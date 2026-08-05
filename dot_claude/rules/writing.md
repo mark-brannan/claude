@@ -34,6 +34,15 @@ CHANGELOG, or markdown docs.
 
 ## Sound like a person, not a model
 
+This section governs what I draft, not existing prose I didn't write. It
+is a phrase/pattern match, not an authorship detector — it can't tell "AI
+wrote this" from "a verbose human wrote this," and Mark has told me he's
+the second kind by nature. Never use this checklist as grounds to flag or
+edit prose you didn't just draft, including anything predating this repo's
+Claude commits — check `git blame` before treating old text as a tell
+rather than assuming. That's what "don't touch a human-written doc"
+already covers; this section doesn't override it.
+
 - Self-check before showing a draft: would a reader guess this was
   AI-written? If yes, revise before I see it.
 - Words that read as AI by default — avoid or replace with something
