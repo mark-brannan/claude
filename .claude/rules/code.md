@@ -22,6 +22,13 @@ project-specific facts belong in that project's own CLAUDE.md.
 - Prefer `rm` or an edit over `git rm` for files being replaced, so deletions
   stay unstaged until I commit them.
 
+## Publishing
+
+- **npm publish: no OTP.** My npm account uses browser 2FA with a passkey.
+  Run plain `npm publish` and let it open (or print) the auth URL; I approve
+  in my browser. Don't ask me for authenticator codes or pass `--otp`.
+  (Added 2026-08-08.)
+
 ## Design
 
 - **Reuse before build.** Search for an existing pattern first. Escalate in
