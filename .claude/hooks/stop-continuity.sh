@@ -67,6 +67,11 @@ printf '%s\n' "$metrics" \
   > "$SD/metrics/sessions/$sid.json"
 printf '%s\n' "$metrics" | jq -c '.decisions[]' > "$SD/metrics/decisions/$sid.jsonl"
 
+# The live snapshot has served its purpose; the finished session file
+# supersedes it, so drop it rather than leaving two records of one session.
+rm -f "$SD/metrics/live/$sid.json" 2>/dev/null
+bash "$HOOK_DIR/metrics-rollup.sh" 2>/dev/null || true
+
 # ---------------------------------------------------------------- checkpoint
 ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
 
