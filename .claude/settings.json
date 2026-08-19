@@ -1,7 +1,7 @@
 {
   "enabledPlugins": {
     "discord@claude-plugins-official": false,
-    "signalk-registry@sailingnaturali":false 
+    "signalk-registry@sailingnaturali": false
   },
   "extraKnownMarketplaces": {
     "sailingnaturali": {
@@ -48,14 +48,37 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/measure-cherry-pick.sh\" 2>/dev/null || true"
+          }
+        ]
+      }
     ]
   },
   "deniedMcpServers": [
-    { "serverName": "Intuit_QuickBooks" },
-    { "serverName": "Intuit_TurboTax" },
-    { "serverName": "CourtListener" },
-    { "serverName": "Courtroom5" },
-    { "serverName": "Legal_Data_Hunter" },
-    { "serverName": "LegalZoom" }
+    {
+      "serverName": "Intuit_QuickBooks"
+    },
+    {
+      "serverName": "Intuit_TurboTax"
+    },
+    {
+      "serverName": "CourtListener"
+    },
+    {
+      "serverName": "Courtroom5"
+    },
+    {
+      "serverName": "Legal_Data_Hunter"
+    },
+    {
+      "serverName": "LegalZoom"
+    }
   ]
 }
