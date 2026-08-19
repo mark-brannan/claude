@@ -178,17 +178,18 @@ lives only in the conversation is already lost.
   the state and question to a file first, so the question survives the
   chat. Everything else becomes a proposed board line for batch
   accept/edit/delete at wrap-up.
-- **Where state lands, settled 2026-08-19:** everything Claude produces
-  between sessions — boards, checkpoints, logs, handoffs, scratch analysis
-  — goes to the private repo `~/claude_prompts_scratch`, under
-  `state/<project>/kanban.md` and `state/<project>/log/`. Work on `main`
-  there; `git pull --rebase` before pushing. **Never into dotfiles** — it
-  is a public repo, and session notes name boats, hosts and services.
-  Never into a working repo either. Symphony is the one grandfathered
-  exception: its Claude state stays at
-  `~/symphony/intermediate_files/claude_slop/`, and its human-facing
-  `maintenance/log.md` and `priorities.md` get only finished, high-level
-  results. Never stage one project's work under another's.
+- **Where state lands, settled 2026-08-19:** a project's session state
+  stays in that project's own repo. Symphony's is
+  `~/symphony/intermediate_files/claude_slop/` (kanban.md + log.md); its
+  human-facing `maintenance/log.md` and `priorities.md` get only finished,
+  high-level results. **Global and cross-cutting state** — standing
+  orders, rules, hooks, Claude tooling, anything spanning projects — goes
+  to the private repo `~/claude_prompts_scratch`, under
+  `state/global/kanban.md` and `state/global/log/`; so does state for any
+  project with no private repo of its own. Work on `main` there; `git pull
+  --rebase` before pushing. **Never into dotfiles** — it is public, and
+  session notes name boats, hosts and services. Never stage one project's
+  work under another's.
 
 ## Maintenance
 
