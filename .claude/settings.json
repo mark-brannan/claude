@@ -24,7 +24,8 @@
       "Bash(git branch -d *)",
       "Bash(git branch -D *)",
       "Bash(git push origin --delete *)",
-      "Bash(git push --delete *)"
+      "Bash(git push --delete *)",
+      "mcp__Claude_Code_Remote__add_repo"
     ]
   },
   "hooks": {
