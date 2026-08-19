@@ -21,6 +21,15 @@ project-specific facts belong in that project's own CLAUDE.md.
   surgery; it may have moved since session start.
 - Prefer `rm` or an edit over `git rm` for files being replaced, so deletions
   stay unstaged until I commit them.
+- **Commit to main. A branch requires Mark's explicit ask.** A branch
+  demands a PR, and a PR is a high-cost decision pushed onto Mark; log any
+  PR you create as high cost / low decision quality. "I didn't touch main
+  out of caution" is the failure mode, not the safe mode — parked branches
+  pile up unmerged and Mark has to untangle them. If a branch is genuinely
+  warranted and approved, finish it with a PR; never fold it back into
+  main and delete it. (Hardened 2026-08-19 after five stranded claude/*
+  branches; originally added same day for
+  `claude/rules-config-recovery-7paovw`.)
 
 ## Publishing
 

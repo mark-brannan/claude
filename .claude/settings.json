@@ -1,0 +1,51 @@
+{
+  "enabledPlugins": {
+    "discord@claude-plugins-official": false,
+    "signalk-registry@sailingnaturali":false 
+  },
+  "extraKnownMarketplaces": {
+    "sailingnaturali": {
+      "source": {
+        "source": "github",
+        "repo": "sailingnaturali/claude-skills"
+      }
+    }
+  },
+  "theme": "dark",
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true,
+  "disableClaudeAiConnectors": true,
+  "env": {
+    "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
+  },
+  "crossSessionInbound": "hold",
+  "permissions": {
+    "allow": [
+      "Bash(git branch -d *)",
+      "Bash(git branch -D *)",
+      "Bash(git push origin --delete *)",
+      "Bash(git push --delete *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*__(send_later|create_trigger)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/no-persistent-polling.sh\""
+          }
+        ]
+      }
+    ]
+  },
+  "deniedMcpServers": [
+    { "serverName": "Intuit_QuickBooks" },
+    { "serverName": "Intuit_TurboTax" },
+    { "serverName": "CourtListener" },
+    { "serverName": "Courtroom5" },
+    { "serverName": "Legal_Data_Hunter" },
+    { "serverName": "LegalZoom" }
+  ]
+}
