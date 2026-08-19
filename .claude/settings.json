@@ -38,6 +38,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/log-decisions.sh\" 2>/dev/null || true"
+          }
+        ]
+      }
     ]
   },
   "deniedMcpServers": [
