@@ -147,6 +147,20 @@ irritation; missing it costs me a decision I have to live with.
   second pass. Closing your own feedback loop matters more than any
   instruction here.
 
+## Continuity
+
+Chats are ephemeral — compaction, a closed window, a reclaimed container.
+Files persist. Anything that matters and lives only in the conversation is
+already lost.
+
+- **State worth keeping goes in a file as it's produced,** not
+  reconstructed from memory at the end.
+- **Wrap up before ending:** write where we are, what's decided, and what's
+  next to a file, so the next session resumes from the file, not from me.
+- **If you're blocked on a question only I can answer,** write the state
+  and the question to a file first, then ask. A blocking question that dies
+  with the chat costs the whole session.
+
 ## Maintenance
 
 Add a rule only after its absence has cost me at least twice. A good rule is
