@@ -41,6 +41,8 @@ INSTALL="
 .claude/rules/code.md
 .claude/rules/writing.md
 .claude/hooks/no-persistent-polling.sh
+.claude/hooks/log-decisions.sh
+.claude/hooks/measure-cherry-pick.sh
 "
 
 # --- what must never be installed ----------------------------------------
