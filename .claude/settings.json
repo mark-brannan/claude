@@ -79,6 +79,15 @@
     },
     {
       "serverName": "LegalZoom"
+    },
+    {
+      "serverName": "Gmail"
+    },
+    {
+      "serverName": "Google_Drive"
+    },
+    {
+      "serverName": "Google_Calendar"
     }
   ]
 }
