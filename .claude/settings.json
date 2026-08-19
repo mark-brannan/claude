@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/no-persistent-polling.sh\""
+            "command": "h=\"$HOME/.claude/hooks/no-persistent-polling.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-persistent-polling.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
           }
         ]
       }
@@ -44,18 +44,29 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/log-decisions.sh\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/stop-continuity.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
+            "timeout": 180
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|mcp__.*__create_pull_request",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/measure-cherry-pick.sh\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
           }
         ]
       }

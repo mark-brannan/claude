@@ -165,19 +165,26 @@ a reclaimed container. Durable state lives in files: boards for open work,
 checkpoints/logs for what was done and decided. Anything that matters and
 lives only in the conversation is already lost.
 
-- **State worth keeping goes in a file as it's produced,** not
-  reconstructed from memory at the end.
-- **"Wrap up" / "log it" means:** flush loose ends to the right board,
-  write where-we-are / what's-decided / what's-next to a checkpoint,
-  commit, **push**, confirm the chat is safe to kill. The next session
-  resumes from files, not from me.
+**The mechanics are hooks, not prose.** `session-start-continuity.sh` puts
+the board and the last sessions' checkpoints in front of every session.
+`stop-continuity.sh` writes the session record, the typed decision log and
+an auto-checkpoint, then commits and pushes — every Stop, unprompted. Don't
+redo that by hand and don't wait to be asked. What's left to judgment:
+
+- **Narrative beats the auto-checkpoint.** The hook records what happened;
+  only you can record what it meant and what should happen next. On "wrap
+  up" / "log it", write that to `log/YYYY-MM-DD-<slug>.md`. The machine one
+  is evidence, not a substitute.
 - **Capture ≠ activation.** Something off-goal but real → one board line
   at wrap-up; trivial → drop it. Never a new workstream mid-session.
 - **New sessions open by pulling from a board.** WIP limit ~2–3.
-- **Ask inline only when the answer blocks the current task** — and write
-  the state and question to a file first, so the question survives the
-  chat. Everything else becomes a proposed board line for batch
-  accept/edit/delete at wrap-up.
+- **Ask early or not at all.** A question before the first file is written
+  is cheap — context is fresh and a wrong assumption would have cost the
+  whole session. The same question mid-flight makes me reload context I
+  haven't been carrying. Front-load them; ask inline only when the answer
+  blocks the current task; board the rest for batch accept/edit/delete at
+  wrap-up. The decision log types every ask this way, so the ratio is
+  checkable rather than remembered.
 - **Where state lands, settled 2026-08-19:** a project's session state
   stays in that project's own repo. Symphony's is
   `~/symphony/intermediate_files/claude_slop/` (kanban.md + log.md); its

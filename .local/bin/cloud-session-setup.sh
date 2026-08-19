@@ -40,10 +40,21 @@ INSTALL="
 .claude/CLAUDE.md
 .claude/rules/code.md
 .claude/rules/writing.md
+.claude/hooks/lib-state.sh
+.claude/hooks/session-metrics.jq
+.claude/hooks/session-start-continuity.sh
+.claude/hooks/stop-continuity.sh
+.claude/hooks/measure-git-events.sh
 .claude/hooks/no-persistent-polling.sh
-.claude/hooks/log-decisions.sh
-.claude/hooks/measure-cherry-pick.sh
 "
+
+# The continuity hooks read and write the private state repo
+# (claude_prompts_scratch). This script cannot clone it -- a VM has no
+# credentials for a private repo at setup time -- so it must be added as a
+# SECOND SOURCE on the cloud environment alongside dotfiles. Without it the
+# hooks still run, but they write to ~/.claude/state/global, which dies with
+# the container. session-start-continuity.sh says so at the top of every
+# session rather than failing quietly.
 
 # --- what must never be installed ----------------------------------------
 # A tripwire, not documentation: an INSTALL entry matching one of these is
