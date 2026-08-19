@@ -55,6 +55,17 @@ project-specific facts belong in that project's own CLAUDE.md.
   it — that instruction is for that session only and takes precedence;
   finish that branch with a PR as usual.
 
+- **Branch cleanup: merged means deleted.** Keep "Automatically delete head
+  branches" ticked on every repo (dotfiles: on, confirmed 2026-08-19 when
+  PR #5's head vanished on merge) so the common case needs no sweep. Beyond
+  that, a branch whose commits are all ancestors of `main` is garbage —
+  delete it on sight, no ceremony, no asking. A branch with commits *not* in
+  main is real unlanded work: don't delete it, surface it to Mark instead.
+  Cloud sessions often can't delete remote branches (`git push --delete` is
+  blocked by the auto-mode classifier and there is no MCP equivalent), so
+  the sweep is a nucbox job; from a cloud session, just list what should go.
+  (Decided 2026-08-19.)
+
 ## Publishing
 
 - **npm publish: no OTP.** My npm account uses browser 2FA with a passkey.
