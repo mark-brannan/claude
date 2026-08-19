@@ -135,6 +135,9 @@
     },
     {
       "serverName": "Google_Calendar"
+    },
+    {
+      "serverName": "Evernote_MCP"
     }
   ],
   "statusLine": {
