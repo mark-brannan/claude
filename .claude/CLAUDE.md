@@ -157,6 +157,12 @@ irritation; missing it costs me a decision I have to live with.
 - **Give yourself a way to verify.** Tests, a diff, a re-read, a browser, a
   second pass. Closing your own feedback loop matters more than any
   instruction here.
+- **My "merge" means pull + rebase + push to origin/main, never `git
+  merge`.** I'm trying to say "land on main" instead; treat that as the
+  same order. **"Ship it"** means whatever the actual next move is for the
+  work in front of us — push straight to main, push the branch and open
+  the PR, or push and merge/close an existing PR. Pick the one that fits;
+  don't ask which.
 
 ## Continuity
 
