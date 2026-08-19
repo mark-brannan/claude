@@ -11,6 +11,36 @@
 
 def lastline: split("\n") | map(select(test("\\S"))) | last // "";
 
+# --- what counts as an ask ------------------------------------------------
+# The original test -- last non-blank line ends in "?" -- misses the exact
+# shape Mark asks for: a numbered escalation followed by a fenced block he
+# can paste back. Three forms are accepted now:
+#   trailing "?"          the turn stopped on a question
+#   enumerated ask        "1." / "2." items, at least one of them a question
+#   trailing fenced block stripped off, if what precedes it is either of the
+#                         above -- the fence is the answer form, not the ask
+def enum_items: split("\n") | map(select(test("^\\s*\\d+[.)]\\s+\\S")));
+
+def is_ask:
+  (lastline | test("\\?\\s*$"))
+  or (((enum_items | length) >= 2) and (enum_items | any(test("\\?"))));
+
+# The text before a trailing ``` fenced block, or null if there isn't one.
+def prefence:
+  (sub("\\s+$"; "")) as $t
+  | if ($t | test("```\\s*$"))
+    then ($t | split("```")) as $p
+         | if ($p | length) >= 3 then ($p[0:-2] | join("```")) else null end
+    else null end;
+
+# The ask inside an assistant message, or null. Empty string is never an ask.
+def ask_text:
+  if (. == null or . == "") then null
+  elif is_ask then .
+  else (prefence // null) as $pre
+       | if ($pre != null and ($pre | is_ask)) then $pre else null end
+  end;
+
 # A tool call that changes something. Used only to split "before work
 # started" from "after", which is what separates a cheap scoping question
 # from an expensive mid-flight one.
@@ -26,6 +56,29 @@ def mutating_bash:
 def is_mutating:
   (.name | IN("Write","Edit","NotebookEdit"))
   or (.name == "Bash" and ((.input.command // "") | mutating_bash));
+
+# Files a mutating Bash command writes to. Under auto mode nearly every edit
+# is a heredoc, a `tee` or a `sed -i`, none of which produce a Write/Edit
+# tool call -- so counting only those tools reports files_written: 0 for a
+# session that rewrote half the repo.
+def bash_targets:
+  . as $c
+  | [ ($c | [ match(">>?\\s*(?!/dev/null)([^>|&;()\\s]+)"; "g")
+              | .captures[0].string ]),
+      ($c | [ match("\\btee\\s+(?:-a\\s+)?([^>|&;()\\s]+)"; "g")
+              | .captures[0].string ]),
+      # sed -i [-e SCRIPT]... SCRIPT FILE
+      ($c | [ match("\\bsed\\s+-i\\S*\\s+(?:-e\\s+\\S+\\s+)*(?:'[^']*'|\"[^\"]*\"|\\S+)\\s+([^>|&;()\\s]+)"; "g")
+              | .captures[0].string ]) ]
+  | add
+  | map(select(. != null))
+  | map(sub("^[\"']+"; "") | sub("[\"']+$"; ""))
+  | map(select(. != "" and (startswith("-") | not)
+               and (startswith("/dev/") | not)
+               # scraping shell text is inherently approximate: require the
+               # token to look like a path so `>= 2` inside a heredoc does
+               # not get filed as a written file
+               and test("[./]") and (test("^[0-9=]") | not)));
 
 to_entries as $E
 
@@ -51,21 +104,25 @@ to_entries as $E
 # --- decisions -----------------------------------------------------------
 # Two mechanisms, both mechanically detectable:
 #   AskUserQuestion -- an explicit, structured hand-off
-#   prose           -- the last assistant text before a human turn ends in
-#                      a question mark, i.e. the turn stopped to ask
+#   prose           -- the last assistant text before a human turn is an ask
+#                      (see is_ask): a trailing question, an enumerated
+#                      escalation, or either of those under a fenced block
 | ([ $tools[] | select(.name == "AskUserQuestion")
      | {i: .i, mechanism: "AskUserQuestion",
         n: ((.input.questions // []) | length),
         text: ((.input.questions // []) | map(.question) | join(" | "))} ]
    +
    [ $humans[] | select(. > 0) as $h
+     | ([ $E[] | select(.key < $h and .value.type == "assistant")
+          | .value.message.content[]? | select(.type == "text")
+          | .text ] | last // "" | ask_text) as $ask
+     | select($ask != null)
      | { i: $h,
          mechanism: "prose",
          n: 1,
-         text: ([ $E[] | select(.key < $h and .value.type == "assistant")
-                  | .value.message.content[]? | select(.type == "text")
-                  | .text ] | last // "" | lastline) }
-     | select(.text | test("\\?\\s*$")) ]
+         # the last non-blank line of the ask is the readable summary; for an
+         # enumerated escalation that is its final item, not the fence
+         text: ($ask | lastline) } ]
    | sort_by(.i)) as $raw_decisions
 
 | ([ $raw_decisions | to_entries[]
@@ -112,8 +169,11 @@ to_entries as $E
       context_peak: (([ $amsgs[] | .message.usage
                         | ((.input_tokens // 0) + (.cache_read_input_tokens // 0)
                            + (.cache_creation_input_tokens // 0)) ] | max) // 0),
-      files_written: ([ $tools[] | select(.name | IN("Write","Edit","NotebookEdit"))
-                        | .input.file_path // .input.notebook_path ]
+      files_written: (([ $tools[] | select(.name | IN("Write","Edit","NotebookEdit"))
+                         | .input.file_path // .input.notebook_path ]
+                       + [ $tools[] | select(.name == "Bash")
+                           | (.input.command // "")
+                           | select(mutating_bash) | bash_targets[] ])
                       | unique | length),
       work_started: ($first_mut_raw != null),
       decisions: {

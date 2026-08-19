@@ -48,6 +48,26 @@ INSTALL="
 .claude/hooks/no-persistent-polling.sh
 "
 
+# --- what to prune -------------------------------------------------------
+# Directories this script OWNS ENTIRELY: anything in them that is not in
+# INSTALL is a leftover from an older seed and is removed. Seeding without
+# pruning is why a deleted hook keeps running -- the container seeded it
+# once, the repo dropped it, and the $HOME copy is still there and still
+# wins. The $CLAUDE_PROJECT_DIR fallback does not save you: it fires only
+# when the $HOME path is ABSENT, which is exactly not this case.
+#
+# Only wholly-owned leaf directories go here. `.claude` itself must NEVER
+# appear: it also holds state/, projects/, todos/ and settings.local.json,
+# none of which this script put there.
+PRUNE_DIRS='.claude/hooks .claude/rules'
+
+# A tripwire for PRUNE_DIRS, in the same spirit as SKIP_GLOBS: these are
+# shared directories that hold files this script never put there, so a prune
+# of one would delete a stranger's work. `.claude` is the live example --
+# INSTALL names files directly under it, which would otherwise make it look
+# prunable, and settings.local.json, state/ and projects/ all live there.
+PRUNE_NEVER='. .claude .config .local .local/bin .ssh'
+
 # The continuity hooks read and write the private state repo
 # (claude_prompts_scratch). This script cannot clone it -- a VM has no
 # credentials for a private repo at setup time -- so it must be added as a
@@ -162,14 +182,15 @@ install_file() {
   fi
 }
 
-installed=0; replaced=0; same=0; refused=0; missing=0; failed=0
+installed=0; replaced=0; same=0; refused=0; missing=0; failed=0; pruned=0
 
 # Flatten INSTALL (which may name directories) to one src<TAB>relpath per line
 # in a temp file. A file, not a pipe: `find | while` would run the loop in a
 # subshell and every counter above would be discarded at the end of it.
 TAB=$(printf '\t')
 LIST=$(mktemp) || exit 0
-trap 'rm -f "$LIST"' EXIT INT TERM
+PRUNE=$(mktemp) || exit 0
+trap 'rm -f "$LIST" "$PRUNE"' EXIT INT TERM
 
 for path in $INSTALL; do
   [ -n "$path" ] || continue
@@ -198,15 +219,78 @@ for path in $INSTALL; do
   fi
 done
 
+KEEP=$(mktemp) || exit 0
+trap 'rm -f "$LIST" "$KEEP" "$PRUNE"' EXIT INT TERM
+
 while IFS="$TAB" read -r src path; do
   [ -n "${src:-}" ] || continue
   case "$src" in
     "$SEED/$path") rel=$path ;;                    # single file
     *)             rel="$path/${src#"$SEED/$path/"}" ;;  # file within a dir
   esac
+  # recorded before install_file, so a refused or failed copy is still never
+  # pruned -- prune removes only what this script has no business keeping
+  printf '%s\n' "$rel" >>"$KEEP"
   install_file "$src" "$rel"
 done <"$LIST"
 
-say "$installed installed, $replaced replaced, $same unchanged, $refused refused, $missing missing, $failed failed"
+# =========================================================================
+# Prune — remove files under PRUNE_DIRS that INSTALL no longer names.
+# =========================================================================
+# Same policy as an overwrite: never silent, never irreversible within the
+# session. The old file is copied to ~/.dotfiles-replaced/ before removal.
+prune_dir() {
+  rel_dir=$1
+
+  # A prune must never be able to walk outside a managed directory. Three
+  # independent checks, because one bad PRUNE_DIRS entry would be `rm`ing
+  # under $HOME: the relative path is literal and local, it is actually
+  # named by INSTALL, and every file found is re-checked against its dir.
+  case "$rel_dir" in
+    ''|/*|*..*|*'*'*|*'?'*|.|./*)
+      warn "  PRUNE SKIPPED '$rel_dir' — not a safe managed path"; return ;;
+  esac
+  for never in $PRUNE_NEVER; do
+    [ "$rel_dir" = "$never" ] && {
+      warn "  PRUNE SKIPPED $rel_dir — on the never-prune list"; return; }
+  done
+  grep -q "^$rel_dir/[^/]" "$KEEP" 2>/dev/null || {
+    warn "  PRUNE SKIPPED $rel_dir — INSTALL names nothing under it"; return; }
+
+  dir="$HOME/$rel_dir"
+  [ -d "$dir" ] || return
+  [ -L "$dir" ] && { warn "  PRUNE SKIPPED $rel_dir — directory is a symlink"; return; }
+
+  # -maxdepth 1 -type f: regular files directly in the directory. Symlinks
+  # and subdirectories are left alone, as everywhere else in this script.
+  : >"$PRUNE"
+  find "$dir" -maxdepth 1 -type f -print >>"$PRUNE" 2>/dev/null
+
+  while IFS= read -r found; do
+    [ -n "${found:-}" ] || continue
+    base=${found##*/}
+    # belt and braces: the file must really be a direct child of $dir
+    [ "$found" = "$dir/$base" ] || { warn "  PRUNE SKIPPED $found — outside $rel_dir"; continue; }
+    rel="$rel_dir/$base"
+    grep -qx "$rel" "$KEEP" 2>/dev/null && continue   # in INSTALL, keep
+
+    if [ "$DRY_RUN" = yes ]; then
+      say "  would PRUNE $rel (backup to ~/.dotfiles-replaced/$rel)"
+      pruned=$((pruned + 1)); continue
+    fi
+    mkdir -p "$BACKUP/$rel_dir" && cp -a "$found" "$BACKUP/$rel" || {
+      warn "  FAILED to back up $rel — not pruning"; failed=$((failed + 1)); continue; }
+    rm -f "$found" &&
+      say "  pruned $rel — no longer in INSTALL (old copy: ~/.dotfiles-replaced/$rel)" ||
+      { warn "  FAILED to prune $rel"; failed=$((failed + 1)); continue; }
+    pruned=$((pruned + 1))
+  done <"$PRUNE"
+}
+
+for d in $PRUNE_DIRS; do
+  prune_dir "$d"
+done
+
+say "$installed installed, $replaced replaced, $same unchanged, $pruned pruned, $refused refused, $missing missing, $failed failed"
 say "seed checkout: $SEED"
 exit 0
