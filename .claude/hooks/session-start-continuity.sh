@@ -36,9 +36,13 @@ checkpoints and the metrics are all missing, and `stop-continuity.sh` will
 write to `~/.claude/state/global` (local, unpushed, lost when this container
 is reclaimed).
 
-To fix in this session: `mcp__Claude_Code_Remote__add_repo` with owner
-`mark-brannan`, repo `claude_prompts_scratch`, access `push`, then clone it.
-To fix permanently: add it as a second source on this cloud environment.
+Fix it now: `mcp__Claude_Code_Remote__add_repo` with owner `mark-brannan`,
+repo `claude_prompts_scratch`, access `push`, then clone it to
+`/workspace/claude_prompts_scratch` -- a path `state_repo` already searches.
+Do this every cold session; there is no environment setting that does it for
+you. Cloud environments configure only name, network access, environment
+variables and a setup script -- repositories attach per session, and the
+GitHub proxy 403s any repo not attached, so a setup script cannot clone this.
 MSG
   exit 0
 fi
