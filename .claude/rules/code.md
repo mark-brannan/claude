@@ -21,15 +21,39 @@ project-specific facts belong in that project's own CLAUDE.md.
   surgery; it may have moved since session start.
 - Prefer `rm` or an edit over `git rm` for files being replaced, so deletions
   stay unstaged until I commit them.
-- **Commit to main. A branch requires Mark's explicit ask.** A branch
-  demands a PR, and a PR is a high-cost decision pushed onto Mark; log any
-  PR you create as high cost / low decision quality. "I didn't touch main
-  out of caution" is the failure mode, not the safe mode — parked branches
-  pile up unmerged and Mark has to untangle them. If a branch is genuinely
-  warranted and approved, finish it with a PR; never fold it back into
-  main and delete it. (Hardened 2026-08-19 after five stranded claude/*
-  branches; originally added same day for
-  `claude/rules-config-recovery-7paovw`.)
+- **Work on main by default. Branch-vs-main is a rule, not a judgment
+  call — don't ask.** Commit straight to main in small, verified commits,
+  pushed early and often, unless one of these triggers:
+  - **Explicit phrase** — I say "make this a feature," "make this a
+    branch," or "this needs review." Skip the metric check; branch
+    immediately.
+  - **Metric threshold crossed** (placeholders, tune later): **>50 lines
+    of code changed** (excluding docs), **>200 lines of docs changed**,
+    **session >100k tokens**, or **session >30 min wall clock**.
+
+  Everything else — small fixes, doc edits, config tweaks — goes straight
+  to main, no branch, no asking. Reversed 2026-08-19 from the prior
+  deny-by-default polarity ("commit to main requires no branch reason");
+  the old rule produced five stranded `claude/*` branches from excess
+  caution, which was the actual failure mode, not landing on main.
+
+  When a branch *is* warranted under this rule: always open the PR
+  yourself immediately, **as a draft, with no reviewer requested** — never
+  wait to be asked, never leave a pushed branch without one. A branch
+  opened under this rule ends only one way: merged via PR, never folded
+  back to main and deleted.
+
+- **Cloud sessions: a pre-assigned `claude/*` branch name is not, by
+  itself, a decision to branch.** Apply the rule above as normal — if
+  nothing crosses a trigger, still land the work with
+  `git push origin HEAD:main`, pushed early and often, rather than
+  treating the assigned name as the destination. Decided 2026-08-19, see
+  `claude_prompts_scratch/state/global/log/2026-08-19-git-vocabulary-worktrees.md`
+  (cloud sessions cannot delete their own remote branches, so the cheapest
+  fix is not creating one). This does **not** apply when a session's own
+  task instructions separately name one specific branch and say to stay on
+  it — that instruction is for that session only and takes precedence;
+  finish that branch with a PR as usual.
 
 ## Publishing
 

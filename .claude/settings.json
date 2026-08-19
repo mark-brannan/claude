@@ -57,6 +57,10 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/log-commit.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/log-commit.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
           }
         ]
       }
