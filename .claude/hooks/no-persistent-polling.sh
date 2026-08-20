@@ -19,6 +19,17 @@
 set -euo pipefail
 
 input=$(cat)
+
+# Fail closed. This guard exists only to deny; its job is safety, not
+# function. If jq is missing we cannot parse the request to judge it, and the
+# settings.json matcher ends in `|| true`, so a non-zero exit here would be
+# silently swallowed into an ALLOW. Emit an explicit deny with hand-written
+# JSON instead of relying on jq to build it.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked by no-persistent-polling.sh: jq is unavailable, so the scheduled-wakeup request cannot be evaluated. Denying to fail closed. Install jq, or use subscribe_pr_activity to wake on real events."}}'
+  exit 0
+fi
+
 tool=$(printf '%s' "$input" | jq -r '.tool_name // ""')
 
 deny() {

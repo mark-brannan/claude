@@ -23,8 +23,6 @@
     "allow": [
       "Bash(git branch -d *)",
       "Bash(git branch -D *)",
-      "Bash(git push origin --delete *)",
-      "Bash(git push --delete *)",
       "mcp__Claude_Code_Remote__add_repo"
     ]
   },
@@ -35,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "for d in \"$HOME\" \"${CLAUDE_PROJECT_DIR:-}\" \"$PWD\"; do h=\"$d/.claude/hooks/guard-add-repo.sh\"; [ -n \"$d\" ] && [ -f \"$h\" ] && { bash \"$h\"; break; }; done; true"
+            "command": "h=\"$HOME/.claude/hooks/guard-add-repo.sh\"; [ -f \"$h\" ] && bash \"$h\"; true"
           }
         ]
       },
@@ -44,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/no-persistent-polling.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-persistent-polling.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/no-persistent-polling.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
           }
         ]
       },
@@ -53,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" question 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" question 0 show 2>/dev/null || true"
           }
         ]
       }
@@ -63,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" stop 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" stop 0 show 2>/dev/null || true"
           }
         ]
       },
@@ -71,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/stop-continuity.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
+            "command": "h=\"$HOME/.claude/hooks/stop-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
             "timeout": 180
           }
         ]
@@ -83,15 +81,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/log-commit.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/log-commit.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/log-commit.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" git 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" git 0 show 2>/dev/null || true"
           }
         ]
       }
@@ -101,11 +99,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
           }
         ]
       }
@@ -115,7 +113,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" prompt 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" prompt 2>/dev/null || true"
           }
         ]
       }
@@ -155,7 +153,7 @@
   ],
   "statusLine": {
     "type": "command",
-    "command": "h=\"$HOME/.claude/hooks/statusline-metrics.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/statusline-metrics.sh\"; bash \"$h\" 2>/dev/null",
+    "command": "h=\"$HOME/.claude/hooks/statusline-metrics.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null",
     "padding": 0
   }
 }

@@ -35,6 +35,12 @@ DRY_RUN=no
 # --- what to install -----------------------------------------------------
 # Repo-relative paths, files or directories, copied to the same path under
 # $HOME. Expand deliberately: every line lands in every cloud session.
+# Every hook that settings.json references (directly or transitively) MUST be
+# listed here. settings.json now runs hooks from $HOME ONLY -- the old
+# $CLAUDE_PROJECT_DIR fallback was removed because in a cloud session on a
+# third-party repo it executed THAT repo's .claude/hooks/*.sh under user-scope
+# trust. Fail-closed is only safe if $HOME is complete: an omission here means
+# the hook silently stops running, not that a stranger's copy runs instead.
 INSTALL="
 .claude/settings.json
 .claude/CLAUDE.md
@@ -46,6 +52,12 @@ INSTALL="
 .claude/hooks/stop-continuity.sh
 .claude/hooks/measure-git-events.sh
 .claude/hooks/no-persistent-polling.sh
+.claude/hooks/guard-add-repo.sh
+.claude/hooks/metrics-live.sh
+.claude/hooks/metrics-rollup.sh
+.claude/hooks/log-commit.sh
+.claude/hooks/statusline-metrics.sh
+.claude/hooks/connector-budget.sh
 "
 
 # --- what to prune -------------------------------------------------------
