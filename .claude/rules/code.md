@@ -113,10 +113,22 @@ project-specific facts belong in that project's own CLAUDE.md.
 
 ### Babysitting a PR is cheap; polling for it is not
 
-- **Above ~100k tokens this session, don't subscribe.** Push, open the PR,
-  and end the turn with a follow-up prompt plus: "You should archive this
-  chat now. It's at ~Nk tokens." Fire-and-forget — no webhook, no wake,
-  pick it up fresh next time. (Added 2026-08-20.)
+- **Past 60% of the context window — ~120k on the default 200k — don't
+  subscribe.** Push, open the PR, and end the turn with a follow-up prompt
+  plus: "You should archive this chat now. It's at ~Nk tokens."
+  Fire-and-forget — no webhook, no wake, pick it up fresh next time.
+  (Added 2026-08-20; was a flat ~100k until the number was checked against
+  the docs the same day.) A fraction, not a fixed number, because 100k is
+  half the default window but a tenth of the 1M one Opus upgrades to on
+  Max. 60% leaves room for ~6-10 wakes at 5-15k each and stops short of the
+  band where cloud sessions start compacting — and compaction drops exactly
+  the reasoning behind the diff under review. Enforced by
+  `~/.claude/hooks/no-late-pr-subscribe.sh`, which reads current context
+  from the transcript and denies `subscribe_pr_activity` at or above the
+  threshold. Knobs: `CLAUDE_PR_WATCH_CONTEXT_WINDOW` (raise it by hand for
+  a 1M session — the hook can't see the model's window),
+  `CLAUDE_PR_WATCH_CONTEXT_PERCENT`, `CLAUDE_PR_WATCH_MIN_HEADROOM`,
+  `CLAUDE_PR_WATCH_TOKEN_LIMIT` (absolute, overrides the rest).
 - **Wake on events, not timers.** Subscribing to PR activity costs nothing
   idle and fires the moment a check finishes or a comment lands — cheaper and faster than checking back. "I'll check again in a
   few minutes" is a polling loop in disguise; if a check is still running,

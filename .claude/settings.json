@@ -54,6 +54,15 @@
             "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" question 0 show 2>/dev/null || true"
           }
         ]
+      },
+      {
+        "matcher": "mcp__.*__subscribe_pr_activity",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-late-pr-subscribe.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-late-pr-subscribe.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+          }
+        ]
       }
     ],
     "Stop": [
