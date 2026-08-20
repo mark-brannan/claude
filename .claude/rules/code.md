@@ -66,6 +66,20 @@ project-specific facts belong in that project's own CLAUDE.md.
   the sweep is a nucbox job; from a cloud session, just list what should go.
   (Decided 2026-08-19.)
 
+## PR ownership: draft → ready is mine
+
+- When I open a PR as a draft, driving it to ready is my job, not something
+  to wait on. Resolve bot/reviewer comments, fix CI failures, and flip it
+  out of draft the moment CI is green and comments are addressed — don't
+  wait to be asked, and don't leave a green, comment-free PR sitting in
+  draft for a human to notice and un-draft.
+- "Looks good" / "I'm signing off" said before CI finishes isn't a stall —
+  it's pre-authorization: push (and mark ready) the moment CI comes back
+  green, without circling back to re-confirm.
+- This stops at merge, not before it. Getting a PR to ready-and-green is
+  mine by default; merging it is a separate, explicit action unless told
+  otherwise for a given PR or repo. (Added 2026-08-20.)
+
 ## Publishing
 
 - **npm publish: no OTP.** My npm account uses browser 2FA with a passkey.
