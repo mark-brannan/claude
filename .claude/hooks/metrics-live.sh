@@ -10,8 +10,9 @@
 #
 # One file per session, keyed by session_id: parallel sessions are normal
 # here, and per-session paths mean two of them never write the same file.
-# The rollup that merges them (`metrics/metrics.json`) is *generated*, never
-# hand-merged, so a push can't conflict on it in a way that needs resolving.
+# The rollup that merges them (`metrics/metrics.json`) is *generated* and
+# gitignored -- it is never committed, so there is no shared file for two
+# sessions to collide on. See metrics-rollup.sh.
 #
 # stdin: any hook payload carrying transcript_path/session_id/cwd.
 # Always exits 0.

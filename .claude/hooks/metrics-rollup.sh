@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Regenerate metrics/metrics.json from the per-session files.
 #
-# Generated, never edited: two sessions pushing at once both regenerate the
-# same derived file from conflict-free per-session inputs, so a rebase can
-# always take "theirs" and re-run this. That is the collision handling --
-# there is no merge to get wrong.
+# Generated, never edited, and *never committed*: the state repo gitignores
+# metrics.json. Per-session inputs are conflict-free by construction, but a
+# committed rollup of them is not -- every Stop rewrote the one shared file,
+# so any two sessions ending near each other collided on it and a human had
+# to resolve a conflict in generated JSON. Untracked, the file is still here
+# to read; each machine regenerates its own from whatever sessions it has.
+# Reads that must not depend on a local rollup use the `jq -s` one-liners in
+# metrics/README.md over sessions/*.json directly.
+# (Decided 2026-08-20 after one such conflict; see the metrics README.)
 set -uo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib-state.sh
@@ -19,6 +24,10 @@ M="$(state_dir)/metrics"
 # rollup keeps counting that half-session's tokens in every future total.
 # 14 days is well past any session that is still going to finish.
 find "$M/live" -name '*.json' -mtime +14 -delete 2>/dev/null
+# Interrupted writers leave `<id>.json.<pid>` temp files behind. The glob
+# below never picks them up, so they are harmless to the rollup -- but they
+# sat in the state repo as untracked clutter until someone noticed them.
+find "$M/live" -name '*.json.*' -mtime +1 -delete 2>/dev/null
 # Globbing, not `ls`: with an unmatched pattern `ls` exits 2, and the old
 # `|| exit 0` then aborted the rollup even when the other glob had matched.
 # That is the normal case -- stop-continuity.sh deletes this session's live
