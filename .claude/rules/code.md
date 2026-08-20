@@ -40,9 +40,15 @@ project-specific facts belong in that project's own CLAUDE.md.
 
   When a branch *is* warranted under this rule: always open the PR
   yourself immediately, **as a draft, with no reviewer requested** — never
-  wait to be asked, never leave a pushed branch without one. A branch
-  opened under this rule ends only one way: merged via PR, never folded
-  back to main and deleted.
+  wait to be asked, never leave a pushed branch without one. Same step,
+  not a later one: **the instant that push/build/format/local-test bar is
+  met, flip it to ready before doing anything else** — before messaging
+  Mark, before ending the turn. "Open the PR" and "mark it ready" are one
+  action split across two tool calls, not two decisions; don't let the
+  second one wait on recalling a rule after the first one already felt
+  like "done." (See "PR ownership" below for what ready unlocks and what
+  stays mine after.) A branch opened under this rule ends only one way:
+  merged via PR, never folded back to main and deleted.
 
 - **Cloud sessions: a pre-assigned `claude/*` branch name is not, by
   itself, a decision to branch.** Apply the rule above as normal — if
