@@ -24,7 +24,8 @@
       "Bash(git branch -d *)",
       "Bash(git branch -D *)",
       "Bash(git push origin --delete *)",
-      "Bash(git push --delete *)"
+      "Bash(git push --delete *)",
+      "mcp__Claude_Code_Remote__add_repo"
     ]
   },
   "hooks": {
@@ -101,6 +102,10 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
           }
         ]
       }
