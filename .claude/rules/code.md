@@ -107,13 +107,20 @@ project-specific facts belong in that project's own CLAUDE.md.
 - This stops at merge, not before it. Getting a PR to ready-and-green is
   mine by default; merging it is a separate, explicit action unless told
   otherwise for a given PR or repo. (Added 2026-08-20.)
+- Don't ask "want me to watch this PR?" — subscribe yourself, or don't,
+  per the token-budget rule below. Either way, no question. (Added
+  2026-08-20.)
 
 ### Babysitting a PR is cheap; polling for it is not
 
+- **Above ~100k tokens this session, don't subscribe.** Push, open the PR,
+  and end the turn with a follow-up prompt plus: "You should archive this
+  chat now. It's at ~Nk tokens." Fire-and-forget — no webhook, no wake,
+  pick it up fresh next time. (Added 2026-08-20.)
 - **Wake on events, not timers.** Subscribing to PR activity costs nothing
-  idle and fires the moment a check finishes or a comment lands — cheaper
-  and faster than checking back. "I'll check again in a few minutes" is a
-  polling loop in disguise; if a check is still running, say so and stop.
+  idle and fires the moment a check finishes or a comment lands — cheaper and faster than checking back. "I'll check again in a
+  few minutes" is a polling loop in disguise; if a check is still running,
+  say so and stop.
 - **Never bind a scheduled wakeup to a live session** to re-poll a PR — no
   `send_later`, no `create_trigger` carrying a persistent session id or
   missing a fresh-session flag. Each firing re-sends that session's whole
