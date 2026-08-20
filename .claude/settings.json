@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/guard-add-repo.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-add-repo.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "for d in \"$HOME\" \"${CLAUDE_PROJECT_DIR:-}\" \"$PWD\"; do h=\"$d/.claude/hooks/guard-add-repo.sh\"; [ -n \"$d\" ] && [ -f \"$h\" ] && { bash \"$h\"; break; }; done; true"
           }
         ]
       },
