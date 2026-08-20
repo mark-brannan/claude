@@ -181,16 +181,33 @@ redo that by hand and don't wait to be asked. What's left to judgment:
   only you can record what it meant and what should happen next. On "wrap
   up" / "log it", write that to `log/YYYY-MM-DD-<slug>.md`. The machine one
   is evidence, not a substitute.
-- **Capture ≠ activation.** Something off-goal but real → one board line
-  at wrap-up; trivial → drop it. Never a new workstream mid-session.
+- **Write the card when the loop is found, not at wrap-up.** By the end of a
+  session the context has been compacted, so the link, the timestamp and the
+  exact wording are gone and what's left is unactionable. Discovery is the
+  last moment the evidence still exists. Capture is still not activation:
+  the card is written now, the decision about it waits. Trivial → drop it;
+  never a new workstream mid-session.
 - **New sessions open by pulling from a board.** WIP limit ~2–3.
+- **One card contract, every board** (adopted 2026-08-20, rationale in
+  [space-weather#95](https://github.com/mark-brannan/signalk-noaa-space-weather/pull/95)).
+  One file, two sections — `## Yours` and `## Claude's`, because the cards
+  block each other and split files show both lists clear while the work
+  sits deadlocked. One checkbox line per card: the action in the
+  imperative, then a link. The link is never optional — a card only its
+  author can resolve is not a card. `blocked:` plus the dependency only
+  when blocked. Cards die when done. Checkboxes, never a table.
+- **End with the follow-up prompt, not a status bullet.** When a session
+  ends with work left, end with the prompt that would start it —
+  pasteable, naming the branch, PR or file. Anything only I can do is a
+  card, referenced by link. Both written so someone who wasn't in the
+  session can act on them a week later.
 - **Ask early or not at all.** A question before the first file is written
   is cheap — context is fresh and a wrong assumption would have cost the
   whole session. The same question mid-flight makes me reload context I
   haven't been carrying. Front-load them; ask inline only when the answer
-  blocks the current task; board the rest for batch accept/edit/delete at
-  wrap-up. The decision log types every ask this way, so the ratio is
-  checkable rather than remembered.
+  blocks the current task; card the rest as they come up and bring them for
+  batch accept/edit/delete at wrap-up. The decision log types every ask
+  this way, so the ratio is checkable rather than remembered.
 - **Where state lands, settled 2026-08-19:** a project's session state
   stays in that project's own repo. Symphony's is
   `~/symphony/intermediate_files/claude_slop/` (kanban.md + log.md); its
@@ -201,8 +218,10 @@ redo that by hand and don't wait to be asked. What's left to judgment:
   `state/global/kanban.md` and `state/global/log/`; so does state for any
   project with no private repo of its own. Work on `main` there; `git pull
   --rebase` before pushing. **Never into dotfiles** — it is public, and
-  session notes name boats, hosts and services. Never stage one project's
-  work under another's.
+  session notes name boats, hosts and services. Dotfiles therefore has no
+  board of its own: its cards sit on the global board, and anything with a
+  question in it becomes a dotfiles issue the card links to. Never stage
+  one project's work under another's.
 
 ## Maintenance
 

@@ -2,6 +2,7 @@
 paths:
   - "**/*.{py,js,ts,jsx,tsx,go,rs,rb,php,java,c,h,cpp,hpp,cs,sh,sql}"
   - "**/*.{json,yaml,yml,toml}"
+  - "**/*.md"
   - "**/{Makefile,Dockerfile,docker-compose*,*.tf}"
 ---
 
@@ -79,11 +80,21 @@ project-specific facts belong in that project's own CLAUDE.md.
 
 ## PR ownership: draft → ready is mine
 
-- When I open a PR as a draft, driving it to ready is my job, not something
-  to wait on. Resolve bot/reviewer comments, fix CI failures, and flip it
-  out of draft the moment CI is green and comments are addressed — don't
-  wait to be asked, and don't leave a green, comment-free PR sitting in
-  draft for a human to notice and un-draft.
+- **Draft is a working state, not a resting state.** A draft gets no review
+  at all — CodeRabbit and claude-review both skip drafts — so a PR parked
+  in draft makes Mark the first reader instead of the last. Open as draft if
+  you like, then mark it ready **the moment the session's own work is done**:
+  pushed, building, formatter and tests green locally. Don't wait for CI or
+  for bot comments to decide — on a draft they aren't coming. Marking ready
+  is my call, never handed upward; a PR waiting on a human to flip it is
+  waiting for nothing. (Corrected 2026-08-20 from "flip it out of draft the
+  moment CI is green and comments are addressed", which was a deadlock:
+  those never arrive while it's a draft. Ported from
+  [space-weather#93](https://github.com/mark-brannan/signalk-noaa-space-weather/pull/93).)
+- **Ready is not the end of the turn.** After it, CI failures, bot findings
+  and merge conflicts are mine, round after round, until every check is
+  green and every automated thread is answered or resolved. A red check is
+  never handed over as a status report.
 - "Looks good" / "I'm signing off" said before CI finishes isn't a stall —
   it's pre-authorization: push (and mark ready) the moment CI comes back
   green, without circling back to re-confirm.
@@ -108,6 +119,17 @@ project-specific facts belong in that project's own CLAUDE.md.
   before subscribing or scheduling.
 - **Batch review responses.** Address every open thread in one pass, then
   push once — don't wake per comment.
+- **Tell Mark once, when it's actually his turn.** He signs off last;
+  everything that can finish without him finishes first. No "CI is
+  running", no "two jobs left", no asking whether to fix a failure I can
+  diagnose myself, no reminders to look at something still in progress —
+  that traffic costs a read and returns nothing actionable. One message,
+  when the PR is green and the automated reviews have been dealt with. The
+  two exceptions both end in a decision only he can make: a blocker I
+  can't resolve, or a design question where guessing wrong means redoing
+  the work — lay out the options and ask, don't narrate. (Ported
+  2026-08-20 from
+  [space-weather#93](https://github.com/mark-brannan/signalk-noaa-space-weather/pull/93).)
 - **Long agentic loops, not long conversations, are the real expense.**
   Every tool call re-sends the full context, so a tool-dense task (PR
   review, CI chasing, branch cleanup) costs far more than its wall-clock
