@@ -135,10 +135,11 @@ project-specific facts belong in that project's own CLAUDE.md.
   review, CI chasing, branch cleanup) costs far more than its wall-clock
   suggests. Scope these tightly; prefer one considered pass over iterative
   poking.
-- **Park open questions somewhere durable** — the project's own
-  working-state file if it has one, otherwise ask directly — never only in
-  session scrollback. A question that lives solely in a session's last
-  response is invisible the moment that session scrolls out of view.
+- **Park open questions somewhere durable** — the project's board per
+  CLAUDE.md "Open loops", or ask directly when the answer blocks the task —
+  never only in session scrollback. A question that lives solely in a
+  session's last response is invisible the moment that session scrolls out
+  of view.
   (Added 2026-08-20; generalized from `symphony/CLAUDE.md`'s "PR
   automation and session cost" section, which stays the canonical version
   for that repo's specifics.)

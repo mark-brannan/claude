@@ -181,26 +181,10 @@ redo that by hand and don't wait to be asked. What's left to judgment:
   only you can record what it meant and what should happen next. On "wrap
   up" / "log it", write that to `log/YYYY-MM-DD-<slug>.md`. The machine one
   is evidence, not a substitute.
-- **Write the card when the loop is found, not at wrap-up.** By the end of a
-  session the context has been compacted, so the link, the timestamp and the
-  exact wording are gone and what's left is unactionable. Discovery is the
-  last moment the evidence still exists. Capture is still not activation:
-  the card is written now, the decision about it waits. Trivial → drop it;
-  never a new workstream mid-session.
+- **Capture ≠ activation.** Something off-goal but real → a card, written
+  at discovery (see Open loops); trivial → drop it. Never a new workstream
+  mid-session.
 - **New sessions open by pulling from a board.** WIP limit ~2–3.
-- **One card contract, every board** (adopted 2026-08-20, rationale in
-  [space-weather#95](https://github.com/mark-brannan/signalk-noaa-space-weather/pull/95)).
-  One file, two sections — `## Yours` and `## Claude's`, because the cards
-  block each other and split files show both lists clear while the work
-  sits deadlocked. One checkbox line per card: the action in the
-  imperative, then a link. The link is never optional — a card only its
-  author can resolve is not a card. `blocked:` plus the dependency only
-  when blocked. Cards die when done. Checkboxes, never a table.
-- **End with the follow-up prompt, not a status bullet.** When a session
-  ends with work left, end with the prompt that would start it —
-  pasteable, naming the branch, PR or file. Anything only I can do is a
-  card, referenced by link. Both written so someone who wasn't in the
-  session can act on them a week later.
 - **Ask early or not at all.** A question before the first file is written
   is cheap — context is fresh and a wrong assumption would have cost the
   whole session. The same question mid-flight makes me reload context I
@@ -222,6 +206,47 @@ redo that by hand and don't wait to be asked. What's left to judgment:
   board of its own: its cards sit on the global board, and anything with a
   question in it becomes a dotfiles issue the card links to. Never stage
   one project's work under another's.
+
+## Open loops
+
+Every project keeps one board: `kanban.md` at the repo root, or the path its
+own CLAUDE.md names. A loop that belongs to no project goes to
+`claude_prompts_scratch/state/global/kanban.md`; so does the first card of a
+repo with no board — don't create a board unilaterally, a card landing
+global is the signal to decide whether that repo earns one. A question goes
+to an issue; an action goes on a board. A public repo's board never carries
+boats, hosts, or services — those cards go global, with a link back.
+
+**Write the card when the loop is found, never at the end of a session.** By
+wrap-up the context has been compacted, so the comment link, the timestamp
+and the exact wording are gone and what is left is unactionable. Discovery
+is the last moment the evidence still exists. Writing the card is capture,
+not activation — the work still waits for a pull.
+
+One file, two sections — `## Yours` and `## Claude's` — because the useful
+edges cross between them: an agent's card is routinely blocked on mine, and
+two files would show each list clear while the work sits deadlocked. The
+card contract:
+
+- One line per card: a link, and the action in the imperative. Add
+  `blocked:` and the dependency only when the card is blocked. The link is
+  never optional — a card nobody but its author can resolve is not a card.
+- Cards die when done. This is a work-in-progress list, not a log — `git
+  log` and the session logs keep the history.
+- Keep each section short. A list nobody can hold in their head is a second
+  place to lose things; finish or delete before adding.
+- Sections and checkboxes, not a table.
+
+If a loop is not worth a card, it is not worth telling me about either.
+
+**End with a prompt, not a status bullet.** A closing summary that reads
+"the vague thing is borked, your call" costs a read and returns nothing
+actionable — least of all a week later, when it is actually read. When a
+session ends with work still to do, end with the follow-up prompt that would
+start it: ready to paste, naming the branch, PR or file it acts on. Anything
+only I can do personally is a card, referenced by link. Nothing else goes in
+a closing message. Both forms must survive the session — written so somebody
+who was not in it can act on them.
 
 ## Maintenance
 
