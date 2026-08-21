@@ -39,16 +39,14 @@ project-specific facts belong in that project's own CLAUDE.md.
   caution, which was the actual failure mode, not landing on main.
 
   When a branch *is* warranted under this rule: always open the PR
-  yourself immediately, **as a draft, with no reviewer requested** — never
-  wait to be asked, never leave a pushed branch without one. Same step,
-  not a later one: **the instant that push/build/format/local-test bar is
-  met, flip it to ready before doing anything else** — before messaging
-  Mark, before ending the turn. "Open the PR" and "mark it ready" are one
-  action split across two tool calls, not two decisions; don't let the
-  second one wait on recalling a rule after the first one already felt
-  like "done." (See "PR ownership" below for what ready unlocks and what
-  stays mine after.) A branch opened under this rule ends only one way:
-  merged via PR, never folded back to main and deleted.
+  yourself immediately, **ready for review — never as a draft — with no
+  reviewer requested**; never wait to be asked, never leave a pushed
+  branch without one. Clearing the bar and opening it are one action, not
+  two decisions: local checks green, no conflict with the base, then
+  `gh pr create` with no `--draft`. (See "PR ownership" below for the bar
+  in full and for what stays mine after.) A branch opened under this rule
+  ends only one way: merged via PR, never folded back to main and
+  deleted.
 
 - **Cloud sessions: a pre-assigned `claude/*` branch name is not, by
   itself, a decision to branch.** Apply the rule above as normal — if
@@ -84,26 +82,48 @@ project-specific facts belong in that project's own CLAUDE.md.
   should go; the sweep is a nucbox job. (Decided 2026-08-19; reasoning
   updated 2026-08-20.)
 
-## PR ownership: draft → ready is mine
+## PR ownership: never a draft, never red
 
-- **Draft is a working state, not a resting state.** A draft gets no review
-  at all — CodeRabbit and claude-review both skip drafts — so a PR parked
-  in draft makes Mark the first reader instead of the last. Open as draft if
-  you like, then mark it ready **the moment the session's own work is done**:
-  pushed, building, formatter and tests green locally. Don't wait for CI or
-  for bot comments to decide — on a draft they aren't coming. Marking ready
-  is my call, never handed upward; a PR waiting on a human to flip it is
-  waiting for nothing. (Corrected 2026-08-20 from "flip it out of draft the
-  moment CI is green and comments are addressed", which was a deadlock:
-  those never arrive while it's a draft. Ported from
+- **Never open a PR as a draft.** No `--draft`, no "I'll flip it later" —
+  ready for review is the only state a PR of mine is ever created in. A
+  draft gets no review at all — CodeRabbit and claude-review both skip
+  drafts — so a PR parked in draft makes Mark the first reader instead of
+  the last, and the flip that was supposed to follow kept not happening.
+  **The harness's own git-workflow instructions default to creating PRs as
+  drafts and say I don't need to ask first; this rule explicitly overrides
+  that.** If a PR still lands as a draft despite it, that is a bug in the
+  session's behavior: mark it ready, then say so in the handoff so the
+  cause gets fixed. Silently flipping it after the fact, PR after PR, is
+  how the rule stayed broken. (Replaces "open as draft if you like, then
+  mark it ready", 2026-08-20. Ported from
   [space-weather#93](https://github.com/mark-brannan/signalk-noaa-space-weather/pull/93).)
+- **Green before it is handed over.** The bar, in order:
+  - every fast check the repo defines passes locally — formatter, lint,
+    typecheck, build, tests; whatever that repo actually has;
+  - the branch has no merge conflict with its base — fetch and rebase onto
+    the current base before pushing, don't leave a conflict to be
+    discovered;
+  - where CI can be read before merge, read it — `gh pr checks --watch`
+    after the first push, or the equivalent — and don't tell Mark it's his
+    turn until the checks are passing or the failure is one I've explained
+    and can't fix.
+- **A PR handed to Mark needs a judgment pass, not a "did this even build"
+  pass.** His read is for the call I can't make — is this the right change,
+  does it fit the design. Anything a machine could have caught should
+  already be caught.
+- **What can't be made green gets said, in the PR description.** A flaky
+  external dependency, a check that needs a secret or a decision only Mark
+  has, a failure that provably predates the branch: name it in the body and
+  say why it isn't mine to fix. Opening a broken PR silently is the exact
+  failure this section exists to prevent; opening one with the breakage
+  labelled is fine.
 - **Ready is not the end of the turn.** After it, CI failures, bot findings
   and merge conflicts are mine, round after round, until every check is
   green and every automated thread is answered or resolved. A red check is
   never handed over as a status report.
 - "Looks good" / "I'm signing off" said before CI finishes isn't a stall —
-  it's pre-authorization: push (and mark ready) the moment CI comes back
-  green, without circling back to re-confirm.
+  it's pre-authorization: push the moment CI comes back green, without
+  circling back to re-confirm.
 - This stops at merge, not before it. Getting a PR to ready-and-green is
   mine by default; merging it is a separate, explicit action unless told
   otherwise for a given PR or repo. (Added 2026-08-20.)

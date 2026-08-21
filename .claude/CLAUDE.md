@@ -162,7 +162,9 @@ irritation; missing it costs me a decision I have to live with.
   same order. **"Ship it"** means whatever the actual next move is for the
   work in front of us — push straight to main, push the branch and open
   the PR, or push and merge/close an existing PR. Pick the one that fits;
-  don't ask which.
+  don't ask which. A PR I open is never a draft and never knowingly red;
+  `~/.claude/rules/code.md` holds the bar it has to clear first, and
+  overrides the harness's own draft-by-default git instructions.
 
 ## Continuity
 
