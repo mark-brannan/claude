@@ -82,7 +82,15 @@ OUT="$LIVE/$sid.json"
 #            when the streak actually ends -- so `git add && git commit &&
 #            git push`, or a rebase's wall of checkouts, prints exactly one
 #            block reflecting the final state, not one per call.
+#
+#            Coalescing only kicks in after GIT_EARLY_N git events have
+#            already printed individually this session: the first few git
+#            actions are exactly the ones Mark most wants to see land in
+#            real time, so they show immediately, uncoalesced. Streaks are
+#            only worth collapsing once git activity is established as
+#            routine for the session.
 PULSE_N="${METRICS_PULSE_N:-8}"
+GIT_EARLY_N="${METRICS_GIT_EARLY_N:-3}"
 if [ "$EVENT" = posttooluse ]; then
   PULSE="$LIVE/$sid.pulse.json"
   mkdir -p "$LIVE" 2>/dev/null || exit 0
@@ -91,21 +99,32 @@ if [ "$EVENT" = posttooluse ]; then
     | grep -qE "$(git_event_re)" \
     && is_git=1
 
-  count=0; pending_git=0
+  count=0; pending_git=0; git_seen=0
   if [ -f "$PULSE" ]; then
-    IFS=$'\t' read -r count pending_git <<<"$(jq -r \
-      '[(.count // 0), (if .pending_git then 1 else 0 end)] | @tsv' "$PULSE" 2>/dev/null)"
+    IFS=$'\t' read -r count pending_git git_seen <<<"$(jq -r \
+      '[(.count // 0), (if .pending_git then 1 else 0 end), (.git_seen // 0)] | @tsv' "$PULSE" 2>/dev/null)"
     [ -n "$count" ] || count=0
     [ -n "$pending_git" ] || pending_git=0
+    [ -n "$git_seen" ] || git_seen=0
   fi
 
   do_print=0
   DISPLAY_KIND=""
   if [ "$is_git" -eq 1 ]; then
-    # Still inside (or starting) a git streak: recompute so $OUT stays
-    # current, but stay silent -- the streak isn't over yet.
-    count=0
-    pending_git=1
+    if [ "$git_seen" -lt "$GIT_EARLY_N" ]; then
+      # Still under the early-git quota: print this one immediately rather
+      # than folding it into a streak.
+      git_seen=$((git_seen + 1))
+      do_print=1
+      DISPLAY_KIND="git"
+      count=0
+      pending_git=0
+    else
+      # Quota spent: coalesce as before -- recompute so $OUT stays current,
+      # stay silent, the streak isn't over yet.
+      count=0
+      pending_git=1
+    fi
   else
     if [ "$pending_git" -eq 1 ]; then
       # The streak just ended: flush the one block for it.
@@ -124,7 +143,8 @@ if [ "$EVENT" = posttooluse ]; then
   fi
 
   jq -n --argjson c "$count" --argjson p "$([ "$pending_git" -eq 1 ] && echo true || echo false)" \
-    '{count: $c, pending_git: $p}' > "$PULSE.$$" 2>/dev/null \
+    --argjson g "$git_seen" \
+    '{count: $c, pending_git: $p, git_seen: $g}' > "$PULSE.$$" 2>/dev/null \
     && mv -f "$PULSE.$$" "$PULSE" 2>/dev/null || rm -f "$PULSE.$$" 2>/dev/null
 
   # A tool call mid-streak (git or not, below PULSE_N) needs nothing beyond
