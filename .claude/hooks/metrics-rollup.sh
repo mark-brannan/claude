@@ -52,7 +52,9 @@ jq -s '
        output_tokens: (map(.output_tokens // 0) | add),
        tool_calls:   (map(.tool_calls // 0) | add),
        decisions:    (map(.decisions.total // 0) | add),
-       gates:        (map(.decisions.gate // 0) | add)
+       gates:        (map(.decisions.gate // 0) | add),
+       cache_churn_pct_avg: ([.[] | .cache_churn_pct | select(. != null)]
+                              | if length > 0 then (add / length | round) else null end)
      }}' "${files[@]}" > "$M/metrics.json.$$" 2>/dev/null \
   && mv -f "$M/metrics.json.$$" "$M/metrics.json" 2>/dev/null \
   || rm -f "$M/metrics.json.$$" 2>/dev/null

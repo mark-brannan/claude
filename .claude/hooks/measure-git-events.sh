@@ -44,7 +44,8 @@ case "$tool" in
     repo=$(printf '%s' "$input" | jq -r '.tool_input.repo // ""')
     branch=$(printf '%s' "$input" | jq -r '.tool_input.head // ""')
     emit pr "$(printf '%s' "$input" | jq -c '{title: (.tool_input.title // ""),
-                                              base: (.tool_input.base // "")}')"
+                                              base: (.tool_input.base // ""),
+                                              draft: (.tool_input.draft // false)}')"
     exit 0
     ;;
   Bash) ;;
@@ -63,7 +64,9 @@ branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
 # PR opened from the CLI
 if printf '%s' "$cmd" | grep -qE '\bgh\b.*\bpr\b.*\bcreate\b'; then
-  emit pr '{"title":"","base":""}'
+  is_draft=false
+  printf '%s' "$cmd" | grep -qE '(^|[[:space:]])--draft([[:space:]]|$)' && is_draft=true
+  emit pr "$(jq -nc --argjson d "$is_draft" '{title:"", base:"", draft:$d}')"
 fi
 
 # Branch created. `git checkout -b` / `git switch -c` is the moment a PR

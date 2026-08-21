@@ -166,6 +166,15 @@ to_entries as $E
       input_tokens: sumu(.input_tokens),
       cache_creation_tokens: sumu(.cache_creation_input_tokens),
       cache_read_tokens: sumu(.cache_read_input_tokens),
+      # Cache churn: creation/read as a percent. A cold start makes one
+      # creation burst against zero reads, so a single-digit ratio is
+      # normal; anything sustained above ~30% means the prompt cache kept
+      # missing mid-session -- a stale-cache/reload proxy, not a token-cost
+      # one. Null (not 0) when there were no reads at all, so a one-turn
+      # session doesn't read as either healthy or churning.
+      cache_churn_pct: (sumu(.cache_read_input_tokens) as $r
+        | if $r > 0 then ((sumu(.cache_creation_input_tokens) / $r * 100) | round)
+          else null end),
       context_peak: (([ $amsgs[] | .message.usage
                         | ((.input_tokens // 0) + (.cache_read_input_tokens // 0)
                            + (.cache_creation_input_tokens // 0)) ] | max) // 0),
