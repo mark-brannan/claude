@@ -102,11 +102,25 @@ def night_nag:
   (now | localtime) as $lt
   | ($lt[3]) as $h24
   | ($lt[4]) as $m
-  | if $h24 >= 23 or $h24 < 5
+  | if $h24 >= 22 or $h24 < 5
     then
       (if $h24 < 12 then "am" else "pm" end) as $ampm
       | (if $h24 == 0 then 12 elif $h24 > 12 then $h24 - 12 else $h24 end) as $h12
-      | " 🌙 LATE!(\($h12):\(if $m < 10 then "0\($m)" else "\($m)" end)\($ampm))"
+      | "\($h12):\(if $m < 10 then "0\($m)" else "\($m)" end)\($ampm)" as $clock
+      # Minutes since 22:00, wrapping through midnight -- 22:00 -> 0,
+      # 00:00 -> 120, 05:00 -> 420. Lets the tiers below read as a plain
+      # elif ladder instead of chained hour/minute comparisons.
+      | (if $h24 >= 22 then ($h24 - 22) * 60 + $m else ($h24 + 2) * 60 + $m end) as $mins
+      # [moons per side, lines repeated] -- edit this ladder to retune tiers.
+      | (if   $mins <  90 then [1, 1]   # 22:00 --
+         elif $mins < 180 then [2, 1]   # 23:30 --
+         elif $mins < 240 then [3, 2]   # 01:00 --
+         elif $mins < 300 then [3, 3]   # 02:00 --
+         else                  [3, 4]   # 03:00 --
+         end) as [$moons, $lines]
+      | ([range($moons)] | map("🌙") | join("")) as $m3
+      | ([range($lines)] | map("\($m3) LATE! \($m3)") | join("\n")) as $block
+      | " \($block)(\($clock))"
     else ""
     end;
 
