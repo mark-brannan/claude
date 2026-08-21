@@ -4,9 +4,11 @@
 #
 # Why a cache file at all: `session-metrics.jq` slurps the whole transcript,
 # which is fine once at Stop but not on every statusline render (those fire
-# several times a second). So the expensive part runs only on the events that
-# actually change the numbers -- a prompt, a question put to Mark, a git
-# event -- and the statusline just prints what is already on disk.
+# several times a second), and not on every tool call either now that a
+# PostToolUse pulse fires on all of them. The expensive part runs only when
+# a block is actually about to print -- a prompt, a question put to Mark, a
+# pulse tick, a coalesced git action, Stop -- and the statusline just prints
+# what is already on disk.
 #
 # One file per session, keyed by session_id: parallel sessions are normal
 # here, and per-session paths mean two of them never write the same file.
@@ -24,7 +26,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-EVENT="${1:-tool}"          # prompt | question | git | stop | statusline
+EVENT="${1:-tool}"          # prompt | question | posttooluse | stop | statusline
 MAX_AGE="${2:-0}"           # seconds; >0 means "skip if cache is fresher"
 SHOW="${3:-}"               # "show" -> also print a systemMessage block
 
@@ -36,9 +38,10 @@ case "$EVENT" in prompt|statusline) SHOW="" ;; esac
 # One jq for all three fields: the statusline reaches this code on every
 # render, and three spawns before the staleness check was most of its cost.
 input=$(cat 2>/dev/null || echo '{}')
-IFS=$'\t' read -r tp sid cwd <<<"$(printf '%s' "$input" | jq -r \
+IFS=$'\t' read -r tp sid cwd tool_name tool_cmd <<<"$(printf '%s' "$input" | jq -r \
   '[(.transcript_path // ""), (.session_id // ""),
-    (.cwd // .workspace.current_dir // "")] | @tsv')"
+    (.cwd // .workspace.current_dir // ""),
+    (.tool_name // ""), (.tool_input.command // "")] | @tsv')"
 [ -n "$tp" ] && [ -f "$tp" ] && [ -n "$sid" ] || exit 0
 [ -n "$cwd" ] || cwd=$PWD
 
@@ -60,6 +63,79 @@ JQPROG="$HOOK_DIR/session-metrics.jq"
 
 LIVE="$(state_dir)/metrics/live"
 OUT="$LIVE/$sid.json"
+
+# ------------------------------------------------------------- pulse/coalesce
+# EVENT=posttooluse fires on EVERY tool call (settings.json matches all
+# tools, no per-tool matcher). Two jobs, both driven by a small counter file
+# the statusline never touches -- it only ever reads/writes $OUT, so this
+# file is safe to use as a debounce the 15s statusline refresh can't stomp:
+#
+#   pulse    a block every PULSE_N tool calls, so a long non-git stretch
+#            (reading, editing, debugging) still gets a regular readout
+#            instead of showing nothing until the next git event or Stop.
+#            PULSE_N=8: roughly one read/edit/check cycle -- frequent enough
+#            that a 20-minute silent stretch still gets 2-3 pulses, coarse
+#            enough that a grep/read sweep doesn't spam a block per call.
+#   coalesce a git-matching call (commit/push/rebase/...) doesn't print
+#            immediately. It marks a "pending" flag and recomputes silently.
+#            The block only prints once a NON-git tool call arrives -- i.e.
+#            when the streak actually ends -- so `git add && git commit &&
+#            git push`, or a rebase's wall of checkouts, prints exactly one
+#            block reflecting the final state, not one per call.
+PULSE_N="${METRICS_PULSE_N:-8}"
+if [ "$EVENT" = posttooluse ]; then
+  PULSE="$LIVE/$sid.pulse.json"
+  mkdir -p "$LIVE" 2>/dev/null || exit 0
+  is_git=0
+  printf '%s\n%s' "$tool_cmd" "$tool_name" \
+    | grep -qE "$(git_event_re)" \
+    && is_git=1
+
+  count=0; pending_git=0
+  if [ -f "$PULSE" ]; then
+    IFS=$'\t' read -r count pending_git <<<"$(jq -r \
+      '[(.count // 0), (if .pending_git then 1 else 0 end)] | @tsv' "$PULSE" 2>/dev/null)"
+    [ -n "$count" ] || count=0
+    [ -n "$pending_git" ] || pending_git=0
+  fi
+
+  do_print=0
+  DISPLAY_KIND=""
+  if [ "$is_git" -eq 1 ]; then
+    # Still inside (or starting) a git streak: recompute so $OUT stays
+    # current, but stay silent -- the streak isn't over yet.
+    count=0
+    pending_git=1
+  else
+    if [ "$pending_git" -eq 1 ]; then
+      # The streak just ended: flush the one block for it.
+      do_print=1
+      DISPLAY_KIND="git"
+      count=0
+      pending_git=0
+    else
+      count=$((count + 1))
+      if [ "$count" -ge "$PULSE_N" ]; then
+        do_print=1
+        DISPLAY_KIND="pulse"
+        count=0
+      fi
+    fi
+  fi
+
+  jq -n --argjson c "$count" --argjson p "$([ "$pending_git" -eq 1 ] && echo true || echo false)" \
+    '{count: $c, pending_git: $p}' > "$PULSE.$$" 2>/dev/null \
+    && mv -f "$PULSE.$$" "$PULSE" 2>/dev/null || rm -f "$PULSE.$$" 2>/dev/null
+
+  # A tool call mid-streak (git or not, below PULSE_N) needs nothing beyond
+  # the counter bookkeeping above -- no reason to pay for the full transcript
+  # slurp below on every single call. Only a print (streak-end flush, or a
+  # pulse tick) needs $OUT current, and it'll be recomputed fresh right here
+  # regardless of how stale it was, so skipping the recompute in between
+  # never shows stale numbers, only fewer silent writes.
+  [ "$do_print" -eq 1 ] || exit 0
+  EVENT="$DISPLAY_KIND"
+fi
 
 # Throttle: the statusline asks constantly, events ask rarely. An event
 # always recomputes; the statusline only does so if the cache has gone stale.
@@ -109,16 +185,17 @@ printf '%s\n' "$metrics" | jq -c \
 
 # ------------------------------------------------------------ event block
 # Shown to Mark at the moments that matter -- a question put to him, a git
-# event, the end of the session -- and never sent to the model, so the
-# running decision count costs nothing to display.
+# event, a pulse tick, the end of the session -- and never sent to the
+# model, so the running decision count costs nothing to display.
 #
-# `stop` fires unconditionally, every single turn -- unlike `question` and
-# `git`, which only fire when something actually happened. Left unguarded,
-# a stop block posts after every reply and buries the rare git/nag ones in
-# noise until they're effectively the only thing Mark ever sees. So a stop
-# only shows when it's carrying something: a nag firing, or dirty/unpushed/
-# uncommitted work. Other events always show -- they already earned it by
-# being rare.
+# `stop` fires unconditionally, every single turn -- unlike `question`,
+# `git` and `pulse`, which only fire when something actually happened (or,
+# for pulse, every PULSE_N calls). Left unguarded, a stop block posts after
+# every reply and buries the rare git/nag ones in noise until they're
+# effectively the only thing Mark ever sees. So a stop only shows when it's
+# carrying something: a nag firing, or dirty/unpushed/uncommitted work.
+# Other events always show -- they already earned it by being rare (or, for
+# pulse, by being rate-limited).
 if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
   if [ "$EVENT" = stop ]; then
     jq -e -L "$HOOK_DIR" 'include "lib-metrics-fmt";

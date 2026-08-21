@@ -19,7 +19,7 @@ def k: if . >= 1000 then "\(. / 1000 | floor)k" else "\(.)" end;
 def pad($w; $fill): . + (if length < $w then ($fill * ($w - length)) else "" end);
 
 
-def ev: {question: "‽", git: "⎇ ", stop: "▼"}[.last_event] // .last_event;
+def ev: {question: "‽", git: "⎇ ", stop: "▼", pulse: "○"}[.last_event] // .last_event;
 
 # The branch is the one field with no upper bound -- `claude/*` names run to
 # 36 characters and would push everything after it off the line on their own.
