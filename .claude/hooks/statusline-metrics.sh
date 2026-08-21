@@ -33,14 +33,8 @@ F="$(state_dir)/metrics/live/$sid.json"
 jq -e '.decisions.total != null and .output_tokens != null' "$F" >/dev/null 2>&1 \
   || { printf '⛁ warming up'; exit 0; }
 
-jq -r '
-  def k: if . >= 1000 then "\(. / 1000 | floor)k" else "\(.)" end;
-  [ "⛁ \(.repo)@\(.branch // "?")",
-    "◆ \(.decisions.total) dec (\(.decisions.scoping)s/\(.decisions.inline)i/\(.decisions.gate)g)",
-    "↑ \(.output_tokens | k) out · ctx \(.context_peak | k)",
-    "⇢ \(.user_turns)p/\(.tool_calls)t",
-    (if .commits > 0 or .dirty > 0 or .unpushed > 0
-     then "⎇ \(.commits)c" + (if .dirty > 0 then " \(.dirty)~" else "" end)
-                            + (if .unpushed > 0 then " \(.unpushed)↑unpushed" else "" end)
-     else empty end)
-  ] | join("  ")' "$F" 2>/dev/null || printf '⛁ —'
+# Two rows: the readout, then the time row on its own line. `time` yields
+# empty rather than zeros on a stale cache, so the row disappears instead of
+# lying.
+jq -r -L "$HOOK_DIR" 'include "lib-metrics-fmt"; row' "$F" \
+  2>/dev/null || printf '⛁ —'

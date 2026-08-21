@@ -48,6 +48,7 @@ INSTALL="
 .claude/rules/writing.md
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
+.claude/hooks/lib-metrics-fmt.jq
 .claude/hooks/session-start-continuity.sh
 .claude/hooks/stop-continuity.sh
 .claude/hooks/measure-git-events.sh
@@ -61,6 +62,7 @@ INSTALL="
 .claude/hooks/log-commit.sh
 .claude/hooks/statusline-metrics.sh
 .claude/hooks/connector-budget.sh
+.local/bin/metrics-preview.sh
 "
 
 # --- what to prune -------------------------------------------------------

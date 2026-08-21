@@ -107,15 +107,6 @@ printf '%s\n' "$metrics" | jq -c \
 # Shown to Mark at the moments that matter -- a question put to him, a git
 # event, the end of the session -- and never sent to the model, so the
 # running decision count costs nothing to display.
-[ "$SHOW" = show ] && [ -f "$OUT" ] && jq -c '
-  def k: if . >= 1000 then "\(. / 1000 | floor)k" else "\(.)" end;
-  def evname: {question: "decision point", git: "git event", stop: "session end"}[.last_event] // .last_event;
-  {systemMessage: (
-     "⛁ \(evname) · \(.repo)@\(.branch // "?")\n"
-   + "  decisions \(.decisions.total)"
-   + (if .last_event == "question" then " (+1 being asked now)" else "" end)
-   + "  (\(.decisions.scoping) scoping · \(.decisions.inline) inline · \(.decisions.gate) gate)\n"
-   + "  cost      \(.output_tokens | k) out · ctx peak \(.context_peak | k) · \(.user_turns) prompts · \(.tool_calls) tools\n"
-   + "  work      \(.commits) commits · \(.dirty) dirty · \(.unpushed) unpushed"
-   + (if .unpushed > 0 then "  ← not safe to kill" else "" end))}' "$OUT" 2>/dev/null
+[ "$SHOW" = show ] && [ -f "$OUT" ] && jq -c -L "$HOOK_DIR" \
+  'include "lib-metrics-fmt"; {systemMessage: block}' "$OUT" 2>/dev/null
 exit 0

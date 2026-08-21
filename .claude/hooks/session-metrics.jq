@@ -143,6 +143,42 @@ to_entries as $E
                else "inline" end),
         question: (.text | .[0:300])} ]) as $decisions
 
+# --- time ----------------------------------------------------------------
+# Three numbers, because they answer different questions and no one of them
+# substitutes for another:
+#   elapsed  how long the chat has been open. Not "work" -- a 4h session with
+#            a lunch in it reads 4h -- but it is the number that predicts
+#            cost, because an old session re-sends a large context.
+#   active   elapsed with every silence clamped to CAP. Walking away stops
+#            the clock; thinking for a minute does not.
+#   split    of that active time, which side was busy. The gap that ends in
+#            Mark typing is his (reading, deciding); every other gap is the
+#            agent's (thinking, tools, waiting on a command).
+# Measured on eight sessions of this project, elapsed ran 5x active on the
+# long one (270m vs 50m) and identical on the short ones -- the clamp only
+# bites where someone left the room.
+| def epoch: sub("\\.[0-9]+"; "") | fromdateiso8601;
+
+  120 as $cap
+
+| ([ $E[].value | select(.timestamp != null)
+     | {t: (.timestamp | epoch),
+        # only a human enqueue with text closes an idle gap as Mark's; the
+        # duplicate `user` record for the opening prompt is skipped for the
+        # same reason it is skipped when counting turns
+        h: (.type == "queue-operation" and .operation == "enqueue"
+            and ((.content // "") != ""))} ]
+   | sort_by(.t)) as $ev
+
+| (($ev | length) as $n
+   | if $n > 1 then [ range(1; $n) | {d: ($ev[.].t - $ev[.-1].t), h: $ev[.].h} ]
+     else [] end) as $gaps
+
+| (if ($ev | length) > 1 then ($ev[-1].t - $ev[0].t) else 0 end
+   | round) as $elapsed_s
+| (([ $gaps[] | ([.d, $cap] | min) ] | add) // 0 | round) as $active_s
+| (([ $gaps[] | select(.h) | ([.d, $cap] | min) ] | add) // 0 | round) as $human_s
+
 | def sumu(f): ([ $amsgs[] | (.message.usage | f) // 0 ] | add) // 0;
 
   {
@@ -155,6 +191,12 @@ to_entries as $E
       started_at: ([ $E[].value.timestamp | select(. != null) ] | min),
       ended_at:   ([ $E[].value.timestamp | select(. != null) ] | max),
       version:    ([ $E[].value.version | select(. != null) ] | last),
+      # seconds; see the time block above for what each one measures
+      elapsed_seconds: $elapsed_s,
+      active_seconds:  $active_s,
+      human_seconds:   $human_s,
+      agent_seconds:   ($active_s - $human_s),
+      idle_seconds:    ($elapsed_s - $active_s),
       model:      ([ $E[].value | select(.type=="assistant")
                      | .message.model | select(. != null) ] | last),
       user_turns: ($humans | length),
