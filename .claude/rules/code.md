@@ -195,6 +195,12 @@ project-specific facts belong in that project's own CLAUDE.md.
 - Dry-run flags are not always dry. `make -n` executes recursive `$(MAKE)`
   lines for real. Read the file instead of trusting the flag.
 
+## Cost
+
+- **Don't switch model or `/effort` mid-session** — pick both at start; a
+  switch at ~50k context recomputes 65-100% of it (measured,
+  `.claude/docs/token-budget.md`).
+
 ## Tests
 
 - **Test behavior, not presentation.** Assert what got persisted, who's

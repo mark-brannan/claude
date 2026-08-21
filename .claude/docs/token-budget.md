@@ -56,6 +56,39 @@ WebFetch and the entire Task family saves **33 tokens**. Agent+Task saves
 2,039. The only large savings come from denying Bash/Read/Edit/Write/Glob/
 Grep — the six that make the tool useful. Do not revisit this.
 
+## Cache churn: what a mid-session switch actually costs
+
+Measured 2026-08-20 the same way — headless probes (`claude -p --output-format
+json --resume <session-id>`), reading `usage.cache_creation_input_tokens` /
+`cache_read_input_tokens` off real requests, at ~50k tokens of context built
+from real repo files. Two runs each; no estimates.
+
+- **Model switch mid-session: 65,000-70,000 tokens of unwanted recompute.**
+  A same-model control turn at ~50k context hit cache at 94.7-95.1%
+  (4.7-5.3% recomputed). Switching model on the next turn hit cache at only
+  24.3-26.5% — 73.5-75.7% of the ~95k-token context was recomputed from
+  scratch, confirmed on two independent runs. The break is scoped to the
+  switch turn itself: reverting to the original model on the *following*
+  turn mostly re-hits cache (94.9%) — it is a one-time tax, not a permanent
+  fork.
+- **`/effort` change mid-session: worse — 100% recompute.** high→low effort
+  on the next turn showed `cache_read_input_tokens: 0` against a same-effort
+  control at 95.1%. Every token of context was rebilled at full
+  cache-write rate.
+- Cache-write tokens bill above base input price; cache-read bills around
+  10%. So this isn't just latency — a stray `/model` or `/effort` tap at
+  50k context is a real cost multiplier, and it gets worse the deeper the
+  session already is.
+
+**Practical rule: pick model and effort at session start. Don't change
+either mid-session** unless the task genuinely requires it — know going in
+that the next turn eats a near-full-context recompute.
+
+`/rewind` could not be probed headlessly — it's refused outright in `-p`
+mode (`"/rewind isn't available in this environment"`, no request sent,
+zero usage). Whether it re-enters a cached prefix is still unverified;
+testing it requires the interactive REPL, not a scripted probe.
+
 ## Why `/clear` is the whole game
 
 The floor is a one-time charge; growth is charged every turn. In the session
