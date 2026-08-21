@@ -52,6 +52,8 @@ INSTALL="
 .claude/hooks/stop-continuity.sh
 .claude/hooks/measure-git-events.sh
 .claude/hooks/no-persistent-polling.sh
+.claude/hooks/no-late-pr-subscribe.sh
+.claude/hooks/session-start-seed-refresh.sh
 .claude/hooks/guard-add-repo.sh
 .claude/hooks/metrics-live.sh
 .claude/hooks/metrics-rollup.sh
@@ -147,6 +149,32 @@ fi
 
 [ -d "$SEED/.git" ] || { warn "no checkout at $SEED — nothing installed"; exit 0; }
 [ "$DRY_RUN" = yes ] && say "DRY RUN — nothing will be written"
+
+# =========================================================================
+# Refresh — bring the seed checkout up to date before installing from it.
+# =========================================================================
+# The setup-script blob's `git clone` is a no-op once $SEED exists, and a
+# cloud container is checkpointed and reused across sessions. Without this
+# the seed is frozen at whatever it cloned the first time the environment
+# was provisioned, so a rule edited here never reaches a session again --
+# and it fails silently, exactly like the deleted-hook scar above.
+#
+# `pull --ff-only`, not `fetch` plus a merge of FETCH_HEAD: the latter takes
+# origin's default branch whatever the seed has checked out, so testing a
+# change by checking the branch out in $SEED would silently reset it to main.
+# --ff-only because the VM never commits here -- anything that will not fast
+# forward means the checkout is damaged, and a merge would only bury it.
+# Never fatal: a proxy that blocks the fetch must still leave the session
+# with the last-known-good seed rather than none at all.
+if [ "$DRY_RUN" = yes ]; then
+  say "would refresh $SEED (skipped: --dry-run does no network)"
+elif ! out=$(git -C "$SEED" pull -q --ff-only 2>&1); then
+  warn "refresh failed, installing from the existing checkout:"
+  warn "  ${out:-unknown error}"
+else
+  say "refreshed to $(git -C "$SEED" rev-parse --short HEAD 2>/dev/null)"
+fi
+
 
 # =========================================================================
 # Overwrite policy
