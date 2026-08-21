@@ -112,10 +112,11 @@ def night_nag:
 
 # Escalates rather than just firing once at a threshold: a flat "take a
 # break" easy to skim past every render for the next three hours. Minutes
-# derived from elapsed_seconds, not active_seconds -- the point is time
-# spent at the screen, and a silent gap did not get him up from the chair.
+# derived from time_since_break_seconds -- spans across sessions, accumulates
+# until gap >= 25 min auto-resets it. The point is time spent at the screen
+# across continuous work, not resetting on every new session.
 def break_nag:
-  (.elapsed_seconds // 0) as $s
+  (.time_since_break_seconds // .elapsed_seconds // 0) as $s
   | ($s / 60 | floor) as $m
   | if   $s <  5400 then ""
     elif $s < 10800 then " ⏰ break!(\($m)m)"

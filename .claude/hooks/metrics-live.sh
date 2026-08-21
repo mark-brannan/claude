@@ -207,13 +207,47 @@ if [ -n "$work_root" ]; then
 fi
 
 mkdir -p "$LIVE" 2>/dev/null || exit 0
+
+# --------------------------------------------------------- break-time tracking
+# Store last-activity timestamp. If gap >= 25 min since last activity, auto-reset
+# break timer. Else accumulate time since last break across sessions.
+ACTIVITY_FILE="$(state_dir)/metrics/last_activity.json"
+mkdir -p "$(dirname "$ACTIVITY_FILE")" 2>/dev/null || true
+now_ts=$(date +%s)
+time_since_break_seconds=0
+
+if [ -f "$ACTIVITY_FILE" ]; then
+  last_activity_ts=$(jq -r '.last_activity_timestamp // 0' "$ACTIVITY_FILE" 2>/dev/null || echo 0)
+  last_break_ts=$(jq -r '.last_break_timestamp // 0' "$ACTIVITY_FILE" 2>/dev/null || echo 0)
+
+  # If we have a last activity time, check the gap
+  if [ "$last_activity_ts" -gt 0 ]; then
+    gap=$((now_ts - last_activity_ts))
+    # 25 minutes = 1500 seconds
+    if [ "$gap" -ge 1500 ]; then
+      # Gap is long enough to count as a break -- reset the timer
+      last_break_ts=$now_ts
+    fi
+  fi
+
+  # Calculate time since last break
+  if [ "$last_break_ts" -gt 0 ]; then
+    time_since_break_seconds=$((now_ts - last_break_ts))
+  fi
+fi
+
+# Update activity file with new timestamps
+jq -n --argjson la "$now_ts" --argjson lb "${last_break_ts:-0}" \
+  '{last_activity_timestamp: $la, last_break_timestamp: $lb}' > "$ACTIVITY_FILE.$$" 2>/dev/null \
+  && mv -f "$ACTIVITY_FILE.$$" "$ACTIVITY_FILE" 2>/dev/null || rm -f "$ACTIVITY_FILE.$$" 2>/dev/null
+
 tmp="$OUT.$$"
 printf '%s\n' "$metrics" | jq -c \
   --arg ev "$EVENT" --arg now "$now" \
   --argjson d "${dirty:-0}" --argjson u "${unpushed:-0}" --argjson c "${ncommits:-0}" \
-  --arg sha "$start_sha" \
+  --arg sha "$start_sha" --argjson tsb "$time_since_break_seconds" \
   '.session + {last_event: $ev, updated_at: $now, start_sha: $sha,
-               dirty: $d, unpushed: $u, commits: $c}' > "$tmp" 2>/dev/null \
+               dirty: $d, unpushed: $u, commits: $c, time_since_break_seconds: $tsb}' > "$tmp" 2>/dev/null \
   && mv -f "$tmp" "$OUT" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 
 # ------------------------------------------------------------ event block
