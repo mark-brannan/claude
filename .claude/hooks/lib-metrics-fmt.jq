@@ -100,8 +100,16 @@ def split: " ☺ \(.human_seconds | dur)/⚙ \(.agent_seconds | dur)";
 # Local hour via jq's `localtime`, which reads the *host's* TZ (the one the
 # statusline process actually runs under) -- not UTC, not a hardcoded zone.
 def night_nag:
-  (now | localtime | .[3]) as $h
-  | if $h >= 23 or $h < 5 then " 🌙 LATE!(\($h))" else "" end;
+  (now | localtime) as $lt
+  | ($lt[3]) as $h24
+  | ($lt[4]) as $m
+  | if $h24 >= 23 or $h24 < 5
+    then
+      (if $h24 < 12 then "am" else "pm" end) as $ampm
+      | (if $h24 == 0 then 12 elif $h24 > 12 then $h24 - 12 else $h24 end) as $h12
+      | " 🌙 LATE!(\($h12):\(if $m < 10 then "0\($m)" else "\($m)" end)\($ampm))"
+    else ""
+    end;
 
 # Escalates rather than just firing once at a threshold: a flat "take a
 # break" easy to skim past every render for the next three hours. Minutes
