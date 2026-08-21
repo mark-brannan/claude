@@ -160,16 +160,25 @@ to_entries as $E
     | select($t != "")
     | {i: $i, text: $t} ]) as $atext
 
-# Tool-result text flattened to lines: strips pasted hook/command output out
-# of human turns before any regex runs, and keeps a quoted command result
-# from tripping the S3 quote-back check.
-| ([ $E[] | select(.value.type == "user")
+# Tool-result text, keyed by index. The index is load-bearing for the caps
+# check below, which may only look at output that already existed when the
+# human turn was written.
+| ([ $E[] | select(.value.type == "user") | .key as $i
     | .value.message.content[]? | select(.type == "tool_result")
-    | (.content | if type == "array" then ([ .[] | .text? // empty ] | join("\n"))
-                  elif type == "string" then .
-                  else "" end) ]
+    | {i: $i,
+       t: (.content | if type == "array" then ([ .[] | .text? // empty ] | join("\n"))
+                      elif type == "string" then .
+                      else "" end)} ]) as $tool_texts
+
+# The same text flattened to a set of lines, so clean_human can strip
+# pasted hook/command output out of human turns before any regex runs, and a
+# quoted command result cannot trip the S3 quote-back check. A set, not an
+# array: clean_human tests every line of every human turn against it, and
+# `index` on an array is a linear scan.
+| ([ $tool_texts[].t ]
    | map(split("\n")[]) | map(gsub("^\\s+|\\s+$"; ""))
-   | map(select(. != "")) | unique) as $tool_lines
+   | map(select(. != ""))
+   | reduce .[] as $l ({}; .[$l] = true)) as $tool_lines
 
 # Whole-transcript interrupt/decline markers, for S7. Zero-cost: neither
 # calibration transcript hits it, but it is free to compute.
@@ -187,8 +196,23 @@ def clean_human:
     | map(gsub("^\\s+|\\s+$"; ""))
     | map(select(test("^Stop says:") | not))
     | map(select(test("^>") | not))
-    | map(select(. as $l | ($tool_lines | index($l)) == null))
+    | map(select(. as $l | ($tool_lines | has($l)) | not))
     | join("\n");
+
+# The excerpt below is persisted and pushed, so secret-shaped values come out
+# of it first. The token-prefix list is the one `.config/yadm/hooks/pre_commit`
+# uses, deliberately; the key-name list is wider, because that gate guards
+# tracked prose in a public repo where a false positive blocks a commit, and
+# this one guards a metrics excerpt where a false positive costs one
+# unreadable line. clean_human has already dropped fenced blocks and pasted
+# tool output -- where most pasted credentials live -- so this is here for the
+# loose `export API_KEY=...` line that was never in a fence.
+def redact:
+    gsub("(?i)(?<k>(api|access|auth|oauth|bearer|client|secret|private|refresh|session)[_-]?(key|token|secret)|_authtoken|passwo?r?d|passphrase|credential)(?<s>\\s*[:=]\\s*)[^\\s'\"]{6,}";
+         "\(.k)\(.s)[redacted]")
+    | gsub("(?i)\\b(?<b>bearer)\\s+[A-Za-z0-9._~+/=-]{16,}"; "\(.b) [redacted]")
+    | gsub("npm_[A-Za-z0-9]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|BEGIN [A-Z ]*PRIVATE KEY";
+           "[redacted]");
 
 def s1_first: test("(?i)^(no|nope|wrong|not)\\b[?.,!:]?");
 def s1_conduct: test("(?i)stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|you'?re not making|quantify");
@@ -200,18 +224,37 @@ def s4_words: test("(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull");
 
 # Words already said by Claude or a tool, lowercased, so a shouted identifier
 # Claude itself printed (SHOW, EVENT_ARG, PR, WSL) never counts as heat.
-(([ $atext[].text ] + $tool_lines) | join(" ")
-   | [ scan("[A-Za-z]{3,}") ] | map(ascii_downcase) | unique) as $seen_words
+#
+# Prior-only, not whole-transcript. Scanning the whole transcript let a word
+# Claude first uttered *after* the shout retroactively suppress it: append one
+# assistant turn saying "right, absolutely, not what asked for" and the
+# preceding ABSOLUTELY NOT WHAT I ASKED FOR downgraded from rebuke to
+# override. Words are attributed to the record they appeared in, and each
+# human turn is scored against the set as it stood at that point.
+([ ($atext[] | {i: .i, t: .text}), ($tool_texts[] | {i: .i, t: .t}) ]
+ | map({i: .i, w: (.t | [ scan("[A-Za-z]{3,}") ] | map(ascii_downcase))})) as $src_words
 
-| def s4_caps:
+# One snapshot of that set per human turn, from a single ordered pass. jq
+# values are persistent, so parking the accumulator in .snap stores a
+# reference, not a copy of every word seen so far -- the naive
+# "filter $src_words by index inside the per-turn map" is quadratic in the
+# transcript, and this runs in a blocking Stop hook.
+| (reduce (([ $humans[] | {i: ., h: true} ] + [ $src_words[] | {i: .i, h: false, w: .w} ])
+           | sort_by([.i, (if .h then 0 else 1 end)]))[] as $r
+     ({seen: {}, snap: {}};
+      if $r.h then .snap[$r.i | tostring] = .seen
+      else .seen = (reduce $r.w[] as $w (.seen; .[$w] = true)) end)
+   | .snap) as $seen_before
+
+| def s4_caps($seen):
     ([ scan("[A-Z]{3,}") ]
      | map(select(test("[0-9_]") | not))
-     | map(select((ascii_downcase | IN($seen_words[])) | not))
+     | map(. as $w | select(($seen | has($w | ascii_downcase)) | not))
      | length) >= 3;
 
 ([ $tools[] | select(is_mutating) | .i ]) as $mut_is
 | def mutated_between($lo; $hi): [ $mut_is[] | select(. > $lo and . < $hi) ] | length > 0;
-def prev_ask($h): ([ $atext[] | select(.i < $h) ] | last // {text: null}).text | ask_text;
+def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_text;
 
 # One record per human turn, everything the tags need already resolved.
 ($humans | to_entries | map(
@@ -227,13 +270,22 @@ def prev_ask($h): ([ $atext[] | select(.i < $h) ] | last // {text: null}).text |
     | ($conduct_hit or (($is_answer | not) and ($clean | (s1_first or s1_any)))) as $lexicon
     | ($lexicon and $conduct_hit) as $lexicon_conduct
     | ([ $clean | scan("\"([^\"]{20,})\"") ] | map(.[0])) as $quotes
-    | ([ $atext[] | select(.i < $h) | .text ] | join("\n")) as $before_text
-    | (($quotes | length) > 0 and ($quotes | any(. as $q | $before_text | contains($q)))) as $quote
+    # $before_text is every prior assistant turn concatenated, so building it
+    # for each human turn is quadratic in the transcript -- and it is only
+    # ever read when the turn actually contains a quote, which is rare. jq's
+    # `and` short-circuits, so keeping it on the right-hand side means most
+    # turns never pay for it. This runs in a blocking Stop hook: on a 600-turn
+    # synthetic transcript the friction pass cost 7.7s before this and the
+    # $tool_lines set below, 3.4s after, against a 1.1s pre-friction baseline.
+    | (($quotes | length) > 0
+       and (([ $atext[] | select(.i < $h) | .text ] | join("\n")) as $before_text
+            | $quotes | any(. as $q | $before_text | contains($q)))) as $quote
     | mutated_between($prev; $h) as $mutated_before
     | ((($clean | split("\n") | first) // "") | s5_undo) as $undo_line
     | ($undo_line and $mutated_before) as $undo
-    | ($clean as $c | ($c | s4_caps) or ($c | s4_words)) as $heat
-    | ([ $atext[] | select(.i > $h) ] | first) as $next
+    | (($seen_before[$h | tostring]) // {}) as $seen
+    | ($clean as $c | ($c | s4_caps($seen)) or ($c | s4_words)) as $heat
+    | first($atext[] | select(.i > $h)) as $next
     | ((($next.text // "")[0:200]) | s2_retract) as $retracted
     | (($veto_at | map(select(. > $prev and . <= $h)) | length) > 0) as $veto
     | ([ (if $lexicon then "lexicon" else empty end),
@@ -241,7 +293,12 @@ def prev_ask($h): ([ $atext[] | select(.i < $h) ] | last // {text: null}).text |
          (if $undo    then "undo"    else empty end),
          (if $heat    then "heat"    else empty end),
          (if $veto    then "veto"    else empty end) ]) as $tags
-    | {i: $h, pos: $pos, raw: $raw, tags: $tags,
+    # The cleaned text, not $raw: the excerpt is persisted and pushed, and
+    # $raw still carries whatever the human pasted in -- fenced blocks, hook
+    # output, a captured command result. clean_human already stripped those
+    # for the detectors; keeping the excerpt on the same text means nothing
+    # reaches disk that the metric did not actually read.
+    | {i: $h, pos: $pos, text: ($clean | redact), tags: $tags,
        lexicon_conduct: $lexicon_conduct, retracted: $retracted,
        has_event: (($tags | length) > 0 or $retracted)}
   )) as $human_tagged
@@ -268,7 +325,7 @@ def prev_ask($h): ([ $atext[] | select(.i < $h) ] | last // {text: null}).text |
 # --- pushback: assistant re-argues in the turn right after a tagged human
 # turn (lexicon/undo/heat -- not a bare quote or silent retraction).
 | ([ $atext[] | select(.text | s8_pushback) | .i as $ai
-    | ($humans | map(select(. < $ai)) | last) as $ph
+    | last($humans[] | select(. < $ai)) as $ph
     | select($ph != null)
     | ($friction_events[] | select(.i == $ph)) as $ev
     | select($ev.tags | any(. == "lexicon" or . == "undo" or . == "heat")) ]
@@ -283,7 +340,7 @@ def prev_ask($h): ([ $atext[] | select(.i < $h) ] | last // {text: null}).text |
         tags: .tags,
         retracted: .retracted,
         repeat: .repeat,
-        excerpt: (.raw | .[0:300])} ]) as $friction
+        excerpt: (.text | .[0:300])} ]) as $friction
 
 # --- time ----------------------------------------------------------------
 # Three numbers, because they answer different questions and no one of them

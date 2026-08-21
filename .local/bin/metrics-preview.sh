@@ -36,7 +36,12 @@
 #            passes -- the shape a pre-commit or CI step wants.
 set -u
 
-HOOKS="$HOME/.claude/hooks"
+# The installed copy by default -- on Mark's machines the yadm worktree is
+# $HOME, so that is also the repo. It is not on a cloud container or a CI
+# runner, where the repo is an ordinary checkout somewhere else, and the
+# header above promises this script is runnable there. $METRICS_HOOKS is how
+# you say which tree to check.
+HOOKS="${METRICS_HOOKS:-$HOME/.claude/hooks}"
 [ -d "$HOOKS" ] || { echo "no hooks at $HOOKS" >&2; exit 1; }
 # shellcheck source=.claude/hooks/lib-state.sh
 . "$HOOKS/lib-state.sh"
@@ -130,9 +135,14 @@ esac
 # Runs session-metrics.jq directly against a transcript -- not through
 # metrics-live.sh -- since these are checking the counts, not the display.
 # check_friction FIXTURE LABEL want_total want_correction want_override
-#                 want_rebuke want_pushback
+#                 want_rebuke want_repeat want_pushback
+#
+# `repeat` is checked too, not just the three types it feeds: it is an input
+# to the classifier (a repeat that was not retracted is forced to "rebuke"),
+# so a repeat regression can move events between categories in ways the
+# totals happen to absorb.
 check_friction() {
-  fx="$1"; label="$2"; wt="$3"; wc="$4"; wo="$5"; wr="$6"; wp="$7"
+  fx="$1"; label="$2"; wt="$3"; wc="$4"; wo="$5"; wr="$6"; wrp="$7"; wp="$8"
   [ -f "$fx" ] || { bad "$label: fixture missing at $fx"; return; }
   got=$(jq -s --arg sid "friction-preview" --arg repo "preview" \
           --arg branch "preview" --arg cwd "$PWD" --arg now "1970-01-01T00:00:00Z" \
@@ -141,20 +151,21 @@ check_friction() {
   gc=$(printf '%s' "$got" | jq -r '.correction // "?"' 2>/dev/null)
   go=$(printf '%s' "$got" | jq -r '.override // "?"' 2>/dev/null)
   gr=$(printf '%s' "$got" | jq -r '.rebuke // "?"' 2>/dev/null)
+  grp=$(printf '%s' "$got" | jq -r '.repeat // "?"' 2>/dev/null)
   gp=$(printf '%s' "$got" | jq -r '.pushback // "?"' 2>/dev/null)
   if [ "$gt" = "$wt" ] && [ "$gc" = "$wc" ] && [ "$go" = "$wo" ] \
-     && [ "$gr" = "$wr" ] && [ "$gp" = "$wp" ]; then
-    ok "$label: total $gt [${gc}c ${go}o ${gr}r], pushback $gp"
+     && [ "$gr" = "$wr" ] && [ "$grp" = "$wrp" ] && [ "$gp" = "$wp" ]; then
+    ok "$label: total $gt [${gc}c ${go}o ${gr}r], repeat $grp, pushback $gp"
   else
-    bad "$label: got total=$gt correction=$gc override=$go rebuke=$gr pushback=$gp -- want total=$wt correction=$wc override=$wo rebuke=$wr pushback=$wp"
+    bad "$label: got total=$gt correction=$gc override=$go rebuke=$gr repeat=$grp pushback=$gp -- want total=$wt correction=$wc override=$wo rebuke=$wr repeat=$wrp pushback=$wp"
   fi
 }
 
 say ""
 say "--- friction acceptance"
 FIXDIR="$HOOKS/fixtures"
-check_friction "$FIXDIR/friction-contentious.jsonl" "contentious fixture" 11 2 2 7 2
-check_friction "$FIXDIR/friction-calm.jsonl"         "calm fixture"        0 0 0 0 0
+check_friction "$FIXDIR/friction-contentious.jsonl" "contentious fixture" 11 2 2 7 7 2
+check_friction "$FIXDIR/friction-calm.jsonl"         "calm fixture"        0 0 0 0 0 0
 
 # Optional and advisory only: the real calibration transcripts, kept private
 # (redacted content in a public fixture was ruled out -- see
