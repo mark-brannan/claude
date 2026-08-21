@@ -54,7 +54,7 @@ esac
 
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 printf '%s' "$cmd" \
-  | grep -qE '\bgit\b.*\b(commit|cherry-pick|checkout|switch)\b|\bgh\b.*\bpr\b.*\bcreate\b' \
+  | grep -qE '\bgit\b.*\b(commit|cherry-pick|checkout|switch|branch|worktree)\b|\bgh\b.*\bpr\b.*\bcreate\b' \
   || exit 0
 
 [ -n "$cwd" ] && cd "$cwd" 2>/dev/null || exit 0
@@ -69,10 +69,16 @@ if printf '%s' "$cmd" | grep -qE '\bgh\b.*\bpr\b.*\bcreate\b'; then
   emit pr "$(jq -nc --argjson d "$is_draft" '{title:"", base:"", draft:$d}')"
 fi
 
-# Branch created. `git checkout -b` / `git switch -c` is the moment a PR
-# becomes inevitable, so that is the moment worth counting.
+# Branch created -- the moment a PR becomes inevitable, so the moment worth
+# counting. All four forms: `checkout -b`, `switch -c`, `worktree add -b`,
+# and bare `git branch <name>`. Only the first was counted before, which is
+# why a session could open a branch and have the counter show nothing.
 newbr=$(printf '%s' "$cmd" \
-  | sed -nE 's/.*\bgit[[:space:]]+(checkout[[:space:]]+-b|switch[[:space:]]+-c)[[:space:]]+([^[:space:];&|]+).*/\2/p' \
+  | sed -nE 's/.*\bgit[[:space:]]+(checkout[[:space:]]+-b|switch[[:space:]]+-c|worktree[[:space:]]+add[[:space:]]+-b)[[:space:]]+([^[:space:];&|]+).*/\2/p' \
+  | head -1)
+# `git branch` alone: only the create form, never -d/-D/-m/--list/-a.
+[ -n "$newbr" ] || newbr=$(printf '%s' "$cmd" \
+  | sed -nE 's/.*\bgit[[:space:]]+branch[[:space:]]+([^-][^[:space:];&|]*).*/\1/p' \
   | head -1)
 [ -n "$newbr" ] && emit branch "$(jq -nc --arg b "$newbr" '{created_branch:$b}')"
 

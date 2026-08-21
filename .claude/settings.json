@@ -95,7 +95,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|mcp__.*__create_pull_request",
+        "matcher": "Bash|mcp__.*__(create_pull_request|merge_pull_request|update_pull_request|update_pull_request_branch|push_files|create_or_update_file|delete_file|create_branch|create_repository|fork_repository)",
         "hooks": [
           {
             "type": "command",

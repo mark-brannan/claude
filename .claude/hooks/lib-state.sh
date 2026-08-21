@@ -44,3 +44,26 @@ state_dir() {
 state_is_repo() { state_repo >/dev/null 2>&1; }
 
 json_str() { jq -Rn --rawfile f /dev/stdin '$f'; }
+
+# The set of tool calls that change git state, in one place.
+#
+# It lives here because three consumers have to agree on it: the PostToolUse
+# matcher in settings.json, metrics-live.sh's "is this worth recomputing"
+# filter, and measure-git-events.sh's pre-filter. When they disagreed the
+# narrow one won by accident -- a `git push`, a `git reset`, a `git branch
+# -D`, an MCP `push_files` or a `merge_pull_request` each changed the repo
+# and none of them moved a counter until the Stop hook swept the transcript
+# at the end of the session. A number that only becomes true afterwards is
+# not a live number, and the git block Mark actually reads never appeared at
+# the moment the state changed.
+#
+# Deliberately NOT here: `git add`, `fetch`, `clone`, `remote`, `status`,
+# `log`, `diff`. The first four are frequent and carry no decision; the rest
+# are reads. Every entry costs a full jq pass over the transcript, so the
+# line is drawn at "did the repo's history, refs or worktree move".
+#
+# Two shapes are matched: a shell command (Bash tool_input.command) and a
+# bare tool name (any MCP tool that writes a repo, branch or PR).
+git_event_re() {
+  printf '%s' '\bgit\s+(commit|push|pull|merge|rebase|cherry-pick|revert|checkout|switch|branch|worktree|tag|stash|reset|restore|rm|mv|apply|am)\b|\bgh\s+(pr|release)\b|\b(yadm|dotsync)\b|create_pull_request|merge_pull_request|update_pull_request|update_pull_request_branch|push_files|create_or_update_file|delete_file|create_branch|create_repository|fork_repository'
+}

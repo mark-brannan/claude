@@ -43,11 +43,15 @@ IFS=$'\t' read -r tp sid cwd <<<"$(printf '%s' "$input" | jq -r \
 [ -n "$cwd" ] || cwd=$PWD
 
 # A git event means an actual git-state change, not every Bash call: the jq
-# pass is too expensive to run after `ls`.
+# pass is too expensive to run after `ls`. The set is git_event_re in
+# lib-state.sh -- shared with measure-git-events.sh so the counter and the
+# display can never disagree about what counts. Both fields are tested, not
+# one falling back to the other: an MCP tool has no `.command`, and a Bash
+# call whose command does not match must not then match on the tool name.
 if [ "$EVENT" = git ]; then
   printf '%s' "$input" \
-    | jq -r '.tool_input.command // .tool_name // ""' \
-    | grep -qE '\bgit\s+(commit|push|merge|rebase|cherry-pick|checkout|switch|tag)\b|create_pull_request' \
+    | jq -r '[(.tool_input.command // ""), (.tool_name // "")] | join("\n")' \
+    | grep -qE "$(git_event_re)" \
     || exit 0
 fi
 
