@@ -161,6 +161,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" sessionstart 0 2>/dev/null || true"
+          },
+          {
+            "type": "command",
             "command": "h=\"$HOME/.claude/hooks/session-start-seed-refresh.sh\"; [ -f \"$h\" ] && bash \"$h\" || true",
             "timeout": 60
           },
