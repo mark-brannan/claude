@@ -101,13 +101,32 @@ to_entries as $E
                   and (.value.content // "") != "")
     | .key ] as $humans
 
+# Persisted excerpts -- the friction excerpt and decisions[].question -- are
+# written to metrics/ and pushed, so secret-shaped values come out of them
+# first. The token-prefix list is the one `.config/yadm/hooks/pre_commit`
+# uses, deliberately; the key-name list is wider, because that gate guards
+# tracked prose in a public repo where a false positive blocks a commit, and
+# this one guards a metrics excerpt where a false positive costs one
+# unreadable line. clean_human has already dropped fenced blocks and pasted
+# tool output -- where most pasted credentials live -- so this is here for the
+# loose `export API_KEY=...` line that was never in a fence. The question is
+# assistant text rather than pasted input, but the assistant routinely quotes
+# a config line back when asking which value to use, so it runs through the
+# same filter.
+| def redact:
+    gsub("(?i)(?<k>(api|access|auth|oauth|bearer|client|secret|private|refresh|session)[_-]?(key|token|secret)|_authtoken|passwo?r?d|passphrase|credential)(?<s>\\s*[:=]\\s*)[^\\s'\"]{6,}";
+         "\(.k)\(.s)[redacted]")
+    | gsub("(?i)\\b(?<b>bearer)\\s+[A-Za-z0-9._~+/=-]{16,}"; "\(.b) [redacted]")
+    | gsub("npm_[A-Za-z0-9]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|BEGIN [A-Z ]*PRIVATE KEY";
+           "[redacted]");
+
 # --- decisions -----------------------------------------------------------
 # Two mechanisms, both mechanically detectable:
 #   AskUserQuestion -- an explicit, structured hand-off
 #   prose           -- the last assistant text before a human turn is an ask
 #                      (see is_ask): a trailing question, an enumerated
 #                      escalation, or either of those under a fenced block
-| ([ $tools[] | select(.name == "AskUserQuestion")
+([ $tools[] | select(.name == "AskUserQuestion")
      | {i: .i, mechanism: "AskUserQuestion",
         n: ((.input.questions // []) | length),
         text: ((.input.questions // []) | map(.question) | join(" | "))} ]
@@ -141,7 +160,7 @@ to_entries as $E
                elif .mechanism == "prose" then "gate"
                elif .n > 2 then "gate"
                else "inline" end),
-        question: (.text | .[0:300])} ]) as $decisions
+        question: (.text | redact | .[0:300])} ]) as $decisions
 
 # --- friction --------------------------------------------------------------
 # A friction event is a human turn that contradicts, corrects, overrides or
@@ -198,21 +217,6 @@ def clean_human:
     | map(select(test("^>") | not))
     | map(select(. as $l | ($tool_lines | has($l)) | not))
     | join("\n");
-
-# The excerpt below is persisted and pushed, so secret-shaped values come out
-# of it first. The token-prefix list is the one `.config/yadm/hooks/pre_commit`
-# uses, deliberately; the key-name list is wider, because that gate guards
-# tracked prose in a public repo where a false positive blocks a commit, and
-# this one guards a metrics excerpt where a false positive costs one
-# unreadable line. clean_human has already dropped fenced blocks and pasted
-# tool output -- where most pasted credentials live -- so this is here for the
-# loose `export API_KEY=...` line that was never in a fence.
-def redact:
-    gsub("(?i)(?<k>(api|access|auth|oauth|bearer|client|secret|private|refresh|session)[_-]?(key|token|secret)|_authtoken|passwo?r?d|passphrase|credential)(?<s>\\s*[:=]\\s*)[^\\s'\"]{6,}";
-         "\(.k)\(.s)[redacted]")
-    | gsub("(?i)\\b(?<b>bearer)\\s+[A-Za-z0-9._~+/=-]{16,}"; "\(.b) [redacted]")
-    | gsub("npm_[A-Za-z0-9]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|BEGIN [A-Z ]*PRIVATE KEY";
-           "[redacted]");
 
 def s1_first: test("(?i)^(no|nope|wrong|not)\\b[?.,!:]?");
 def s1_conduct: test("(?i)stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|you'?re not making|quantify");
@@ -312,6 +316,13 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
        and (mutated_between(.last_h; $ht.i) | not) ) as $repeat
      | ( if ($ht.tags | any(. == "heat" or . == "quote"))
            or $ht.lexicon_conduct
+           # A repeat that was not retracted is forced to rebuke. Kept
+           # deliberately: on the contentious fixture repeat is 7 of 11 and
+           # rebuke is also 7, which reads like the classifier is measuring
+           # consecutiveness rather than severity -- it is not. Dropping this
+           # clause moves exactly one event (rebuke 7 -> 6, override 2 -> 3),
+           # measured; the other six rebukes come from heat, quote or a
+           # conduct lexicon hit on their own.
            or ($repeat and ($ht.retracted | not))
          then "rebuke"
          elif $ht.retracted then "correction"
