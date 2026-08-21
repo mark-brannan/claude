@@ -62,6 +62,7 @@ INSTALL="
 .claude/hooks/log-commit.sh
 .claude/hooks/statusline-metrics.sh
 .claude/hooks/connector-budget.sh
+.claude/hooks/fixtures
 .local/bin/metrics-preview.sh
 "
 

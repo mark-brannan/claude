@@ -45,6 +45,17 @@ def dec: "⚖ \(.decisions.total)"
        + "[\(.decisions.scoping)/\(.decisions.inline)/\(.decisions.gate)]";
 
 def cost:  "\(.output_tokens | k)/\(.context_peak | k)";
+
+# ⚡ pairs with ⚖ (decisions) but is not a warning glyph -- friction is a
+# measurement, not an alarm. Pushback is a weekly number, like `split`; it
+# lives in the session JSON only, not this row. Null-guarded the same way as
+# `time`: a cache written before this field existed drops the row instead of
+# printing "null".
+def fric:
+  if .friction == null then empty
+  else "⚡ \(.friction.total)[\(.friction.correction)/\(.friction.override)/\(.friction.rebuke)]"
+  end;
+
 def turns: "⇢ \(.user_turns) ⚙ \(.tool_calls)";
 
 # Git state, the part that decides whether the chat is safe to kill. Empty
@@ -153,7 +164,7 @@ def nag: night_nag + break_nag;
 # wraps around 75 columns and the two groups together run past 90, so the
 # break is placed rather than left to the renderer -- an accidental wrap
 # lands mid-field, a deliberate one does not.
-def fields:  [cost, dec];
+def fields:  [cost, dec, fric];
 def fields2: [time, turns, work];
 
 # One row, for the statusline; no 'event'

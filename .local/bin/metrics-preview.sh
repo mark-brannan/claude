@@ -20,6 +20,14 @@
 #             (the jq pass is too expensive to run after `ls`)
 #   block     the two-line event block, once per event type
 #   row       the statusline row
+#   friction  session-metrics.jq's friction counts against the two fixtures
+#             in .claude/hooks/fixtures/ -- see the spec that number is
+#             calibrated against: claude_prompts_scratch/state/global/log/
+#             2026-08-21-friction-metric-spec.md. The fixtures are fully
+#             synthetic (no real transcript text -- dotfiles is public); a
+#             from-the-real-transcripts version can be run locally by
+#             pointing $FRICTION_REAL_CONTENTIOUS / $FRICTION_REAL_CALM at
+#             copies kept in the private claude_prompts_scratch repo.
 # Exits non-zero if any check fails, so it is usable in a pre-commit or CI.
 #
 # Reads the newest local transcript, so the numbers are a real session's.
@@ -117,6 +125,56 @@ case "$row" in
   ""|*"warming up"*|*"⛁ —"*) bad "statusline fell back to: ${row:-<empty>}" ;;
   *) say "$row" ;;
 esac
+
+# --- friction ----------------------------------------------------------
+# Runs session-metrics.jq directly against a transcript -- not through
+# metrics-live.sh -- since these are checking the counts, not the display.
+# check_friction FIXTURE LABEL want_total want_correction want_override
+#                 want_rebuke want_pushback
+check_friction() {
+  fx="$1"; label="$2"; wt="$3"; wc="$4"; wo="$5"; wr="$6"; wp="$7"
+  [ -f "$fx" ] || { bad "$label: fixture missing at $fx"; return; }
+  got=$(jq -s --arg sid "friction-preview" --arg repo "preview" \
+          --arg branch "preview" --arg cwd "$PWD" --arg now "1970-01-01T00:00:00Z" \
+          -f "$HOOKS/session-metrics.jq" "$fx" 2>&1 | jq -c '.session.friction' 2>&1)
+  gt=$(printf '%s' "$got" | jq -r '.total // "?"' 2>/dev/null)
+  gc=$(printf '%s' "$got" | jq -r '.correction // "?"' 2>/dev/null)
+  go=$(printf '%s' "$got" | jq -r '.override // "?"' 2>/dev/null)
+  gr=$(printf '%s' "$got" | jq -r '.rebuke // "?"' 2>/dev/null)
+  gp=$(printf '%s' "$got" | jq -r '.pushback // "?"' 2>/dev/null)
+  if [ "$gt" = "$wt" ] && [ "$gc" = "$wc" ] && [ "$go" = "$wo" ] \
+     && [ "$gr" = "$wr" ] && [ "$gp" = "$wp" ]; then
+    ok "$label: total $gt [${gc}c ${go}o ${gr}r], pushback $gp"
+  else
+    bad "$label: got total=$gt correction=$gc override=$go rebuke=$gr pushback=$gp -- want total=$wt correction=$wc override=$wo rebuke=$wr pushback=$wp"
+  fi
+}
+
+say ""
+say "--- friction acceptance"
+FIXDIR="$HOOKS/fixtures"
+check_friction "$FIXDIR/friction-contentious.jsonl" "contentious fixture" 11 2 2 7 2
+check_friction "$FIXDIR/friction-calm.jsonl"         "calm fixture"        0 0 0 0 0
+
+# Optional and advisory only: the real calibration transcripts, kept private
+# (redacted content in a public fixture was ruled out -- see
+# claude_prompts_scratch). Point these at local copies to compare against the
+# real sessions. Report-only, not gating -- the spec's S2/S8 phrase lists are
+# a fixed vocabulary and don't literally match every real phrasing (e.g. "The
+# pad-to-75 approach was wrong" vs the regex's "that (claim|was) wrong"), so
+# a mismatch here is a spec-tuning question, not a regression signal.
+if [ -n "${FRICTION_REAL_CONTENTIOUS:-}" ] && [ -f "$FRICTION_REAL_CONTENTIOUS" ]; then
+  say ""
+  say "--- real contentious transcript (advisory, spec wants total 10-11, correction 2, override 2, rebuke 6-7, pushback 2)"
+  jq -s --arg sid p --arg repo p --arg branch p --arg cwd "$PWD" --arg now "1970-01-01T00:00:00Z" \
+    -f "$HOOKS/session-metrics.jq" "$FRICTION_REAL_CONTENTIOUS" 2>&1 | jq '.session.friction' 2>&1 | sed 's/^/  /'
+fi
+if [ -n "${FRICTION_REAL_CALM:-}" ] && [ -f "$FRICTION_REAL_CALM" ]; then
+  say ""
+  say "--- real calm transcript (advisory, spec wants total 0, pushback 0)"
+  jq -s --arg sid p --arg repo p --arg branch p --arg cwd "$PWD" --arg now "1970-01-01T00:00:00Z" \
+    -f "$HOOKS/session-metrics.jq" "$FRICTION_REAL_CALM" 2>&1 | jq '.session.friction' 2>&1 | sed 's/^/  /'
+fi
 
 # --- fields ----------------------------------------------------------------
 # One field per line with its width: the only way to see which one is eating

@@ -143,6 +143,148 @@ to_entries as $E
                else "inline" end),
         question: (.text | .[0:300])} ]) as $decisions
 
+# --- friction --------------------------------------------------------------
+# A friction event is a human turn that contradicts, corrects, overrides or
+# rebukes the assistant turn before it. Anchored at the human enqueue index,
+# same as $humans, so friction and decisions share one timeline. Full spec:
+# claude_prompts_scratch/state/global/log/2026-08-21-friction-metric-spec.md
+
+# Text of every human enqueue, keyed by turn index -- same source as $humans.
+| ([ $E[] | select(.value.type == "queue-operation" and .value.operation == "enqueue"
+                   and (.value.content // "") != "")
+    | {i: .key, text: .value.content} ]) as $human_texts
+
+# Assistant text, one entry per assistant record that has any, keyed by index.
+| ([ $E[] | select(.value.type == "assistant") | .key as $i
+    | ([ .value.message.content[]? | select(.type == "text") | .text ] | join("\n")) as $t
+    | select($t != "")
+    | {i: $i, text: $t} ]) as $atext
+
+# Tool-result text flattened to lines: strips pasted hook/command output out
+# of human turns before any regex runs, and keeps a quoted command result
+# from tripping the S3 quote-back check.
+| ([ $E[] | select(.value.type == "user")
+    | .value.message.content[]? | select(.type == "tool_result")
+    | (.content | if type == "array" then ([ .[] | .text? // empty ] | join("\n"))
+                  elif type == "string" then .
+                  else "" end) ]
+   | map(split("\n")[]) | map(gsub("^\\s+|\\s+$"; ""))
+   | map(select(. != "")) | unique) as $tool_lines
+
+# Whole-transcript interrupt/decline markers, for S7. Zero-cost: neither
+# calibration transcript hits it, but it is free to compute.
+| ([ $E[] | .key as $i | .value
+    | (( .message.content[]? | select(.type == "tool_result")
+         | (.content | if type == "array" then ([ .[] | .text? // empty ] | join(" "))
+                        elif type == "string" then . else "" end) ) // "") as $trtext
+    | select(($trtext | test("doesn'?t want to proceed|The user declined"))
+             or ((tostring) | test("\\[Request interrupted by user")))
+    | $i ]) as $veto_at
+
+| def strip_fences: gsub("```[^`]*```"; "");
+def clean_human:
+    strip_fences | split("\n")
+    | map(gsub("^\\s+|\\s+$"; ""))
+    | map(select(test("^Stop says:") | not))
+    | map(select(test("^>") | not))
+    | map(select(. as $l | ($tool_lines | index($l)) == null))
+    | join("\n");
+
+def s1_first: test("(?i)^(no|nope|wrong|not)\\b[?.,!:]?");
+def s1_conduct: test("(?i)stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|you'?re not making|quantify");
+def s1_any: test("(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify");
+def s2_retract: test("(?i)^(fair|you'?re right|that (claim|was) (was )?wrong|bad call|my mistake|I was wrong|I (hadn'?t|misread|assumed)|dropping it|scratch that)");
+def s5_undo: test("(?i)^(no[,.!]?\\s*)?(take (it|that|this)? ?out|remove|revert|undo|put (it )?back|don'?t|stop)\\b");
+def s8_pushback: test("(?i)I('d| would) still|I disagree|doesn'?t change the answer|recommend(ation)?:? (ignore|reject|don'?t)|that case stands");
+def s4_words: test("(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull");
+
+# Words already said by Claude or a tool, lowercased, so a shouted identifier
+# Claude itself printed (SHOW, EVENT_ARG, PR, WSL) never counts as heat.
+(([ $atext[].text ] + $tool_lines) | join(" ")
+   | [ scan("[A-Za-z]{3,}") ] | map(ascii_downcase) | unique) as $seen_words
+
+| def s4_caps:
+    ([ scan("[A-Z]{3,}") ]
+     | map(select(test("[0-9_]") | not))
+     | map(select((ascii_downcase | IN($seen_words[])) | not))
+     | length) >= 3;
+
+([ $tools[] | select(is_mutating) | .i ]) as $mut_is
+| def mutated_between($lo; $hi): [ $mut_is[] | select(. > $lo and . < $hi) ] | length > 0;
+def prev_ask($h): ([ $atext[] | select(.i < $h) ] | last // {text: null}).text | ask_text;
+
+# One record per human turn, everything the tags need already resolved.
+($humans | to_entries | map(
+    .key as $pos | .value as $h
+    | (if $pos == 0 then -1 else $humans[$pos - 1] end) as $prev
+    | (($human_texts[] | select(.i == $h) | .text) // "") as $raw
+    | ($raw | clean_human) as $clean
+    | (prev_ask($h) != null and ($clean | length) < 40) as $is_answer
+    | ($clean | s1_conduct) as $conduct_hit
+    # A short reply to a question is "no" answering, not friction -- unless
+    # it hit the conduct subset (stop hedging/quantify/...), which is never
+    # a bare answer regardless of length.
+    | ($conduct_hit or (($is_answer | not) and ($clean | (s1_first or s1_any)))) as $lexicon
+    | ($lexicon and $conduct_hit) as $lexicon_conduct
+    | ([ $clean | scan("\"([^\"]{20,})\"") ] | map(.[0])) as $quotes
+    | ([ $atext[] | select(.i < $h) | .text ] | join("\n")) as $before_text
+    | (($quotes | length) > 0 and ($quotes | any(. as $q | $before_text | contains($q)))) as $quote
+    | mutated_between($prev; $h) as $mutated_before
+    | ((($clean | split("\n") | first) // "") | s5_undo) as $undo_line
+    | ($undo_line and $mutated_before) as $undo
+    | ($clean as $c | ($c | s4_caps) or ($c | s4_words)) as $heat
+    | ([ $atext[] | select(.i > $h) ] | first) as $next
+    | ((($next.text // "")[0:200]) | s2_retract) as $retracted
+    | (($veto_at | map(select(. > $prev and . <= $h)) | length) > 0) as $veto
+    | ([ (if $lexicon then "lexicon" else empty end),
+         (if $quote   then "quote"   else empty end),
+         (if $undo    then "undo"    else empty end),
+         (if $heat    then "heat"    else empty end),
+         (if $veto    then "veto"    else empty end) ]) as $tags
+    | {i: $h, pos: $pos, raw: $raw, tags: $tags,
+       lexicon_conduct: $lexicon_conduct, retracted: $retracted,
+       has_event: (($tags | length) > 0 or $retracted)}
+  )) as $human_tagged
+
+# Sequential pass: `repeat` and `type` both depend on the previous *event*,
+# not the previous human turn, so this can't be a per-record map.
+| (reduce ($human_tagged[] | select(.has_event)) as $ht
+    ({events: [], last_h: -1, last_pos: -1};
+     ( .last_h != -1
+       and ((($ht.pos) - .last_pos) <= 2)
+       and (mutated_between(.last_h; $ht.i) | not) ) as $repeat
+     | ( if ($ht.tags | any(. == "heat" or . == "quote"))
+           or $ht.lexicon_conduct
+           or ($repeat and ($ht.retracted | not))
+         then "rebuke"
+         elif $ht.retracted then "correction"
+         else "override"
+         end ) as $type
+     | .events += [ $ht + {repeat: $repeat, type: $type} ]
+     | .last_h = $ht.i | .last_pos = $ht.pos
+    )
+  ).events as $friction_events
+
+# --- pushback: assistant re-argues in the turn right after a tagged human
+# turn (lexicon/undo/heat -- not a bare quote or silent retraction).
+| ([ $atext[] | select(.text | s8_pushback) | .i as $ai
+    | ($humans | map(select(. < $ai)) | last) as $ph
+    | select($ph != null)
+    | ($friction_events[] | select(.i == $ph)) as $ev
+    | select($ev.tags | any(. == "lexicon" or . == "undo" or . == "heat")) ]
+  | length) as $pushback
+
+| ([ $friction_events | to_entries[]
+     | .key as $seq | .value
+     | {ts: $now, session_id: $sid, repo: $repo, branch: $branch,
+        seq: ($seq + 1),
+        turn_index: .i,
+        type: .type,
+        tags: .tags,
+        retracted: .retracted,
+        repeat: .repeat,
+        excerpt: (.raw | .[0:300])} ]) as $friction
+
 # --- time ----------------------------------------------------------------
 # Three numbers, because they answer different questions and no one of them
 # substitutes for another:
@@ -232,7 +374,16 @@ to_entries as $E
         scoping: ([ $decisions[] | select(.type == "scoping") ] | length),
         inline:  ([ $decisions[] | select(.type == "inline") ]  | length),
         gate:    ([ $decisions[] | select(.type == "gate") ]    | length)
+      },
+      friction: {
+        total:      ($friction | length),
+        correction: ([ $friction[] | select(.type == "correction") ] | length),
+        override:   ([ $friction[] | select(.type == "override") ]   | length),
+        rebuke:     ([ $friction[] | select(.type == "rebuke") ]     | length),
+        repeat:     ([ $friction[] | select(.repeat) ]                | length),
+        pushback:   $pushback
       }
     },
-    decisions: $decisions
+    decisions: $decisions,
+    friction: $friction
   }

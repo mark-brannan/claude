@@ -7,9 +7,12 @@
 # other way, which on an ephemeral cloud container is most of them. So this
 # runs unconditionally on Stop and needs nothing from the conversation.
 #
-# It writes three things, all derived from the transcript and from git:
+# It writes four things, all derived from the transcript and from git:
 #   metrics/sessions/<id>.json    cost and shape of the session
 #   metrics/decisions/<id>.jsonl  each decision pushed to Mark, typed by cost
+#   metrics/friction/<id>.jsonl   each friction event, typed by cost -- see
+#                                  claude_prompts_scratch/state/global/log/
+#                                  2026-08-21-friction-metric-spec.md
 #   log/auto/<date>-<repo>-<id>.md  a resumable checkpoint the next session reads
 #
 # One file per session, not one shared append-only log: parallel sessions are
@@ -52,7 +55,8 @@ metrics=$(jq -s \
 [ -n "$metrics" ] || exit 0
 
 SD=$(state_dir)
-mkdir -p "$SD/metrics/sessions" "$SD/metrics/decisions" "$SD/log/auto" 2>/dev/null || exit 0
+mkdir -p "$SD/metrics/sessions" "$SD/metrics/decisions" "$SD/metrics/friction" \
+         "$SD/log/auto" 2>/dev/null || exit 0
 
 # Commit count comes from git, never from grepping the transcript for
 # "git commit": a heredoc that writes a script containing that string is
@@ -66,6 +70,7 @@ printf '%s\n' "$metrics" \
   | jq -c --argjson c "${ncommits:-0}" '.session + {commits: $c}' \
   > "$SD/metrics/sessions/$sid.json"
 printf '%s\n' "$metrics" | jq -c '.decisions[]' > "$SD/metrics/decisions/$sid.jsonl"
+printf '%s\n' "$metrics" | jq -c '.friction[]' > "$SD/metrics/friction/$sid.jsonl"
 
 # The live snapshot has served its purpose; the finished session file
 # supersedes it, so drop it rather than leaving two records of one session.
@@ -86,7 +91,8 @@ ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
     "- session `\(.session_id)` · \(.model // "?") · started \(.started_at // "?")",
     "- \(.user_turns) prompts, \(.assistant_turns) turns, \(.tool_calls) tool calls",
     "- \(.output_tokens) output tokens, context peak \(.context_peak)",
-    "- decisions: \(.decisions.total) total (\(.decisions.scoping) scoping, \(.decisions.inline) inline, \(.decisions.gate) gate)"'
+    "- decisions: \(.decisions.total) total (\(.decisions.scoping) scoping, \(.decisions.inline) inline, \(.decisions.gate) gate)",
+    "- friction: \(.friction.total) total (\(.friction.correction) correction, \(.friction.override) override, \(.friction.rebuke) rebuke, \(.friction.pushback) pushback)"'
 
   if [ -n "$work_root" ]; then
     echo
