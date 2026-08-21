@@ -18,8 +18,20 @@ def k: if . >= 1000 then "\(. / 1000 | floor)k" else "\(.)" end;
 # already over budget is left alone rather than truncated mid-number.
 def pad($w; $fill): . + (if length < $w then ($fill * ($w - length)) else "" end);
 
-
-def ev: {question: "‽", git: "⎇ ", stop: "▼", pulse: "○"}[.last_event] // .last_event;
+# we might not even need this but don't remove it yet
+def ev: {
+    sessionstart: "▶",
+    sessionend: "∎",
+    stop: "⏸",
+    subagentstop: "␚⏹",
+    prompt: "💬",
+    question: "‽",
+    notification: "✉",
+    recompact: "🗜",
+    posttooluse: "🔧",
+    git: "⎇ ",
+    pulse: "○",
+}[.last_event] // .last_event;
 
 # The branch is the one field with no upper bound -- `claude/*` names run to
 # 36 characters and would push everything after it off the line on their own.
@@ -122,18 +134,11 @@ def nag: night_nag + break_nag;
 def fields:  [cost, dec];
 def fields2: [time, turns, work];
 
-# One row, for the statusline: no event (there isn't one -- it is a
-# continuous readout, not a moment) and no padding (the terminal ends the
-# line).
+# One row, for the statusline; no 'event'
 def row: (["◆\(env)"] + fields + fields2) | join(" ");
 
-# Two lines, for an event block in the transcript: a padded header naming
-# what just happened, then the numbers. The UI prefixes each line with
-# "PostToolUse:<tool> says:", so this costs that prefix twice -- deliberate,
-# in exchange for a header that scans at a glance.
 def block($w; $fill): . as $in
-                    | ("\(ev)\(env) " | pad($w; $fill)) + "\n"
-                    + (fields | join(" "))
-                    + (fields2 | join(" "))
-                    + nag;
-def block: block(30; "-");
+                    | ((fields | join(" ")) + (fields2 | join(" "))) as $main
+                    | nag as $n
+                    | if $n == "" then $main else $main + "\n" + $n end;
+def block: block(75; " ");

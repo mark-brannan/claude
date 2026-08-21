@@ -26,24 +26,37 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-EVENT="${1:-tool}"          # prompt | question | posttooluse | stop | statusline
+EVENT_ARG="${1:-}"          # explicit override; only statusline and tests pass this now
 MAX_AGE="${2:-0}"           # seconds; >0 means "skip if cache is fresher"
 SHOW="${3:-}"               # "show" -> also print a systemMessage block
-
-# `show` on an event that Claude can read would make the block context, not
-# display. Only PreToolUse/PostToolUse/Stop keep systemMessage display-only;
-# on UserPromptSubmit and SessionStart the model sees it, so those never show.
-case "$EVENT" in prompt|statusline) SHOW="" ;; esac
 
 # One jq for all three fields: the statusline reaches this code on every
 # render, and three spawns before the staleness check was most of its cost.
 input=$(cat 2>/dev/null || echo '{}')
-IFS=$'\t' read -r tp sid cwd tool_name tool_cmd <<<"$(printf '%s' "$input" | jq -r \
+IFS=$'\t' read -r tp sid cwd tool_name tool_cmd hook_name <<<"$(printf '%s' "$input" | jq -r \
   '[(.transcript_path // ""), (.session_id // ""),
     (.cwd // .workspace.current_dir // ""),
-    (.tool_name // ""), (.tool_input.command // "")] | @tsv')"
+    (.tool_name // ""), (.tool_input.command // ""),
+    (.hook_event_name // "")] | @tsv')"
 [ -n "$tp" ] && [ -f "$tp" ] && [ -n "$sid" ] || exit 0
 [ -n "$cwd" ] || cwd=$PWD
+
+# Default EVENT to hook_event_name verbatim, lowercased, so a new hook
+# needs no matching entry here. question is the one specialized case.
+if [ -n "$EVENT_ARG" ]; then
+  EVENT="$EVENT_ARG"
+elif [ "$hook_name" = PreToolUse ] && [ "$tool_name" = AskUserQuestion ]; then
+  EVENT="$tool_name"
+else
+  EVENT=$(printf '%s' "${hook_name:-tool}" | tr '[:upper:]' '[:lower:]')
+fi
+
+# `show` on an event that Claude can read would make the block context, not
+# display -- true for UserPromptSubmit and SessionStart. Guarding SessionStart
+# is dropped for now: it's the one moment with no other visibility into
+# session state, worth the per-session token cost to see it. UserPromptSubmit
+# fires every turn, so it stays suppressed.
+case "$EVENT" in prompt|userpromptsubmit|statusline) SHOW="" ;; esac
 
 # A git event means an actual git-state change, not every Bash call: the jq
 # pass is too expensive to run after `ls`. The set is git_event_re in
@@ -207,21 +220,7 @@ printf '%s\n' "$metrics" | jq -c \
 # Shown to Mark at the moments that matter -- a question put to him, a git
 # event, a pulse tick, the end of the session -- and never sent to the
 # model, so the running decision count costs nothing to display.
-#
-# `stop` fires unconditionally, every single turn -- unlike `question`,
-# `git` and `pulse`, which only fire when something actually happened (or,
-# for pulse, every PULSE_N calls). Left unguarded, a stop block posts after
-# every reply and buries the rare git/nag ones in noise until they're
-# effectively the only thing Mark ever sees. So a stop only shows when it's
-# carrying something: a nag firing, or dirty/unpushed/uncommitted work.
-# Other events always show -- they already earned it by being rare (or, for
-# pulse, by being rate-limited).
 if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
-  if [ "$EVENT" = stop ]; then
-    jq -e -L "$HOOK_DIR" 'include "lib-metrics-fmt";
-      (nag != "") or (.dirty > 0) or (.unpushed > 0) or (.commits > 0)' \
-      "$OUT" >/dev/null 2>&1 || exit 0
-  fi
   jq -c -L "$HOOK_DIR" \
     'include "lib-metrics-fmt"; {systemMessage: block}' "$OUT" 2>/dev/null
 fi
