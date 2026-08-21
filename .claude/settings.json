@@ -163,6 +163,60 @@
     },
     {
       "serverName": "Evernote_MCP"
+    },
+    {
+      "serverName": "Audible"
+    },
+    {
+      "serverName": "Autodesk_Product_Help"
+    },
+    {
+      "serverName": "DocuSeal"
+    },
+    {
+      "serverName": "Docusign"
+    },
+    {
+      "serverName": "Dropbox"
+    },
+    {
+      "serverName": "Harvey"
+    },
+    {
+      "serverName": "IFTTT"
+    },
+    {
+      "serverName": "Lucid"
+    },
+    {
+      "serverName": "Postman"
+    },
+    {
+      "serverName": "PubMed"
+    },
+    {
+      "serverName": "Scholar_Gateway"
+    },
+    {
+      "serverName": "SignNow"
+    },
+    {
+      "serverName": "Spotify"
+    },
+    {
+      "serverName": "Superhuman_Docs"
+    },
+    {
+      "serverName": "Taskrabbit_Booking_Assistance"
+    },
+    {
+      "serverName": "Todoist"
+    },
+    {
+      "serverName": "Trello"
+    },
+    {
+      "serverName": "Zapier"
     }
   ],
   "statusLine": {
