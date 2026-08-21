@@ -55,6 +55,7 @@ INSTALL="
 .claude/hooks/no-late-pr-subscribe.sh
 .claude/hooks/session-start-seed-refresh.sh
 .claude/hooks/guard-add-repo.sh
+.claude/hooks/no-late-pr-subscribe.sh
 .claude/hooks/metrics-live.sh
 .claude/hooks/metrics-rollup.sh
 .claude/hooks/log-commit.sh

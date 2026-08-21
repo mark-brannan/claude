@@ -21,8 +21,8 @@
   "crossSessionInbound": "hold",
   "permissions": {
     "allow": [
-      "Bash(git branch -d *)",
-      "Bash(git branch -D *)",
+      "Bash(git branch -d claude/*)",
+      "Bash(git branch -D claude/*)",
       "mcp__Claude_Code_Remote__add_repo"
     ]
   },
