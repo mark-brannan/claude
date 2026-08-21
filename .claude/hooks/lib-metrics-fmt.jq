@@ -42,9 +42,9 @@ def env: " \(.repo)@\(.branch
 
 def dec: "⚖ \(.decisions.total)"
        + (if .last_event == "question" then "+1?" else "" end)
-       + " [\(.decisions.scoping)s \(.decisions.inline)i \(.decisions.gate)g]";
+       + "[\(.decisions.scoping)/\(.decisions.inline)/\(.decisions.gate)]";
 
-def cost:  "¤ \(.output_tokens | k)/\(.context_peak | k)";
+def cost:  "\(.output_tokens | k)/\(.context_peak | k)";
 def turns: "⇢ \(.user_turns) ⚙ \(.tool_calls)";
 
 # Git state, the part that decides whether the chat is safe to kill. Empty
@@ -80,8 +80,7 @@ def dur:
 def time:
   if .elapsed_seconds == null then empty
   else " ⏱\(.active_seconds | dur)⟳"
-     + " \(.human_seconds | dur)🧑/\(.agent_seconds | dur)🤖"
-     + " 🕰 \(.elapsed_seconds | dur)"
+     + " \(.elapsed_seconds | dur)"
   end;
 
 # Who the active time went to, on its own. Not in either readout -- it is the
