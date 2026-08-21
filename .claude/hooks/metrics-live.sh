@@ -107,6 +107,21 @@ printf '%s\n' "$metrics" | jq -c \
 # Shown to Mark at the moments that matter -- a question put to him, a git
 # event, the end of the session -- and never sent to the model, so the
 # running decision count costs nothing to display.
-[ "$SHOW" = show ] && [ -f "$OUT" ] && jq -c -L "$HOOK_DIR" \
-  'include "lib-metrics-fmt"; {systemMessage: block}' "$OUT" 2>/dev/null
+#
+# `stop` fires unconditionally, every single turn -- unlike `question` and
+# `git`, which only fire when something actually happened. Left unguarded,
+# a stop block posts after every reply and buries the rare git/nag ones in
+# noise until they're effectively the only thing Mark ever sees. So a stop
+# only shows when it's carrying something: a nag firing, or dirty/unpushed/
+# uncommitted work. Other events always show -- they already earned it by
+# being rare.
+if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
+  if [ "$EVENT" = stop ]; then
+    jq -e -L "$HOOK_DIR" 'include "lib-metrics-fmt";
+      (nag != "") or (.dirty > 0) or (.unpushed > 0) or (.commits > 0)' \
+      "$OUT" >/dev/null 2>&1 || exit 0
+  fi
+  jq -c -L "$HOOK_DIR" \
+    'include "lib-metrics-fmt"; {systemMessage: block}' "$OUT" 2>/dev/null
+fi
 exit 0
