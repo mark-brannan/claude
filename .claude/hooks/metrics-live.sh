@@ -89,7 +89,7 @@ OUT="$LIVE/$sid.json"
 #            real time, so they show immediately, uncoalesced. Streaks are
 #            only worth collapsing once git activity is established as
 #            routine for the session.
-PULSE_N="${METRICS_PULSE_N:-8}"
+PULSE_N="${METRICS_PULSE_N:-1}"
 GIT_EARLY_N="${METRICS_GIT_EARLY_N:-3}"
 if [ "$EVENT" = posttooluse ]; then
   PULSE="$LIVE/$sid.pulse.json"
