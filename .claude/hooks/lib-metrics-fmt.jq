@@ -119,8 +119,8 @@ def nag: night_nag + break_nag;
 # wraps around 75 columns and the two groups together run past 90, so the
 # break is placed rather than left to the renderer -- an accidental wrap
 # lands mid-field, a deliberate one does not.
-def fields:  [cost, dec, nag];
-def fields2: [time, turns, work, nag];
+def fields:  [cost, dec];
+def fields2: [time, turns, work];
 
 # One row, for the statusline: no event (there isn't one -- it is a
 # continuous readout, not a moment) and no padding (the terminal ends the
@@ -132,7 +132,7 @@ def row: (["◆\(env)"] + fields + fields2) | join(" ");
 # "PostToolUse:<tool> says:", so this costs that prefix twice -- deliberate,
 # in exchange for a header that scans at a glance.
 def block($w; $fill): . as $in
-                    | ("\(ev)\(env) " | pad($w; $fill)) + ($in | nag) + "\n"
+                    | ("\(ev)\(env) " | pad($w; $fill)) + "\n"
                     + (fields | join(" "))
                     + (fields2 | join(" "))
                     + nag;
