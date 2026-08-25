@@ -257,12 +257,22 @@ done
 # without serialization is a delete of the release the other run just
 # pointed `current` at. Best-effort: a VM without flock, or a lock that
 # never frees, must still leave a session installable.
+#
+# Fail-open, but not into the race: a VM with no flock at all has nothing to
+# contend with and proceeds as before, while a lock that is held and times
+# out means another installer is mid-flip right now -- exactly when running
+# the GC unserialized is most likely to delete the release that run just
+# activated. There, ADVANCE=no: skip the flip, and link against whatever
+# `current` already resolves to. 20s, not longer: this runs inside a
+# SessionStart hook and an install takes well under a second, so a wait
+# that long already means the holder is wedged. Nothing needs to block;
+# this run simply doesn't move the release, and the next SessionStart will.
 LOCK="$CONFIG_DIR/.install.lock"
+ADVANCE=yes
 if [ "$DRY_RUN" = no ] && command -v flock >/dev/null 2>&1 &&
    mkdir -p "$CONFIG_DIR" 2>/dev/null && : >>"$LOCK" 2>/dev/null; then
   exec 9>>"$LOCK"
-  flock -w 60 9 2>/dev/null ||
-    warn "  no lock on $LOCK after 60s — continuing unserialized"
+  flock -w 20 9 2>/dev/null || ADVANCE=no
 fi
 
 flip() {
@@ -282,6 +292,12 @@ flip() {
 
 if [ "$DRY_RUN" = yes ]; then
   say "would flip $CONFIG_DIR/current -> releases/$REV"
+elif [ "$ADVANCE" = no ]; then
+  warn "another installer holds $LOCK — not advancing the release"
+  warn "  linking against whatever $CONFIG_DIR/current already holds"
+  # Only a failure if there is nothing to fall back to: an earlier release
+  # still serving the session is a stale install, not an incomplete one.
+  [ -e "$CONFIG_DIR/current" ] || failed=$((failed + 1))
 elif [ "$missing" -gt 0 ] || [ "$failed" -gt 0 ] || [ "$refused" -gt 0 ]; then
   # A partial stage must never be activated. $HOME reaches its whole
   # instruction set through `current`, so flipping to a tree that is missing
