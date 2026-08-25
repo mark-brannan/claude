@@ -24,10 +24,23 @@
       "Bash(git branch -d claude/*)",
       "Bash(git branch -D claude/*)",
       "mcp__Claude_Code_Remote__add_repo"
+    ],
+    "deny": [
+      "Bash(git reset --hard:*)"
     ]
   },
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-git-reset-hard.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
+            "statusMessage": "Checking for git reset --hard"
+          }
+        ]
+      },
       {
         "matcher": "mcp__Claude_Code_Remote__add_repo",
         "hooks": [
