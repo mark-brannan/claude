@@ -206,7 +206,10 @@ STAGE_TMP="$CONFIG_DIR/releases/.tmp.$$"
 CURRENT_TMP="$CONFIG_DIR/.current.$$"
 # A crash or interrupt mid-stage/mid-flip must never leave a half-built temp
 # behind for the next run to trip over -- both names are unique to this PID.
-trap 'rm -rf "$STAGE_TMP" "$CURRENT_TMP" "$STATUS_TMP"' EXIT INT TERM
+# LOCKDIR is set only by the run that actually holds the mkdir fallback lock
+# below, so this never removes a lock another run is holding.
+LOCKDIR=""
+trap 'rm -rf "$STAGE_TMP" "$CURRENT_TMP" "$STATUS_TMP"; [ -n "$LOCKDIR" ] && rm -rf "$LOCKDIR"; :' EXIT INT TERM
 
 installed=0; refused=0; missing=0; failed=0; linked=0
 
@@ -267,12 +270,45 @@ done
 # SessionStart hook and an install takes well under a second, so a wait
 # that long already means the holder is wedged. Nothing needs to block;
 # this run simply doesn't move the release, and the next SessionStart will.
+#
+# No flock is not the same as nothing to contend with: a VM without it still
+# runs one installer per SessionStart, so "no flock" would otherwise be the
+# one path that promotes and garbage-collects unserialized. An atomic mkdir
+# is the portable equivalent -- POSIX guarantees exactly one of two racing
+# mkdirs succeeds -- so the fallback gets the same ADVANCE=no treatment on
+# contention rather than a free pass.
 LOCK="$CONFIG_DIR/.install.lock"
 ADVANCE=yes
-if [ "$DRY_RUN" = no ] && command -v flock >/dev/null 2>&1 &&
-   mkdir -p "$CONFIG_DIR" 2>/dev/null && : >>"$LOCK" 2>/dev/null; then
-  exec 9>>"$LOCK"
-  flock -w 20 9 2>/dev/null || ADVANCE=no
+if [ "$DRY_RUN" = no ] && mkdir -p "$CONFIG_DIR" 2>/dev/null; then
+  if command -v flock >/dev/null 2>&1 && : >>"$LOCK" 2>/dev/null; then
+    exec 9>>"$LOCK"
+    flock -w 20 9 2>/dev/null || ADVANCE=no
+  else
+    # The holder's pid goes inside the directory: a run killed mid-flip -- a
+    # reclaimed container, a hook timeout -- leaves the lock behind with no
+    # process to free it, and without this check every later session would
+    # sit at ADVANCE=no forever and never advance the release again.
+    held=no
+    waited=0
+    while [ "$waited" -le 20 ]; do
+      if mkdir "$LOCK.d" 2>/dev/null; then
+        held=yes
+        LOCKDIR="$LOCK.d"
+        echo $$ >"$LOCK.d/pid" 2>/dev/null
+        break
+      fi
+      holder=$(cat "$LOCK.d/pid" 2>/dev/null)
+      waited=$((waited + 1))
+      # An empty pid means a holder that has not written it yet -- treat that
+      # as live and wait, or two runs would break each other's fresh locks.
+      if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+        rm -rf "$LOCK.d"
+      else
+        sleep 1
+      fi
+    done
+    [ "$held" = yes ] || ADVANCE=no
+  fi
 fi
 
 flip() {
