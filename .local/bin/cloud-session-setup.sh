@@ -35,6 +35,7 @@ BACKUP="$HOME/.dotfiles-replaced"
 # STATUS_FILE is still under it. Isolating a run means overriding $HOME.
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-config}"
 STATUS_FILE="$HOME/.claude/.sync-status.json"
+STATUS_TMP="$STATUS_FILE.$$"
 DRY_RUN=no
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=yes
 
@@ -205,7 +206,7 @@ STAGE_TMP="$CONFIG_DIR/releases/.tmp.$$"
 CURRENT_TMP="$CONFIG_DIR/.current.$$"
 # A crash or interrupt mid-stage/mid-flip must never leave a half-built temp
 # behind for the next run to trip over -- both names are unique to this PID.
-trap 'rm -rf "$STAGE_TMP" "$CURRENT_TMP"' EXIT INT TERM
+trap 'rm -rf "$STAGE_TMP" "$CURRENT_TMP" "$STATUS_TMP"' EXIT INT TERM
 
 installed=0; refused=0; missing=0; failed=0; linked=0
 
@@ -249,6 +250,21 @@ done
 # this script targets) is load-bearing here -- plain `mv src dst` treats an
 # existing symlink-to-directory `dst` as that directory and moves `src`
 # *into* it instead of replacing it.
+# One installer at a time from here on. session-start-seed-refresh.sh runs
+# this on every SessionStart and a checkpointed container can host several
+# sessions at once, so two runs on different SHAs can reach the flip
+# together -- and the GC below deletes every release but its own, which
+# without serialization is a delete of the release the other run just
+# pointed `current` at. Best-effort: a VM without flock, or a lock that
+# never frees, must still leave a session installable.
+LOCK="$CONFIG_DIR/.install.lock"
+if [ "$DRY_RUN" = no ] && command -v flock >/dev/null 2>&1 &&
+   mkdir -p "$CONFIG_DIR" 2>/dev/null && : >>"$LOCK" 2>/dev/null; then
+  exec 9>>"$LOCK"
+  flock -w 60 9 2>/dev/null ||
+    warn "  no lock on $LOCK after 60s — continuing unserialized"
+fi
+
 flip() {
   ln -s "$STAGE" "$CURRENT_TMP" &&
     mv -T "$CURRENT_TMP" "$CONFIG_DIR/current" ||
@@ -397,7 +413,10 @@ COMPLETE=true
 if [ "$DRY_RUN" = yes ]; then
   say "would write $STATUS_FILE (complete: $COMPLETE)"
 else
-  mkdir -p "$(dirname "$STATUS_FILE")" && cat >"$STATUS_FILE" <<EOF
+  # Staged and renamed, not truncated in place: session-start-continuity.sh
+  # reads this file, and a parallel session catching it mid-write would parse
+  # an empty document and announce a DEGRADED session that isn't one.
+  mkdir -p "$(dirname "$STATUS_FILE")" && cat >"$STATUS_TMP" <<EOF
 {
   "channel": "$BRANCH",
   "tag": null,
@@ -407,6 +426,11 @@ else
   "source": "cloud-session-setup.sh"
 }
 EOF
+  mv -f "$STATUS_TMP" "$STATUS_FILE" 2>/dev/null || {
+    warn "  FAILED to write $STATUS_FILE — the status below is what this run"
+    warn "  intended, not what a later session will read"
+    rm -f "$STATUS_TMP"
+  }
 fi
 
 say "$installed staged, $linked linked, $refused refused, $missing missing, $failed failed"
