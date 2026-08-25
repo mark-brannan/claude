@@ -416,7 +416,10 @@ else
   # Staged and renamed, not truncated in place: session-start-continuity.sh
   # reads this file, and a parallel session catching it mid-write would parse
   # an empty document and announce a DEGRADED session that isn't one.
-  mkdir -p "$(dirname "$STATUS_FILE")" && cat >"$STATUS_TMP" <<EOF
+  # The rename is gated on the write: `mv` only cares that its source
+  # exists, so an unconditional one would publish a half-written temp over
+  # the previous good file -- the very corruption the temp exists to avoid.
+  if mkdir -p "$(dirname "$STATUS_FILE")" && cat >"$STATUS_TMP" <<EOF &&
 {
   "channel": "$BRANCH",
   "tag": null,
@@ -426,11 +429,13 @@ else
   "source": "cloud-session-setup.sh"
 }
 EOF
-  mv -f "$STATUS_TMP" "$STATUS_FILE" 2>/dev/null || {
+     mv -f "$STATUS_TMP" "$STATUS_FILE" 2>/dev/null; then
+    :
+  else
     warn "  FAILED to write $STATUS_FILE — the status below is what this run"
     warn "  intended, not what a later session will read"
     rm -f "$STATUS_TMP"
-  }
+  fi
 fi
 
 say "$installed staged, $linked linked, $refused refused, $missing missing, $failed failed"
