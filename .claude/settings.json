@@ -278,7 +278,6 @@
   ],
   "statusLine": {
     "type": "command",
-    "command": "h=\"$HOME/.claude/hooks/statusline-metrics.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null",
-    "padding": 0
+    "command": "claude-statusline-powerline"
   }
 }
