@@ -30,8 +30,9 @@ set -uf
 SEED="${DOTFILES_SEED:-$HOME/.local/share/dotfiles-seed}"
 BACKUP="$HOME/.dotfiles-replaced"
 # Versioned releases + the "current" symlink that makes an install atomic --
-# see "Stage" and "Flip" below. Overridable so a test run doesn't touch a
-# real $HOME/.claude-config.
+# see "Stage" and "Flip" below. Overridable, but on its own it is NOT a test
+# harness: the Link step still writes symlinks under the real $HOME, and
+# STATUS_FILE is still under it. Isolating a run means overriding $HOME.
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-config}"
 STATUS_FILE="$HOME/.claude/.sync-status.json"
 DRY_RUN=no
@@ -194,7 +195,11 @@ fi
 # and $HOME never sees the difference until the flip below. A file dropped
 # from INSTALL simply isn't copied -- no separate prune step needed, unlike
 # the old per-file-copy design this replaced.
-REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null) || REV=unknown
+# The release name must identify its content: the flip below reuses an
+# existing release rather than rebuilding it, which is only sound because a
+# git SHA pins exactly what was staged. With no SHA to be had, fall back to a
+# name unique to this run so that shortcut can never match a stale tree.
+REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null) || REV="unknown.$$"
 STAGE="$CONFIG_DIR/releases/$REV"
 STAGE_TMP="$CONFIG_DIR/releases/.tmp.$$"
 CURRENT_TMP="$CONFIG_DIR/.current.$$"
@@ -244,19 +249,53 @@ done
 # this script targets) is load-bearing here -- plain `mv src dst` treats an
 # existing symlink-to-directory `dst` as that directory and moves `src`
 # *into* it instead of replacing it.
+flip() {
+  ln -s "$STAGE" "$CURRENT_TMP" &&
+    mv -T "$CURRENT_TMP" "$CONFIG_DIR/current" ||
+    { warn "  FAILED to flip current to releases/$REV"; failed=$((failed + 1)); return 1; }
+  say "  flipped current -> releases/$REV"
+  # Superseded releases go only after the flip, never before it: every $HOME
+  # symlink now resolves through the new one. Without this a checkpointed
+  # container accumulates a full tree per seed commit, forever.
+  set +f
+  for old in "$CONFIG_DIR"/releases/*; do
+    [ -d "$old" ] && [ "$old" != "$STAGE" ] && rm -rf "$old"
+  done
+  set -f
+}
+
 if [ "$DRY_RUN" = yes ]; then
   say "would flip $CONFIG_DIR/current -> releases/$REV"
+elif [ "$missing" -gt 0 ] || [ "$failed" -gt 0 ] || [ "$refused" -gt 0 ]; then
+  # A partial stage must never be activated. $HOME reaches its whole
+  # instruction set through `current`, so flipping to a tree that is missing
+  # a hook or a rule file does not degrade the session gracefully -- it
+  # deletes that instruction. The previous release is complete; keep it.
+  warn "staging incomplete ($missing missing, $failed failed, $refused refused)"
+  warn "  leaving the previous release in place"
+  failed=$((failed + 1))
 elif [ ! -d "$STAGE_TMP" ]; then
   warn "staging produced nothing usable — leaving the previous release in place"
   failed=$((failed + 1))
+elif [ -d "$STAGE" ]; then
+  # The common path, not an edge case: session-start-seed-refresh.sh runs
+  # this installer on EVERY SessionStart, and the seed's SHA only moves when
+  # a commit lands upstream. $REV pins the content, so an existing release
+  # under that name already holds exactly what was just staged -- and
+  # `rm -rf "$STAGE"` to rebuild it would be a delete of the directory
+  # `current` is resolving through right then, leaving every $HOME symlink
+  # dangling until the mv landed and nothing at all if the run died between
+  # the two. Throw the redundant copy away and re-point instead; the flip is
+  # a no-op when current already points here.
+  say "  release $REV already staged — reusing it"
+  rm -rf "$STAGE_TMP"
+  flip
 else
-  mkdir -p "$CONFIG_DIR/releases" &&
-    rm -rf "$STAGE" &&
-    mv "$STAGE_TMP" "$STAGE" &&
-    ln -s "$STAGE" "$CURRENT_TMP" &&
-    mv -T "$CURRENT_TMP" "$CONFIG_DIR/current" &&
-    say "  flipped current -> releases/$REV" ||
-    { warn "  FAILED to flip current to releases/$REV"; failed=$((failed + 1)); }
+  if mkdir -p "$CONFIG_DIR/releases" && mv "$STAGE_TMP" "$STAGE"; then
+    flip
+  else
+    warn "  FAILED to stage releases/$REV"; failed=$((failed + 1))
+  fi
 fi
 
 # =========================================================================
@@ -267,8 +306,15 @@ fi
 # only place content ever changes. A directory in OWNED_DIRS is linked once
 # as a whole (so a file INSTALL later drops from it just disappears, with no
 # prune step); anything else is linked individually.
+# No release to point at means no linking: a symlink into a missing
+# `current` is worse than the real file it would replace.
+if [ "$DRY_RUN" = no ] && [ ! -e "$CONFIG_DIR/current" ]; then
+  warn "no usable release at $CONFIG_DIR/current — skipping Link"
+fi
+
 link_path() {
   rel=$1
+  [ "$DRY_RUN" = yes ] || [ -e "$CONFIG_DIR/current" ] || return
   dst="$HOME/$rel"
   target="$CONFIG_DIR/current/$rel"
 
@@ -330,12 +376,23 @@ done
 # install actually finished (R6/T7: a missing or stale file is the signal a
 # degraded session uses to say so, in the SessionStart brief).
 # =========================================================================
+# Report the release that is actually live, not the one this run tried to
+# build: when the flip is refused above, `sha` naming the rejected revision
+# would make the degraded session look current at exactly the moment the
+# status file matters most.
+ACTIVE=$REV
+if [ "$DRY_RUN" = no ]; then
+  target=$(readlink "$CONFIG_DIR/current" 2>/dev/null) || target=
+  [ -n "$target" ] && ACTIVE=${target##*/}
+fi
+
 BRANCH=$(git -C "$SEED" rev-parse --abbrev-ref HEAD 2>/dev/null) || BRANCH=main
 [ "$BRANCH" = HEAD ] && BRANCH=main   # detached checkout -- not expected yet, but not fatal
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 COMPLETE=true
 [ "$missing" -gt 0 ] && COMPLETE=false
 [ "$failed" -gt 0 ] && COMPLETE=false
+[ "$refused" -gt 0 ] && COMPLETE=false   # an allowlisted entry that did not install
 
 if [ "$DRY_RUN" = yes ]; then
   say "would write $STATUS_FILE (complete: $COMPLETE)"
@@ -344,7 +401,7 @@ else
 {
   "channel": "$BRANCH",
   "tag": null,
-  "sha": "$REV",
+  "sha": "$ACTIVE",
   "installed_at": "$NOW",
   "complete": $COMPLETE,
   "source": "cloud-session-setup.sh"
@@ -354,5 +411,5 @@ fi
 
 say "$installed staged, $linked linked, $refused refused, $missing missing, $failed failed"
 say "seed checkout: $SEED"
-say "config: $CONFIG_DIR/current -> releases/$REV (complete: $COMPLETE)"
+say "config: $CONFIG_DIR/current -> releases/$ACTIVE (complete: $COMPLETE)"
 exit 0
