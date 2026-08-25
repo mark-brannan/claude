@@ -29,6 +29,11 @@ set -uf
 
 SEED="${DOTFILES_SEED:-$HOME/.local/share/dotfiles-seed}"
 BACKUP="$HOME/.dotfiles-replaced"
+# Versioned releases + the "current" symlink that makes an install atomic --
+# see "Stage" and "Flip" below. Overridable so a test run doesn't touch a
+# real $HOME/.claude-config.
+CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-config}"
+STATUS_FILE="$HOME/.claude/.sync-status.json"
 DRY_RUN=no
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=yes
 
@@ -66,25 +71,26 @@ INSTALL="
 .local/bin/metrics-preview.sh
 "
 
-# --- what to prune -------------------------------------------------------
-# Directories this script OWNS ENTIRELY: anything in them that is not in
-# INSTALL is a leftover from an older seed and is removed. Seeding without
-# pruning is why a deleted hook keeps running -- the container seeded it
-# once, the repo dropped it, and the $HOME copy is still there and still
-# wins. The $CLAUDE_PROJECT_DIR fallback does not save you: it fires only
-# when the $HOME path is ABSENT, which is exactly not this case.
+# --- what is wholly owned by this installer -------------------------------
+# Directories entirely populated by INSTALL entries below them: linked into
+# $HOME as a single symlink to the staged tree rather than mirrored file by
+# file. Nothing else ever writes here, so nothing is lost by treating the
+# whole directory as one unit -- and a directory INSTALL later drops from
+# these needs no separate prune step, because the next stage simply doesn't
+# contain it (see "Stage" below).
 #
 # Only wholly-owned leaf directories go here. `.claude` itself must NEVER
 # appear: it also holds state/, projects/, todos/ and settings.local.json,
 # none of which this script put there.
-PRUNE_DIRS='.claude/hooks .claude/rules'
+OWNED_DIRS='.claude/hooks .claude/rules'
 
-# A tripwire for PRUNE_DIRS, in the same spirit as SKIP_GLOBS: these are
-# shared directories that hold files this script never put there, so a prune
-# of one would delete a stranger's work. `.claude` is the live example --
-# INSTALL names files directly under it, which would otherwise make it look
-# prunable, and settings.local.json, state/ and projects/ all live there.
-PRUNE_NEVER='. .claude .config .local .local/bin .ssh'
+# A tripwire for OWNED_DIRS, in the same spirit as SKIP_GLOBS: these are
+# shared directories that hold files this script never put there, so linking
+# one as a whole would hide a stranger's files behind the symlink swap.
+# `.claude` is the live example -- INSTALL names files directly under it,
+# which would otherwise make it look owned, and settings.local.json, state/
+# and projects/ all live there.
+OWNED_NEVER='. .claude .config .local .local/bin .ssh'
 
 # The continuity hooks read and write the private state repo
 # (claude_prompts_scratch). This script cannot clone it -- a VM has no
@@ -181,60 +187,22 @@ fi
 
 
 # =========================================================================
-# Overwrite policy
+# Stage — build the next release in full, touching nothing under $HOME.
 # =========================================================================
-# Overwriting is the point on an ephemeral VM, but it is never silent and
-# never irreversible within the session:
-#   missing      -> install
-#   identical    -> no-op
-#   symlink      -> refuse (that is yadm-alt or another manager's file)
-#   differs      -> copy the old one to ~/.dotfiles-replaced/, then overwrite
-install_file() {
-  src=$1; rel=$2; dst="$HOME/$rel"
+# T3 (partial failure -> mixed instruction set) is fixed here, not by care
+# at install time: this stage either produces a complete tree or it doesn't,
+# and $HOME never sees the difference until the flip below. A file dropped
+# from INSTALL simply isn't copied -- no separate prune step needed, unlike
+# the old per-file-copy design this replaced.
+REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null) || REV=unknown
+STAGE="$CONFIG_DIR/releases/$REV"
+STAGE_TMP="$CONFIG_DIR/releases/.tmp.$$"
+CURRENT_TMP="$CONFIG_DIR/.current.$$"
+# A crash or interrupt mid-stage/mid-flip must never leave a half-built temp
+# behind for the next run to trip over -- both names are unique to this PID.
+trap 'rm -rf "$STAGE_TMP" "$CURRENT_TMP"' EXIT INT TERM
 
-  if [ -L "$dst" ]; then
-    warn "  REFUSED $rel — destination is a symlink, left alone"
-    refused=$((refused + 1)); return
-  fi
-
-  if [ -e "$dst" ] && cmp -s "$src" "$dst"; then
-    same=$((same + 1)); return
-  fi
-
-  if [ -e "$dst" ]; then
-    if [ "$DRY_RUN" = yes ]; then
-      say "  would REPLACE $rel (backup to ~/.dotfiles-replaced/$rel)"
-    else
-      mkdir -p "$BACKUP/$(dirname "$rel")" && cp -a "$dst" "$BACKUP/$rel" || {
-        warn "  FAILED to back up $rel — not overwriting"
-        failed=$((failed + 1)); return
-      }
-      cp -a "$src" "$dst" &&
-        say "  replaced $rel (old copy: ~/.dotfiles-replaced/$rel)" ||
-        { warn "  FAILED $rel"; failed=$((failed + 1)); return; }
-    fi
-    replaced=$((replaced + 1))
-  else
-    if [ "$DRY_RUN" = yes ]; then
-      say "  would install $rel"
-    else
-      mkdir -p "$(dirname "$dst")" && cp -a "$src" "$dst" ||
-        { warn "  FAILED $rel"; failed=$((failed + 1)); return; }
-      say "  installed $rel"
-    fi
-    installed=$((installed + 1))
-  fi
-}
-
-installed=0; replaced=0; same=0; refused=0; missing=0; failed=0; pruned=0
-
-# Flatten INSTALL (which may name directories) to one src<TAB>relpath per line
-# in a temp file. A file, not a pipe: `find | while` would run the loop in a
-# subshell and every counter above would be discarded at the end of it.
-TAB=$(printf '\t')
-LIST=$(mktemp) || exit 0
-PRUNE=$(mktemp) || exit 0
-trap 'rm -f "$LIST" "$PRUNE"' EXIT INT TERM
+installed=0; refused=0; missing=0; failed=0; linked=0
 
 for path in $INSTALL; do
   [ -n "$path" ] || continue
@@ -255,86 +223,136 @@ for path in $INSTALL; do
     missing=$((missing + 1)); continue
   fi
 
-  if [ -d "$src" ]; then
-    # walk the tree so the policy applies per file, not as a blanket copy
-    find "$src" -type f -exec printf '%s\t%s\n' '{}' "$path" \; >>"$LIST"
-  else
-    printf '%s\t%s\n' "$src" "$path" >>"$LIST"
+  if [ "$DRY_RUN" = yes ]; then
+    say "  would stage $path"
+    installed=$((installed + 1)); continue
   fi
+
+  dst="$STAGE_TMP/$path"
+  mkdir -p "$(dirname "$dst")" && cp -a "$src" "$dst" ||
+    { warn "  FAILED to stage $path"; failed=$((failed + 1)); continue; }
+  installed=$((installed + 1))
 done
 
-KEEP=$(mktemp) || exit 0
-trap 'rm -f "$LIST" "$KEEP" "$PRUNE"' EXIT INT TERM
-
-while IFS="$TAB" read -r src path; do
-  [ -n "${src:-}" ] || continue
-  case "$src" in
-    "$SEED/$path") rel=$path ;;                    # single file
-    *)             rel="$path/${src#"$SEED/$path/"}" ;;  # file within a dir
-  esac
-  # recorded before install_file, so a refused or failed copy is still never
-  # pruned -- prune removes only what this script has no business keeping
-  printf '%s\n' "$rel" >>"$KEEP"
-  install_file "$src" "$rel"
-done <"$LIST"
+# =========================================================================
+# Flip — atomically swap what "current" points to.
+# =========================================================================
+# The rename is the whole install: every path under $HOME that reaches its
+# content through $CONFIG_DIR/current (see "Link" below) changes target in
+# one filesystem operation, so a reader never sees half of $STAGE_TMP and
+# half of the previous release. `mv -T` (GNU, guaranteed on the Ubuntu VMs
+# this script targets) is load-bearing here -- plain `mv src dst` treats an
+# existing symlink-to-directory `dst` as that directory and moves `src`
+# *into* it instead of replacing it.
+if [ "$DRY_RUN" = yes ]; then
+  say "would flip $CONFIG_DIR/current -> releases/$REV"
+elif [ ! -d "$STAGE_TMP" ]; then
+  warn "staging produced nothing usable — leaving the previous release in place"
+  failed=$((failed + 1))
+else
+  mkdir -p "$CONFIG_DIR/releases" &&
+    rm -rf "$STAGE" &&
+    mv "$STAGE_TMP" "$STAGE" &&
+    ln -s "$STAGE" "$CURRENT_TMP" &&
+    mv -T "$CURRENT_TMP" "$CONFIG_DIR/current" &&
+    say "  flipped current -> releases/$REV" ||
+    { warn "  FAILED to flip current to releases/$REV"; failed=$((failed + 1)); }
+fi
 
 # =========================================================================
-# Prune — remove files under PRUNE_DIRS that INSTALL no longer names.
+# Link — point $HOME at "current", once. Never needs to move again.
 # =========================================================================
-# Same policy as an overwrite: never silent, never irreversible within the
-# session. The old file is copied to ~/.dotfiles-replaced/ before removal.
-prune_dir() {
-  rel_dir=$1
+# Every entry INSTALL names ends up reachable at $HOME/<path>, but not as a
+# copy: a symlink through $CONFIG_DIR/current, so the Flip step above is the
+# only place content ever changes. A directory in OWNED_DIRS is linked once
+# as a whole (so a file INSTALL later drops from it just disappears, with no
+# prune step); anything else is linked individually.
+link_path() {
+  rel=$1
+  dst="$HOME/$rel"
+  target="$CONFIG_DIR/current/$rel"
 
-  # A prune must never be able to walk outside a managed directory. Three
-  # independent checks, because one bad PRUNE_DIRS entry would be `rm`ing
-  # under $HOME: the relative path is literal and local, it is actually
-  # named by INSTALL, and every file found is re-checked against its dir.
-  case "$rel_dir" in
-    ''|/*|*..*|*'*'*|*'?'*|.|./*)
-      warn "  PRUNE SKIPPED '$rel_dir' — not a safe managed path"; return ;;
-  esac
-  for never in $PRUNE_NEVER; do
-    [ "$rel_dir" = "$never" ] && {
-      warn "  PRUNE SKIPPED $rel_dir — on the never-prune list"; return; }
-  done
-  grep -q "^$rel_dir/[^/]" "$KEEP" 2>/dev/null || {
-    warn "  PRUNE SKIPPED $rel_dir — INSTALL names nothing under it"; return; }
+  if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$target" ]; then
+    return   # already correct -- most sessions, most runs
+  fi
 
-  dir="$HOME/$rel_dir"
-  [ -d "$dir" ] || return
-  [ -L "$dir" ] && { warn "  PRUNE SKIPPED $rel_dir — directory is a symlink"; return; }
-
-  # -maxdepth 1 -type f: regular files directly in the directory. Symlinks
-  # and subdirectories are left alone, as everywhere else in this script.
-  : >"$PRUNE"
-  find "$dir" -maxdepth 1 -type f -print >>"$PRUNE" 2>/dev/null
-
-  while IFS= read -r found; do
-    [ -n "${found:-}" ] || continue
-    base=${found##*/}
-    # belt and braces: the file must really be a direct child of $dir
-    [ "$found" = "$dir/$base" ] || { warn "  PRUNE SKIPPED $found — outside $rel_dir"; continue; }
-    rel="$rel_dir/$base"
-    grep -qx "$rel" "$KEEP" 2>/dev/null && continue   # in INSTALL, keep
-
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    # A real file/dir here (or a symlink to somewhere else) is either a
+    # leftover from the old copy-based installer or something else's --
+    # never silently discarded, same policy as everywhere else in this
+    # script: back it up, then replace it.
     if [ "$DRY_RUN" = yes ]; then
-      say "  would PRUNE $rel (backup to ~/.dotfiles-replaced/$rel)"
-      pruned=$((pruned + 1)); continue
+      say "  would replace $rel with a symlink (backup to ~/.dotfiles-replaced/$rel)"
+      linked=$((linked + 1)); return
     fi
-    mkdir -p "$BACKUP/$rel_dir" && cp -a "$found" "$BACKUP/$rel" || {
-      warn "  FAILED to back up $rel — not pruning"; failed=$((failed + 1)); continue; }
-    rm -f "$found" &&
-      say "  pruned $rel — no longer in INSTALL (old copy: ~/.dotfiles-replaced/$rel)" ||
-      { warn "  FAILED to prune $rel"; failed=$((failed + 1)); continue; }
-    pruned=$((pruned + 1))
-  done <"$PRUNE"
+    mkdir -p "$BACKUP/$(dirname "$rel")" && rm -rf "${BACKUP:?}/${rel:?}" 2>/dev/null
+    cp -a "$dst" "$BACKUP/$rel" || {
+      warn "  FAILED to back up $rel — not linking"; failed=$((failed + 1)); return; }
+    rm -rf "$dst"
+  fi
+
+  if [ "$DRY_RUN" = yes ]; then
+    say "  would link $rel -> current/$rel"
+    linked=$((linked + 1)); return
+  fi
+  mkdir -p "$(dirname "$dst")" &&
+    ln -s "$target" "$dst" &&
+    { say "  linked $rel -> current/$rel"; linked=$((linked + 1)); } ||
+    { warn "  FAILED to link $rel"; failed=$((failed + 1)); }
 }
 
-for d in $PRUNE_DIRS; do
-  prune_dir "$d"
+for path in $INSTALL; do
+  [ -n "$path" ] || continue
+  owned=no
+  for dir in $OWNED_DIRS; do
+    case "$path" in
+      "$dir"/*) owned=yes; break ;;
+    esac
+  done
+  [ "$owned" = yes ] && continue   # reachable via its OWNED_DIRS symlink
+  link_path "$path"
 done
 
-say "$installed installed, $replaced replaced, $same unchanged, $pruned pruned, $refused refused, $missing missing, $failed failed"
+for dir in $OWNED_DIRS; do
+  blocked=no
+  for never in $OWNED_NEVER; do
+    [ "$dir" = "$never" ] && { blocked=yes; break; }
+  done
+  if [ "$blocked" = yes ]; then
+    warn "  REFUSED to link $dir — on the never-own list"
+    continue
+  fi
+  link_path "$dir"
+done
+
+# =========================================================================
+# Status — written last, so its mere presence with complete:true means the
+# install actually finished (R6/T7: a missing or stale file is the signal a
+# degraded session uses to say so, in the SessionStart brief).
+# =========================================================================
+BRANCH=$(git -C "$SEED" rev-parse --abbrev-ref HEAD 2>/dev/null) || BRANCH=main
+[ "$BRANCH" = HEAD ] && BRANCH=main   # detached checkout -- not expected yet, but not fatal
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+COMPLETE=true
+[ "$missing" -gt 0 ] && COMPLETE=false
+[ "$failed" -gt 0 ] && COMPLETE=false
+
+if [ "$DRY_RUN" = yes ]; then
+  say "would write $STATUS_FILE (complete: $COMPLETE)"
+else
+  mkdir -p "$(dirname "$STATUS_FILE")" && cat >"$STATUS_FILE" <<EOF
+{
+  "channel": "$BRANCH",
+  "tag": null,
+  "sha": "$REV",
+  "installed_at": "$NOW",
+  "complete": $COMPLETE,
+  "source": "cloud-session-setup.sh"
+}
+EOF
+fi
+
+say "$installed staged, $linked linked, $refused refused, $missing missing, $failed failed"
 say "seed checkout: $SEED"
+say "config: $CONFIG_DIR/current -> releases/$REV (complete: $COMPLETE)"
 exit 0
