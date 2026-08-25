@@ -236,9 +236,20 @@ if [ -f "$ACTIVITY_FILE" ]; then
   fi
 fi
 
-# Update activity file with new timestamps
+# Update activity file with new timestamps. Both fields take the max of what
+# we computed and whatever is on disk now: parallel sessions on this machine
+# read and write this file independently, so between the read above and this
+# write another session may have recorded newer activity or a later break.
+# Taking the max makes concurrent writers idempotent instead of letting the
+# last one to finish drag the break timer backwards.
+cur_json=$(jq -c '{last_activity_timestamp, last_break_timestamp}' \
+  "$ACTIVITY_FILE" 2>/dev/null) || cur_json='{}'
+[ -n "$cur_json" ] || cur_json='{}'
 jq -n --argjson la "$now_ts" --argjson lb "${last_break_ts:-0}" \
-  '{last_activity_timestamp: $la, last_break_timestamp: $lb}' > "$ACTIVITY_FILE.$$" 2>/dev/null \
+  --argjson c "$cur_json" \
+  '{last_activity_timestamp: ([$la, ($c.last_activity_timestamp // 0)] | max),
+    last_break_timestamp:    ([$lb, ($c.last_break_timestamp    // 0)] | max)}' \
+  > "$ACTIVITY_FILE.$$" 2>/dev/null \
   && mv -f "$ACTIVITY_FILE.$$" "$ACTIVITY_FILE" 2>/dev/null || rm -f "$ACTIVITY_FILE.$$" 2>/dev/null
 
 tmp="$OUT.$$"
