@@ -266,6 +266,17 @@ printf '%s\n' "$metrics" | jq -c \
 # event, a pulse tick, the end of the session -- and never sent to the
 # model, so the running decision count costs nothing to display.
 if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
+  # night_nag needs Pacific time, not the host's TZ -- an ephemeral/cloud
+  # session usually runs UTC, which read as "LATE!" all evening. Compute the
+  # US/Pacific UTC offset here (handles PST/PDT) and hand it to jq as seconds,
+  # since jq has no timezone database of its own.
+  TZOFF=$(TZ="America/Los_Angeles" date +%z | awk '{
+    sign = (substr($0,1,1) == "-") ? -1 : 1
+    hh = substr($0,2,2) + 0
+    mm = substr($0,4,2) + 0
+    print sign * (hh * 3600 + mm * 60)
+  }')
+  export TZOFF
   jq -c -L "$HOOK_DIR" \
     'include "lib-metrics-fmt"; {systemMessage: block}' "$OUT" 2>/dev/null
 fi

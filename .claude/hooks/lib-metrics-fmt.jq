@@ -107,10 +107,13 @@ def split: " ☺ \(.human_seconds | dur)/⚙ \(.agent_seconds | dur)";
 # statusline, which renders too often for an escalating nag to feel like
 # anything but noise.
 
-# Local hour via jq's `localtime`, which reads the *host's* TZ (the one the
-# statusline process actually runs under) -- not UTC, not a hardcoded zone.
+# Pacific hour, not the host's TZ. An ephemeral/cloud session's host clock
+# is usually UTC, which made this fire "LATE!" every Pacific evening. TZOFF
+# is the US/Pacific UTC offset in seconds, an env var the caller computes
+# (jq has no timezone database of its own); defaults to PST (-8h) if unset.
 def night_nag:
-  (now | localtime) as $lt
+  (($ENV.TZOFF // "-28800") | tonumber) as $tzoff
+  | (now + $tzoff | gmtime) as $lt
   | ($lt[3]) as $h24
   | ($lt[4]) as $m
   | if $h24 >= 22 or $h24 < 5
