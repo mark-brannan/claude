@@ -151,7 +151,9 @@ changes bypass review, while a bot-skip filter *narrower* than the merge
 rule leaves a board-only PR waiting on a bot it was supposed to be exempt
 from. This does not apply to a repo whose board edits already go straight
 to `main` with no PR at all (e.g. `claude_prompts_scratch`) — there's no PR
-here to auto-merge.
+here to auto-merge. Nor does it apply to dotfiles itself: this repo has no
+board file to write the checklist against — see `CLAUDE.md`'s "This repo is
+public" section.
 
 ### Babysitting a PR is cheap; polling for it is not
 
