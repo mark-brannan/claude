@@ -118,6 +118,41 @@ project-specific facts belong in that project's own CLAUDE.md.
 - Don't ask "want me to watch this PR?" — subscribe yourself, or don't,
   per the token-budget rule below. Either way, no question.
 
+### A board-only PR merges itself
+
+Ported from `signalk-noaa-space-weather/AGENTS.md`, 2026-08-26 — the pattern
+was write-once there; this generalizes it for any repo whose board/state file
+lives inside the repo and is edited via PR (a cloud session pinned to a
+branch is the case that comes up, per each repo's own branch-vs-main rule).
+
+A PR whose diff touches **only** the board/state file (`kanban.md` or
+whatever the repo names it) needs no review and no approval to ask for —
+it's a card, not code; nothing installs it, and the next session to read the
+board fixes anything wrong with it in the same breath it's reading it in
+anyway. Only wire this up on a repo where PR authorship is trusted (solo
+maintainer, own bots) — the board is exactly the file a session-start hook
+reads into every future session's context, so skipping review on it is
+skipping review on a live prompt-injection surface, not just inert data.
+Set this up once per repo, not per PR:
+
+- Repo settings: auto-merge enabled, branch deletes on merge.
+- Every review bot the repo runs (CodeRabbit, `claude-review`, etc.) is
+  filtered to skip when the board file is the *entire* diff — same test the
+  merge rule uses. Without this, a slow bot's finding lands as a comment on
+  an already-merged PR, which nobody reads.
+- The PR itself: `gh pr merge --squash --auto --delete-branch` as soon as
+  whatever required check the repo has (if any) goes green — often
+  immediately, since a board-only diff triggers nothing else.
+
+Keep the merge-rule diff test and the bot skip-filters matched to each
+other — the two can drift in either direction, and each is wrong a
+different way: a bot-skip filter *wider* than the merge rule lets non-board
+changes bypass review, while a bot-skip filter *narrower* than the merge
+rule leaves a board-only PR waiting on a bot it was supposed to be exempt
+from. This does not apply to a repo whose board edits already go straight
+to `main` with no PR at all (e.g. `claude_prompts_scratch`) — there's no PR
+here to auto-merge.
+
 ### Babysitting a PR is cheap; polling for it is not
 
 - **Past 60% of the context window — ~120k on the default 200k — don't
