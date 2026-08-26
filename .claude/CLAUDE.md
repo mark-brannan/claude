@@ -225,6 +225,11 @@ and the exact wording are gone and what is left is unactionable. Discovery
 is the last moment the evidence still exists. Writing the card is capture,
 not activation — the work still waits for a pull.
 
+**A unilateral call — deleting someone else's work, cutting scope, reversing
+a prior decision — gets a card the moment it's made, not when review flags
+it.** A PR comment defending the call afterward doesn't substitute; it's
+context for the reviewer, not tracked anywhere the continuity system looks.
+
 One file, two sections — `## Yours` and `## Claude's` — because the useful
 edges cross between them: an agent's card is routinely blocked on mine, and
 two files would show each list clear while the work sits deadlocked. The
