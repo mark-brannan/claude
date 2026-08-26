@@ -253,7 +253,21 @@ session ends with work still to do, end with the follow-up prompt that would
 start it: ready to paste, naming the branch, PR or file it acts on. Anything
 only I can do personally is a card, referenced by link. Nothing else goes in
 a closing message. Both forms must survive the session — written so somebody
-who was not in it can act on them.
+who was not in it can act on them. **Every handoff prompt names a
+recommended model and a difficulty/effort estimate**, not just the task —
+I'm the one who launches the next session and shouldn't have to guess which
+tier it needs.
+
+**A finding that reads like a real security or credential exposure never
+goes into a public repo's tracked files** — board, log, doc, commit
+message, anywhere — until I've made the call on severity and disclosure.
+Write it to the private `claude_prompts_scratch` state repo instead
+(a public-repo card may point at it vaguely, with no specifics) and tell me
+directly, in the same turn you found it. Git history doesn't forgive a
+guess here — undoing a public push means a force-push rewrite, real
+disruption, not an edit. When genuinely unsure whether something rises to
+this level, treat it as if it does; the cost of a false positive is one
+extra private file, the cost of a false negative is already public.
 
 ## Maintenance
 
