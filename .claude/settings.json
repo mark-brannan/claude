@@ -38,6 +38,11 @@
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/no-git-reset-hard.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
             "statusMessage": "Checking for git reset --hard"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-pkill.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
+            "statusMessage": "Checking for pkill"
           }
         ]
       },
