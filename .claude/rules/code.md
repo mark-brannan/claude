@@ -109,6 +109,17 @@ project-specific facts belong in that project's own CLAUDE.md.
   and merge conflicts are mine, round after round, until every check is
   green and every automated thread is answered or resolved. A red check is
   never handed over as a status report.
+- **CodeRabbit findings get closed the loop, not skimmed.** Read every
+  actionable comment on the PR, not just the top-level summary line — it
+  edits comments in place to mark them "✅ Addressed in commit X" once a fix
+  lands, so a finding that looks unresolved from the summary may already be
+  fixed, and one that looks handled may not be. For each: verify against
+  current code, fix or state why not, then **reply on the thread with the
+  evidence and resolve it** — a repo ruleset can require
+  `required_review_thread_resolution` and silently block the merge until you
+  do, independent of check status. Scar: 2026-08-27, ampacity#3 — confirmed a
+  flagged link was live, never replied or resolved the thread, merge failed
+  on branch policy.
 - "Looks good" / "I'm signing off" said before CI finishes isn't a stall —
   it's pre-authorization: push the moment CI comes back green, without
   circling back to re-confirm.
