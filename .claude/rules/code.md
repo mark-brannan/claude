@@ -234,6 +234,30 @@ public" section.
 - Watch for parallel implementations, repeated state machines, repeated
   validation flows, and copy-paste feature development. Those are the smell.
 
+## Screenshots and Playwright
+
+- **Every browser launch defaults to a light background unless told
+  otherwise, and that default is per-invocation** — a repo's checked-in
+  capture script can hardcode `colorScheme: 'dark'` and still leave every
+  ad-hoc Playwright script (a throwaway `chromium.launch()` to eyeball
+  something) unset, because nothing carries the setting forward. That's why
+  "always use dark" corrections don't stick: each new script is a fresh
+  default, not a continuation of the last one.
+- **So set it explicitly, every time, in the script itself** — not as a
+  one-off correction. `newContext({ colorScheme: 'dark' })` (or
+  `page.emulateMedia({ colorScheme: 'dark' })` if reusing a context), before
+  `goto`. Do this whether the script is a permanent repo asset or a
+  five-line throwaway.
+- Exception: the page being captured has no dark mode at all (a vendor admin
+  UI, a light-only third-party page). Then light is correct — say so in a
+  comment so the choice reads as deliberate, not missed.
+- If a project's own capture tooling already threads a `--theme`/`theme:`
+  option (check for one before adding a flag), pass dark through that
+  instead of hardcoding — see this repo's
+  [scripts/screenshots/capture.mjs](scripts/screenshots/capture.mjs) and
+  [scripts/screenshots/states.mjs](scripts/screenshots/states.mjs) for the
+  pattern.
+
 ## Verification
 
 - **Verify an identifier exists before using it** — enum values, icon names,
