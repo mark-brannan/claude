@@ -218,6 +218,20 @@ public" section.
   session's last response is invisible the moment that session scrolls out
   of view.
 
+## Comments and docs
+
+- **Bias toward fewer comments.** Add one only where a reader would likely
+  trip on non-obvious behavior later — a why, not a what. Default to a
+  single line; two only when genuinely needed, and say the essential thing
+  plainly rather than reasoning through it in prose.
+- **Don't touch README/docs/design-docs on a small or mechanical change**
+  unless skipping the edit would leave them factually wrong. A defensive
+  guard, a rename, a bug fix: code and tests only. Scar: repeated doc/comment
+  churn on past PRs that cost review attention without changing a decision.
+- Tests may carry more description than production code — lean on names,
+  `it.each` labels, and assertion text to self-document rather than adding
+  narration comments above them.
+
 ## Publishing
 
 - **npm publish: no OTP.** My npm account uses browser 2FA with a passkey.
