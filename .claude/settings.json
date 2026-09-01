@@ -1,24 +1,7 @@
 {
-  "enabledPlugins": {
-    "discord@claude-plugins-official": false,
-    "signalk-registry@sailingnaturali": false
-  },
-  "extraKnownMarketplaces": {
-    "sailingnaturali": {
-      "source": {
-        "source": "github",
-        "repo": "sailingnaturali/claude-skills"
-      }
-    }
-  },
-  "theme": "dark",
-  "inputNeededNotifEnabled": true,
-  "agentPushNotifEnabled": true,
-  "disableClaudeAiConnectors": true,
   "env": {
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
   },
-  "crossSessionInbound": "hold",
   "permissions": {
     "allow": [
       "Bash(git branch -d claude/*)",
@@ -29,6 +12,93 @@
       "Bash(git reset --hard:*)"
     ]
   },
+  "disableClaudeAiConnectors": true,
+  "deniedMcpServers": [
+    {
+      "serverName": "Intuit_QuickBooks"
+    },
+    {
+      "serverName": "Intuit_TurboTax"
+    },
+    {
+      "serverName": "CourtListener"
+    },
+    {
+      "serverName": "Courtroom5"
+    },
+    {
+      "serverName": "Legal_Data_Hunter"
+    },
+    {
+      "serverName": "LegalZoom"
+    },
+    {
+      "serverName": "Gmail"
+    },
+    {
+      "serverName": "Google_Drive"
+    },
+    {
+      "serverName": "Google_Calendar"
+    },
+    {
+      "serverName": "Evernote_MCP"
+    },
+    {
+      "serverName": "Audible"
+    },
+    {
+      "serverName": "Autodesk_Product_Help"
+    },
+    {
+      "serverName": "DocuSeal"
+    },
+    {
+      "serverName": "Docusign"
+    },
+    {
+      "serverName": "Dropbox"
+    },
+    {
+      "serverName": "Harvey"
+    },
+    {
+      "serverName": "IFTTT"
+    },
+    {
+      "serverName": "Lucid"
+    },
+    {
+      "serverName": "Postman"
+    },
+    {
+      "serverName": "PubMed"
+    },
+    {
+      "serverName": "Scholar_Gateway"
+    },
+    {
+      "serverName": "SignNow"
+    },
+    {
+      "serverName": "Spotify"
+    },
+    {
+      "serverName": "Superhuman_Docs"
+    },
+    {
+      "serverName": "Taskrabbit_Booking_Assistance"
+    },
+    {
+      "serverName": "Todoist"
+    },
+    {
+      "serverName": "Trello"
+    },
+    {
+      "serverName": "Zapier"
+    }
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -203,94 +273,26 @@
       }
     ]
   },
-  "deniedMcpServers": [
-    {
-      "serverName": "Intuit_QuickBooks"
-    },
-    {
-      "serverName": "Intuit_TurboTax"
-    },
-    {
-      "serverName": "CourtListener"
-    },
-    {
-      "serverName": "Courtroom5"
-    },
-    {
-      "serverName": "Legal_Data_Hunter"
-    },
-    {
-      "serverName": "LegalZoom"
-    },
-    {
-      "serverName": "Gmail"
-    },
-    {
-      "serverName": "Google_Drive"
-    },
-    {
-      "serverName": "Google_Calendar"
-    },
-    {
-      "serverName": "Evernote_MCP"
-    },
-    {
-      "serverName": "Audible"
-    },
-    {
-      "serverName": "Autodesk_Product_Help"
-    },
-    {
-      "serverName": "DocuSeal"
-    },
-    {
-      "serverName": "Docusign"
-    },
-    {
-      "serverName": "Dropbox"
-    },
-    {
-      "serverName": "Harvey"
-    },
-    {
-      "serverName": "IFTTT"
-    },
-    {
-      "serverName": "Lucid"
-    },
-    {
-      "serverName": "Postman"
-    },
-    {
-      "serverName": "PubMed"
-    },
-    {
-      "serverName": "Scholar_Gateway"
-    },
-    {
-      "serverName": "SignNow"
-    },
-    {
-      "serverName": "Spotify"
-    },
-    {
-      "serverName": "Superhuman_Docs"
-    },
-    {
-      "serverName": "Taskrabbit_Booking_Assistance"
-    },
-    {
-      "serverName": "Todoist"
-    },
-    {
-      "serverName": "Trello"
-    },
-    {
-      "serverName": "Zapier"
-    }
-  ],
   "statusLine": {
     "type": "command",
     "command": "claude-statusline-powerline"
-  }
+  },
+  "enabledPlugins": {
+    "discord@claude-plugins-official": false,
+    "signalk-registry@sailingnaturali": false,
+    "github@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "sailingnaturali": {
+      "source": {
+        "source": "github",
+        "repo": "sailingnaturali/claude-skills"
+      }
+    }
+  },
+  "theme": "dark",
+  "crossSessionInbound": "hold",
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true
 }
