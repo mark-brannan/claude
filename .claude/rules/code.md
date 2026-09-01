@@ -120,6 +120,15 @@ project-specific facts belong in that project's own CLAUDE.md.
   do, independent of check status. Scar: 2026-08-27, ampacity#3 — confirmed a
   flagged link was live, never replied or resolved the thread, merge failed
   on branch policy.
+- **A repeated CodeRabbit comment gets re-verified live, not answered from
+  turn memory.** When the same finding text shows up again (re-pasted, or a
+  fresh review pass after a push), re-fetch the actual thread state — GraphQL
+  `reviewThreads` (path, `isResolved`, comment body) — before telling Mark
+  it's already handled, even when you're confident it's the same one. State
+  what you found: thread id, resolved status, which commit fixed it. Scar:
+  2026-08-28, signalk-noaa-space-weather#214 — said "nothing further to do"
+  from memory of an earlier fix; the conclusion happened to be right, but it
+  was asserted, not checked, on the very question "is this fully closed."
 - "Looks good" / "I'm signing off" said before CI finishes isn't a stall —
   it's pre-authorization: push the moment CI comes back green, without
   circling back to re-confirm.
