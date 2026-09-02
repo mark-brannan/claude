@@ -6,6 +6,7 @@
     "allow": [
       "Bash(git branch -d claude/*)",
       "Bash(git branch -D claude/*)",
+      "Bash(git push origin HEAD:main)",
       "mcp__Claude_Code_Remote__add_repo"
     ],
     "deny": [
@@ -281,7 +282,8 @@
     "discord@claude-plugins-official": false,
     "signalk-registry@sailingnaturali": false,
     "github@claude-plugins-official": true,
-    "security-guidance@claude-plugins-official": true
+    "security-guidance@claude-plugins-official": true,
+    "mergify@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "sailingnaturali": {
