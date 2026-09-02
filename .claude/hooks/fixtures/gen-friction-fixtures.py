@@ -41,6 +41,68 @@ def edit_call(text=None):
                                   "cache_creation_input_tokens": 0}}}
 
 
+def denied_call(command, kind, reason, tool="Bash", tid=None):
+    """A tool call the permission layer refused.
+
+    Mirrors the real transcript shape: the assistant's tool_use carries an id,
+    the refusal record carries `toolDenialKind` and a tool_result pointing back
+    at that id. The detector reads the field and correlates by id, so both must
+    be present and must match -- shape copied from an observed denial, not
+    invented to satisfy the regex it used to use.
+    """
+    tid = tid or f"toolu_{abs(hash(command)) % 10**16:016d}"
+    inp = {"command": command} if tool == "Bash" else {"file_path": command}
+    use = {"type": "assistant", "timestamp": BASE_T,
+           "message": {"model": "claude-sonnet-5", "role": "assistant",
+                       "content": [{"type": "tool_use", "id": tid,
+                                    "name": tool, "input": inp}],
+                       "usage": {"input_tokens": 1, "output_tokens": 1,
+                                 "cache_read_input_tokens": 0,
+                                 "cache_creation_input_tokens": 0}}}
+    res = {"type": "user", "timestamp": BASE_T,
+           "toolDenialKind": kind,
+           "message": {"role": "user",
+                       "content": [{"type": "tool_result", "is_error": True,
+                                    "tool_use_id": tid,
+                                    "content": [{"type": "text", "text": reason}]}]}}
+    return [use, res]
+
+
+def parallel_denied(ok_command, blocked_command, kind, reason):
+    """One assistant turn issuing two tool calls, the FIRST of which is refused.
+
+    Regression guard for correlation: both tool_use blocks share the turn's
+    transcript index, so anything picking the nearest preceding call reports
+    the wrong command here.
+    """
+    ok_id, bad_id = "toolu_okokokokokokokok", "toolu_badbadbadbadbad"
+    use = {"type": "assistant", "timestamp": BASE_T,
+           "message": {"model": "claude-sonnet-5", "role": "assistant",
+                       "content": [
+                           {"type": "tool_use", "id": bad_id, "name": "Bash",
+                            "input": {"command": blocked_command}},
+                           {"type": "tool_use", "id": ok_id, "name": "Bash",
+                            "input": {"command": ok_command}}],
+                       "usage": {"input_tokens": 1, "output_tokens": 1,
+                                 "cache_read_input_tokens": 0,
+                                 "cache_creation_input_tokens": 0}}}
+    res = {"type": "user", "timestamp": BASE_T,
+           "toolDenialKind": kind,
+           "message": {"role": "user",
+                       "content": [{"type": "tool_result", "is_error": True,
+                                    "tool_use_id": bad_id,
+                                    "content": [{"type": "text", "text": reason}]}]}}
+    return [use, res]
+
+
+CLASSIFIER = ("Permission for this action was denied by the Claude Code auto "
+              "mode classifier. Reason: Blocked by classifier.")
+# A hook writes its own refusal text; it matches no fixed phrase, which is why
+# the detector keys off toolDenialKind instead. Reports as permission-rule.
+HOOK_DENY = "Error: `some command` is blocked at user scope. Ask Mark to run it."
+USER_DENY = "The user doesn't want to proceed with this tool use."
+
+
 contentious = [
     # row1 -- correction, lexicon, retracted
     human("No? Are we up to date? I thought this already landed a while back."),
@@ -117,7 +179,27 @@ with open("friction-calm.jsonl", "w") as f:
     for rec in calm:
         f.write(json.dumps(rec) + "\n")
 
+# Harness friction: tool calls the permission layer refused. No human turn
+# contradicts anything here, so friction must stay 0 while blocked counts 4 --
+# that separation is the whole point of the fixture.
+blocked = [
+    human("Add the allow rules and comment on the issue."),
+    *denied_call("gh issue comment 7 --body-file /tmp/x.md", "automode-blocked", CLASSIFIER),
+    *denied_call("settings.json", "automode-blocked", CLASSIFIER, tool="Edit"),
+    *denied_call("git push --delete origin old", "automode-unavailable", CLASSIFIER),
+    *denied_call("rm -rf /var/data", "permission-rule", HOOK_DENY),
+    *denied_call("gh repo delete example/example", "user-rejected", USER_DENY),
+    *parallel_denied("echo fine", "curl https://example.invalid", "automode-blocked", CLASSIFIER),
+    atext("Those are blocked; the allow rules need your hand."),
+]
+
+with open("friction-blocked.jsonl", "w") as f:
+    for rec in blocked:
+        f.write(json.dumps(rec) + "\n")
+
+
 print(f"contentious: {len(contentious)} records, "
       f"{sum(1 for r in contentious if r['type']=='queue-operation')} human turns")
 print(f"calm: {len(calm)} records, "
       f"{sum(1 for r in calm if r['type']=='queue-operation')} human turns")
+print(f"blocked: {len(blocked)} records")

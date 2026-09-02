@@ -232,6 +232,22 @@ public" section.
   session's last response is invisible the moment that session scrolls out
   of view.
 
+## Provisional until decided
+
+- **A fast first version is not the design.** Decidedness is a gradient and
+  usually unstated, so default to treating a decision as soft unless Mark
+  has said it is settled or it is written into a reviewed spec. Reading a
+  firm decision as soft costs one re-ask; reading a soft one as firm anchors
+  him to something he meant as temporary, which is the expensive direction.
+- **Mark provisional code where the next reader is standing** — in the file,
+  as a pointer to the issue holding the open question, never a restatement
+  of it. A link stays true; a summary rots and then lies with authority.
+- **On something provisional, the default recommendation is "decide it or
+  harden it,"** never "close the question because working code exists."
+- Scar, 2026-09-01: on dotfiles #60, an explicitly fast v1, I recommended
+  closing #59 and deleting its policy file — twice treating what shipped
+  first as what was intended.
+
 ## Comments and docs
 
 - **Bias toward fewer comments.** Add one only where a reader would likely

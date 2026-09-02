@@ -161,11 +161,39 @@ check_friction() {
   fi
 }
 
+# check_blocked FIXTURE LABEL want_total want_classifier want_rule want_user
+#
+# The blocked counts correlate a denial back to its tool call by
+# tool_use_id, so a regression there moves denials between kinds (or drops
+# them) without changing anything the friction checks look at. Without this
+# the blocked fixture is a file nothing reads.
+check_blocked() {
+  fx="$1"; label="$2"; wt="$3"; wc="$4"; wr="$5"; wu="$6"
+  [ -f "$fx" ] || { bad "$label: fixture missing at $fx"; return; }
+  got=$(jq -s --arg sid "blocked-preview" --arg repo "preview" \
+          --arg branch "preview" --arg cwd "$PWD" --arg now "1970-01-01T00:00:00Z" \
+          -f "$HOOKS/session-metrics.jq" "$fx" 2>&1 | jq -c '.session.blocked' 2>&1)
+  gt=$(printf '%s' "$got" | jq -r '.total // "?"' 2>/dev/null)
+  gc=$(printf '%s' "$got" | jq -r '.classifier // "?"' 2>/dev/null)
+  gr=$(printf '%s' "$got" | jq -r '.rule // "?"' 2>/dev/null)
+  gu=$(printf '%s' "$got" | jq -r '.user // "?"' 2>/dev/null)
+  if [ "$gt" = "$wt" ] && [ "$gc" = "$wc" ] && [ "$gr" = "$wr" ] && [ "$gu" = "$wu" ]; then
+    ok "$label: total $gt [${gc} classifier, ${gr} rule, ${gu} user]"
+  else
+    bad "$label: got total=$gt classifier=$gc rule=$gr user=$gu -- want total=$wt classifier=$wc rule=$wr user=$wu"
+  fi
+}
+
 say ""
 say "--- friction acceptance"
 FIXDIR="$HOOKS/fixtures"
 check_friction "$FIXDIR/friction-contentious.jsonl" "contentious fixture" 11 2 2 7 7 2
 check_friction "$FIXDIR/friction-calm.jsonl"         "calm fixture"        0 0 0 0 0 0
+
+say ""
+say "--- blocked acceptance"
+check_blocked "$FIXDIR/friction-blocked.jsonl" "blocked fixture" 6 4 1 1
+check_blocked "$FIXDIR/friction-calm.jsonl"    "calm fixture"    0 0 0 0
 
 # Optional and advisory only: the real calibration transcripts, kept private
 # (redacted content in a public fixture was ruled out -- see

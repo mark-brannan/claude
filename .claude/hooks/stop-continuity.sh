@@ -13,6 +13,7 @@
 #   metrics/friction/<id>.jsonl   each friction event, typed by cost -- see
 #                                  claude_prompts_scratch/state/global/log/
 #                                  2026-08-21-friction-metric-spec.md
+#   metrics/blocked/<id>.jsonl    each tool call the permission layer refused
 #   log/auto/<date>-<repo>-<id>.md  a resumable checkpoint the next session reads
 #
 # One file per session, not one shared append-only log: parallel sessions are
@@ -55,7 +56,7 @@ metrics=$(jq -s \
 [ -n "$metrics" ] || exit 0
 
 SD=$(state_dir)
-mkdir -p "$SD/metrics/sessions" "$SD/metrics/decisions" "$SD/metrics/friction" \
+mkdir -p "$SD/metrics/sessions" "$SD/metrics/decisions" "$SD/metrics/friction" "$SD/metrics/blocked" \
          "$SD/log/auto" 2>/dev/null || exit 0
 
 # Commit count comes from git, never from grepping the transcript for
@@ -71,6 +72,7 @@ printf '%s\n' "$metrics" \
   > "$SD/metrics/sessions/$sid.json"
 printf '%s\n' "$metrics" | jq -c '.decisions[]' > "$SD/metrics/decisions/$sid.jsonl"
 printf '%s\n' "$metrics" | jq -c '.friction[]' > "$SD/metrics/friction/$sid.jsonl"
+printf '%s\n' "$metrics" | jq -c '.blocked[]' > "$SD/metrics/blocked/$sid.jsonl"
 
 # The live snapshot has served its purpose; the finished session file
 # supersedes it, so drop it rather than leaving two records of one session.
@@ -92,7 +94,8 @@ ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
     "- \(.user_turns) prompts, \(.assistant_turns) turns, \(.tool_calls) tool calls",
     "- \(.output_tokens) output tokens, context peak \(.context_peak)",
     "- decisions: \(.decisions.total) total (\(.decisions.scoping) scoping, \(.decisions.inline) inline, \(.decisions.gate) gate)",
-    "- friction: \(.friction.total) total (\(.friction.correction) correction, \(.friction.override) override, \(.friction.rebuke) rebuke, \(.friction.pushback) pushback)"'
+    "- friction: \(.friction.total) total (\(.friction.correction) correction, \(.friction.override) override, \(.friction.rebuke) rebuke, \(.friction.pushback) pushback)",
+    "- blocked: \(.blocked.total // 0) tool calls refused (\(.blocked.classifier // 0) classifier, \(.blocked.rule // 0) rule, \(.blocked.user // 0) user-declined)"'
 
   if [ -n "$work_root" ]; then
     echo

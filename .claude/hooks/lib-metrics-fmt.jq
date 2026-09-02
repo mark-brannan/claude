@@ -56,6 +56,11 @@ def fric:
   else "⚡ \(.friction.total)[\(.friction.correction)/\(.friction.override)/\(.friction.rebuke)]"
   end;
 
+# Harness refusals, shown only when there are any: on a clean session the row
+# is noise, and the statusline is width-constrained.
+def blk:
+  if (.blocked.total // 0) == 0 then empty else "⛔ \(.blocked.total)" end;
+
 def turns: "⇢ \(.user_turns) ⚙ \(.tool_calls)";
 
 # Git state, the part that decides whether the chat is safe to kill. Empty
@@ -167,7 +172,7 @@ def nag: night_nag + break_nag;
 # wraps around 75 columns and the two groups together run past 90, so the
 # break is placed rather than left to the renderer -- an accidental wrap
 # lands mid-field, a deliberate one does not.
-def fields:  [cost, dec, fric];
+def fields:  [cost, dec, fric, blk];
 def fields2: [time, turns, work];
 
 # One row, for the statusline; no 'event'
