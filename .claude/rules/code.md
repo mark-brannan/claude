@@ -120,6 +120,11 @@ project-specific facts belong in that project's own CLAUDE.md.
   do, independent of check status. Scar: 2026-08-27, ampacity#3 — confirmed a
   flagged link was live, never replied or resolved the thread, merge failed
   on branch policy.
+- **Resolve threads one at a time, by id, after reading each one.** Never
+  loop over "all unresolved threads" — a review bot can post between your
+  listing and your resolve, and the loop closes findings nobody read. Scar:
+  2026-09-01, dotfiles#60 — resolved three CodeRabbit threads unread this
+  way, one of which asked to disable pre-commit hooks.
 - **A repeated CodeRabbit comment gets re-verified live, not answered from
   turn memory.** When the same finding text shows up again (re-pasted, or a
   fresh review pass after a push), re-fetch the actual thread state — GraphQL
