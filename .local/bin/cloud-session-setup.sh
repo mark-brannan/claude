@@ -64,6 +64,7 @@ INSTALL="
 .claude/hooks/no-draft-pr.sh
 .claude/hooks/no-git-reset-hard.sh
 .claude/hooks/no-unsigned-push.sh
+.claude/hooks/no-git-footguns.sh
 .claude/hooks/session-start-seed-refresh.sh
 .claude/hooks/guard-add-repo.sh
 .claude/hooks/metrics-live.sh
