@@ -107,13 +107,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/no-git-reset-hard.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
+            "command": "h=\"$HOME/.claude/hooks/no-git-reset-hard.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-git-reset-hard.sh is missing from $HOME/.claude/hooks or crashed, so git reset --hard could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
             "statusMessage": "Checking for git reset --hard"
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/no-git-footguns.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
+            "command": "h=\"$HOME/.claude/hooks/no-git-footguns.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-git-footguns.sh is missing from $HOME/.claude/hooks or crashed, so the git footguns could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
             "statusMessage": "Checking for git footguns"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-rm-tree.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-rm-tree.sh is missing from $HOME/.claude/hooks or crashed, so recursive rm could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
+            "statusMessage": "Checking for rm -r on a working directory"
           }
         ]
       },
@@ -122,7 +127,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/no-unsigned-push.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
+            "command": "h=\"$HOME/.claude/hooks/no-unsigned-push.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-unsigned-push.sh is missing from $HOME/.claude/hooks or crashed, so unsigned commits could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
             "statusMessage": "Checking for unsigned commits"
           }
         ]
