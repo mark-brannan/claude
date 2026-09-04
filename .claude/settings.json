@@ -117,6 +117,11 @@
           },
           {
             "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-checkout-home.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-checkout-home.sh is missing from $HOME/.claude/hooks or crashed, so a branch checkout in $HOME could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
+            "statusMessage": "Checking for a branch checkout in $HOME"
+          },
+          {
+            "type": "command",
             "command": "h=\"$HOME/.claude/hooks/no-rm-tree.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-rm-tree.sh is missing from $HOME/.claude/hooks or crashed, so recursive rm could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
             "statusMessage": "Checking for rm -r on a working directory"
           }
