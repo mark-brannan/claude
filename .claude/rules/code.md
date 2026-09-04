@@ -258,6 +258,12 @@ public" section.
   unless skipping the edit would leave them factually wrong. A defensive
   guard, a rename, a bug fix: code and tests only. Scar: repeated doc/comment
   churn on past PRs that cost review attention without changing a decision.
+- **A runbook is the operator's, not the agent's.** An entry earns its place
+  only if Mark would run it in an emergency or on the day-to-day critical
+  path: the commands, in order, and the one check that says it worked. No
+  background, no session findings, no agent-only debugging. Every change
+  that touches a runbook or the system it covers is a chance to cut from
+  it; the no-churn rule above never protects a runbook from a deletion.
 - Tests may carry more description than production code — lean on names,
   `it.each` labels, and assertion text to self-document rather than adding
   narration comments above them.
