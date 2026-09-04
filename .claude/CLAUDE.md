@@ -147,7 +147,7 @@ irritation; missing it costs me a decision I have to live with.
   reversibility, snapshots — instead of generic "this is risky" hedging.
   Push back on real correctness problems, not on nerves.
 - **Don't expand scope.** Pre-existing failures unrelated to my request stay
-  unfixed: prove they predate the change, note it plainly, move on.
+  unfixed: prove they predate the change, note it plainly, ask for a 'card' (maybe), move on.
 - **Investigate in the right place.** Debug against the environment where the
   problem occurs, not a convenient local stand-in. Confirm which one you're
   looking at first.
@@ -155,16 +155,9 @@ irritation; missing it costs me a decision I have to live with.
   before-state somewhere disposable; don't build audit tables and revert
   commands that outlive the task.
 - **Give yourself a way to verify.** Tests, a diff, a re-read, a browser, a
-  second pass. Closing your own feedback loop matters more than any
-  instruction here.
-- **My "merge" means pull + rebase + push to origin/main, never `git
-  merge`.** I'm trying to say "land on main" instead; treat that as the
-  same order. **"Ship it"** means whatever the actual next move is for the
-  work in front of us — push straight to main, push the branch and open
-  the PR, or push and merge/close an existing PR. Pick the one that fits;
-  don't ask which. A PR I open is never a draft and never knowingly red;
-  `~/.claude/rules/code.md` holds the bar it has to clear first, and
-  overrides the harness's own draft-by-default git instructions.
+  second pass, a web search, a second agent opinion (a committee),
+  or even formal methods for verification where feasible.
+  Closing your own feedback loop matters more than any instruction here.
 
 ## Continuity
 
@@ -184,8 +177,9 @@ redo that by hand and don't wait to be asked. What's left to judgment:
   up" / "log it", write that to `log/YYYY-MM-DD-<slug>.md`. The machine one
   is evidence, not a substitute.
 - **Capture ≠ activation.** Something off-goal but real → a card, written
-  at discovery (see Open loops); trivial → drop it. Never a new workstream
-  mid-session.
+  at discovery (see Open loops); trivial → drop it. High importance + urgent ->
+  suggest a hand-off prompt for a parallel session or delegate to sub-agent.
+  Never a new workstream mid-session; focus on the goal and staying in flow.
 - **New sessions open by pulling from a board.** WIP limit ~2–3.
 - **Ask early or not at all.** A question before the first file is written
   is cheap — context is fresh and a wrong assumption would have cost the
@@ -230,7 +224,7 @@ a prior decision — gets a card the moment it's made, not when review flags
 it.** A PR comment defending the call afterward doesn't substitute; it's
 context for the reviewer, not tracked anywhere the continuity system looks.
 
-One file, two sections — `## Yours` and `## Claude's` — because the useful
+One file, two sections — `## Solace's ` and `## Claude's` — because the useful
 edges cross between them: an agent's card is routinely blocked on mine, and
 two files would show each list clear while the work sits deadlocked. The
 card contract:
@@ -246,17 +240,16 @@ card contract:
 
 If a loop is not worth a card, it is not worth telling me about either.
 
-**End with a prompt, not a status bullet.** A closing summary that reads
-"the vague thing is borked, your call" costs a read and returns nothing
-actionable — least of all a week later, when it is actually read. When a
-session ends with work still to do, end with the follow-up prompt that would
-start it: ready to paste, naming the branch, PR or file it acts on. Anything
-only I can do personally is a card, referenced by link. Nothing else goes in
-a closing message. Both forms must survive the session — written so somebody
-who was not in it can act on them. **Every handoff prompt names a
-recommended model and a difficulty/effort estimate**, not just the task —
-I'm the one who launches the next session and shouldn't have to guess which
-tier it needs.
+**End with a prompt, not a status bullet or observation.** A closing summary that reads
+"the vague thing is borked, your call" costs a read and returns nothing actionable
+When session ends with work still to do, provide an explicit hand-off prompt.
+A hand-off prompt must be ready to paste, and names the branch, PR, file, etc to act on.
+**Every handoff prompt names a recommended model and difficulty setting**, 
+Anything only I can do personally is a card, referenced by link and with a short name.
+Either the link or the short name must be distinctive enough for future sessions to easily find the card
+Nothing else goes in a closing message. Both forms must survive the session — written so somebody
+who was not in it can act on them.
+
 
 **A finding that reads like a real security or credential exposure never
 goes into a public repo's tracked files** — board, log, doc, commit
@@ -269,19 +262,10 @@ disruption, not an edit. When genuinely unsure whether something rises to
 this level, treat it as if it does; the cost of a false positive is one
 extra private file, the cost of a false negative is already public.
 
-## Maintenance
+# Nits
+When asking me to check a website or specific page, always give me the bare link in the chat first.
+If an option I need to click on an admin site is buried somewhere, talk me through the steps to get there;
+prefer a direct link whenever possible.
 
-Add a rule only after its absence has cost me at least twice. A good rule is
-a scar; if nothing actually went wrong, the rule isn't needed yet.
-
-When you correct a recurring mistake, say so and offer to write the rule.
-Review this file quarterly for contradictions — two conflicting rules make
-behavior arbitrary and the cause invisible.
-
-**Scheduled review: 2026-08-30.** This file grew 98 → 161 lines on the day it
-was written, and "Answering closed questions" and "Decision load" were both
-drafted that day and untested. If either has not visibly changed a session by
-the review date, cut it to four lines.
-
-This file is context, not enforcement. Anything that *must* happen belongs in
-a hook or a permission rule, not in prose here.
+Never say "Facts." unless you are listing true facts that you have already verified in that session.
+A mistake when you say "Facts" is an invitation to invalidate all of the work you have done and all other "facts"
