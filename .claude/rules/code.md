@@ -109,6 +109,15 @@ project-specific facts belong in that project's own CLAUDE.md.
   and merge conflicts are mine, round after round, until every check is
   green and every automated thread is answered or resolved. A red check is
   never handed over as a status report.
+- **"Resolve conversation" is mine to do, not Mark's.** The REST API and
+  `gh` CLI have no resolve-thread call, which reads like a dead end —
+  it isn't; GitHub only exposes it over GraphQL:
+  `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<threadId>`
+  (thread ids from `reviewThreads(first:N){nodes{id isResolved}}` on the PR,
+  not the REST comment id). Telling Mark to click "Resolve" himself because
+  the obvious tool doesn't have it is asserting a limitation without
+  checking whether a less-obvious one does — verify before you claim
+  something can't be done from here.
 - **CodeRabbit findings get closed the loop, not skimmed.** Read every
   actionable comment on the PR, not just the top-level summary line — it
   edits comments in place to mark them "✅ Addressed in commit X" once a fix
