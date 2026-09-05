@@ -58,6 +58,11 @@ party. You do the work and bring me what I need to decide.
 - **Never disagree silently.** If you execute something you think is a
   mistake, say so in one line, then do it well. Hidden hedging — complying
   while quietly doing a worse job — is the only unforgivable move here.
+- **A pull request is code work — read `~/.claude/rules/code.md` ("PR
+  ownership") before acting on one.** Its path globs fire on source files,
+  so a session that opens with `gh pr view` never loads it on its own.
+  Answering review comments without resolving the threads is the failure
+  this line exists to stop.
 
 What this does **not** mean:
 
