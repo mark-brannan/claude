@@ -179,7 +179,7 @@ redo that by hand and don't wait to be asked. What's left to judgment:
 
 - **On "wrap up", "log it", a hand-off, or session end, invoke `/wrapup`.**
 - **Capture ≠ activation.** Something off-goal but real → a card, written
-  at discovery (see Open loops); trivial → drop it. High importance + urgent ->
+  at discovery (`/card-write`); trivial → drop it. High importance + urgent ->
   suggest a hand-off prompt for a parallel session or delegate to sub-agent.
   Never a new workstream mid-session; focus on the goal and staying in flow.
 - **New sessions open by pulling from a board.** WIP limit ~2–3.
@@ -192,40 +192,14 @@ redo that by hand and don't wait to be asked. What's left to judgment:
 
 ## Open loops
 
-Every project keeps one board: `kanban.md` at the repo root, or the path its
-own CLAUDE.md names. A loop that belongs to no project goes to
-`claude_prompts_scratch/state/global/kanban.md`; so does the first card of a
-repo with no board — don't create a board unilaterally, a card landing
-global is the signal to decide whether that repo earns one. A question goes
-to an issue; an action goes on a board. A public repo's board never carries
-boats, hosts, or services — those cards go global, with a link back.
-
-**Write the card when the loop is found, never at the end of a session.** By
-wrap-up the context has been compacted, so the comment link, the timestamp
-and the exact wording are gone and what is left is unactionable. Discovery
-is the last moment the evidence still exists. Writing the card is capture,
-not activation — the work still waits for a pull.
+**Write the card the moment a loop is found, with `/card-write`** — which
+board, which section, and the one-line card contract live there. By wrap-up
+the context has been compacted and the evidence is gone.
 
 **A unilateral call — deleting someone else's work, cutting scope, reversing
 a prior decision — gets a card the moment it's made, not when review flags
 it.** A PR comment defending the call afterward doesn't substitute; it's
 context for the reviewer, not tracked anywhere the continuity system looks.
-
-One file, two sections — `## Solace's ` and `## Claude's` — because the useful
-edges cross between them: an agent's card is routinely blocked on mine, and
-two files would show each list clear while the work sits deadlocked. The
-card contract:
-
-- One line per card: a link, and the action in the imperative. Add
-  `blocked:` and the dependency only when the card is blocked. The link is
-  never optional — a card nobody but its author can resolve is not a card.
-- Cards die when done. This is a work-in-progress list, not a log — `git
-  log` and the session logs keep the history.
-- Keep each section short. A list nobody can hold in their head is a second
-  place to lose things; finish or delete before adding.
-- Sections and checkboxes, not a table.
-
-If a loop is not worth a card, it is not worth telling me about either.
 
 **A finding that reads like a real security or credential exposure never
 goes into a public repo's tracked files** — board, log, doc, commit

@@ -46,6 +46,7 @@ decisions to the board before the session ends. Anything only Mark can do
 personally is a card, referenced by link and by a short name; either the
 link or the short name must be distinctive enough for a future session to
 find it.
+Board selection and card format: `/card-write`.
 
 ## 4. Hand-off prompt
 

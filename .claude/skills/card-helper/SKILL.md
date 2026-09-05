@@ -1,6 +1,6 @@
 ---
-name: card
-description: Walk the user through one open-loop card, one step at a time, with exact links, click paths and copy-paste commands. Use when they say "walk me through card N", "/card", "escort me through this", or ask to work a specific item off kanban.md or a similar open-loops list. Not for doing the work autonomously — this is for loops only the user can close, in UIs and accounts an agent cannot reach.
+name: card-helper
+description: Walk the user through one open-loop card, one step at a time, with exact links, click paths and copy-paste commands. Use when they say "walk me through card N", "/card-helper", "escort me through this", or ask to work a specific item off kanban.md or a similar open-loops list. Not for doing the work autonomously — this is for loops only the user can close, in UIs and accounts an agent cannot reach.
 ---
 
 # Walking a card
@@ -11,12 +11,12 @@ their screen outranks anything you believe about it.
 
 ## Pick the card
 
-Find the board the way the standing orders' Continuity section says to —
-this project's own `kanban.md` if it has one, else the global board. Read
-the whole file, then default to walking one card from `## Yours`: that's
-the work only the user can close, which is what this skill is for. If the
-argument names a different card or section, walk that one instead. Never
-start a second card without being asked.
+Find the board the way `/card-write` says to; its routing rules are the
+contract, don't paraphrase them here. Read the whole file, then default to
+walking one card from `## Solace's` (older boards: `## Yours`):
+that's the work only the user can close, which is what this skill is for.
+If the argument names a different card or section, walk that one instead.
+Never start a second card without being asked.
 
 ## Load the real context first
 
