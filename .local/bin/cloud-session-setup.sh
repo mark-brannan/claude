@@ -53,6 +53,7 @@ INSTALL="
 .claude/CLAUDE.md
 .claude/rules/code.md
 .claude/rules/writing.md
+.claude/skills/wrapup/SKILL.md
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq

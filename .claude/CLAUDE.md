@@ -177,10 +177,7 @@ the board and the last sessions' checkpoints in front of every session.
 an auto-checkpoint, then commits and pushes — every Stop, unprompted. Don't
 redo that by hand and don't wait to be asked. What's left to judgment:
 
-- **Narrative beats the auto-checkpoint.** The hook records what happened;
-  only you can record what it meant and what should happen next. On "wrap
-  up" / "log it", write that to `log/YYYY-MM-DD-<slug>.md`. The machine one
-  is evidence, not a substitute.
+- **On "wrap up", "log it", a hand-off, or session end, invoke `/wrapup`.**
 - **Capture ≠ activation.** Something off-goal but real → a card, written
   at discovery (see Open loops); trivial → drop it. High importance + urgent ->
   suggest a hand-off prompt for a parallel session or delegate to sub-agent.
@@ -190,23 +187,8 @@ redo that by hand and don't wait to be asked. What's left to judgment:
   is cheap — context is fresh and a wrong assumption would have cost the
   whole session. The same question mid-flight makes me reload context I
   haven't been carrying. Front-load them; ask inline only when the answer
-  blocks the current task; card the rest as they come up and bring them for
-  batch accept/edit/delete at wrap-up. The decision log types every ask
-  this way, so the ratio is checkable rather than remembered.
-- **Where state lands, settled 2026-08-19:** a project's session state
-  stays in that project's own repo. Symphony's is
-  `~/symphony/intermediate_files/claude_slop/` (kanban.md + log.md); its
-  human-facing `maintenance/log.md` and `priorities.md` get only finished,
-  high-level results. **Global and cross-cutting state** — standing
-  orders, rules, hooks, Claude tooling, anything spanning projects — goes
-  to the private repo `~/claude_prompts_scratch`, under
-  `state/global/kanban.md` and `state/global/log/`; so does state for any
-  project with no private repo of its own. Work on `main` there; `git pull
-  --rebase` before pushing. **Never into dotfiles** — it is public, and
-  session notes name boats, hosts and services. Dotfiles therefore has no
-  board of its own: its cards sit on the global board, and anything with a
-  question in it becomes a dotfiles issue the card links to. Never stage
-  one project's work under another's.
+  blocks the current task; card the rest as they come up. The decision log
+  types every ask this way, so the ratio is checkable rather than remembered.
 
 ## Open loops
 
@@ -244,17 +226,6 @@ card contract:
 - Sections and checkboxes, not a table.
 
 If a loop is not worth a card, it is not worth telling me about either.
-
-**End with a prompt, not a status bullet or observation.** A closing summary that reads
-"the vague thing is borked, your call" costs a read and returns nothing actionable
-When session ends with work still to do, provide an explicit hand-off prompt.
-A hand-off prompt must be ready to paste, and names the branch, PR, file, etc to act on.
-**Every handoff prompt names a recommended model and difficulty setting**, 
-Anything only I can do personally is a card, referenced by link and with a short name.
-Either the link or the short name must be distinctive enough for future sessions to easily find the card
-Nothing else goes in a closing message. Both forms must survive the session — written so somebody
-who was not in it can act on them.
-
 
 **A finding that reads like a real security or credential exposure never
 goes into a public repo's tracked files** — board, log, doc, commit
