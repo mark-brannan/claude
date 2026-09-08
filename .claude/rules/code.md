@@ -129,7 +129,7 @@ project-specific facts belong in that project's own CLAUDE.md.
   do, independent of check status. Scar: 2026-08-27, ampacity#3 — confirmed a
   flagged link was live, never replied or resolved the thread, merge failed
   on branch policy.
-- **Resolve threads one at a time, by id, after reading each one.** Never
+- **Resolve threads one at a time, by id, after reading and responding to each one.** Never
   loop over "all unresolved threads" — a review bot can post between your
   listing and your resolve, and the loop closes findings nobody read. Scar:
   2026-09-01, dotfiles#60 — resolved three CodeRabbit threads unread this
