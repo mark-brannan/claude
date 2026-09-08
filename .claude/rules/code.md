@@ -291,6 +291,10 @@ public" section.
 - **npm publish: no OTP.** My npm account uses browser 2FA with a passkey.
   Run plain `npm publish` and let it open (or print) the auth URL; I approve
   in my browser. Don't ask me for authenticator codes or pass `--otp`.
+- **A new package's first publish is mine, from the CLI.** Trusted-publisher
+  CI can't create a name that doesn't exist yet, and npm reports that as
+  E404 on the `PUT`, not 403. Don't edit the workflow; run `/npm-first-publish`
+  and ask me inline — not a card, it's thirty seconds.
 
 ## Design
 
