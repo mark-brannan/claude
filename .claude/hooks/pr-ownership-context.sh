@@ -29,6 +29,13 @@
 #
 # CONVENIENCE: never denies, always exits 0. A missing jq or an odd payload
 # must not stop a `gh` command.
+#
+# The repo/number extraction works clause-by-clause on a compound Bash call
+# (split on ; & |), not on the command as one string. 2026-09-08: pairing the
+# first repo match and the first number match found *anywhere* in the string
+# let a call that named an issue and a PR in one line (or two PRs) fabricate
+# a repo#number neither clause actually queried -- the Stop gate then blocked
+# on a PR that never existed.
 set -u
 
 # jq does the JSON encoding: the section is arbitrary markdown and a hand-rolled
@@ -78,11 +85,33 @@ if [ -n "$sid" ]; then
         # the tmp file must not fail the mergify command that triggered this.
         [ -n "$cwd" ] && { printf 'cwd\t%s\n' "$cwd" >> "$record" 2>/dev/null || :; }
       else
-        repo=$(printf '%s' "$cmd" | grep -Eo -- '(^|[[:space:]])(-R|--repo)[[:space:]=]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' | head -1 | sed 's/.*[[:space:]=]//')
-        num=$(printf '%s' "$cmd" | grep -Eo 'gh[[:space:]]+pr[[:space:]]+[a-z-]+[[:space:]]+[0-9]+' | head -1 | grep -Eo '[0-9]+$')
-        [ -z "$num" ] && num=$(printf '%s' "$cmd" | grep -Eo 'pulls/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
-        [ -z "$num" ] && num=$(printf '%s' "$cmd" | grep -Eo 'pull/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
-        [ -z "$repo" ] && repo=$(printf '%s' "$cmd" | grep -Eo '(repos|github\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pulls?/' | head -1 | sed 's#^[^/]*/##; s#/pulls\?/$##; s#/pull/$##')
+        # A single Bash call is often several gh invocations joined by ; && ||
+        # | or a newline (a subagent checking issue #73 and PR #80 in one
+        # command is exactly this shape). Extracting repo and number
+        # independently with `head -1` over the *whole* string pairs the
+        # first repo found with the first number found even when they came
+        # from different clauses -- fabricating a repo#number this call never
+        # actually queried. So: split into clauses first, and only record a
+        # pair pulled from the *same* clause. A clause naming `issues/NNN`
+        # and not `pulls`/`pull/` never contributes a number, so an issue
+        # reference can no longer borrow a PR's repo (or vice versa).
+        repo=""; num=""
+        clauses=$(printf '%s' "$cmd" | tr ';&|' '\n')
+        old_ifs=$IFS; IFS='
+'
+        for clause in $clauses; do
+          IFS=$old_ifs
+          [ -n "$repo" ] && [ -n "$num" ] && break
+          c_repo=$(printf '%s' "$clause" | grep -Eo -- '(^|[[:space:]])(-R|--repo)[[:space:]=]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' | head -1 | sed 's/.*[[:space:]=]//')
+          c_num=$(printf '%s' "$clause" | grep -Eo 'gh[[:space:]]+pr[[:space:]]+[a-z-]+[[:space:]]+[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+          [ -z "$c_num" ] && c_num=$(printf '%s' "$clause" | grep -Eo 'pulls/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+          [ -z "$c_num" ] && c_num=$(printf '%s' "$clause" | grep -Eo 'pull/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+          [ -z "$c_repo" ] && c_repo=$(printf '%s' "$clause" | grep -Eo '(repos|github\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pulls?/' | head -1 | sed 's#^[^/]*/##; s#/pulls\?/$##; s#/pull/$##')
+          if [ -n "$c_repo" ] && [ -n "$c_num" ]; then repo=$c_repo; num=$c_num; fi
+          IFS='
+'
+        done
+        IFS=$old_ifs
         if [ -n "$repo" ] && [ -n "$num" ]; then printf 'repo\t%s\t%s\n' "$repo" "$num" >> "$record" 2>/dev/null || :
         elif [ -n "$cwd" ]; then printf 'cwd\t%s\n' "$cwd" >> "$record" 2>/dev/null || :
         fi

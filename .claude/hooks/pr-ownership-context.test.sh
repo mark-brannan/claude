@@ -68,6 +68,7 @@ no_context() {
 
 bash_input() { jq -n --arg s "$1" --arg c "$2" '{session_id:$s,tool_name:"Bash",tool_input:{command:$c}}'; }
 mcp_input()  { jq -n --arg s "$1" --arg t "$2" '{session_id:$s,tool_name:$t,tool_input:{}}'; }
+t() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi; }
 
 # --- fires, and on what ----------------------------------------------------
 check inject 'gh pr view' "$(bash_input s1 'gh pr view 12 --comments')"
@@ -115,6 +116,23 @@ check inject 'mergify stack push (cwd)' "$(bash_input_cwd s5f 'mergify stack pus
 RECORD="$TMPDIR/claude-pr-threads.s5f"
 if [ -f "$RECORD" ] && grep -qx "cwd	/repo/checkout" "$RECORD"; then pass=$((pass + 1))
 else fail=$((fail + 1)); printf 'FAIL: mergify call did not record cwd (record: %s)\n' "$(cat "$RECORD" 2>/dev/null || echo MISSING)"; fi
+
+# --- one compound Bash call doesn't fabricate a repo#number pair --------------
+# Regression for the false positive found 2026-09-08: repo and number were
+# each pulled independently (head -1) from the *whole* command, so a call
+# that touches an issue and a PR in one line -- or two PRs in one line --
+# could pair the repo of one gh invocation with the number of another,
+# recording a PR that was never actually queried.
+rec_last() { cat "$TMPDIR/claude-pr-threads.$1" 2>/dev/null | tail -1; }
+check inject 'issue + PR in one compound command' \
+  "$(bash_input cx1 "gh api repos/o/r/issues/73 --jq '.state' 2>&1; echo ---; gh api repos/o/r/pulls/80 --jq '.state' 2>&1")"
+t 'records the PR clause only, not the issue number' \
+  "$(printf 'repo\to/r\t80')" "$(rec_last cx1)"
+
+check inject 'two PRs, two repos, in one compound command' \
+  "$(bash_input cx2 'gh pr view 73 -R mark-brannan/dotfiles --json state 2>&1; echo ---; gh pr view 80 -R markbrannan/dotfiles --json state 2>&1')"
+t 'records the first clause intact, not a cross-clause mix' \
+  "$(printf 'repo\tmark-brannan/dotfiles\t73')" "$(rec_last cx2)"
 
 # --- once per session ----------------------------------------------------------
 check inject 'first PR call in s8'   "$(bash_input s8 'gh pr view')"
