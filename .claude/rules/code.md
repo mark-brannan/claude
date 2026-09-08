@@ -134,6 +134,15 @@ project-specific facts belong in that project's own CLAUDE.md.
   listing and your resolve, and the loop closes findings nobody read. Scar:
   2026-09-01, dotfiles#60 — resolved three CodeRabbit threads unread this
   way, one of which asked to disable pre-commit hooks.
+- **Every subagent prompt that touches a PR carries the resolve requirement
+  verbatim.** Delegating the fix does not delegate away this rule — an agent
+  told only "fix the CI failure" fixes it and leaves the thread open, and the
+  thread is then mine, discovered a turn later by the gate. Any prompt that
+  sends an agent at a PR states: read the thread, fix it, reply with the
+  evidence, resolve it by id, in the same pass; and report the thread ids it
+  resolved. Scar: 2026-09-08, the six-PR conflict sweep — six agents launched,
+  only two carried the instruction, and Mark had to ask again.
+
 - **A repeated CodeRabbit comment gets re-verified live, not answered from
   turn memory.** When the same finding text shows up again (re-pasted, or a
   fresh review pass after a push), re-fetch the actual thread state — GraphQL
