@@ -56,7 +56,9 @@ the next one. It must:
 - be **ready to paste** — no "as discussed", no context the reader has to
   supply;
 - name the **branch, PR, file, card, etc.** it acts on;
-- name a **recommended model and difficulty (effort) setting**;
+- name a **recommended model and difficulty (effort) setting** — both,
+  every time, e.g. `Model: opus · Effort: high`. A hand-off prompt missing
+  either is not finished;
 - be written so somebody who was not in this session can act on it.
 
 Put it in the narrative log as well as the chat. The log survives; the chat

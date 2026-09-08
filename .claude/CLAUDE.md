@@ -128,6 +128,9 @@ Hooks handle the mechanics unprompted.
 - **End with a prompt, not a status bullet or observation.** Work remaining
   → hand-off prompt; only-I-can-do → card by link. Nothing else in a closing
   message; `/wrapup` has the spec.
+- **Every hand-off prompt names a recommended model and difficulty (effort)
+  setting.** Not optional, not only under `/wrapup` — any prompt meant to be
+  pasted into a new session. A hand-off without both is unfinished.
 
 **A finding that reads like a real security or credential exposure never
 goes into a public repo's tracked files** — board, log, doc, commit
