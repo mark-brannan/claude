@@ -86,6 +86,11 @@ check inject 'gh api pulls'     "$(bash_input s3 'gh api repos/o/r/pulls/4/comme
 check inject 'gh pr after &&'   "$(bash_input s4 'git push && gh pr checks --watch')"
 check inject 'MCP pull_request_read'  "$(mcp_input s5 mcp__plugin_github_github__pull_request_read)"
 check inject 'MCP review tool'        "$(mcp_input s6 mcp__github__create_pending_pull_request_review)"
+check inject 'mergify stack push'     "$(bash_input s5a 'mergify stack push')"
+check inject 'mergify stack checkout' "$(bash_input s5b 'mergify stack checkout NAME')"
+check inject 'mergify stack sync'     "$(bash_input s5c 'mergify stack sync')"
+check inject 'mergify queue add'      "$(bash_input s5d 'mergify queue add')"
+check inject 'mergify merge'          "$(bash_input s5e 'mergify merge 12')"
 
 # --- stays silent ------------------------------------------------------------
 check silent 'gh issue'              "$(bash_input s7 'gh issue view 3')"
@@ -96,6 +101,20 @@ check silent 'MCP non-PR github'     "$(mcp_input s7 mcp__github__search_reposit
 check silent 'MCP other server'      "$(mcp_input s7 mcp__Trello__pull_request_read)"
 check silent 'other tool'            "$(jq -n '{session_id:"s7",tool_name:"Read",tool_input:{file_path:"gh pr"}}')"
 check silent 'empty payload'         ''
+check silent 'mergify config command' "$(bash_input s7 'mergify config validate')"
+check silent 'mergify events command' "$(bash_input s7 'mergify events list')"
+check silent 'word containing mergify' "$(bash_input s7 'echo unmergifyable')"
+check silent 'mergify named, not run (echo)'    "$(bash_input s7 'echo mergify merge')"
+check silent 'mergify named, not run (comment)' "$(bash_input s7 'true # mergify merge')"
+check inject 'mergify after &&'   "$(bash_input s7b 'git push && mergify stack push')"
+check inject 'mergify after pipe' "$(bash_input s7c 'echo x | mergify queue add')"
+
+# --- mergify records cwd, not repo/number (it never names them) -----------
+bash_input_cwd() { jq -n --arg s "$1" --arg c "$2" --arg w "$3" '{session_id:$s,tool_name:"Bash",tool_input:{command:$c},cwd:$w}'; }
+check inject 'mergify stack push (cwd)' "$(bash_input_cwd s5f 'mergify stack push' /repo/checkout)"
+RECORD="$TMPDIR/claude-pr-threads.s5f"
+if [ -f "$RECORD" ] && grep -qx "cwd	/repo/checkout" "$RECORD"; then pass=$((pass + 1))
+else fail=$((fail + 1)); printf 'FAIL: mergify call did not record cwd (record: %s)\n' "$(cat "$RECORD" 2>/dev/null || echo MISSING)"; fi
 
 # --- once per session ----------------------------------------------------------
 check inject 'first PR call in s8'   "$(bash_input s8 'gh pr view')"

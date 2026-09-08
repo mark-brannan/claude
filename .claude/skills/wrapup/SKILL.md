@@ -46,6 +46,23 @@ decisions to the board before the session ends. Anything only Mark can do
 personally is a card, referenced by link and by a short name; either the
 link or the short name must be distinctive enough for a future session to
 find it.
+
+**Before surfacing any card that asks Mark to decide on or act on a PR
+(merge it, review it, close it), check its live state first** —
+`gh pr view <PR> --json state,mergedAt,mergeCommit` (or the equivalent for
+the board's existing PR cards, not just ones from this session). If it's
+already merged or closed, don't hand it to him as a decision: mark it done
+and note how, or drop it if it was already reflected on the board. If the
+check itself fails — `gh` errors, isn't authenticated, or the reply carries
+no `state` — that's not the same as "still open": leave the card pending
+and say its live state couldn't be verified, the same failure-closed stance
+`pr-threads-gate.sh` already takes. Only mark done or drop after a state
+check actually succeeds. This
+applies to every open PR card being carried forward, not only ones this
+session touched — a PR can merge after the session that filed the card
+ended. A card that asks him to decide something already decided outside
+the chat is wasted attention.
+
 Board selection and card format: `/card-write`.
 
 ## 4. Hand-off prompt

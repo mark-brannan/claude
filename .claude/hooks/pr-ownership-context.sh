@@ -16,6 +16,11 @@
 #
 # Fires once per session, on the first matching call:
 #   - Bash: `gh pr ...`, or `gh api ...` naming pulls / graphql / reviewThreads
+#   - Bash: `mergify stack push/checkout/sync`, `mergify queue ...`, or
+#     `mergify merge ...` -- the mergify CLI plugin creates and merges PRs
+#     without ever calling gh, so a session working a PR only through it used
+#     to leave the record empty and the Stop gate silently found nothing.
+#     2026-09-08.
 #   - MCP:  any GitHub tool whose name mentions a pull request or a review
 # The section is read live from code.md, so there is one source of truth and
 # nothing here to keep in sync. If the file or the heading is missing, say so
@@ -40,8 +45,12 @@ tool=$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null) || exit
 case "$tool" in
   Bash)
     cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
+    # The mergify half is restricted to a real command position (start of
+    # string, or after a separator: ; & | ( or a backtick) so "echo mergify
+    # merge" or "true # mergify merge" -- mergify named but not run -- don't
+    # falsely record a cwd and trip the Stop gate on an unrelated PR.
     printf '%s' "$cmd" | grep -Eq \
-      '(^|[^A-Za-z0-9_./-])gh[[:space:]]+(pr([[:space:]]|$)|api[[:space:]].*(pulls|graphql|reviewThreads))' \
+      '(^|[^A-Za-z0-9_./-])gh[[:space:]]+(pr([[:space:]]|$)|api[[:space:]].*(pulls|graphql|reviewThreads))|(^|[;&|(`])[[:space:]]*mergify[[:space:]]+(stack[[:space:]]+(push|checkout|sync)([[:space:]]|$)|(queue|merge)([[:space:]]|$))' \
       || exit 0
     ;;
   mcp__*github*__*)
@@ -61,14 +70,22 @@ if [ -n "$sid" ]; then
   record="${TMPDIR:-/tmp}/claude-pr-threads.$tag"
   case "$tool" in
     Bash)
-      repo=$(printf '%s' "$cmd" | grep -Eo -- '(^|[[:space:]])(-R|--repo)[[:space:]=]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' | head -1 | sed 's/.*[[:space:]=]//')
-      num=$(printf '%s' "$cmd" | grep -Eo 'gh[[:space:]]+pr[[:space:]]+[a-z-]+[[:space:]]+[0-9]+' | head -1 | grep -Eo '[0-9]+$')
-      [ -z "$num" ] && num=$(printf '%s' "$cmd" | grep -Eo 'pulls/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
-      [ -z "$num" ] && num=$(printf '%s' "$cmd" | grep -Eo 'pull/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
-      [ -z "$repo" ] && repo=$(printf '%s' "$cmd" | grep -Eo '(repos|github\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pulls?/' | head -1 | sed 's#^[^/]*/##; s#/pulls\?/$##; s#/pull/$##')
       cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)
-      if [ -n "$repo" ] && [ -n "$num" ]; then printf 'repo\t%s\t%s\n' "$repo" "$num" >> "$record" 2>/dev/null || :
-      elif [ -n "$cwd" ]; then printf 'cwd\t%s\n' "$cwd" >> "$record" 2>/dev/null || :
+      if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`])[[:space:]]*mergify[[:space:]]'; then
+        # mergify never names owner/repo/number on the command line -- it
+        # infers the PR from the current branch, so cwd is the only handle.
+        # Best-effort like the record writes below: a full disk or a race on
+        # the tmp file must not fail the mergify command that triggered this.
+        [ -n "$cwd" ] && { printf 'cwd\t%s\n' "$cwd" >> "$record" 2>/dev/null || :; }
+      else
+        repo=$(printf '%s' "$cmd" | grep -Eo -- '(^|[[:space:]])(-R|--repo)[[:space:]=]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' | head -1 | sed 's/.*[[:space:]=]//')
+        num=$(printf '%s' "$cmd" | grep -Eo 'gh[[:space:]]+pr[[:space:]]+[a-z-]+[[:space:]]+[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+        [ -z "$num" ] && num=$(printf '%s' "$cmd" | grep -Eo 'pulls/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+        [ -z "$num" ] && num=$(printf '%s' "$cmd" | grep -Eo 'pull/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+        [ -z "$repo" ] && repo=$(printf '%s' "$cmd" | grep -Eo '(repos|github\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pulls?/' | head -1 | sed 's#^[^/]*/##; s#/pulls\?/$##; s#/pull/$##')
+        if [ -n "$repo" ] && [ -n "$num" ]; then printf 'repo\t%s\t%s\n' "$repo" "$num" >> "$record" 2>/dev/null || :
+        elif [ -n "$cwd" ]; then printf 'cwd\t%s\n' "$cwd" >> "$record" 2>/dev/null || :
+        fi
       fi
       ;;
     *)
