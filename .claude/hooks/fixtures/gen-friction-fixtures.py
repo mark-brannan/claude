@@ -99,7 +99,7 @@ CLASSIFIER = ("Permission for this action was denied by the Claude Code auto "
               "mode classifier. Reason: Blocked by classifier.")
 # A hook writes its own refusal text; it matches no fixed phrase, which is why
 # the detector keys off toolDenialKind instead. Reports as permission-rule.
-HOOK_DENY = "Error: `some command` is blocked at user scope. Ask Mark to run it."
+HOOK_DENY = "Error: `some command` is blocked at user scope. Ask the user to run it."
 USER_DENY = "The user doesn't want to proceed with this tool use."
 
 

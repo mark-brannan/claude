@@ -6,7 +6,7 @@
 # which is fine once at Stop but not on every statusline render (those fire
 # several times a second), and not on every tool call either now that a
 # PostToolUse pulse fires on all of them. The expensive part runs only when
-# a block is actually about to print -- a prompt, a question put to Mark, a
+# a block is actually about to print -- a prompt, a question put to the user, a
 # pulse tick, a coalesced git action, Stop -- and the statusline just prints
 # what is already on disk.
 #
@@ -98,7 +98,7 @@ OUT="$LIVE/$sid.json"
 #
 #            Coalescing only kicks in after GIT_EARLY_N git events have
 #            already printed individually this session: the first few git
-#            actions are exactly the ones Mark most wants to see land in
+#            actions are exactly the ones the user most wants to see land in
 #            real time, so they show immediately, uncoalesced. Streaks are
 #            only worth collapsing once git activity is established as
 #            routine for the session.
@@ -262,7 +262,7 @@ printf '%s\n' "$metrics" | jq -c \
   && mv -f "$tmp" "$OUT" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 
 # ------------------------------------------------------------ event block
-# Shown to Mark at the moments that matter -- a question put to him, a git
+# Shown to the user at the moments that matter -- a question put to her, a git
 # event, a pulse tick, the end of the session -- and never sent to the
 # model, so the running decision count costs nothing to display.
 if [ "$SHOW" = show ] && [ -f "$OUT" ]; then

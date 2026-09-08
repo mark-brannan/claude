@@ -86,9 +86,9 @@ def dur:
 # The time row. Three numbers that do not substitute for one another:
 #   active   silences clamped at 2 min, so walking away stops the clock but
 #            thinking for a minute does not
-#   split    of that active time, the gap ending in Mark typing is his, every
+#   split    of that active time, the gap ending in the user typing is hers, every
 #            other gap is the agent's -- a message sent mid-turn is credited
-#            to him too, the one place the split is generous to the machine
+#            to her too, the one place the split is generous to the machine
 #   open     raw wall clock. Not work, but the number that predicts cost: an
 #            old session re-sends a large context on every turn.
 # Empty on a cache written before these fields existed, so an upgrade in
@@ -106,7 +106,7 @@ def split: " ☺ \(.human_seconds | dur)/⚙ \(.agent_seconds | dur)";
 
 # --- quality-of-life nags ---------------------------------------------
 # Deterministic, desktop-UI-only: computed from the system clock and the
-# cache's own elapsed_seconds, never sent to the model, so nagging Mark
+# cache's own elapsed_seconds, never sent to the model, so nagging the user
 # costs nothing in context. Lives only in `block` -- the systemMessage shown
 # in the desktop UI at question/git/stop events -- not `row`, the terminal
 # statusline, which renders too often for an escalating nag to feel like

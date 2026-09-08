@@ -1,17 +1,17 @@
 ---
 name: worklist
-description: Report a project's overall status and the next unblocked work items, in one standard format, to help decide what to kick off in a new session, a subagent, or a stream. Use when Mark asks "what's next", "what can we work on", "project status", "what's on the roadmap", or "/worklist".
+description: Report a project's overall status and the next unblocked work items, in one standard format, to help decide what to kick off in a new session, a subagent, or a stream. Use when Solace asks "what's next", "what can we work on", "project status", "what's on the roadmap", or "/worklist".
 ---
 
 # Worklist: status + next work
 
 Read-only. This skill never files issues, ticks boxes, or starts work — it
 answers "what's the state of things and what could a session pick up right
-now," then stops and lets Mark choose.
+now," then stops and lets Solace choose.
 
 ## Which project, and which repos it spans
 
-If Mark named a project, use it. If not, ask — one question, not a guess —
+If Solace named a project, use it. If not, ask — one question, not a guess —
 unless the current repo makes it obvious.
 
 A project is usually **not** one repo. Resolve its full repo set before
@@ -91,7 +91,7 @@ _as of <date> · repos: <owner/repo1>, <owner/repo2>, ... + global board_
 ## Personal / learning (parallel, non-blocking)
 - <item> (<source link>)
 
-## Needs Mark's decision first
+## Needs Solace's decision first
 - <item> — <the one-line question> (<source link>)
 ```
 
@@ -100,7 +100,7 @@ Skip a section entirely rather than writing "none."
 ## After reporting
 
 Stop. Don't recommend a single item unless asked — the point of this skill
-is to hand over the ranked list so Mark can pick what fits the moment
+is to hand over the ranked list so Solace can pick what fits the moment
 (one session, a subagent, or a stream of several). If asked which one you'd
 start, give one sentence naming it before any explanation, per standing
 orders.

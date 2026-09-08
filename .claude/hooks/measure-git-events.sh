@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# PostToolUse: log the git events that carry a cost Mark ends up paying.
+# PostToolUse: log the git events that carry a cost the user ends up paying.
 #
 # Three kinds, and only three -- logging every commit would make this a commit
 # log wearing a metrics label, and the signal is the whole point:
 #
 #   cherry-pick  shuttling a commit between branches; the original question
 #                was how much of that is actually happening
-#   branch       `rules/code.md` says a branch requires Mark's explicit ask,
+#   branch       `rules/code.md` says a branch requires the user's explicit ask,
 #                because a branch demands a PR and a PR is a decision pushed
 #                to him. Five stranded `claude/*` branches is what prompted
 #                that rule; this is the counter that would have shown them

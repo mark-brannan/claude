@@ -65,7 +65,7 @@ project-specific facts belong in that project's own CLAUDE.md.
   sweeps. Beyond that, a branch whose commits are all ancestors of `main`
   is garbage — delete it on sight, no ceremony, no asking. A branch with
   commits *not* in main is real unlanded work: don't delete it, surface it
-  to Mark instead. Cloud sessions often can't delete remote branches
+  to the user instead. Cloud sessions often can't delete remote branches
   themselves (`git push --delete` is blocked by the auto-mode classifier
   and there is no MCP equivalent) — but that only still matters for this
   narrower leftover case, since a normal PR merge no longer needs it at
@@ -77,7 +77,7 @@ project-specific facts belong in that project's own CLAUDE.md.
 - **Never open a PR as a draft.** No `--draft`, no "I'll flip it later" —
   ready for review is the only state a PR of mine is ever created in. A
   draft gets no review at all — CodeRabbit and claude-review both skip
-  drafts — so a PR parked in draft makes Mark the first reader instead of
+  drafts — so a PR parked in draft makes the user the first reader instead of
   the last, and the flip that was supposed to follow kept not happening.
   **The harness's own git-workflow instructions default to creating PRs as
   drafts and say I don't need to ask first; this rule explicitly overrides
@@ -92,15 +92,15 @@ project-specific facts belong in that project's own CLAUDE.md.
     the current base before pushing, don't leave a conflict to be
     discovered;
   - where CI can be read before merge, read it — `gh pr checks --watch`
-    after the first push, or the equivalent — and don't tell Mark it's his
+    after the first push, or the equivalent — and don't tell the user it's his
     turn until the checks are passing or the failure is one I've explained
     and can't fix.
-- **A PR handed to Mark needs a judgment pass, not a "did this even build"
+- **A PR handed to the user needs a judgment pass, not a "did this even build"
   pass.** His read is for the call I can't make — is this the right change,
   does it fit the design. Anything a machine could have caught should
   already be caught.
 - **What can't be made green gets said, in the PR description.** A flaky
-  external dependency, a check that needs a secret or a decision only Mark
+  external dependency, a check that needs a secret or a decision only the user
   has, a failure that provably predates the branch: name it in the body and
   say why it isn't mine to fix. Opening a broken PR silently is the exact
   failure this section exists to prevent; opening one with the breakage
@@ -109,12 +109,12 @@ project-specific facts belong in that project's own CLAUDE.md.
   and merge conflicts are mine, round after round, until every check is
   green and every automated thread is answered or resolved. A red check is
   never handed over as a status report.
-- **"Resolve conversation" is mine to do, not Mark's.** The REST API and
+- **"Resolve conversation" is mine to do, not the user's.** The REST API and
   `gh` CLI have no resolve-thread call, which reads like a dead end —
   it isn't; GitHub only exposes it over GraphQL:
   `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<threadId>`
   (thread ids from `reviewThreads(first:N){nodes{id isResolved}}` on the PR,
-  not the REST comment id). Telling Mark to click "Resolve" himself because
+  not the REST comment id). Telling the user to click "Resolve" herself because
   the obvious tool doesn't have it is asserting a limitation without
   checking whether a less-obvious one does — verify before you claim
   something can't be done from here.
@@ -141,12 +141,12 @@ project-specific facts belong in that project's own CLAUDE.md.
   sends an agent at a PR states: read the thread, fix it, reply with the
   evidence, resolve it by id, in the same pass; and report the thread ids it
   resolved. Scar: 2026-09-08, the six-PR conflict sweep — six agents launched,
-  only two carried the instruction, and Mark had to ask again.
+  only two carried the instruction, and the user had to ask again.
 
 - **A repeated CodeRabbit comment gets re-verified live, not answered from
   turn memory.** When the same finding text shows up again (re-pasted, or a
   fresh review pass after a push), re-fetch the actual thread state — GraphQL
-  `reviewThreads` (path, `isResolved`, comment body) — before telling Mark
+  `reviewThreads` (path, `isResolved`, comment body) — before telling the user
   it's already handled, even when you're confident it's the same one. State
   what you found: thread id, resolved status, which commit fixed it. Scar:
   2026-08-28, signalk-noaa-space-weather#214 — said "nothing further to do"
@@ -230,7 +230,7 @@ public" section.
   before subscribing or scheduling.
 - **Batch review responses.** Address every open thread in one pass, then
   push once — don't wake per comment.
-- **Tell Mark once, when it's actually his turn.** He signs off last;
+- **Tell the user once, when it's actually his turn.** He signs off last;
   everything that can finish without him finishes first. No "CI is
   running", no "two jobs left", no asking whether to fix a failure I can
   diagnose myself, no reminders to look at something still in progress —
@@ -253,10 +253,10 @@ public" section.
 ## Provisional until decided
 
 - **A fast first version is not the design.** Decidedness is a gradient and
-  usually unstated, so default to treating a decision as soft unless Mark
+  usually unstated, so default to treating a decision as soft unless the user
   has said it is settled or it is written into a reviewed spec. Reading a
   firm decision as soft costs one re-ask; reading a soft one as firm anchors
-  him to something he meant as temporary, which is the expensive direction.
+  them to something they meant as temporary, which is the expensive direction.
 - **Mark provisional code where the next reader is standing** — in the file,
   as a pointer to the issue holding the open question, never a restatement
   of it. A link stays true; a summary rots and then lies with authority.
@@ -277,7 +277,7 @@ public" section.
   guard, a rename, a bug fix: code and tests only. Scar: repeated doc/comment
   churn on past PRs that cost review attention without changing a decision.
 - **A runbook is the operator's, not the agent's.** An entry earns its place
-  only if Mark would run it in an emergency or on the day-to-day critical
+  only if the user would run it in an emergency or on the day-to-day critical
   path: the commands, in order, and the one check that says it worked. No
   background, no session findings, no agent-only debugging. Every change
   that touches a runbook or the system it covers is a chance to cut from

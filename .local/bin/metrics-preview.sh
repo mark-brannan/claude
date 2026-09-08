@@ -36,7 +36,7 @@
 #            passes -- the shape a pre-commit or CI step wants.
 set -u
 
-# The installed copy by default -- on Mark's machines the yadm worktree is
+# The installed copy by default -- on the user's machines the yadm worktree is
 # $HOME, so that is also the repo. It is not on a cloud container or a CI
 # runner, where the repo is an ordinary checkout somewhere else, and the
 # header above promises this script is runnable there. $METRICS_HOOKS is how

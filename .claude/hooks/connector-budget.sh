@@ -48,7 +48,7 @@ n=$(printf '%s\n' "$enabled" | grep -c '[^[:space:]]' || true)
   echo
   echo "Enabled: $(printf '%s' "$enabled" | sed '/^$/d' | paste -sd, - | sed 's/,/, /g')"
   echo
-  echo "Tell Mark this in your FIRST reply, before anything he asked for."
+  echo "Tell the user this in your FIRST reply, before anything he asked for."
   echo "In a local CLI every one of these loads its full tool schemas into"
   echo "the floor of every session. Offer to disable the ones this task does"
   echo "not need (\`deniedMcpServers\` in settings.json), then continue."

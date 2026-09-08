@@ -13,7 +13,7 @@ def lastline: split("\n") | map(select(test("\\S"))) | last // "";
 
 # --- what counts as an ask ------------------------------------------------
 # The original test -- last non-blank line ends in "?" -- misses the exact
-# shape Mark asks for: a numbered escalation followed by a fenced block he
+# shape the user asks for: a numbered escalation followed by a fenced block she
 # can paste back. Three forms are accepted now:
 #   trailing "?"          the turn stopped on a question
 #   enumerated ask        "1." / "2." items, at least one of them a question
@@ -92,7 +92,7 @@ to_entries as $E
 | ([ $tools[] | select(is_mutating) | .i ] | min) as $first_mut_raw
 | (($first_mut_raw // 999999999)) as $first_mut
 
-# Human input, including messages injected mid-turn. Every message Mark
+# Human input, including messages injected mid-turn. Every message the user
 # sends is enqueued with its text; the `user` record for the first one is a
 # duplicate of its enqueue, so counting enqueues avoids double-counting the
 # opening prompt while still catching mid-turn interjections.
@@ -155,7 +155,7 @@ to_entries as $E
         # scoping  cheap: asked before any work exists to invalidate
         # inline   moderate: a bounded choice that blocks the current task
         # gate     expensive: open-ended or unstructured, mid-flight, and
-        #          needs Mark to reload context he has not been carrying
+        #          needs the user to reload context they have not been carrying
         type: (if .i < $first_mut then "scoping"
                elif .mechanism == "prose" then "gate"
                elif .n > 2 then "gate"
@@ -211,7 +211,7 @@ to_entries as $E
 
 # --- blocked: the harness refused a tool call --------------------------------
 # Not human friction -- nobody corrected anything, the permission layer said
-# no. Tracked separately because it costs Mark the same currency: a retry, a
+# no. Tracked separately because it costs the user the same currency: a retry, a
 # workaround, or a decision about his own settings. Previously invisible, so
 # "the classifier keeps blocking things" was an impression with no number.
 #
@@ -434,7 +434,7 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
 #   active   elapsed with every silence clamped to CAP. Walking away stops
 #            the clock; thinking for a minute does not.
 #   split    of that active time, which side was busy. The gap that ends in
-#            Mark typing is his (reading, deciding); every other gap is the
+#            the user typing is theirs (reading, deciding); every other gap is the
 #            agent's (thinking, tools, waiting on a command).
 # Measured on eight sessions of this project, elapsed ran 5x active on the
 # long one (270m vs 50m) and identical on the short ones -- the clamp only
@@ -445,7 +445,7 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
 
 | ([ $E[].value | select(.timestamp != null)
      | {t: (.timestamp | epoch),
-        # only a human enqueue with text closes an idle gap as Mark's; the
+        # only a human enqueue with text closes an idle gap as the user's; the
         # duplicate `user` record for the opening prompt is skipped for the
         # same reason it is skipped when counting turns
         h: (.type == "queue-operation" and .operation == "enqueue"

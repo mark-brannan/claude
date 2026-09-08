@@ -99,7 +99,8 @@ Threats, in the order they matter:
 
 - **T1 — config-repo compromise, including by the agent itself.** The local
   rule is "commit straight to main" for dotfiles-scale edits, and Claude
-  sessions carry Mark's push credentials. A prompt-injected session that edits
+  sessions carry the user's push credentials. A prompt-injected session
+  that edits
   a hook on `main` becomes code running in every unpinned consumer's next
   session. This is the central design driver: the pin-and-review gate is a
   human checkpoint between an agent-writable branch and agent-executing
@@ -153,7 +154,7 @@ Threats, in the order they matter:
 The source of truth stays here, public, yadm-managed. Releases are annotated
 tags `claude-config/vN` on reviewed commits.
 
-Promotion is a small script (`claude-config-release`) run by Mark on a real
+Promotion is a small script (`claude-config-release`) run by the user on a real
 machine: it shows `git diff <last-release>..HEAD -- .claude/`, asks once, then
 creates an SSH-signed tag and pushes it. That diff-then-sign moment **is** the
 review gate. SSH signing (verified via `ssh-keygen -Y verify`) avoids a gpg
@@ -161,7 +162,7 @@ dependency on consumers — Ubuntu VMs have `ssh-keygen`.
 
 The signing key must be **touch-required hardware-backed** — `sk-ssh-ed25519`
 (FIDO2) or a Secure Enclave key. This is load-bearing, not preference: local
-Claude runs as Mark with file-based keys reachable, and a pattern guard on
+Claude runs as the user with file-based keys reachable, and a pattern guard on
 `git tag` is bypassable by anything that shells around it. With a
 touch-required key, every signature is a physical human act, so a
 prompt-injected session cannot mint a valid tag non-interactively — the gate
@@ -337,7 +338,7 @@ commits it. Everything else on the INSTALL list (CLAUDE.md, rules/, hooks/)
 is agent-untouched at runtime and safe to auto-commit.
 
 Auto-committed pushes carry distinct authorship (the Claude co-author
-trailer), because auto-push otherwise launders agent edits under Mark's name
+trailer), because auto-push otherwise launders agent edits under the user's name
 (L1). The promotion diff is the review surface either way — the release
 script shows *what* is being promoted regardless of who committed it — but
 authorship in the log keeps provenance readable when reviewing that diff.

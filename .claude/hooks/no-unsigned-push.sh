@@ -29,7 +29,7 @@ json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk 'BEGIN{ORS="\
 deny()  { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s}}\n' "$(json_str "$1")"; exit 0; }
 allow_with_note() { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","additionalContext":%s}}\n' "$(json_str "$1")"; exit 0; }
 
-command -v jq >/dev/null 2>&1 || deny "no-unsigned-push: jq is missing, so the push payload can't be inspected. Install jq or ask Mark."
+command -v jq >/dev/null 2>&1 || deny "no-unsigned-push: jq is missing, so the push payload can't be inspected. Install jq or ask the user."
 payload=$(cat) || deny "no-unsigned-push: could not read the hook payload."
 cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null) || deny "no-unsigned-push: unreadable hook payload."
 [ -n "$cmd" ] || exit 0

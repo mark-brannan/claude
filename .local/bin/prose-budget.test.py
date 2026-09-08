@@ -475,16 +475,16 @@ class VoiceTest(RepoCase):
 
     def test_diff_scope_judges_only_added_lines(self):
         self.config({})
-        self.write("README.md", "a robust line Mark wrote\nkeep\n")
+        self.write("README.md", "a robust line someone wrote\nkeep\n")
         self.commit("README.md", ".prose-budgets.json")
         self.assertEqual(self.findings("--tree"), [], "diff scope never judges the tree")
-        self.write("README.md", "a robust line Mark wrote\nkeep\nnew and comprehensive\n")
+        self.write("README.md", "a robust line someone wrote\nkeep\nnew and comprehensive\n")
         self.git("add", "README.md")
         f = [x for x in self.findings("--staged") if x["rule"] == "voice"]
         self.assertEqual([(x["line"], x["message"].split('"')[1]) for x in f], [(3, "comprehensive")])
         self.git("commit", "-qm", "x")
         self.git("checkout", "-qb", "feature")
-        self.write("README.md", "a robust line Mark wrote\nkeep\nnew and comprehensive\nleverage it\n")
+        self.write("README.md", "a robust line someone wrote\nkeep\nnew and comprehensive\nleverage it\n")
         self.commit("README.md")
         f = [x for x in self.findings("--base", "main") if x["rule"] == "voice"]
         self.assertEqual([x["message"].split('"')[1] for x in f], ["leverage"])

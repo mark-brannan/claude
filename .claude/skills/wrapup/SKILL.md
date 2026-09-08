@@ -1,6 +1,6 @@
 ---
 name: wrapup
-description: Close a session — write the narrative log to the right state repo, bring the session's cards for batch accept/edit/delete, and end with a paste-ready hand-off prompt. Use when Mark says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
+description: Close a session — write the narrative log to the right state repo, bring the session's cards for batch accept/edit/delete, and end with a paste-ready hand-off prompt. Use when Solace says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
 ---
 
 # Wrapping up
@@ -41,17 +41,17 @@ Put in it:
 ## 3. Cards
 
 Bring every card written during the session for batch accept / edit /
-delete: one list, one line per card, each with its link. Apply Mark's
-decisions to the board before the session ends. Anything only Mark can do
+delete: one list, one line per card, each with its link. Apply Solace's
+decisions to the board before the session ends. Anything only Solace can do
 personally is a card, referenced by link and by a short name; either the
 link or the short name must be distinctive enough for a future session to
 find it.
 
-**Before surfacing any card that asks Mark to decide on or act on a PR
+**Before surfacing any card that asks Solace to decide on or act on a PR
 (merge it, review it, close it), check its live state first** —
 `gh pr view <PR> --json state,mergedAt,mergeCommit` (or the equivalent for
 the board's existing PR cards, not just ones from this session). If it's
-already merged or closed, don't hand it to him as a decision: mark it done
+already merged or closed, don't hand it to her as a decision: mark it done
 and note how, or drop it if it was already reflected on the board. If the
 check itself fails — `gh` errors, isn't authenticated, or the reply carries
 no `state` — that's not the same as "still open": leave the card pending
@@ -60,7 +60,7 @@ and say its live state couldn't be verified, the same failure-closed stance
 check actually succeeds. This
 applies to every open PR card being carried forward, not only ones this
 session touched — a PR can merge after the session that filed the card
-ended. A card that asks him to decide something already decided outside
+ended. A card that asks them to decide something already decided outside
 the chat is wasted attention.
 
 Board selection and card format: `/card-write`.
@@ -86,5 +86,5 @@ does not.
 End with a prompt, not a status bullet or observation. A closing that reads
 "the vague thing is borked, your call" costs a read and returns nothing
 actionable. The closing message holds exactly two things: the hand-off
-prompt, and the cards only Mark can act on, by link and short name. Nothing
+prompt, and the cards only Solace can act on, by link and short name. Nothing
 else goes in it.

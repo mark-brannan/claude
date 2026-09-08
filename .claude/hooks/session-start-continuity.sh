@@ -3,12 +3,12 @@
 #
 # The standing orders say new sessions open by pulling from a board. That only
 # happens reliably if the board is already in front of the session -- asking
-# Claude to go find it costs a prompt from Mark, which is the thing this is
+# Claude to go find it costs a prompt from the user, which is the thing this is
 # supposed to remove. So this reads the state repo and injects a short brief.
 #
 # Deliberately terse. Every line here is charged to every session in every
 # repo, so it carries only what changes what the session does first: open
-# work, what the last sessions left behind, and how much deciding Mark has
+# work, what the last sessions left behind, and how much deciding the user has
 # already been asked to do this week.
 #
 # Never clones. A private clone needs credentials a hook cannot count on and
@@ -133,7 +133,7 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
       echo "### Decision load, last 7 days"
       echo
       echo "$counts — \`scoping\` is cheap (asked before work exists),"
-      echo "\`gate\` is expensive (open-ended, mid-flight, needs Mark to reload"
+      echo "\`gate\` is expensive (open-ended, mid-flight, needs the user to reload"
       echo "context). Prefer front-loading questions; board the rest."
     fi
   fi

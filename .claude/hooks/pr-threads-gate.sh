@@ -18,7 +18,7 @@
 # No record -> nothing to do, exit 0 -- most turns never touch a PR.
 #
 # Blocks at most once per turn: the harness sets stop_hook_active on the
-# retry, and a second block would just loop against a thread only Mark can
+# retry, and a second block would just loop against a thread only the user can
 # close. One forced re-check is the whole point; the honest report after it
 # is the model's job.
 #
@@ -101,5 +101,5 @@ msg="$msg
 
 For each open thread, in this order: read it (gh api graphql on the thread id, or the PR's review comments), fix or answer it, reply on the thread with the evidence, then resolve it by id --
   gh api graphql -f query='mutation(\$id:ID!){resolveReviewThread(input:{threadId:\$id}){thread{isResolved}}}' -f id=<threadId>
-One thread at a time, never a loop over all unresolved ids. A thread only Mark can close (a decision, a question to him) stays open: say so in your final message, by id, with what he needs to decide. Never report 'all threads resolved' unless this check passes. Then end the turn again; this gate does not fire twice in one turn."
+One thread at a time, never a loop over all unresolved ids. A thread only the user can close (a decision, a question to them) stays open: say so in your final message, by id, with what they need to decide. Never report 'all threads resolved' unless this check passes. Then end the turn again; this gate does not fire twice in one turn."
 block "$msg"

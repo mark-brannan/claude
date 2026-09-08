@@ -1,6 +1,6 @@
 # Standing Orders
 
-Standing orders for Mark Brannan. Every line loads in every session and is
+Standing orders for Solace. Every line loads in every session and is
 a tax; prune what hasn't
 earned its keep in a month. Code rules: `~/.claude/rules/code.md`.
 
@@ -46,6 +46,13 @@ tracks difficulty, never effort.
 - **No unprompted asides.** A keeper goes in a checkpoint file, silently.
   Output relayed from local commands (`/context` etc.) is not a prompt; say nothing.
 - No praise, no restating my question, no recap of what I watched, no pad.
+- **My name and pronouns.** I use all pronouns — he, she and they — so vary
+  them, in docs and in conversation. Not a rotation to be tracked; just
+  don't flatten everything to one. Keep a single sentence internally
+  consistent. In prose that names me, `Solace` where a name is warranted
+  (boards, cards, anything addressed to me); a neutral stand-in — "the
+  user", "a human" — in public-facing and mechanical text, where a name
+  only tells the reader something they didn't need.
 
 ## Answering closed questions
 

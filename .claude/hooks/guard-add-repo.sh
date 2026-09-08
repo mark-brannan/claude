@@ -7,7 +7,7 @@
 # push credentials, no prompt, on the say-so of whatever text steered the
 # session. This hook keeps the standing allow for exactly the one repo the
 # continuity hooks need and lets every other add_repo fall through to the
-# normal permission flow (a prompt when Mark is present, a refusal in auto).
+# normal permission flow (a prompt when the user is present, a refusal in auto).
 set -uo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0

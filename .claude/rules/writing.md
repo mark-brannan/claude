@@ -36,7 +36,7 @@ CHANGELOG, or markdown docs.
 
 This section governs what I draft, not existing prose I didn't write. It
 is a phrase/pattern match, not an authorship detector — it can't tell "AI
-wrote this" from "a verbose human wrote this," and Mark has told me he's
+wrote this" from "a verbose human wrote this," and the user has told me they're
 the second kind by nature. Never use this checklist as grounds to flag or
 edit prose you didn't just draft, including anything predating this repo's
 Claude commits — check `git blame` before treating old text as a tell

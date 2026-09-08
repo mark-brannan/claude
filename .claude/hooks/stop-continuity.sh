@@ -9,7 +9,7 @@
 #
 # It writes four things, all derived from the transcript and from git:
 #   metrics/sessions/<id>.json    cost and shape of the session
-#   metrics/decisions/<id>.jsonl  each decision pushed to Mark, typed by cost
+#   metrics/decisions/<id>.jsonl  each decision pushed to the user, typed by cost
 #   metrics/friction/<id>.jsonl   each friction event, typed by cost -- see
 #                                  claude_prompts_scratch/state/global/log/
 #                                  2026-08-21-friction-metric-spec.md
@@ -117,7 +117,7 @@ ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
   dq=$(printf '%s' "$metrics" | jq -r '.decisions[] | "- (\(.type)) \(.question)"')
   if [ -n "$dq" ]; then
     echo
-    echo "## Decisions pushed to Mark"
+    echo "## Decisions pushed to the user"
     echo
     printf '%s\n' "$dq"
   fi

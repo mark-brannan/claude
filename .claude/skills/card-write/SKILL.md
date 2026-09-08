@@ -25,9 +25,9 @@ exact wording still exist.
 
 ## Which section
 
-One file, two sections: `## Solace's` for loops only Mark can close, and
+One file, two sections: `## Solace's` for loops only Solace can close, and
 `## Claude's` for loops an agent can. One file, not two, because the useful
-edges cross — an agent's card is routinely blocked on one of Mark's, and two
+edges cross — an agent's card is routinely blocked on one of Solace's, and two
 files would show each list clear while the work sits deadlocked. Older
 boards still head the first section `## Yours`; treat it as the same section
 and don't rename it as a side effect of adding a card.
@@ -55,7 +55,7 @@ and don't rename it as a side effect of adding a card.
   box is at most a placeholder until the next tidy.
 - Keep each section short. A list nobody can hold in their head is a second
   place to lose things; finish or delete before adding.
-- If a loop is not worth a card, it is not worth telling Mark about either.
+- If a loop is not worth a card, it is not worth telling Solace about either.
 - Commit the board in its own repo, and never stage one project's work
   under another's. The Stop hook commits the global state repo; a project
   board is committed with that project's work.

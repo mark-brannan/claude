@@ -54,7 +54,7 @@ json_str() { jq -Rn --rawfile f /dev/stdin '$f'; }
 # -D`, an MCP `push_files` or a `merge_pull_request` each changed the repo
 # and none of them moved a counter until the Stop hook swept the transcript
 # at the end of the session. A number that only becomes true afterwards is
-# not a live number, and the git block Mark actually reads never appeared at
+# not a live number, and the git block the user actually reads never appeared at
 # the moment the state changed.
 #
 # Deliberately NOT here: `git add`, `fetch`, `clone`, `remote`, `status`,
