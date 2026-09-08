@@ -1,0 +1,788 @@
+#!/usr/bin/env python3
+# prose-budget: mechanical guards against agents bloating documentation.
+#
+# Every number and every grandfathered exception lives in the repo's config
+# (docs/budgets.json or .prose-budgets.json), so loosening a rule is a
+# visible diff in review, not a quiet edit to a test. Rules: lines, sections,
+# delta, json_prose, narration, voice, headers, unique_ids, land_alone.
+#
+# Usage: prose-budget [--config PATH] [--tree | --staged | --base REF]
+#                     [--file PATH ...] [--warn-only] [--json]
+#                     [--require-config] [--version]
+#
+# Exit 1 on any finding, 2 on a bad config or usage, 0 otherwise. A missing
+# config is a no-op (exit 0) unless --require-config. Findings go to stdout,
+# one per line as `file:line: rule: message`; counts and other information
+# go to stderr. Python 3 stdlib only; on PATH from dotfiles.
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+
+VERSION = "1.0.0"
+CONFIG_NAMES = ("docs/budgets.json", ".prose-budgets.json")
+RAISE = "Budgets live in {}; raising one is a deliberate, reviewable diff."
+
+MD_TARGETS = ["README.md", "RUNBOOK.md", "AGENTS.md", "CLAUDE.md", "docs/**/*.md", "runbooks/*.md"]
+RUNBOOK_TARGETS = ["RUNBOOK.md", "runbooks/*.md"]
+LAND_WITH = ["README.md", "CLAUDE.md", "AGENTS.md", "docs/**", "reference/**"]
+PROSE_KEYS = ["note", "$note", "notes", "about", "gap", "narrative", "settled_by", "rationale", "why", "would_settle"]
+NARRATION = {
+    "pr": r"\bPR ?#?\d+\b",
+    "issue": r"(?<![\w./-])[\w-]+(?:/[\w-]+)?#\d+\b",
+    "phase": r"\bP\d\.\d\b",
+    "session": r"\b(?:this|that|the) session\b",
+    "seeded": r"\bseeded \d{4}-",
+    "split": r"\bsplit out of\b|\bstacked on\b",
+}
+VOICE_WORDS = [
+    "delve", "leverage", "seamless", "cutting-edge", "robust", "comprehensive", "vibrant", "testament",
+    "tapestry", "pivotal", "foster", "elevate", "unlock", "game-changer", "revolutionary",
+]
+VOICE_PHRASES = {
+    "worth noting": r"\bit'?s worth noting\b",
+    "not just X but Y": r"\bnot just\b[^.;\n]{1,80}\bbut\b",
+    "whether you're X or Y": r"\bwhether you'?re\b[^.;\n]{1,80}\bor\b",
+    "sentence opener": r"(?:^|[.!?]\s+)(?:Moreover|Additionally|Certainly)\b",
+}
+CODE_EXT = {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py"}
+COMMENT_SYNTAX = {
+    "slash": ({".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".c", ".h", ".cpp",
+               ".hpp", ".cs", ".swift", ".kt", ".scala", ".php"}, "//", ("/*", "*/")),
+    "hash": ({".py", ".sh", ".bash", ".zsh", ".rb", ".pl", ".awk", ".yml", ".yaml", ".toml", ".jq", ".mk", ""},
+             "#", None),
+    "dash": ({".sql", ".lua", ".hs"}, "--", None),
+}
+TITLE_RE = {
+    "js": re.compile(r"(?<![.\w])(?:describe|it|test)(?:\.(?:skip|todo|only|each))?\s*\(\s*"
+                     r"(?:'((?:[^'\\\n]|\\.)*)'|\"((?:[^\"\\\n]|\\.)*)\"|`((?:[^`\\\n]|\\.)*)`)"),
+    "py": re.compile(r"^\s*def (test_\w+)", re.M),
+}
+FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’./_-]*")
+CODE_SPAN_RE = re.compile(r"`[^`]*`")
+HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+class ConfigError(Exception):
+    pass
+
+
+# --- text ------------------------------------------------------------------
+
+def line_count(text):
+    if not text:
+        return 0
+    return text.count("\n") + (0 if text.endswith("\n") else 1)
+
+
+def hash12(s):
+    return hashlib.sha256(s.strip().encode("utf-8")).hexdigest()[:12]
+
+
+def glob_re(pattern):
+    out, i = "", 0
+    while i < len(pattern):
+        c = pattern[i]
+        if pattern.startswith("**/", i):
+            out += "(?:.*/)?"
+            i += 3
+        elif pattern.startswith("**", i):
+            out += ".*"
+            i += 2
+        elif c == "*":
+            out += "[^/]*"
+            i += 1
+        elif c == "?":
+            out += "[^/]"
+            i += 1
+        else:
+            out += re.escape(c)
+            i += 1
+    return re.compile("^" + out + "$")
+
+
+def matches(globs, path):
+    return any(glob_re(g).match(path) for g in globs)
+
+
+def _is_table_delimiter(stripped):
+    return "|" in stripped and "-" in stripped and set(stripped) <= set("|-: ")
+
+
+def prose_lines(text):
+    """Yield (section_id, section_title, heading_line, lineno, line) per prose line.
+
+    Ported from symphony's lint_runbook_prose. Sections are keyed by ordinal
+    so two `## Backup` sections stay distinct. Fences, headings, blanks and
+    tables are free; a `#` comment inside a fence still counts (prose in a
+    costume) except a shebang; inline code spans are stripped in words().
+    """
+    section_id, title, heading_line = 0, "(preamble)", 0
+    in_fence, fence_char, fence_len, in_table = False, None, 0, False
+    pending = None
+
+    def flush():
+        nonlocal pending
+        item, pending = pending, None
+        return item
+
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if in_fence:
+            s = line.strip()
+            if s and set(s) == {fence_char} and len(s) >= fence_len:
+                in_fence = False
+            elif re.match(r"^\s*#", line) and not line.lstrip().startswith("#!"):
+                item = flush()
+                if item:
+                    yield item
+                yield section_id, title, heading_line, lineno, line
+            continue
+        m = FENCE_RE.match(line)
+        if m:
+            item = flush()
+            if item:
+                yield item
+            fence_char, fence_len, in_fence, in_table = m.group(1)[0], len(m.group(1)), True, False
+            continue
+        h = HEADING_RE.match(line)
+        if h:
+            item = flush()
+            if item:
+                yield item
+            in_table = False
+            if len(h.group(1)) == 2:
+                section_id, title, heading_line = section_id + 1, h.group(2), lineno
+            continue
+        stripped = line.strip()
+        if not stripped:
+            item = flush()
+            if item:
+                yield item
+            in_table = False
+            continue
+        if _is_table_delimiter(stripped):
+            pending = None
+            in_table = True
+            continue
+        if in_table:
+            if "|" in stripped:
+                continue
+            in_table = False
+        if stripped.startswith("|"):
+            continue
+        item = flush()
+        if item:
+            yield item
+        pending = (section_id, title, heading_line, lineno, line)
+    item = flush()
+    if item:
+        yield item
+
+
+def words(line):
+    return len(WORD_RE.findall(CODE_SPAN_RE.sub(" ", line)))
+
+
+def count_prose_words(text, exempt=("Where things are",)):
+    return sum(words(line) for _, title, _, _, line in prose_lines(text) if title not in exempt)
+
+
+def section_word_counts(text, exempt=("Where things are",)):
+    """[(title, words, heading_line)] in document order, exempt sections dropped."""
+    order, counts = [], {}
+    for sid, title, hline, _, line in prose_lines(text):
+        if title in exempt:
+            continue
+        if sid not in counts:
+            counts[sid] = [title, 0, hline]
+            order.append(sid)
+        counts[sid][1] += words(line)
+    return [tuple(counts[s]) for s in order]
+
+
+def json_pointer(parts):
+    return "".join("/" + str(p).replace("~", "~0").replace("/", "~1") for p in parts)
+
+
+def prose_strings(value, keys, path=()):
+    """(pointer, text) for every string (or list of strings) under a prose key."""
+    if isinstance(value, list):
+        for i, v in enumerate(value):
+            yield from prose_strings(v, keys, path + (i,))
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            p = path + (k,)
+            if k in keys:
+                if isinstance(v, str):
+                    yield json_pointer(p), v
+                elif isinstance(v, list):
+                    for i, s in enumerate(v):
+                        if isinstance(s, str):
+                            yield json_pointer(p + (i,)), s
+            if not isinstance(v, str):
+                yield from prose_strings(v, keys, p)
+
+
+def comment_syntax(path):
+    ext = os.path.splitext(path)[1]
+    for _, (exts, line_marker, block) in COMMENT_SYNTAX.items():
+        if ext in exts:
+            return line_marker, block
+    return None, None
+
+
+def header_comment(text, path):
+    """Lines of the leading comment block: consecutive line comments, or one block comment."""
+    marker, block = comment_syntax(path)
+    if marker is None:
+        return []
+    lines = text.split("\n")
+    if lines and lines[0].startswith("#!"):
+        lines = lines[1:]
+    if block and lines and lines[0].lstrip().startswith(block[0]):
+        for i, l in enumerate(lines):
+            if block[1] in l:
+                return lines[: i + 1]
+        return lines
+    out = []
+    for l in lines:
+        if not l.startswith(marker):
+            break
+        out.append(l)
+    return out
+
+
+def comment_line_count(text, path):
+    marker, block = comment_syntax(path)
+    if marker is None:
+        return 0
+    n, in_block = 0, False
+    for raw in text.split("\n"):
+        l = raw.strip()
+        if in_block:
+            n += 1
+            if block[1] in l:
+                in_block = False
+        elif l.startswith(marker) and not l.startswith("#!"):
+            n += 1
+        elif block and l.startswith(block[0]):
+            n += 1
+            if block[1] not in l:
+                in_block = True
+    return n
+
+
+def test_titles(text, path):
+    """(lineno, title) for every test title in a source file, indented or not."""
+    kind = "py" if path.endswith(".py") else "js"
+    out = []
+    for m in TITLE_RE[kind].finditer(text):
+        title = m.group(1) if kind == "py" else next(g for g in m.groups() if g is not None)
+        out.append((text.count("\n", 0, m.start()) + 1, title))
+    return out
+
+
+def voice_regexes(words_, phrases):
+    out = [(w, re.compile(r"(?<![\w-])" + re.escape(w) + r"(?![\w-])", re.I)) for w in words_]
+    out += [(name, re.compile(p, re.I if name != "sentence opener" else 0)) for name, p in phrases.items()]
+    return out
+
+
+# --- config ----------------------------------------------------------------
+
+def find_config(cwd, root):
+    d = os.path.abspath(cwd)
+    while True:
+        for name in CONFIG_NAMES:
+            p = os.path.join(d, name)
+            if os.path.isfile(p):
+                return p
+        if os.path.samefile(d, root) or os.path.dirname(d) == d:
+            return None
+        d = os.path.dirname(d)
+
+
+def _rule(cfg, name, defaults, on):
+    v = cfg.get(name)
+    if v is False:
+        return None
+    if v is None:
+        return dict(defaults) if on else None
+    if not isinstance(v, dict):
+        raise ConfigError(f"{name}: expected an object")
+    for k in v:
+        if k not in defaults:
+            raise ConfigError(f"{name}.{k}: unknown key")
+    d = dict(defaults)
+    d.update(v)
+    return d
+
+
+def load_config(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (OSError, ValueError) as e:
+        raise ConfigError(f"cannot read {path}: {e}")
+    if not isinstance(cfg, dict):
+        raise ConfigError("top level must be an object")
+    known = {"$comment", "preset", "lines", "sections", "delta", "json_prose", "narration", "voice",
+             "headers", "unique_ids", "land_alone"}
+    for k in cfg:
+        if k not in known:
+            raise ConfigError(f"unknown rule {k!r}")
+    if cfg.get("preset", "strict") != "strict":
+        raise ConfigError("preset: only 'strict' exists")
+    r = {}
+    lines = cfg.get("lines")
+    if lines is None or lines is False:
+        r["lines"] = None
+    elif not isinstance(lines, dict):
+        raise ConfigError("lines: expected {file: max_lines}")
+    else:
+        files = {k: v for k, v in lines.items() if k not in ("required", "must_budget", "pending")}
+        for k, v in files.items():
+            if not isinstance(v, int):
+                raise ConfigError(f"lines.{k}: expected an integer")
+        r["lines"] = {"files": files, "required": bool(lines.get("required", False)),
+                      "must_budget": list(lines.get("must_budget", [])), "pending": list(lines.get("pending", []))}
+    r["sections"] = _rule(cfg, "sections", {"targets": RUNBOOK_TARGETS, "max_words": 140,
+                                             "exempt": ["Where things are"]}, True)
+    budgeted = set(r["lines"]["files"]) if r["lines"] else set()
+    r["delta"] = _rule(cfg, "delta", {"targets": None, "max_words": 40}, True)
+    if r["delta"] and r["delta"]["targets"] is None:
+        r["delta"]["targets"] = MD_TARGETS
+        r["delta"]["exclude"] = budgeted
+    elif r["delta"]:
+        r["delta"]["exclude"] = set()
+    r["json_prose"] = _rule(cfg, "json_prose", {"targets": [], "keys": PROSE_KEYS, "max_chars": 450,
+                                                 "grandfathered": []}, False)
+    r["narration"] = _rule(cfg, "narration", {"targets": MD_TARGETS, "patterns": {}, "disable": [],
+                                               "scope": {}, "grandfathered": []}, True)
+    if r["narration"]:
+        for name, pattern in r["narration"]["patterns"].items():
+            if not isinstance(pattern, str):
+                raise ConfigError(f"narration.patterns.{name}: expected a string")
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                raise ConfigError(f"narration.patterns.{name}: invalid pattern: {e}") from e
+    r["voice"] = _rule(cfg, "voice", {"scope": "diff", "targets": MD_TARGETS, "words": [], "allow": [],
+                                       "count": ["rather than"]}, True)
+    if r["voice"] and r["voice"]["scope"] not in ("diff", "tree"):
+        raise ConfigError("voice.scope: 'diff' or 'tree'")
+    r["headers"] = _rule(cfg, "headers", {"targets": [], "max_lines": 25, "grandfathered": {}}, False)
+    ids = cfg.get("unique_ids")
+    if ids is not None and ids is not False and not (isinstance(ids, list) and all(
+            isinstance(e, dict) and "file" in e and "pattern" in e for e in ids)):
+        raise ConfigError("unique_ids: expected [{file, pattern}]")
+    for entry in ids or []:
+        try:
+            re.compile(entry["pattern"])
+        except re.error as e:
+            raise ConfigError(f"unique_ids[{entry['file']}].pattern: invalid pattern: {e}") from e
+    r["unique_ids"] = ids or None
+    r["land_alone"] = _rule(cfg, "land_alone", {"targets": RUNBOOK_TARGETS, "with": LAND_WITH}, True)
+    return r
+
+
+# --- repo access -------------------------------------------------------------
+
+class Repo:
+    def __init__(self, root):
+        self.root = root
+        self.is_git = self.git("rev-parse", "--git-dir").returncode == 0
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True)
+
+    def all_files(self):
+        if self.is_git:
+            r = self.git("ls-files", "-co", "--exclude-standard", "-z")
+            if r.returncode == 0:
+                return sorted(p for p in r.stdout.split("\0") if p and os.path.isfile(os.path.join(self.root, p)))
+        out = []
+        for d, dirs, files in os.walk(self.root):
+            dirs[:] = [x for x in dirs if x not in (".git", "node_modules")]
+            for f in files:
+                out.append(os.path.relpath(os.path.join(d, f), self.root))
+        return sorted(out)
+
+    def read_disk(self, path):
+        try:
+            with open(os.path.join(self.root, path), encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError:
+            return None
+
+    def show(self, ref, path):
+        r = self.git("show", f"{ref}:{path}" if ref != ":" else f":{path}")
+        return r.stdout if r.returncode == 0 else None
+
+    def staged_paths(self):
+        r = self.git("diff", "--cached", "--no-renames", "--name-only", "--diff-filter=ACMRD")
+        return [p for p in r.stdout.splitlines() if p.strip()]
+
+    def changed_paths(self, a, b):
+        r = self.git("diff", "--no-renames", "--name-only", a, b)
+        return [p for p in r.stdout.splitlines() if p.strip()]
+
+    def added_lines(self, *diff_args):
+        """{path: [(lineno, text)]} of added lines in a unified diff."""
+        r = self.git("diff", "--no-color", "-U0", "--no-renames", *diff_args)
+        out, path, lineno = {}, None, 0
+        for line in r.stdout.split("\n"):
+            if line.startswith("+++ "):
+                path = line[6:] if line.startswith("+++ b/") else None
+            elif line.startswith("@@"):
+                m = HUNK_RE.match(line)
+                lineno = int(m.group(1)) if m else 0
+            elif path and line.startswith("+"):
+                out.setdefault(path, []).append((lineno, line[1:]))
+                lineno += 1
+            elif path and not line.startswith("-") and not line.startswith("\\"):
+                lineno += 1
+        return out
+
+
+# --- checking ------------------------------------------------------------------
+
+class Checker:
+    def __init__(self, rules, repo, config_rel, mode, base=None, only=None):
+        self.rules, self.repo, self.config_rel, self.mode, self.base = rules, repo, config_rel, mode, base
+        self.only = only
+        self.findings = []
+        self.info = []
+        self._bad_json = set()
+        self.full = mode in ("tree", "base") and only is None
+        if only is not None:
+            self.files = [f for f in only if os.path.isfile(os.path.join(repo.root, f))]
+            self.read = repo.read_disk
+        elif mode == "staged":
+            deleted = set(repo.git("diff", "--cached", "--name-only", "--diff-filter=D").stdout.split())
+            self.files = [p for p in repo.staged_paths() if p not in deleted]
+            self.read = lambda p: repo.show(":", p)
+        else:
+            self.files = repo.all_files()
+            self.read = repo.read_disk
+        if mode == "staged":
+            self.before_ref, self.after_ref = "HEAD", ":"
+            self.changed = repo.staged_paths()
+            self.diff_args = ("--cached",)
+        elif mode == "base":
+            mb = repo.git("merge-base", base, "HEAD").stdout.strip()
+            if not mb:
+                raise ConfigError(f"--base {base}: no merge base with HEAD")
+            self.before_ref, self.after_ref = mb, "HEAD"
+            self.changed = repo.changed_paths(mb, "HEAD")
+            self.diff_args = (mb, "HEAD")
+        else:
+            self.changed = []
+
+    def add(self, rule, file, message, line=None, pointer=None, hash_=None):
+        self.findings.append({"rule": rule, "file": file, "line": line, "pointer": pointer,
+                              "hash": hash_, "message": message})
+
+    def targets(self, globs):
+        return [f for f in self.files if matches(globs, f)]
+
+    def run(self):
+        r = self.rules
+        for name in ("lines", "sections", "json_prose", "narration", "voice", "headers", "unique_ids"):
+            if r[name]:
+                getattr(self, "check_" + name)(r[name])
+        if self.mode in ("staged", "base") and self.only is None:
+            if r["delta"]:
+                self.check_delta(r["delta"])
+            if r["land_alone"]:
+                self.check_land_alone(r["land_alone"])
+        self.findings.sort(key=lambda f: (f["file"], f["line"] or 0, f["pointer"] or "", f["rule"]))
+        return self.findings
+
+    def check_lines(self, cfg):
+        for file, max_ in cfg["files"].items():
+            if self.only is not None and file not in self.files:
+                continue
+            text = self.read(file) if (file in self.files or self.mode != "staged") else None
+            if text is None:
+                if cfg["required"] and self.full and file not in cfg["pending"]:
+                    self.add("lines", file, "budgeted but not on disk (rename or typo?); drop the entry "
+                             "or list it under lines.pending")
+                continue
+            n = line_count(text)
+            if n > max_:
+                self.add("lines", file, f"{n} lines, budget {max_}", line=n)
+        for f in self.targets(cfg["must_budget"]):
+            if f not in cfg["files"]:
+                self.add("lines", f, "no line budget; add one")
+
+    def check_sections(self, cfg):
+        for f in self.targets(cfg["targets"]):
+            text = self.read(f)
+            if text is None:
+                continue
+            for title, n, hline in section_word_counts(text, tuple(cfg["exempt"])):
+                if n > cfg["max_words"]:
+                    self.add("sections", f, f"section '{title}' has {n} prose words (max {cfg['max_words']})",
+                             line=hline)
+
+    def _json_targets(self, cfg):
+        files = self.targets(cfg["targets"])
+        if self.config_rel and self.config_rel in self.files and self.config_rel not in files:
+            files.append(self.config_rel)
+        return files
+
+    def _prose_fields(self, f, keys, rule="json_prose"):
+        text = self.read(f)
+        if text is None:
+            return []
+        try:
+            data = json.loads(text)
+        except ValueError as e:
+            if f not in self._bad_json:
+                self._bad_json.add(f)
+                self.add(rule, f, f"invalid JSON: {e}")
+            return []
+        if f == self.config_rel:
+            keys = list(keys) + ["$comment"]
+        return list(prose_strings(data, keys))
+
+    def check_json_prose(self, cfg):
+        unused = list(cfg["grandfathered"])
+        still = 0
+        for f in self._json_targets(cfg):
+            for ptr, text in self._prose_fields(f, cfg["keys"]):
+                if len(text) <= cfg["max_chars"]:
+                    continue
+                id_ = f"{f}#{ptr}"
+                if id_ in unused:
+                    unused.remove(id_)
+                    still += 1
+                else:
+                    self.add("json_prose", f, f"{len(text)} chars, cap {cfg['max_chars']} "
+                             "(a note is one sentence plus the id it points at)", pointer=ptr)
+        if self.full:
+            for id_ in unused:
+                f, _, ptr = id_.partition("#")
+                self.add("json_prose", f, "grandfathered but no longer over the cap; remove the entry",
+                         pointer=ptr)
+        self.info.append(f"json_prose: {still} grandfathered field(s) still over {cfg['max_chars']} chars")
+
+    def _narration_units(self, f):
+        """(lineno, text) units to scan: raw lines, or header comment + test titles for code."""
+        text = self.read(f)
+        if text is None:
+            return []
+        if os.path.splitext(f)[1] in CODE_EXT:
+            header = header_comment(text, f)
+            start = 2 if text.startswith("#!") else 1
+            return [(start + i, l) for i, l in enumerate(header)] + test_titles(text, f)
+        return list(enumerate(text.split("\n"), 1))
+
+    def check_narration(self, cfg):
+        patterns = {k: v for k, v in NARRATION.items() if k not in cfg["disable"]}
+        patterns.update(cfg["patterns"])
+        compiled = {k: re.compile(v, re.I) for k, v in patterns.items()}
+        unused = list(cfg["grandfathered"])
+        old = 0
+        for f in self.targets(cfg["targets"]):
+            if f == self.config_rel:
+                continue
+            active = {k: v for k, v in compiled.items() if k not in cfg["scope"] or matches(cfg["scope"][k], f)}
+            for lineno, unit in self._narration_units(f):
+                h = hash12(unit)
+                for name, rx in active.items():
+                    for m in rx.finditer(unit):
+                        hit = m.group(0)
+                        g = next((e for e in unused if e.get("file") == f
+                                  and e.get("hash", h) == h and e.get("match", hit) == hit), None)
+                        if g is not None:
+                            unused.remove(g)
+                            old += 1
+                        else:
+                            self.add("narration", f, f'{name} "{hit}" (session narration belongs in the PR '
+                                     f"body or the log; grandfather hash {h})", line=lineno, hash_=h)
+        if self.full:
+            for g in unused:
+                self.add("narration", g.get("file", "?"), f"grandfathered {g.get('match', g.get('hash'))!r} "
+                         "no longer matches; remove the entry", hash_=g.get("hash"))
+        self.info.append(f"narration: {old} grandfathered hit(s)")
+
+    def _voice_units(self, f):
+        text = self.read(f)
+        if text is None:
+            return []
+        if f.endswith(".json"):
+            keys = self.rules["json_prose"]["keys"] if self.rules["json_prose"] else PROSE_KEYS
+            return [(None, ptr, s) for ptr, s in self._prose_fields(f, keys, rule="voice")]
+        return [(i, None, l) for i, l in enumerate(text.split("\n"), 1)]
+
+    def check_voice(self, cfg):
+        regexes = voice_regexes(VOICE_WORDS + list(cfg["words"]), VOICE_PHRASES)
+        counts = {p: {} for p in cfg["count"]}
+        count_rx = {p: re.compile(r"\b" + re.escape(p) + r"\b", re.I) for p in cfg["count"]}
+        if cfg["scope"] == "tree" or self.only is not None:
+            units = [(f, u) for f in self.targets(cfg["targets"]) if f != self.config_rel
+                     for u in self._voice_units(f)]
+        elif self.mode in ("staged", "base") and self.only is None:
+            added = self.repo.added_lines(*self.diff_args)
+            units = [(f, (n, None, l)) for f, lines in added.items()
+                     if matches(cfg["targets"], f) and f != self.config_rel for n, l in lines]
+        else:
+            return
+        for f, (lineno, ptr, text) in units:
+            for a in cfg["allow"]:
+                text = text.replace(a, "")
+            for name, rx in regexes:
+                for m in rx.finditer(text):
+                    self.add("voice", f, f'"{m.group(0).strip()}" reads as a model; say it plainer',
+                             line=lineno, pointer=ptr)
+            for p, rx in count_rx.items():
+                n = len(rx.findall(text))
+                if n:
+                    counts[p][f] = counts[p].get(f, 0) + n
+        for p, per_file in counts.items():
+            self.info.append(f'voice: "{p}": ' + (", ".join(f"{f} {n}" for f, n in sorted(per_file.items()))
+                                                    or "none"))
+
+    def check_headers(self, cfg):
+        for f in self.targets(cfg["targets"]):
+            text = self.read(f)
+            if text is None:
+                continue
+            total, comments, header = line_count(text), comment_line_count(text, f), len(header_comment(text, f))
+            self.info.append(f"headers: {f}: {comments}/{total} comment lines "
+                             f"({100 * comments // max(total, 1)}%), header {header}")
+            max_ = cfg["grandfathered"].get(f, cfg["max_lines"])
+            if header > max_:
+                self.add("headers", f, f"header comment is {header} lines, cap {max_}", line=1)
+
+    def check_unique_ids(self, cfg):
+        for entry in cfg:
+            f = entry["file"]
+            if f not in self.files:
+                continue
+            text = self.read(f) or ""
+            seen = {}
+            for m in re.finditer(entry["pattern"], text):
+                id_ = m.group(1) if m.groups() else m.group(0)
+                seen[id_] = seen.get(id_, 0) + 1
+            for id_, n in seen.items():
+                if n > 1:
+                    self.add("unique_ids", f, f"{id_} defined {n} times")
+
+    def check_delta(self, cfg):
+        exempt = tuple(self.rules["sections"]["exempt"]) if self.rules["sections"] else ("Where things are",)
+        paths = [p for p in self.changed if matches(cfg["targets"], p) and p not in cfg["exclude"]]
+        added = removed = 0
+        for p in paths:
+            before = self.repo.show(self.before_ref, p)
+            after = self.repo.show(self.after_ref, p)
+            b = count_prose_words(before, exempt) if before is not None else 0
+            a = count_prose_words(after, exempt) if after is not None else 0
+            if a > b:
+                added += a - b
+            else:
+                removed += b - a
+        delta = added - removed
+        if paths:
+            self.info.append(f"delta: {delta:+d} net prose words across {len(paths)} file(s)")
+        if delta > cfg["max_words"]:
+            self.add("delta", "", f"adds {delta} net prose words to {', '.join(paths)} "
+                     f"(max {cfg['max_words']}); cut as much as you add")
+
+    def check_land_alone(self, cfg):
+        if not any(matches(cfg["targets"], p) for p in self.changed):
+            return
+        strays = sorted(p for p in self.changed if not matches(cfg["targets"], p)
+                        and not matches(cfg["with"], p) and p != self.config_rel)
+        if strays:
+            self.add("land_alone", "", "edits to " + ", ".join(p for p in self.changed if matches(cfg["targets"], p))
+                     + " land in their own change so they can be reviewed and rejected on their own; "
+                     "also changed: " + ", ".join(strays))
+
+
+# --- CLI -------------------------------------------------------------------------
+
+def format_finding(f):
+    loc = f["file"] or "(change)"
+    if f["pointer"]:
+        loc += "#" + f["pointer"]
+    if f["line"]:
+        loc += f":{f['line']}"
+    return f"{loc}: {f['rule']}: {f['message']}"
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="prose-budget", add_help=True)
+    ap.add_argument("--config")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--tree", action="store_true")
+    mode.add_argument("--staged", action="store_true")
+    mode.add_argument("--base", metavar="REF")
+    ap.add_argument("--file", nargs="+", default=None)
+    ap.add_argument("--warn-only", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--require-config", action="store_true")
+    ap.add_argument("--version", action="version", version=f"prose-budget {VERSION}")
+    try:
+        args = ap.parse_args(argv)
+    except SystemExit as e:
+        return 0 if e.code == 0 else 2
+
+    cwd = os.getcwd()
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, cwd=cwd)
+    root = top.stdout.strip() if top.returncode == 0 else cwd
+    config = os.path.abspath(args.config) if args.config else find_config(cwd, root)
+    if config is None:
+        if args.require_config:
+            print("no prose-budget config (docs/budgets.json or .prose-budgets.json) and --require-config given")
+            return 1
+        print("no prose-budget config")
+        return 0
+    if not args.config:
+        root = os.path.dirname(config)
+        if os.path.basename(root) == "docs" and config.endswith(os.path.join("docs", "budgets.json")):
+            root = os.path.dirname(root)
+    config_rel = os.path.relpath(config, root).replace(os.sep, "/")
+    if config_rel.startswith(".."):
+        config_rel = None
+    try:
+        rules = load_config(config)
+        repo = Repo(root)
+        which = "staged" if args.staged else "base" if args.base else "tree"
+        if which != "tree" and not repo.is_git:
+            raise ConfigError(f"--{which} needs a git repository at {root}")
+        only = None
+        if args.file:
+            only = [os.path.relpath(os.path.abspath(p), root).replace(os.sep, "/") for p in args.file]
+            only = [p for p in only if not p.startswith("..")]
+        checker = Checker(rules, repo, config_rel, which, args.base, only)
+        findings = checker.run()
+    except ConfigError as e:
+        print(f"prose-budget: bad config {config}: {e}", file=sys.stderr)
+        return 2
+
+    for line in checker.info:
+        print("prose-budget: " + line, file=sys.stderr)
+    if args.json:
+        print(json.dumps(findings, indent=2))
+    else:
+        for f in findings:
+            print(format_finding(f))
+        if findings:
+            print(RAISE.format(config_rel or config))
+        else:
+            print(f"prose-budget: OK -- {len(checker.files)} file(s) checked ({which})")
+    if findings and not args.warn_only:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

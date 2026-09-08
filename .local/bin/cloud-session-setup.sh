@@ -80,8 +80,11 @@ INSTALL="
 .claude/hooks/log-commit.sh
 .claude/hooks/statusline-metrics.sh
 .claude/hooks/connector-budget.sh
+.claude/hooks/prose-budget-commit.sh
+.claude/hooks/prose-budget-edit.sh
 .claude/hooks/fixtures
 .local/bin/metrics-preview.sh
+.local/bin/prose-budget
 "
 
 # --- what is wholly owned by this installer -------------------------------
