@@ -11,6 +11,9 @@
 # meant to fix. This hook is the mechanical version: the text arrives because
 # a PR-shaped tool call happened, not because anyone remembered.
 #
+# Also, on every matching call, records the PR touched (see below) so
+# pr-threads-gate.sh can block the Stop while review threads are still open.
+#
 # Fires once per session, on the first matching call:
 #   - Bash: `gh pr ...`, or `gh api ...` naming pulls / graphql / reviewThreads
 #   - MCP:  any GitHub tool whose name mentions a pull request or a review
@@ -47,11 +50,36 @@ case "$tool" in
   *) exit 0 ;;
 esac
 
-# Once per session. The marker lives in tmp on purpose: it should die with the
-# machine (cloud VM) or the reboot, and must never land in a state repo.
+# Record which PR this call touched, every call, so pr-threads-gate.sh (Stop)
+# can re-fetch its review threads before the session hands it back. The
+# reminder below is text and fires once; the record is what the gate runs on.
+# Lines are "repo<TAB>owner/name<TAB>number" when the call names a PR, else
+# "cwd<TAB>path" and the gate asks gh which PR the branch there belongs to.
 sid=$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)
 if [ -n "$sid" ]; then
-  marker="${TMPDIR:-/tmp}/claude-pr-ownership-context.$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_-' '_')"
+  tag=$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_-' '_')
+  record="${TMPDIR:-/tmp}/claude-pr-threads.$tag"
+  case "$tool" in
+    Bash)
+      repo=$(printf '%s' "$cmd" | grep -Eo -- '(^|[[:space:]])(-R|--repo)[[:space:]=]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' | head -1 | sed 's/.*[[:space:]=]//')
+      num=$(printf '%s' "$cmd" | grep -Eo 'gh[[:space:]]+pr[[:space:]]+[a-z-]+[[:space:]]+[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+      [ -z "$num" ] && num=$(printf '%s' "$cmd" | grep -Eo 'pulls/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+      [ -z "$num" ] && num=$(printf '%s' "$cmd" | grep -Eo 'pull/[0-9]+' | head -1 | grep -Eo '[0-9]+$')
+      [ -z "$repo" ] && repo=$(printf '%s' "$cmd" | grep -Eo '(repos|github\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pulls?/' | head -1 | sed 's#^[^/]*/##; s#/pulls\?/$##; s#/pull/$##')
+      cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)
+      if [ -n "$repo" ] && [ -n "$num" ]; then printf 'repo\t%s\t%s\n' "$repo" "$num" >> "$record" 2>/dev/null || :
+      elif [ -n "$cwd" ]; then printf 'cwd\t%s\n' "$cwd" >> "$record" 2>/dev/null || :
+      fi
+      ;;
+    *)
+      line=$(printf '%s' "$payload" | jq -r '.tool_input | select(.owner and .repo and (.pullNumber // .pull_number // .number)) | "repo\t\(.owner)/\(.repo)\t\(.pullNumber // .pull_number // .number)"' 2>/dev/null)
+      [ -n "$line" ] && { printf '%s\n' "$line" >> "$record" 2>/dev/null || :; }
+      ;;
+  esac
+  # Once per session for the text. The marker lives in tmp on purpose: it should
+  # die with the machine (cloud VM) or the reboot, and must never land in a
+  # state repo.
+  marker="${TMPDIR:-/tmp}/claude-pr-ownership-context.$tag"
   [ -e "$marker" ] && exit 0
   : > "$marker" 2>/dev/null || :
 fi

@@ -65,6 +65,7 @@ INSTALL="
 .claude/hooks/no-persistent-polling.sh
 .claude/hooks/no-late-pr-subscribe.sh
 .claude/hooks/pr-ownership-context.sh
+.claude/hooks/pr-threads-gate.sh
 .claude/hooks/no-draft-pr.sh
 .claude/hooks/no-git-reset-hard.sh
 .claude/hooks/no-unsigned-push.sh

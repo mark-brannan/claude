@@ -205,6 +205,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "p=$(cat); [ \"$(printf '%s' \"$p\" | jq -r '.stop_hook_active // false' 2>/dev/null)\" = true ] && exit 0; h=\"$HOME/.claude/hooks/pr-threads-gate.sh\"; { [ -f \"$h\" ] && printf '%s' \"$p\" | sh \"$h\"; } || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"pr-threads-gate.sh is missing from $HOME/.claude/hooks or crashed, so review threads on the PR this session worked could not be re-checked. This is a gate and fails closed: if you touched a PR this session, state per thread id which are resolved and which are open, then end the turn again.\"}'",
+            "timeout": 60,
+            "statusMessage": "Re-checking review threads on PRs this session touched"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" stop 0 show 2>/dev/null || true"
           }
         ]
