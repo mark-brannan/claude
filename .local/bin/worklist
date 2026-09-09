@@ -277,8 +277,16 @@ def labels: [(.labels.nodes // [])[].name];
     | (if .data.pullRequests.pageInfo.hasNextPage then "\($s): more than 50 open PRs -- PR buckets truncated" else empty end),
       (if .data.issues.pageInfo.hasNextPage then "\($s): more than 100 open issues -- issue buckets and Untriaged truncated" else empty end) ] as $trunc
 | ($c.counts | if (.prs|type) == "string" and (.issues|type) == "string" and .prs == .issues and (.prs|test("^[0-9]")|not)
-      then "counts: unavailable (\(.prs))"
-      else "counts: \(.prs) open PRs, \(.issues) open issues across \($owner)" end) as $counts
+      then "unavailable (\(.prs))"
+      else "\(.prs) open PRs, \(.issues) open issues across \($owner)" end) as $acct
+# The number a reader skims sits above project-scoped tables, so the scoped
+# count comes first; the account-wide one follows, labelled.
+| ([$c.records[] | select(.data)]
+   | if length == 0 then null else
+     { prs: (map(.data.pullRequests.nodes | length) | add), prs_more: (map(.data.pullRequests.pageInfo.hasNextPage) | any),
+       issues: (map(.data.issues.nodes | length) | add), issues_more: (map(.data.issues.pageInfo.hasNextPage) | any) } end) as $scope
+| (if $scope == null then "counts: \($acct)"
+   else "counts: \($scope.prs)\(if $scope.prs_more then "+" else "" end) open PRs, \($scope.issues)\(if $scope.issues_more then "+" else "" end) open issues in scope; \($acct)" end) as $counts
 | [ $c.label + " " + ($c.repos | map(split("/")[1]) | join(", ")) ]
   + $fails + $trunc + [ $counts, "", "@@RULINGS@@",
   table_bucket("Solace'"'"'s turn"; "Notes"; $prs | map(select(awaiting_human))),

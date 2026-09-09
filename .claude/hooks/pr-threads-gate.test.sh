@@ -27,6 +27,7 @@ case "${GH_MODE:-}" in
   merged)   printf '{"data":{"repository":{"pullRequest":{"state":"MERGED","reviewThreads":{"nodes":[{"id":"PRRT_z","isResolved":false,"path":null,"comments":{"nodes":[]}}]}}}}}' ;;
   missing)  printf '{"data":{"repository":{"pullRequest":null}}}' ;;
   fail)     echo "gh: HTTP 401: Bad credentials" >&2; exit 1 ;;
+  hang)     sleep 30 ;;
 esac
 GH
 chmod +x "$SCRATCH/bin/gh"
@@ -107,12 +108,22 @@ out=$(stop_input s8 | PATH="$SCRATCH/nogh" GH_MODE=open /bin/sh "$HOOK" 2>&1); L
 if [ "$(printf '%s' "$out" | jq -r .decision 2>/dev/null)" = block ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL: gh absent should block: $out"; fi
 reason 'names gh as missing'           'gh is not installed'
 
-# --- more PRs than the cap are unverified, not clean ---------------------------
-for i in 1 2 3 4 5 6 7; do record s9 "$(printf 'repo\to/r\t%s' "$i")"; done
+# --- a fan-out over many PRs checks every one; none is skipped by count ---------
+for i in 1 2 3 4 5 6 7 8; do record s9 "$(printf 'repo\to/r\t%s' "$i")"; done
 : > "$GH_LOG"
-check block 'over the cap -> block'     resolved "$(stop_input s9)"
-reason 'names the unchecked PR'         'o/r#7: not checked, more than 5'
-t 'only 5 queried' 5 "$(grep -c 'api graphql' "$GH_LOG")"
+check silent 'eight clean PRs -> silent' resolved "$(stop_input s9)"
+t 'all eight queried' 8 "$(grep -c 'api graphql' "$GH_LOG")"
+check block 'eight PRs, one open thread each -> block' open "$(stop_input s9)"
+reason 'names the eighth PR'            'o/r#8 has 1 unresolved'
+no_reason 'no count cap'                'not checked'
+
+# --- a hung fetch is reported as unverified, not skipped ------------------------
+if command -v timeout >/dev/null 2>&1; then
+  record s10 "$(printf 'repo\to/r\t1')"
+  out=$(stop_input s10 | PR_THREADS_GATE_TIMEOUT=1 GH_MODE=hang sh "$HOOK" 2>&1); LAST=$out
+  if [ "$(printf '%s' "$out" | jq -r .decision 2>/dev/null)" = block ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL: hung fetch should block: $out"; fi
+  reason 'names the timeout'             'o/r#1: fetch timed out'
+fi
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

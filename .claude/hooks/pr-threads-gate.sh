@@ -56,25 +56,43 @@ prs=$(sort -u "$record" | while IFS="$(printf '\t')" read -r kind a b; do
 done | sort -u)
 [ -n "$prs" ] || exit 0
 
-open=""
-failed=""
+# One fetch per PR, all at once, each bounded by wall clock rather than the
+# list by count: a session that fans out over eight PRs still gets every one
+# checked, and a fetch that hangs is reported as unverified, never skipped.
+# Without `timeout` the bound is gh's own; the fetch still runs.
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/pr-threads-gate.XXXXXX") || block "pr-threads-gate: cannot create a scratch directory, so review threads on the PR you worked could not be re-checked. State in your final message, per thread id, which are resolved and which are open, then end the turn again."
+trap 'rm -rf "$WORK"' EXIT
+TO=""; command -v timeout >/dev/null 2>&1 && TO="timeout ${PR_THREADS_GATE_TIMEOUT:-60}"
 n=0
 while IFS="$(printf '\t')" read -r repo num; do
   if [ -z "$repo" ] || [ -z "$num" ]; then continue; fi
-  # Cap the network calls, but never silently: a PR past the cap is reported
-  # as unverified so the turn still blocks instead of reading as clean.
   n=$((n + 1))
-  [ "$n" -gt 5 ] && { failed="$failed
-- $repo#$num: not checked, more than 5 PRs recorded this session"; continue; }
+  printf '%s\t%s\n' "$repo" "$num" > "$WORK/$n.pr"
   owner=${repo%%/*}; name=${repo#*/}
   # shellcheck disable=SC2016  # GraphQL variables, not shell ones
-  out=$(gh api graphql -f owner="$owner" -f name="$name" -F number="$num" -f query='
+  ( $TO gh api graphql -f owner="$owner" -f name="$name" -F number="$num" -f query='
     query($owner:String!,$name:String!,$number:Int!){
       repository(owner:$owner,name:$name){ pullRequest(number:$number){
         state
         reviewThreads(first:100){ nodes{ id isResolved path
-          comments(first:1){ nodes{ author{login} body } } } } } } }' 2>&1) \
-    || { failed="$failed
+          comments(first:1){ nodes{ author{login} body } } } } } } }' > "$WORK/$n.out" 2>&1
+    echo $? > "$WORK/$n.rc" ) &
+done <<EOF
+$prs
+EOF
+wait
+
+open=""
+failed=""
+i=0
+while [ "$i" -lt "$n" ]; do
+  i=$((i + 1))
+  IFS="$(printf '\t')" read -r repo num < "$WORK/$i.pr"
+  out=$(cat "$WORK/$i.out" 2>/dev/null)
+  rc=$(cat "$WORK/$i.rc" 2>/dev/null)
+  if [ "$rc" = 124 ]; then failed="$failed
+- $repo#$num: fetch timed out"; continue; fi
+  [ "$rc" = 0 ] || { failed="$failed
 - $repo#$num: $(printf '%s' "$out" | head -3 | tr '\n' ' ')"; continue; }
   state=$(printf '%s' "$out" | jq -r '.data.repository.pullRequest.state // empty')
   [ -n "$state" ] || { failed="$failed
@@ -85,9 +103,7 @@ while IFS="$(printf '\t')" read -r repo num; do
   [ -n "$threads" ] && open="$open
 - $repo#$num has $(printf '%s\n' "$threads" | wc -l | tr -d ' ') unresolved review thread(s):
 $threads"
-done <<EOF
-$prs
-EOF
+done
 
 [ -z "$open" ] && [ -z "$failed" ] && exit 0
 

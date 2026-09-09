@@ -128,7 +128,7 @@ run
 eq 'exit 0' 0 "$RC"
 has 'stamp without cache note' '^as of [0-9]{2}:[0-9]{2}Z$'
 has 'scope names the project and repos' '^project demo \(o\): alpha, beta$'
-has 'account-wide counts' '^counts: 3 open PRs, 2 open issues across o$'
+has 'scoped counts first, account-wide after' '^counts: 6 open PRs, 6 open issues in scope; 3 open PRs, 2 open issues across o$'
 eq 'one GraphQL call per repo' 2 "$(calls 'api graphql')"
 eq 'topic looked up once' 1 "$(calls 'repo view o/alpha --json repositoryTopics')"
 eq 'repo set from the topic' 1 "$(calls 'repo list o --topic project-demo')"
