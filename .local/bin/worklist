@@ -221,8 +221,8 @@ def cut: if brief and length > 80 then .[:77] + "..." else . end;
 def limit: if brief then 5 else 1000000 end;
 def bucket($title; $lines):
   if ($lines|length) == 0 then "\($title): none"
-  else ([$title] + ($lines[:limit] | map("  " + .))
-        + (if ($lines|length) > limit then ["  +\(($lines|length) - limit) more (run worklist)"] else [] end)) | join("\n") end;
+  else ([$title] + ($lines[:limit] | map("- " + .))
+        + (if ($lines|length) > limit then ["- +\(($lines|length) - limit) more (run worklist)"] else [] end)) | join("\n") end;
 def url_sfx: if brief then "" else "  " + .url end;
 def failing_names: [ (.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[]
   | select( ((.conclusion // "") | IN("FAILURE","TIMED_OUT","CANCELLED","ACTION_REQUIRED","STARTUP_FAILURE"))
@@ -330,9 +330,9 @@ ruling_section() {
     # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
     printf '%s\n' "$inscope" | head -8 | jq -Rr --arg brief "$brief" --arg all "$showall" '
       split("\t") | (if $all == "1" then .[0] + ": " else "" end) + .[1]
-      | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "  " + .'
+      | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
   fi
-  [ "$other" -gt 0 ] && printf '  +%s in other projects (worklist --all-rulings)\n' "$other"
+  [ "$other" -gt 0 ] && printf -- '- +%s in other projects (worklist --all-rulings)\n' "$other"
   return 0
 }
 
@@ -345,7 +345,7 @@ section_of() {
   if [ "$total" -eq 0 ]; then printf '%s: none\n' "$3$4"; return 0; fi
   printf '%s, showing %s of %s%s\n' "$3" "$( [ "$total" -gt 8 ] && echo 8 || echo "$total" )" "$total" "$4"
   # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
-  printf '%s\n' "$cards" | head -8 | jq -Rr --arg brief "$brief" '.[6:] | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "  " + .'
+  printf '%s\n' "$cards" | head -8 | jq -Rr --arg brief "$brief" '.[6:] | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
 }
 
 # render <cache file or ""> <cached 0|1> <extra line or "">
@@ -365,6 +365,11 @@ render() {
   rulings=""
   [ -n "$kb" ] && rulings=$(ruling_section "$kb" "$proj")
   {
+    if [ -n "$proj" ]; then
+        echo "## Project '$proj' worklist"
+    else
+        echo "## (no project) worklist"
+    fi
     echo "$stamp"
     [ -n "$3" ] && echo "$3"
     if [ -n "$1" ]; then

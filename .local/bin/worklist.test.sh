@@ -111,8 +111,8 @@ has()  { if printf '%s\n' "$OUT" | grep -Eq -- "$2"; then ok; else bad "$1 (miss
 lacks(){ if printf '%s\n' "$OUT" | grep -Eq -- "$2"; then bad "$1 (has /$2/)" "$OUT"; else ok; fi; }
 eq()   { if [ "$2" = "$3" ]; then ok; else bad "$1: want [$2] got [$3]"; fi; }
 assert() { local d=$1; shift; if "$@"; then ok; else bad "$d"; fi; }
-# the lines between a bucket heading and the next unindented line
-section() { printf '%s\n' "$OUT_ALL" | awk -v h="$1" 'f && /^[^ ]/ {exit} f {print} index($0, h) == 1 {f=1}'; }
+# the lines between a bucket heading and the next non-bullet line
+section() { printf '%s\n' "$OUT_ALL" | awk -v h="$1" 'f && !/^- / {exit} f {print} index($0, h) == 1 {f=1}'; }
 run() { OUT=$(sh "$WL" "$@" 2>&1); RC=$?; OUT_ALL=$OUT; }
 calls() { grep -c -- "$1" "$GH_LOG"; }
 wait_refresh() { # until the cache written_at is newer than $1, at most 15 s
@@ -133,15 +133,15 @@ eq 'repo set from the topic' 1 "$(calls 'repo list o --topic project-demo')"
 eq 'two account-wide searches' 2 "$(calls 'search ')"
 OUT_ALL=$OUT
 OUT=$(section "Solace's turn")
-has 'ready PR is Solace'"'"'s turn' '^  alpha#10  Ready PR  https://github.com/o/alpha/pull/10$'
-has 'release PR (no checks, bot author) is Solace'"'"'s turn, author named' '^  alpha#14  Release PR  -- by release-please\[bot\]'
+has 'ready PR is Solace'"'"'s turn' '^- alpha#10  Ready PR  https://github.com/o/alpha/pull/10$'
+has 'release PR (no checks, bot author) is Solace'"'"'s turn, author named' '^- alpha#14  Release PR  -- by release-please\[bot\]'
 lacks 'no issue reaches Solace'"'"'s turn' 'alpha#2[0-9]'
 lacks 'the (assigned) suffix is gone' '\(assigned\)'
 lacks 'queued PR not Solace'"'"'s turn' 'alpha#11'
 lacks 'threaded PR not Solace'"'"'s turn' 'alpha#12'
 lacks 'red PR not Solace'"'"'s turn' 'alpha#13'
 lacks 'draft PR not Solace'"'"'s turn' 'beta#5'
-OUT=$(section "Queued (auto-merge)"); has 'queued PR listed separately' '^  alpha#11  Queued PR'
+OUT=$(section "Queued (auto-merge)"); has 'queued PR listed separately' '^- alpha#11  Queued PR'
 OUT=$OUT_ALL
 has 'Needs ruling reads the board section' "^Needs ruling, showing 2 of 2$"
 first_section=$(printf '%s\n' "$OUT_ALL" | grep -E "^(Needs ruling|Solace's turn|Queued|Ready:|Board \()" | head -1)
@@ -150,10 +150,10 @@ assert 'and after the counts header' \
   [ "$(printf '%s\n' "$OUT_ALL" | grep -nE '^(counts:|Needs ruling)' | head -1 | cut -d: -f1)" -lt \
     "$(printf '%s\n' "$OUT_ALL" | grep -n '^Needs ruling' | cut -d: -f1)" ]
 OUT=$(section "Needs ruling")
-has 'a ruling card renders, unprefixed in its own project' '^  \*\*Board sections\*\* — decide whether a question is a card or an issue'
-has '### global is in scope everywhere' '^  \*\*Engine pin\*\*'
+has 'a ruling card renders, unprefixed in its own project' '^- \*\*Board sections\*\* — decide whether a question is a card or an issue'
+has '### global is in scope everywhere' '^- \*\*Engine pin\*\*'
 lacks 'another project'"'"'s group is out of scope' 'Give-way rule'
-has 'the hidden groups are counted' '^  \+1 in other projects \(worklist --all-rulings\)$'
+has 'the hidden groups are counted' '^- \+1 in other projects \(worklist --all-rulings\)$'
 lacks 'no issue reaches Needs ruling' 'alpha#'
 OUT=$OUT_ALL
 
@@ -161,27 +161,27 @@ OUT=$OUT_ALL
 run --all-rulings
 has 'all rulings shows every group' '^Needs ruling, showing 3 of 3$'
 OUT=$(section "Needs ruling")
-has 'a card carries its group'      '^  demo: \*\*Board sections\*\*'
-has 'the other project is listed'   '^  colregs: \*\*Give-way rule\*\*'
+has 'a card carries its group'      '^- demo: \*\*Board sections\*\*'
+has 'the other project is listed'   '^- colregs: \*\*Give-way rule\*\*'
 lacks 'nothing is hidden'           'in other projects'
 run
 OUT=$OUT_ALL
 lacks 'the Ruled, unlanded bucket is gone' 'Ruled, unlanded'
-OUT=$(section "Ready"); has 'ready label' '^  alpha#23  Ready issue'; lacks 'blocked beats ready' 'alpha#24'
-OUT=$(section "Blocked"); has 'blocked label' '^  alpha#24  Blocked issue'
+OUT=$(section "Ready"); has 'ready label' '^- alpha#23  Ready issue'; lacks 'blocked beats ready' 'alpha#24'
+OUT=$(section "Blocked"); has 'blocked label' '^- alpha#24  Blocked issue'
 OUT=$(section "Not ready (agent's turn)")
-has 'unresolved thread named as a count' '^  alpha#12  Threaded PR  -- 1 unresolved thread\(s\)'
-has 'failing checks named, never a boolean' '^  alpha#13  Red PR  -- failing: ci-gate / gate, coverage'
+has 'unresolved thread named as a count' '^- alpha#12  Threaded PR  -- 1 unresolved thread\(s\)'
+has 'failing checks named, never a boolean' '^- alpha#13  Red PR  -- failing: ci-gate / gate, coverage'
 lacks 'a green check is not listed as failing' 'lint'
-has 'draft noted' '^  beta#5  Draft PR  -- draft'
+has 'draft noted' '^- beta#5  Draft PR  -- draft'
 OUT=$OUT_ALL
 has 'untriaged is a count, deferred separately' '^Untriaged: 2 \(deferred to a milestone: 1\)$'
 OUT=$(section "Stranded branches (no PR)")
-has 'branch with no PR' '^  alpha: feature-x$'
+has 'branch with no PR' '^- alpha: feature-x$'
 lacks 'main is not stranded' 'main'; lacks 'release-please branch is not stranded' 'release-please'; lacks 'branch with a PR is not stranded' 'pr-branch'
 OUT=$OUT_ALL
 has 'board heading with counts' "^Board \(## Claude's, showing 8 of 10\)$"
-eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -c '^  \*\*Card ')"
+eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -c '^- \*\*Card ')"
 lacks 'ticked card dropped' 'Ticked card'
 has 'Solace section shown with its count' "^Board \(## Solace's, showing 1 of 1\)$"
 OUT=$(section "Board (## Solace's")
@@ -222,13 +222,13 @@ assert "brief is <= 3 KB ($(printf '%s' "$OUT" | wc -c) bytes)" test "$(printf '
 OUT_ALL=$OUT
 OUT=$(section "Ready")
 eq 'bucket capped at five lines plus the overflow line' 6 "$(printf '%s\n' "$OUT" | grep -c .)"
-has 'overflow line' '^  \+4 more \(run worklist\)$'
+has 'overflow line' '^- \+4 more \(run worklist\)$'
 OUT=$OUT_ALL
 lacks 'no urls in brief' 'https://github.com/o/alpha/pull/10'
-cut_title=$(printf '%s\n' "$OUT" | sed -n 's/^  alpha#28  //p')
+cut_title=$(printf '%s\n' "$OUT" | sed -n 's/^- alpha#28  //p')
 eq 'long title cut to 80 chars ending in ...' '80 ...' "$(printf '%s' "$cut_title" | wc -m | tr -d ' ') $(printf '%s' "$cut_title" | tail -c 3)"
 lacks 'long title not whole' 'cut it short somewhere'
-card1=$(printf '%s\n' "$OUT" | sed -n 's/^  \(\*\*Card 1\*\*.*\)$/\1/p')
+card1=$(printf '%s\n' "$OUT" | sed -n 's/^- \(\*\*Card 1\*\*.*\)$/\1/p')
 eq 'card cut to 80 chars ending in ...' '80 ...' "$(printf '%s' "$card1" | wc -m | tr -d ' ') $(printf '%s' "$card1" | tail -c 3)"
 has 'brief keeps the failing check names' 'failing: ci-gate / gate, coverage'
 
