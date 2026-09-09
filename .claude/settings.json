@@ -197,8 +197,7 @@
             "command": "h=\"$HOME/.claude/hooks/no-late-pr-subscribe.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
           }
         ]
-      }
-,
+      },
       {
         "matcher": "Bash|mcp__.*github.*__.*",
         "hooks": [
@@ -206,6 +205,16 @@
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/pr-ownership-context.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
             "statusMessage": "Loading the PR ownership rules"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|mcp__.*__(create_issue|update_issue|issue_write|add_issue_comment|create_pull_request|update_pull_request|add_pull_request_review_comment|create_pull_request_review|pull_request_review_write|add_comment_to_pending_review|create_and_submit_pull_request_review|submit_pending_pull_request_review)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/public-issue-guard.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"public-issue-guard.sh is missing from $HOME/.claude/hooks or crashed, so the issue or PR text could not be checked against the private-terms list. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
+            "statusMessage": "Checking issue/PR text against the private-terms list"
           }
         ]
       }
@@ -218,6 +227,16 @@
             "command": "p=$(cat); [ \"$(printf '%s' \"$p\" | jq -r '.stop_hook_active // false' 2>/dev/null)\" = true ] && exit 0; h=\"$HOME/.claude/hooks/pr-threads-gate.sh\"; { [ -f \"$h\" ] && printf '%s' \"$p\" | sh \"$h\"; } || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"pr-threads-gate.sh is missing from $HOME/.claude/hooks or crashed, so review threads on the PR this session worked could not be re-checked. This is a gate and fails closed: if you touched a PR this session, state per thread id which are resolved and which are open, then end the turn again.\"}'",
             "timeout": 60,
             "statusMessage": "Re-checking review threads on PRs this session touched"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=$(cat); [ \"$(printf '%s' \"$p\" | jq -r '.stop_hook_active // false' 2>/dev/null)\" = true ] && exit 0; h=\"$HOME/.claude/hooks/kanban-gate.sh\"; { [ -f \"$h\" ] && printf '%s' \"$p\" | sh \"$h\"; } || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"kanban-gate.sh is missing from $HOME/.claude/hooks or crashed, so uncommitted kanban.md changes in the state repo could not be linted. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry; if you edited kanban.md this session, say which cards changed, then end the turn again.\"}'",
+            "timeout": 30,
+            "statusMessage": "Linting uncommitted kanban.md changes in the state repo"
           }
         ]
       },
@@ -246,6 +265,15 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/prose-budget-edit.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/kanban-lint.sh\"; [ -f \"$h\" ] && sh \"$h\" || true"
           }
         ]
       },

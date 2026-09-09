@@ -43,7 +43,19 @@ state_dir() {
 # True when state_dir is inside the git repo, i.e. worth committing.
 state_is_repo() { state_repo >/dev/null 2>&1; }
 
-json_str() { jq -Rn --rawfile f /dev/stdin '$f'; }
+# One JSON-string escaper for the hooks that source this. It takes its text as
+# an argument, and falls back to sed/awk where jq is absent -- a hook that
+# cannot emit its reason is a hook that fails open. Do not add a second
+# json_str with a different signature: kanban-gate.sh once sourced this file
+# and then shadowed it, and the two disagreed about stdin vs "$1".
+json_str() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$1" | jq -Rs .
+  else
+    printf '"%s"\n' "$(printf '%s' "$1" | tr '\t' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{ if (NR > 1) printf "\\n"; printf "%s", $0 }')"
+  fi
+}
+block() { printf '{"decision":"block","reason":%s}\n' "$(json_str "$1")"; exit 0; }
 
 # The set of tool calls that change git state, in one place.
 #

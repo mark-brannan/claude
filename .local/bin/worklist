@@ -1,0 +1,422 @@
+#!/bin/sh
+# worklist -- what is outstanding across a project's repos, computed from
+# GitHub at read time and never stored anywhere but a cache.
+#
+# Why: the state of a loop used to be copied into up to five places (issue,
+# PR, card, epic Status line, log) and every copy drifted. Sessions then spent
+# their opening turns "sweeping" the board -- editing prose to match GitHub
+# -- and the user still could not tell what was theirs to do. Every fact now has one
+# home (the PR or issue) and this is the one view over them: Solace's turn,
+# queued, ready, blocked, untriaged, stranded branches, and the two board
+# sections -- questions that need a ruling, and the agent's rabbit-trails.
+# Anything that asks "what's stale / outstanding / next" runs this and
+# reports; nothing edits.
+#
+#   worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings]
+#
+# Repo set: the cwd repo's GitHub topic `project-<name>`, else the cwd repo
+# alone; a project name argument skips the topic lookup; --here forces the
+# cwd repo alone. One GraphQL call per repo, run in parallel.
+#
+# Cache: $XDG_CACHE_HOME/worklist/<owner>-<key>.json, stale-while-revalidate.
+# A cached view prints at once and a detached process refreshes it for the
+# next run; only a missing cache waits, and --brief waits at most 5 s because
+# it is what SessionStart injects. `timeout` is used only where it exists
+# (macOS has none). Failures are named per cause -- `no gh`, `gh
+# unauthenticated`, `<repo>: 403 -- attach the repo`, `network` -- because a
+# view that goes quiet when it cannot look is indistinguishable from one that
+# looked and found nothing.
+#
+# CONVENIENCE: exit 0 always, except --json with nothing fetched.
+set -u
+
+usage() { printf 'usage: worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings]\n'; }
+
+brief=0; fresh=0; json=0; here=0; project=""; refresh=0; marker=""; all_rulings=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --brief) brief=1 ;;
+    --fresh) fresh=1 ;;
+    --json) json=1 ;;
+    --here) here=1 ;;
+    --all-rulings) all_rulings=1 ;;
+    --_refresh) refresh=1 ;;
+    --_marker) shift; marker=${1:-} ;;
+    -h|--help) usage; exit 0 ;;
+    -*) printf 'worklist: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) project=$1 ;;
+  esac
+  shift
+done
+
+self=$0
+case $self in */*) ;; *) self=$(command -v "$self" 2>/dev/null || printf '%s' "$self") ;; esac
+self_dir=$(cd "$(dirname "$self")" 2>/dev/null && pwd)
+cache_root=${XDG_CACHE_HOME:-$HOME/.cache}/worklist
+mkdir -p "$cache_root" 2>/dev/null
+TIMEOUT=$(command -v timeout 2>/dev/null || :)
+run_t() { if [ -n "$TIMEOUT" ]; then "$TIMEOUT" 20 "$@"; else "$@"; fi; }
+now=$(date +%s)
+have_gh=1; command -v gh >/dev/null 2>&1 || have_gh=0
+command -v jq >/dev/null 2>&1 || { echo "no jq -- worklist needs jq"; exit 0; }
+
+# owner/name of the cwd repo from its origin URL: no network, so the cache
+# can be found before gh is ever called.
+cwd_repo() {
+  u=$(git remote get-url origin 2>/dev/null) || return 1
+  r=$(printf '%s' "$u" | sed -e 's#^https://github\.com/##' -e 's#^ssh://git@github\.com/##' \
+        -e 's#^git@github\.com:##' -e 's#/$##' -e 's#\.git$##')
+  [ "$r" = "$u" ] && return 1
+  case $r in */*/*|/*|*/) return 1 ;; */*) printf '%s' "$r" ;; *) return 1 ;; esac
+}
+
+# stdout = cause; $1 = exit code, $2 = file holding the command's stderr+stdout
+cause_of() {
+  [ "$1" = 124 ] && { printf 'network'; return; }
+  if grep -Eqi 'HTTP 401|Bad credentials|gh auth login|not logged in' "$2"; then printf 'gh unauthenticated'
+  elif grep -Eqi 'HTTP 403|Resource not accessible|FORBIDDEN|SAML' "$2"; then printf '403 -- attach the repo'
+  elif grep -Eqi 'HTTP 404|Could not resolve to a Repository|NOT_FOUND' "$2"; then printf 'not found'
+  elif grep -Eqi 'dial tcp|no such host|connection refused|i/o timeout|TLS handshake|network is unreachable|error connecting|Could not resolve host|HTTP 5[0-9][0-9]' "$2"; then printf 'network'
+  else head -1 "$2" | tr -d '\r' | cut -c1-120; fi
+}
+
+# shellcheck disable=SC2016  # GraphQL variables, not shell ones
+QUERY='query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){
+  defaultBranchRef{name}
+  pullRequests(states:OPEN,first:50){pageInfo{hasNextPage} nodes{number title url isDraft mergeable autoMergeRequest{enabledAt} author{login}
+    reviewThreads(first:100){nodes{isResolved}}
+    commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{
+      ... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}
+  issues(states:OPEN,first:100){pageInfo{hasNextPage} nodes{number title url labels(first:20){nodes{name}}
+    milestone{title}}}
+  refs(refPrefix:"refs/heads/",first:100){nodes{name associatedPullRequests(first:1){totalCount}}}
+}}'
+
+# Resolve owner, key, label and the repo list into globals. Returns 1 with
+# scope_error set when nothing sensible can be fetched.
+resolve_scope() {
+  scope_error=""; repos=""
+  cwd=$(cwd_repo) || cwd=""
+  if [ -n "$cwd" ]; then owner=${cwd%%/*}
+  elif [ -n "$project" ]; then
+    owner=$(run_t gh api user --jq .login 2>/dev/null) || owner=""
+    [ -n "$owner" ] || { scope_error="not in a GitHub repo and gh could not name the account"; return 1; }
+  else scope_error="not in a GitHub repo; pass a project name or --here"; return 1; fi
+
+  if [ "$here" = 1 ] && [ -n "$cwd" ]; then :
+  elif [ -n "$project" ]; then :
+  elif [ -n "$cwd" ]; then
+    project=$(run_t gh repo view "$cwd" --json repositoryTopics 2>/dev/null \
+      | jq -r '(.repositoryTopics // [])[].name | select(startswith("project-"))' 2>/dev/null | head -1)
+    project=${project#project-}
+  fi
+
+  if [ -n "$project" ]; then
+    if list=$(run_t gh repo list "$owner" --topic "project-$project" --limit 100 --json name 2>"$cache_root/.list.err.$$") \
+       && [ -n "$list" ]; then
+      for n in $(printf '%s' "$list" | jq -r '.[].name'); do repos="$repos $owner/$n"; done
+    fi
+    rm -f "$cache_root/.list.err.$$"
+    [ -n "$repos" ] || repos=${cwd:+" $cwd"}
+    [ -n "$repos" ] || { scope_error="no repos carry topic project-$project"; return 1; }
+    key="$owner-$project"; label="project $project ($owner):"
+  else
+    repos=" $cwd"; key="$owner-${cwd#*/}"; label="repo $cwd"
+  fi
+  return 0
+}
+
+# Fetch everything, write the cache, print the key. Holds <key>.lock so two
+# sessions starting together do not both hit the API.
+do_fetch() {
+  resolve_scope || { [ -n "$marker" ] && printf 'error\t%s\n' "$scope_error" > "$marker"; return 1; }
+  lock="$cache_root/$key.lock"
+  if [ -f "$lock" ] && pid=$(cat "$lock" 2>/dev/null) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    i=0; while [ -f "$lock" ] && kill -0 "$pid" 2>/dev/null && [ "$i" -lt 60 ]; do sleep 1; i=$((i + 1)); done
+    if [ -n "$marker" ]; then
+      if [ -f "$cache_root/$key.json" ]; then
+        printf 'key\t%s\n' "$key" > "$marker"
+      else
+        printf 'error\t%s\n' "another worklist fetch has held the lock for ${i} s and has not written a cache yet -- it is still running or it died; retry shortly" > "$marker"
+      fi
+    fi
+    return 0
+  fi
+  printf '%s' $$ > "$lock"
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/worklist.XXXXXX") || { rm -f "$lock"; return 1; }
+
+  for r in $repos; do
+    ( o=${r%%/*}; n=${r#*/}
+      run_t gh api graphql -f owner="$o" -f name="$n" -f query="$QUERY" >"$tmp/$n.out" 2>"$tmp/$n.err"
+      echo $? >"$tmp/$n.rc" ) &
+  done
+  ( run_t gh search prs --owner "$owner" --state open --limit 300 --json number >"$tmp/_prs.out" 2>"$tmp/_prs.err"; echo $? >"$tmp/_prs.rc" ) &
+  ( run_t gh search issues --owner "$owner" --state open --limit 300 --json number >"$tmp/_iss.out" 2>"$tmp/_iss.err"; echo $? >"$tmp/_iss.rc" ) &
+  wait
+
+  : > "$tmp/recs"
+  for r in $repos; do
+    n=${r#*/}
+    if [ "$(cat "$tmp/$n.rc")" = 0 ] && jq -e '.data.repository != null' "$tmp/$n.out" >/dev/null 2>&1; then
+      jq -c --arg repo "$r" '{repo:$repo, data:.data.repository}' "$tmp/$n.out" >> "$tmp/recs"
+    else
+      cat "$tmp/$n.err" "$tmp/$n.out" > "$tmp/$n.txt"
+      cause=$(cause_of "$(cat "$tmp/$n.rc")" "$tmp/$n.txt")
+      jq -nc --arg repo "$r" --arg c "${cause:-unknown error}" '{repo:$repo, error:$c}' >> "$tmp/recs"
+    fi
+  done
+  count_of() { # $1 = _prs|_iss ; prints a JSON number or a quoted cause
+    if [ "$(cat "$tmp/$1.rc")" = 0 ] && c=$(jq 'length' "$tmp/$1.out" 2>/dev/null); then
+      if [ "$c" -ge 300 ]; then printf '"300+"'; else printf '%s' "$c"; fi
+    else cat "$tmp/$1.err" "$tmp/$1.out" > "$tmp/$1.txt"; cause_of "$(cat "$tmp/$1.rc")" "$tmp/$1.txt" | jq -R .; fi
+  }
+  jq -n --arg key "$key" --arg owner "$owner" --arg project "$project" --arg label "$label" \
+     --argjson now "$(date +%s)" --arg hm "$(date -u +%H:%MZ)" \
+     --slurpfile recs "$tmp/recs" --argjson prs "$(count_of _prs)" --argjson issues "$(count_of _iss)" \
+     '{key:$key, owner:$owner, project:$project, label:$label, written_at:$now, written_hm:$hm,
+       repos:[$recs[].repo], records:$recs, counts:{prs:$prs, issues:$issues}}' > "$tmp/cache.json" \
+    && mv -f "$tmp/cache.json" "$cache_root/$key.json"
+  rm -rf "$tmp" "$lock"
+  [ -n "$marker" ] && printf 'key\t%s\n' "$key" > "$marker"
+  printf '%s\n' "$key"
+}
+
+if [ "$refresh" = 1 ]; then do_fetch >/dev/null 2>&1; exit 0; fi
+
+# Detached so the caller's exit (a SessionStart hook ending) does not kill it.
+spawn_refresh() {
+  set -- --_refresh
+  [ "$here" = 1 ] && set -- "$@" --here
+  [ -n "$project" ] && set -- "$@" "$project"
+  if [ -n "$wait_marker" ]; then set -- "$@" --_marker "$wait_marker"; fi
+  if command -v setsid >/dev/null 2>&1; then setsid nohup sh "$self" "$@" >/dev/null 2>&1 </dev/null &
+  else nohup sh "$self" "$@" >/dev/null 2>&1 </dev/null & fi
+}
+
+# Which cache file answers this invocation, without the network.
+find_cache() {
+  cwd=$(cwd_repo) || cwd=""
+  if [ -n "$project" ]; then
+    o=${cwd%%/*}
+    if [ -n "$o" ]; then f="$cache_root/$o-$project.json"
+    else for f in "$cache_root"/*"-$project.json"; do break; done; fi
+    [ -f "$f" ] && printf '%s' "$f"; return
+  fi
+  [ -n "$cwd" ] || return
+  if [ "$here" != 1 ]; then
+    for f in "$cache_root"/*.json; do
+      [ -f "$f" ] || continue
+      if jq -e --arg r "$cwd" '.project != "" and any(.repos[]; . == $r)' "$f" >/dev/null 2>&1; then printf '%s' "$f"; return; fi
+    done
+  fi
+  [ -f "$cache_root/${cwd%%/*}-${cwd#*/}.json" ] && printf '%s' "$cache_root/${cwd%%/*}-${cwd#*/}.json"
+}
+
+# --- render --------------------------------------------------------------------
+# shellcheck disable=SC2016  # jq program, not shell
+RENDER='
+def brief: $brief == "1";
+def cut: if brief and length > 80 then .[:77] + "..." else . end;
+def limit: if brief then 5 else 1000000 end;
+def bucket($title; $lines):
+  if ($lines|length) == 0 then "\($title): none"
+  else ([$title] + ($lines[:limit] | map("  " + .))
+        + (if ($lines|length) > limit then ["  +\(($lines|length) - limit) more (run worklist)"] else [] end)) | join("\n") end;
+def url_sfx: if brief then "" else "  " + .url end;
+def failing_names: [ (.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[]
+  | select( ((.conclusion // "") | IN("FAILURE","TIMED_OUT","CANCELLED","ACTION_REQUIRED","STARTUP_FAILURE"))
+         or ((.state // "") | IN("FAILURE","ERROR")) )
+  | (.name // .context // "?") ];
+def rollup: .commits.nodes[0].commit.statusCheckRollup.state // "NONE";
+def unresolved: [ (.reviewThreads.nodes // [])[] | select(.isResolved | not) ] | length;
+def pr_notes($owner): [
+  ((.author.login // "ghost") | if . != $owner then "by \(.)" else empty end),
+  (if .isDraft then "draft" else empty end),
+  (if .mergeable == "CONFLICTING" then "conflicting" elif .mergeable == "UNKNOWN" then "mergeability unknown" else empty end),
+  (failing_names | if length > 0 then "failing: " + join(", ") else empty end),
+  (if (failing_names|length) == 0 and (rollup|IN("FAILURE","ERROR")) then "checks \(rollup|ascii_downcase), names past the first 50 contexts" else empty end),
+  (if (failing_names|length) == 0 and (rollup|IN("PENDING","EXPECTED")) then "checks pending" else empty end),
+  (unresolved | if . > 0 then "\(.) unresolved thread(s)" else empty end) ];
+# rollup NONE (no checks at all) counts as ready: a repo without CI still needs the user to merge. Ruled on #90.
+def awaiting_human: (.isDraft|not) and .mergeable == "MERGEABLE" and (failing_names|length) == 0
+  and (rollup|IN("SUCCESS","NONE")) and unresolved == 0 and .autoMergeRequest == null;
+def notes_sfx($owner): pr_notes($owner) | if length > 0 then "  -- " + join("; ") else "" end;
+def labels: [(.labels.nodes // [])[].name];
+def ms_sfx: if .milestone then "  [\(.milestone.title)]" else "" end;
+
+. as $c | $c.owner as $owner
+| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.pullRequests.nodes // [])[]
+    | . + {line: ("\($s)#\(.number)  \(.title|cut)" + notes_sfx($owner) + url_sfx)} ] as $prs
+| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.issues.nodes // [])[]
+    | . + {lbl: labels,
+           line: ("\($s)#\(.number)  \(.title|cut)" + ms_sfx + url_sfx)} ] as $is
+| ($is | map(select(.lbl|index("blocked")))) as $bl
+| ($is | map(select((.lbl|index("blocked")|not) and (.lbl|index("ready"))))) as $rd
+| ($is | map(select((.lbl|index("blocked")|not) and (.lbl|index("ready")|not)))) as $rest
+| ($rest | map(select(.milestone)) | length) as $deferred
+| ($rest | map(select(.milestone|not)) | length) as $untriaged
+| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.defaultBranchRef.name // "main") as $def
+    | [ (.data.refs.nodes // [])[] | select(.associatedPullRequests.totalCount == 0 and (.name|IN("main","master",$def)|not)
+        and (.name|startswith("release-please--")|not)) | .name ]
+    | select(length > 0) | ("\($s): " + join(", ") | cut) ] as $stranded
+| [ ($c.records | map(select(.error))) as $e
+    | if ($e|length) > 0 and ($e|length) == ($c.records|length) and ([$e[].error]|unique|length) == 1
+         and ($e[0].error|IN("gh unauthenticated","network")) then $e[0].error
+      else $e[] | "\(.repo): \(.error)" end ] as $fails
+| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s
+    | (if .data.pullRequests.pageInfo.hasNextPage then "\($s): more than 50 open PRs -- PR buckets truncated" else empty end),
+      (if .data.issues.pageInfo.hasNextPage then "\($s): more than 100 open issues -- issue buckets and Untriaged truncated" else empty end) ] as $trunc
+| ($c.counts | if (.prs|type) == "string" and (.issues|type) == "string" and .prs == .issues and (.prs|test("^[0-9]")|not)
+      then "counts: unavailable (\(.prs))"
+      else "counts: \(.prs) open PRs, \(.issues) open issues across \($owner)" end) as $counts
+| [ $c.label + " " + ($c.repos | map(split("/")[1]) | join(", ")) ]
+  + $fails + $trunc + [ $counts, "", "@@RULINGS@@",
+  bucket("Solace'"'"'s turn"; $prs | map(select(awaiting_human) | .line)),
+  bucket("Queued (auto-merge)"; $prs | map(select(.autoMergeRequest != null) | .line)),
+  bucket("Ready"; $rd | map(.line)),
+  bucket("Blocked"; $bl | map(.line)),
+  bucket("Not ready (agent'"'"'s turn)"; $prs | map(select(.autoMergeRequest == null and (awaiting_human|not)) | .line)),
+  "Untriaged: \($untriaged)" + (if $deferred > 0 then " (deferred to a milestone: \($deferred))" else "" end),
+  bucket("Stranded branches (no PR)"; $stranded) ]
+| join("\n")
+'
+
+# board_path -- sets $kb to the kanban.md this view reads. Returns 1 with
+# $board_err set and $kb empty when there is none.
+board_err=""; kb=""
+board_path() {
+  board_err=""; kb=""
+  lib=""
+  for c in "$self_dir/../../.claude/hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
+    [ -f "$c" ] && { lib=$c; break; }
+  done
+  [ -n "$lib" ] || { board_err="Board: unavailable (lib-state.sh not found)"; return 1; }
+  # shellcheck disable=SC1090
+  . "$lib"
+  kb="$(state_dir)/kanban.md"
+  [ -f "$kb" ] || { board_err="Board: no kanban.md at $kb"; kb=""; return 1; }
+  return 0
+}
+
+count_lines() { [ -n "$1" ] || { echo 0; return; }; printf '%s\n' "$1" | grep -c '^'; }
+
+# ruling_section <board> <project>
+# The ## Needs ruling cards, grouped by the "### <name>" heading above them --
+# one group per project, "### global" for what no project owns. Inside a
+# project's repo only that project's group and global are shown, with a count
+# of what was hidden; --all-rulings, or no project at all, shows every group
+# and prefixes each card with its group. Printed first because it is the one
+# thing here that is waiting on the user.
+ruling_section() {
+  rows=$(awk '
+    /^## / { f = ($0 ~ /^## Needs ruling[[:space:]]*$/); g = "global"; next }
+    !f { next }
+    /^### / { g = $0; sub(/^###[ \t]+/, "", g); sub(/[ \t]+$/, "", g); next }
+    /^- \[ \]/ { t = substr($0, 7); print g "\t" t }
+  ' "$1")
+  showall=$all_rulings
+  [ -n "$2" ] || showall=1
+  if [ "$showall" = 1 ]; then
+    inscope=$rows; other=0
+  else
+    inscope=$(printf '%s\n' "$rows" | awk -F'\t' -v p="$2" 'NF > 1 && ($1 == p || $1 == "global")')
+    other=$(count_lines "$(printf '%s\n' "$rows" | awk -F'\t' -v p="$2" 'NF > 1 && $1 != p && $1 != "global"')")
+  fi
+  total=$(count_lines "$inscope")
+  if [ "$total" -eq 0 ]; then printf 'Needs ruling: none\n'
+  else
+    printf 'Needs ruling, showing %s of %s\n' "$( [ "$total" -gt 8 ] && echo 8 || echo "$total" )" "$total"
+    # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
+    printf '%s\n' "$inscope" | head -8 | jq -Rr --arg brief "$brief" --arg all "$showall" '
+      split("\t") | (if $all == "1" then .[0] + ": " else "" end) + .[1]
+      | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "  " + .'
+  fi
+  [ "$other" -gt 0 ] && printf '  +%s in other projects (worklist --all-rulings)\n' "$other"
+  return 0
+}
+
+# section_of <board> <heading regex> <label> <suffix>  -- the flat ## Claude's
+# Prints "<label>: none", or "<label>, showing N of T<suffix>" and up to 8
+# cards. Same cut rules as the ruling groups.
+section_of() {
+  cards=$(awk -v pat="$2" '/^## /{f=($0 ~ pat)} f && /^- \[ \]/' "$1")
+  total=$(count_lines "$cards")
+  if [ "$total" -eq 0 ]; then printf '%s: none\n' "$3$4"; return 0; fi
+  printf '%s, showing %s of %s%s\n' "$3" "$( [ "$total" -gt 8 ] && echo 8 || echo "$total" )" "$total" "$4"
+  # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
+  printf '%s\n' "$cards" | head -8 | jq -Rr --arg brief "$brief" '.[6:] | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "  " + .'
+}
+
+# render <cache file or ""> <cached 0|1> <extra line or "">
+render() {
+  stamp="as of $(date -u +%H:%MZ)"
+  proj=""
+  if [ -n "$1" ]; then
+    stamp="as of $(jq -r .written_hm "$1")"
+    proj=$(jq -r '.project // ""' "$1")
+    if [ "$2" = 1 ]; then
+      age=$(( (now - $(jq -r .written_at "$1")) / 60 ))
+      [ "$age" -lt 1 ] && age="<1"
+      stamp="$stamp (cached $age min)"
+    fi
+  fi
+  board_path || :
+  rulings=""
+  [ -n "$kb" ] && rulings=$(ruling_section "$kb" "$proj")
+  {
+    echo "$stamp"
+    [ -n "$3" ] && echo "$3"
+    if [ -n "$1" ]; then
+      # The buckets come out of jq in one piece with a @@RULINGS@@ marker in
+      # them; the rulings are spliced in here rather than by awk, because a
+      # multi-line -v assignment is a syntax error in one-true-awk.
+      body=$(jq -r --arg brief "$brief" "$RENDER" "$1")
+      printf '%s' "${body%%@@RULINGS@@*}"
+      [ -n "$rulings" ] && printf '%s\n' "$rulings"
+      printf '%s\n' "${body#*@@RULINGS@@}"
+    elif [ -n "$rulings" ]; then
+      printf '%s\n\n' "$rulings"
+    fi
+    echo
+    if [ -n "$kb" ]; then section_of "$kb" '^## Claude' "Board (## Claude's" ")"
+    else echo "$board_err"; fi
+  } | if [ "$brief" = 1 ]; then
+    awk -v max=2900 '{ n += length($0) + 1; if (n > max) { print "... (cut at 3 KB; run worklist)"; exit } print }'
+  else cat; fi
+}
+
+# --- main ------------------------------------------------------------------
+if [ "$have_gh" = 0 ]; then
+  cache=$(find_cache)
+  [ "$json" = 1 ] && { [ -n "$cache" ] && cat "$cache" && exit 0; echo '{"error":"no gh"}'; exit 1; }
+  render "$cache" 1 "no gh -- live GitHub view unavailable${cache:+; showing the last cached view}"
+  exit 0
+fi
+
+cache=""; [ "$fresh" = 1 ] || cache=$(find_cache)
+wait_marker=""
+if [ -n "$cache" ]; then
+  age=$(( now - $(jq -r .written_at "$cache") ))
+  [ "$age" -gt 120 ] && spawn_refresh
+  if [ "$json" = 1 ]; then cat "$cache"; exit 0; fi
+  render "$cache" 1 ""
+  exit 0
+fi
+
+# Nothing cached: fetch now, in the background so the wait can be capped.
+wait_marker=$(mktemp "${TMPDIR:-/tmp}/worklist-marker.XXXXXX") && rm -f "$wait_marker"
+spawn_refresh
+cap=90; [ "$brief" = 1 ] && cap=5
+i=0; while [ ! -f "$wait_marker" ] && [ "$i" -lt "$cap" ]; do sleep 1; i=$((i + 1)); done
+if [ -f "$wait_marker" ]; then
+  IFS="$(printf '\t')" read -r kind val < "$wait_marker"; rm -f "$wait_marker"
+  if [ "$kind" = key ] && [ -f "$cache_root/$val.json" ]; then
+    [ "$json" = 1 ] && { cat "$cache_root/$val.json"; jq -e '[.records[]|select(.data)]|length > 0' "$cache_root/$val.json" >/dev/null 2>&1; exit $?; }
+    render "$cache_root/$val.json" 0 ""; exit 0
+  fi
+  [ "$json" = 1 ] && { jq -n --arg e "${val:-fetch failed}" '{error:$e}'; exit 1; }
+  render "" 0 "${val:-fetch failed; nothing cached}"; exit 0
+fi
+[ "$json" = 1 ] && { echo '{"error":"still fetching"}'; exit 1; }
+render "" 0 "GitHub has not answered in ${cap} s; fetching continues in the background -- run worklist again"
+exit 0

@@ -56,6 +56,7 @@ INSTALL="
 .claude/skills/card-helper/SKILL.md
 .claude/skills/card-write/SKILL.md
 .claude/skills/wrapup/SKILL.md
+.claude/skills/worklist/SKILL.md
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq
@@ -82,9 +83,13 @@ INSTALL="
 .claude/hooks/connector-budget.sh
 .claude/hooks/prose-budget-commit.sh
 .claude/hooks/prose-budget-edit.sh
+.claude/hooks/kanban-lint.sh
+.claude/hooks/kanban-gate.sh
+.claude/hooks/public-issue-guard.sh
 .claude/hooks/fixtures
 .local/bin/metrics-preview.sh
 .local/bin/prose-budget
+.local/bin/worklist
 "
 
 # --- what is wholly owned by this installer -------------------------------

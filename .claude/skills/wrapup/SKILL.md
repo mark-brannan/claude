@@ -1,6 +1,6 @@
 ---
 name: wrapup
-description: Close a session — write the narrative log to the right state repo, bring the session's cards for batch accept/edit/delete, and end with a paste-ready hand-off prompt. Use when Solace says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
+description: Close a session — write the narrative log to the right state repo, list the issues the session opened or labelled, and end with a paste-ready hand-off prompt. Use when Solace says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
 ---
 
 # Wrapping up
@@ -21,7 +21,7 @@ repo. Never stage one project's work under another's.
 | Symphony | `~/symphony/intermediate_files/claude_slop/` (`kanban.md` + `log.md`). Its human-facing `maintenance/log.md` and `priorities.md` get only finished, high-level results. |
 | Global and cross-cutting — standing orders, rules, hooks, Claude tooling, anything spanning projects | The private repo `~/claude_prompts_scratch`, under `state/global/kanban.md` and `state/global/log/`. Work on `main` there; `git pull --rebase` before pushing. |
 | Any project with no private repo of its own | The same global paths. |
-| Dotfiles | **Never** — it is public, and session notes name boats, hosts and services. Dotfiles has no board of its own: its cards sit on the global board, and anything with a question in it becomes a dotfiles issue the card links to. |
+| Dotfiles | **Never** — it is public, and session notes name boats, hosts and services. Dotfiles has no board of its own: its loops are dotfiles issues, or cards on the global board when they have no GitHub home. |
 | Any other project with its own board | That repo, at the path its CLAUDE.md names. |
 
 ## 2. Narrative log
@@ -31,39 +31,21 @@ auto-checkpoint records what happened; only you can record what it meant
 and what should happen next. The machine one is evidence, not a substitute.
 Put in it:
 
-- what was decided, and why — including calls that reversed or narrowed an
-  earlier one;
+- what was decided, and why — as a link to where each decision landed (the
+  Q-nn footnote, the ADR, the closed issue, the PR), including calls that
+  reversed or narrowed an earlier one. The log holds the link, not a copy;
 - what was tried and abandoned, so the next session doesn't retry it;
 - what comes next: the hand-off prompt from step 4, verbatim;
 - observations worth keeping. They go here, silently — never as an aside in
   chat.
 
-## 3. Cards
+## 3. Issues
 
-Bring every card written during the session for batch accept / edit /
-delete: one list, one line per card, each with its link. Apply Solace's
-decisions to the board before the session ends. Anything only Solace can do
-personally is a card, referenced by link and by a short name; either the
-link or the short name must be distinctive enough for a future session to
-find it.
-
-**Before surfacing any card that asks Solace to decide on or act on a PR
-(merge it, review it, close it), check its live state first** —
-`gh pr view <PR> --json state,mergedAt,mergeCommit` (or the equivalent for
-the board's existing PR cards, not just ones from this session). If it's
-already merged or closed, don't hand it to her as a decision: mark it done
-and note how, or drop it if it was already reflected on the board. If the
-check itself fails — `gh` errors, isn't authenticated, or the reply carries
-no `state` — that's not the same as "still open": leave the card pending
-and say its live state couldn't be verified, the same failure-closed stance
-`pr-threads-gate.sh` already takes. Only mark done or drop after a state
-check actually succeeds. This
-applies to every open PR card being carried forward, not only ones this
-session touched — a PR can merge after the session that filed the card
-ended. A card that asks them to decide something already decided outside
-the chat is wasted attention.
-
-Board selection and card format: `/card-write`.
+List the issues this session opened or labelled: one line each, with its
+link. Nothing else — no sweep of the board, no card batch to accept or
+delete, no checking what merged. State lives on GitHub and `worklist`
+reads it; a wrap-up that edits it is a second copy. Routing and format:
+`/card-write`.
 
 ## 4. Hand-off prompt
 
@@ -73,6 +55,15 @@ the next one. It must:
 - be **ready to paste** — no "as discussed", no context the reader has to
   supply;
 - name the **branch, PR, file, card, etc.** it acts on;
+- carry **links, not state adjectives** — `#42`, not "PR #42 (merged, CI
+  green)". State is read live at the other end; written down it is stale by
+  the time it's read;
+- **never ask Solace to review or merge.** The PR is where that lives, and
+  `worklist` shows him when it is his turn;
+- rate every item it puts in front of Solace **twice** — difficulty for
+  Solace, and difficulty for an agent with full permissions and high stakes —
+  and answer `could an agent do it: yes/no`. Low for an agent means do it, not
+  ask;
 - name a **recommended model and difficulty (effort) setting** — both,
   every time, e.g. `Model: opus · Effort: high`. A hand-off prompt missing
   either is not finished;
@@ -86,5 +77,6 @@ does not.
 End with a prompt, not a status bullet or observation. A closing that reads
 "the vague thing is borked, your call" costs a read and returns nothing
 actionable. The closing message holds exactly two things: the hand-off
-prompt, and the cards only Solace can act on, by link and short name. Nothing
-else goes in it.
+prompt, and links to the `## Needs ruling` cards awaiting Solace. Nothing
+else goes in it. If nothing hit a one-way door, that half is simply absent —
+a question you worked around is reported in the PR body, not here.

@@ -244,8 +244,8 @@ public" section.
   review, CI chasing, branch cleanup) costs far more than its wall-clock
   suggests. Scope these tightly; prefer one considered pass over iterative
   poking.
-- **Park open questions somewhere durable** — the project's board per
-  CLAUDE.md "Open loops", or ask directly when the answer blocks the task —
+- **Park open questions somewhere durable** — as an issue or card per
+  `/card-write`, or ask directly when the answer blocks the task —
   never only in session scrollback. A question that lives solely in a
   session's last response is invisible the moment that session scrolls out
   of view.

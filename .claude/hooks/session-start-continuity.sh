@@ -11,6 +11,16 @@
 # work, what the last sessions left behind, and how much deciding the user has
 # already been asked to do this week.
 #
+# The board is not read here. It used to be: the first 16 bullets of
+# kanban.md, half of them ticked, ~4 KB into every session, and a bullet
+# above the first heading never printed at all. `worklist --brief` owns that
+# view now -- live PR and issue state plus the `## Needs ruling` and
+# `## Claude's` cards, <= 3 KB by
+# its contract, served from cache so it is fast. This hook only caps the wait
+# at 6 s (a hung gh call must never hold session start) and clips the output
+# at 4 KB, so a broken worklist cannot become a 40 KB tax. Missing worklist
+# is reported, not worked around; the old dump is not a fallback.
+#
 # Never clones. A private clone needs credentials a hook cannot count on and
 # would stall session start on the network; absence is reported with the fix
 # instead of silently papered over.
@@ -76,6 +86,43 @@ fi
 
 SD="$SR/state/global"
 
+# Runs worklist --brief under a wall-clock cap. Background + sleep + kill
+# rather than timeout(1): macOS has no timeout, and one code path is one to
+# test. Both children get their stdio pointed away from this hook's pipe --
+# a child still holding it would keep jq reading until the child died.
+board_view() {
+  wl="$HOME/.local/bin/worklist"
+  if [ ! -x "$wl" ]; then
+    echo "worklist not installed -- live board view unavailable; this is not a clean state (run dotsync / cloud-session-setup.sh)"
+    return 0
+  fi
+  out=$(mktemp "${TMPDIR:-/tmp}/worklist-brief.XXXXXX") || return 0
+  "$wl" --brief >"$out" 2>/dev/null </dev/null &
+  wl_pid=$!
+  ( sleep 6; kill "$wl_pid" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
+  wd_pid=$!
+  wait "$wl_pid" 2>/dev/null
+  rc=$?
+  kill "$wd_pid" 2>/dev/null
+  if [ "$rc" -gt 128 ]; then
+    echo "worklist --brief did not return in 6 s -- board view unavailable this session; run \`worklist --brief\` yourself"
+  elif [ "$rc" -ne 0 ]; then
+    echo "worklist --brief exited $rc -- board view unavailable this session; run \`worklist --brief\` yourself"
+  fi
+  head -c 4096 "$out"
+  rm -f "$out"
+}
+
+# A card written above the first "## " heading belongs to no section, so the
+# lint, worklist and every reader skip it. One line, so someone moves it.
+board_lint_warning() {
+  [ -f "$SD/kanban.md" ] || return 0
+  if awk '/^## / { exit } /^- \[/ { found = 1; exit } END { exit !found }' "$SD/kanban.md"; then
+    echo
+    echo "WARNING: kanban.md has a card above its first \`## \` heading -- no section, invisible to every reader. Move it under \`## Needs ruling\` or \`## Claude's\`."
+  fi
+}
+
 # Freshen the board, but never block session start on it.
 timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
 
@@ -86,25 +133,9 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
   echo "State repo: \`$SR\` (board, checkpoints and metrics live here; the Stop"
   echo "hook commits and pushes to it automatically -- no need to be asked)."
 
-  if [ -f "$SD/kanban.md" ]; then
-    echo
-    echo "### Open board items (\`state/global/kanban.md\`)"
-    echo
-    # Bullets under the first "## Backlog"-style heading onward, each folded
-    # back onto one line -- board items wrap over several lines, and printing
-    # only the first one turns "delete these three branches" into "delete".
-    awk '
-      /^## / { print ""; print "**" substr($0, 4) "**"; print "";
-               inb = 1; buf = ""; next }
-      !inb   { next }
-      /^(- |[0-9]+\. )/ { if (buf != "") { print buf; if (++n >= 16) exit }
-                          buf = $0; next }
-      /^[ \t]*$/       { if (buf != "") { print buf; buf = ""
-                                          if (++n >= 16) exit } next }
-                        { if (buf != "") buf = buf " " $0 }
-      END               { if (buf != "" && n < 16) print buf }
-    ' "$SD/kanban.md" | sed 's/[[:space:]][[:space:]]*/ /g' | cut -c1-260
-  fi
+  echo
+  board_view
+  board_lint_warning
 
   if [ -d "$SD/log/auto" ]; then
     recent=$(ls -t "$SD/log/auto"/*.md 2>/dev/null | head -3)

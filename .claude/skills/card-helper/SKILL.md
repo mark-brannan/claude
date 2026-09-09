@@ -11,12 +11,12 @@ their screen outranks anything you believe about it.
 
 ## Pick the card
 
-Find the board the way `/card-write` says to; its routing rules are the
-contract, don't paraphrase them here. Read the whole file, then default to
-walking one card from `## Solace's` (older boards: `## Yours`):
-that's the work only the user can close, which is what this skill is for.
-If the argument names a different card or section, walk that one instead.
-Never start a second card without being asked.
+Find it the way `/card-write` routes; its rules are the contract, don't
+paraphrase them here. An issue is walked exactly like a card. The default
+is the card or issue Solace names, or the oldest card under `## Needs
+ruling` that `worklist` shows: that's the work only the user can close,
+which is what this skill is for. Never start a second one without being
+asked.
 
 ## Load the real context first
 
@@ -68,13 +68,15 @@ same step. Losing their position is the one thing worse than a wrong step.
 
 ## Closing the card
 
-When the card is done, close it the way the board says to, and commit with
-a message naming what was closed. Say in one line what changed and stop.
+When the card is done, delete it and commit with a message naming what
+was closed. A `## Needs ruling` card stays on the board until the ruling
+has landed somewhere durable — the PR, the ADR, the doc it settles — then
+the same commit deletes the card. Say in one line what changed and stop.
 
-If the walk stalls, write what you learned **into the card** before ending
-— the step that failed, what the UI actually showed, what would unblock
-it. A card that has been half-walked twice with nothing recorded is worse
-than one nobody touched.
+If the walk stalls, write what you learned **into the card or issue**
+before ending — the step that failed, what the UI actually showed, what
+would unblock it. A loop that has been half-walked twice with nothing
+recorded is worse than one nobody touched.
 
 ## Cadence
 

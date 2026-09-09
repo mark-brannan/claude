@@ -211,7 +211,36 @@ if [ -f .gitattributes ] && grep -qE '(^|[[:space:]])filter=' .gitattributes; th
   done
 fi
 
+# The board is linted before it is staged. This hook commits and pushes at
+# every Stop, so a card that restates a PR's state or a line ticked instead
+# of deleted would be in history before anyone read it. A failing lint
+# leaves the board's edits in the working tree and names them in the
+# checkpoint; a missing lint is treated the same way, never as a pass.
+board=state/global/kanban.md
+board_ok=1
+# If a human had already staged board edits, the unstage below must not eat
+# them: remember the exact staged blob and put it back in the index once this
+# hook is done committing.
+board_pre_blob=
+git diff --cached --quiet -- "$board" 2>/dev/null || board_pre_blob=$(git rev-parse ":$board" 2>/dev/null)
+restore_board() {
+  [ -n "$board_pre_blob" ] || return 0
+  git update-index --cacheinfo "100644,$board_pre_blob,$board" >/dev/null 2>&1
+}
+if [ -n "$(git status --porcelain -- "$board" 2>/dev/null)" ]; then
+  if [ -f "$HOOK_DIR/kanban-lint.sh" ]; then
+    lint_out=$(sh "$HOOK_DIR/kanban-lint.sh" --diff "$SR" "$board" 2>&1) || board_ok=0
+  else
+    lint_out="kanban-lint.sh is missing from $HOOK_DIR, so the board could not be linted"; board_ok=0
+  fi
+  [ "$board_ok" = 1 ] || printf '\n## Board NOT committed\n\n`%s` failed kanban-lint; its edits stay uncommitted in the working tree (anything you had already staged for it is left staged). Fix or delete the lines, then commit by hand or let the next Stop try again.\n\n```\n%s\n```\n' "$board" "$lint_out" >> "$ckpt"
+fi
+
 git add state/ >/dev/null 2>&1
+if [ "$board_ok" != 1 ]; then
+  git reset -q -- "$board" >/dev/null 2>&1
+  [ -n "$board_pre_blob" ] && trap restore_board EXIT
+fi
 git diff --cached --quiet 2>/dev/null && exit 0   # nothing changed
 
 git -c user.name="${GIT_AUTHOR_NAME:-Claude}" \
