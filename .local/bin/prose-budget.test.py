@@ -164,13 +164,13 @@ class CliTest(RepoCase):
     def test_version(self):
         self.assertEqual(self.cli("--version")[1].strip(), f"prose-budget {pb.VERSION}")
 
-    def test_findings_end_with_the_budget_line_and_name_the_config(self):
+    def test_findings_end_with_the_cut_line_and_name_the_config(self):
         self.config({"lines": {"README.md": 1}}, path="docs/budgets.json")
         self.write("README.md", "a\nb\nc\n")
         code, out, _ = self.cli("--tree")
         self.assertEqual(code, 1)
         self.assertEqual(out.splitlines()[0], "README.md:3: lines: 3 lines, budget 1")
-        self.assertEqual(out.splitlines()[-1], pb.RAISE.format("docs/budgets.json"))
+        self.assertEqual(out.splitlines()[-1], pb.CUT.format("docs/budgets.json"))
 
     def test_warn_only_exits_zero(self):
         self.config({"lines": {"README.md": 1}})
@@ -332,6 +332,144 @@ class LandAloneTest(RepoCase):
         self.config({})
         self.stage("scripts/foo.py", "ansible/x.yml")
         self.assertEqual(self.findings("--staged"), [])
+
+
+class ConfigRelaxTest(RepoCase):
+    """The guard's own config is a file like any other; weakening it lands alone."""
+
+    def start(self, cfg):
+        self.config(cfg)
+        self.write("README.md", "a\n")
+        self.commit(".prose-budgets.json", "README.md")
+
+    def stage_config(self, cfg, *also):
+        self.config(cfg)
+        paths = [".prose-budgets.json"]
+        for p in also:
+            self.write(p, "x\n")
+            paths.append(p)
+        self.git("add", "--", *paths)
+
+    def config_findings(self, *args):
+        return [f for f in self.findings(*args) if f["rule"] == "config"]
+
+    def test_raising_a_budget_beside_other_edits_fails(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 40}}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertEqual(len(f), 1)
+        self.assertIn("lines.README.md: 10 -> 40", f[0]["message"])
+        self.assertIn("docs/x.md", f[0]["message"])
+
+    def test_the_same_raise_landing_alone_passes(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 40}})
+        self.assertEqual(self.config_findings("--staged"), [])
+
+    def test_a_new_allow_entry_beside_other_edits_fails(self):
+        self.start({"voice": {"allow": ["Foster/Gleirscher"]}})
+        self.stage_config({"voice": {"allow": ["Foster/Gleirscher", "robust policy"]}}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertEqual(len(f), 1)
+        self.assertIn("voice.allow: +1 (robust policy)", f[0]["message"])
+
+    def test_tightening_beside_other_edits_passes(self):
+        self.start({"lines": {"README.md": 40}, "voice": {"allow": ["a", "b"]}})
+        self.stage_config({"lines": {"README.md": 10}, "voice": {"allow": ["a"]}}, "docs/x.md")
+        self.assertEqual(self.config_findings("--staged"), [])
+
+    def test_a_budget_for_a_new_file_is_not_a_relaxation(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 10, "docs/x.md": 300}}, "docs/x.md")
+        self.assertEqual(self.config_findings("--staged"), [])
+
+    def test_turning_a_rule_off_beside_other_edits_fails(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 10}, "voice": False}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertIn("voice: rule turned off", f[0]["message"])
+
+    def test_narrowing_coverage_beside_other_edits_fails(self):
+        self.start({"lines": {"README.md": 10, "must_budget": ["README.md", "docs/**/*.md"]}})
+        self.stage_config({"lines": {"README.md": 10, "must_budget": ["README.md"]}}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertIn("lines.must_budget: -1 (docs/**/*.md)", f[0]["message"])
+
+    def test_base_mode_sees_a_relaxation_from_the_merge_base(self):
+        self.start({"lines": {"README.md": 10}})
+        self.git("checkout", "-qb", "work")
+        self.config({"lines": {"README.md": 40}})
+        self.write("docs/x.md", "x\n")
+        self.commit(".prose-budgets.json", "docs/x.md")
+        f = self.config_findings("--base", "main")
+        self.assertEqual(len(f), 1)
+        self.assertIn("lines.README.md: 10 -> 40", f[0]["message"])
+
+    def test_an_untouched_config_is_never_a_finding(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 10}}, "docs/x.md")
+        self.assertEqual(self.config_findings("--staged"), [])
+
+    def test_enforce_already_false_at_the_base_disables_the_rule(self):
+        self.start({"lines": {"README.md": 10}, "config": {"enforce": False}})
+        self.stage_config({"lines": {"README.md": 40}, "config": {"enforce": False}}, "docs/x.md")
+        self.assertEqual(self.config_findings("--staged"), [])
+
+    def test_switching_enforce_off_in_the_same_diff_cannot_self_grant(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 999}, "config": {"enforce": False}}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertEqual(len(f), 1)
+        self.assertIn("config.enforce: true -> false", f[0]["message"])
+        self.assertIn("lines.README.md: 10 -> 999", f[0]["message"])
+
+    def test_setting_the_whole_rule_to_false_cannot_self_grant(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 999}, "config": False}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertIn("config: rule turned off", f[0]["message"])
+        self.assertIn("lines.README.md: 10 -> 999", f[0]["message"])
+
+    def test_an_override_more_permissive_than_the_built_in_default_is_a_relaxation(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 10}, "sections": {"max_words": 5000}}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertIn("sections.max_words: 140 -> 5000", f[0]["message"])
+
+    def test_narrowing_default_coverage_with_an_explicit_list_is_a_relaxation(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 10}, "voice": {"targets": ["README.md"]}}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertIn("voice.targets: -", f[0]["message"])
+
+
+class RelaxationsTest(unittest.TestCase):
+    def test_a_cap_introduced_above_the_built_in_default(self):
+        """An on-by-default rule is already binding, so an explicit override loosens it."""
+        self.assertEqual(pb.relaxations({}, {"sections": {"max_words": 5000}}),
+                         ["sections.max_words: 140 -> 5000"])
+
+    def test_switching_an_off_by_default_rule_on_is_a_tightening(self):
+        self.assertEqual(pb.relaxations({}, {"json_prose": {"targets": ["x.json"], "max_chars": 9000}}), [])
+
+    def test_a_raised_cap_and_a_grown_exemption(self):
+        old = {"json_prose": {"max_chars": 300}, "narration": {"disable": []}}
+        new = {"json_prose": {"max_chars": 900}, "narration": {"disable": ["issue"]}}
+        self.assertEqual(pb.relaxations(old, new),
+                         ["json_prose.max_chars: 300 -> 900", "narration.disable: +1 (issue)"])
+
+    def test_voice_scope_narrowed_to_the_diff(self):
+        self.assertEqual(pb.relaxations({"voice": {"scope": "tree"}}, {"voice": {"scope": "diff"}}),
+                         ["voice.scope: tree -> diff"])
+
+    def test_a_raised_grandfathered_value(self):
+        old = {"headers": {"targets": ["src/**"], "grandfathered": {"a.ts": 30}}}
+        new = {"headers": {"targets": ["src/**"], "grandfathered": {"a.ts": 48}}}
+        self.assertEqual(pb.relaxations(old, new), ["headers.grandfathered.a.ts: 30 -> 48"])
+
+    def test_identical_configs_are_silent(self):
+        cfg = {"lines": {"README.md": 10}, "voice": {"allow": ["x"]}}
+        self.assertEqual(pb.relaxations(cfg, json.loads(json.dumps(cfg))), [])
 
 
 class JsonProseTest(RepoCase):
