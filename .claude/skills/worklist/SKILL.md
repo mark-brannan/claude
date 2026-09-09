@@ -15,34 +15,43 @@ epic or log.
 
 ## Output shape
 
-The script prints it; don't rewrite it into another format. First line
-`as of HH:MMZ` (`cached N min` when served from cache), then the repo set
-and the account-wide counts, then these buckets. An empty bucket prints
-`none` — that is "checked, nothing there", not a failure:
+The script prints it as markdown; don't rewrite it into another format!
+First line is a heading that contains the project name
+then `as of HH:MMZ` (`cached N min` when served from cache),
+then the repo set and the account-wide counts, then these buckets.
+An empty bucket prints `none` — that is "checked, nothing there", not a failure.
+
+Each GitHub bucket (everything but Needs ruling and Board) renders as a
+`Ref | Item | Notes` table, capped at 5 rows in `--brief` and 1000000
+otherwise, with a `+N more` row past the cap. Needs ruling and Board stay
+plain bullets — they're prose cards, not tabular data:
 
 ```
 Solace's turn             PRs ready for her: not draft, mergeable, checks
                           green, no unresolved threads, no auto-merge
-                          (failing check names printed, never a boolean)
+                          (failing check names printed in Notes, never a
+                          boolean)
 Queued (auto-merge)       auto-merge enabled, waiting on checks
 Ready                     `ready` issues — agent-startable now
 Blocked                   `blocked` issues, with what blocks them
 Not ready (agent's turn)  open PRs that are none of the above, with why
-Untriaged: N              unlabelled issues, count only
+Untriaged: N              unlabelled issues, table capped like every other
+                          bucket — not count-only
 Stranded branches         pushed branches with no PR
 Needs ruling              the board's `## Needs ruling` cards, at most 8 —
                           one-way doors only, so normally empty
 Board                     the `## Claude's` cards, at most 8
 ```
 
-Every line carries its repo; the full view carries links too, `--brief`
-does not. Failure lines are per cause — `no gh`, `gh unauthenticated`,
-`<repo>: 403 — attach the repo`, `network` — and a bucket missing for one
-of those reasons is not an empty bucket; say so.
+Every row carries its repo; the full view links the Ref cell, `--brief`
+prints it as bare text. Failure lines are per cause — `no gh`, `gh
+unauthenticated`, `<repo>: 403 — attach the repo`, `network` — and a bucket
+missing for one of those reasons is not an empty bucket; say so.
 
 ## After reporting
 
 Stop. Don't recommend a single item unless asked — the point is to hand
 over the list so Solace can pick what fits the moment (one session, a
 subagent, or a stream of several). If asked which one you'd start, give one
-sentence naming it before any explanation, per standing orders.
+sentence naming it before any explanation, per standing orders, and
+estimate the model and difficulty to accomplish it if it is a one-shot task.

@@ -88,7 +88,7 @@ QUERY='query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){
     reviewThreads(first:100){nodes{isResolved}}
     commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{
       ... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}
-  issues(states:OPEN,first:100){pageInfo{hasNextPage} nodes{number title url labels(first:20){nodes{name}}
+  issues(states:OPEN,first:100){pageInfo{hasNextPage} nodes{number title url updatedAt labels(first:20){nodes{name}}
     milestone{title}}}
   refs(refPrefix:"refs/heads/",first:100){nodes{name associatedPullRequests(first:1){totalCount}}}
 }}'
@@ -218,12 +218,21 @@ find_cache() {
 RENDER='
 def brief: $brief == "1";
 def cut: if brief and length > 80 then .[:77] + "..." else . end;
-def limit: if brief then 5 else 1000000 end;
-def bucket($title; $lines):
-  if ($lines|length) == 0 then "\($title): none"
-  else ([$title] + ($lines[:limit] | map("- " + .))
-        + (if ($lines|length) > limit then ["- +\(($lines|length) - limit) more (run worklist)"] else [] end)) | join("\n") end;
-def url_sfx: if brief then "" else "  " + .url end;
+def esc: gsub("\\|"; "\\|");
+def limit: if brief then 5 else 8 end;
+# table_bucket -- $title heading, $col3 header (e.g. "Notes" or "Updated"),
+# $rows of {ref, item, notes}. Empty notes render as a blank cell, not
+# "null" (jq // "" upstream handles that).
+def table_bucket($title; $col3; $rows):
+  if ($rows|length) == 0 then "\($title): none"
+  else
+    ($rows[:limit]) as $r
+    | ([$title, "", "| Ref | Item | \($col3) |", "|---|---|---|"]
+       + ($r | map("| " + (.ref|esc) + " | " + (.item|esc) + " | " + (.notes|esc) + " |"))
+       + (if ($rows|length) > limit then ["| +\(($rows|length) - limit) more | | run `worklist` |"] else [] end)
+      ) | join("\n")
+  end;
+def ref_link: if brief then "\(.repo)#\(.number)" else "[\(.repo)#\(.number)](\(.url))" end;
 def failing_names: [ (.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[]
   | select( ((.conclusion // "") | IN("FAILURE","TIMED_OUT","CANCELLED","ACTION_REQUIRED","STARTUP_FAILURE"))
          or ((.state // "") | IN("FAILURE","ERROR")) )
@@ -237,29 +246,29 @@ def pr_notes($owner): [
   (failing_names | if length > 0 then "failing: " + join(", ") else empty end),
   (if (failing_names|length) == 0 and (rollup|IN("FAILURE","ERROR")) then "checks \(rollup|ascii_downcase), names past the first 50 contexts" else empty end),
   (if (failing_names|length) == 0 and (rollup|IN("PENDING","EXPECTED")) then "checks pending" else empty end),
-  (unresolved | if . > 0 then "\(.) unresolved thread(s)" else empty end) ];
+  (unresolved | if . > 0 then "\(.) unresolved thread(s)" else empty end) ] | join("; ");
 # rollup NONE (no checks at all) counts as ready: a repo without CI still needs the user to merge. Ruled on #90.
 def awaiting_human: (.isDraft|not) and .mergeable == "MERGEABLE" and (failing_names|length) == 0
   and (rollup|IN("SUCCESS","NONE")) and unresolved == 0 and .autoMergeRequest == null;
-def notes_sfx($owner): pr_notes($owner) | if length > 0 then "  -- " + join("; ") else "" end;
 def labels: [(.labels.nodes // [])[].name];
-def ms_sfx: if .milestone then "  [\(.milestone.title)]" else "" end;
 
 . as $c | $c.owner as $owner
 | [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.pullRequests.nodes // [])[]
-    | . + {line: ("\($s)#\(.number)  \(.title|cut)" + notes_sfx($owner) + url_sfx)} ] as $prs
+    | . + {repo: $s, ref: ({repo:$s,number,url}|ref_link), item: (.title|cut), notes: pr_notes($owner)} ] as $prs
 | [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.issues.nodes // [])[]
-    | . + {lbl: labels,
-           line: ("\($s)#\(.number)  \(.title|cut)" + ms_sfx + url_sfx)} ] as $is
+    | . + {repo: $s, lbl: labels,
+           ref: ({repo:$s,number,url}|ref_link), item: (.title|cut),
+           notes: (.updatedAt[:10] // "")} ] as $is
 | ($is | map(select(.lbl|index("blocked")))) as $bl
 | ($is | map(select((.lbl|index("blocked")|not) and (.lbl|index("ready"))))) as $rd
 | ($is | map(select((.lbl|index("blocked")|not) and (.lbl|index("ready")|not)))) as $rest
 | ($rest | map(select(.milestone)) | length) as $deferred
-| ($rest | map(select(.milestone|not)) | length) as $untriaged
+| ($rest | map(select(.milestone|not))) as $untri
+| ($untri | length) as $untriaged
 | [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.defaultBranchRef.name // "main") as $def
     | [ (.data.refs.nodes // [])[] | select(.associatedPullRequests.totalCount == 0 and (.name|IN("main","master",$def)|not)
         and (.name|startswith("release-please--")|not)) | .name ]
-    | select(length > 0) | ("\($s): " + join(", ") | cut) ] as $stranded
+    | select(length > 0) | {ref: $s, item: (join(", ") | cut), notes: ""} ] as $stranded
 | [ ($c.records | map(select(.error))) as $e
     | if ($e|length) > 0 and ($e|length) == ($c.records|length) and ([$e[].error]|unique|length) == 1
          and ($e[0].error|IN("gh unauthenticated","network")) then $e[0].error
@@ -272,13 +281,14 @@ def ms_sfx: if .milestone then "  [\(.milestone.title)]" else "" end;
       else "counts: \(.prs) open PRs, \(.issues) open issues across \($owner)" end) as $counts
 | [ $c.label + " " + ($c.repos | map(split("/")[1]) | join(", ")) ]
   + $fails + $trunc + [ $counts, "", "@@RULINGS@@",
-  bucket("Solace'"'"'s turn"; $prs | map(select(awaiting_human) | .line)),
-  bucket("Queued (auto-merge)"; $prs | map(select(.autoMergeRequest != null) | .line)),
-  bucket("Ready"; $rd | map(.line)),
-  bucket("Blocked"; $bl | map(.line)),
-  bucket("Not ready (agent'"'"'s turn)"; $prs | map(select(.autoMergeRequest == null and (awaiting_human|not)) | .line)),
-  "Untriaged: \($untriaged)" + (if $deferred > 0 then " (deferred to a milestone: \($deferred))" else "" end),
-  bucket("Stranded branches (no PR)"; $stranded) ]
+  table_bucket("Solace'"'"'s turn"; "Notes"; $prs | map(select(awaiting_human))),
+  table_bucket("Queued (auto-merge)"; "Notes"; $prs | map(select(.autoMergeRequest != null))),
+  table_bucket("Ready"; "Updated"; $rd),
+  table_bucket("Blocked"; "Updated"; $bl),
+  table_bucket("Not ready (agent'"'"'s turn)"; "Notes"; $prs | map(select(.autoMergeRequest == null and (awaiting_human|not)))),
+  (if $untriaged == 0 then "Untriaged: 0"
+   else table_bucket("Untriaged: \($untriaged)" + (if $deferred > 0 then " (deferred to a milestone: \($deferred))" else "" end); "Updated"; $untri) end),
+  table_bucket("Stranded branches (no PR)"; "Notes"; $stranded) ]
 | join("\n")
 '
 
