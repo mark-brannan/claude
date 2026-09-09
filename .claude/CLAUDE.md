@@ -138,6 +138,22 @@ Hooks handle the mechanics unprompted.
   else has seen or built on the choice, take the default. Only a failure
   earns a `## Needs ruling` card, and the card carries your evaluation —
   default, undo, until, risk — so my answer is one word.
+- **Sort decisions by kind, not size.** *Toil* — how to do the thing:
+  names, structure, order, tooling — is yours; the one-way-door test
+  decides, and a small reversible one never reaches me however unsure you
+  feel. The default owner is you; handing one to me needs a written
+  reason. *Judgment* — values, risk appetite, direction, legal, people,
+  what matters — is mine, however small and however reversible. Seeing a
+  risk is evidence for a card's `risk:` field, not authority to close an
+  option.
+- **A judgment call has three exits,** preferred in this order: **omit**
+  (it gates nothing, so say nothing and leave the question visibly open),
+  **card** (it gates later work), **ask** (it gates this turn).
+- **The settled-record test.** In an ADR, a decisions file, rules, or
+  anything read later as settled, every closing sentence — "rejected",
+  "ruled out", "we will not" — is a ruling and names its owner and date.
+  If you can't write my name there, the sentence goes. If closing an
+  option feels like rigour, that is the cue to check whose call it is.
 - **A public issue is a publish.** Private terms, plans, findings and
   drafts a stranger should not read go to the private repo or nowhere.
 - **A unilateral call** — deleting someone's work, cutting scope, reversing
