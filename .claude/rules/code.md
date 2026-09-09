@@ -338,6 +338,15 @@ public" section.
   registered and referenced before relying on it or recommending it.
 - Dry-run flags are not always dry. `make -n` executes recursive `$(MAKE)`
   lines for real. Read the file instead of trusting the flag.
+- **A PR merging is not the fix landing, for anything published as a
+  package.** "Done" means the release workflow completed and the registry
+  reflects it — check `npm view <pkg> dist-tags` (or the equivalent for the
+  registry in play), don't infer publish from a merged PR or a green
+  release-please run. In the gap between merge and publish, label the issue
+  (e.g. `blocked`) or leave a comment saying what it's waiting on, rather
+  than closing early or leaving it ambiguous. Scar: 2026-09-08,
+  colregs-engine#32 — closed on PR merge, reopened three minutes later
+  because `npm view colregs dist-tags` still showed the pre-fix version.
 
 ## Cost
 
