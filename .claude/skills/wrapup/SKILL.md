@@ -34,6 +34,9 @@ Put in it:
   holds the link, not a copy;
 - what was tried and abandoned, so the next session doesn't retry it;
 - what comes next: the hand-off prompt from step 4, verbatim;
+- stamp the memos that argued a question when it's ruled — a dated
+  one-line annotation under the memo's H1 naming what settled it, per
+  `/reconcile`'s convention. Bodies stay as evidence, never reworded;
 - the `/sweep --dry-run` output from step 3;
 - observations worth keeping. They go here, silently — never as an aside in
   chat.
