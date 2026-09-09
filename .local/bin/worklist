@@ -7,8 +7,9 @@
 # their opening turns "sweeping" the board -- editing prose to match GitHub
 # -- and the user still could not tell what was theirs to do. Every fact now has one
 # home (the PR or issue) and this is the one view over them: Solace's turn,
-# queued, ready, blocked, untriaged, stranded branches, and the two board
-# sections -- questions that need a ruling, and the agent's rabbit-trails.
+# queued, ready, blocked, untriaged, stranded branches, and the three board
+# sections -- questions that need a ruling, click work only the user can do,
+# and the agent's rabbit-trails.
 # Anything that asks "what's stale / outstanding / next" runs this and
 # reports; nothing edits.
 #
@@ -378,7 +379,9 @@ render() {
       printf '%s\n\n' "$rulings"
     fi
     echo
-    if [ -n "$kb" ]; then section_of "$kb" '^## Claude' "Board (## Claude's" ")"
+    if [ -n "$kb" ]; then
+      section_of "$kb" '^## Solace' "Board (## Solace's" ")"
+      section_of "$kb" '^## Claude' "Board (## Claude's" ")"
     else echo "$board_err"; fi
   } | if [ "$brief" = 1 ]; then
     awk -v max=2900 '{ n += length($0) + 1; if (n > max) { print "... (cut at 3 KB; run worklist)"; exit } print }'

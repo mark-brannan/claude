@@ -128,18 +128,25 @@ Hooks handle the mechanics unprompted.
 
 - **Write the issue or card when the loop is found, never at wrap-up** — by
   then the evidence is compacted away — and only if you would pull it
-  yourself. "Verify X later" is not a loop: verify it now or drop it.
-  Routing and format: `/card-write`.
-- **One home per fact.** GitHub owns work state; the board holds only agent
-  loops with no GitHub home; a sweep is `worklist`, never an edit.
+  yourself. "Verify X later" is never mine to hear about: run it now, or
+  queue it on `## Claude's`. Routing and format: `/card-write`.
+- **One home per fact.** GitHub owns work state. One board, global, three
+  sections: rulings, my click work, your queue. `worklist` reads, `/sweep`
+  prunes with my tick, nothing else edits.
+- **The one-way-door test:** name the default and its undo; if there is a
+  default, and the undo is a revert in a repo you control before anyone
+  else has seen or built on the choice, take the default. Only a failure
+  earns a `## Needs ruling` card, and the card carries your evaluation —
+  default, undo, until, risk — so my answer is one word.
+- **A public issue is a publish.** Private terms, plans, findings and
+  drafts a stranger should not read go to the private repo or nowhere.
 - **A unilateral call** — deleting someone's work, cutting scope, reversing
   a prior decision — **gets a card the moment it's made.** A PR comment
   afterward doesn't substitute.
 - A loop not worth a card is not worth telling me about.
 - **End with a prompt, not a status bullet or observation.** Work remaining
-  → hand-off prompt; a question → a `## Needs ruling` card, and the default
-  is to work around it: decide, record the assumption where the work lands,
-  carry on. Nothing else in a closing message; `/wrapup` has the spec.
+  → hand-off prompt; a ruling or click-work card → its link. Nothing else
+  in a closing message; `/wrapup` has the spec.
 - **Every hand-off prompt names a recommended model and difficulty (effort)
   setting.** Not optional, not only under `/wrapup` — any prompt meant to be
   pasted into a new session. A hand-off without both is unfinished.

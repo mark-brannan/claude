@@ -183,7 +183,10 @@ OUT=$OUT_ALL
 has 'board heading with counts' "^Board \(## Claude's, showing 8 of 10\)$"
 eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -c '^  \*\*Card ')"
 lacks 'ticked card dropped' 'Ticked card'
-lacks 'other sections dropped' 'Not an agent card'
+has 'Solace section shown with its count' "^Board \(## Solace's, showing 1 of 1\)$"
+OUT=$(section "Board (## Solace's")
+has 'click-work card shown' 'Not an agent card'
+OUT=$OUT_ALL
 has 'full mode keeps the whole card' 'eighty characters when brief is asked for \(\[link\]'
 has 'long title uncut in full mode' "$long_title"
 assert 'cache written under owner-project key' test -f "$CACHE/o-demo.json"

@@ -11,11 +11,16 @@ their screen outranks anything you believe about it.
 
 ## Pick the card
 
+Run `/sweep` first, so a card already closed elsewhere is never walked.
 Find it the way `/card-write` routes; its rules are the contract, don't
 paraphrase them here. An issue is walked exactly like a card. The default
-is the card or issue Solace names, or the oldest card under `## Needs
-ruling` that `worklist` shows: that's the work only the user can close,
-which is what this skill is for. Never start a second one without being
+is the card or issue Solace names, else the top card under `## Solace's`:
+that's the work only the user can close, which is what this skill is for.
+A card there carries `why you:` and `why this:`; read both before the
+first step, and if `why this:` no longer holds — the cause was something
+else, the secret was already in sops — say so and stop rather than walk
+the wrong fix. A `why you: learn` card is walked at the user's pace and
+stays until they say they have it. Never start a second one without being
 asked.
 
 ## Load the real context first

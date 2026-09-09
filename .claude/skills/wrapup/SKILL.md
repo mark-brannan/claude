@@ -1,6 +1,6 @@
 ---
 name: wrapup
-description: Close a session — write the narrative log to the right state repo, list the issues the session opened or labelled, and end with a paste-ready hand-off prompt. Use when Solace says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
+description: Close a session — write the narrative log to the state repo, list the issues the session opened or labelled, dry-run the board sweep, and end with a paste-ready hand-off prompt. Use when Solace says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
 ---
 
 # Wrapping up
@@ -13,16 +13,13 @@ meant, what is still open, and how the next one starts.
 
 ## 1. Where state lands
 
-Settled 2026-08-19. A project's session state stays in that project's own
-repo. Never stage one project's work under another's.
-
-| Work | State goes to |
-|---|---|
-| Symphony | `~/symphony/intermediate_files/claude_slop/` (`kanban.md` + `log.md`). Its human-facing `maintenance/log.md` and `priorities.md` get only finished, high-level results. |
-| Global and cross-cutting — standing orders, rules, hooks, Claude tooling, anything spanning projects | The private repo `~/claude_prompts_scratch`, under `state/global/kanban.md` and `state/global/log/`. Work on `main` there; `git pull --rebase` before pushing. |
-| Any project with no private repo of its own | The same global paths. |
-| Dotfiles | **Never** — it is public, and session notes name boats, hosts and services. Dotfiles has no board of its own: its loops are dotfiles issues, or cards on the global board when they have no GitHub home. |
-| Any other project with its own board | That repo, at the path its CLAUDE.md names. |
+Session state lives in the private repo `~/claude_prompts_scratch`, under
+`state/global/kanban.md` and `state/global/log/`, for every project. Work on
+`main` there; `git pull --rebase` before pushing. No project repo carries a
+board or a session log; a public repo never carries session notes, because
+they name boats, hosts and services. Symphony's human-facing
+`maintenance/log.md` and `priorities.md` get only finished, high-level
+results.
 
 ## 2. Narrative log
 
@@ -32,20 +29,22 @@ and what should happen next. The machine one is evidence, not a substitute.
 Put in it:
 
 - what was decided, and why — as a link to where each decision landed (the
-  Q-nn footnote, the ADR, the closed issue, the PR), including calls that
-  reversed or narrowed an earlier one. The log holds the link, not a copy;
+  Q-nn footnote, the ADR, the `docs/decisions.md` line, the closed issue,
+  the PR), including calls that reversed or narrowed an earlier one. The log
+  holds the link, not a copy;
 - what was tried and abandoned, so the next session doesn't retry it;
 - what comes next: the hand-off prompt from step 4, verbatim;
+- the `/sweep --dry-run` output from step 3;
 - observations worth keeping. They go here, silently — never as an aside in
   chat.
 
-## 3. Issues
+## 3. Issues and the board
 
 List the issues this session opened or labelled: one line each, with its
-link. Nothing else — no sweep of the board, no card batch to accept or
-delete, no checking what merged. State lives on GitHub and `worklist`
-reads it; a wrap-up that edits it is a second copy. Routing and format:
-`/card-write`.
+link. Then run `/sweep --dry-run` and put its output in the log. Nothing
+else — no board edits, no checking what merged. State lives on GitHub and
+`worklist` reads it; a wrap-up that edits it is a second copy. Routing and
+format: `/card-write`.
 
 ## 4. Hand-off prompt
 
@@ -77,6 +76,7 @@ does not.
 End with a prompt, not a status bullet or observation. A closing that reads
 "the vague thing is borked, your call" costs a read and returns nothing
 actionable. The closing message holds exactly two things: the hand-off
-prompt, and links to the `## Needs ruling` cards awaiting Solace. Nothing
-else goes in it. If nothing hit a one-way door, that half is simply absent —
-a question you worked around is reported in the PR body, not here.
+prompt, and links to the `## Needs ruling` and `## Solace's` cards this
+session wrote. Nothing else goes in it. If nothing hit a one-way door, that
+half is simply absent — a question you worked around is reported in the PR
+body, not here.

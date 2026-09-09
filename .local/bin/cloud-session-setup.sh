@@ -57,6 +57,7 @@ INSTALL="
 .claude/skills/card-write/SKILL.md
 .claude/skills/wrapup/SKILL.md
 .claude/skills/worklist/SKILL.md
+.claude/skills/sweep/SKILL.md
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq
