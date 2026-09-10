@@ -382,10 +382,14 @@ work_str() {
   printf '%s' "$s"
 }
 
-sys_lines=""; model_line=""
+sys_lines=""; model_line=""; arch_lines=""
 add_line()  { sys_lines="${sys_lines:+$sys_lines
 }$1"; }
 add_model() { model_line="${model_line:+$model_line
+}$1"; }
+# Stop's archival verdict (📦 and what follows it) prints last, after the
+# block -- a separate bucket from the crossing nags above, which print first.
+add_arch()  { arch_lines="${arch_lines:+$arch_lines
 }$1"; }
 record_crossing() {
   mkdir -p "$CROSSD" 2>/dev/null || return 0
@@ -610,9 +614,9 @@ resume_ckpt() {
 if [ "$hook_name" = Stop ]; then
   archivable > /dev/null
   if [ -z "$archival_reasons" ]; then
-    add_line "📦 archivable."
+    add_arch "📦 archivable."
   else
-    add_line "📦 not archivable: ${archival_reasons}."
+    add_arch "📦 not archivable: ${archival_reasons}."
   fi
 
   if [ "$nag_pending" -eq 1 ]; then
@@ -624,9 +628,9 @@ if [ "$hook_name" = Stop ]; then
     found=$(resume_ckpt)
     if [ -n "$found" ]; then
       resume_ts=$now_ts
-      add_line "Archivable. Resume block written $(hhmm "$resume_ts") in $(basename "$found"). Next time: \`/resume\`."
+      add_arch "Archivable. Resume block written $(hhmm "$resume_ts") in $(basename "$found"). Next time: \`/resume\`."
     else
-      add_line "Archivable, but no \`## Resume\` block in $(state_dir)/log/auto/*-${sid:0:8}.md. Not asking again this session."
+      add_arch "Archivable, but no \`## Resume\` block in $(state_dir)/log/auto/*-${sid:0:8}.md. Not asking again this session."
     fi
     save_nag
   elif archivable; then
@@ -643,16 +647,20 @@ if [ "$hook_name" = Stop ]; then
       nag_pending=1; save_nag
       # The crossing lines that armed this Stop have already been persisted
       # as consumed, so this reason is their only chance to be seen. They go
-      # in front of the instruction rather than being dropped.
+      # in front of the instruction rather than being dropped -- nags, then
+      # the archival verdict, same order as the screen.
       reason="Write the resume block: append a \`## Resume\` block (next, link, model, effort) to this session's checkpoint in $(state_dir)/log/auto/."
-      [ -z "$sys_lines" ] || reason="$sys_lines
+      pre="$sys_lines"
+      [ -z "$arch_lines" ] || pre="${pre:+$pre
+}$arch_lines"
+      [ -z "$pre" ] || reason="$pre
 $reason"
       printf '{"decision":"block","reason":%s}\n' "$(json_str "$reason")"
       exit 0
     fi
     # Nothing new to say. Later Stops carry the block's age and nothing else.
     if [ "$resume_ts" -gt 0 ]; then
-      add_line "Resume block $(hm $(( (now_ts - resume_ts) / 60 ))) old."
+      add_arch "Resume block $(hm $(( (now_ts - resume_ts) / 60 ))) old."
     fi
   fi
 fi
@@ -749,9 +757,10 @@ if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
   [ -n "$bl_second" ] && bl_block="$bl_block
 $bl_second"
 
-  jq -nc --arg s "$sys_lines" --arg b "$bl_block" \
-    '{systemMessage: (if $s == "" then $b else $b + "\n" + $s end)}'
-elif [ -n "$sys_lines" ]; then
-  jq -nc --arg s "$sys_lines" '{systemMessage: $s}'
+  jq -nc --arg s "$sys_lines" --arg b "$bl_block" --arg a "$arch_lines" \
+    '[$s, $b, $a] | map(select(. != "")) | join("\n") | {systemMessage: .}'
+elif [ -n "$sys_lines" ] || [ -n "$arch_lines" ]; then
+  jq -nc --arg s "$sys_lines" --arg a "$arch_lines" \
+    '[$s, $a] | map(select(. != "")) | join("\n") | {systemMessage: .}'
 fi
 exit 0

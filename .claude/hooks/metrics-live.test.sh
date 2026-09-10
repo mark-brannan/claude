@@ -303,6 +303,41 @@ has 'and the reason carries the crossing line' '⛁ 103k/100k' \
 o4=$(payload "$TP3" stop2 "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
 t 'a dirty tree is never archivable' '' "$(printf '%s' "$o4" | jq -r '.decision // ""')"
 
+# --- 3c. order: nags before the block, archival after it ---------------------
+# dotfiles#149 step 4's whole point. A nag that fires on the same Stop that
+# also confirms a pending resume block must render before the block, with
+# the archival verdict after it -- never interleaved. Own repo so this does
+# not depend on section 3's ordering or its dirty-tree flip above.
+REPOO="$SCRATCH/repoo"; mkdir -p "$REPOO"
+git -C "$REPOO" init -q -b feat/order
+git -C "$REPOO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git init -q --bare "$SCRATCH/repoo.git"
+git -C "$REPOO" remote add origin "$SCRATCH/repoo.git"
+git -C "$REPOO" push -q -u origin feat/order
+
+TPO="$SCRATCH/order.jsonl"; turn "$TPO" 103000
+oO1=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+t 'order setup: the first Stop blocks' block "$(printf '%s' "$oO1" | jq -r '.decision // ""')"
+
+printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repoo-orderx.md"
+
+# Second Stop: also crosses 150k while confirming the resume block, so a
+# nag, the block, and the archival tail all fire together -- no re-block.
+turn "$TPO" 152000
+oO2=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+t 'order: the confirming Stop does not re-block' '' "$(printf '%s' "$oO2" | jq -r '.decision // ""')"
+msgO2=$(msg "$oO2")
+nag_at=$(printf '%s\n' "$msgO2" | grep -n '⛁⛁ 152k/150k' | head -1 | cut -d: -f1)
+block_at=$(printf '%s\n' "$msgO2" | grep -n '⇢ ' | head -1 | cut -d: -f1)
+arch_at=$(printf '%s\n' "$msgO2" | grep -n '📦' | head -1 | cut -d: -f1)
+t 'all three sections are present' yes \
+  "$( [ -n "$nag_at" ] && [ -n "$block_at" ] && [ -n "$arch_at" ] && echo yes || echo no )"
+t 'the nag line renders before the block' yes \
+  "$( [ "${nag_at:-0}" -lt "${block_at:-0}" ] 2>/dev/null && echo yes || echo no )"
+t 'the archival verdict renders after the block' yes \
+  "$( [ "${block_at:-0}" -lt "${arch_at:-0}" ] 2>/dev/null && echo yes || echo no )"
+has 'and reports the resume block it found' 'Resume block written' "$msgO2"
+
 # --- 4. the friction counter is the one line addressed to the model ----------
 # The standing orders' capacity clause no longer carries its own trigger, so
 # this line has to arrive as context, not as a systemMessage the model cannot
