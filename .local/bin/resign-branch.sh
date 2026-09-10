@@ -16,18 +16,33 @@
 #   1. fetches <remote>/<branch> into a throwaway worktree, so the checkout
 #      you run it from never changes branch (refuses if your local <branch>
 #      has commits the remote lacks — they would be orphaned)
-#   2. if every commit already verifies, there are no merge commits and the
-#      branch is up to date with <remote>/HEAD, exits 0 without touching
-#      anything — safe to run repeatedly
+#   2. if every commit already verifies, every commit is authored as this
+#      machine's user.email, there are no merge commits and the branch is
+#      up to date with <remote>/HEAD, exits 0 without touching anything —
+#      safe to run repeatedly
 #   3. otherwise rebases onto <remote>/HEAD with -S, which re-signs every
-#      commit, drops any "Update branch" merge commits and brings the branch
-#      up to date — a signed, linear stand-in for GitHub's "Update branch"
+#      commit, reauthors any commit not authored as this machine's
+#      user.email (original identity kept as a Co-Authored-By trailer),
+#      drops any "Update branch" merge commits and brings the branch up
+#      to date — a signed, linear stand-in for GitHub's "Update branch"
 #      button; a conflict aborts the rebase and exits 1, branch untouched.
 #      Refuses if linearizing would drop content from a hand-resolved merge
 #   4. verifies every rewritten commit locally, then force-pushes with lease
 #
 # Rewrites history. Single-author PR branches only; it refuses to run
 # against the default branch.
+#
+# A commit can carry a locally-valid signature and still fail GitHub's
+# check with reason "unknown_key" -- not because the key is wrong, but
+# because the commit's author/committer email (e.g. a cloud session's
+# noreply@anthropic.com) belongs to a different GitHub account than the
+# one this key is registered to. Local `git log --pretty=%G?` reports
+# such a commit "good" regardless -- it checks the signature against
+# allowed_signers, not against GitHub's email-to-account mapping -- so
+# that check alone under-detects this case. Any commit whose author or
+# committer email isn't this machine's user.email gets reauthored to it
+# (original identity preserved as a Co-Authored-By trailer) in the same
+# pass that resigns.
 set -eu
 
 branch="${1:?usage: resign-branch.sh <branch> [<remote>]}"
@@ -38,6 +53,8 @@ die() { echo "resign-branch: $*" >&2; exit 1; }
 git rev-parse --git-dir >/dev/null 2>&1 || die "not in a git repo"
 
 signingkey=$(git config user.signingkey 2>/dev/null) || die "no user.signingkey configured on this machine — nothing to sign with"
+localemail=$(git config user.email 2>/dev/null) || die "no user.email configured on this machine"
+localname=$(git config user.name 2>/dev/null) || die "no user.name configured on this machine"
 
 # Local verification of an SSH signature needs an allowed-signers file. If
 # none is configured, build one from our own key for this run only, so the
@@ -72,7 +89,7 @@ fi
 # runs from — which cron and other sessions may be using — never changes
 # branch and never needs to be clean.
 wt=$(mktemp -d)
-cleanup() { git worktree remove --force "$wt" 2>/dev/null; rm -rf "$wt" ${tmpsigners:+"$tmpsigners"}; }
+cleanup() { git worktree remove --force "$wt" 2>/dev/null; rm -rf "$wt" ${tmpsigners:+"$tmpsigners"} ${reauthor:+"$reauthor"}; }
 trap cleanup EXIT
 git worktree add -q --detach "$wt" "$old"
 g() { git -C "$wt" "$@"; }
@@ -83,21 +100,46 @@ g() { git -C "$wt" "$@"; }
 count_unverified() {
   g log --pretty='%G?' "$1" | grep -vc -E '^[GU]$' || true
 }
+# Commits whose author or committer email isn't this machine's identity --
+# the case %G? can't see (see header comment).
+count_foreign() {
+  g log --pretty='%ae%n%ce' "$1" | grep -vic -F "$localemail" || true
+}
 unverified=$(count_unverified "$target..HEAD")
+foreign=$(count_foreign "$target..HEAD")
 merges=$(g rev-list --count --merges "$target..HEAD")
 total=$(g rev-list --count "$target..HEAD")
 behind=$(g rev-list --count "HEAD..$target")
 
-if [ "$unverified" -eq 0 ] && [ "$merges" -eq 0 ] && [ "$behind" -eq 0 ]; then
-  echo "resign-branch: all $total commit(s) on $branch verify, no merge commits, up to date with $default — nothing to do"
+if [ "$unverified" -eq 0 ] && [ "$foreign" -eq 0 ] && [ "$merges" -eq 0 ] && [ "$behind" -eq 0 ]; then
+  echo "resign-branch: all $total commit(s) on $branch verify, all authored as $localemail, no merge commits, up to date with $default — nothing to do"
   exit 0
 fi
 
-echo "resign-branch: $total commit(s) on $branch, $unverified unverified, $merges merge commit(s), $behind behind $default; rebasing onto $default with -S"
-if ! GIT_SEQUENCE_EDITOR=true g rebase -q -S --force-rebase "$target"; then
+echo "resign-branch: $total commit(s) on $branch, $unverified unverified, $foreign not authored as $localemail, $merges merge commit(s), $behind behind $default; rebasing onto $default with -S"
+
+reauthor=$(mktemp)
+cat >"$reauthor" <<REAUTHOR
+#!/bin/sh
+set -eu
+ae=\$(git log -1 --format=%ae)
+ce=\$(git log -1 --format=%ce)
+[ "\$ae" = "$localemail" ] && [ "\$ce" = "$localemail" ] && exit 0
+an=\$(git log -1 --format=%an)
+msg=\$(git log -1 --format=%B)
+trailer="Co-Authored-By: \$an <\$ae>"
+case "\$msg" in *"\$trailer"*) : ;; *) msg="\$msg
+\$trailer" ;; esac
+GIT_AUTHOR_NAME="$localname" GIT_AUTHOR_EMAIL="$localemail" git commit -q --amend --allow-empty -S --reset-author -m "\$msg"
+REAUTHOR
+chmod +x "$reauthor"
+
+if ! GIT_SEQUENCE_EDITOR=true g rebase -q -S --force-rebase --exec "$reauthor" "$target"; then
   g rebase --abort 2>/dev/null || true
+  rm -f "$reauthor"
   die "rebase onto $default conflicted; $branch is untouched. Resolve by hand: git rebase -S $target $branch"
 fi
+rm -f "$reauthor"
 
 # A rebase linearizes through merge commits. That is intended for an
 # "Update branch" merge, which carries no content of its own -- but a merge
@@ -120,6 +162,11 @@ unverified=$(count_unverified "$target..HEAD")
 [ "$unverified" -eq 0 ] || {
   g log --pretty='%h %G? %s' "$target..HEAD" >&2
   die "$unverified commit(s) still don't verify after the rebase — not pushing"
+}
+foreign=$(count_foreign "$target..HEAD")
+[ "$foreign" -eq 0 ] || {
+  g log --pretty='%h %ae %ce %s' "$target..HEAD" >&2
+  die "$foreign commit(s) still not authored as $localemail after the rebase — not pushing"
 }
 
 new=$(g rev-parse HEAD)
