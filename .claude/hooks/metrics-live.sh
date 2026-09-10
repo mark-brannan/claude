@@ -760,7 +760,7 @@ if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
 
   bl_second=$(jq -r -L "$HOOK_DIR" \
     'include "lib-metrics-fmt";
-     turns + (work as $w | if $w == "" then "" else " " + $w end)' \
+     turns + ((work // "") as $w | if $w == "" then "" else " " + $w end)' \
     "$OUT" 2>/dev/null)
   bl_block="$bl_main"
   [ -n "$bl_second" ] && bl_block="$bl_block

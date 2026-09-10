@@ -474,5 +474,22 @@ o8b=$(payload "$TP8" stop8b "$REPO8" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" st
 hasnt 'no upstream, nothing ahead of origin/main: not flagged' \
       'has no upstream' "$(msg "$o8b")"
 
+# --- 9. the turns line survives a clean tree --------------------------------
+# The block's second line is "⇢ turns ⚙ tools", with git state appended only
+# when there is any. `work` used to yield jq's `empty` on a clean tree, and an
+# empty stream swallows the concatenation whole -- so the line that always
+# applies vanished exactly when nothing else was wrong (#149).
+REPO9="$SCRATCH/repo9"; mkdir -p "$REPO9"
+git -C "$REPO9" init -q -b main
+git -C "$REPO9" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+TP9="$SCRATCH/repo9.jsonl"; turn "$TP9" 1000
+o9=$(payload "$TP9" show9 "$REPO9" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+has 'a clean tree still prints the turns line' '⇢ [0-9]+ ⚙ [0-9]+' "$(msg "$o9")"
+hasnt 'and says nothing about git state' '⎇' "$(msg "$o9")"
+
+: > "$REPO9/scratch-file"
+o9b=$(payload "$TP9" show9b "$REPO9" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+has 'a dirty tree appends git state to the same line' '⇢ [0-9]+ ⚙ [0-9]+ ⎇ 1~' "$(msg "$o9b")"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
