@@ -320,6 +320,18 @@ glyphs() {
   printf '%s' "$out"
 }
 
+fib_rungs() {
+  local total="$1" n=0 L
+  for L in 1 2 3 5 8; do [ "$total" -ge "$L" ] && n=$((n + 1)); done
+  printf '%s' "$n"
+}
+
+time_rungs() {
+  local total="$1" n=0 L
+  for L in 25 47 62 90 120; do [ "$total" -ge "$L" ] && n=$((n + 1)); done
+  printf '%s' "$n"
+}
+
 # Git state folded into a nag line -- the same shorthand as lib-metrics-fmt.jq's
 # `work`, but the crossing lines run in bash, not jq. Empty on a clean tree.
 work_str() {
@@ -596,10 +608,72 @@ if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
     print sign * (hh * 3600 + mm * 60)
   }')
   export TZOFF
-  jq -c -L "$HOOK_DIR" --arg x "$sys_lines" \
+
+  IFS=$'\t' read -r bl_dec bl_fric bl_blocked bl_ctx <<<"$(printf '%s\n' "$metrics" | jq -r \
+    '[(.session.decisions.total // 0), (.session.friction.total // 0),
+      (.session.blocked.total // 0), (.session.context_peak // 0)] | @tsv')"
+
+  bl_ctx_denom=$ctx_line
+  if [ "${bl_ctx_denom:-0}" -eq 0 ]; then
+    set -- $NAG_CONTEXT_LINES
+    bl_ctx_denom=${1:-100000}
+  fi
+  bl_ctx_glyphs="⛁"; [ "${ctx_rungs:-0}" -gt 0 ] && bl_ctx_glyphs=$(glyphs "$ctx_rungs" "⛁")
+  bl_ctx_cluster="$bl_ctx_glyphs $(kfmt "$bl_ctx")/$(kfmt "$bl_ctx_denom")"
+
+  bl_dec_cluster=""
+  if [ "${bl_dec:-0}" -gt 0 ]; then
+    r=$(fib_rungs "$bl_dec")
+    g=""; for ((i = 0; i < r; i++)); do g="${g}⚖"; done
+    p=""; [ "$bl_dec" -gt 3 ] && p="🤔"
+    bl_dec_cluster="${p}${g}(x${bl_dec})"
+  fi
+
+  bl_fric_cluster=""
+  if [ "${bl_fric:-0}" -gt 0 ]; then
+    r=$(fib_rungs "$bl_fric")
+    g=""; for ((i = 0; i < r; i++)); do g="${g}⚡"; done
+    bl_fric_cluster="${g}(x${bl_fric})"
+  fi
+
+  bl_blocked_state="✅"; [ "${bl_blocked:-0}" -gt 0 ] && bl_blocked_state="⛔"
+  bl_blocked_cluster="🔧${bl_blocked_state}(x${bl_blocked:-0})"
+
+  bl_sit_cluster=""
+  if [ "${sit_start:-0}" -gt 0 ]; then
+    sit_min=$(( (now_ts - sit_start) / 60 ))
+    r=$(time_rungs "$sit_min")
+    pac_hour=$(( ( ($(date +%s) + TZOFF) / 3600 ) % 24 ))
+    sg="⏱️"; { [ "$pac_hour" -ge 22 ] || [ "$pac_hour" -lt 5 ]; } && sg="🌙"
+    reps=""; for ((i = 0; i < r; i++)); do reps="${reps}${sg}"; done
+    bl_sit_cluster="⏱$(hm "$sit_min")${reps}"
+  fi
+
+  bl_reason=""; bl_propose=0
+  [ "${ctx_stop_line:-0}" -gt 0 ] && { bl_reason="${bl_reason}💸"; bl_propose=1; }
+  [ "${bl_dec:-0}" -gt 3 ]        && { bl_reason="${bl_reason}🤔"; bl_propose=1; }
+  [ "${bl_blocked:-0}" -ge 3 ]    && { bl_reason="${bl_reason}⛔"; bl_propose=1; }
+  bl_verdict="still room"
+  [ "$bl_propose" -eq 1 ] && bl_verdict="propose stopping"
+  [ -n "$bl_reason" ] && bl_reason="${bl_reason} "
+
+  bl_main="$bl_ctx_cluster"
+  [ -n "$bl_dec_cluster" ] && bl_main="$bl_main $bl_dec_cluster"
+  [ -n "$bl_fric_cluster" ] && bl_main="$bl_main $bl_fric_cluster"
+  bl_main="$bl_main $bl_blocked_cluster"
+  [ -n "$bl_sit_cluster" ] && bl_main="$bl_main $bl_sit_cluster"
+  bl_main="$bl_main — ${bl_reason}${bl_verdict}."
+
+  bl_second=$(jq -r -L "$HOOK_DIR" \
     'include "lib-metrics-fmt";
-     {systemMessage: (if $x == "" then block else $x + "\n" + block end)}' \
-    "$OUT" 2>/dev/null
+     turns + (work as $w | if $w == "" then "" else " " + $w end)' \
+    "$OUT" 2>/dev/null)
+  bl_block="$bl_main"
+  [ -n "$bl_second" ] && bl_block="$bl_block
+$bl_second"
+
+  jq -nc --arg s "$sys_lines" --arg b "$bl_block" \
+    '{systemMessage: (if $s == "" then $b else $s + "\n" + $b end)}'
 elif [ -n "$sys_lines" ]; then
   jq -nc --arg s "$sys_lines" '{systemMessage: $s}'
 fi
