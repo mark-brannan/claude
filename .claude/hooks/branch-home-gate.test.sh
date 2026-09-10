@@ -33,7 +33,12 @@ cat > "$BIN/gh" <<'EOF'
 #!/bin/sh
 [ "${GH_FAIL:-0}" = 1 ] && { echo "gh: could not authenticate" >&2; exit 1; }
 case "$1 ${2:-}" in
-  "pr list")    printf '%s\n' "${GH_PRS:-[]}" ;;
+  "pr list")
+    case " $* " in
+      *" --head "*) printf '%s\n' "${GH_PRS:-[]}" ;;
+      *)            printf '%s\n' "${GH_PRS_ALL:-[]}" ;;
+    esac
+    ;;
   "issue list") printf '%s\n' "${GH_ISSUES:-[]}" ;;
   *) exit 1 ;;
 esac
@@ -125,6 +130,13 @@ gitq "$SR" checkout -- state/global/kanban.md 2>/dev/null || \
 
 GH_ISSUES='[{"number":4,"title":"t","body":"the work is on claude/homed"}]' \
   check silent 'an open issue names the branch' h3
+
+# A mergify stack PR's head is stack/<login>/<branch>/<slug>--<change-id>, not
+# the branch name -- the exact --head lookup misses it, so this must fall
+# back to the broad state-based match.
+setup_repo claude/homed
+GH_PRS_ALL='[{"url":"https://github.com/o/r/pull/9","headRefName":"stack/mark-brannan/claude/homed/record-rulings--ad4fbbdd"}]' \
+  check silent 'a mergify stack PR has this head' h3b
 
 # A card or issue naming a longer branch must not give a false home to its
 # prefix: claude/homed-extra does not mean claude/homed has one.

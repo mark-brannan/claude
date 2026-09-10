@@ -146,6 +146,23 @@ if [ -z "$found" ]; then
     else
       unverified="gh pr list failed (not authenticated here?)"
     fi
+
+    # `mergify stack push` opens the PR from a generated head,
+    # stack/<login>/<local-branch>/<slug>--<change-id>, so the exact --head
+    # lookup above misses it. Broaden once, only if that lookup found
+    # nothing and didn't fail outright.
+    if [ -z "$found" ] && [ -z "$unverified" ]; then
+      if prs=$( (cd "$work_root" && run_to 30 gh pr list --state all --limit 50 --json url,headRefName) 2>/dev/null ); then
+        url=$(printf '%s' "$prs" | jq -r --arg b "$branch" \
+          '[.[] | select(.headRefName as $h
+                          | ($h | startswith("stack/"))
+                            and (($h | split("/"))[2:] | join("/") | startswith($b + "/")))
+           ][0].url // empty' 2>/dev/null)
+        [ -n "$url" ] && found="$url has this head (a mergify stack PR)"
+      else
+        unverified="gh pr list failed (not authenticated here?)"
+      fi
+    fi
   else
     unverified="gh is not installed here"
   fi
