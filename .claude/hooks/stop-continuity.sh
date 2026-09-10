@@ -206,29 +206,22 @@ set_verdict() {
   esac
   if [ -n "$work_root" ]; then
     [ -n "$(git -C "$work_root" status --porcelain 2>/dev/null)" ] && add_reason "worktree dirty"
-    # An unconfigured upstream makes `rev-list @{u}..HEAD` fail, and a failure
-    # that falls back to 0 is indistinguishable from a fully-pushed branch --
-    # the "lost work" failure mode one step earlier than #108/#110. Ask about
-    # the upstream first, so a never-pushed branch gets its own reason.
-    if git -C "$work_root" rev-parse --verify -q --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-      unpushed=$(git -C "$work_root" rev-list --count "@{u}..HEAD" 2>/dev/null || printf '')
-      case "${unpushed:-}" in
-        0)  ;;
-        '') add_reason "could not count unpushed commits" ;;
-        *)  add_reason "$unpushed commit(s) unpushed" ;;
-      esac
-    elif [ "$work_branch" = HEAD ] || [ -z "$work_branch" ]; then
-      [ -n "$(git -C "$work_root" branch -r --contains HEAD 2>/dev/null)" ] \
-        || add_reason "detached HEAD, no upstream to compare against"
-    else
-      # #126: no upstream is only a hazard when there is something on the
-      # branch to lose -- the same "ahead of the default branch" test
-      # branch-home-gate.sh already applies before it looks for a home.
-      vbase=$(git -C "$work_root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
-      git -C "$work_root" rev-parse --verify -q "${vbase:-origin/main}" >/dev/null 2>&1 || vbase=origin/master
-      vahead=$(git -C "$work_root" rev-list --count "${vbase:-origin/main}..HEAD" 2>/dev/null || echo 0)
-      [ "${vahead:-0}" -gt 0 ] && add_reason "\`$work_branch\` has no upstream (never pushed)"
-    fi
+    # Whether the branch holds work that exists nowhere else -- lib-state.sh
+    # owns that question and its carve-outs, so this verdict and the one
+    # metrics-live.sh draws cannot disagree (#149). Only the wording is here.
+    ust=$(unpushed_state "$work_root" "$work_branch")
+    case "$ust" in
+      'ahead 0')   ;;
+      'ahead '*)   add_reason "${ust#ahead } commit(s) unpushed" ;;
+      unknown)     add_reason "could not count unpushed commits" ;;
+      never-pushed)
+        if [ "$work_branch" = HEAD ] || [ -z "$work_branch" ]; then
+          add_reason "detached HEAD, no upstream to compare against"
+        else
+          add_reason "\`$work_branch\` has no upstream (never pushed)"
+        fi
+        ;;
+    esac
   fi
   [ -n "${1:-}" ] && add_reason "$1"
 

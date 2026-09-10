@@ -93,3 +93,47 @@ block() { printf '{"decision":"block","reason":%s}\n' "$(json_str "$1")"; exit 0
 git_event_re() {
   printf '%s' '\bgit\s+(commit|push|pull|merge|rebase|cherry-pick|revert|checkout|switch|branch|worktree|tag|stash|reset|restore|rm|mv|apply|am)\b|\bgh\s+(pr|release)\b|\b(yadm|dotsync)\b|create_pull_request|merge_pull_request|update_pull_request|update_pull_request_branch|push_files|create_or_update_file|delete_file|create_branch|create_repository|fork_repository'
 }
+
+# Answer "does this branch hold commits that exist nowhere but here?" for a
+# repo root ($1) and the branch name ($2, `HEAD` or empty when detached).
+#
+# It lives here because two hooks have to agree on the answer: metrics-live.sh
+# draws the ⎇ nag and the archival verdict from it, stop-continuity.sh's
+# set_verdict decides from it whether the session is safe to kill. When each
+# had its own copy they drifted -- #148 had to port two carve-outs back into
+# metrics-live.sh that stop-continuity.sh had grown in #126 and #128/#143.
+#
+# Prints one word, plus a count for the first:
+#   ahead <n>     an upstream exists; n commits are not on it (n may be 0)
+#   unknown       an upstream exists, but the count could not be taken
+#   never-pushed  no upstream, and there is work on the branch to lose
+#   safe          no upstream, but nothing on the branch to lose
+#
+# The last two are the carve-outs. A detached HEAD whose commit already lives
+# on some remote branch is not a hazard (#128/#143), and a named branch with
+# no upstream is not one either until it is actually ahead of the default
+# branch (#126) -- the same test branch-home-gate.sh applies before it looks
+# for a home. `rev-list @{u}..HEAD` fails outright when there is no upstream,
+# and the `|| echo 0` that used to swallow that read a never-pushed branch as
+# fully pushed: the "lost work" failure one step earlier than #108/#110.
+unpushed_state() {
+  local root="$1" branch="$2" n base ahead
+
+  if git -C "$root" rev-parse --verify -q --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+    n=$(git -C "$root" rev-list --count '@{u}..HEAD' 2>/dev/null || printf '')
+    [ -n "$n" ] && printf 'ahead %s' "$n" || printf 'unknown'
+    return 0
+  fi
+
+  if [ "$branch" = HEAD ] || [ -z "$branch" ]; then
+    [ -n "$(git -C "$root" branch -r --contains HEAD 2>/dev/null)" ] \
+      && printf 'safe' || printf 'never-pushed'
+    return 0
+  fi
+
+  base=$(git -C "$root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
+  base="${base:-origin/main}"
+  git -C "$root" rev-parse --verify -q "$base" >/dev/null 2>&1 || base=origin/master
+  ahead=$(git -C "$root" rev-list --count "$base..HEAD" 2>/dev/null || printf 0)
+  [ "${ahead:-0}" -gt 0 ] && printf 'never-pushed' || printf 'safe'
+}

@@ -162,24 +162,14 @@ metrics=$(jq -s \
 dirty=0; unpushed=0; no_upstream=0; ncommits=0; start_sha=""
 if [ -n "$work_root" ]; then
   dirty=$(git -C "$work_root" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-  # `rev-list @{u}..HEAD` fails when the branch has no upstream at all, and
-  # the `|| echo 0` below used to swallow that into "0 unpushed" -- a never-
-  # pushed branch read as clean. Tell the two apart, same guard (and the
-  # same two carve-outs) as stop-continuity.sh's set_verdict: a detached
-  # HEAD whose commit already lives on some remote branch isn't a hazard
-  # (#128/#143), and a named branch with no upstream isn't one either
-  # unless it's actually ahead of the default branch -- nothing to lose
-  # yet (#126).
-  if git -C "$work_root" rev-parse --verify -q --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-    unpushed=$(git -C "$work_root" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
-  elif [ "$work_branch" = HEAD ] || [ -z "$work_branch" ]; then
-    [ -n "$(git -C "$work_root" branch -r --contains HEAD 2>/dev/null)" ] || no_upstream=1
-  else
-    vbase=$(git -C "$work_root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
-    git -C "$work_root" rev-parse --verify -q "${vbase:-origin/main}" >/dev/null 2>&1 || vbase=origin/master
-    vahead=$(git -C "$work_root" rev-list --count "${vbase:-origin/main}..HEAD" 2>/dev/null || echo 0)
-    [ "${vahead:-0}" -gt 0 ] && no_upstream=1
-  fi
+  # Whether this branch holds work that exists nowhere else. lib-state.sh
+  # owns the answer, carve-outs and all, so this hook and stop-continuity.sh
+  # cannot disagree about it (#149).
+  ust=$(unpushed_state "$work_root" "$work_branch")
+  case "$ust" in
+    'ahead '*)    unpushed=${ust#ahead } ;;
+    never-pushed) no_upstream=1 ;;
+  esac
   # Commits counted from the SHA this session started at, not by timestamp.
   # `--since=<start>` counts everything in the window whatever wrote it, so a
   # fresh clone whose history landed today reports a session's commits as 13

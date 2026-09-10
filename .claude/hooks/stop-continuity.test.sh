@@ -112,6 +112,19 @@ GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
 eq 'zero commits ahead, no upstream: archivable' 'archivable' "$(verdict)"
 gitq "$WORK" checkout claude/work
 
+# --- a detached HEAD, on and off a remote branch (#128/#143) -----------------------
+# The carve-out lib-state.sh's unpushed_state owns: a commit that already lives
+# on some remote branch is not stranded by being checked out detached, but one
+# that lives nowhere else is exactly the case the verdict exists for.
+gitq "$WORK" checkout --detach origin/claude/work
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'detached on a remote branch: archivable' 'archivable' "$(verdict)"
+echo six >> "$WORK/f"; gitq "$WORK" add f; gitq "$WORK" commit -m detached-only
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'detached off any remote branch: not archivable' \
+  'not archivable: detached HEAD, no upstream to compare against' "$(verdict)"
+gitq "$WORK" checkout claude/work
+
 # --- "cannot verify" is never a pass ------------------------------------------------
 GH_FAIL=1 stop
 has 'unverified is not archivable' '^\*\*Verdict:\*\* not archivable: branch home unverified' "$CKPT"
