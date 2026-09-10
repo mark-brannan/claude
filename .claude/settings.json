@@ -331,7 +331,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "claude-statusline-powerline"
+    "command": "bash \"$HOME/.claude/hooks/statusline-metrics.sh\""
   },
   "enabledPlugins": {
     "discord@claude-plugins-official": false,
