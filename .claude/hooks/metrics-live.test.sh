@@ -28,6 +28,8 @@ pass=0; fail=0
 SCRATCH=$(mktemp -d); trap 'rm -rf "$SCRATCH"' EXIT
 export HOME="$SCRATCH/home"; mkdir -p "$HOME" "$SCRATCH/bin"
 export CLAUDE_STATE_REPO=""
+export METRICS_CONTEXT_LINES="100000 150000 200000"
+export METRICS_CONTEXT_STEP=50000
 STATE="$HOME/.claude/state/global"
 
 # shellcheck source=lib-metrics-test-harness.sh

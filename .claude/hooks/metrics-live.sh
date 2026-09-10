@@ -25,7 +25,8 @@
 # Always exits 0.
 #
 # FROZEN -- THAW CAREFULLY. Every block below tagged with that phrase (the
-# ⛁ context, ⚖ gate, ⚡ friction and ⏱ sitting-clock crossings, and any glyph
+# ⛁ context (» below the first rung; ¢ and ○ were the other candidates),
+# ⚖ gate, ⚡ friction and ⏱ sitting-clock crossings, and any glyph
 # family added alongside them) is frozen: do not modify without direct,
 # explicit interaction with Solace.
 #
@@ -78,9 +79,9 @@ SHOW="${3:-}"               # "show" -> also print a systemMessage block
 #             line that goes to the model rather than to the screen, since the
 #             standing orders' capacity rule is what it is asking for
 #   gate      gate decisions pushed to the user, every GATE_EVERY
-NAG_CONTEXT_LINES="${METRICS_CONTEXT_LINES:-100000 150000 200000}"
+NAG_CONTEXT_LINES="${METRICS_CONTEXT_LINES:-60000 90000 120000 150000 185000}"
 NAG_CONTEXT_STOP_AT="${METRICS_CONTEXT_STOP_AT:-150000}"
-NAG_CONTEXT_STEP="${METRICS_CONTEXT_STEP:-50000}"
+NAG_CONTEXT_STEP="${METRICS_CONTEXT_STEP:-35000}"
 NAG_SIT_EVERY_MIN="${METRICS_SIT_EVERY_MIN:-60}"
 NAG_SIT_GAP_MIN="${METRICS_SIT_GAP_MIN:-30}"
 NAG_FRICTION_N="${METRICS_FRICTION_N:-3}"
@@ -618,7 +619,7 @@ if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
     set -- $NAG_CONTEXT_LINES
     bl_ctx_denom=${1:-100000}
   fi
-  bl_ctx_glyphs="⛁"; [ "${ctx_rungs:-0}" -gt 0 ] && bl_ctx_glyphs=$(glyphs "$ctx_rungs" "⛁")
+  bl_ctx_glyphs="»"; [ "${ctx_rungs:-0}" -gt 0 ] && bl_ctx_glyphs=$(glyphs "$ctx_rungs" "⛁")
   bl_ctx_cluster="$bl_ctx_glyphs $(kfmt "$bl_ctx")/$(kfmt "$bl_ctx_denom")"
 
   bl_dec_cluster=""
