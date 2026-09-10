@@ -617,10 +617,18 @@ resume_ckpt() {
 
 if [ "$hook_name" = Stop ]; then
   archivable > /dev/null
+  # Worktree slug is the leaf dir name only when work_root is actually a
+  # `~/.claude/worktrees/<name>` checkout (stop-continuity.sh:269's test) --
+  # in the main checkout there's no separate slug worth repeating.
+  case "$work_root" in
+    */.claude/worktrees/*) worktree_slug=$(basename "$work_root") ;;
+    *) worktree_slug="" ;;
+  esac
+  archivable_tag="${work_branch}${worktree_slug:+/$worktree_slug} ${sid:0:8}"
   if [ -z "$archival_reasons" ]; then
-    add_arch "📦 archivable."
+    add_arch "📦 archivable. (${archivable_tag})"
   else
-    add_arch "📦 not archivable: ${archival_reasons}."
+    add_arch "📦 not archivable: ${archival_reasons}. (${archivable_tag})"
   fi
 
   if [ "$nag_pending" -eq 1 ]; then
