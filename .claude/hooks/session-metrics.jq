@@ -470,7 +470,50 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
 
 | def sumu(f): ([ $amsgs[] | (.message.usage | f) // 0 ] | add) // 0;
 
-  {
+# --- cost ------------------------------------------------------------------
+# A dollar estimate, priced here rather than read: the transcript JSONL carries
+# no cost field at all (checked across every transcript on this machine). The
+# `total_cost_usd` the grind script prints comes from the `--output-format json`
+# result envelope, which only a headless `claude -p` run produces and which
+# never lands in a transcript. Interactive Claude Code does know the number --
+# `/cost` and the status-line payload both carry it -- but neither reaches a
+# UserPromptSubmit or Stop hook, which is all this script gets. So: derive it.
+#
+# Two things the naive version gets wrong, both measured on real transcripts
+# here:
+#   per-model   6.6% of sessions (91 of 1385) used more than one model. The
+#               `model` field above keeps only the last one, so pricing the
+#               whole session at that model's rate is wrong for all of them.
+#               Priced per model and summed instead.
+#   cache TTL   cache writes cost 1.25x base input at the 5-minute TTL and 2x
+#               at the 1-hour TTL. Every write in these transcripts is 1h, so
+#               a flat 1.25x under-reports input by ~8%. Split by TTL.
+# Cache reads are 0.1x base input; output is priced at the output rate.
+#
+# List prices per MTok, and they will drift. This is an estimate for comparing
+# sessions to each other, not an invoice -- an unrecognised model falls back to
+# the Opus rate rather than to zero, so a new model reads as expensive rather
+# than free.
+def price:
+    if   test("opus")   then {i: 5, o: 25}
+    elif test("sonnet") then {i: 2, o: 10}
+    elif test("haiku")  then {i: 1, o: 5}
+    else {i: 5, o: 25} end;
+
+([ $amsgs[] | {m: (.message.model // "unknown"), u: (.message.usage // {})} ]
+   | group_by(.m)
+   | map({ key: .[0].m,
+           value: ((.[0].m | price) as $p
+             | ( (map(.u.input_tokens // 0) | add) * $p.i
+               + (map(.u.cache_creation.ephemeral_5m_input_tokens // 0) | add) * $p.i * 1.25
+               + (map(.u.cache_creation.ephemeral_1h_input_tokens  // 0) | add) * $p.i * 2
+               + (map(.u.cache_read_input_tokens // 0) | add) * $p.i * 0.1
+               + (map(.u.output_tokens // 0) | add) * $p.o
+               ) / 1000000
+             | . * 10000 | round | . / 10000) })
+   | from_entries) as $cost_by_model
+
+| {
     session: {
       ts: $now,
       session_id: $sid,
@@ -503,6 +546,10 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
       # missing mid-session -- a stale-cache/reload proxy, not a token-cost
       # one. Null (not 0) when there were no reads at all, so a one-turn
       # session doesn't read as either healthy or churning.
+      # Estimated, not billed -- see the cost block above for the pricing
+      # assumptions and why it is derived rather than read.
+      cost_usd: ([ $cost_by_model[] ] | add // 0 | . * 10000 | round | . / 10000),
+      cost_usd_by_model: $cost_by_model,
       cache_churn_pct: (sumu(.cache_read_input_tokens) as $r
         | if $r > 0 then ((sumu(.cache_creation_input_tokens) / $r * 100) | round)
           else null end),
