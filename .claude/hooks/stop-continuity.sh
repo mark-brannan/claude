@@ -218,7 +218,8 @@ set_verdict() {
         *)  add_reason "$unpushed commit(s) unpushed" ;;
       esac
     elif [ "$work_branch" = HEAD ] || [ -z "$work_branch" ]; then
-      add_reason "detached HEAD, no upstream to compare against"
+      [ -n "$(git -C "$work_root" branch -r --contains HEAD 2>/dev/null)" ] \
+        || add_reason "detached HEAD, no upstream to compare against"
     else
       add_reason "\`$work_branch\` has no upstream (never pushed)"
     fi
