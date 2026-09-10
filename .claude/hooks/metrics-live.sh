@@ -698,13 +698,9 @@ if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
     '[(.session.decisions.total // 0), (.session.friction.total // 0),
       (.session.blocked.total // 0), (.session.context_peak // 0)] | @tsv')"
 
-  bl_ctx_denom=$ctx_line
-  if [ "${bl_ctx_denom:-0}" -eq 0 ]; then
-    set -- $NAG_CONTEXT_LINES
-    bl_ctx_denom=${1:-100000}
-  fi
+  bl_out=$(printf '%s\n' "$metrics" | jq -r '.session.output_tokens // 0')
   bl_ctx_glyphs="»"; [ "${ctx_rungs:-0}" -gt 0 ] && bl_ctx_glyphs=$(glyphs "$ctx_rungs" "⛁")
-  bl_ctx_cluster="$bl_ctx_glyphs $(kfmt "$bl_ctx")/$(kfmt "$bl_ctx_denom")"
+  bl_ctx_cluster="$bl_ctx_glyphs $(kfmt "$bl_out")/$(kfmt "$bl_ctx")"
 
   bl_dec_cluster=""
   if [ "${bl_dec:-0}" -gt 0 ]; then
