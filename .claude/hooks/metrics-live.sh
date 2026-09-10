@@ -198,14 +198,18 @@ mkdir -p "$LIVE" 2>/dev/null || exit 0
 # lib-metrics-fmt.jq -- the sitting clock is the only sitting clock now.
 now_ts=$(date +%s)
 
-tmp="$OUT.$$"
-printf '%s\n' "$metrics" | jq -c \
+merged=$(printf '%s\n' "$metrics" | jq -c \
   --arg ev "$EVENT" --arg now "$now" \
   --argjson d "${dirty:-0}" --argjson u "${unpushed:-0}" --argjson c "${ncommits:-0}" \
   --arg sha "$start_sha" \
   '.session + {last_event: $ev, updated_at: $now, start_sha: $sha,
-               dirty: $d, unpushed: $u, commits: $c}' > "$tmp" 2>/dev/null \
-  && mv -f "$tmp" "$OUT" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+               dirty: $d, unpushed: $u, commits: $c}' 2>/dev/null)
+
+tmp="$OUT.$$"
+if [ -n "$merged" ]; then
+  printf '%s\n' "$merged" > "$tmp" 2>/dev/null \
+    && mv -f "$tmp" "$OUT" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+fi
 
 # =========================================================== crossing engine
 # Edge-triggered. State lives in one small file per session next to the cache;
@@ -685,7 +689,7 @@ fi
 # Shown to the user at the end of a turn -- never sent to the model, so the
 # running decision count costs nothing to display. Any crossing line rides on
 # the front of it rather than arriving as a second message.
-if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
+if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
   # night_nag needs Pacific time, not the host's TZ -- an ephemeral/cloud
   # session usually runs UTC, which read as "LATE!" all evening. Compute the
   # US/Pacific UTC offset here (handles PST/PDT) and hand it to jq as seconds,
@@ -749,10 +753,10 @@ if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
   [ -n "$bl_sit_cluster" ] && bl_main="$bl_main $bl_sit_cluster"
   bl_main="$bl_main — ${bl_reason}${bl_verdict}."
 
-  bl_second=$(jq -r -L "$HOOK_DIR" \
+  bl_second=$(printf '%s\n' "$merged" | jq -r -L "$HOOK_DIR" \
     'include "lib-metrics-fmt";
      turns + ((work // "") as $w | if $w == "" then "" else " " + $w end)' \
-    "$OUT" 2>/dev/null)
+    2>/dev/null)
   bl_block="$bl_main"
   [ -n "$bl_second" ] && bl_block="$bl_block
 $bl_second"
