@@ -137,3 +137,59 @@ unpushed_state() {
   ahead=$(git -C "$root" rev-list --count "$base..HEAD" 2>/dev/null || printf 0)
   [ "${ahead:-0}" -gt 0 ] && printf 'never-pushed' || printf 'safe'
 }
+
+# archivable_reasons <work_root> <work_branch> -- the reasons a session on
+# this branch is not yet archivable, comma-joined; empty when it is. Order:
+# worktree dirty, unpushed commits, branch home.
+#
+# Lives here for the same reason unpushed_state does: metrics-live.sh's live
+# nag and stop-continuity.sh's Stop-hook verdict must never disagree about
+# what "archivable" means (dotfiles#149). Before this they didn't even
+# agree on what a "home" is -- metrics-live.sh re-checked PR-or-kanban
+# inline and never looked for a pointer issue, the one branch-home-gate.sh
+# already finds.
+#
+# Requires $HOOK_DIR set by the caller: branch-home-gate.sh lives beside
+# this file and is shelled out to, not sourced, so its own gate (which fires
+# once per session, separately) and this read-only check never share state.
+#
+# Home is checked last, and only when dirty/unpushed are already clean: it's
+# the one check here that can shell out to `gh` (up to two 30s calls in
+# branch-home-gate.sh), so a dirty mid-work tree -- the common case, and the
+# one Stop fires on every turn -- never pays that cost. Restores the
+# short-circuit the pre-dotfiles#149 archivable() had.
+#
+# Not this function's job: "not a git repo" (there is no branch here to
+# judge) and anything that only becomes true after a push is attempted --
+# both are the caller's own facts to add.
+archivable_reasons() {
+  local work_root="$1" work_branch="$2" reasons="" home ust
+  add_reason() { reasons="${reasons:+$reasons, }$1"; }
+
+  [ -z "$(git -C "$work_root" status --porcelain 2>/dev/null)" ] || add_reason "worktree dirty"
+
+  ust=$(unpushed_state "$work_root" "$work_branch")
+  case "$ust" in
+    'ahead 0')   ;;
+    'ahead '*)   add_reason "${ust#ahead } commit(s) unpushed" ;;
+    unknown)     add_reason "could not count unpushed commits" ;;
+    never-pushed)
+      if [ "$work_branch" = HEAD ] || [ -z "$work_branch" ]; then
+        add_reason "detached HEAD, no upstream to compare against"
+      else
+        add_reason "\`$work_branch\` has no upstream (never pushed)"
+      fi
+      ;;
+  esac
+
+  if [ -z "$reasons" ]; then
+    home=$(sh "$HOOK_DIR/branch-home-gate.sh" --check "$work_root" 2>/dev/null)
+    case "$home" in
+      home:*)       : ;;
+      unverified:*) add_reason "branch home unverified (${home#unverified: })" ;;
+      *)            add_reason "no PR and no pointer for \`$work_branch\`" ;;
+    esac
+  fi
+
+  printf '%s' "$reasons"
+}

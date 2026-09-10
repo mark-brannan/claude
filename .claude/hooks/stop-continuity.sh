@@ -192,37 +192,26 @@ sc_note() { printf '\n## Stop-commit\n\n%s\n' "$1" >> "$ckpt"; }
 #      not known until the bottom of this script).
 # "Could not verify" is never a pass, here as in the gate.
 verdict=""
+_archivable_reasons=""
+_archivable_reasons_cached=0
 set_verdict() {
   reasons=""
   add_reason() { reasons="${reasons:+$reasons, }$1"; }
 
-  # Cached across calls: the check costs a `gh` round trip and the branch's
-  # home does not change between the salvage and the state-repo push.
-  [ -n "${home:-}" ] || home=$(sh "$HOOK_DIR/branch-home-gate.sh" --check "$cwd" 2>/dev/null)
-  case "$home" in
-    home:*)       : ;;
-    unverified:*) add_reason "branch home unverified (${home#unverified: })" ;;
-    *)            add_reason "no PR and no pointer for \`$work_branch\`" ;;
-  esac
-  if [ -n "$work_root" ]; then
-    [ -n "$(git -C "$work_root" status --porcelain 2>/dev/null)" ] && add_reason "worktree dirty"
-    # Whether the branch holds work that exists nowhere else -- lib-state.sh
-    # owns that question and its carve-outs, so this verdict and the one
-    # metrics-live.sh draws cannot disagree (#149). Only the wording is here.
-    ust=$(unpushed_state "$work_root" "$work_branch")
-    case "$ust" in
-      'ahead 0')   ;;
-      'ahead '*)   add_reason "${ust#ahead } commit(s) unpushed" ;;
-      unknown)     add_reason "could not count unpushed commits" ;;
-      never-pushed)
-        if [ "$work_branch" = HEAD ] || [ -z "$work_branch" ]; then
-          add_reason "detached HEAD, no upstream to compare against"
-        else
-          add_reason "\`$work_branch\` has no upstream (never pushed)"
-        fi
-        ;;
-    esac
+  # Cached across calls: nothing about work_root changes between the salvage
+  # and the state-repo push below, and the home check costs a `gh` round
+  # trip. archivable_reasons() is lib-state.sh's -- the home/dirty/unpushed
+  # check shared with metrics-live.sh's live nag, so the two can never
+  # disagree about what "archivable" means (#149).
+  if [ "$_archivable_reasons_cached" -eq 0 ]; then
+    if [ -n "$work_root" ]; then
+      _archivable_reasons=$(archivable_reasons "$work_root" "$work_branch")
+    else
+      _archivable_reasons="no PR and no pointer for \`$work_branch\`"
+    fi
+    _archivable_reasons_cached=1
   fi
+  reasons="$_archivable_reasons"
   [ -n "${1:-}" ] && add_reason "$1"
 
   if [ -n "$reasons" ]; then verdict="not archivable: $reasons"; else verdict="archivable"; fi

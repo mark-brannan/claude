@@ -575,41 +575,24 @@ fi
 # "archivable" is the verdict that the chat can be closed without losing
 # anything: clean worktree, nothing unpushed, the state repo's own commits
 # pushed, and the branch either has an open PR or is named by a pointer card.
-_to() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
 archival_reasons=""
 archivable() {
-  local sr n c home_ok=0
+  local sr n
   archival_reasons=""
   add_areason() { archival_reasons="${archival_reasons:+$archival_reasons, }$1"; }
 
-  [ "${dirty:-0}" -eq 0 ] || add_areason "worktree dirty"
-  [ "${no_upstream:-0}" -eq 0 ] \
-    && { [ "${unpushed:-0}" -eq 0 ] || add_areason "$unpushed commit(s) unpushed"; } \
-    || add_areason "\`$work_branch\` has no upstream (never pushed)"
+  if [ -z "$work_root" ]; then
+    add_areason "not a git repo"
+  else
+    # archivable_reasons() is lib-state.sh's -- the home/dirty/unpushed
+    # check shared with stop-continuity.sh's Stop-hook verdict (#149).
+    archival_reasons=$(archivable_reasons "$work_root" "$work_branch")
+  fi
+
   sr=$(state_repo 2>/dev/null) || sr=""
   if [ -n "$sr" ]; then
     n=$(git -C "$sr" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
     [ "${n:-0}" -eq 0 ] || add_areason "state repo $n commit(s) unpushed"
-  fi
-  if [ -z "$work_root" ]; then
-    add_areason "not a git repo"
-  elif [ -z "$archival_reasons" ]; then
-    case "$work_branch" in
-      main|master|HEAD|"") home_ok=1 ;;
-      *)
-        if command -v gh >/dev/null 2>&1; then
-          c=$( (cd "$work_root" 2>/dev/null \
-                && _to 10 gh pr list --head "$work_branch" --state open --json number \
-                     --jq 'length') 2>/dev/null )
-          [ "${c:-0}" -gt 0 ] 2>/dev/null && home_ok=1
-        fi
-        if [ "$home_ok" -eq 0 ] && [ -n "$sr" ] \
-           && grep -qF -- "$work_branch" "$sr/state/global/kanban.md" 2>/dev/null; then
-          home_ok=1
-        fi
-        [ "$home_ok" -eq 1 ] || add_areason "no PR or pointer card for \`$work_branch\`"
-        ;;
-    esac
   fi
 
   [ -z "$archival_reasons" ]
