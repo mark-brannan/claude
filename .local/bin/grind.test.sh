@@ -101,7 +101,12 @@ eq 'exit 0' 0 "$RC"
 eq 'two claude invocations' 2 "$(calls_claude)"
 has 'first item line: cost, tokens, running total, percent' '^o/alpha#5: First item -- sonnet, \$1\.00, 150 tokens -- running \$1\.00 / \$20\.00 -- 5%$'
 has 'second item line: running total accumulates' '^o/alpha#20: Second item -- sonnet, \$2\.00, 150 tokens -- running \$3\.00 / \$20\.00 -- 15%$'
-has 'queue exhausted, final tally' '^done: Ready queue exhausted\. Running total \$3\.00 / \$20\.00\.$'
+has 'queue exhausted, final tally' '^done: Ready queue exhausted\. Running total \$3\.00 / \$20\.00\. 0 skipped\.$'
+has 'INFO: session line names repo, count, model, caps' 'INFO  session grind-.* on o/alpha: 2 Ready item\(s\), sonnet/medium, cap \$5\.00/item \$20\.00/session'
+has 'INFO: item start line' 'INFO  \[1/2\] starting o/alpha#5 -- First item'
+has 'INFO: worker line names the permission mode' 'INFO  worker running: .*--permission-mode acceptEdits'
+has 'INFO: worker exit line' 'INFO  worker exited 0 after [0-9]+s'
+has 'worker gets --permission-mode' '--permission-mode acceptEdits' 
 sess=$(latest_session)
 eq 'two items recorded in state' 2 "$(jq '.items | length' "$sess")"
 
@@ -130,6 +135,27 @@ eq 'exit 0' 0 "$RC"
 eq 'no more items to run -- queue already exhausted' 0 "$(calls_claude)"
 has 'says the queue is done' 'Ready queue exhausted'
 eq 'state file unchanged (still 2 items)' 2 "$(jq '.items | length' "$sess")"
+
+# --- a worktree that cannot be created is a WARN, counted, and fails the run ----
+# grind-5 already exists from earlier runs; checking it out elsewhere makes
+# grind's branch -D and worktree add -b both fail for #5.
+git -C "$S/repo" worktree add -q "$S/wt5" grind-5 >/dev/null 2>&1 \
+  || git -C "$S/repo" worktree add -q -b grind-5 "$S/wt5" >/dev/null 2>&1
+rm -f "$S/state/grind"/*.json
+run --session-budget 100 --pause-every 10
+eq 'exit 1 when an item was skipped' 1 "$RC"
+has 'WARN line for the skip names the item and the branch' 'WARN  skipping o/alpha#5 -- could not create worktree .* on branch grind-5'
+has 'the other item still runs' '^o/alpha#20: Second item --'
+has 'tally counts the skip' 'Ready queue exhausted\. .* 1 skipped\.$'
+has 'ERR line at the end' 'ERR   1 item\(s\) skipped'
+
+# same skip, but the run ends on the cadence pause instead of the queue: still exit 1
+rm -f "$S/state/grind"/*.json
+run --session-budget 100 --pause-every 1
+eq 'exit 1 when a skip precedes a pause' 1 "$RC"
+has 'the pause line still prints' '^pause: 1 items processed this run'
+has 'ERR line after the pause' 'ERR   1 item\(s\) skipped'
+git -C "$S/repo" worktree remove -f "$S/wt5" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-5 >/dev/null 2>&1
 
 # --- outlier pause: one item costs more than twice the running median -----------
 rm -f "$S/state/grind"/*.json

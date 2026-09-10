@@ -37,14 +37,30 @@
 #
 #   grind [--dry-run] [--repo owner/name] [--model <m>] [--effort <e>]
 #         [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]
-#         [--resume <session-id>]
+#         [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]
+#
+# Output: one INFO line per unit of work started and finished, a heartbeat
+# every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
+# for a skipped item, ERR when the run ends with skips (exit 1). The worker
+# gets --permission-mode (default acceptEdits) so it never waits on a
+# terminal; bypassPermissions is the caller's call, not the default.
 set -eu
 
 usage() {
   printf 'usage: grind [--dry-run] [--repo owner/name] [--model <m>] [--effort <e>]\n'
   printf '             [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]\n'
-  printf '             [--resume <session-id>]\n'
+  printf '             [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]\n'
 }
+
+# Logging. INFO goes to stdout at a low rate: one line per unit of work
+# started or finished, plus a heartbeat while a worker runs. WARN and ERR go
+# to stderr. All three are always on; there is no quiet mode.
+pct() { awk -v a="$1" -v b="$2" 'BEGIN { if (b == 0) { print 0 } else { printf "%.0f", (a / b) * 100 } }'; }
+fmt_usd() { awk -v v="$1" 'BEGIN { printf "$%.2f", v }'; }
+ts()   { date -u +%H:%M:%SZ; }
+info() { printf '%s INFO  %s\n' "$(ts)" "$*"; }
+warn() { printf '%s WARN  %s\n' "$(ts)" "$*" >&2; }
+err()  { printf '%s ERR   %s\n' "$(ts)" "$*" >&2; }
 
 model=sonnet
 effort=medium
@@ -54,6 +70,8 @@ pause_every=3
 dry_run=0
 repo=""
 resume_id=""
+heartbeat=60
+permission_mode=acceptEdits
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -65,6 +83,8 @@ while [ $# -gt 0 ]; do
     --session-budget) shift; session_budget=${1:-} ;;
     --pause-every) shift; pause_every=${1:-} ;;
     --resume) shift; resume_id=${1:-} ;;
+    --heartbeat) shift; heartbeat=${1:-} ;;
+    --permission-mode) shift; permission_mode=${1:-} ;;
     -h|--help) usage; exit 0 ;;
     -*) printf 'grind: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
     *) printf 'grind: unexpected argument %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -153,6 +173,22 @@ if [ "$count" -eq 0 ]; then
   exit 0
 fi
 
+if [ "$dry_run" -eq 0 ]; then
+  info "session $session_id on $repo: $count Ready item(s), $model/$effort, cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
+  info "state: $state_file"
+fi
+skipped=0
+
+# Every way out of the loop goes through here so a skipped item fails the
+# run whether it ended by pause or by exhausting the queue.
+finish() {
+  if [ "$skipped" -gt 0 ]; then
+    err "$skipped item(s) skipped (worktree could not be created); see WARN lines above"
+    exit 1
+  fi
+  exit 0
+}
+
 # --- one worktree per item -----------------------------------------------------
 worktree_root=${TMPDIR:-/tmp}/grind-worktrees
 
@@ -175,8 +211,6 @@ median() {
       if (NR % 2) print a[(NR+1)/2]; else print (a[NR/2]+a[NR/2+1])/2 }'
 }
 
-pct() { awk -v a="$1" -v b="$2" 'BEGIN { if (b == 0) { print 0 } else { printf "%.0f", (a / b) * 100 } }'; }
-fmt_usd() { awk -v v="$1" 'BEGIN { printf "$%.2f", v }'; }
 
 # Seed running_total and costs from prior-run item costs already in
 # $state_file so a --resume honors the original --session-budget as a
@@ -211,7 +245,7 @@ while [ "$i" -lt "$count" ]; do
       printf 'pause: session budget reached (%s / %s). %d item(s) processed this run.\n' \
         "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$processed_this_run"
       printf 'resume: %s\n' "$resume_cmd"
-      exit 0
+      finish
     fi
   fi
 
@@ -227,18 +261,38 @@ while [ "$i" -lt "$count" ]; do
     continue
   fi
 
+  info "[$i/$count] starting $ref -- $title"
   mkdir -p "$worktree_root"
   git worktree prune >/dev/null 2>&1 || true
   rm -rf "$wt_path"
   git branch -D "$branch" >/dev/null 2>&1 || true
-  git worktree add -q -b "$branch" "$wt_path" >/dev/null 2>&1 \
-    || { printf 'grind: could not create worktree for %s -- skipping\n' "$ref" >&2; continue; }
+  if ! wt_err=$(git worktree add -q -b "$branch" "$wt_path" 2>&1 >/dev/null); then
+    warn "skipping $ref -- could not create worktree $wt_path on branch $branch: $wt_err"
+    skipped=$((skipped + 1))
+    continue
+  fi
+  info "worktree $wt_path on branch $branch"
 
   prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')")
+  started=$(date +%s)
+  info "worker running: claude -p --model $model --effort $effort --max-budget-usd $item_budget --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
+  hb_pid=""
+  if [ "$heartbeat" -gt 0 ]; then
+    # The sleep child would otherwise outlive the kill and hold stdout open.
+    ( trap 'kill "$sp" 2>/dev/null; exit 0' TERM
+      while :; do
+        sleep "$heartbeat" & sp=$!; wait "$sp" || exit 0
+        info "still working on $ref ($(( ($(date +%s) - started) / 60 ))m elapsed)"
+      done ) &
+    hb_pid=$!
+  fi
   claude_rc=0
   result_json=$( (cd "$wt_path" && printf '%s' "$prompt" | \
-    claude -p --output-format json --max-budget-usd "$item_budget" --model "$model" --effort "$effort") ) \
+    claude -p --output-format json --max-budget-usd "$item_budget" --model "$model" --effort "$effort" \
+      --permission-mode "$permission_mode") ) \
     || claude_rc=$?
+  if [ -n "$hb_pid" ]; then kill "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true; fi
+  info "worker exited $claude_rc after $(( $(date +%s) - started ))s"
 
   git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
 
@@ -304,19 +358,19 @@ while [ "$i" -lt "$count" ]; do
     printf 'pause: session budget reached (%s / %s). %d item(s) processed this run.\n' \
       "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$processed_this_run"
     printf 'resume: %s\n' "$resume_cmd"
-    exit 0
+    finish
   fi
   if [ "$outlier" -eq 1 ]; then
     printf 'pause: %s cost %s, more than twice the running median (%s). %d item(s) processed this run.\n' \
       "$ref" "$(fmt_usd "$cost")" "$(fmt_usd "$prior_median")" "$processed_this_run"
     printf 'resume: %s\n' "$resume_cmd"
-    exit 0
+    finish
   fi
   if [ "$processed_this_run" -ge "$pause_every" ]; then
     printf 'pause: %d items processed this run (pause every %d). Running total %s / %s.\n' \
       "$processed_this_run" "$pause_every" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")"
     printf 'resume: %s\n' "$resume_cmd"
-    exit 0
+    finish
   fi
 done
 
@@ -324,4 +378,5 @@ if [ "$dry_run" -eq 1 ]; then
   exit 0
 fi
 
-printf 'done: Ready queue exhausted. Running total %s / %s.\n' "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")"
+printf 'done: Ready queue exhausted. Running total %s / %s. %d skipped.\n' "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$skipped"
+finish
