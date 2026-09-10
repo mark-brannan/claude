@@ -103,10 +103,11 @@ NAG_STOP_HOUR="${METRICS_STOP_HOUR:-22}"
 # One jq for all three fields: the statusline reaches this code on every
 # render, and three spawns before the staleness check was most of its cost.
 input=$(cat 2>/dev/null || echo '{}')
-IFS=$'\t' read -r tp sid cwd hook_name <<<"$(printf '%s' "$input" | jq -r \
+IFS=$'\t' read -r tp sid cwd hook_name prompt_text <<<"$(printf '%s' "$input" | jq -r \
   '[(.transcript_path // ""), (.session_id // ""),
     (.cwd // .workspace.current_dir // ""),
-    (.hook_event_name // "")] | @tsv')"
+    (.hook_event_name // ""),
+    (.prompt // "")] | @tsv')"
 [ -n "$tp" ] && [ -f "$tp" ] && [ -n "$sid" ] || exit 0
 [ -n "$cwd" ] || cwd=$PWD
 
@@ -248,8 +249,32 @@ fi
 
 save_sitting() {
   mkdir -p "$(dirname "$SITF")" 2>/dev/null || return 0
+  # Debug fields only -- nothing here is read by the clock itself. They
+  # exist so a wrong-looking readout can be diagnosed without re-deriving
+  # sid/cwd/branch by hand: which session last wound the clock, from where,
+  # and what local wall time that was. worktree_slug isn't computed yet at
+  # this point in the file (that happens near the archival block below), so
+  # it's derived inline from work_root the same way that block does.
+  local last_local last_slug last_ckpt
+  last_local=$(TZ="America/Los_Angeles" date -d "@$last_prompt" +"%Y-%m-%d %H:%M %Z" 2>/dev/null \
+    || TZ="America/Los_Angeles" date -r "$last_prompt" +"%Y-%m-%d %H:%M %Z" 2>/dev/null || echo "")
+  case "$work_root" in
+    */.claude/worktrees/*) last_slug=$(basename "$work_root") ;;
+    *) last_slug="" ;;
+  esac
+  last_ckpt="$(date -u -d "@$last_prompt" +%Y-%m-%d 2>/dev/null \
+    || date -u -r "$last_prompt" +%Y-%m-%d 2>/dev/null)-${work_repo}-${sid:0:8}.md"
+  # Preview only, not the full prompt -- enough to recognize which turn wound
+  # the clock without keeping a growing transcript excerpt in a machine-wide
+  # file that gets read constantly.
   jq -n --argjson ss "$sit_start" --argjson lp "$last_prompt" \
-    '{sitting_start: $ss, last_prompt: $lp}' \
+    --arg local "$last_local" --arg sid "$sid" --arg repo "$work_repo" \
+    --arg branch "$work_branch" --arg slug "$last_slug" --arg ckpt "$last_ckpt" \
+    --arg cwd "$cwd" --arg prompt "${prompt_text:-}" \
+    '{sitting_start: $ss, last_prompt: $lp,
+      last_prompt_local: $local, last_session_id: $sid, last_repo: $repo,
+      last_branch: $branch, last_worktree_slug: $slug, last_checkpoint: $ckpt,
+      last_cwd: $cwd, last_prompt_preview: ($prompt[0:80])}' \
     > "$SITF.$$" 2>/dev/null \
     && mv -f "$SITF.$$" "$SITF" 2>/dev/null || rm -f "$SITF.$$" 2>/dev/null
 }
