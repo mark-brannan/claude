@@ -13,6 +13,11 @@ def k: if . >= 1000 then "\(. / 1000 | floor)k" else "\(.)" end;
 
 # other UTF-8 single width chars for consideration:
 # § ¶ ◊ ⁂ ‽ ⸎ ❖ ⌖ ◎ ⊙ ⦾ ⎊ • · ✦  ‖ ⁄ ⁞ ┄ — . ¤ ✎ ⚙  ⚑ ⚠
+#
+# other emoji held for consideration, from 2026-09-10's mockup session --
+# not wired to any output yet, just reserved so the option isn't lost:
+# 🧘‍♀️🌌 (calm/zero state, proposed for friction) ✅ (clear/ok, proposed for
+# blocked=0) ⏰ (louder alarm variant, proposed for a hotter nag/alarm tier)
 
 # Right-pad to $w visible characters. Only ever widens; a field that is
 # already over budget is left alone rather than truncated mid-number.

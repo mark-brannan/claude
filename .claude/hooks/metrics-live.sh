@@ -23,6 +23,25 @@
 #
 # stdin: any hook payload carrying transcript_path/session_id/cwd.
 # Always exits 0.
+#
+# FROZEN -- THAW CAREFULLY. Every block below tagged with that phrase (the
+# ⛁ context, ⚖ gate, ⚡ friction and ⏱ sitting-clock crossings, and any glyph
+# family added alongside them) is frozen: do not modify without direct,
+# explicit interaction with Solace.
+#
+# Changes here are small and contained -- one glyph/family at a time. Never
+# a wholesale rewrite: don't drop an existing glyph, family, or behavior
+# without her explicit call to drop it. That includes cadence: don't make
+# a line fire less often, coalesce, dedupe, or go quiet as a "cleanup" --
+# she has said explicitly she wants this louder and more frequent, not
+# calmer. Edge-triggered (once per new crossing) is the floor, not a ceiling
+# to defend; if a change would make the reader see this line less, it is
+# out of scope for a "small, contained" edit and needs to be asked about.
+#
+# Before touching any of these lines: propose it visually in-chat first --
+# rendered before/after examples, not a description of the change. Before
+# merging: the PR description carries those same rendered examples. Prose
+# alone does not satisfy this.
 set -uo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -363,10 +382,7 @@ if [ "$run_engine" -eq 1 ]; then
   [ -n "${fric_total:-}" ] || fric_total=0
   [ -n "${fric_win:-}" ] || fric_win=0
 
-  # Note for agents: do not modify without direct, explicit interaction with Solace.
-  # If changing the display, you must show in the chat session
-  # examples of the expected output, before and after.
-  #
+  # FROZEN -- THAW CAREFULLY. See the file header for the rule this tags.
   # context -- lines ascending, so a jump past several of them reports each in
   # order. The ladder is the configured lines, then NAG_CONTEXT_STEP forever
   # past the last one, so a session that blows through every configured line
@@ -422,6 +438,7 @@ if [ "$run_engine" -eq 1 ]; then
     fi
   fi
 
+  # FROZEN -- THAW CAREFULLY.
   # sitting clock -- read on a prompt and nowhere else, so the line lands
   # where the user is already reading, at the top of a turn.
   if [ "$is_prompt" -eq 1 ] && [ "$NAG_SIT_EVERY_MIN" -gt 0 ] \
@@ -443,6 +460,7 @@ if [ "$run_engine" -eq 1 ]; then
     fi
   fi
 
+  # FROZEN -- THAW CAREFULLY.
   # gate decisions
   if [ "$NAG_GATE_EVERY" -gt 0 ]; then
     n=$(( gates / NAG_GATE_EVERY * NAG_GATE_EVERY ))
@@ -453,6 +471,7 @@ if [ "$run_engine" -eq 1 ]; then
     fi
   fi
 
+  # FROZEN -- THAW CAREFULLY.
   # friction -- measured in human turns, so only a prompt can trip it, and it
   # is addressed to the model, which is the thing the capacity rule asks of.
   if [ "$is_prompt" -eq 1 ] && [ "$fric_tripped" -ne 1 ] \

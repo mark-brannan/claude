@@ -62,6 +62,7 @@ INSTALL="
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq
+.claude/hooks/lib-metrics-test-harness.sh
 .claude/hooks/session-start-continuity.sh
 .claude/hooks/stop-continuity.sh
 .claude/hooks/measure-git-events.sh

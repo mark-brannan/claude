@@ -30,6 +30,9 @@ export HOME="$SCRATCH/home"; mkdir -p "$HOME" "$SCRATCH/bin"
 export CLAUDE_STATE_REPO=""
 STATE="$HOME/.claude/state/global"
 
+# shellcheck source=lib-metrics-test-harness.sh
+. "$(dirname "$HOOK")/lib-metrics-test-harness.sh"
+
 t() {  # t <desc> <want> <got>
   if [ "$2" = "$3" ]; then pass=$((pass+1))
   else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi
@@ -43,30 +46,6 @@ hasnt() {
     fail=$((fail+1)); printf 'FAIL (has /%s/): %s\n  in [%s]\n' "$2" "$1" "$3"
   else pass=$((pass+1)); fi
 }
-
-# --- transcripts -------------------------------------------------------------
-# One human turn plus one assistant turn carrying the context number. Appending
-# another pair with a bigger number is how a session grows past a line.
-turn() {  # turn <file> <context tokens>
-  jq -nc --arg ts "2026-09-09T10:00:00.000Z" \
-    '{type:"queue-operation", operation:"enqueue", timestamp:$ts,
-      sessionId:"t", content:"go on"}' >> "$1"
-  jq -nc --arg ts "2026-09-09T10:00:00.000Z" --argjson n "$2" \
-    --arg u "req-$(wc -l < "$1" | tr -d ' ')" \
-    '{type:"assistant", timestamp:$ts, requestId:$u,
-      message:{model:"claude-opus-5", role:"assistant",
-               content:[{type:"text", text:"ok"}],
-               usage:{input_tokens:$n, output_tokens:10,
-                      cache_read_input_tokens:0, cache_creation_input_tokens:0}}}' >> "$1"
-}
-
-payload() {  # payload <transcript> <session id> <cwd> [hook_event_name]
-  jq -nc --arg tp "$1" --arg sid "$2" --arg cwd "$3" --arg h "${4:-}" \
-    '{transcript_path:$tp, session_id:$sid, cwd:$cwd}
-     + (if $h == "" then {} else {hook_event_name:$h} end)'
-}
-
-msg() { printf '%s' "$1" | jq -r '.systemMessage // ""' 2>/dev/null; }
 
 # --- 1. two context lines, in order ------------------------------------------
 TP="$SCRATCH/ctx.jsonl"; SID=ctx1
