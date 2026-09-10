@@ -222,6 +222,13 @@ has 'a restarted clock frees the other session to speak again' \
 REPO="$SCRATCH/repo"; mkdir -p "$REPO"
 git -C "$REPO" init -q -b feat/nags
 git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+# A real upstream, pushed and clean -- these tests are about the sitting
+# clock and the Stop block, not about unpushed work, and a branch with no
+# upstream at all is its own "not archivable" reason (metrics-live's
+# archivable() checks that before anything else below runs).
+git init -q --bare "$SCRATCH/repo.git"
+git -C "$REPO" remote add origin "$SCRATCH/repo.git"
+git -C "$REPO" push -q -u origin feat/nags
 cat > "$SCRATCH/bin/gh" <<'GH'
 #!/bin/sh
 echo 1
@@ -441,6 +448,31 @@ TP7="$SCRATCH/sit7.jsonl"; turn "$TP7" 1000
 : > "$REPO7/scratch-file"
 o7=$(clock 61 10; payload "$TP7" sit7 "$REPO7" | bash "$HOOK" prompt 0 2>&1)
 has 'the sitting line shows the dirty tree' '⎇ 1~' "$(msg "$o7")"
+
+# --- 8. no upstream is only a hazard with something on the branch to lose ----
+# The carve-out this PR's review asked for, mirroring stop-continuity.sh's
+# set_verdict (#126): a branch with no @{u} isn't flagged unless it's ahead
+# of the default branch -- $REPO/$REPO7 above have no origin at all, so
+# that comparison always falls back to "not ahead" for them. Exercise it
+# for real with an origin that has a main to compare against.
+ORIGIN8="$SCRATCH/origin8.git"; git init -q --bare "$ORIGIN8"
+REPO8="$SCRATCH/repo8"; mkdir -p "$REPO8"
+git -C "$REPO8" init -q -b main
+git -C "$REPO8" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$REPO8" remote add origin "$ORIGIN8"
+git -C "$REPO8" push -q -u origin main
+TP8="$SCRATCH/repo8.jsonl"; turn "$TP8" 1000
+
+git -C "$REPO8" checkout -q -b feat/ahead
+git -C "$REPO8" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
+o8=$(payload "$TP8" stop8a "$REPO8" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+has 'no upstream, ahead of origin/main: not archivable' \
+    'has no upstream \(never pushed\)' "$(msg "$o8")"
+
+git -C "$REPO8" checkout -q -b feat/nothing-to-lose main
+o8b=$(payload "$TP8" stop8b "$REPO8" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+hasnt 'no upstream, nothing ahead of origin/main: not flagged' \
+      'has no upstream' "$(msg "$o8b")"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
