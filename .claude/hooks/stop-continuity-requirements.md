@@ -2,14 +2,14 @@
 
 ## Push rate
 
-**The state-repo push must not fire on every Stop, unattended, forever.**
-This hook runs on every Stop across every session and container the user
-has open, and the sessions themselves are the ones tripping GitHub's own
-abuse-rate defenses against automated push volume — self-inflicted, not
-adversarial. Some form of throttling, batching, or debouncing the push
-(never the commit — that stays cheap and per-Stop, so nothing is ever lost)
-is required, not optional tuning.
+The state-repo push to the remote must not fire on every Stop hook.
+Throttle, batch, or debounce in some form. The local commit is not
+affected since it stays per-Stop, so nothing is lost.
 
-The specific window and the force-through conditions (session end, an
-explicit flush) are tuning and may change without a ruling. What may not
-change without one: reverting to an unconditional push per Stop event.
+The window and the force-through conditions are tuning and can change
+freely. Removing the throttle entirely cannot.
+
+Note that the GitHub recommended limit (6 pushes per minute per repo) must
+account for all of our pushes combined and we should strive to stay far
+below this limit.
+https://docs.github.com/en/repositories/creating-and-managing-repositories/repository-limits
