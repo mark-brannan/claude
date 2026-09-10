@@ -121,6 +121,9 @@ fi
 # it is the whole block that stays suppressed.
 case "$EVENT" in prompt|userpromptsubmit|statusline) SHOW="" ;; esac
 
+# HUMAN NOTE: The statement "the jq pass is too expensive" is categorically wrong.
+# Do not consider jq passes to be "too expensive" even if the code is suboptimal;
+# compute over text processing is dirt cheap...the only real cost is tokens.
 # A git event means an actual git-state change, not every Bash call: the jq
 # pass is too expensive to run after `ls`. The set is git_event_re in
 # lib-state.sh -- shared with measure-git-events.sh so the counter and the
