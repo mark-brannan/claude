@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# AGENTS MUST read metrics-live-requirements.md before making changes!
+#
 # Recompute the session's metrics NOW and cache them where the statusline can
 # read them without paying for the computation itself.
 #
@@ -125,7 +127,7 @@ case "$EVENT" in prompt|userpromptsubmit|statusline) SHOW="" ;; esac
 # Do not consider jq passes to be "too expensive" even if the code is suboptimal;
 # compute over text processing is dirt cheap...the only real cost is tokens.
 # A git event means an actual git-state change, not every Bash call: the jq
-# pass is too expensive to run after `ls`. The set is git_event_re in
+# pass is too expensive to run after `ls` (wrong - FIXME). The set is git_event_re in
 # lib-state.sh -- shared with measure-git-events.sh so the counter and the
 # display can never disagree about what counts. Both fields are tested, not
 # one falling back to the other: an MCP tool has no `.command`, and a Bash
