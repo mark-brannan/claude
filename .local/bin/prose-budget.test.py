@@ -627,6 +627,10 @@ class VoiceTest(RepoCase):
         f = [x for x in self.findings("--base", "main") if x["rule"] == "voice"]
         self.assertEqual([x["message"].split('"')[1] for x in f], ["leverage"])
 
+    def test_blockquote_line_is_exempt_from_voice_only(self):
+        self.assertEqual(self.tree("> a robust quote\na robust line\n"), ["robust"])
+        self.assertIn("voice: 1 quoted line(s) skipped", self.cli("--tree")[2])
+
 
 class HeadersTest(RepoCase):
     def test_cap_grandfather_and_shebang(self):

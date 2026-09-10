@@ -726,7 +726,11 @@ class Checker:
                      if matches(cfg["targets"], f) and f != self.config_rel for n, l in lines]
         else:
             return
+        skipped = 0
         for f, (lineno, ptr, text) in units:
+            if ptr is None and text.lstrip().startswith(">"):
+                skipped += 1
+                continue
             for a in cfg["allow"]:
                 text = text.replace(a, "")
             for name, rx in regexes:
@@ -740,6 +744,7 @@ class Checker:
         for p, per_file in counts.items():
             self.info.append(f'voice: "{p}": ' + (", ".join(f"{f} {n}" for f, n in sorted(per_file.items()))
                                                     or "none"))
+        self.info.append(f"voice: {skipped} quoted line(s) skipped")
 
     def check_headers(self, cfg):
         for f in self.targets(cfg["targets"]):
