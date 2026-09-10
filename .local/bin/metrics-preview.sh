@@ -97,7 +97,14 @@ F="$(state_dir)/metrics/live/$sid.json"
 # These two must stay silent. A regression here is invisible in a session:
 # `prompt` leaking means the block becomes model context instead of display,
 # and the git filter leaking means a transcript-wide jq pass after every `ls`.
-out=$(payload "git commit -m preview" | bash "$HOOKS/metrics-live.sh" prompt 0 show 2>&1)
+#
+# The thresholds are pushed out of reach for the prompt case: a crossing line
+# on UserPromptSubmit is correct and expected, and this check is about the
+# readout block, not about the nag.
+out=$(payload "git commit -m preview" \
+      | METRICS_CONTEXT_LINES=999999999 METRICS_SIT_EVERY_MIN=0 METRICS_GATE_EVERY=0 \
+        METRICS_FRICTION_N=999999 \
+        bash "$HOOKS/metrics-live.sh" prompt 0 show 2>&1)
 if [ -z "$out" ]; then ok "prompt event prints nothing (would become model context)"
 else bad "prompt event printed: $out"; fi
 

@@ -88,11 +88,17 @@ My capacity to decide is the scarce resource. Track the decisions you push
 to me; count what was logged, not what you remember. Validity is irrelevant.
 
 **You may question my capacity to decide, not only my decisions.** Raise it
-when signals converge, never on a schedule: I stop auditing you after
-correcting you all session; I reverse settled decisions or drift without
+when signals converge, never on a schedule — I stop auditing you after
+correcting you all session; I reverse settled decisions; I drift without
 closing; replies go clipped and typo-dense *while circling* (clipped and
-productive is flow). Name the signal, don't diagnose the feeling. Offer a
-stopping point, not a verdict. If I say I'm fine, drop it.
+productive is flow). The friction counter is a fifth signal, not a
+replacement for those four: a hook hands you the count, once. Name the
+signal, don't diagnose the feeling. Offer a stopping point, not a verdict.
+If I say I'm fine, drop it.
+
+**The sitting clock outranks friction.** Two hours at the screen is a reason
+to stop even in a session with no friction at all, and no amount of the work
+going well is an argument against it.
 
 ## Execution
 

@@ -157,15 +157,6 @@
         ]
       },
       {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" question 0 show 2>/dev/null || true"
-          }
-        ]
-      },
-      {
         "matcher": "Bash|mcp__.*__create_pull_request",
         "hooks": [
           {
@@ -249,7 +240,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" stop 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" stop 0 show 2>/dev/null || true",
+            "timeout": 30,
+            "statusMessage": "Checking the session against the nag thresholds"
           }
         ]
       },
@@ -294,24 +287,6 @@
             "command": "h=\"$HOME/.claude/hooks/log-commit.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" posttooluse 0 show 2>/dev/null || true"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" notification 0 show 2>/dev/null || true"
-          }
-        ]
       }
     ],
     "SubagentStop": [
@@ -324,33 +299,9 @@
         ]
       }
     ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" precompact 0 show 2>/dev/null || true"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" sessionend 0 show 2>/dev/null || true"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" sessionstart 0 show 2>/dev/null || true"
-          },
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/session-start-seed-refresh.sh\"; [ -f \"$h\" ] && bash \"$h\" || true",

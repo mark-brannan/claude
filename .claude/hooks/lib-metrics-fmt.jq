@@ -143,21 +143,14 @@ def night_nag:
     else ""
     end;
 
-# Escalates rather than just firing once at a threshold: a flat "take a
-# break" easy to skim past every render for the next three hours. Minutes
-# derived from time_since_break_seconds -- spans across sessions, accumulates
-# until gap >= 25 min auto-resets it. The point is time spent at the screen
-# across continuous work, not resetting on every new session.
-def break_nag:
-  (.time_since_break_seconds // .elapsed_seconds // 0) as $s
-  | ($s / 60 | floor) as $m
-  | if   $s <  5400 then ""
-    elif $s < 10800 then " ⏰ break!(\($m)m)"
-    elif $s < 16200 then " ⏰⏰ BREAK!(\($m)m)"
-    else                 " ⏰⏰⏰ STOP!(\($m)m)"
-    end;
+# The sitting clock is not here. It used to be -- `break_nag`, escalating off
+# a `time_since_break_seconds` field that metrics-live.sh stamped on every
+# event including every statusline render, so the readout wound its own
+# timer by being drawn. The clock that replaced it is prompt-driven and lives
+# in metrics-live.sh's crossing engine, where it fires once per threshold
+# instead of on every render.
 
-def nag: night_nag + break_nag;
+def nag: night_nag;
 
 # --- layouts --------------------------------------------------------------
 # The two readouts are one vocabulary in two shapes, so both shapes live here

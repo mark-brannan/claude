@@ -406,6 +406,11 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
      | {ts: $now, session_id: $sid, repo: $repo, branch: $branch,
         seq: ($seq + 1),
         turn_index: .i,
+        # Position among human turns, 1-based. turn_index is an index into the
+        # whole event stream, so it cannot answer "how many turns ago" -- and
+        # the friction counter in metrics-live.sh is defined as a window of
+        # turns, not of events. Computed here because $humans lives here.
+        turn_ordinal: (.i as $ii | ($humans | map(select(. <= $ii)) | length)),
         type: .type,
         tags: .tags,
         retracted: .retracted,
@@ -416,7 +421,9 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
         prior: .prior} ]) as $friction_human
 | ([ $atext[] | (first(.text | split("\n")[] | select(test(s9_self_re))) // empty) as $line
      | {ts: $now, session_id: $sid, repo: $repo, branch: $branch,
-        seq: 0, turn_index: .i, type: "self_report", tags: ["self_report"],
+        seq: 0, turn_index: .i,
+        turn_ordinal: (.i as $ii | ($humans | map(select(. <= $ii)) | length)),
+        type: "self_report", tags: ["self_report"],
         retracted: false, repeat: false,
         slug: ($ARGS.named.slug // ""),
         hits: [ $line | match(s9_self_re) | .captures[0].string ],
