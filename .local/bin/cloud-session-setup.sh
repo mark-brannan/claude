@@ -69,7 +69,6 @@ INSTALL="
 .claude/hooks/pr-ownership-context.sh
 .claude/hooks/pr-threads-gate.sh
 .claude/hooks/no-draft-pr.sh
-.claude/hooks/no-git-reset-hard.sh
 .claude/hooks/no-unsigned-push.sh
 .claude/hooks/no-git-footguns.sh
 .claude/hooks/no-checkout-home.sh
