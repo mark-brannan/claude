@@ -92,7 +92,7 @@ QUERY='query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){
     commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{
       ... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}
   issues(states:OPEN,first:100){pageInfo{hasNextPage} nodes{number title url updatedAt labels(first:20){nodes{name}}
-    milestone{title}}}
+    milestone{title} body}}
   refs(refPrefix:"refs/heads/",first:100){nodes{name associatedPullRequests(first:1){totalCount}}}
 }}'
 
@@ -273,17 +273,13 @@ def labels: [(.labels.nodes // [])[].name];
 | (if $milestone == "" then ($rest | map(select(.milestone)) | length) else 0 end) as $deferred
 | (if $milestone == "" then ($rest | map(select(.milestone|not))) else $rest end) as $untri
 | ($untri | length) as $untriaged
-| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.defaultBranchRef.name // "main") as $def
-    | [ (.data.refs.nodes // [])[] | select(.associatedPullRequests.totalCount == 0 and (.name|IN("main","master",$def)|not)
-        and (.name|startswith("release-please--")|not)) | .name ]
-    | select(length > 0) | {ref: $s, item: (join(", ") | cut), notes: ""} ] as $stranded
 | [ ($c.records | map(select(.error))) as $e
     | if ($e|length) > 0 and ($e|length) == ($c.records|length) and ([$e[].error]|unique|length) == 1
          and ($e[0].error|IN("gh unauthenticated","network")) then $e[0].error
       else $e[] | "\(.repo): \(.error)" end ] as $fails
 | [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s
     | (if .data.pullRequests.pageInfo.hasNextPage then "\($s): more than 50 open PRs -- PR buckets truncated" else empty end),
-      (if .data.issues.pageInfo.hasNextPage then "\($s): more than 100 open issues -- issue buckets and Untriaged truncated" else empty end) ] as $trunc
+      (if .data.issues.pageInfo.hasNextPage then "\($s): more than 100 open issues -- issue buckets, Untriaged and the stranded-branch pointer check truncated" else empty end) ] as $trunc
 | ($c.counts | if (.prs|type) == "string" and (.issues|type) == "string" and .prs == .issues and (.prs|test("^[0-9]")|not)
       then "unavailable (\(.prs))"
       else "\(.prs) open PRs, \(.issues) open issues across \($owner)" end) as $acct
@@ -299,12 +295,12 @@ def labels: [(.labels.nodes // [])[].name];
   + $fails + $trunc + [ $counts, "", "@@RULINGS@@",
   table_bucket("Solace'"'"'s turn"; "Notes"; $prs | map(select(awaiting_human))),
   table_bucket("Queued (auto-merge)"; "Notes"; $prs | map(select(.autoMergeRequest != null))),
+  table_bucket("Stranded branches (no PR)"; "Notes"; $stranded | map(.item |= cut)),
   table_bucket("Ready"; "Updated"; $rd),
   table_bucket("Blocked"; "Updated"; $bl),
   table_bucket("Not ready (agent'"'"'s turn)"; "Notes"; $prs | map(select(.autoMergeRequest == null and (awaiting_human|not)))),
   (if $untriaged == 0 then "Untriaged: 0"
-   else table_bucket("Untriaged: \($untriaged)" + (if $deferred > 0 then " (deferred to a milestone: \($deferred))" else "" end); "Updated"; $untri) end),
-  table_bucket("Stranded branches (no PR)"; "Notes"; $stranded) ]
+   else table_bucket("Untriaged: \($untriaged)" + (if $deferred > 0 then " (deferred to a milestone: \($deferred))" else "" end); "Updated"; $untri) end) ]
 | join("\n")
 '
 
@@ -326,6 +322,52 @@ board_path() {
 }
 
 count_lines() { [ -n "$1" ] || { echo 0; return; }; printf '%s\n' "$1" | grep -c '^'; }
+
+# Pushed branches with no open PR, one repo object per record, each carrying
+# its candidate branch names and its open issues' title+body (for the
+# pointer check below).
+# shellcheck disable=SC2016  # jq program, not shell
+STRANDED_CANDIDATES='
+[ .records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.defaultBranchRef.name // "main") as $def
+  | { repo: $s,
+      branches: [ (.data.refs.nodes // [])[] | select(.associatedPullRequests.totalCount == 0 and (.name|IN("main","master",$def)|not)
+        and (.name|startswith("release-please--")|not)) | .name ],
+      issues: [ (.data.issues.nodes // [])[] | ((.title // "") + " " + (.body // "") | gsub("\n"; " ")) ] }
+  | select(.branches | length > 0) ]
+'
+
+# stranded_rows <cache file> -- {ref,item,notes} rows for the "Stranded
+# branches" bucket, one row per branch (not grouped by repo) so brief mode's
+# row cap and "+N more" line work the same as every other bucket. A branch
+# is dropped from the bucket, not merely annotated, once a home names it --
+# a board card (names_branch against $kb, set by board_path) or an open
+# issue in the same repo (whole-token match against title+body). Same
+# names_branch as branch-home-gate.sh (dotfiles#114), shared via
+# lib-state.sh so a branch counts as pointed-at the same way in both
+# places. Only the first 100 open issues are ever fetched (see $trunc), so
+# a pointer past that page is missed the same way every other issue-derived
+# bucket already accepts. When lib-state.sh could not be found at all
+# (board_path never sourced it, so names_branch is undefined) every no-PR
+# branch is still listed -- "could not check for a pointer" is not the same
+# as "checked, found none".
+stranded_rows() {
+  have_nb=1; command -v names_branch >/dev/null 2>&1 || have_nb=0
+  jq -c "$STRANDED_CANDIDATES" "$1" 2>/dev/null | jq -c '.[]' 2>/dev/null | while IFS= read -r robj; do
+    repo=$(printf '%s' "$robj" | jq -r '.repo')
+    issues_text=$(printf '%s' "$robj" | jq -r '.issues[]' 2>/dev/null)
+    printf '%s' "$robj" | jq -r '.branches[]' | while IFS= read -r branch; do
+      pointed=0
+      if [ "$have_nb" = 1 ]; then
+        if [ -n "$kb" ] && names_branch "$branch" < "$kb"; then pointed=1
+        elif [ -n "$issues_text" ] && printf '%s\n' "$issues_text" | names_branch "$branch"; then pointed=1
+        fi
+      fi
+      [ "$pointed" = 0 ] && printf '%s\t%s\n' "$repo" "$branch"
+    done
+  done | jq -R -s '
+    split("\n") | map(select(length > 0) | split("\t") | {ref:.[0], item:.[1], notes:""})
+  '
+}
 
 # ruling_section <board> <project>
 # The ## Needs ruling cards, grouped by the "### <name>" heading above them --
@@ -404,7 +446,8 @@ render() {
       # The buckets come out of jq in one piece with a @@RULINGS@@ marker in
       # them; the rulings are spliced in here rather than by awk, because a
       # multi-line -v assignment is a syntax error in one-true-awk.
-      body=$(jq -r --arg brief "$brief" --arg milestone "$milestone" "$RENDER" "$1")
+      stranded_json=$(stranded_rows "$1")
+      body=$(jq -r --arg brief "$brief" --arg milestone "$milestone" --argjson stranded "${stranded_json:-[]}" "$RENDER" "$1")
       printf '%s' "${body%%@@RULINGS@@*}"
       [ -n "$rulings" ] && printf '%s\n' "$rulings"
       printf '%s\n' "${body#*@@RULINGS@@}"

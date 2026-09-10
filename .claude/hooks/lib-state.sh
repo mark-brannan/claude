@@ -43,6 +43,20 @@ state_dir() {
 # True when state_dir is inside the git repo, i.e. worth committing.
 state_is_repo() { state_repo >/dev/null 2>&1; }
 
+# True when $1 appears as a whole branch-name token in text on stdin -- not
+# merely as a substring. `-w` alone is not enough: branch names are built
+# from hyphens too, so claude/homed-extra is a `-w` match for claude/homed.
+# Extract every maximal run of branch-name characters and require one to
+# equal the branch exactly. The charset is deliberately narrower than every
+# character git allows in a branch name (no `~^:?*[\`, no non-ASCII): it
+# exists to strip prose punctuation (a trailing period or comma) off a
+# branch mention in a sentence, and `+`/`@` are the two git allows that
+# never show up as that kind of padding. Shared by branch-home-gate.sh and
+# worklist so a branch counts as pointed-at the same way in both.
+names_branch() {
+  grep -oE '[A-Za-z0-9._/+@-]+' | grep -qxF -- "$1"
+}
+
 # One JSON-string escaper for the hooks that source this. It takes its text as
 # an argument, and falls back to sed/awk where jq is absent -- a hook that
 # cannot emit its reason is a hook that fails open. Do not add a second

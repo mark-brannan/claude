@@ -38,21 +38,12 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=lib-state.sh
 . "$HERE/lib-state.sh"
 
-# json_str() and block() come from lib-state.sh, sourced above.
+# json_str(), block() and names_branch() come from lib-state.sh, sourced above.
 
 # timeout is coreutils; a machine without it runs the command unbounded
 # rather than failing every check and blocking every session.
 run_to() {
   if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi
-}
-
-# True when $1 appears as a whole branch-name token in text on stdin -- not
-# merely as a substring. `-w` alone is not enough: branch names are built
-# from hyphens too, so claude/homed-extra is a `-w` match for claude/homed.
-# Extract every maximal run of branch-name characters and require one to
-# equal the branch exactly.
-names_branch() {
-  grep -oE '[A-Za-z0-9._/-]+' | grep -qxF -- "$1"
 }
 
 payload=$(cat) || exit 0

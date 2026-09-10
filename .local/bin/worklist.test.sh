@@ -30,7 +30,7 @@ cd "$S/repo" || exit 1
 
 # --- the board -----------------------------------------------------------------
 {
-  printf '# Board\n\n## Needs ruling\n'
+  printf '# Board\n\nA card names the pushed branch pointed-by-board somewhere in its body.\n\n## Needs ruling\n'
   printf -- '### demo\n'
   printf -- '- [ ] **Board sections** — decide whether a question is a card or an issue ([o/r#90](https://github.com/o/r/pull/90))\n'
   printf -- '### global\n'
@@ -52,10 +52,10 @@ pr() { # number title draft mergeable rollup automerge unresolved contexts-json 
      reviewThreads:{nodes:(([range($u)] | map({isResolved:false})) + [{isResolved:true}])},
      commits:{nodes:[{commit:{statusCheckRollup:(if $r == "NONE" then null else {state:$r, contexts:{nodes:$cx}} end)}}]}}'
 }
-issue() { # number title labels-json milestone-or-null
-  jq -n --argjson n "$1" --arg t "$2" --argjson l "$3" --argjson ms "$4" '
+issue() { # number title labels-json milestone-or-null [body]
+  jq -n --argjson n "$1" --arg t "$2" --argjson l "$3" --argjson ms "$4" --arg b "${5:-}" '
     {number:$n, title:$t, url:"https://github.com/o/alpha/issues/\($n)", labels:{nodes:($l|map({name:.}))},
-     milestone:(if $ms then {title:$ms} else null end)}'
+     milestone:(if $ms then {title:$ms} else null end), body:$b}'
 }
 green='[{"name":"ci-gate / gate","conclusion":"SUCCESS"}]'
 red='[{"name":"ci-gate / gate","conclusion":"FAILURE"},{"context":"coverage","state":"FAILURE"},{"name":"lint","conclusion":"SUCCESS"}]'
@@ -75,8 +75,13 @@ long_title="A title that runs well past the eighty character mark so that brief 
   issue 27 "Formerly assigned" '[]' null; echo ,
   issue 28 "$long_title" '["ready"]' null; echo ,
   issue 40 "Milestone ready" '["ready"]' '"1.0"'; echo ,
-  issue 41 "Milestone blocked" '["blocked"]' '"1.0"'
-  echo ']},"refs":{"nodes":[{"name":"main","associatedPullRequests":{"totalCount":0}},{"name":"release-please--branches--main","associatedPullRequests":{"totalCount":0}},{"name":"feature-x","associatedPullRequests":{"totalCount":0}},{"name":"pr-branch","associatedPullRequests":{"totalCount":1}}]}}}}'
+  issue 41 "Milestone blocked" '["blocked"]' '"1.0"'; echo ,
+  issue 42 "Points at a branch" '[]' null "see the pointed-by-issue branch for the change"
+  echo ']},"refs":{"nodes":['
+  echo '{"name":"main","associatedPullRequests":{"totalCount":0}},{"name":"release-please--branches--main","associatedPullRequests":{"totalCount":0}},{"name":"feature-x","associatedPullRequests":{"totalCount":0}},{"name":"pr-branch","associatedPullRequests":{"totalCount":1}},{"name":"pointed-by-board","associatedPullRequests":{"totalCount":0}},{"name":"pointed-by-issue","associatedPullRequests":{"totalCount":0}}'
+  # five more unpointed branches, for the stranded bucket's own +N more line
+  for i in 1 2 3 4 5; do printf ',{"name":"stray-%s","associatedPullRequests":{"totalCount":0}}' "$i"; done
+  echo ']}}}}'
 } | jq -c . > "$FIXTURES/alpha.json"
 jq -nc '{data:{repository:{defaultBranchRef:{name:"main"},pullRequests:{nodes:[{number:5,title:"Draft PR",url:"https://github.com/o/beta/pull/5",isDraft:true,mergeable:"MERGEABLE",autoMergeRequest:null,author:{login:"o"},reviewThreads:{nodes:[]},commits:{nodes:[{commit:{statusCheckRollup:null}}]}}]},issues:{nodes:[]},refs:{nodes:[{name:"main",associatedPullRequests:{totalCount:0}}]}}}}' > "$FIXTURES/beta.json"
 # seven more ready issues, for the +N more line
@@ -130,7 +135,7 @@ run
 eq 'exit 0' 0 "$RC"
 has 'stamp without cache note' '^as of [0-9]{2}:[0-9]{2}Z$'
 has 'scope names the project and repos' '^project demo \(o\): alpha, beta$'
-has 'scoped counts first, account-wide after' '^counts: 6 open PRs, 8 open issues in scope; 3 open PRs, 2 open issues across o$'
+has 'scoped counts first, account-wide after' '^counts: 6 open PRs, 9 open issues in scope; 3 open PRs, 2 open issues across o$'
 eq 'one GraphQL call per repo' 2 "$(calls 'api graphql')"
 eq 'topic looked up once' 1 "$(calls 'repo view o/alpha --json repositoryTopics')"
 eq 'repo set from the topic' 1 "$(calls 'repo list o --topic project-demo')"
@@ -179,10 +184,20 @@ has 'failing checks named, never a boolean' '^\| \[alpha#13\].* \| Red PR \| fai
 lacks 'a green check is not listed as failing' 'lint'
 has 'draft noted' '^\| \[beta#5\].* \| Draft PR \| draft \|'
 OUT=$OUT_ALL
-has 'untriaged is a count, deferred separately' '^Untriaged: 2 \(deferred to a milestone: 1\)$'
+has 'untriaged is a count, deferred separately' '^Untriaged: 3 \(deferred to a milestone: 1\)$'
+q_line=$(printf '%s\n' "$OUT_ALL" | grep -n '^Queued (auto-merge)' | cut -d: -f1)
+s_line=$(printf '%s\n' "$OUT_ALL" | grep -n '^Stranded branches (no PR)' | cut -d: -f1)
+r_line=$(printf '%s\n' "$OUT_ALL" | grep -n '^Ready$\|^Ready:' | head -1 | cut -d: -f1)
+assert 'Stranded branches sits after Queued' [ "$q_line" -lt "$s_line" ]
+assert 'Stranded branches sits before Ready' [ "$s_line" -lt "$r_line" ]
 OUT=$(section "Stranded branches (no PR)")
 has 'branch with no PR' '^\| alpha \| feature-x \|  \|$'
+has 'each stray branch is its own row' '^\| alpha \| stray-3 \|  \|$'
+eq 'one row per branch, all six shown (full mode cap is eight)' 6 "$(printf '%s\n' "$OUT" | grep -c '^| alpha |')"
+lacks 'no overflow line under the cap' '\+.* more'
 lacks 'main is not stranded' 'main'; lacks 'release-please branch is not stranded' 'release-please'; lacks 'branch with a PR is not stranded' 'pr-branch'
+lacks 'branch pointed at by a board card is not stranded' 'pointed-by-board'
+lacks 'branch pointed at by an open issue is not stranded' 'pointed-by-issue'
 OUT=$OUT_ALL
 has 'board heading with counts' "^Board \(## Claude's, showing 8 of 10\)$"
 eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -c '^- \*\*Card ')"
@@ -227,6 +242,9 @@ OUT_ALL=$OUT
 OUT=$(section "Ready")
 eq 'bucket capped at five lines plus header, separator and overflow line' 8 "$(printf '%s\n' "$OUT" | grep -c .)"
 has 'overflow line' '^\| \+5 more \| \| run `worklist` \|$'
+OUT=$(section "Stranded branches (no PR)")
+eq 'stranded branches capped at five rows too, one row per branch' 8 "$(printf '%s\n' "$OUT" | grep -c .)"
+has 'stranded overflow line' '^\| \+1 more \| \| run `worklist` \|$'
 OUT=$OUT_ALL
 lacks 'no urls in brief' 'https://github.com/o/alpha/pull/10'
 cut_title=$(printf '%s\n' "$OUT" | sed -n 's/^| alpha#28 | \(.*\) |  |$/\1/p')

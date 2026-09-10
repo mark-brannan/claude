@@ -41,12 +41,14 @@ Solace's turn             PRs ready for her: not draft, mergeable, checks
                           (failing check names printed in Notes, never a
                           boolean)
 Queued (auto-merge)       auto-merge enabled, waiting on checks
+Stranded branches         pushed branches with no PR and no pointer — a
+                          board card or open issue naming the branch counts
+                          as a home and drops it from this bucket
 Ready                     `ready` issues — agent-startable now
 Blocked                   `blocked` issues, with the updated date
 Not ready (agent's turn)  open PRs that are none of the above, with why
 Untriaged: N              unlabelled issues, table capped like every other
                           bucket — not count-only
-Stranded branches         pushed branches with no PR
 Needs ruling              the board's `## Needs ruling` cards, at most 8 —
                           one-way doors only, so normally empty
 Board                     the `## Claude's` cards, at most 8
