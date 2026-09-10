@@ -758,7 +758,7 @@ if [ "$SHOW" = show ] && [ -f "$OUT" ]; then
 $bl_second"
 
   jq -nc --arg s "$sys_lines" --arg b "$bl_block" \
-    '{systemMessage: (if $s == "" then $b else $s + "\n" + $b end)}'
+    '{systemMessage: (if $s == "" then $b else $b + "\n" + $s end)}'
 elif [ -n "$sys_lines" ]; then
   jq -nc --arg s "$sys_lines" '{systemMessage: $s}'
 fi
