@@ -29,7 +29,7 @@ Read the verdict line at the top of this session's auto-checkpoint
   wrap-up and sometimes turns it into an archive.
 
 If the session's only remaining need is "the next session should start here",
-that is a resume block (`/resume`, four lines), not a wrap-up.
+that is a resume block (`/pickup`, four lines), not a wrap-up.
 
 ## 1. Where state lands
 

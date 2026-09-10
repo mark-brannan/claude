@@ -1,9 +1,9 @@
 ---
-name: resume
-description: Pick up a session where an earlier one left it, from the resume block that session wrote into its own checkpoint. Use when Solace says "resume", "/resume", "/resume <branch>", "pick up where we left off", or opens a session meaning to continue work rather than choose new work.
+name: pickup
+description: Pick up a session where an earlier one left it, from the resume block that session wrote into its own checkpoint. Use when Solace says "resume", "pick up", "/pickup", "/pickup <branch>", "pick up where we left off", or opens a session meaning to continue work rather than choose new work. Not `/resume` — that name is claimed by Claude Code's own terminal-session resume.
 ---
 
-# Resume
+# Pickup
 
 Thin by design. `resume-list` holds the parsing, the drop rules and the
 table; this skill picks a row and starts.
@@ -20,7 +20,7 @@ Run `~/.local/bin/resume-list`.
 - **No rows** — say so in one line and stop. There is nothing to resume;
   `worklist` is the tool for choosing new work, and Solace will ask for it.
 - **One row** — take it.
-- **Several** — if Solace named a branch (`/resume <branch>`), take that row.
+- **Several** — if Solace named a branch (`/pickup <branch>`), take that row.
   Otherwise print the table and ask for a one-line pick. That is the one
   question this skill is allowed to ask.
 
