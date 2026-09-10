@@ -356,9 +356,27 @@ git -c user.name="${GIT_AUTHOR_NAME:-Claude}" \
     -c commit.gpgsign=false \
     commit -q -m "State: $work_repo session ${sid:0:8} ($today)" >/dev/null 2>&1 || { set_verdict "state-repo commit failed"; exit 0; }
 
+# Debounce the push, not the commit: every Stop still commits locally (cheap,
+# never lost), but pushes to GitHub at most once per 5 minutes unless the
+# session is actually ending (verdict already computed above by set_verdict).
+# Measured 2026-09-10: ~560 pushes/day to claude_prompts_scratch, bursty
+# enough to risk GitHub's abuse-rate heuristics. Force-push whenever archivable, so a real
+# session end is never held back by the debounce window.
+PUSH_SENTINEL="$SD/.last-state-push"
+debounce_secs=300
+if [ "$verdict" != "archivable" ] && [ -f "$PUSH_SENTINEL" ]; then
+  last_push=$(cat "$PUSH_SENTINEL" 2>/dev/null || echo 0)
+  now_epoch=$(date -u +%s)
+  case "$last_push" in ''|*[!0-9]*) last_push=0 ;; esac
+  if [ $((now_epoch - last_push)) -lt "$debounce_secs" ]; then
+    exit 0   # committed locally; next push (debounced or archivable) carries it
+  fi
+fi
+
 for attempt in 1 2; do
   timeout 120 git pull --rebase --autostash -q >/dev/null 2>&1
   if timeout 120 git push -q origin HEAD >/dev/null 2>&1; then
+    date -u +%s > "$PUSH_SENTINEL" 2>/dev/null
     exit 0
   fi
   sleep $((attempt * 3))
