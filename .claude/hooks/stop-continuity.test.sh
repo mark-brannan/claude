@@ -104,6 +104,14 @@ eq 'never pushed is not archivable' \
   'not archivable: `claude/never-pushed` has no upstream (never pushed)' "$(verdict)"
 gitq "$WORK" checkout claude/work
 
+# --- a fresh branch, no upstream, zero commits ahead of main -----------------------
+# branch-home-gate.sh already treats this as "nothing to strand"; the verdict
+# should agree instead of flagging the same branch as never-pushed.
+gitq "$WORK" checkout -b claude/fresh-review main
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'zero commits ahead, no upstream: archivable' 'archivable' "$(verdict)"
+gitq "$WORK" checkout claude/work
+
 # --- "cannot verify" is never a pass ------------------------------------------------
 GH_FAIL=1 stop
 has 'unverified is not archivable' '^\*\*Verdict:\*\* not archivable: branch home unverified' "$CKPT"

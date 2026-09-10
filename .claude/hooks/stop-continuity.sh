@@ -221,7 +221,13 @@ set_verdict() {
       [ -n "$(git -C "$work_root" branch -r --contains HEAD 2>/dev/null)" ] \
         || add_reason "detached HEAD, no upstream to compare against"
     else
-      add_reason "\`$work_branch\` has no upstream (never pushed)"
+      # #126: no upstream is only a hazard when there is something on the
+      # branch to lose -- the same "ahead of the default branch" test
+      # branch-home-gate.sh already applies before it looks for a home.
+      vbase=$(git -C "$work_root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
+      git -C "$work_root" rev-parse --verify -q "${vbase:-origin/main}" >/dev/null 2>&1 || vbase=origin/master
+      vahead=$(git -C "$work_root" rev-list --count "${vbase:-origin/main}..HEAD" 2>/dev/null || echo 0)
+      [ "${vahead:-0}" -gt 0 ] && add_reason "\`$work_branch\` has no upstream (never pushed)"
     fi
   fi
   [ -n "${1:-}" ] && add_reason "$1"
