@@ -82,13 +82,34 @@ bash "$HOOK_DIR/metrics-rollup.sh" 2>/dev/null || true
 # ---------------------------------------------------------------- checkpoint
 ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
 
+# The resume block (dotfiles#110) is the one part of this file a *model*
+# writes, and this hook rewrites the whole file on every Stop -- so it has to
+# be lifted out of the old copy and put back, or the next Stop silently eats
+# the hand-off the model was told to write. Everything from the `## Resume`
+# heading to the next `## ` heading is carried verbatim, including the
+# `- consumed:` marker a resuming session appends.
+resume_block=""
+[ -f "$ckpt" ] && resume_block=$(awk '
+  /^## Resume[[:space:]]*$/ { f = 1; print; next }
+  f && /^## / { exit }
+  f { print }
+' "$ckpt" 2>/dev/null)
+
 {
   echo "# Auto-checkpoint — $work_repo @ \`$work_branch\`"
+  echo
+  # The verdict is the first thing in the file because it is the one line a
+  # reader needs: archivable means archive, no wrap-up. It cannot be computed
+  # yet -- the salvage commit and the state-repo push have not happened -- so
+  # it starts as a refusal and set_verdict() substitutes it below. A Stop that
+  # dies in between leaves this line, which is the truth: nothing was decided.
+  echo "**Verdict:** not archivable: the Stop hook did not finish"
   echo
   echo "Machine-written by \`stop-continuity.sh\`; rewritten on every Stop, so"
   echo "this is the session's current state, not a history. Narrative entries"
   echo "belong in \`log/\` proper."
   echo
+  [ -n "$work_root" ] && echo "- worktree \`$work_root\`"
   printf '%s' "$metrics" | jq -r '.session |
     "- session `\(.session_id)` · \(.model // "?") · started \(.started_at // "?")",
     "- \(.user_turns) prompts, \(.assistant_turns) turns, \(.tool_calls) tool calls",
@@ -96,6 +117,11 @@ ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
     "- decisions: \(.decisions.total) total (\(.decisions.scoping) scoping, \(.decisions.inline) inline, \(.decisions.gate) gate)",
     "- friction: \(.friction.total) total (\(.friction.correction) correction, \(.friction.override) override, \(.friction.rebuke) rebuke, \(.friction.pushback) pushback)",
     "- blocked: \(.blocked.total // 0) tool calls refused (\(.blocked.classifier // 0) classifier, \(.blocked.rule // 0) rule, \(.blocked.user // 0) user-declined)"'
+
+  if [ -n "$resume_block" ]; then
+    echo
+    printf '%s\n' "$resume_block"
+  fi
 
   if [ -n "$work_root" ]; then
     echo
@@ -146,6 +172,76 @@ flock -w 90 9 2>/dev/null || exit 0
 # do; every refusal after that is named in the checkpoint so it can carry
 # whatever detail turns out to be useful.
 sc_note() { printf '\n## Stop-commit\n\n%s\n' "$1" >> "$ckpt"; }
+
+# ------------------------------------------------------------ the verdict
+# set_verdict [extra reason] -- computes the archive verdict (dotfiles#110)
+# and writes it into the checkpoint's placeholder line and into the session's
+# metrics record. Idempotent: it rewrites whatever verdict line is already
+# there, so it can be called again once the state-repo push has been tried.
+#
+# "wrap up" is expensive and was being paid every session, including sessions
+# whose work already had a home. Archivable means archive; wrap up only when
+# the session holds something no issue, PR or card carries. Four conditions,
+# reasons named in this order:
+#   1. the branch has a home -- an open PR, or a pointer card/issue (#108).
+#      branch-home-gate.sh --check answers it, so this verdict and that gate
+#      can never disagree about what counts as a home;
+#   2. the worktree is clean;
+#   3. nothing is unpushed;
+#   4. the state-repo push succeeded (passed in by the caller, because it is
+#      not known until the bottom of this script).
+# "Could not verify" is never a pass, here as in the gate.
+verdict=""
+set_verdict() {
+  reasons=""
+  add_reason() { reasons="${reasons:+$reasons, }$1"; }
+
+  # Cached across calls: the check costs a `gh` round trip and the branch's
+  # home does not change between the salvage and the state-repo push.
+  [ -n "${home:-}" ] || home=$(sh "$HOOK_DIR/branch-home-gate.sh" --check "$cwd" 2>/dev/null)
+  case "$home" in
+    home:*)       : ;;
+    unverified:*) add_reason "branch home unverified (${home#unverified: })" ;;
+    *)            add_reason "no PR and no pointer for \`$work_branch\`" ;;
+  esac
+  if [ -n "$work_root" ]; then
+    [ -n "$(git -C "$work_root" status --porcelain 2>/dev/null)" ] && add_reason "worktree dirty"
+    # An unconfigured upstream makes `rev-list @{u}..HEAD` fail, and a failure
+    # that falls back to 0 is indistinguishable from a fully-pushed branch --
+    # the "lost work" failure mode one step earlier than #108/#110. Ask about
+    # the upstream first, so a never-pushed branch gets its own reason.
+    if git -C "$work_root" rev-parse --verify -q --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+      unpushed=$(git -C "$work_root" rev-list --count "@{u}..HEAD" 2>/dev/null || printf '')
+      case "${unpushed:-}" in
+        0)  ;;
+        '') add_reason "could not count unpushed commits" ;;
+        *)  add_reason "$unpushed commit(s) unpushed" ;;
+      esac
+    elif [ "$work_branch" = HEAD ] || [ -z "$work_branch" ]; then
+      add_reason "detached HEAD, no upstream to compare against"
+    else
+      add_reason "\`$work_branch\` has no upstream (never pushed)"
+    fi
+  fi
+  [ -n "${1:-}" ] && add_reason "$1"
+
+  if [ -n "$reasons" ]; then verdict="not archivable: $reasons"; else verdict="archivable"; fi
+
+  # Substitute rather than append: the line is at a known place and a second
+  # verdict line would be a second answer.
+  tmpc="$ckpt.verdict.$$"
+  if awk -v v="**Verdict:** $verdict" '
+       !done && /^\*\*Verdict:\*\* / { print v; done = 1; next } { print }
+     ' "$ckpt" > "$tmpc" 2>/dev/null; then mv -f "$tmpc" "$ckpt" 2>/dev/null; else rm -f "$tmpc"; fi
+
+  sf="$SD/metrics/sessions/$sid.json"
+  if [ -f "$sf" ]; then
+    tmpj="$sf.$$"
+    if jq -c --arg v "$verdict" '. + {verdict: $v}' "$sf" > "$tmpj" 2>/dev/null; then
+      mv -f "$tmpj" "$sf" 2>/dev/null
+    else rm -f "$tmpj"; fi
+  fi
+}
 sc_salvage() {
   # --- silent exits: the normal case for most sessions ---------------------
   # Not inside a git repo at all.
@@ -206,6 +302,9 @@ sc_salvage() {
   fi
 }
 sc_salvage
+# After the salvage, not before: a session whose work this hook just committed
+# and pushed is not "dirty, unpushed".
+set_verdict
 
 # ------------------------------------------------------------ state repo
 state_is_repo || exit 0
@@ -223,6 +322,7 @@ if [ -f .gitattributes ] && grep -qE '(^|[[:space:]])filter=' .gitattributes; th
       printf '\n**NOT COMMITTED** — git filter `%s` is declared in .gitattributes\n' "$f" >> "$ckpt"
       printf 'but not configured in this clone, so committing would mangle content.\n' >> "$ckpt"
       printf 'Run the repo'"'"'s filter setup, or commit by hand from a real machine.\n' >> "$ckpt"
+      set_verdict "state repo not committed (git filter \`$f\` unconfigured)"
       exit 0
     fi
   done
@@ -253,6 +353,8 @@ if [ -n "$(git status --porcelain -- "$board" 2>/dev/null)" ]; then
   [ "$board_ok" = 1 ] || printf '\n## Board NOT committed\n\n`%s` failed kanban-lint; its edits stay uncommitted in the working tree (anything you had already staged for it is left staged). Fix or delete the lines, then commit by hand or let the next Stop try again.\n\n```\n%s\n```\n' "$board" "$lint_out" >> "$ckpt"
 fi
 
+# Before the add, so the correction is what gets committed.
+[ "$board_ok" = 1 ] || set_verdict "board not committed (kanban-lint failed)"
 git add state/ >/dev/null 2>&1
 if [ "$board_ok" != 1 ]; then
   git reset -q -- "$board" >/dev/null 2>&1
@@ -263,7 +365,7 @@ git diff --cached --quiet 2>/dev/null && exit 0   # nothing changed
 git -c user.name="${GIT_AUTHOR_NAME:-Claude}" \
     -c user.email="${GIT_AUTHOR_EMAIL:-noreply@anthropic.com}" \
     -c commit.gpgsign=false \
-    commit -q -m "State: $work_repo session ${sid:0:8} ($today)" >/dev/null 2>&1 || exit 0
+    commit -q -m "State: $work_repo session ${sid:0:8} ($today)" >/dev/null 2>&1 || { set_verdict "state-repo commit failed"; exit 0; }
 
 for attempt in 1 2; do
   timeout 120 git pull --rebase --autostash -q >/dev/null 2>&1
@@ -272,4 +374,8 @@ for attempt in 1 2; do
   fi
   sleep $((attempt * 3))
 done
+# The optimistic verdict is now known to be wrong. Correcting it leaves the
+# checkpoint one commit behind the state repo -- the next Stop carries both
+# the correction and this commit.
+set_verdict "state-repo push failed"
 exit 0

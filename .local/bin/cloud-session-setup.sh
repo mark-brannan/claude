@@ -58,6 +58,7 @@ INSTALL="
 .claude/skills/wrapup/SKILL.md
 .claude/skills/worklist/SKILL.md
 .claude/skills/sweep/SKILL.md
+.claude/skills/resume/SKILL.md
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq
@@ -91,6 +92,7 @@ INSTALL="
 .local/bin/metrics-preview.sh
 .local/bin/prose-budget
 .local/bin/worklist
+.local/bin/resume-list
 "
 
 # --- what is wholly owned by this installer -------------------------------

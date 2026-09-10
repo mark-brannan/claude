@@ -1,0 +1,176 @@
+#!/bin/sh
+# resume-list -- the unconsumed resume blocks across every session's
+# auto-checkpoint, newest first.
+#
+# Why: sessions were being wrapped up every time, because a hand-off prompt in
+# a chat is gone the moment the chat is. The Stop hook already writes one
+# checkpoint per session; a resume block is four lines the *model* writes into
+# its own checkpoint saying what the next session should do. This is the view
+# over them. Ruled 2026-09-09 (Solace): resume from a per-session block, never
+# a single pointer file, because parallel sessions in one repo are normal --
+# one file per session is also why two of them never conflict on push.
+#
+#   resume-list [--brief] [--files]
+#
+# Read-only, always. Marking a block consumed is an edit to the checkpoint and
+# belongs to /resume, not here; --files prints the paths so it can do that.
+#
+# A block is shown until one of three things is true:
+#   - a session resumed it (a `- consumed:` line in the block);
+#   - its branch has no commits ahead of the default branch;
+#   - its PR is merged.
+# Anything that cannot be checked -- the worktree is gone, gh is absent or
+# unauthenticated -- keeps its row and says so in Notes. Dropping a block
+# because we could not look is how work gets lost, which is the thing this
+# exists to stop.
+#
+# CONVENIENCE: exit 0 always.
+set -u
+
+usage() { printf 'usage: resume-list [--brief] [--files]\n'; }
+
+brief=0; files=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --brief) brief=1 ;;
+    --files) files=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'resume-list: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+self=$0
+case $self in */*) ;; *) self=$(command -v "$self" 2>/dev/null || printf '%s' "$self") ;; esac
+self_dir=$(cd "$(dirname "$self")" 2>/dev/null && pwd)
+
+# The state dir is lib-state.sh's answer, never a guess: every hook that
+# writes a checkpoint asks the same function, so a machine without the private
+# repo degrades identically here.
+lib=""
+for c in "$self_dir/../../.claude/hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
+  [ -f "$c" ] && { lib=$c; break; }
+done
+if [ -z "$lib" ]; then
+  [ "$files" = 1 ] || printf 'Resume: unavailable (lib-state.sh not found)\n'
+  exit 0
+fi
+# shellcheck disable=SC1090
+. "$lib"
+auto="$(state_dir)/log/auto"
+if [ ! -d "$auto" ]; then
+  [ "$files" = 1 ] || printf 'Resume: none\n'
+  exit 0
+fi
+
+have_gh=1; command -v gh >/dev/null 2>&1 || have_gh=0
+now=$(date +%s)
+
+# Portable mtime: GNU stat, then BSD stat. A machine with neither prints the
+# row with an unknown age rather than losing it.
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || printf ''; }
+
+# Age as one short token: 4m, 3h, 6d.
+age_of() {
+  [ -n "$1" ] || { printf '?'; return; }
+  s=$((now - $1))
+  [ "$s" -lt 0 ] && s=0
+  if [ "$s" -lt 3600 ]; then printf '%dm' $((s / 60))
+  elif [ "$s" -lt 172800 ]; then printf '%dh' $((s / 3600))
+  else printf '%dd' $((s / 86400)); fi
+}
+
+field() {  # field <file> <name> -- the value of "- <name>: ..." inside ## Resume
+  awk -v k="$2" '
+    /^## Resume[[:space:]]*$/ { f = 1; next }
+    f && /^## / { exit }
+    f && index($0, "- " k ":") == 1 { print substr($0, length(k) + 4); exit }
+  ' "$1" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+esc() { printf '%s' "$1" | sed 's/|/\\|/g'; }
+cut80() { if [ "$brief" = 1 ]; then printf '%s' "$1" | cut -c1-77; else printf '%s' "$1"; fi; }
+
+# --- collect ---------------------------------------------------------------
+# One record per line, unit-separator (\037) delimited: mtime path branch
+# next model effort repo worktree note. Not a tab: tab is IFS whitespace, so
+# `read` would collapse an empty field's two adjacent separators into one and
+# shift every later column.
+sep=$(printf '\037')
+recs=""
+for f in "$auto"/*.md; do
+  [ -f "$f" ] || continue
+  next=$(field "$f" next)
+  [ -n "$next" ] || continue                       # no block in this checkpoint
+  [ -n "$(field "$f" consumed)" ] && continue      # a session already took it
+
+  branch=$(sed -n '1s/.*@ `\(.*\)`.*/\1/p' "$f" 2>/dev/null)
+  repo=$(sed -n '1s/^# Auto-checkpoint — \(.*\) @ .*/\1/p' "$f" 2>/dev/null)
+  [ -n "$branch" ] || branch="?"
+  [ -n "$repo" ] || repo="?"
+  work=$(sed -n 's/^- worktree `\(.*\)`$/\1/p' "$f" 2>/dev/null | head -1)
+
+  note=""
+  drop=0
+  if [ -n "$work" ] && [ -d "$work" ]; then
+    base=""
+    for cand in "$(git -C "$work" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)" \
+                origin/main origin/master; do
+      [ -n "$cand" ] || continue
+      git -C "$work" rev-parse --verify -q "$cand" >/dev/null 2>&1 && { base=$cand; break; }
+    done
+    if [ -n "$base" ]; then
+      ahead=$(git -C "$work" rev-list --count "$base..$branch" 2>/dev/null || printf '')
+      case "${ahead:-}" in
+        0) drop=1 ;;                               # nothing ahead: landed or empty
+        '') note="branch not found in the worktree" ;;
+      esac
+    else
+      note="no default branch to compare against"
+    fi
+    if [ "$drop" = 0 ] && [ "$have_gh" = 1 ]; then
+      if st=$( (cd "$work" && gh pr list --head "$branch" --state merged --limit 1 --json number) 2>/dev/null ); then
+        case "$st" in ''|'[]') ;; *) drop=1 ;; esac   # its PR merged
+      else
+        note="${note:+$note; }PR state unverified (gh)"
+      fi
+    elif [ "$drop" = 0 ]; then
+      note="${note:+$note; }PR state unverified (no gh)"
+    fi
+  else
+    note="worktree gone"
+  fi
+  [ "$drop" = 1 ] && continue
+
+  recs="$recs$(mtime "$f")$sep$f$sep$branch$sep$next$sep$(field "$f" model)$sep$(field "$f" effort)$sep$repo$sep${work:-?}$sep$note
+"
+done
+
+recs=$(printf '%s' "$recs" | grep -v '^$' | sort -rn)
+
+# --- render ----------------------------------------------------------------
+if [ -z "$recs" ]; then
+  [ "$files" = 1 ] || printf 'Resume: none\n'
+  exit 0
+fi
+
+if [ "$files" = 1 ]; then
+  printf '%s\n' "$recs" | awk -F "$sep" -v OFS='\t' '{print $3, $2}'
+  exit 0
+fi
+
+total=$(printf '%s\n' "$recs" | grep -c '^')
+limit=8; [ "$brief" = 1 ] && limit=5
+printf 'Resume, showing %s of %s\n\n' "$( [ "$total" -gt "$limit" ] && echo "$limit" || echo "$total" )" "$total"
+printf '| Branch | Next step | Age | Model | Notes |\n|---|---|---|---|---|\n'
+printf '%s\n' "$recs" | head -n "$limit" | while IFS="$sep" read -r mt _path branch next model effort repo work note; do
+  m=$model
+  [ -n "$effort" ] && m="${m:+$m · }$effort"
+  notes="$repo"
+  [ "$work" != "?" ] && notes="$notes · $work"
+  [ -n "$note" ] && notes="$notes · $note"
+  printf '| `%s` | %s | %s | %s | %s |\n' \
+    "$(esc "$branch")" "$(esc "$(cut80 "$next")")" "$(age_of "$mt")" "$(esc "${m:-?}")" "$(esc "$notes")"
+done
+[ "$total" -gt "$limit" ] && printf '| +%s more | | | | run `resume-list` |\n' $((total - limit))
+exit 0

@@ -11,6 +11,26 @@ repo — every Stop, unprompted. Don't redo any of that by hand and don't wait
 to be asked. This skill covers what only you can write: what the session
 meant, what is still open, and how the next one starts.
 
+## 0. Should this session wrap up at all
+
+Check first, every time. A wrap-up costs a log, a sweep and a prompt, and it
+was being paid every session — including sessions whose work already had a
+home, where all it produced was a second copy of what GitHub held.
+
+Read the verdict line at the top of this session's auto-checkpoint
+(`state/global/log/auto/<date>-<repo>-<id>.md`, written by the Stop hook):
+
+- **`archivable`** — the branch has a PR or a pointer, the worktree is clean,
+  nothing is unpushed, the state repo pushed — **and** every open loop has a
+  home (an issue, a PR or a card): say so in one line, name where the work
+  lives, and **stop**. No log, no hand-off prompt. Archivable means archive.
+- **`not archivable: <reasons>`**, or a loop with no home: continue below.
+  The reasons name what to fix; fixing them is usually cheaper than the
+  wrap-up and sometimes turns it into an archive.
+
+If the session's only remaining need is "the next session should start here",
+that is a resume block (`/resume`, four lines), not a wrap-up.
+
 ## 1. Where state lands
 
 Session state lives in the private repo `~/claude_prompts_scratch`, under
@@ -51,8 +71,23 @@ format: `/card-write`.
 
 ## 4. Hand-off prompt
 
-When the session ends with work still to do, write the prompt that starts
-the next one. It must:
+**Look for the home first.** Before writing anything, find the PR or issue
+that already carries this work — the PR on the branch, the issue the session
+was working, the card that pointed at it. If there is one:
+
+- the hand-off is one line, `continue <link>`, and nothing else. A fresh
+  prompt restating what the PR body and the issue already say is a second
+  copy of both, and the copies drift;
+- what the session *learned* — what was tried and abandoned, what the next
+  reader would otherwise redo — goes as a **comment on that PR or issue**,
+  where the person who picks it up is already looking. Not in a prompt they
+  would have to be handed separately.
+
+A fresh prompt is for work with **no home**: nothing on GitHub carries it. If
+that is the case, ask why not first — a pointer card or an issue is usually
+the right artefact, and then the hand-off is `continue <link>` again.
+
+When you do write one, it must:
 
 - be **ready to paste** — no "as discussed", no context the reader has to
   supply;

@@ -335,5 +335,18 @@ cd "$S/repo" || exit 1
 # --- board edge: no kanban ------------------------------------------------------------------
 mv "$S/state/state/global/kanban.md" "$S/kb.bak"; run; has 'missing board named' '^Board: no kanban.md at'; mv "$S/kb.bak" "$S/state/state/global/kanban.md"
 
+# --- the resume bucket is first (dotfiles#110) ------------------------------------
+run
+has 'resume bucket present' '^Resume: none$'
+eq 'resume is the first bucket' 'Resume: none' \
+  "$(printf '%s\n' "$OUT" | grep -nE '^(Resume|Needs ruling|Solace|Queued|Ready|Blocked|Untriaged|Stranded)' | head -1 | cut -d: -f2-)"
+mkdir -p "$S/state/state/global/log/auto"
+{ printf '# Auto-checkpoint — alpha @ `claude/x`\n\n**Verdict:** archivable\n\n- worktree `%s`\n\n' "$S/repo"
+  printf '## Resume\n\n- next: Finish the thing\n- link: o/alpha#10\n- model: opus\n- effort: high\n'
+} > "$S/state/state/global/log/auto/2026-09-09-alpha-abcd1234.md"
+run
+has 'a real block shows in worklist' '\| `claude/x` \| Finish the thing \|'
+rm -rf "$S/state/state/global/log"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

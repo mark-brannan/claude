@@ -32,11 +32,30 @@
 # GATE: no jq, no gh, gh failing or unauthenticated -> block once saying the
 # branch could not be verified. A guard that goes quiet when it cannot look is
 # indistinguishable from one that looked and found nothing.
+#
+#   branch-home-gate.sh --check [dir]
+#
+# Second entry point, read-only: answers "does this branch have a home" on
+# stdout and exits 0, without ever blocking and without touching the
+# once-per-session marker. stop-continuity.sh calls it for the archive verdict
+# (dotfiles#110) so the verdict and the gate can never disagree about what a
+# home is -- one implementation, two callers. Prints exactly one line:
+#   home: <why>          a PR, a card or an issue names it; or nothing to strand
+#   none                 ahead of the default branch with no home
+#   unverified: <why>    could not look (no gh, not authenticated, no jq)
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=lib-state.sh
 . "$HERE/lib-state.sh"
+
+CHECK=0; check_cwd=
+if [ "${1:-}" = "--check" ]; then CHECK=1; check_cwd=${2:-$PWD}; fi
+# In --check mode every path that would exit quietly (default branch, nothing
+# ahead, no origin, not a repo) is a pass: there is nothing to strand, so
+# nothing there blocks an archive. Silence would read as "no answer" to the
+# caller, so say it.
+quiet_exit() { [ "$CHECK" = 1 ] && printf 'home: %s\n' "${1:-nothing to strand}"; exit 0; }
 
 # json_str(), block() and names_branch() come from lib-state.sh, sourced above.
 
@@ -46,33 +65,40 @@ run_to() {
   if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi
 }
 
-payload=$(cat) || exit 0
-
-# stop_hook_active is the last-resort loop breaker.
-if command -v jq >/dev/null 2>&1; then
-  active=$(printf '%s' "$payload" | jq -r '.stop_hook_active // false' 2>/dev/null)
+if [ "$CHECK" = 1 ]; then
+  active=false; sid=; cwd=$check_cwd
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'unverified: jq is not installed here\n'; exit 0
+  fi
 else
-  active=false
-  printf '%s' "$payload" | grep -q '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && active=true
-  [ "$active" = true ] && exit 0
-  block "branch-home-gate: jq is missing here, so this session's branch could not be checked for a PR or a pointer card. This is a gate and fails closed: open the PR, or file a pointer card naming the branch and what it holds (/card-write), then end the turn again."
-fi
+  payload=$(cat) || exit 0
 
-sid=$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)
-cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)
-[ -n "$sid" ] || exit 0
+  # stop_hook_active is the last-resort loop breaker.
+  if command -v jq >/dev/null 2>&1; then
+    active=$(printf '%s' "$payload" | jq -r '.stop_hook_active // false' 2>/dev/null)
+  else
+    active=false
+    printf '%s' "$payload" | grep -q '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && active=true
+    [ "$active" = true ] && exit 0
+    block "branch-home-gate: jq is missing here, so this session's branch could not be checked for a PR or a pointer card. This is a gate and fails closed: open the PR, or file a pointer card naming the branch and what it holds (/card-write), then end the turn again."
+  fi
+
+  sid=$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)
+  cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)
+  [ -n "$sid" ] || exit 0
+fi
 [ -n "$cwd" ] || cwd=$PWD
 
 # ------------------------------------------------------------- quiet path
-work_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
-[ -n "$work_root" ] || exit 0
-branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null) || exit 0
+work_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || quiet_exit "not a git repo"
+[ -n "$work_root" ] || quiet_exit "not a git repo"
+branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null) || quiet_exit
 case "$branch" in
-  ''|HEAD|main|master) exit 0 ;;   # default branch or detached: nothing to strand
+  ''|HEAD|main|master) quiet_exit "on \`$branch\`" ;;   # default branch or detached
 esac
 # No origin means nothing was published and nothing can be: a purely local
 # repo has no orphan to leave behind.
-git -C "$work_root" remote get-url origin >/dev/null 2>&1 || exit 0
+git -C "$work_root" remote get-url origin >/dev/null 2>&1 || quiet_exit "no origin remote"
 
 # The base to measure "ahead" against: origin's default branch, however it is
 # named here.
@@ -82,19 +108,23 @@ for cand in "$(git -C "$work_root" symbolic-ref -q --short refs/remotes/origin/H
   [ -n "$cand" ] || continue
   if git -C "$work_root" rev-parse --verify -q "$cand" >/dev/null 2>&1; then base=$cand; break; fi
 done
-[ -n "$base" ] || exit 0
-[ "$base" = "origin/$branch" ] && exit 0
+[ -n "$base" ] || quiet_exit "no default branch to compare against"
+[ "$base" = "origin/$branch" ] && quiet_exit "is the default branch"
 ahead=$(git -C "$work_root" rev-list --count "$base..HEAD" 2>/dev/null || echo 0)
-[ "${ahead:-0}" -gt 0 ] 2>/dev/null || exit 0
+[ "${ahead:-0}" -gt 0 ] 2>/dev/null || quiet_exit "no commits ahead of $base"
 
-# One file per session: the once-per-session marker (a line beginning
-# "blocked") for the checkpoint.
-rec="${TMPDIR:-/tmp}/claude-branch-home.$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_-' '_')"
-note() { printf '%s\n' "$1" >> "$rec" 2>/dev/null || true; }
+if [ "$CHECK" = 1 ]; then
+  note() { :; }
+else
+  # One file per session: the once-per-session marker (a line beginning
+  # "blocked") for the checkpoint.
+  rec="${TMPDIR:-/tmp}/claude-branch-home.$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_-' '_')"
+  note() { printf '%s\n' "$1" >> "$rec" 2>/dev/null || true; }
 
-# --------------------------------------------------------- already blocked
-[ -f "$rec" ] && grep -q '^blocked' "$rec" 2>/dev/null && exit 0
-[ "$active" = true ] && exit 0
+  # ------------------------------------------------------- already blocked
+  [ -f "$rec" ] && grep -q '^blocked' "$rec" 2>/dev/null && exit 0
+  [ "$active" = true ] && exit 0
+fi
 
 # ------------------------------------------------------------ find a home
 # 0 found, 1 none, 2 could not verify. The board is a local file, so it is
@@ -135,6 +165,13 @@ if [ -z "$found" ] && [ -z "$unverified" ]; then
   else
     unverified="gh issue list failed (not authenticated here?)"
   fi
+fi
+
+if [ "$CHECK" = 1 ]; then
+  if [ -n "$found" ]; then printf 'home: %s\n' "$found"
+  elif [ -n "$unverified" ]; then printf 'unverified: %s\n' "$unverified"
+  else printf 'none\n'; fi
+  exit 0
 fi
 
 [ -n "$found" ] && exit 0

@@ -323,6 +323,19 @@ board_path() {
 
 count_lines() { [ -n "$1" ] || { echo 0; return; }; printf '%s\n' "$1" | grep -c '^'; }
 
+# resume_section -- the unconsumed resume blocks, printed first because a
+# session that has one starts from it and never reads the rest of this view
+# (dotfiles#110). The table is resume-list's, not rebuilt here: one home for
+# the parsing and the drop rules.
+resume_section() {
+  rl=""
+  for c in "$self_dir/resume-list" "$HOME/.local/bin/resume-list"; do
+    [ -x "$c" ] && { rl=$c; break; }
+  done
+  [ -n "$rl" ] || { printf 'Resume: unavailable (resume-list not found)\n'; return 0; }
+  if [ "$brief" = 1 ]; then sh "$rl" --brief; else sh "$rl"; fi
+}
+
 # Pushed branches with no open PR, one repo object per record, each carrying
 # its candidate branch names and its open issues' title+body (for the
 # pointer check below).
@@ -442,6 +455,9 @@ render() {
     fi
     echo "$stamp"
     [ -n "$3" ] && echo "$3"
+    echo
+    resume_section
+    echo
     if [ -n "$1" ]; then
       # The buckets come out of jq in one piece with a @@RULINGS@@ marker in
       # them; the rulings are spliced in here rather than by awk, because a
