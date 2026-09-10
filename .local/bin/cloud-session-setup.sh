@@ -90,6 +90,7 @@ INSTALL="
 .claude/hooks/public-issue-guard.sh
 .claude/hooks/fixtures
 .local/bin/metrics-preview.sh
+.local/bin/metrics-breakdown.sh
 .local/bin/prose-budget
 .local/bin/worklist
 .local/bin/resume-list

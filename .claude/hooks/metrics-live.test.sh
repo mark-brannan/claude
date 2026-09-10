@@ -76,10 +76,12 @@ turn "$TP" 152000
 out2=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 out3=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 
-has  'first crossing names 100k'      'past 100k' "$(msg "$out1")"
+has  'first crossing names 100k'      '103k/100k' "$(msg "$out1")"
 hasnt 'first crossing does not propose stopping' 'propose stopping' "$(msg "$out1")"
-has  'second crossing names 150k'     'past 150k' "$(msg "$out2")"
+has  'second crossing names 150k'     '152k/150k' "$(msg "$out2")"
 has  'second crossing proposes stopping' 'propose stopping' "$(msg "$out2")"
+has  'first crossing shows one ⛁ glyph'  '⛁ 103k' "$(msg "$out1")"
+has  'second crossing shows two ⛁ glyphs' '⛁⛁ 152k' "$(msg "$out2")"
 t    'nothing fires a third time'     '' "$(msg "$out3")"
 
 CROSS="$STATE/metrics/crossings/$SID.jsonl"
@@ -305,7 +307,7 @@ o=$(S3); t 'and stays quiet after' '' "$(printf '%s' "$o" | jq -r '.decision // 
 TP4="$SCRATCH/cross.jsonl"; turn "$TP4" 103000
 o=$(payload "$TP4" stop4 "$REPO" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
 t   'a context crossing at Stop blocks' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
-has 'and the reason carries the crossing line' '⛁ context 103k — past 100k' \
+has 'and the reason carries the crossing line' '⛁ 103k/100k' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
 
 # A dirty tree is not archivable, so nothing blocks however late it is.
@@ -333,6 +335,68 @@ if [ -f "$FIX" ]; then
 else
   printf 'SKIP: %s is missing\n' "$FIX"
 fi
+
+# --- 5. the ladder extends past the configured lines, forever ----------------
+# dotfiles#132: NAG_CONTEXT_LINES stops at 200k by default, but a session that
+# blows straight past it must keep getting a line every NAG_CONTEXT_STEP,
+# not go quiet. A single jump to 320k crosses five rungs at once (100k, 150k,
+# 200k, 250k, 300k) and the glyph count escalates with each: the fifth rung is
+# capped at 5 ⛁ and switches to "(xN)".
+TP5="$SCRATCH/ladder.jsonl"; SID5=ladder
+turn "$TP5" 350000
+out5=$(payload "$TP5" "$SID5" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has 'the ladder reaches past the last configured line' '350k/350k' "$(msg "$out5")"
+has 'and the glyph count is capped, with the total after it' \
+    '⛁⛁⛁⛁⛁\(x6\)' "$(msg "$out5")"
+t 'six rungs cross in one jump, in order' \
+  "$(printf '100000\n150000\n200000\n250000\n300000\n350000')" \
+  "$(jq -r 'select(.kind == "context") | .at' "$STATE/metrics/crossings/$SID5.jsonl" 2>/dev/null)"
+
+# --- 6. model injection only from the stop threshold up -----------------------
+# Below NAG_CONTEXT_STOP_AT (150k default) the crossing is screen-only. At or
+# above it, the first crossing offers a stopping point; every crossing after
+# that says plainly it was already raised, instead of repeating the offer.
+TP6="$SCRATCH/inject.jsonl"; SID6=inject
+turn "$TP6" 103000
+ctx6a=$(payload "$TP6" "$SID6" "$SCRATCH" \
+        | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+t 'below the stop threshold, nothing reaches the model' '' "$ctx6a"
+
+turn "$TP6" 152000
+ctx6b=$(payload "$TP6" "$SID6" "$SCRATCH" \
+        | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+has 'the first crossing at/above the stop line offers to stop' \
+    'a stopping point' "$ctx6b"
+
+turn "$TP6" 260000
+ctx6c=$(payload "$TP6" "$SID6" "$SCRATCH" \
+        | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+has  'a later crossing says it was already raised'  'Already raised at 150k' "$ctx6c"
+hasnt 'and does not repeat the stopping-point offer' 'a stopping point'      "$ctx6c"
+
+# A single call can cross more than one stop-eligible rung at once (a big
+# tool result landing between prompts). That must still emit exactly one
+# model line, not one per rung -- otherwise every rung but the first claims
+# a distinct earlier occasion nobody acted on, when they all just fired now.
+TP6b="$SCRATCH/inject2.jsonl"; SID6b=inject2
+turn "$TP6b" 300000
+ctx6d=$(payload "$TP6b" "$SID6b" "$SCRATCH" \
+        | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+t 'one jump across three stop-eligible rungs still sends one line' \
+  1 "$(printf '%s' "$ctx6d" | grep -c 'stopping point\|Already raised')"
+
+# --- 7. the sitting line carries git state once #129 makes it safe to ---------
+# dotfiles#132's third deferred item, reconciled now that #129 landed: a dirty
+# or unpushed tree is exactly the fact the "stop here" verdict needs. A fresh
+# repo, not $REPO -- that one already carries a leftover "dirty" file from the
+# archivable tests above, and this is checking the exact count.
+REPO7="$SCRATCH/repo7"; mkdir -p "$REPO7"
+git -C "$REPO7" init -q -b feat/nags
+git -C "$REPO7" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+TP7="$SCRATCH/sit7.jsonl"; turn "$TP7" 1000
+: > "$REPO7/scratch-file"
+o7=$(clock 61 10; payload "$TP7" sit7 "$REPO7" | bash "$HOOK" prompt 0 2>&1)
+has 'the sitting line shows the dirty tree' '⎇ 1~' "$(msg "$o7")"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
