@@ -305,14 +305,15 @@ t 'a dirty tree is never archivable' '' "$(printf '%s' "$o4" | jq -r '.decision 
 FIX="$(cd "$(dirname "$0")" && pwd)/fixtures/friction-contentious.jsonl"
 if [ -f "$FIX" ]; then
   ctx=$(payload "$FIX" fric "$SCRATCH" \
-        | METRICS_FRICTION_TURNS=200 bash "$HOOK" prompt 0 2>&1 \
+        | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 \
         | jq -r '.hookSpecificOutput.additionalContext // ""')
   has 'the friction line reaches the model'  'corrections or rebukes' "$ctx"
   has 'and names the capacity rule'          'capacity rule'          "$ctx"
   ctx2=$(payload "$FIX" fric "$SCRATCH" \
-         | METRICS_FRICTION_TURNS=200 bash "$HOOK" prompt 0 2>&1 \
+         | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 \
          | jq -r '.hookSpecificOutput.additionalContext // ""')
-  t 'and fires once, not every turn' '' "$ctx2"
+  t 'and fires once, not every turn' '0' \
+    "$(printf '%s' "$ctx2" | grep -c 'corrections or rebukes' | tr -d ' ')"
 else
   printf 'SKIP: %s is missing\n' "$FIX"
 fi
@@ -333,26 +334,26 @@ t 'six rungs cross in one jump, in order' \
   "$(printf '100000\n150000\n200000\n250000\n300000\n350000')" \
   "$(jq -r 'select(.kind == "context") | .at' "$STATE/metrics/crossings/$SID5.jsonl" 2>/dev/null)"
 
-# --- 6. model injection only from the stop threshold up -----------------------
-# Below NAG_CONTEXT_STOP_AT (150k default) the crossing is screen-only. At or
-# above it, the first crossing offers a stopping point; every crossing after
-# that says plainly it was already raised, instead of repeating the offer.
+# --- 6. model injection rides its own context ladder -------------------------
+# Below the first rung, nothing reaches the model. At or above it, the first
+# prompt offers a stopping point and every prompt after says it was already
+# raised.
 TP6="$SCRATCH/inject.jsonl"; SID6=inject
 turn "$TP6" 103000
 ctx6a=$(payload "$TP6" "$SID6" "$SCRATCH" \
-        | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
-t 'below the stop threshold, nothing reaches the model' '' "$ctx6a"
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+t 'below the first model rung, nothing reaches the model' '' "$ctx6a"
 
 turn "$TP6" 152000
 ctx6b=$(payload "$TP6" "$SID6" "$SCRATCH" \
-        | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 has 'the first crossing at/above the stop line offers to stop' \
     'a stopping point' "$ctx6b"
 
 turn "$TP6" 260000
 ctx6c=$(payload "$TP6" "$SID6" "$SCRATCH" \
-        | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
-has  'a later crossing says it was already raised'  'Already raised at 150k' "$ctx6c"
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+has  'a later crossing says it was already raised'  'Already raised at 125k' "$ctx6c"
 hasnt 'and does not repeat the stopping-point offer' 'a stopping point'      "$ctx6c"
 
 # A single call can cross more than one stop-eligible rung at once (a big
@@ -365,6 +366,68 @@ ctx6d=$(payload "$TP6b" "$SID6b" "$SCRATCH" \
         | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 t 'one jump across three stop-eligible rungs still sends one line' \
   1 "$(printf '%s' "$ctx6d" | grep -c 'stopping point\|Already raised')"
+
+# --- 6b. model injection: sitting clock, mirrors section 6 --------------------
+# Same shape as the context ladder, on the sitting clock; a restart of the
+# clock clears the injection with it.
+SID6e=sitmodel
+sitting "$SID6e" 40 10
+out6e=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+t 'below the first sitting rung, nothing reaches the model' '' "$(ctx "$out6e")"
+
+clock 61 10
+out6f=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has 'the first sitting crossing offers a break' \
+    'Sitting 1h01 at this machine, past 1h00. Say so and offer a break.' "$(ctx "$out6f")"
+
+clock 121 10
+out6g=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has 'a later sitting crossing names the earlier rung raised' \
+    'Already raised at 1h00' "$(ctx "$out6g")"
+hasnt 'and does not repeat the break offer' 'offer a break' "$(ctx "$out6g")"
+
+clock 5 2
+out6h=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+t 'a sitting-clock restart resets the model side too' '' "$(ctx "$out6h")"
+
+clock 61 10
+out6i=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has 'so the next real crossing offers again, not "already raised"' \
+    'past 1h00. Say so and offer a break.' "$(ctx "$out6i")"
+clock_clear
+
+# --- 6c. model injection: decision load, mirrors section 6 --------------------
+# askturn() is turn() with an assistant "ask" message, the shape
+# session-metrics.jq counts as a decision pushed to the user.
+askturn() {  # like turn(), but the assistant text is an ask
+  jq -nc --arg ts "2026-09-09T10:00:00.000Z" \
+    '{type:"assistant", timestamp:$ts, requestId:("q-" + (now|tostring)),
+      message:{model:"claude-opus-5", role:"assistant",
+               content:[{type:"text", text:"Which way should this go?"}],
+               usage:{input_tokens:40000, output_tokens:10,
+                      cache_read_input_tokens:0, cache_creation_input_tokens:0}}}' >> "$1"
+  jq -nc --arg ts "2026-09-09T10:00:00.000Z" \
+    '{type:"queue-operation", operation:"enqueue", timestamp:$ts,
+      sessionId:"t", content:"the first one"}' >> "$1"
+}
+TP6c="$SCRATCH/decmodel.jsonl"; SID6c=decmodel
+turn "$TP6c" 40000
+ctx6j=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+t 'below the first decision rung, nothing reaches the model' '' "$ctx6j"
+
+for _ in 1 2 3; do askturn "$TP6c"; done
+ctx6k=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+has 'the first decision crossing offers to front-load or card' \
+    '3 decisions pushed to Solace this session .* past 3\. Front-load or card the rest\.' "$ctx6k"
+
+for _ in 1 2; do askturn "$TP6c"; done
+ctx6l=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+has 'a later decision crossing names the earlier rung raised' \
+    'past 5\. Already raised at 3 and not acted on\.' "$ctx6l"
+hasnt 'and does not repeat the front-load offer' 'Front-load or card the rest\.' "$ctx6l"
 
 # --- 7. the sitting line carries git state once #129 makes it safe to ---------
 # dotfiles#132's third deferred item, reconciled now that #129 landed: a dirty

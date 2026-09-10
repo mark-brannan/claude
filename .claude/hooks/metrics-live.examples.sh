@@ -49,6 +49,56 @@ TP4="$SCRATCH/d.jsonl"; turn "$TP4" 260000
 out=$(payload "$TP4" d "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 printf '  additionalContext: %s\n' "$(ctx "$out")"
 
+show "model injection: same session, next prompt while still over (no new rung)"
+turn "$TP3" 153000
+out=$(payload "$TP3" c "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+printf '  additionalContext: %s\n' "$(ctx "$out")"
+
+show "model injection: sitting clock past 1h (screen + model)"
+TP5="$SCRATCH/f.jsonl"; turn "$TP5" 40000
+export METRICS_MODEL_CONTEXT_LINES=999999999
+now=$(date +%s)
+out=$(payload "$TP5" f "$SCRATCH" | METRICS_SIT_EVERY_MIN=60 bash "$HOOK" prompt 0 2>&1)
+SITFILE=$(find "$HOME" -name sitting.json 2>/dev/null | head -1)
+sed -i "s/\"sitting_start\": *[0-9]*/\"sitting_start\": $((now - 4300))/" \
+  "$SITFILE" 2>/dev/null
+turn "$TP5" 41000
+out=$(payload "$TP5" f "$SCRATCH" | METRICS_SIT_EVERY_MIN=60 bash "$HOOK" prompt 0 2>&1)
+printf '  screen:           %s\n' "$(msg "$out")"
+printf '  additionalContext: %s\n' "$(ctx "$out")"
+
+show "model injection: sitting past 2h, next prompt (already raised)"
+sed -i "s/\"sitting_start\": *[0-9]*/\"sitting_start\": $((now - 7400))/" \
+  "$SITFILE" 2>/dev/null
+turn "$TP5" 42000
+out=$(payload "$TP5" f "$SCRATCH" | METRICS_SIT_EVERY_MIN=60 bash "$HOOK" prompt 0 2>&1)
+printf '  screen:           %s\n' "$(msg "$out")"
+printf '  additionalContext: %s\n' "$(ctx "$out")"
+unset METRICS_MODEL_CONTEXT_LINES
+
+rm -f "$SITFILE"
+
+show "model injection: decision load past 3, then past 5"
+askturn() {  # like turn(), but the assistant text is an ask
+  jq -nc --arg ts "2026-09-09T10:00:00.000Z" \
+    '{type:"assistant", timestamp:$ts, requestId:("q-" + (now|tostring)),
+      message:{model:"claude-opus-5", role:"assistant",
+               content:[{type:"text", text:"Which way should this go?"}],
+               usage:{input_tokens:40000, output_tokens:10,
+                      cache_read_input_tokens:0, cache_creation_input_tokens:0}}}' >> "$1"
+  jq -nc --arg ts "2026-09-09T10:00:00.000Z" \
+    '{type:"queue-operation", operation:"enqueue", timestamp:$ts,
+      sessionId:"t", content:"the first one"}' >> "$1"
+}
+TP6="$SCRATCH/g.jsonl"; turn "$TP6" 40000
+for _ in 1 2 3; do askturn "$TP6"; done
+out=$(payload "$TP6" g "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+printf '  additionalContext: %s\n' "$(ctx "$out")"
+for _ in 1 2; do askturn "$TP6"; done
+out=$(payload "$TP6" g "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+printf '  additionalContext: %s\n' "$(ctx "$out")"
+rm -f "$SITFILE"
+
 show "friction crossing (committed contentious fixture)"
 FIX="$(dirname "$HOOK")/fixtures/friction-contentious.jsonl"
 if [ -f "$FIX" ]; then
