@@ -45,7 +45,10 @@ SHOW="${3:-}"               # "show" -> also print a systemMessage block
 #             starts at the first one, restarts when the gap between two of
 #             them runs past SIT_GAP_MIN (a session picked up after dinner is
 #             a new sitting, not a nine-hour one), and is never read or moved
-#             by a Stop. 60 min says stand up, 120 says stop here and wrap up
+#             by a Stop. 60 min says stand up, 120 says stop here and wrap up.
+#             The clock itself is machine-wide, not per session -- three open
+#             chats are still one chair -- while the line is reported once per
+#             session, so each chat says it where its user is reading
 #   friction  corrections and rebukes inside a window of human turns; the one
 #             line that goes to the model rather than to the screen, since the
 #             standing orders' capacity rule is what it is asking for
@@ -166,31 +169,74 @@ printf '%s\n' "$metrics" | jq -c \
 NAGF="$LIVE/$sid.nag.json"
 CROSSD="$(state_dir)/metrics/crossings"
 
-ctx_line=0; time_line=0; gate_line=0; fric_tripped=0
-sit_start=0; last_prompt=0; since_nag=0; resume_ts=0; nag_pending=0; late_nagged=0
+# The sitting clock is the one piece of this state that is NOT per session.
+# A person with three chats open is one person in one chair: when the clock
+# lived in the per-session file, every new session started its own clock at
+# zero and a four-hour afternoon spread over four chats never reached the
+# 60-minute line once. So sitting_start and last_prompt live in a single
+# machine-wide file that any session's UserPromptSubmit advances.
+#
+# Per machine, and never a record: it answers "how long has this body been at
+# this box", which does not survive being synced to another host. It is
+# gitignored in the state repo for the same reason last_activity.json was.
+#
+# Two sessions prompting in the same second can clobber each other's write.
+# The loss is bounded by the write being whole-file and atomic -- the reader
+# sees one session's clock or the other's, never a torn one -- and both are
+# writing near-identical values, so it is not worth a lock file that would
+# have to work on a machine without flock.
+SITF="$(state_dir)/metrics/sitting.json"
+
+sit_start=0; last_prompt=0
+if [ -f "$SITF" ]; then
+  IFS=$'\t' read -r sit_start last_prompt \
+    <<<"$(jq -r '[(.sitting_start // 0), (.last_prompt // 0)] | @tsv' "$SITF" 2>/dev/null)"
+fi
+[ -n "$sit_start" ] || sit_start=0
+[ -n "$last_prompt" ] || last_prompt=0
+
+save_sitting() {
+  mkdir -p "$(dirname "$SITF")" 2>/dev/null || return 0
+  jq -n --argjson ss "$sit_start" --argjson lp "$last_prompt" \
+    '{sitting_start: $ss, last_prompt: $lp}' \
+    > "$SITF.$$" 2>/dev/null \
+    && mv -f "$SITF.$$" "$SITF" 2>/dev/null || rm -f "$SITF.$$" 2>/dev/null
+}
+
+# time_line stays per session: the clock is shared, but the report of it is
+# each session's own, so a threshold is spoken once in every chat that is
+# open when it is crossed rather than once on the machine. tl_sitting is the
+# sitting_start that time_line was recorded against -- when the shared clock
+# restarts, every session's line is stale, including the ones that were not
+# the prompt that restarted it, and they must be free to speak again.
+ctx_line=0; time_line=0; tl_sitting=0; gate_line=0; fric_tripped=0
+since_nag=0; resume_ts=0; nag_pending=0; late_nagged=0
 if [ -f "$NAGF" ]; then
-  IFS=$'\t' read -r ctx_line time_line gate_line fric_tripped \
-                    sit_start last_prompt since_nag resume_ts nag_pending late_nagged \
-    <<<"$(jq -r '[(.context_line // 0), (.time_line // 0), (.gate_line // 0),
+  IFS=$'\t' read -r ctx_line time_line tl_sitting gate_line fric_tripped \
+                    since_nag resume_ts nag_pending late_nagged \
+    <<<"$(jq -r '[(.context_line // 0), (.time_line // 0), (.time_line_sitting // -1),
+                  (.gate_line // 0),
                   (if .friction_tripped then 1 else 0 end),
-                  (.sitting_start // 0), (.last_prompt // 0),
                   (if .since_nag then 1 else 0 end),
                   (.resume_ts // 0),
                   (if .nag_pending then 1 else 0 end),
                   (if .late_nagged then 1 else 0 end)] | @tsv' "$NAGF" 2>/dev/null)"
 fi
-for v in ctx_line time_line gate_line fric_tripped sit_start last_prompt \
+for v in ctx_line time_line tl_sitting gate_line fric_tripped \
          since_nag resume_ts nag_pending late_nagged; do
   [ -n "${!v}" ] || eval "$v=0"
 done
+# -1 is a nag file written before the clock moved out of it: its time_line
+# belongs to a sitting nobody can name, so it is spent rather than trusted.
+[ "$tl_sitting" -eq "$sit_start" ] || { time_line=0; tl_sitting=$sit_start; }
 
 save_nag() {
-  jq -n --argjson cl "$ctx_line" --argjson tl "$time_line" --argjson gl "$gate_line" \
-        --argjson ft "$fric_tripped" --argjson ss "$sit_start" --argjson lp "$last_prompt" \
+  jq -n --argjson cl "$ctx_line" --argjson tl "$time_line" --argjson ts "$tl_sitting" \
+        --argjson gl "$gate_line" --argjson ft "$fric_tripped" \
         --argjson sn "$since_nag" --argjson rt "$resume_ts" --argjson np "$nag_pending" \
         --argjson ln "$late_nagged" \
-    '{context_line: $cl, time_line: $tl, gate_line: $gl,
-      friction_tripped: ($ft == 1), sitting_start: $ss, last_prompt: $lp,
+    '{context_line: $cl, time_line: $tl, time_line_sitting: $ts, gate_line: $gl,
+      friction_tripped: ($ft == 1),
       since_nag: ($sn == 1), resume_ts: $rt, nag_pending: ($np == 1),
       late_nagged: ($ln == 1)}' \
     > "$NAGF.$$" 2>/dev/null \
@@ -226,6 +272,11 @@ if [ "$run_engine" -eq 1 ]; then
   # SubagentStop leaves sitting_start exactly as it found it: those fire on
   # the agent's schedule, not the user's, so a session whose first wired
   # event is a Stop must not start a clock nobody has sat down at.
+  #
+  # The gap that resets it is the gap between prompts anywhere on the
+  # machine, not in this chat: a session left idle for an hour while its
+  # neighbour was worked in has not earned a fresh clock, because the person
+  # never left the chair.
   if [ "$is_prompt" -eq 1 ]; then
     if [ "$last_prompt" -gt 0 ] \
        && [ $((now_ts - last_prompt)) -gt $((NAG_SIT_GAP_MIN * 60)) ]; then
@@ -234,6 +285,8 @@ if [ "$run_engine" -eq 1 ]; then
     fi
     last_prompt=$now_ts
     [ "$sit_start" -gt 0 ] || sit_start=$now_ts
+    tl_sitting=$sit_start
+    save_sitting
   fi
 
   IFS=$'\t' read -r ctx gates fric_win <<<"$(printf '%s\n' "$metrics" | jq -r \
@@ -266,11 +319,16 @@ if [ "$run_engine" -eq 1 ]; then
     sit_min=$(( (now_ts - sit_start) / 60 ))
     n=$(( sit_min / NAG_SIT_EVERY_MIN * NAG_SIT_EVERY_MIN ))
     if [ "$n" -ge "$NAG_SIT_EVERY_MIN" ] && [ "$n" -gt "$time_line" ]; then
-      if [ "$n" -ge $((NAG_SIT_EVERY_MIN * 2)) ]; then verdict="stop here, run /wrapup"
+      # Only "stop here" arms the Stop block. "Stand up" is a nudge to leave
+      # the chair for five minutes and come back to the same session; making
+      # it demand a resume block turned the one-hour mark into a wrap-up
+      # every hour. Two hours is the sitting clock's actual verdict.
+      if [ "$n" -ge $((NAG_SIT_EVERY_MIN * 2)) ]; then
+        verdict="stop here, run /wrapup"; since_nag=1
       else verdict="stand up"; fi
       t="⏱ sitting $(hm "$n") — context $(kfmt "$ctx"): $verdict."
       add_line "$t"; record_crossing time "$n" "$t"
-      time_line=$n; since_nag=1
+      time_line=$n
     fi
   fi
 

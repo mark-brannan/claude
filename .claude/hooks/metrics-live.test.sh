@@ -91,14 +91,24 @@ t 'both crossings are recorded, in order' \
 # The clock is wall-clock, so the way to put a session 61 minutes in is to
 # write the state file the engine reads, which is what a resumed session's
 # state actually looks like.
+# The clock is machine-wide now, so putting a session 61 minutes in means
+# writing the one shared file plus that session's own per-session state --
+# the second only to keep the context line out of the way of the assertions.
+SITF=$STATE/metrics/sitting.json
+clock() {  # clock <minutes since sitting start> <minutes since last prompt>
+  mkdir -p "$(dirname "$SITF")"
+  jq -n --argjson ss "$(( $(date +%s) - $1 * 60 ))" \
+        --argjson lp "$(( $(date +%s) - $2 * 60 ))" \
+    '{sitting_start:$ss, last_prompt:$lp}' > "$SITF"
+}
+clock_clear() { rm -f "$SITF"; }
 sitting() {  # sitting <session id> <minutes since sitting start> <minutes since last prompt>
   local n=$STATE/metrics/live/$1.nag.json
   mkdir -p "$(dirname "$n")"
-  jq -n --argjson ss "$(( $(date +%s) - $2 * 60 ))" \
-        --argjson lp "$(( $(date +%s) - $3 * 60 ))" \
-    '{context_line:200000, time_line:0, gate_line:0, friction_tripped:false,
-      sitting_start:$ss, last_prompt:$lp, since_nag:false,
-      resume_ts:0, nag_pending:false}' > "$n"
+  jq -n '{context_line:200000, time_line:0, time_line_sitting:0, gate_line:0,
+          friction_tripped:false, since_nag:false,
+          resume_ts:0, nag_pending:false}' > "$n"
+  clock "$2" "$3"
 }
 
 TP2="$SCRATCH/sit.jsonl"; turn "$TP2" 1000
@@ -122,30 +132,108 @@ has 'two hours names the exit' 'sitting 2h00 .* stop here, run /wrapup' "$(msg "
 # --- 2b. the clock belongs to the prompt -------------------------------------
 # $SCRATCH is not a git repo, so archivable() refuses and the Stop nag stays
 # out of the way; what is under test here is only the clock.
-sit_start() { jq -r '.sitting_start // 0' "$STATE/metrics/live/$1.nag.json" 2>/dev/null; }
+# 0 when the file is not there at all: no clock is a clock at zero, and the
+# assertions below are about a Stop never creating one.
+sit_start() { jq -r '.sitting_start // 0' "$SITF" 2>/dev/null || true; \
+              [ -f "$SITF" ] || printf 0; }
 
 TPS="$SCRATCH/stopfirst.jsonl"; turn "$TPS" 1000
+clock_clear
 payload "$TPS" sfirst "$SCRATCH" Stop \
   | bash "$HOOK" stop 0 show >/dev/null 2>&1
-t 'a Stop before any prompt does not start the clock' 0 "$(sit_start sfirst)"
+t 'a Stop before any prompt does not start the clock' 0 "$(sit_start)"
 
 payload "$TPS" sfirst "$SCRATCH" SubagentStop \
   | bash "$HOOK" subagentstop 0 show >/dev/null 2>&1
-t 'nor does a SubagentStop' 0 "$(sit_start sfirst)"
+t 'nor does a SubagentStop' 0 "$(sit_start)"
 
 out=$(payload "$TPS" sfirst "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 hasnt 'so the first prompt after them is minute zero' '⏱' "$(msg "$out")"
 t 'and it is the prompt that starts the clock' yes \
-  "$( [ "$(sit_start sfirst)" -gt 0 ] && echo yes || echo no )"
+  "$( [ "$(sit_start)" -gt 0 ] && echo yes || echo no )"
 
 # An hour on the clock: a Stop must neither report it nor disturb it.
 sitting quiet 61 10
-before=$(sit_start quiet)
+before=$(sit_start)
 out=$(payload "$TPS" quiet "$SCRATCH" Stop | bash "$HOOK" stop 0 show 2>&1)
 hasnt 'a Stop past the line says nothing about sitting' '⏱ sitting' "$(msg "$out")"
-t    'and leaves the clock exactly where it found it' "$before" "$(sit_start quiet)"
+t    'and leaves the clock exactly where it found it' "$before" "$(sit_start)"
 out=$(payload "$TPS" quiet "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 has  'the next prompt is what reports it' '⏱ sitting 1h00' "$(msg "$out")"
+
+# --- 2c. one clock for the machine, one report per session -------------------
+# Three chats open is still one person in one chair. sitting_start and
+# last_prompt live in a single file under the state dir's metrics directory
+# that any session's UserPromptSubmit advances; only time_line is per session,
+# so each chat says a threshold once where its reader is looking.
+TPM="$SCRATCH/multi.jsonl"; turn "$TPM" 1000
+P() { payload "$TPM" "$1" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1; }
+nag_field() { jq -r "$2" "$STATE/metrics/live/$1.nag.json" 2>/dev/null; }
+
+clock_clear
+P mA >/dev/null
+started=$(sit_start)
+t 'the first prompt anywhere starts the one clock' yes \
+  "$( [ "${started:-0}" -gt 0 ] && echo yes || echo no )"
+P mB >/dev/null
+t 'a second session id does not start a second clock' "$started" "$(sit_start)"
+t 'and no session keeps a clock of its own' '' \
+  "$(cat "$STATE"/metrics/live/m[AB].nag.json | jq -r '.sitting_start // empty')"
+
+# A prompt in either session is the same person still sitting: it advances the
+# shared last_prompt, and both sessions read the same elapsed time back.
+clock 61 10
+outA=$(P mA)
+has 'a prompt in one session reports the shared hour' '⏱ sitting 1h00' "$(msg "$outA")"
+kept=$(sit_start)
+outB=$(P mB)
+has 'and the other session reports the same hour, not zero' '⏱ sitting 1h00' "$(msg "$outB")"
+t   'neither prompt restarted the sitting' "$kept" "$(sit_start)"
+t   'the second prompt advanced the shared last_prompt' yes \
+  "$( [ "$(jq -r '.last_prompt' "$SITF")" -ge "$(( $(date +%s) - 5 ))" ] && echo yes || echo no )"
+
+# The report is per session, so each says the hour once and only once.
+t 'the line does not repeat in the session that said it' '' "$(msg "$(P mA)")"
+t 'nor in the other one'                                 '' "$(msg "$(P mB)")"
+
+# A session opened partway into someone else's sitting inherits the clock it
+# walked in on. Wall-clock time cannot be advanced inside a test, so the ten
+# minutes between mF's two prompts are expressed by rewriting the shared file
+# -- which is exactly what the other session's prompts would have left there.
+clock 50 5
+outF1=$(P mF)
+hasnt 'a session opened 50 minutes in says nothing at 50' '⏱' "$(msg "$outF1")"
+t     'and does not restart the clock it walked in on' 0 "$(nag_field mF '.time_line')"
+clock 61 5
+outF2=$(P mF)
+has 'and reports 1h00 at its next prompt' '⏱ sitting 1h00' "$(msg "$outF2")"
+has 'with the stand-up verdict, not a wrap-up' 'stand up' "$(msg "$outF2")"
+
+# A nag file written before the clock moved out of it carries a time_line
+# with no sitting to belong to. Spend it rather than trust it: the sitting it
+# was recorded in is one this machine has no record of.
+clock 61 10
+old=$STATE/metrics/live/mOld.nag.json
+jq -n --argjson ss "$(( $(date +%s) - 900 ))" \
+  '{context_line:200000, time_line:60, gate_line:0, friction_tripped:false,
+    sitting_start:$ss, last_prompt:$ss, since_nag:false,
+    resume_ts:0, nag_pending:false}' > "$old"
+has 'a pre-move nag file does not suppress the new hour' '⏱ sitting 1h00' \
+    "$(msg "$(P mOld)")"
+
+# When the shared clock restarts, every session is free to speak again, not
+# only the one whose prompt restarted it: a spent time_line belongs to the
+# sitting it was recorded in, and that sitting is over. The per-session file
+# carries that sitting's identity next to the line for exactly this.
+clock 61 10
+P mI >/dev/null
+t 'the hour is spent in that session' '' "$(msg "$(P mI)")"
+before_break=$(jq -r '.sitting_start' "$SITF")
+clock 62 10   # a different sitting, an hour into itself
+t 'which is a different sitting' no \
+  "$( [ "$before_break" = "$(jq -r '.sitting_start' "$SITF")" ] && echo yes || echo no )"
+has 'a restarted clock frees the other session to speak again' \
+    '⏱ sitting 1h00' "$(msg "$(P mI)")"
 
 # --- 3. Stop, archivable, past the line --------------------------------------
 REPO="$SCRATCH/repo"; mkdir -p "$REPO"
@@ -159,6 +247,25 @@ chmod +x "$SCRATCH/bin/gh"
 export PATH="$SCRATCH/bin:$PATH"
 
 TP3="$SCRATCH/stop.jsonl"; turn "$TP3" 1000
+
+# --- 3b. only "stop here" arms the Stop block --------------------------------
+# "Stand up" asks for five minutes out of the chair and the same session back;
+# it is not a wrap-up. Arming the block on it made every hour a demand for a
+# resume block. Two hours is the sitting clock's actual verdict, and the only
+# crossing on it that blocks. METRICS_STOP_HOUR=23 keeps the late-hour arm out
+# of the way so what is under test is the crossing alone.
+arm() {  # arm <session id> <minutes on the shared clock>
+  clock "$2" 10
+  payload "$TP3" "$1" "$REPO" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+  payload "$TP3" "$1" "$REPO" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1
+}
+o=$(arm arm1 61)
+has 'the one-hour crossing is still reported' '⏱ sitting 1h00' \
+    "$(msg "$(clock 61 10; payload "$TP3" armX "$REPO" | bash "$HOOK" prompt 0 2>&1)")"
+t 'but it does not arm the Stop block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
+o=$(arm arm2 121)
+t 'the two-hour crossing does' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
+
 S() { payload "$TP3" stop1 "$REPO" Stop \
       | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
 
