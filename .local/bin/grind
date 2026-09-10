@@ -1,0 +1,327 @@
+#!/bin/sh
+# grind -- a zero-token orchestrator that works the Ready queue one
+# `claude -p` session at a time.
+#
+# Why: no skill executes work. `sequence` routes decisions, `worklist`
+# reports, `sweep` and `reconcile` prune the record. This is the one that
+# does the work, and because it is a script rather than a model, measuring
+# and capping spend is free. Ruled 2026-09-09 (Solace).
+#
+# Per Ready item, top (lowest issue number) first:
+#   1. A fresh worktree on a new branch, named after the item.
+#   2. One `claude -p --output-format json --max-budget-usd <item cap>
+#      --model <m> --effort <e>` with the issue body (plus a short contract
+#      appended below) as the prompt. That session does the work and opens
+#      the PR. Merging stays the human's.
+#   3. Parse the JSON result for cost and tokens; print one line: item,
+#      model, cost, tokens, running total, percent of session budget.
+#      Crossing 25/50/75% prints a louder line, once each, per session.
+#   4. A worker that decides an item needs a human ruling ends its final
+#      message with the line "GRIND_STATUS: carded" (having filed the card
+#      itself, per this repo's card-write convention) instead of guessing.
+#      grind matches that line, logs "carded", and moves to the next item
+#      without treating it as a failure.
+#   5. Pause -- print a tally and the exact resume command, then exit 0 --
+#      when: the session budget is reached, one item costs more than twice
+#      the running median, or every N items. Nothing here waits on a
+#      terminal.
+#
+# Defaults, overridable by flag: Sonnet, medium effort, $5/item, $20/session,
+# pause every 3. `--dry-run` prints the plan -- one line per Ready item, the
+# exact command that item would run -- and spends nothing.
+#
+# State (resume bookkeeping only, never committed): a JSON file per grind
+# session under $XDG_STATE_HOME/grind holding the options and which item
+# refs are already done or carded. `--resume <session>` re-reads it, skips
+# what is already accounted for, and keeps appending to the same file.
+#
+#   grind [--dry-run] [--repo owner/name] [--model <m>] [--effort <e>]
+#         [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]
+#         [--resume <session-id>]
+set -eu
+
+usage() {
+  printf 'usage: grind [--dry-run] [--repo owner/name] [--model <m>] [--effort <e>]\n'
+  printf '             [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]\n'
+  printf '             [--resume <session-id>]\n'
+}
+
+model=sonnet
+effort=medium
+item_budget=5
+session_budget=20
+pause_every=3
+dry_run=0
+repo=""
+resume_id=""
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --dry-run) dry_run=1 ;;
+    --repo) shift; repo=${1:-} ;;
+    --model) shift; model=${1:-} ;;
+    --effort) shift; effort=${1:-} ;;
+    --item-budget) shift; item_budget=${1:-} ;;
+    --session-budget) shift; session_budget=${1:-} ;;
+    --pause-every) shift; pause_every=${1:-} ;;
+    --resume) shift; resume_id=${1:-} ;;
+    -h|--help) usage; exit 0 ;;
+    -*) printf 'grind: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) printf 'grind: unexpected argument %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+command -v jq >/dev/null 2>&1 || { echo "grind: needs jq" >&2; exit 1; }
+command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }
+
+state_root=${XDG_STATE_HOME:-$HOME/.local/state}/grind
+mkdir -p "$state_root" 2>/dev/null || true
+
+# --- repo scope --------------------------------------------------------------
+cwd_repo() {
+  u=$(git remote get-url origin 2>/dev/null) || return 1
+  r=$(printf '%s' "$u" | sed -e 's#^https://github\.com/##' -e 's#^ssh://git@github\.com/##' \
+        -e 's#^git@github\.com:##' -e 's#/$##' -e 's#\.git$##')
+  [ "$r" = "$u" ] && return 1
+  printf '%s' "$r"
+}
+
+# --- state file ---------------------------------------------------------------
+# {session, repo, model, effort, item_budget, session_budget, pause_every,
+#  items: [{ref, status, cost}]}
+new_session_id() { date -u +%Y%m%dT%H%M%SZ; }
+
+if [ -n "$resume_id" ]; then
+  state_file="$state_root/$resume_id.json"
+  [ -f "$state_file" ] || { printf 'grind: no session %s at %s\n' "$resume_id" "$state_file" >&2; exit 1; }
+  session_id=$resume_id
+  repo=$(jq -r '.repo' "$state_file")
+  model=$(jq -r '.model' "$state_file")
+  effort=$(jq -r '.effort' "$state_file")
+  item_budget=$(jq -r '.item_budget' "$state_file")
+  session_budget=$(jq -r '.session_budget' "$state_file")
+  pause_every=$(jq -r '.pause_every' "$state_file")
+else
+  session_id=grind-$(new_session_id)
+  state_file="$state_root/$session_id.json"
+  [ -n "$repo" ] || repo=$(cwd_repo) || { printf 'grind: not in a GitHub repo; pass --repo owner/name\n' >&2; exit 1; }
+  if [ "$dry_run" -eq 0 ]; then
+    jq -n --arg repo "$repo" --arg model "$model" --arg effort "$effort" \
+          --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson pe "$pause_every" \
+      '{repo:$repo, model:$model, effort:$effort, item_budget:$ib, session_budget:$sb, pause_every:$pe, items:[]}' \
+      > "$state_file"
+  fi
+fi
+
+resume_cmd="grind --resume $session_id"
+
+# Worktrees are cut from the current directory's repository, so it must be
+# a checkout of $repo -- otherwise the worker is handed the wrong codebase.
+if [ "$dry_run" -eq 0 ]; then
+  here=$(cwd_repo) || here=""
+  [ "$here" = "$repo" ] \
+    || { printf 'grind: current directory is not a checkout of %s (found: %s); cd there first\n' \
+           "$repo" "${here:-no GitHub remote}" >&2; exit 1; }
+fi
+
+# refs (owner/repo#N) already accounted for from a prior run of this session,
+# delimited so a ref that is a prefix of another (e.g. #5 vs #50) can't
+# falsely match on a raw substring test.
+# Items recorded as failed keep their cost but are retried, so they are
+# excluded here.
+done_refs="|"
+[ -f "$state_file" ] && done_refs="|$(jq -r '.items[] | select(.status != "failed") | .ref' "$state_file" | tr '\n' '|')"
+
+is_done_ref() {
+  case "$done_refs" in *"|$1|"*) return 0 ;; esac
+  return 1
+}
+
+# --- fetch the Ready queue, top (lowest number) first -------------------------
+ready_json=$(gh issue list --repo "$repo" --label ready --state open --limit 100 \
+  --json number,title,body,url,labels 2>&1) \
+  || { printf 'grind: could not list issues on %s: %s\n' "$repo" "$ready_json" >&2; exit 1; }
+
+items=$(printf '%s' "$ready_json" | jq -c '
+  map(select((.labels | map(.name) | index("blocked")) == null))
+  | sort_by(.number)')
+
+count=$(printf '%s' "$items" | jq 'length')
+if [ "$count" -eq 0 ]; then
+  echo "grind: no Ready items on $repo"
+  exit 0
+fi
+
+# --- one worktree per item -----------------------------------------------------
+worktree_root=${TMPDIR:-/tmp}/grind-worktrees
+
+build_prompt() {
+  body=$1
+  printf '%s\n\n---\n' "$body"
+  printf 'Grind orchestration contract: work this item to a mergeable PR and open\n'
+  printf 'it yourself; do not merge it. If finishing it requires a ruling only the\n'
+  printf 'repo owner can make, do not guess -- file the card per this repo'"'"'s\n'
+  printf 'card-write convention, then end your final message with exactly this\n'
+  printf 'line and nothing after it: GRIND_STATUS: carded\n'
+  printf 'Otherwise end your final message with exactly: GRIND_STATUS: done\n'
+}
+
+# median <space-separated numbers> -> prints 0 when the list is empty
+median() {
+  if [ -z "$1" ]; then printf '0\n'; return; fi
+  printf '%s\n' "$1" | tr ' ' '\n' | awk 'NF' | sort -n | awk '
+    { a[NR]=$1 } END { if (NR==0) { print 0; exit }
+      if (NR % 2) print a[(NR+1)/2]; else print (a[NR/2]+a[NR/2+1])/2 }'
+}
+
+pct() { awk -v a="$1" -v b="$2" 'BEGIN { if (b == 0) { print 0 } else { printf "%.0f", (a / b) * 100 } }'; }
+fmt_usd() { awk -v v="$1" 'BEGIN { printf "$%.2f", v }'; }
+
+# Seed running_total and costs from prior-run item costs already in
+# $state_file so a --resume honors the original --session-budget as a
+# cap on the whole session, not just on this invocation.
+running_total=0
+costs=""
+if [ -f "$state_file" ]; then
+  running_total=$(jq -r '[.items[].cost] | add // 0' "$state_file")
+  costs=$(jq -r '.items[].cost' "$state_file" | tr '\n' ' ')
+fi
+
+start_percent=$(pct "$running_total" "$session_budget")
+loud_25=0; loud_50=0; loud_75=0
+[ "$start_percent" -ge 25 ] && loud_25=1
+[ "$start_percent" -ge 50 ] && loud_50=1
+[ "$start_percent" -ge 75 ] && loud_75=1
+processed_this_run=0
+
+i=0
+while [ "$i" -lt "$count" ]; do
+  item=$(printf '%s' "$items" | jq -c ".[$i]")
+  i=$((i + 1))
+  number=$(printf '%s' "$item" | jq -r '.number')
+  title=$(printf '%s' "$item" | jq -r '.title')
+  ref="$repo#$number"
+
+  is_done_ref "$ref" && continue
+
+  if [ "$dry_run" -eq 0 ]; then
+    already_reached=$(awk -v a="$running_total" -v b="$session_budget" 'BEGIN { print (a >= b) ? 1 : 0 }')
+    if [ "$already_reached" -eq 1 ]; then
+      printf 'pause: session budget reached (%s / %s). %d item(s) processed this run.\n' \
+        "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$processed_this_run"
+      printf 'resume: %s\n' "$resume_cmd"
+      exit 0
+    fi
+  fi
+
+  branch="grind-$number"
+  wt_path="$worktree_root/$number"
+
+  cmd_display="claude -p <issue $ref body> --output-format json --max-budget-usd $item_budget --model $model --effort $effort"
+
+  if [ "$dry_run" -eq 1 ]; then
+    printf '[%d/%d] %s -- %s\n' "$((i))" "$count" "$ref" "$title"
+    printf '  worktree: git worktree add -b %s %s\n' "$branch" "$wt_path"
+    printf '  command:  %s\n' "$cmd_display"
+    continue
+  fi
+
+  mkdir -p "$worktree_root"
+  git worktree prune >/dev/null 2>&1 || true
+  rm -rf "$wt_path"
+  git branch -D "$branch" >/dev/null 2>&1 || true
+  git worktree add -q -b "$branch" "$wt_path" >/dev/null 2>&1 \
+    || { printf 'grind: could not create worktree for %s -- skipping\n' "$ref" >&2; continue; }
+
+  prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')")
+  claude_rc=0
+  result_json=$( (cd "$wt_path" && printf '%s' "$prompt" | \
+    claude -p --output-format json --max-budget-usd "$item_budget" --model "$model" --effort "$effort") ) \
+    || claude_rc=$?
+
+  git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
+
+  # Unparseable/empty JSON means the worker never produced a result, so its
+  # spend is unknown: don't record it, and let --resume retry it.
+  if ! printf '%s' "$result_json" | jq -e . >/dev/null 2>&1; then
+    printf 'FAILED: %s -- %s -- claude invocation did not complete; not recorded, will retry on --resume\n' \
+      "$ref" "$title" >&2
+    continue
+  fi
+
+  cost=$(printf '%s' "$result_json" | jq -r '.total_cost_usd // 0' 2>/dev/null); cost=${cost:-0}
+  tokens=$(printf '%s' "$result_json" | jq -r '
+    ((.usage.input_tokens // 0) + (.usage.output_tokens // 0)
+     + (.usage.cache_creation_input_tokens // 0) + (.usage.cache_read_input_tokens // 0))' 2>/dev/null)
+  tokens=${tokens:-0}
+  text=$(printf '%s' "$result_json" | jq -r '.result // ""' 2>/dev/null)
+  is_error=$(printf '%s' "$result_json" | jq -r '.is_error // false' 2>/dev/null)
+
+  # A non-zero exit or an is_error result (e.g. the item cap was hit) still
+  # spent money: record the cost so the session budget stays honest, but mark
+  # it failed so --resume retries it instead of skipping it forever.
+  status=done
+  case "$text" in *"GRIND_STATUS: carded"*) status=carded ;; esac
+  if [ "$claude_rc" -ne 0 ] || [ "$is_error" = true ]; then status=failed; fi
+
+  running_total=$(awk -v a="$running_total" -v b="$cost" 'BEGIN { printf "%.4f", a + b }')
+  processed_this_run=$((processed_this_run + 1))
+  jq --arg ref "$ref" --arg status "$status" --argjson cost "$cost" \
+     '.items += [{ref:$ref, status:$status, cost:$cost}]' "$state_file" > "$state_file.tmp" \
+     && mv "$state_file.tmp" "$state_file"
+
+  percent=$(pct "$running_total" "$session_budget")
+  if [ "$status" = failed ]; then
+    printf 'FAILED: %s -- %s -- worker reported an error (%s, %s tokens, running %s / %s -- %s%%); will retry on --resume\n' \
+      "$ref" "$title" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent" >&2
+  elif [ "$status" = carded ]; then
+    printf 'carded: %s -- %s (%s, %s tokens, running %s / %s -- %s%%)\n' \
+      "$ref" "$title" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent"
+  else
+    printf '%s: %s -- %s, %s, %s tokens -- running %s / %s -- %s%%\n' \
+      "$ref" "$title" "$model" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent"
+  fi
+
+  # Independent checks so one item that crosses two lines announces both.
+  if [ "$percent" -ge 25 ] && [ "$loud_25" -eq 0 ]; then
+    loud_25=1; printf '*** 25%% of session budget spent (%s / %s) ***\n' "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")"
+  fi
+  if [ "$percent" -ge 50 ] && [ "$loud_50" -eq 0 ]; then
+    loud_50=1; printf '*** 50%% of session budget spent (%s / %s) ***\n' "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")"
+  fi
+  if [ "$percent" -ge 75 ] && [ "$loud_75" -eq 0 ]; then
+    loud_75=1; printf '*** 75%% of session budget spent (%s / %s) ***\n' "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")"
+  fi
+
+  # pause conditions, checked in this order: budget, outlier cost, cadence.
+  reached_budget=$(awk -v a="$running_total" -v b="$session_budget" 'BEGIN { print (a >= b) ? 1 : 0 }')
+  prior_median=$(median "$costs")
+  outlier=$(awk -v c="$cost" -v m="$prior_median" 'BEGIN { print (m > 0 && c > 2 * m) ? 1 : 0 }')
+  costs="$costs $cost"
+
+  if [ "$reached_budget" -eq 1 ]; then
+    printf 'pause: session budget reached (%s / %s). %d item(s) processed this run.\n' \
+      "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$processed_this_run"
+    printf 'resume: %s\n' "$resume_cmd"
+    exit 0
+  fi
+  if [ "$outlier" -eq 1 ]; then
+    printf 'pause: %s cost %s, more than twice the running median (%s). %d item(s) processed this run.\n' \
+      "$ref" "$(fmt_usd "$cost")" "$(fmt_usd "$prior_median")" "$processed_this_run"
+    printf 'resume: %s\n' "$resume_cmd"
+    exit 0
+  fi
+  if [ "$processed_this_run" -ge "$pause_every" ]; then
+    printf 'pause: %d items processed this run (pause every %d). Running total %s / %s.\n' \
+      "$processed_this_run" "$pause_every" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")"
+    printf 'resume: %s\n' "$resume_cmd"
+    exit 0
+  fi
+done
+
+if [ "$dry_run" -eq 1 ]; then
+  exit 0
+fi
+
+printf 'done: Ready queue exhausted. Running total %s / %s.\n' "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")"
