@@ -114,6 +114,17 @@ ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
     [ -n "$up" ] && [ "$up" != "0" ] && echo && echo "**$up commit(s) not pushed.**"
   fi
 
+  # branch-home-gate.sh writes one line per outcome to a per-session file
+  # under TMPDIR; this is where it becomes durable. The checkpoint is
+  # rewritten on every Stop, so the gate cannot append to it directly.
+  bh="${TMPDIR:-/tmp}/claude-branch-home.$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_-' '_')"
+  if [ -s "$bh" ]; then
+    echo
+    echo "## Branch home"
+    echo
+    sed 's/^/- /' "$bh"
+  fi
+
   dq=$(printf '%s' "$metrics" | jq -r '.decisions[] | "- (\(.type)) \(.question)"')
   if [ -n "$dq" ]; then
     echo
@@ -145,6 +156,12 @@ sc_salvage() {
   [ "${CLAUDE_STOP_COMMIT:-on}" != off ] || return 0
   # Nothing uncommitted (tracked or untracked).
   [ -n "$(git -C "$work_root" status --porcelain 2>/dev/null)" ] || return 0
+
+  # Re-read the branch: the value captured at hook start can be stale by now
+  # if anything detached HEAD since (e.g. a hand-run abandon-branch.sh), and
+  # pushing the name it used to have would put an abandoned branch straight
+  # back on the remote.
+  work_branch=$(git -C "$work_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
   # --- named refusals: something is dirty but we will not touch it ---------
   # These three cases are a provisional best-effort fallback, NOT a decided

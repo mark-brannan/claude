@@ -86,6 +86,7 @@ INSTALL="
 .claude/hooks/prose-budget-edit.sh
 .claude/hooks/kanban-lint.sh
 .claude/hooks/kanban-gate.sh
+.claude/hooks/branch-home-gate.sh
 .claude/hooks/public-issue-guard.sh
 .claude/hooks/fixtures
 .local/bin/metrics-preview.sh

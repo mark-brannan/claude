@@ -244,6 +244,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "p=$(cat); h=\"$HOME/.claude/hooks/branch-home-gate.sh\"; { [ -f \"$h\" ] && printf '%s' \"$p\" | sh \"$h\"; } || { if command -v jq >/dev/null 2>&1; then active=$(printf '%s' \"$p\" | jq -r '.stop_hook_active // false' 2>/dev/null); else active=false; printf '%s' \"$p\" | grep -q '\"stop_hook_active\"[[:space:]]*:[[:space:]]*true' && active=true; fi; [ \"$active\" = true ] || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"branch-home-gate.sh is missing from $HOME/.claude/hooks or crashed, so the branch this session worked could not be checked for a PR or a pointer card. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry; if the branch is ahead of the default branch, open the PR or file a pointer card naming the branch and what it holds, then end the turn again.\"}'; }",
+            "timeout": 60,
+            "statusMessage": "Checking this branch has a PR or a pointer card"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" stop 0 show 2>/dev/null || true"
           }
         ]
