@@ -25,6 +25,16 @@ For every card and every memo with a linked PR, issue, or ADR:
    it here.
 4. **Done cards claiming open state** — "awaiting review" a week after
    merge, "re-test after merging" past the merge.
+5. **Blocked issues past their blocker** — for every open issue labelled
+   `blocked` in the project's repos, read the body's `Blocked by` line.
+   `Blocked by owner/repo#N`: `gh issue view owner/repo#N --json state,url`
+   (or `gh pr view`) — if `CLOSED` or `MERGED`, the block is over.
+   `Blocked by <party> until <YYYY-MM-DD>`: if the date is before
+   `date -u +%F`, the wait is over. Either way relabel:
+   `gh issue edit <url> --remove-label blocked --add-label ready`, and put
+   the proof (the `state` line, or the date next to today's) in the reconcile
+   commit message and a one-line comment on the issue. A `blocked` issue with
+   no parseable `Blocked by` line is a finding to report, not a flip.
 
 A reconcile finds a mismatch between what's written and what `gh` (or the
 linked file) says. It never decides which one is right when both could be —
@@ -39,6 +49,8 @@ that's a `/sequence` card.
 - **"Pending:" tail with no contract:** don't resolve it — rewrite it as a
   proper card with input (the exact question) and output type, or hand it
   to `/sequence` if it needs judgment now.
+- **Blocked issue whose blocker is closed or dated past:** relabel `ready`,
+  proof in the commit.
 
 ## Output
 

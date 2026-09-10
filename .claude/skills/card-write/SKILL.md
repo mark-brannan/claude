@@ -53,6 +53,10 @@ GitHub home. Take the first line that fits:
 - **Agent-startable work** → an issue labelled `ready`. Unlabelled is
   untriaged, and only ever a count.
 - **Blocked** → label `blocked`, plus a body line `Blocked by owner/repo#N`.
+  For a third-party wait with no issue to point at,
+  `Blocked by <party> until <YYYY-MM-DD>` — reconcile flips it to `ready` on
+  that date unprompted, so write the date the wait is expected to end, not a
+  hope.
 - **Deferred to after 1.0** → the `1.0` milestone.
 - **A launchable session** — prompt written, model and effort sized → the
   epic file's session list; a `ready` issue when no epic owns it.

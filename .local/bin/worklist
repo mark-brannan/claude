@@ -14,6 +14,7 @@
 # reports; nothing edits.
 #
 #   worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings]
+#            [--milestone <title>]
 #
 # Repo set: the cwd repo's GitHub topic `project-<name>`, else the cwd repo
 # alone; a project name argument skips the topic lookup; --here forces the
@@ -31,9 +32,9 @@
 # CONVENIENCE: exit 0 always, except --json with nothing fetched.
 set -u
 
-usage() { printf 'usage: worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings]\n'; }
+usage() { printf 'usage: worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings] [--milestone <title>]\n'; }
 
-brief=0; fresh=0; json=0; here=0; project=""; refresh=0; marker=""; all_rulings=0
+brief=0; fresh=0; json=0; here=0; project=""; refresh=0; marker=""; all_rulings=0; milestone=""
 while [ $# -gt 0 ]; do
   case $1 in
     --brief) brief=1 ;;
@@ -41,6 +42,8 @@ while [ $# -gt 0 ]; do
     --json) json=1 ;;
     --here) here=1 ;;
     --all-rulings) all_rulings=1 ;;
+    --milestone) shift; milestone=${1:-}
+      [ -n "$milestone" ] || { printf 'worklist: --milestone needs a title\n' >&2; usage >&2; exit 2; } ;;
     --_refresh) refresh=1 ;;
     --_marker) shift; marker=${1:-} ;;
     -h|--help) usage; exit 0 ;;
@@ -259,11 +262,16 @@ def labels: [(.labels.nodes // [])[].name];
     | . + {repo: $s, lbl: labels,
            ref: ({repo:$s,number,url}|ref_link), item: (.title|cut),
            notes: (.updatedAt[:10] // "")} ] as $is
+# A milestone view is a filter over the same cache: the fetch and the cache
+# stay unscoped, so one cache serves both views.
+| ($is | if $milestone == "" then . else map(select(.milestone.title == $milestone)) end) as $is
 | ($is | map(select(.lbl|index("blocked")))) as $bl
 | ($is | map(select((.lbl|index("blocked")|not) and (.lbl|index("ready"))))) as $rd
 | ($is | map(select((.lbl|index("blocked")|not) and (.lbl|index("ready")|not)))) as $rest
-| ($rest | map(select(.milestone)) | length) as $deferred
-| ($rest | map(select(.milestone|not))) as $untri
+# In a milestone view the milestone is the scope, so nothing in it is
+# "deferred to a milestone": its unlabelled issues are the Untriaged table.
+| (if $milestone == "" then ($rest | map(select(.milestone)) | length) else 0 end) as $deferred
+| (if $milestone == "" then ($rest | map(select(.milestone|not))) else $rest end) as $untri
 | ($untri | length) as $untriaged
 | [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.defaultBranchRef.name // "main") as $def
     | [ (.data.refs.nodes // [])[] | select(.associatedPullRequests.totalCount == 0 and (.name|IN("main","master",$def)|not)
@@ -383,10 +391,12 @@ render() {
   rulings=""
   [ -n "$kb" ] && rulings=$(ruling_section "$kb" "$proj")
   {
+    ms_suffix=""
+    [ -n "$milestone" ] && ms_suffix=" (milestone: $milestone)"
     if [ -n "$proj" ]; then
-        echo "## Project '$proj' worklist"
+        echo "## Project '$proj' worklist$ms_suffix"
     else
-        echo "## (no project) worklist"
+        echo "## (no project) worklist$ms_suffix"
     fi
     echo "$stamp"
     [ -n "$3" ] && echo "$3"
@@ -394,7 +404,7 @@ render() {
       # The buckets come out of jq in one piece with a @@RULINGS@@ marker in
       # them; the rulings are spliced in here rather than by awk, because a
       # multi-line -v assignment is a syntax error in one-true-awk.
-      body=$(jq -r --arg brief "$brief" "$RENDER" "$1")
+      body=$(jq -r --arg brief "$brief" --arg milestone "$milestone" "$RENDER" "$1")
       printf '%s' "${body%%@@RULINGS@@*}"
       [ -n "$rulings" ] && printf '%s\n' "$rulings"
       printf '%s\n' "${body#*@@RULINGS@@}"
@@ -411,10 +421,19 @@ render() {
   else cat; fi
 }
 
+# emit_json <cache file> -- the cache verbatim, except that --milestone scopes
+# every record's issue nodes. Same keys, same shape, so a caller's own
+# `jq '.records[].data.issues.nodes[]'` query works with or without the flag.
+# shellcheck disable=SC2016  # jq program, not shell
+emit_json() {
+  jq --arg m "$milestone" 'if $m == "" then .
+     else .records |= map(if .data then .data.issues.nodes |= map(select(.milestone.title == $m)) else . end) end' "$1"
+}
+
 # --- main ------------------------------------------------------------------
 if [ "$have_gh" = 0 ]; then
   cache=$(find_cache)
-  [ "$json" = 1 ] && { [ -n "$cache" ] && cat "$cache" && exit 0; echo '{"error":"no gh"}'; exit 1; }
+  [ "$json" = 1 ] && { [ -n "$cache" ] && emit_json "$cache" && exit 0; echo '{"error":"no gh"}'; exit 1; }
   render "$cache" 1 "no gh -- live GitHub view unavailable${cache:+; showing the last cached view}"
   exit 0
 fi
@@ -424,7 +443,7 @@ wait_marker=""
 if [ -n "$cache" ]; then
   age=$(( now - $(jq -r .written_at "$cache") ))
   [ "$age" -gt 120 ] && spawn_refresh
-  if [ "$json" = 1 ]; then cat "$cache"; exit 0; fi
+  if [ "$json" = 1 ]; then emit_json "$cache"; exit 0; fi
   render "$cache" 1 ""
   exit 0
 fi
@@ -437,7 +456,7 @@ i=0; while [ ! -f "$wait_marker" ] && [ "$i" -lt "$cap" ]; do sleep 1; i=$((i + 
 if [ -f "$wait_marker" ]; then
   IFS="$(printf '\t')" read -r kind val < "$wait_marker"; rm -f "$wait_marker"
   if [ "$kind" = key ] && [ -f "$cache_root/$val.json" ]; then
-    [ "$json" = 1 ] && { cat "$cache_root/$val.json"; jq -e '[.records[]|select(.data)]|length > 0' "$cache_root/$val.json" >/dev/null 2>&1; exit $?; }
+    [ "$json" = 1 ] && { emit_json "$cache_root/$val.json"; jq -e '[.records[]|select(.data)]|length > 0' "$cache_root/$val.json" >/dev/null 2>&1; exit $?; }
     render "$cache_root/$val.json" 0 ""; exit 0
   fi
   [ "$json" = 1 ] && { jq -n --arg e "${val:-fetch failed}" '{error:$e}'; exit 1; }

@@ -13,6 +13,15 @@ label, tick or edit anything from here: a sweep, a reconcile and "what's
 stale" are all this command plus a report, and they never touch a board,
 epic or log.
 
+`--milestone <title>` scopes the Ready, Blocked and Untriaged buckets to open
+issues on that milestone, and stops treating it as deferred — its unlabelled
+issues become the Untriaged table with no `(deferred to a milestone: N)`
+suffix. PR buckets, stranded branches, the board sections and the `counts:`
+line are unscoped either way, and so is the cache and the fetch behind it:
+the filter is applied at render time, so one cache serves both views.
+`--json` applies the same filter to every record's issue nodes and changes
+nothing else.
+
 ## Output shape
 
 The script prints it as markdown; don't rewrite it into another format!
@@ -33,7 +42,7 @@ Solace's turn             PRs ready for her: not draft, mergeable, checks
                           boolean)
 Queued (auto-merge)       auto-merge enabled, waiting on checks
 Ready                     `ready` issues — agent-startable now
-Blocked                   `blocked` issues, with what blocks them
+Blocked                   `blocked` issues, with the updated date
 Not ready (agent's turn)  open PRs that are none of the above, with why
 Untriaged: N              unlabelled issues, table capped like every other
                           bucket — not count-only

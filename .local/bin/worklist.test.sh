@@ -73,7 +73,9 @@ long_title="A title that runs well past the eighty character mark so that brief 
   issue 25 "Unlabelled" '[]' null; echo ,
   issue 26 "Deferred" '[]' '"1.0"'; echo ,
   issue 27 "Formerly assigned" '[]' null; echo ,
-  issue 28 "$long_title" '["ready"]' null
+  issue 28 "$long_title" '["ready"]' null; echo ,
+  issue 40 "Milestone ready" '["ready"]' '"1.0"'; echo ,
+  issue 41 "Milestone blocked" '["blocked"]' '"1.0"'
   echo ']},"refs":{"nodes":[{"name":"main","associatedPullRequests":{"totalCount":0}},{"name":"release-please--branches--main","associatedPullRequests":{"totalCount":0}},{"name":"feature-x","associatedPullRequests":{"totalCount":0}},{"name":"pr-branch","associatedPullRequests":{"totalCount":1}}]}}}}'
 } | jq -c . > "$FIXTURES/alpha.json"
 jq -nc '{data:{repository:{defaultBranchRef:{name:"main"},pullRequests:{nodes:[{number:5,title:"Draft PR",url:"https://github.com/o/beta/pull/5",isDraft:true,mergeable:"MERGEABLE",autoMergeRequest:null,author:{login:"o"},reviewThreads:{nodes:[]},commits:{nodes:[{commit:{statusCheckRollup:null}}]}}]},issues:{nodes:[]},refs:{nodes:[{name:"main",associatedPullRequests:{totalCount:0}}]}}}}' > "$FIXTURES/beta.json"
@@ -128,7 +130,7 @@ run
 eq 'exit 0' 0 "$RC"
 has 'stamp without cache note' '^as of [0-9]{2}:[0-9]{2}Z$'
 has 'scope names the project and repos' '^project demo \(o\): alpha, beta$'
-has 'scoped counts first, account-wide after' '^counts: 6 open PRs, 6 open issues in scope; 3 open PRs, 2 open issues across o$'
+has 'scoped counts first, account-wide after' '^counts: 6 open PRs, 8 open issues in scope; 3 open PRs, 2 open issues across o$'
 eq 'one GraphQL call per repo' 2 "$(calls 'api graphql')"
 eq 'topic looked up once' 1 "$(calls 'repo view o/alpha --json repositoryTopics')"
 eq 'repo set from the topic' 1 "$(calls 'repo list o --topic project-demo')"
@@ -224,7 +226,7 @@ assert "brief is <= 3 KB ($(printf '%s' "$OUT" | wc -c) bytes)" test "$(printf '
 OUT_ALL=$OUT
 OUT=$(section "Ready")
 eq 'bucket capped at five lines plus header, separator and overflow line' 8 "$(printf '%s\n' "$OUT" | grep -c .)"
-has 'overflow line' '^\| \+4 more \| \| run `worklist` \|$'
+has 'overflow line' '^\| \+5 more \| \| run `worklist` \|$'
 OUT=$OUT_ALL
 lacks 'no urls in brief' 'https://github.com/o/alpha/pull/10'
 cut_title=$(printf '%s\n' "$OUT" | sed -n 's/^| alpha#28 | \(.*\) |  |$/\1/p')
@@ -239,6 +241,24 @@ run --json
 eq 'json exit 0' 0 "$RC"
 eq 'json carries both repos' 2 "$(printf '%s' "$OUT" | jq '.records | length')"
 eq 'json carries the raw PRs' 5 "$(printf '%s' "$OUT" | jq '.records[0].data.pullRequests.nodes | length')"
+
+# --- --milestone: buckets scoped, milestone not deferred, json same shape ------
+run --milestone 1.0
+eq 'exit 0' 0 "$RC"
+has 'heading names the milestone' "^## Project 'demo' worklist \(milestone: 1.0\)$"
+OUT_ALL=$OUT
+OUT=$(section "Ready");   has 'milestone ready issue' 'alpha#40\].* \| Milestone ready \|';   lacks 'unscoped ready issue gone' 'alpha#23'
+OUT=$(section "Blocked"); has 'milestone blocked issue' 'alpha#41\].* \| Milestone blocked \|'; lacks 'unscoped blocked issue gone' 'alpha#24'
+OUT=$OUT_ALL
+has 'milestone issues are untriaged, not deferred' '^Untriaged: 1$'
+lacks 'no deferred suffix in milestone mode' 'deferred to a milestone'
+has 'PR buckets untouched' 'alpha#10\].* \| Ready PR \|'
+run --milestone 1.0 --json
+eq 'json exit 0' 0 "$RC"
+eq 'json keeps the record shape' 2 "$(printf '%s' "$OUT" | jq '.records | length')"
+eq 'json issues scoped to the milestone' '["1.0"]' "$(printf '%s' "$OUT" | jq -c '[.records[].data.issues.nodes[].milestone.title] | unique')"
+eq 'json PRs untouched' 5 "$(printf '%s' "$OUT" | jq '.records[0].data.pullRequests.nodes | length')"
+run --milestone; eq 'bare --milestone is a usage error' 2 "$RC"
 
 # --- one repo 403 ---------------------------------------------------------------------------
 GH_MODE=403 run --fresh
