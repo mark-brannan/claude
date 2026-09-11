@@ -58,7 +58,7 @@ INSTALL="
 .claude/skills/wrapup/SKILL.md
 .claude/skills/worklist/SKILL.md
 .claude/skills/sweep/SKILL.md
-.claude/skills/resume/SKILL.md
+.claude/skills/pickup/SKILL.md
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq
@@ -75,6 +75,7 @@ INSTALL="
 .claude/hooks/no-git-footguns.sh
 .claude/hooks/no-checkout-home.sh
 .claude/hooks/no-rm-tree.sh
+.claude/hooks/no-foreign-worktree.sh
 .claude/hooks/lib-shell-words.awk
 .claude/hooks/session-start-seed-refresh.sh
 .claude/hooks/guard-add-repo.sh

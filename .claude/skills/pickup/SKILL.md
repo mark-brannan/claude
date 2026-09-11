@@ -42,7 +42,32 @@ Then read the link — the PR, issue or card — for live state. The block
 names where the work is; it does not carry its state, which is stale the
 moment it is written.
 
-## 3. Mark it consumed
+## 3. Take your own worktree
+
+The block hands over a branch, an issue and a PR. It does **not** hand over a
+directory, and the previous session's worktree is not yours to work in even
+when it is sitting right there with the branch already checked out —
+`no-foreign-worktree.sh` refuses it, and the reason it refuses is that the
+owning session may still be running and may be archived out from under you
+mid-turn (PR #162).
+
+So fork one: `EnterWorktree(name=<short-name>)`, then inside it
+
+```
+git fetch origin
+git checkout <the branch the block names>
+```
+
+If git refuses because the branch is checked out in another worktree, that is
+a live claim by a session that has not released it. Say so — name the branch
+and the worktree git named — and stop. Don't take it away from them, and
+don't work anywhere else on the same branch.
+
+Everything the previous session wanted handed over is on the remote. If it
+isn't pushed, it isn't handed over: work from the pushed state and say in one
+line what you found missing.
+
+## 4. Mark it consumed
 
 Do this **as you start**, not at the end: a session that dies mid-work
 should not hand the same block to the next one as if nothing happened, and a
@@ -59,7 +84,7 @@ branch's checkpoint, append one line inside the `## Resume` block:
 consumed line included, into every later rewrite of that checkpoint, so it
 stays as a record of who took it.
 
-## 4. Then work
+## 5. Then work
 
 Nothing else belongs to this skill. Blocks are dropped on their own when the
 branch goes level with the default branch or its PR merges, so there is no
@@ -80,6 +105,12 @@ house hand-off spec, under a `## Resume` heading:
 - model: <opus | sonnet | haiku>
 - effort: <low | medium | high>
 ```
+
+Push before you write it — the block points at a branch, and a branch that
+only exists in your worktree hands over nothing. A session that is *finished*
+(pushed, PR open) also releases its worktree, so the branch is free for
+whoever picks it up; one that is pausing mid-work keeps it, and the branch
+stays claimed until it comes back.
 
 One block per checkpoint; the newest replaces. `next` is a step, not a
 status — "add the fixture for a consumed block", never "resume-list is

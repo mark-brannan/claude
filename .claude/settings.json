@@ -127,6 +127,11 @@
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/no-rm-tree.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-rm-tree.sh is missing from $HOME/.claude/hooks or crashed, so recursive rm could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
             "statusMessage": "Checking for rm -r on a working directory"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-foreign-worktree.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-foreign-worktree.sh is missing from $HOME/.claude/hooks or crashed, so a reach into a worktree owned by another session could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
+            "statusMessage": "Checking for a reach into another worktree"
           }
         ]
       },
@@ -137,6 +142,16 @@
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/no-unsigned-push.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-unsigned-push.sh is missing from $HOME/.claude/hooks or crashed, so unsigned commits could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
             "statusMessage": "Checking for unsigned commits"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|EnterWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-foreign-worktree.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-foreign-worktree.sh is missing from $HOME/.claude/hooks or crashed, so a write into a worktree owned by another session could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
+            "statusMessage": "Checking the edit stays in this worktree"
           }
         ]
       },

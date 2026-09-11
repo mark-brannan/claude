@@ -22,6 +22,14 @@ project-specific facts belong in that project's own CLAUDE.md.
   surgery; it may have moved since session start.
 - Prefer `rm` or an edit over `git rm` for files being replaced, so deletions
   stay unstaged until I commit them.
+- **Work in your own worktree; fork one. Never work in another session's.**
+  A hand-off carries a branch, an issue and a PR, never a directory — the
+  owning session may still be running and may be archived out from under you
+  mid-turn. Read another branch from where you stand (`git log/show <branch>`,
+  `git show <branch>:<path>`); to work it, fork your own worktree and check it
+  out there. If git says the branch is checked out elsewhere, that is a live
+  claim: report it and stop. Enforced by
+  `~/.claude/hooks/no-foreign-worktree.sh`.
 - **Work on main by default. Branch-vs-main is a rule, not a judgment
   call — don't ask.** Commit straight to main in small, verified commits,
   pushed early and often, unless one of these triggers:
