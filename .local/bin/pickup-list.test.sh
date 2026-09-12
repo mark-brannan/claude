@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for resume-list. Run: bash .local/bin/resume-list.test.sh
+# Tests for pickup-list. Run: bash .local/bin/pickup-list.test.sh
 # Set AWK_PATH to a directory whose `awk` is another implementation to run the
 # same cases under it; CI does this for each.
 #
@@ -7,11 +7,11 @@
 # gone; a block whose branch is level with main or whose PR merged is dropped;
 # a block that cannot be checked is KEPT and says why, because dropping what we
 # could not look at is exactly how work gets lost; newest first; --files gives
-# /resume the paths it needs to mark one consumed.
+# /pickup the paths it needs to mark one consumed.
 set -uo pipefail
 [ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 
-RL="$(cd "$(dirname "$0")" && pwd)/resume-list"
+RL="$(cd "$(dirname "$0")" && pwd)/pickup-list"
 pass=0; fail=0
 S=$(mktemp -d); trap 'rm -rf "$S"' EXIT
 export HOME="$S/home"; mkdir -p "$HOME"
@@ -140,7 +140,7 @@ run
 has 'full output does not cut' "$long"
 rm -f "$P"
 
-# --- --files gives /resume the path --------------------------------------------------
+# --- --files gives /pickup the path --------------------------------------------------
 run --files
 eq 'files: one line per block' 1 "$(grep -c '^' <<<"$OUT")"
 has 'files: branch then path' "^claude/alpha	$AUTO/"

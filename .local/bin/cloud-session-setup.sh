@@ -95,7 +95,7 @@ INSTALL="
 .local/bin/metrics-breakdown.sh
 .local/bin/prose-budget
 .local/bin/worklist
-.local/bin/resume-list
+.local/bin/pickup-list
 "
 
 # --- what is wholly owned by this installer -------------------------------

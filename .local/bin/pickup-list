@@ -1,5 +1,5 @@
 #!/bin/sh
-# resume-list -- the unconsumed resume blocks across every session's
+# pickup-list -- the unconsumed resume blocks across every session's
 # auto-checkpoint, newest first.
 #
 # Why: sessions were being wrapped up every time, because a hand-off prompt in
@@ -10,10 +10,10 @@
 # a single pointer file, because parallel sessions in one repo are normal --
 # one file per session is also why two of them never conflict on push.
 #
-#   resume-list [--brief] [--files]
+#   pickup-list [--brief] [--files]
 #
 # Read-only, always. Marking a block consumed is an edit to the checkpoint and
-# belongs to /resume, not here; --files prints the paths so it can do that.
+# belongs to /pickup, not here; --files prints the paths so it can do that.
 #
 # A block is shown until one of three things is true:
 #   - a session resumed it (a `- consumed:` line in the block);
@@ -27,7 +27,7 @@
 # CONVENIENCE: exit 0 always.
 set -u
 
-usage() { printf 'usage: resume-list [--brief] [--files]\n'; }
+usage() { printf 'usage: pickup-list [--brief] [--files]\n'; }
 
 brief=0; files=0
 while [ $# -gt 0 ]; do
@@ -35,7 +35,7 @@ while [ $# -gt 0 ]; do
     --brief) brief=1 ;;
     --files) files=1 ;;
     -h|--help) usage; exit 0 ;;
-    *) printf 'resume-list: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) printf 'pickup-list: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
   shift
 done
@@ -172,5 +172,5 @@ printf '%s\n' "$recs" | head -n "$limit" | while IFS="$sep" read -r mt _path bra
   printf '| `%s` | %s | %s | %s | %s |\n' \
     "$(esc "$branch")" "$(esc "$(cut80 "$next")")" "$(age_of "$mt")" "$(esc "${m:-?}")" "$(esc "$notes")"
 done
-[ "$total" -gt "$limit" ] && printf '| +%s more | | | | run `resume-list` |\n' $((total - limit))
+[ "$total" -gt "$limit" ] && printf '| +%s more | | | | run `pickup-list` |\n' $((total - limit))
 exit 0
