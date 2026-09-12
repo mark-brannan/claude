@@ -5,9 +5,12 @@
 # command per item without spending anything; a real run parses cost/tokens
 # out of the worker's JSON, prints the running-total/percent line, and pauses
 # -- with the exact resume command -- on session budget, an outlier item cost,
-# or the pause-every cadence; a carded worker is logged and not treated as a
-# failure; --resume skips what a prior run already accounted for. gh and
-# claude are both faked; no real `claude -p` is ever invoked.
+# or the pause-every cadence; a carded or blocked worker is logged and not
+# treated as a failure; a done or carded claim that GitHub does not bear out
+# is UNVERIFIED, keeps its worktree and retries; the worker gets a permission
+# mode that can run git and gh; --resume skips what a prior run already
+# accounted for. gh and claude are both faked; no real `claude -p` is ever
+# invoked.
 set -uo pipefail
 
 GRIND="$(cd "$(dirname "$0")" && pwd)/grind"
@@ -39,11 +42,33 @@ cat > "$S/ready.json" <<'JSON'
 ]
 JSON
 
+# What grind's verification asks gh for, canned. `pr list` answers the
+# `done` check (a PR whose head is the item's branch), `issue view` the
+# `carded` one (a comment added while the worker ran). Both are queried with
+# a --jq filter, so the shim applies whatever filter grind passed to the
+# canned document rather than second-guessing it.
+# The far-future timestamp stands for "opened by the worker that just ran":
+# grind's PR check is time-bounded, so a PR must post-date the worker's start.
+cat > "$S/pr-list.json" <<'JSON'
+[{"createdAt": "2999-01-01T00:00:00Z", "updatedAt": "2999-01-01T00:00:00Z", "state": "OPEN"}]
+JSON
+cat > "$S/issue-comments.json" <<'JSON'
+{"comments": []}
+JSON
+
 cat > "$S/bin/gh" <<GH
 #!/bin/sh
 echo "\$*" >> "$GH_LOG"
+filter=""; prev=""
+for a in "\$@"; do
+  [ "\$prev" = "--jq" ] && filter=\$a
+  prev=\$a
+done
+[ -n "\$filter" ] || filter="."
 case "\$1 \$2" in
   "issue list") cat "$S/ready.json" ;;
+  "pr list")    jq -r "\$filter" "$S/pr-list.json" ;;
+  "issue view") jq -r "\$filter" "$S/issue-comments.json" ;;
   *) echo "gh shim: unexpected \$*" >&2; exit 1 ;;
 esac
 GH
@@ -58,7 +83,7 @@ chmod +x "$S/bin/gh"
 mkdir -p "$S/claude-replies"
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
-cat > /dev/null
+cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
@@ -118,11 +143,35 @@ has 'second item line: running total accumulates' '^o/alpha#20: Second item -- s
 has 'queue exhausted, final tally' '^done: Ready queue exhausted\. Running total \$3\.00 / \$20\.00\. 0 skipped\.$'
 has 'INFO: session line names repo, count, model, caps' 'INFO  session grind-.* on o/alpha: 2 Ready item\(s\), sonnet/medium, cap \$5\.00/item \$20\.00/session'
 has 'INFO: item start line' 'INFO  \[1/2\] starting o/alpha#5 -- First item'
-has 'INFO: worker line names the permission mode' 'INFO  worker running: .*--permission-mode acceptEdits'
+has 'INFO: worker line names the permission mode' 'INFO  worker running: .*--permission-mode bypassPermissions'
 has 'INFO: worker exit line' 'INFO  worker exited 0 after [0-9]+s'
-has 'worker gets --permission-mode' '--permission-mode acceptEdits' 
 sess=$(latest_session)
 eq 'two items recorded in state' 2 "$(jq '.items | length' "$sess")"
+
+# --- the worker's permission mode lets it run git and gh -------------------------
+# acceptEdits, the old default, denies every Bash call: a worker could edit
+# files and then neither commit them nor open a PR, which is how run
+# grind-20260912T210131Z spent $4.39 and produced nothing.
+eq 'the default mode is bypassPermissions, not acceptEdits' 2 \
+  "$(grep -c -- '--permission-mode bypassPermissions' "$CLAUDE_LOG")"
+lacks 'acceptEdits is never passed by default' 'permission-mode acceptEdits'
+: > "$CLAUDE_LOG"
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+run --session-budget 100 --pause-every 1 --permission-mode acceptEdits
+assert '--permission-mode still overrides the default' \
+  grep -q -- '--permission-mode acceptEdits' "$CLAUDE_LOG"
+
+# --- the prompt contract names the branch and all three statuses -----------------
+PROMPT=$(cat "$S/prompt.txt")
+prompt_has() { if printf '%s\n' "$PROMPT" | grep -Fq -- "$2"; then ok; else bad "$1 (missing [$2])"; fi; }
+prompt_has 'the issue body is the prompt' 'do the first thing'
+prompt_has 'the contract names the item' 'Grind orchestration contract for o/alpha#5'
+prompt_has 'it names the branch the worker is on' 'branch grind-5'
+prompt_has 'it tells the worker to commit, push and open the PR' 'open the PR yourself with gh'
+prompt_has 'done is offered' 'GRIND_STATUS: done'
+prompt_has 'carded is offered' 'GRIND_STATUS: carded'
+prompt_has 'blocked is offered' 'GRIND_STATUS: blocked'
+prompt_has 'it warns that the claim is checked' 'records the item'
 
 # --- heartbeat: shows a live, ~-marked token/cost estimate before the item
 # finishes, accumulated from two assistant events; the final line still uses
@@ -135,7 +184,7 @@ JSON
 rm -f "$S/state/grind"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
-cat > /dev/null
+cat > "$S/prompt.txt"
 echo "\$*" >> "$CLAUDE_LOG"
 echo '{"type":"assistant","message":{"usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":20000,"cache_creation_input_tokens":3000}}}'
 sleep 0.3
@@ -162,7 +211,7 @@ JSON
 rm -f "$S/state/grind"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
-cat > /dev/null
+cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
@@ -242,6 +291,10 @@ lacks 'exactly 2x median does not trip the outlier pause' '^pause: o/alpha#20 co
 has 'runs to completion instead' '^done: Ready queue exhausted'
 
 # --- carded: logged, not a failure, item still counted toward pause-every -------
+# The card is verified: the issue gained a comment while the worker ran.
+cat > "$S/issue-comments.json" <<'JSON'
+{"comments": [{"createdAt": "2999-01-01T00:00:00Z"}]}
+JSON
 rm -f "$S/state/grind"/*.json
 rm -f "$S/claude-replies"/*.json
 reply 0.50 "carded" 1
@@ -252,6 +305,134 @@ has 'carded item logged distinctly' '^carded: o/alpha#5 -- First item'
 sess=$(latest_session)
 eq 'carded status recorded' 'carded' "$(jq -r '.items[0].status' "$sess")"
 has 'pauses on cadence after two items (one carded)' '^pause: 2 items processed this run'
+
+# --- verification: a claim that does not check out is UNVERIFIED ----------------
+# Run grind-20260912T210131Z reported "carded" twice and "done" once and left
+# no card, no issue comment and no PR behind. Both claims are now checked.
+
+# `done` with no PR on the item's branch
+cat > "$S/pr-list.json" <<'JSON'
+[]
+JSON
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+reply 0.50 "done" 1
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+has 'a done claim with no PR is UNVERIFIED, and says why' \
+  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but no PR opened or pushed to on head branch grind-5 \(\$0\.50, 150 tokens, running \$0.50 / \$100.00 -- 0%\); will retry on --resume'
+lacks 'no success line for an unverified item' '^o/alpha#5: First item --'
+assert 'gh was asked for a PR whose head is the item branch' \
+  grep -q -- 'pr list --repo o/alpha --head grind-5 --state all' "$GH_LOG"
+has 'the worktree is kept for inspection' 'WARN  keeping worktree .*grind-worktrees/5 on branch grind-5 for inspection'
+assert 'and it really is still on disk' test -d "$TMPDIR/grind-worktrees/5"
+sess=$(latest_session)
+eq 'recorded as unverified' unverified "$(jq -r '.items[0].status' "$sess")"
+eq 'its cost is still counted' 0.50 "$(jq -r '.items[0].cost' "$sess")"
+
+# a PR left behind by an earlier attempt does not verify a fresh claim: the
+# branch name is deterministic, so a stale PR is always sitting there on a
+# retry, and without the time bound a worker that did nothing would pass.
+cat > "$S/pr-list.json" <<'JSON'
+[{"createdAt": "2001-01-01T00:00:00Z", "updatedAt": "2001-01-02T00:00:00Z", "state": "CLOSED"}]
+JSON
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+reply 0.50 "done" 1
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+has 'a stale PR from an earlier attempt does not verify this run' \
+  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but no PR opened or pushed to on head branch grind-5'
+
+# an open PR the worker pushed to during the run does verify, even though it
+# was opened long before -- the case of a retry adding commits to its own PR
+cat > "$S/pr-list.json" <<'JSON'
+[{"createdAt": "2001-01-01T00:00:00Z", "updatedAt": "2999-01-01T00:00:00Z", "state": "OPEN"}]
+JSON
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+reply 0.50 "done" 1
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+has 'a pushed-to open PR verifies' '^o/alpha#5: First item -- sonnet, \$0\.50,'
+
+# ...and --resume retries an unverified item, reusing the branch the kept
+# worktree holds
+cat > "$S/pr-list.json" <<'JSON'
+[]
+JSON
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+reply 0.50 "done" 1
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+sess=$(latest_session)
+session_id=$(basename "$sess" .json)
+cat > "$S/pr-list.json" <<'JSON'
+[{"createdAt": "2999-01-01T00:00:00Z", "updatedAt": "2999-01-01T00:00:00Z", "state": "OPEN"}]
+JSON
+rm -f "$S/claude-replies"/*.json
+reply 0.50 "done" 1
+: > "$CLAUDE_LOG"
+run --resume "$session_id" --pause-every 1
+eq 'an unverified item is retried on resume' 1 "$(calls_claude)"
+has 'the retry, with a PR this time, is a plain success line' '^o/alpha#5: First item -- sonnet, \$0\.50,'
+
+# `carded` with an untouched board and no new comment on the issue
+cat > "$S/issue-comments.json" <<'JSON'
+{"comments": [{"createdAt": "2001-01-01T00:00:00Z"}]}
+JSON
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+reply 0.50 "carded" 1
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+has 'a carded claim with nothing written is UNVERIFIED, and says why' \
+  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but board file unchanged and no new comment on the issue'
+lacks 'not logged as carded' '^carded: o/alpha#5'
+
+# a card written to the board file counts too, without any issue comment
+export GRIND_BOARD="$S/kanban.md"
+: > "$GRIND_BOARD"
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+cat > "$S/prompt.txt"
+echo "\$*" >> "$CLAUDE_LOG"
+sleep 1.1
+printf -- '- [ ] a card\n' >> "$GRIND_BOARD"
+echo '{"type":"result","total_cost_usd":0.50,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: carded"}'
+GH
+chmod +x "$S/bin/claude"
+rm -f "$S/state/grind"/*.json
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+has 'a board file written during the run verifies the card' '^carded: o/alpha#5 -- First item'
+unset GRIND_BOARD
+
+# --- blocked: a third status, logged, recorded, not retried ---------------------
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+cat > "$S/prompt.txt"
+n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
+echo "\$n \$*" >> "$CLAUDE_LOG"
+echo \$((n + 1)) > "$S/claude-next"
+reply="$S/claude-replies/\$n.json"
+if [ -f "\$reply" ]; then cat "\$reply"; else
+  echo '{"type":"assistant","message":{"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+  echo '{"type":"result","total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: done"}'
+fi
+GH
+chmod +x "$S/bin/claude"
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+reply 0.50 "blocked" 1
+reply 0.50 "done" 2
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 2
+has 'blocked item logged distinctly' '^blocked: o/alpha#5 -- First item \(\$0\.50, 150 tokens, running \$0.50 / \$100.00 -- 0%\)'
+lacks 'a blocked item is not a failure' '^FAILED: o/alpha#5'
+lacks 'nor an unverified claim -- blocked asserts nothing to check' '^UNVERIFIED: o/alpha#5'
+sess=$(latest_session)
+eq 'blocked status recorded' blocked "$(jq -r '.items[0].status' "$sess")"
+eq 'the next item still runs' 2 "$(calls_claude)"
+session_id=$(basename "$sess" .json)
+: > "$CLAUDE_LOG"
+run --resume "$session_id"
+eq 'a blocked item is accounted for, not retried on resume' 0 "$(calls_claude)"
 
 # --- pause-every cadence, exact count ---------------------------------------------
 rm -f "$S/state/grind"/*.json
@@ -331,7 +512,7 @@ rm -f "$S/state/grind"/*.json
 rm -f "$S/claude-replies"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
-cat > /dev/null
+cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
@@ -348,7 +529,7 @@ eq 'failed item is not recorded in state' 0 "$(jq '.items | length' "$sess")"
 # restore the real claude shim and confirm --resume retries the failed item
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
-cat > /dev/null
+cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
@@ -370,7 +551,7 @@ eq 'now recorded in state' 1 "$(jq '.items | length' "$sess")"
 rm -f "$S/state/grind"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
-cat > /dev/null
+cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
@@ -393,7 +574,7 @@ eq 'failed-with-cost item retried on resume' 1 "$(calls_claude)"
 # restore the real claude shim
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
-cat > /dev/null
+cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"

@@ -20,11 +20,19 @@
 #   3. Parse the final result event for cost and tokens; print one line:
 #      item, model, cost, tokens, running total, percent of session budget.
 #      Crossing 25/50/75% prints a louder line, once each, per session.
-#   4. A worker that decides an item needs a human ruling ends its final
-#      message with the line "GRIND_STATUS: carded" (having filed the card
-#      itself, per this repo's card-write convention) instead of guessing.
-#      grind matches that line, logs "carded", and moves to the next item
-#      without treating it as a failure.
+#   4. The worker ends its final message with one of three status lines:
+#      "GRIND_STATUS: done" (the PR is open), "GRIND_STATUS: carded" (a
+#      ruling only the repo owner can make; the worker filed the card
+#      itself, per this repo's card-write convention), or
+#      "GRIND_STATUS: blocked" (the item cannot be worked at all). None of
+#      the first two is taken on trust: `done` is checked against a PR whose
+#      head is the item's branch, `carded` against the board file's mtime or
+#      a comment added to the issue while the worker ran. A claim that does
+#      not check out becomes status "unverified" -- loud on stderr, cost
+#      kept, worktree kept for inspection, retried on --resume. Run
+#      grind-20260912T210131Z spent $4.39 on three items that all reported
+#      success and left no PR, no card and no commit behind; that is the
+#      failure these checks exist to catch.
 #   5. Pause -- print a tally and the exact resume command, then exit 0 --
 #      when: the session budget is reached, one item costs more than twice
 #      the running median, or every N items. Nothing here waits on a
@@ -46,8 +54,13 @@
 # Output: one INFO line per unit of work started and finished, a heartbeat
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
 # for a skipped item, ERR when the run ends with skips (exit 1). The worker
-# gets --permission-mode (default acceptEdits) so it never waits on a
-# terminal; bypassPermissions is the caller's call, not the default. A
+# gets --permission-mode (default bypassPermissions) so it never waits on a
+# terminal. acceptEdits was the default until it turned out to deny every
+# Bash call -- git add, git commit and gh among them -- which makes finishing
+# an item impossible: the worker edits files and can then do nothing with
+# them. A worker runs unattended in a throwaway worktree it is meant to
+# commit and push, so that is the mode it needs; --permission-mode narrows it
+# again for a caller who wants that. A
 # heartbeat line carries a live, `~`-marked token/cost estimate once the
 # worker has emitted at least one assistant event, e.g.:
 #   still working on owner/repo#97 (3m elapsed, ~48k tokens, ~$0.90 so far)
@@ -82,7 +95,10 @@ dry_run=0
 repo=""
 resume_id=""
 heartbeat=60
-permission_mode=acceptEdits
+permission_mode=bypassPermissions
+# Where a `carded` worker is expected to have written: the global board.
+# Overridable for tests and for a machine that keeps the state repo elsewhere.
+board_file=${GRIND_BOARD:-$HOME/claude_prompts_scratch/state/global/kanban.md}
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -159,10 +175,11 @@ fi
 # refs (owner/repo#N) already accounted for from a prior run of this session,
 # delimited so a ref that is a prefix of another (e.g. #5 vs #50) can't
 # falsely match on a raw substring test.
-# Items recorded as failed keep their cost but are retried, so they are
-# excluded here.
+# Items recorded as failed or unverified keep their cost but are retried, so
+# they are excluded here. A blocked item is accounted for: a later grind run
+# picks it up once whatever blocks it is gone.
 done_refs="|"
-[ -f "$state_file" ] && done_refs="|$(jq -r '.items[] | select(.status != "failed") | .ref' "$state_file" | tr '\n' '|')"
+[ -f "$state_file" ] && done_refs="|$(jq -r '.items[] | select(.status != "failed" and .status != "unverified") | .ref' "$state_file" | tr '\n' '|')"
 
 is_done_ref() {
   case "$done_refs" in *"|$1|"*) return 0 ;; esac
@@ -203,15 +220,57 @@ finish() {
 # --- one worktree per item -----------------------------------------------------
 worktree_root=${TMPDIR:-/tmp}/grind-worktrees
 
+# build_prompt <issue body> <ref> <branch>
 build_prompt() {
-  body=$1
+  body=$1; p_ref=$2; p_branch=$3
   printf '%s\n\n---\n' "$body"
-  printf 'Grind orchestration contract: work this item to a mergeable PR and open\n'
-  printf 'it yourself; do not merge it. If finishing it requires a ruling only the\n'
-  printf 'repo owner can make, do not guess -- file the card per this repo'"'"'s\n'
-  printf 'card-write convention, then end your final message with exactly this\n'
-  printf 'line and nothing after it: GRIND_STATUS: carded\n'
-  printf 'Otherwise end your final message with exactly: GRIND_STATUS: done\n'
+  printf 'Grind orchestration contract for %s.\n\n' "$p_ref"
+  printf 'You are alone in a fresh worktree on branch %s. Work the item to a\n' "$p_branch"
+  printf 'mergeable PR: commit, push the branch, and open the PR yourself with gh.\n'
+  printf 'Do not merge it. The worktree is deleted when you exit, so anything you\n'
+  printf 'have not committed and pushed is lost.\n\n'
+  printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
+  printf '  GRIND_STATUS: done     the PR is open. grind checks that a PR exists\n'
+  printf '                         with head branch %s and records the item\n' "$p_branch"
+  printf '                         unverified if none does.\n'
+  printf '  GRIND_STATUS: carded   finishing needs a ruling only the repo owner can\n'
+  printf '                         make. File the card first, per this repo'"'"'s\n'
+  printf '                         card-write convention. grind checks that the\n'
+  printf '                         board changed or the issue gained a comment, and\n'
+  printf '                         records the item unverified if neither did.\n'
+  printf '  GRIND_STATUS: blocked  the item cannot be worked at all -- a missing\n'
+  printf '                         dependency, an unmet precondition, work that\n'
+  printf '                         belongs to another item. Comment on the issue\n'
+  printf '                         saying why, so the reason outlives this session.\n'
+}
+
+# --- verifying the worker's claim ---------------------------------------------
+# A worker reporting success costs the same as one that did the work, so the
+# claim is checked against GitHub rather than believed. Both checks fail
+# closed: a gh call that errors leaves the item unverified.
+
+# verify_pr <branch> <worker start, ISO 8601>
+# A PR whose head is this item's branch, and which this run is responsible
+# for: opened since the worker started, or already open and pushed to since.
+# Branch names are deterministic (grind-<number>), so without the time bound
+# a PR left behind by an earlier attempt would validate a fresh empty claim.
+verify_pr() {
+  n=$(gh pr list --repo "$repo" --head "$1" --state all --json createdAt,updatedAt,state \
+        --jq "[.[] | select(.createdAt >= \"$2\" or (.state == \"OPEN\" and .updatedAt >= \"$2\"))] | length" 2>/dev/null) || return 1
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$n" -gt 0 ]
+}
+
+# verify_carded <issue number> <marker file> <worker start, ISO 8601>
+# Either the board file was written after the marker, or the issue gained a
+# comment at/after the worker started.
+verify_carded() {
+  # find -newer, not test -nt: -nt is not in POSIX sh (shellcheck SC3013).
+  if [ -f "$board_file" ] && [ -n "$(find "$board_file" -newer "$2" 2>/dev/null)" ]; then return 0; fi
+  c=$(gh issue view "$1" --repo "$repo" --json comments \
+        --jq "[.comments[] | select(.createdAt >= \"$3\")] | length" 2>/dev/null) || return 1
+  case "$c" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$c" -gt 0 ]
 }
 
 # --- live cost estimate (heartbeat only; the final line uses the exact
@@ -303,8 +362,11 @@ while [ "$i" -lt "$count" ]; do
 
   info "[$i/$count] starting $ref -- $title"
   mkdir -p "$worktree_root"
-  git worktree prune >/dev/null 2>&1 || true
+  # Remove the directory first, then prune: a worktree kept from a previous
+  # unverified attempt is still registered, and git refuses to delete a
+  # branch a registered worktree holds.
   rm -rf "$wt_path"
+  git worktree prune >/dev/null 2>&1 || true
   git branch -D "$branch" >/dev/null 2>&1 || true
   if ! wt_err=$(git worktree add -q -b "$branch" "$wt_path" 2>&1 >/dev/null); then
     warn "skipping $ref -- could not create worktree $wt_path on branch $branch: $wt_err"
@@ -313,8 +375,13 @@ while [ "$i" -lt "$count" ]; do
   fi
   info "worktree $wt_path on branch $branch"
 
-  prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')")
+  prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')" "$ref" "$branch")
   started=$(date +%s)
+  # Reference points for the carded check: a marker the board file must be
+  # newer than, and the wall-clock instant a new issue comment must follow.
+  started_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  marker="$state_root/${session_id}.marker"
+  : > "$marker"
   info "worker running: claude -p --model $model --effort $effort --max-budget-usd $item_budget --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
 
   # live_file holds "input output cache_read cache_creation" running totals,
@@ -386,11 +453,11 @@ while [ "$i" -lt "$count" ]; do
   if [ -n "$hb_pid" ]; then kill "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true; fi
   info "worker exited $claude_rc after $(( $(date +%s) - started ))s"
 
-  git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
-
   # Unparseable/empty JSON means the worker never produced a result, so its
   # spend is unknown: don't record it, and let --resume retry it.
   if ! printf '%s' "$result_json" | jq -e . >/dev/null 2>&1; then
+    git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
+    rm -f "$marker"
     printf 'FAILED: %s -- %s -- claude invocation did not complete; not recorded, will retry on --resume\n' \
       "$ref" "$title" >&2
     continue
@@ -408,8 +475,38 @@ while [ "$i" -lt "$count" ]; do
   # spent money: record the cost so the session budget stays honest, but mark
   # it failed so --resume retries it instead of skipping it forever.
   status=done
-  case "$text" in *"GRIND_STATUS: carded"*) status=carded ;; esac
+  case "$text" in
+    *"GRIND_STATUS: carded"*)  status=carded ;;
+    *"GRIND_STATUS: blocked"*) status=blocked ;;
+  esac
   if [ "$claude_rc" -ne 0 ] || [ "$is_error" = true ]; then status=failed; fi
+
+  # Check the claim. `blocked` asserts nothing about the world, so there is
+  # nothing to check; `failed` is already a failure.
+  unverified_why=""
+  case "$status" in
+    done)
+      if ! verify_pr "$branch" "$started_iso"; then
+        unverified_why="no PR opened or pushed to on head branch $branch"
+        status=unverified
+      fi
+      ;;
+    carded)
+      if ! verify_carded "$number" "$marker" "$started_iso"; then
+        unverified_why="board file unchanged and no new comment on the issue"
+        status=unverified
+      fi
+      ;;
+  esac
+  rm -f "$marker"
+
+  # An unverified item keeps its worktree: it is the only remaining record of
+  # what the worker did, and the next attempt at this item clears it anyway.
+  if [ "$status" = unverified ]; then
+    warn "keeping worktree $wt_path on branch $branch for inspection"
+  else
+    git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
+  fi
 
   running_total=$(awk -v a="$running_total" -v b="$cost" 'BEGIN { printf "%.4f", a + b }')
   processed_this_run=$((processed_this_run + 1))
@@ -421,8 +518,14 @@ while [ "$i" -lt "$count" ]; do
   if [ "$status" = failed ]; then
     printf 'FAILED: %s -- %s -- worker reported an error (%s, %s tokens, running %s / %s -- %s%%); will retry on --resume\n' \
       "$ref" "$title" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent" >&2
+  elif [ "$status" = unverified ]; then
+    printf 'UNVERIFIED: %s -- %s -- worker claimed success but %s (%s, %s tokens, running %s / %s -- %s%%); will retry on --resume\n' \
+      "$ref" "$title" "$unverified_why" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent" >&2
   elif [ "$status" = carded ]; then
     printf 'carded: %s -- %s (%s, %s tokens, running %s / %s -- %s%%)\n' \
+      "$ref" "$title" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent"
+  elif [ "$status" = blocked ]; then
+    printf 'blocked: %s -- %s (%s, %s tokens, running %s / %s -- %s%%)\n' \
       "$ref" "$title" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent"
   else
     printf '%s: %s -- %s, %s, %s tokens -- running %s / %s -- %s%%\n' \
