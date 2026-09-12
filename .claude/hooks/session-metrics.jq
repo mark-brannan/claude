@@ -231,8 +231,9 @@ to_entries as $E
 # nearest preceding one mislabels which call in a parallel batch was refused.
 | ([ $E[] | .key as $i | .value | select(.toolDenialKind != null)
     | .toolDenialKind as $k
-    | ([ .message.content[]? | select(.type == "tool_result") | .tool_use_id ] | first) as $tid
-    | ($tool_by_id[$tid // ""] // {}) as $tu
+    | ([ .message.content[]? | select(.type == "tool_result") ] | first) as $tr
+    | (($tr.tool_use_id) // "") as $tid
+    | ($tool_by_id[$tid] // {}) as $tu
     | {i: $i,
        kind: (if ($k | startswith("automode")) then "classifier"
               elif $k == "permission-rule" then "rule"
@@ -243,7 +244,16 @@ to_entries as $E
        target: ((($tu.input.command // $tu.input.file_path // "") | tostring
                   # redact before truncating: a 160-char cut can land mid-token
                   # and leave a partial secret the pattern no longer matches.
-                  | redact) | .[0:160])} ]) as $blocked
+                  | redact) | .[0:160]),
+       # The denial's own text: a hook writes whatever it wants here, so this
+       # is the only way to tell "no-rm-tree fired" from "no allowlist entry"
+       # apart -- `raw`/`kind` alone collapse every hook's rule-deny into one
+       # bucket. automode/user denials carry a fixed phrase already covered
+       # by `kind`; captured for all of them anyway, cheaply, since the text
+       # is already in hand from the tool_result lookup above.
+       reason: ((($tr.content | if type == "array" then ([ .[] | .text? // empty ] | join(" "))
+                                 elif type == "string" then . else "" end) // "")
+                 | redact | .[0:160])} ]) as $blocked
 
 | def strip_fences: gsub("```[^`]*```"; "");
 def clean_human:
