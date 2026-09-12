@@ -49,9 +49,12 @@ esac
 GH
 chmod +x "$S/bin/gh"
 
-# fake claude -- reads the prompt from stdin (unused), writes a canned JSON
-# result read from $CLAUDE_MODE for the current item (matched by title in the
-# piped prompt) via $S/claude-replies/<n>.json, defaulting to a $1 flat reply.
+# fake claude -- reads the prompt from stdin (unused), writes canned
+# stream-json lines read from $S/claude-replies/<n>.json for the current
+# item (an assistant event followed by a result event, one per line, as the
+# real worker now streams), defaulting to a flat two-line reply. grind reads
+# claude's stdout line by line now, so the shim must emit newline-delimited
+# JSON, never one blob.
 mkdir -p "$S/claude-replies"
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
@@ -60,10 +63,21 @@ n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
 reply="$S/claude-replies/\$n.json"
-if [ -f "\$reply" ]; then cat "\$reply"; else echo '{"total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50},"result":"GRIND_STATUS: done"}'; fi
+if [ -f "\$reply" ]; then cat "\$reply"; else
+  echo '{"type":"assistant","message":{"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+  echo '{"type":"result","total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: done"}'
+fi
 GH
 chmod +x "$S/bin/claude"
-reply() { jq -nc --argjson cost "$1" --arg status "$2" '{total_cost_usd:$cost, usage:{input_tokens:100,output_tokens:50}, result:("done work\nGRIND_STATUS: " + $status)}' > "$S/claude-replies/$3.json"; }
+# reply <cost> <status> <n> -- writes the two-line stream-json shape above
+# (one assistant usage event, one result event) to $S/claude-replies/<n>.json.
+reply() {
+  jq -nc '{type:"assistant", message:{usage:{input_tokens:100,output_tokens:50,cache_read_input_tokens:0,cache_creation_input_tokens:0}}}' \
+    > "$S/claude-replies/$3.json"
+  jq -nc --argjson cost "$1" --arg status "$2" \
+    '{type:"result", total_cost_usd:$cost, usage:{input_tokens:100,output_tokens:50,cache_read_input_tokens:0,cache_creation_input_tokens:0}, result:("done work\nGRIND_STATUS: " + $status)}' \
+    >> "$S/claude-replies/$3.json"
+}
 
 ok()   { pass=$((pass + 1)); }
 bad()  { fail=$((fail + 1)); printf 'FAIL: %s\n' "$1"; [ -n "${2:-}" ] && printf '%s\n' "$2" | sed 's/^/    /'; }
@@ -84,7 +98,7 @@ has 'first item is the lower-numbered one' '^\[1/2\] o/alpha#5 -- First item$'
 has 'second item follows' '^\[2/2\] o/alpha#20 -- Second item$'
 lacks 'blocked item excluded' 'alpha#9'
 has 'a worktree command is shown' 'git worktree add -b grind-5'
-has 'the claude command is shown, with defaults' 'claude -p <issue o/alpha#5 body> --output-format json --max-budget-usd 5 --model sonnet --effort medium'
+has 'the claude command is shown, with defaults' 'claude -p <issue o/alpha#5 body> --output-format stream-json --verbose --max-budget-usd 5 --model sonnet --effort medium'
 assert 'dry-run wrote no state file' bash -c '! ls '"$S"'/state/grind/*.json >/dev/null 2>&1'
 
 # --- --dry-run respects override flags -----------------------------------------
@@ -109,6 +123,56 @@ has 'INFO: worker exit line' 'INFO  worker exited 0 after [0-9]+s'
 has 'worker gets --permission-mode' '--permission-mode acceptEdits' 
 sess=$(latest_session)
 eq 'two items recorded in state' 2 "$(jq '.items | length' "$sess")"
+
+# --- heartbeat: shows a live, ~-marked token/cost estimate before the item
+# finishes, accumulated from two assistant events; the final line still uses
+# the exact total_cost_usd -----------------------------------------------------
+cat > "$S/ready.json" <<'JSON'
+[
+  {"number": 5, "title": "First item", "body": "do the first thing", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]}
+]
+JSON
+rm -f "$S/state/grind"/*.json
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+cat > /dev/null
+echo "\$*" >> "$CLAUDE_LOG"
+echo '{"type":"assistant","message":{"usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":20000,"cache_creation_input_tokens":3000}}}'
+sleep 0.3
+echo '{"type":"assistant","message":{"usage":{"input_tokens":5000,"output_tokens":5000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+sleep 2
+echo '{"type":"result","total_cost_usd":0.90,"usage":{"input_tokens":15000,"output_tokens":10000,"cache_read_input_tokens":20000,"cache_creation_input_tokens":3000},"result":"GRIND_STATUS: done"}'
+GH
+chmod +x "$S/bin/claude"
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 10 --heartbeat 1
+eq 'exit 0' 0 "$RC"
+has 'heartbeat line carries elapsed time, a token count, and a ~$ estimate -- both assistant events accumulated (15000+10000+20000+3000=48000 -> 48k)' \
+  'still working on o/alpha#5 \([0-9]+m elapsed, ~48k tokens, ~\$[0-9]+\.[0-9]{2} so far\)'
+has 'the final line still uses the exact total_cost_usd, not the estimate' '^o/alpha#5: First item -- sonnet, \$0\.90,'
+
+# restore the multi-item ready queue and the reply-driven claude shim
+cat > "$S/ready.json" <<'JSON'
+[
+  {"number": 20, "title": "Second item", "body": "do the second thing", "url": "https://github.com/o/alpha/issues/20", "labels": [{"name": "ready"}]},
+  {"number": 5, "title": "First item", "body": "do the first thing", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]},
+  {"number": 9, "title": "Blocked item", "body": "not yet", "url": "https://github.com/o/alpha/issues/9", "labels": [{"name": "ready"}, {"name": "blocked"}]}
+]
+JSON
+rm -f "$S/state/grind"/*.json
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+cat > /dev/null
+n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
+echo "\$n \$*" >> "$CLAUDE_LOG"
+echo \$((n + 1)) > "$S/claude-next"
+reply="$S/claude-replies/\$n.json"
+if [ -f "\$reply" ]; then cat "\$reply"; else
+  echo '{"type":"assistant","message":{"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+  echo '{"type":"result","total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: done"}'
+fi
+GH
+chmod +x "$S/bin/claude"
 
 # --- threshold lines: each fires once, even when one item crosses several ------
 # Only two Ready items exist, so item 1 crosses 25%, item 2 jumps straight to
@@ -289,7 +353,10 @@ n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
 reply="$S/claude-replies/\$n.json"
-if [ -f "\$reply" ]; then cat "\$reply"; else echo '{"total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50},"result":"GRIND_STATUS: done"}'; fi
+if [ -f "\$reply" ]; then cat "\$reply"; else
+  echo '{"type":"assistant","message":{"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+  echo '{"type":"result","total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: done"}'
+fi
 GH
 chmod +x "$S/bin/claude"
 session_id=$(basename "$sess" .json)
@@ -307,7 +374,7 @@ cat > /dev/null
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
-echo '{"is_error":true,"total_cost_usd":5.00,"usage":{"input_tokens":100,"output_tokens":50},"result":"Budget exceeded"}'
+echo '{"type":"result","is_error":true,"total_cost_usd":5.00,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"Budget exceeded"}'
 exit 1
 GH
 chmod +x "$S/bin/claude"
@@ -331,7 +398,10 @@ n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
 reply="$S/claude-replies/\$n.json"
-if [ -f "\$reply" ]; then cat "\$reply"; else echo '{"total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50},"result":"GRIND_STATUS: done"}'; fi
+if [ -f "\$reply" ]; then cat "\$reply"; else
+  echo '{"type":"assistant","message":{"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+  echo '{"type":"result","total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: done"}'
+fi
 GH
 chmod +x "$S/bin/claude"
 

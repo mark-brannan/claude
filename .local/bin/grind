@@ -9,12 +9,16 @@
 #
 # Per Ready item, top (lowest issue number) first:
 #   1. A fresh worktree on a new branch, named after the item.
-#   2. One `claude -p --output-format json --max-budget-usd <item cap>
-#      --model <m> --effort <e>` with the issue body (plus a short contract
-#      appended below) as the prompt. That session does the work and opens
-#      the PR. Merging stays the human's.
-#   3. Parse the JSON result for cost and tokens; print one line: item,
-#      model, cost, tokens, running total, percent of session budget.
+#   2. One `claude -p --output-format stream-json --verbose --max-budget-usd
+#      <item cap> --model <m> --effort <e>` with the issue body (plus a short
+#      contract appended below) as the prompt, read line by line. Each
+#      `assistant` event's `message.usage` is accumulated into a small state
+#      file so the heartbeat can show a running token/cost estimate; the
+#      worker's `result` event still carries the exact `total_cost_usd` and
+#      result text. That session does the work and opens the PR. Merging
+#      stays the human's.
+#   3. Parse the final result event for cost and tokens; print one line:
+#      item, model, cost, tokens, running total, percent of session budget.
 #      Crossing 25/50/75% prints a louder line, once each, per session.
 #   4. A worker that decides an item needs a human ruling ends its final
 #      message with the line "GRIND_STATUS: carded" (having filed the card
@@ -43,7 +47,13 @@
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
 # for a skipped item, ERR when the run ends with skips (exit 1). The worker
 # gets --permission-mode (default acceptEdits) so it never waits on a
-# terminal; bypassPermissions is the caller's call, not the default.
+# terminal; bypassPermissions is the caller's call, not the default. A
+# heartbeat line carries a live, `~`-marked token/cost estimate once the
+# worker has emitted at least one assistant event, e.g.:
+#   still working on owner/repo#97 (3m elapsed, ~48k tokens, ~$0.90 so far)
+# `--output-format json` was dropped rather than kept behind a flag: the
+# worker is always read as a stream now, and the two paths would otherwise
+# duplicate all of the cost/status parsing below for no user-visible gain.
 set -eu
 
 usage() {
@@ -57,6 +67,7 @@ usage() {
 # to stderr. All three are always on; there is no quiet mode.
 pct() { awk -v a="$1" -v b="$2" 'BEGIN { if (b == 0) { print 0 } else { printf "%.0f", (a / b) * 100 } }'; }
 fmt_usd() { awk -v v="$1" 'BEGIN { printf "$%.2f", v }'; }
+fmt_tokens() { awk -v t="$1" 'BEGIN { if (t + 0 >= 1000) { printf "%dk", (t / 1000) + 0.5 } else { printf "%d", t } }'; }
 ts()   { date -u +%H:%M:%SZ; }
 info() { printf '%s INFO  %s\n' "$(ts)" "$*"; }
 warn() { printf '%s WARN  %s\n' "$(ts)" "$*" >&2; }
@@ -203,6 +214,35 @@ build_prompt() {
   printf 'Otherwise end your final message with exactly: GRIND_STATUS: done\n'
 }
 
+# --- live cost estimate (heartbeat only; the final line uses the exact
+# total_cost_usd from the result event) --------------------------------------
+# List price in USD per 1M tokens, by model alias/name substring. Cache
+# write/read aren't looked up per model here -- they use Anthropic's
+# standard ratios off the base input price (1.25x for a cache write, 0.1x
+# for a cache read). Unrecognized names fall back to Sonnet pricing.
+model_price_in() {
+  case "$1" in
+    *opus*) printf '5.00' ;;
+    *fable*|*mythos*) printf '10.00' ;;
+    *haiku*) printf '1.00' ;;
+    *) printf '2.00' ;;
+  esac
+}
+model_price_out() {
+  case "$1" in
+    *opus*) printf '25.00' ;;
+    *fable*|*mythos*) printf '50.00' ;;
+    *haiku*) printf '5.00' ;;
+    *) printf '10.00' ;;
+  esac
+}
+# estimate_cost <model> <input> <output> <cache_read> <cache_creation>
+estimate_cost() {
+  ip=$(model_price_in "$1"); op=$(model_price_out "$1")
+  awk -v ip="$ip" -v op="$op" -v i="$2" -v o="$3" -v cr="$4" -v cc="$5" \
+    'BEGIN { printf "%.4f", (i*ip + o*op + cr*(ip*0.1) + cc*(ip*1.25)) / 1000000 }'
+}
+
 # median <space-separated numbers> -> prints 0 when the list is empty
 median() {
   if [ -z "$1" ]; then printf '0\n'; return; fi
@@ -252,7 +292,7 @@ while [ "$i" -lt "$count" ]; do
   branch="grind-$number"
   wt_path="$worktree_root/$number"
 
-  cmd_display="claude -p <issue $ref body> --output-format json --max-budget-usd $item_budget --model $model --effort $effort"
+  cmd_display="claude -p <issue $ref body> --output-format stream-json --verbose --max-budget-usd $item_budget --model $model --effort $effort"
 
   if [ "$dry_run" -eq 1 ]; then
     printf '[%d/%d] %s -- %s\n' "$((i))" "$count" "$ref" "$title"
@@ -276,21 +316,73 @@ while [ "$i" -lt "$count" ]; do
   prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')")
   started=$(date +%s)
   info "worker running: claude -p --model $model --effort $effort --max-budget-usd $item_budget --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
+
+  # live_file holds "input output cache_read cache_creation" running totals,
+  # rewritten by the reader loop below on every assistant event; the
+  # heartbeat subshell only reads it. One file per grind session -- items
+  # run sequentially, so it's reset (truncated) at the start of each item.
+  live_file="$state_root/${session_id}.live"
+  result_file="$state_root/${session_id}.result"
+  rc_file="$state_root/${session_id}.rc"
+  printf '0 0 0 0\n' > "$live_file"
+  : > "$result_file"
+  : > "$rc_file"
+
   hb_pid=""
   if [ "$heartbeat" -gt 0 ]; then
     # The sleep child would otherwise outlive the kill and hold stdout open.
     ( trap 'kill "$sp" 2>/dev/null; exit 0' TERM
       while :; do
         sleep "$heartbeat" & sp=$!; wait "$sp" || exit 0
-        info "still working on $ref ($(( ($(date +%s) - started) / 60 ))m elapsed)"
+        elapsed_m=$(( ($(date +%s) - started) / 60 ))
+        live=$(cat "$live_file" 2>/dev/null || printf '0 0 0 0')
+        set -- $live
+        li=${1:-0}; lo=${2:-0}; lcr=${3:-0}; lcc=${4:-0}
+        ltotal=$((li + lo + lcr + lcc))
+        if [ "$ltotal" -gt 0 ]; then
+          lcost=$(estimate_cost "$model" "$li" "$lo" "$lcr" "$lcc")
+          info "still working on $ref (${elapsed_m}m elapsed, ~$(fmt_tokens "$ltotal") tokens, ~$(fmt_usd "$lcost") so far)"
+        else
+          info "still working on $ref (${elapsed_m}m elapsed)"
+        fi
       done ) &
     hb_pid=$!
   fi
-  claude_rc=0
-  result_json=$( (cd "$wt_path" && printf '%s' "$prompt" | \
-    claude -p --output-format json --max-budget-usd "$item_budget" --model "$model" --effort "$effort" \
-      --permission-mode "$permission_mode") ) \
-    || claude_rc=$?
+
+  # Read the worker's stream-json output line by line, accumulating each
+  # assistant event's usage into live_file for the heartbeat above, and
+  # keeping the final result event for the cost/status parsing below.
+  # claude's own exit code can't come from $? after the pipeline (that
+  # would be the while loop's), so it's relayed through rc_file instead.
+  ( cd "$wt_path" \
+      && printf '%s' "$prompt" | claude -p --output-format stream-json --verbose \
+           --max-budget-usd "$item_budget" --model "$model" --effort "$effort" \
+           --permission-mode "$permission_mode"
+    echo $? > "$rc_file"
+  ) | while IFS= read -r line; do
+      etype=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || continue
+      case "$etype" in
+        assistant)
+          usage=$(printf '%s' "$line" | jq -c '.message.usage // empty' 2>/dev/null)
+          [ -n "$usage" ] && [ "$usage" != "null" ] || continue
+          cur=$(cat "$live_file" 2>/dev/null || printf '0 0 0 0')
+          set -- $cur
+          ci=${1:-0}; co=${2:-0}; ccr=${3:-0}; ccc=${4:-0}
+          di=$(printf '%s' "$usage" | jq -r '.input_tokens // 0')
+          do_=$(printf '%s' "$usage" | jq -r '.output_tokens // 0')
+          dcr=$(printf '%s' "$usage" | jq -r '.cache_read_input_tokens // 0')
+          dcc=$(printf '%s' "$usage" | jq -r '.cache_creation_input_tokens // 0')
+          printf '%s %s %s %s\n' "$((ci + di))" "$((co + do_))" "$((ccr + dcr))" "$((ccc + dcc))" > "$live_file"
+          ;;
+        result)
+          printf '%s\n' "$line" > "$result_file"
+          ;;
+      esac
+    done
+  claude_rc=$(cat "$rc_file" 2>/dev/null || echo 1)
+  result_json=$(cat "$result_file" 2>/dev/null || echo "")
+  rm -f "$live_file" "$result_file" "$rc_file"
+
   if [ -n "$hb_pid" ]; then kill "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true; fi
   info "worker exited $claude_rc after $(( $(date +%s) - started ))s"
 
