@@ -271,7 +271,7 @@ printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repo-stop1.md"
 o2=$(S)
 t   'the second Stop does not block' '' "$(printf '%s' "$o2" | jq -r '.decision // ""')"
 has 'and reports the resume block it found' \
-    '^Archivable\. Resume block written [0-9]{2}:[0-9]{2} in 2026-09-09-repo-stop1\.md\. Next time: `/resume`\.$' \
+    '^Archivable\. Resume block written [0-9]{2}:[0-9]{2} in 2026-09-09-repo-stop1\.md\. Next time: `/pickup`\.$' \
     "$(msg "$o2")"
 
 o3=$(S)

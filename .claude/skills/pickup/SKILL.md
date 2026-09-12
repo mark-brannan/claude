@@ -5,7 +5,7 @@ description: Pick up a session where an earlier one left it, from the resume blo
 
 # Pickup
 
-Thin by design. `resume-list` holds the parsing, the drop rules and the
+Thin by design. `pickup-list` holds the parsing, the drop rules and the
 table; this skill picks a row and starts.
 
 A session opened this way starts **from the block, not from `worklist`**.
@@ -15,7 +15,7 @@ to avoid.
 
 ## 1. Read the list
 
-Run `~/.local/bin/resume-list`.
+Run `~/.local/bin/pickup-list`.
 
 - **No rows** — say so in one line and stop. There is nothing to resume;
   `worklist` is the tool for choosing new work, and Solace will ask for it.
@@ -73,14 +73,14 @@ Do this **as you start**, not at the end: a session that dies mid-work
 should not hand the same block to the next one as if nothing happened, and a
 block still listed after two sessions took it is worse than none.
 
-`resume-list --files` prints `<branch><TAB><checkpoint path>`. In the chosen
+`pickup-list --files` prints `<branch><TAB><checkpoint path>`. In the chosen
 branch's checkpoint, append one line inside the `## Resume` block:
 
 ```
 - consumed: session <this session id, 8 chars> at <UTC timestamp>
 ```
 
-`resume-list` drops it from then on. The Stop hook carries the whole block,
+`pickup-list` drops it from then on. The Stop hook carries the whole block,
 consumed line included, into every later rewrite of that checkpoint, so it
 stays as a record of who took it.
 
@@ -113,7 +113,7 @@ whoever picks it up; one that is pausing mid-work keeps it, and the branch
 stays claimed until it comes back.
 
 One block per checkpoint; the newest replaces. `next` is a step, not a
-status — "add the fixture for a consumed block", never "resume-list is
+status — "add the fixture for a consumed block", never "pickup-list is
 half done". No state adjectives: the link carries state, live, at the other
 end.
 

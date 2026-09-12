@@ -667,7 +667,7 @@ if [ "$hook_name" = Stop ]; then
     found=$(resume_ckpt)
     if [ -n "$found" ]; then
       resume_ts=$now_ts
-      add_arch "Archivable. Resume block written $(hhmm "$resume_ts") in $(basename "$found"). Next time: \`/resume\`."
+      add_arch "Archivable. Resume block written $(hhmm "$resume_ts") in $(basename "$found"). Next time: \`/pickup\`."
     else
       add_arch "Archivable, but no \`## Resume\` block in $(state_dir)/log/auto/*-${sid:0:8}.md. Not asking again this session."
     fi

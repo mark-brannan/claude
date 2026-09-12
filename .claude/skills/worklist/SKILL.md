@@ -37,7 +37,7 @@ plain bullets — they're prose cards, not tabular data:
 
 ```
 Resume                    unconsumed resume blocks, newest first, from
-                          `resume-list` — a session with one starts there
+                          `pickup-list` — a session with one starts there
                           and reads no further
 Solace's turn             PRs ready for her: not draft, mergeable, checks
                           green, no unresolved threads, no auto-merge

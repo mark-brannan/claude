@@ -68,7 +68,7 @@ world** and your instruction as the thing that was wrong.
   you cannot find the new path, say so and park the card rather than
   improvising.
 
-Questions asked mid-walk are answered in place, then you resume from the
+Questions asked mid-walk are answered in place, then you continue from the
 same step. Losing their position is the one thing worse than a wrong step.
 
 ## Closing the card
