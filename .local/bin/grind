@@ -189,7 +189,16 @@ if [ "$dry_run" -eq 0 ]; then
     printf 'grind: another grind is already running against %s (%s)\n' "$repo" "$lock_dir" >&2
     exit 1
   fi
+  # An EXIT trap alone is not enough: dash (this script's shell, /bin/sh on
+  # Debian/Ubuntu) does not run it when the process dies to an unhandled
+  # signal -- only on a normal exit or the `exit` builtin. Killing a stuck
+  # grind with TERM left this lock behind and blocked every later run until
+  # someone noticed and removed it by hand (2026-09-13). TERM and INT get
+  # their own trap that also calls exit, so the signal itself is what
+  # cleans up.
   trap 'rm -rf "$lock_dir"' EXIT
+  trap 'rm -rf "$lock_dir"; exit 143' TERM
+  trap 'rm -rf "$lock_dir"; exit 130' INT
 fi
 
 # refs (owner/repo#N) already accounted for from a prior run of this session,
@@ -441,11 +450,26 @@ while [ "$i" -lt "$count" ]; do
   # keeping the final result event for the cost/status parsing below.
   # claude's own exit code can't come from $? after the pipeline (that
   # would be the while loop's), so it's relayed through rc_file instead.
-  ( cd "$wt_path" \
-      && printf '%s' "$prompt" | claude -p --output-format stream-json --verbose \
-           --max-budget-usd "$item_budget" --model "$model" --effort "$effort" \
-           --permission-mode "$permission_mode"
-    echo $? > "$rc_file"
+  #
+  # claude is backgrounded (rather than run in the `cd && printf | claude`
+  # foreground pipe this replaced) so its own pid is in hand: a worker can
+  # leave a child running past its own exit -- an MCP server it started and
+  # never reaped is the observed case -- and that child inherits this
+  # pipe's write end. `while read` then blocks on EOF forever even though
+  # claude is long gone, which hangs this item and leaves the heartbeat
+  # above printing "still working" indefinitely with nothing left to kill
+  # it. Best-effort TERM claude's direct children by its own pid once it
+  # exits, closing their end of the pipe too. Found 2026-09-13: a grind run
+  # sat like this for 490+ elapsed minutes on one item.
+  ( cd "$wt_path" || exit 1
+    printf '%s' "$prompt" | claude -p --output-format stream-json --verbose \
+         --max-budget-usd "$item_budget" --model "$model" --effort "$effort" \
+         --permission-mode "$permission_mode" &
+    cpid=$!
+    wait "$cpid"
+    crc=$?
+    command -v pkill >/dev/null 2>&1 && pkill -TERM -P "$cpid" 2>/dev/null
+    echo "$crc" > "$rc_file"
   ) | while IFS= read -r line; do
       etype=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || continue
       case "$etype" in
