@@ -145,5 +145,25 @@ sed -i 's/^- effort: high$/&\n- consumed: session abcd1234 at 2026-09-09T13:00:0
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
 has 'consumed marker survives' '^- consumed: session abcd1234' "$CKPT"
 
+# --- sc_salvage under CI: refused, nothing committed or pushed (dotfiles#196) ----
+# A throwaway repo of its own so a commit here can't leak into the fixtures
+# above; the shared PR reviewer is Claude Code inside GitHub Actions with
+# this hook seeded, and its checkout is dirty by construction.
+SORIGIN="$S/salvage-origin.git"; SWORK="$S/salvage-work"
+git init -q --bare "$SORIGIN"; git init -q -b main "$SWORK"
+gitq "$SWORK" remote add origin "$SORIGIN"
+echo base > "$SWORK/f"; gitq "$SWORK" add f; gitq "$SWORK" commit -m base
+gitq "$SWORK" push -u origin main
+gitq "$SWORK" checkout -b claude/salvage
+gitq "$SWORK" push -u origin claude/salvage
+echo ci-edit >> "$SWORK/f"
+before=$(git -C "$SORIGIN" rev-parse claude/salvage)
+printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$SID" "$SWORK" \
+  | GITHUB_ACTIONS=true CLAUDE_STOP_COMMIT=on bash "$HOOK" >/dev/null 2>&1
+CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
+has 'under CI: refused' 'refused: running under CI' "$CKPT"
+eq 'under CI: origin untouched' "$before" "$(git -C "$SORIGIN" rev-parse claude/salvage)"
+eq 'under CI: the edit is still sitting there, uncommitted' ' M f' "$(git -C "$SWORK" status --porcelain)"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

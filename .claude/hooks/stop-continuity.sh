@@ -275,6 +275,14 @@ sc_salvage() {
   if ! git -C "$work_root" remote get-url origin >/dev/null 2>&1; then
     sc_note "refused: no origin remote"; return 0
   fi
+  # Never from CI. The shared PR reviewer runs Claude Code inside GitHub
+  # Actions with this hook seeded from main, on a checkout whose .claude/
+  # paths claude-code-action has restored to the base branch's versions, with
+  # an app token that can push. Its Stop has nothing to salvage, and what it
+  # did salvage were the "wip: session ... at Stop" reverts of dotfiles#196.
+  if [ -n "${GITHUB_ACTIONS:-}" ] || [ -n "${CI:-}" ]; then
+    sc_note "refused: running under CI (GITHUB_ACTIONS/CI set); a bot's checkout is not a session's work"; return 0
+  fi
 
   # --- the commit: repo hooks and signing run as configured ----------------
   if ! git -C "$work_root" add -A >/dev/null 2>&1 \
