@@ -60,13 +60,19 @@ function heredoc_bodies(b, bodies,   d, eol, endm, tail, start, n) {
 #   k[i] == "w"  a word; w[i] is its text after quote removal and escapes.
 #   k[i] == "q"  a quoted word containing whitespace; w[i] is "$Q" (a hook
 #                can never resolve it) and q[i] is the raw text for texts_of.
+# SW_live[i] is 1 when the word carried a `$` or a backtick somewhere the
+# shell would act on it -- unquoted or inside double quotes. Inside single
+# quotes those are ordinary characters, so a body holding a markdown code
+# span or a literal $(...) is text, not substitution, and a hook that
+# refuses unresolvable values must not refuse it.
 #   k[i] == ";"  a command separator: ; | & newline ( ) ` or a lone { }.
 #                Runs of separators collapse to one.
 # Also sets SW_shellseg (see sw_mark_shell). Scanner state lives in SW_*
 # globals, so a hook must finish with w/k/q before calling scan() again.
 function scan(b, w, k, q,   L, i, c, d, n) {
   delete w; delete k; delete q
-  SW_n = 0; SW_cur = ""; SW_have = 0; SW_quoted = 0; SW_skip = 0
+  delete SW_live
+  SW_n = 0; SW_cur = ""; SW_have = 0; SW_quoted = 0; SW_skip = 0; SW_livecur = 0
   L = length(b)
   for (i = 1; i <= L; i++) {
     c = substr(b, i, 1)
@@ -87,6 +93,7 @@ function scan(b, w, k, q,   L, i, c, d, n) {
         d = substr(b, i, 1)
         if (d == "\"") break
         if (d == "\\" && substr(b, i + 1, 1) ~ /["\\$`]/) { i++; d = substr(b, i, 1) }
+        else if (d == "$" || d == "`") SW_livecur = 1
         SW_cur = SW_cur d
       }
       continue
@@ -115,6 +122,7 @@ function scan(b, w, k, q,   L, i, c, d, n) {
       continue
     }
     if ((c == "{" || c == "}") && !SW_have) { sw_sep(w, k); continue }
+    if (c == "$") SW_livecur = 1
     SW_cur = SW_cur c; SW_have = 1
   }
   sw_emit(w, k, q)
@@ -129,8 +137,9 @@ function sw_emit(w, k, q) {
     SW_n++
     if (SW_quoted && SW_cur ~ /[ \t\n]/) { w[SW_n] = "$Q"; k[SW_n] = "q"; q[SW_n] = SW_cur }
     else { w[SW_n] = SW_cur; k[SW_n] = "w" }
+    SW_live[SW_n] = SW_livecur
   }
-  SW_cur = ""; SW_have = 0; SW_quoted = 0
+  SW_cur = ""; SW_have = 0; SW_quoted = 0; SW_livecur = 0
 }
 
 function sw_sep(w, k) {
