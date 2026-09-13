@@ -298,6 +298,36 @@ sc_salvage() {
       return 0
     fi
   fi
+  # Never a revert of the branch's own work. The tree can be "dirty" because
+  # something put the base branch's version of a file back over the branch's
+  # -- claude-code-action's restore above, a tool writing from a stale copy
+  # -- and committing that publishes a reversion the push cannot detect: it
+  # is a fast-forward. So fetch base (a stale tracking ref would compare
+  # against content nobody restored) and, for every modified tracked file
+  # the branch had changed, refuse if the working copy now matches base byte
+  # for byte, naming the files. A session that really wants base's content
+  # back commits it by hand.
+  base=$(git -C "$work_root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
+  base="${base:-origin/main}"
+  git -C "$work_root" rev-parse -q --verify "$base" >/dev/null 2>&1 || base=origin/master
+  timeout 60 git -C "$work_root" fetch -q origin "${base#origin/}" >/dev/null 2>&1
+  if git -C "$work_root" rev-parse -q --verify "$base" >/dev/null 2>&1; then
+    reverted=""
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      # The branch changed this file, and the working copy is base's again.
+      git -C "$work_root" diff --quiet "$base" HEAD -- "$f" 2>/dev/null && continue
+      if git -C "$work_root" diff --quiet "$base" -- "$f" 2>/dev/null; then
+        reverted="$reverted $f"
+      fi
+    done <<EOF
+$(git -C "$work_root" diff --name-only HEAD -- . 2>/dev/null)
+EOF
+    if [ -n "$reverted" ]; then
+      sc_note "refused: the working tree puts \`$base\`'s version back over this branch's changes to:$reverted -- that is a revert, not new work; not committing"
+      return 0
+    fi
+  fi
 
   # --- the commit: repo hooks and signing run as configured ----------------
   if ! git -C "$work_root" add -A >/dev/null 2>&1 \

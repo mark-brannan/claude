@@ -9,9 +9,10 @@
 # because the hook rewrites the whole checkpoint and eating the hand-off the
 # model was told to write would be silent and total.
 #
-# The salvage commit's refusals (dotfiles#196: CI, stale base) are covered near
-# the bottom, in a throwaway repo of their own. The rest of the hook -- metrics
-# shape, the state-repo push -- is not covered here.
+# The salvage commit's refusals (dotfiles#196: CI, stale base, revert of the
+# branch's own work) are covered near the bottom, in a throwaway repo of
+# their own. The rest of the hook -- metrics shape, the state-repo push -- is
+# not covered here.
 set -uo pipefail
 [ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 
@@ -151,18 +152,22 @@ has 'consumed marker survives' '^- consumed: session abcd1234' "$CKPT"
 # =============================================================================
 # Everything above ran with CLAUDE_STOP_COMMIT=off. These use a throwaway repo
 # of their own, pushed to a bare origin, so a commit made here can't leak into
-# the verdict fixtures above.
+# the verdict fixtures above. `hookpath` is the branch's own work: base has
+# it one way, the branch changed it, and the failure mode under test is the
+# base version coming back over it.
 SORIGIN="$S/salvage-origin.git"; SWORK="$S/salvage-work"
 git init -q --bare "$SORIGIN"
 git init -q -b main "$SWORK"
 git -C "$SWORK" config user.name t; git -C "$SWORK" config user.email t@example.invalid
 git -C "$SWORK" config commit.gpgsign false
 gitq "$SWORK" remote add origin "$SORIGIN"
-echo base > "$SWORK/f"; gitq "$SWORK" add f; gitq "$SWORK" commit -m base
+echo base > "$SWORK/f"; echo 'guard: no' > "$SWORK/hookpath"
+gitq "$SWORK" add f hookpath; gitq "$SWORK" commit -m base
 gitq "$SWORK" push -u origin main
 gitq "$SWORK" remote set-head origin main
 gitq "$SWORK" checkout -b claude/salvage
-echo work >> "$SWORK/f"; gitq "$SWORK" add f; gitq "$SWORK" commit -m work
+echo work >> "$SWORK/f"; echo 'guard: yes' > "$SWORK/hookpath"
+gitq "$SWORK" add f hookpath; gitq "$SWORK" commit -m work
 gitq "$SWORK" push -u origin claude/salvage
 
 stop_salvage() {  # stop_salvage [VAR=value ...] -- run the hook with the salvage commit on
@@ -200,6 +205,29 @@ GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage CI=1
 has 'CI: refused' 'refused: running under CI' "$CKPT"
 untouched 'CI' ' M f'
 gitq "$SWORK" checkout -- f
+
+# --- a revert of the branch's own work: refused, files named ---------------------
+# claude-code-action's restore, or a tool writing from a stale copy: the
+# branch changed hookpath, and now base's version is back over it.
+snapshot; git -C "$SWORK" show origin/main:hookpath > "$SWORK/hookpath"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'revert to base: refused and the file is named' \
+  'refused: the working tree puts .origin/main..s version back over this branch.s changes to: hookpath' "$CKPT"
+untouched 'revert to base' ' M hookpath'
+# ... even when a real edit rides along with it: the revert still wins.
+echo more >> "$SWORK/f"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'revert plus a real edit: still refused' 'that is a revert, not new work' "$CKPT"
+untouched 'revert plus a real edit' $' M f\n M hookpath'
+gitq "$SWORK" checkout -- f hookpath
+# A file the branch never changed, put back to base's content, is not a
+# revert of anything -- it is simply unchanged, and the tree is not dirty.
+# A file the branch changed, edited to something that is neither version,
+# is new work and commits.
+echo 'guard: yes, differently' > "$SWORK/hookpath"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'a real edit to a branch-changed file: committed' 'committed and pushed to .claude/salvage.' "$CKPT"
+eq 'and nothing is left dirty' '' "$(git -C "$SWORK" status --porcelain)"
 
 # --- HEAD behind @{u}: refused, not committed, not pushed (dotfiles#196) ---------
 # Simulate the remote moving on without this checkout -- a hand re-push, a
