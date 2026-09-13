@@ -47,6 +47,11 @@
 # refs are already done or carded. `--resume <session>` re-reads it, skips
 # what is already accounted for, and keeps appending to the same file.
 #
+# One grind per repo at a time: an mkdir-based lock at
+# $XDG_STATE_HOME/grind/locks/<repo>.lock, held for the run and released on
+# any exit. A second invocation fails fast rather than fighting the first
+# over shared worktree paths and branch names.
+#
 #   grind [--dry-run] [--repo owner/name] [--model <m>] [--effort <e>]
 #         [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]
 #         [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]
@@ -170,6 +175,21 @@ if [ "$dry_run" -eq 0 ]; then
   [ "$here" = "$repo" ] \
     || { printf 'grind: current directory is not a checkout of %s (found: %s); cd there first\n' \
            "$repo" "${here:-no GitHub remote}" >&2; exit 1; }
+fi
+
+# --- single-flight lock, one grind per repo -----------------------------------
+# Two grinds against the same repo would fight over the same worktree paths
+# and branch names (grind-<n>): the second's `git branch -D` can delete a
+# worktree the first still has checked out. mkdir is the mutex -- atomic,
+# no flock dependency, and the directory's own existence is the lock.
+if [ "$dry_run" -eq 0 ]; then
+  lock_dir="$state_root/locks/$(printf '%s' "$repo" | tr '/' '_').lock"
+  mkdir -p "$state_root/locks" 2>/dev/null || true
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    printf 'grind: another grind is already running against %s (%s)\n' "$repo" "$lock_dir" >&2
+    exit 1
+  fi
+  trap 'rm -rf "$lock_dir"' EXIT
 fi
 
 # refs (owner/repo#N) already accounted for from a prior run of this session,
