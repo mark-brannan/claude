@@ -356,6 +356,7 @@ if [ -f "$FIX" ]; then
          | jq -r '.hookSpecificOutput.additionalContext // ""')
   t 'and fires once, not every turn' '0' \
     "$(printf '%s' "$ctx2" | grep -c 'corrections or rebukes' | tr -d ' ')"
+
 else
   printf 'SKIP: %s is missing\n' "$FIX"
 fi
@@ -436,6 +437,30 @@ clock 61 10
 out6i=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 has 'so the next real crossing offers again, not "already raised"' \
     'past 1h00. Say so and offer a break.' "$(ctx "$out6i")"
+clock_clear
+
+# --- 6b2. sitting clock with work in flight ----------------------------------
+# The human nags answer a sitting clock with "land it", not "stop and talk":
+# interrupting mid-work is what makes stepping away feel unsafe. The rung must
+# NOT be spent, so the real break offer still arrives once the work lands.
+WT="$SCRATCH/inflight"; mkdir -p "$WT"
+git -C "$WT" init -q 2>/dev/null
+git -C "$WT" checkout -q -b feature 2>/dev/null || true
+: > "$WT/dirty.txt"
+
+SID6j=sitflight
+sitting "$SID6j" 61 10
+out6j=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
+has 'with work in flight the sitting nag says land it, not stop' \
+    'with work in flight .*Do not offer a break or /wrapup yet' "$(ctx "$out6j")"
+hasnt 'and never offers the break' 'Say so and offer a break' "$(ctx "$out6j")"
+
+clock 121 10
+out6k=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
+hasnt 'the in-flight rung is not spent -- no "already raised"' \
+      'Already raised' "$(ctx "$out6k")"
+hasnt 'and two hours in flight still does not order /wrapup' \
+      'Stop here and run /wrapup' "$(ctx "$out6k")"
 clock_clear
 
 # --- 6c. model injection: decision load, mirrors section 6 --------------------

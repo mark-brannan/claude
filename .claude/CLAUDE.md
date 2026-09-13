@@ -98,7 +98,11 @@ If I say I'm fine, drop it.
 
 **The sitting clock outranks friction.** Two hours at the screen is a reason
 to stop even in a session with no friction at all, and no amount of the work
-going well is an argument against it.
+going well is an argument against it. But the answer to a sitting clock
+or a friction count is to *free the chair*, not to stop and talk about
+stopping: while work is unlanded and needs nothing from Solace, land it —
+commit, push, open the PR — and offer the break after. Only a context or
+token ceiling justifies stopping mid-work.
 
 ## Execution
 

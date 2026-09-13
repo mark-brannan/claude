@@ -430,6 +430,15 @@ record_crossing() {
     >> "$CROSSD/$sid.jsonl" 2>/dev/null || true
 }
 
+# Human nags (sitting, friction) gate on this; machine nags (context,
+# decisions) do not -- a context ceiling is a real limit, while a sitting
+# clock is answered by landing the work. Memoized; can shell out to `gh`.
+in_flight() {
+  [ -n "${in_flight_memo+x}" ] || in_flight_memo=$([ -n "$work_root" ] \
+    && archivable_reasons "$work_root" "$work_branch")
+  [ -n "$in_flight_memo" ]
+}
+
 if [ "$run_engine" -eq 1 ]; then
   # The sitting clock is wound by prompts and by nothing else -- started
   # here, reset here, and read only under is_prompt below. A Stop or a
@@ -555,11 +564,13 @@ if [ "$run_engine" -eq 1 ]; then
     if [ "$r" -eq 0 ]; then
       m_sit_at=0
     else
-      if [ "$r" -ge $((NAG_SIT_EVERY_MIN * 2)) ]; then sv="Stop here and run /wrapup."
+      inf=""; in_flight && inf=" with work in flight ($in_flight_memo)"
+      if [ -n "$inf" ]; then sv="Do not offer a break or /wrapup yet: land this without asking -- commit, push, open the PR -- then offer."
+      elif [ "$r" -ge $((NAG_SIT_EVERY_MIN * 2)) ]; then sv="Stop here and run /wrapup."
       else sv="Say so and offer a break."; fi
       if [ "$m_sit_at" -eq 0 ]; then
-        m_sit_at=$r
-        add_model "Sitting $(hm "$m_min") at this machine, past $(hm "$r"). $sv"
+        [ -n "$inf" ] || m_sit_at=$r   # unspent while in flight: fires once landed
+        add_model "Sitting $(hm "$m_min") at this machine, past $(hm "$r")$inf. $sv"
       else
         add_model "Sitting $(hm "$m_min"), past $(hm "$r"). Already raised at $(hm "$m_sit_at") and not acted on. $sv"
       fi
