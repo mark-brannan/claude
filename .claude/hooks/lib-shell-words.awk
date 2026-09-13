@@ -239,3 +239,55 @@ function cmd_index(w, k, a, b, re, nested, parents,   i, wrap, c) {
   }
   return 0
 }
+
+# sw_writes(text, out, heredoc_only): the file paths `text` writes with a
+# redirection or `tee` -- `> f`, `>> f`, `tee f`. Returns the count.
+#
+# Heredoc bodies are skipped, using strip_heredocs' own delimiter matching:
+# a `<<` inside a body is body text, not shell syntax, and a scanner that
+# missed that would let attacker-controlled content name any path it liked.
+# With heredoc_only == 1 only the targets of lines that OPEN a heredoc come
+# back -- the paths whose content is the heredoc body.
+#
+# A hook that reads a file an argument names can use the pair to tell "the
+# file is not there" from "the file is not there YET, and its content is the
+# heredoc body I am already scanning". That second reading holds only while
+# the heredoc is the one and only write to that path, so a caller must check
+# the path's count in the unrestricted result too: `> f <<EOF ... EOF; echo
+# private >> f` writes twice, and the second write is not the body.
+#
+# Quotes are stripped; a path built from $VAR comes back unresolved, so a
+# caller comparing paths simply will not match it.
+function sw_writes(b, out, heredoc_only,   nl, lines, i, line, pre, nt, t, x, teeing, n, delim, opens) {
+  delete out; n = 0; delim = ""
+  nl = split(b, lines, "\n")
+  for (i = 1; i <= nl; i++) {
+    line = lines[i]
+    if (delim != "") {                       # inside a heredoc body: not shell
+      if (line ~ ("^[ \t]*" delim "[ \t]*$")) delim = ""
+      continue
+    }
+    opens = match(line, /<<-?[ \t]*["\047]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)
+    if (opens) {
+      delim = substr(line, RSTART, RLENGTH)
+      sub(/^<<-?[ \t]*/, "", delim); gsub(/["\047]/, "", delim)
+      pre = substr(line, 1, RSTART - 1)      # only what stands before the <<
+    } else pre = line
+    if (heredoc_only && !opens) continue
+    gsub(/[;|&]/, " ; ", pre)
+    gsub(/>>?/, " @redir@ ", pre)            # not "&": in gsub that means the match
+    nt = split(pre, t, /[ \t]+/)
+    teeing = 0
+    for (x = 1; x <= nt; x++) {
+      if (t[x] == ";") { teeing = 0; continue }
+      if (t[x] == "@redir@") {
+        if (x < nt && t[x + 1] != ";" && t[x + 1] != "@redir@") out[++n] = sw_unq(t[x + 1])
+        continue
+      }
+      if (sw_unq(t[x]) == "tee") { teeing = 1; continue }
+      if (teeing && t[x] !~ /^-/) out[++n] = sw_unq(t[x])
+    }
+  }
+  return n
+}
+function sw_unq(t) { gsub(/["\047]/, "", t); return t }
