@@ -75,7 +75,7 @@ case "$ctx" in ''|*[!0-9]*) exit 0 ;; esac
 k=$((ctx / 1000))
 limk=$((LIMIT / 1000))
 
-jq -n --arg r "Blocked by ~/.claude/hooks/no-late-pr-subscribe.sh: this session is at ~${k}k tokens, at or over the ~${limk}k watch threshold${basis}. Every wake on this subscription would re-send that whole context, and it only grows from here. Take the fire-and-forget path instead: push, open the PR (draft, no reviewer), then end the turn with the follow-up prompt that would resume the work, plus \"You should archive this chat now. It's at ~${k}k tokens.\" No webhook, no wake -- pick the PR up fresh in a new session." '
+jq -n --arg r "Blocked by ~/.claude/hooks/no-late-pr-subscribe.sh: this session is at ~${k}k tokens, at or over the ~${limk}k watch threshold${basis}. Every wake on this subscription would re-send that whole context, and it only grows from here. Take the fire-and-forget path instead: push, open the PR (draft, no reviewer), then end the turn with the follow-up prompt that would continue the work, plus \"You should archive this chat now. It's at ~${k}k tokens.\" No webhook, no wake -- pick the PR up fresh in a new session." '
   {hookSpecificOutput: {
      hookEventName: "PreToolUse",
      permissionDecision: "deny",
