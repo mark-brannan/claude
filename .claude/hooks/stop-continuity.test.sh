@@ -9,8 +9,9 @@
 # because the hook rewrites the whole checkpoint and eating the hand-off the
 # model was told to write would be silent and total.
 #
-# The rest of the hook (metrics shape, the salvage commit, the state-repo
-# push) is not covered here.
+# The salvage commit's refusals (dotfiles#196: CI, stale base) are covered near
+# the bottom, in a throwaway repo of their own. The rest of the hook -- metrics
+# shape, the state-repo push -- is not covered here.
 set -uo pipefail
 [ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 
@@ -145,25 +146,76 @@ sed -i 's/^- effort: high$/&\n- consumed: session abcd1234 at 2026-09-09T13:00:0
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
 has 'consumed marker survives' '^- consumed: session abcd1234' "$CKPT"
 
-# --- sc_salvage under CI: refused, nothing committed or pushed (dotfiles#196) ----
-# A throwaway repo of its own so a commit here can't leak into the fixtures
-# above; the shared PR reviewer is Claude Code inside GitHub Actions with
-# this hook seeded, and its checkout is dirty by construction.
+# =============================================================================
+# sc_salvage: the auto-commit at Stop (dotfiles#196)
+# =============================================================================
+# Everything above ran with CLAUDE_STOP_COMMIT=off. These use a throwaway repo
+# of their own, pushed to a bare origin, so a commit made here can't leak into
+# the verdict fixtures above.
 SORIGIN="$S/salvage-origin.git"; SWORK="$S/salvage-work"
-git init -q --bare "$SORIGIN"; git init -q -b main "$SWORK"
+git init -q --bare "$SORIGIN"
+git init -q -b main "$SWORK"
+git -C "$SWORK" config user.name t; git -C "$SWORK" config user.email t@example.invalid
+git -C "$SWORK" config commit.gpgsign false
 gitq "$SWORK" remote add origin "$SORIGIN"
 echo base > "$SWORK/f"; gitq "$SWORK" add f; gitq "$SWORK" commit -m base
 gitq "$SWORK" push -u origin main
+gitq "$SWORK" remote set-head origin main
 gitq "$SWORK" checkout -b claude/salvage
+echo work >> "$SWORK/f"; gitq "$SWORK" add f; gitq "$SWORK" commit -m work
 gitq "$SWORK" push -u origin claude/salvage
-echo ci-edit >> "$SWORK/f"
-before=$(git -C "$SORIGIN" rev-parse claude/salvage)
-printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$SID" "$SWORK" \
-  | GITHUB_ACTIONS=true CLAUDE_STOP_COMMIT=on bash "$HOOK" >/dev/null 2>&1
-CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
-has 'under CI: refused' 'refused: running under CI' "$CKPT"
-eq 'under CI: origin untouched' "$before" "$(git -C "$SORIGIN" rev-parse claude/salvage)"
-eq 'under CI: the edit is still sitting there, uncommitted' ' M f' "$(git -C "$SWORK" status --porcelain)"
+
+stop_salvage() {  # stop_salvage [VAR=value ...] -- run the hook with the salvage commit on
+  # GITHUB_ACTIONS and CI are unset first: this suite runs under Actions, and
+  # the hook's CI refusal would otherwise win every case below. The CI case
+  # sets them back on purpose, as arguments.
+  printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$SID" "$SWORK" \
+    | env -u GITHUB_ACTIONS -u CI CLAUDE_STOP_COMMIT=on "$@" bash "$HOOK" >/dev/null 2>&1
+  CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
+}
+snapshot() { before_local=$(git -C "$SWORK" rev-parse HEAD); before_origin=$(git -C "$SORIGIN" rev-parse claude/salvage); }
+untouched() {  # untouched <label> <expected porcelain> -- nothing committed or pushed
+  eq "$1: local HEAD untouched" "$before_local" "$(git -C "$SWORK" rev-parse HEAD)"
+  eq "$1: origin untouched" "$before_origin" "$(git -C "$SORIGIN" rev-parse claude/salvage)"
+  eq "$1: the edit is still sitting there, uncommitted" "$2" "$(git -C "$SWORK" status --porcelain)"
+}
+
+# --- happy path: dirty tree, HEAD even with @{u} -> commits and pushes -----------
+echo dirty >> "$SWORK/f"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'salvage happy path: committed and pushed' \
+  'committed and pushed to .claude/salvage.' "$CKPT"
+eq 'the dirty change is no longer showing' '' "$(git -C "$SWORK" status --porcelain)"
+eq 'origin now has the pushed commit' \
+  "$(git -C "$SWORK" rev-parse HEAD)" "$(git -C "$SORIGIN" rev-parse claude/salvage)"
+
+# --- under CI: refused before anything else is looked at --------------------------
+# The shared PR reviewer is Claude Code inside GitHub Actions with these hooks
+# seeded; its checkout is dirty by construction. Nothing a bot has is ours.
+snapshot; echo ci-edit >> "$SWORK/f"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage GITHUB_ACTIONS=true
+has 'GITHUB_ACTIONS: refused' 'refused: running under CI' "$CKPT"
+untouched 'GITHUB_ACTIONS' ' M f'
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage CI=1
+has 'CI: refused' 'refused: running under CI' "$CKPT"
+untouched 'CI' ' M f'
+gitq "$SWORK" checkout -- f
+
+# --- HEAD behind @{u}: refused, not committed, not pushed (dotfiles#196) ---------
+# Simulate the remote moving on without this checkout -- a hand re-push, a
+# second session, anything -- by pushing a new commit straight to origin from
+# a scratch clone.
+CLONE="$S/salvage-clone"
+git clone -q "$SORIGIN" "$CLONE" >/dev/null 2>&1
+gitq "$CLONE" checkout claude/salvage
+echo newer >> "$CLONE/f"; gitq "$CLONE" add f; gitq "$CLONE" commit -m newer-upstream
+gitq "$CLONE" push origin claude/salvage
+
+snapshot; echo stale-edit >> "$SWORK/f"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'behind @{u}: refused' \
+  'refused: .claude/salvage. is 1 commit\(s\) behind .origin/claude/salvage.' "$CKPT"
+untouched 'behind @{u}' ' M f'
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

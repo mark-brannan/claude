@@ -283,6 +283,21 @@ sc_salvage() {
   if [ -n "${GITHUB_ACTIONS:-}" ] || [ -n "${CI:-}" ]; then
     sc_note "refused: running under CI (GITHUB_ACTIONS/CI set); a bot's checkout is not a session's work"; return 0
   fi
+  # Never on top of a stale base. If the remote has moved since this checkout
+  # last synced (a re-push by hand, another session, anything), the push
+  # below would be rejected as non-fast-forward and the note would tell a
+  # reader to "push by hand" -- and the obvious hand push of a stale base is
+  # a force-push over the newer work. Fetch and check first.
+  if timeout 60 git -C "$work_root" fetch -q origin "$work_branch" >/dev/null 2>&1 \
+     && git -C "$work_root" rev-parse -q --verify "refs/remotes/origin/$work_branch" \
+          >/dev/null 2>&1; then
+    behind=$(git -C "$work_root" rev-list --count \
+                HEAD.."origin/$work_branch" 2>/dev/null)
+    if [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
+      sc_note "refused: \`$work_branch\` is $behind commit(s) behind \`origin/$work_branch\`; not committing on a stale base"
+      return 0
+    fi
+  fi
 
   # --- the commit: repo hooks and signing run as configured ----------------
   if ! git -C "$work_root" add -A >/dev/null 2>&1 \
