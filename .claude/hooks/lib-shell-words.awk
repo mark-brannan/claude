@@ -36,6 +36,26 @@ function strip_heredocs(b,  d, eol, endm, tail, start) {
   return b
 }
 
+# heredoc_bodies(b, bodies): companion to strip_heredocs -- run on the same
+# original text, it finds the same heredocs in the same order but returns
+# their body text (bodies[1..n]) instead of throwing it away. b itself is
+# untouched (awk passes scalars by value).
+function heredoc_bodies(b, bodies,   d, eol, endm, tail, start, n) {
+  n = 0
+  while (match(b, /<<-?[ \t]*["']?[A-Za-z_][A-Za-z0-9_]*["']?/)) {
+    start = RSTART
+    d = substr(b, start, RLENGTH); sub(/^<<-?[ \t]*/, "", d); gsub(/["']/, "", d)
+    eol = index(substr(b, start), "\n")
+    if (!eol) return n
+    tail = substr(b, start + eol)
+    endm = match(tail, "(^|\n)[ \t]*" d "[ \t]*(\n|$)")
+    if (!endm) return n
+    bodies[++n] = substr(tail, 1, endm - 1)
+    b = substr(b, 1, start - 1) " HEREDOC " substr(tail, endm + RLENGTH - 1)
+  }
+  return n
+}
+
 # scan(text, w, k, q): tokenise shell text into w[1..n]; returns n.
 #   k[i] == "w"  a word; w[i] is its text after quote removal and escapes.
 #   k[i] == "q"  a quoted word containing whitespace; w[i] is "$Q" (a hook
