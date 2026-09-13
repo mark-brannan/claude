@@ -68,6 +68,16 @@ class HelpersTest(unittest.TestCase):
         self.assertFalse(pb.matches(["*.md"], "docs/a.md"))
         self.assertTrue(pb.matches(["reference/**"], "reference/x/y.txt"))
 
+    def test_glob_negation_excludes_subtree(self):
+        globs = ["docs/**/*.md", "!docs/proposals/**"]
+        self.assertTrue(pb.matches(globs, "docs/a.md"))
+        self.assertTrue(pb.matches(globs, "docs/adr/0001.md"))
+        self.assertFalse(pb.matches(globs, "docs/proposals/x.md"))
+        self.assertFalse(pb.matches(globs, "docs/proposals/reviews/y.md"))
+
+    def test_glob_negation_alone_matches_nothing(self):
+        self.assertFalse(pb.matches(["!docs/proposals/**"], "docs/a.md"))
+
     def test_line_count(self):
         self.assertEqual(pb.line_count(""), 0)
         self.assertEqual(pb.line_count("a\nb\n"), 2)

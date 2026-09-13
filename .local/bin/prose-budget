@@ -124,7 +124,11 @@ def glob_re(pattern):
 
 
 def matches(globs, path):
-    return any(glob_re(g).match(path) for g in globs)
+    positive = [g for g in globs if not g.startswith("!")]
+    negative = [g[1:] for g in globs if g.startswith("!")]
+    if not any(glob_re(g).match(path) for g in positive):
+        return False
+    return not any(glob_re(g).match(path) for g in negative)
 
 
 def _is_table_delimiter(stripped):
