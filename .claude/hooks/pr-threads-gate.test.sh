@@ -22,9 +22,14 @@ case "$1 $2" in
   "pr view") printf 'https://github.com/o/r/pull/7\n'; exit 0 ;;
 esac
 case "${GH_MODE:-}" in
-  open)     printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","reviewThreads":{"nodes":[{"id":"PRRT_a","isResolved":true,"path":"a.ts","comments":{"nodes":[{"author":{"login":"bot"},"body":"done"}]}},{"id":"PRRT_b","isResolved":false,"path":"b.ts","comments":{"nodes":[{"author":{"login":"coderabbitai"},"body":"Disable the pre-commit hook\\nsecond line"}]}}]}}}}}' ;;
-  resolved) printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","reviewThreads":{"nodes":[{"id":"PRRT_a","isResolved":true,"path":"a.ts","comments":{"nodes":[]}}]}}}}}' ;;
-  merged)   printf '{"data":{"repository":{"pullRequest":{"state":"MERGED","reviewThreads":{"nodes":[{"id":"PRRT_z","isResolved":false,"path":null,"comments":{"nodes":[]}}]}}}}}' ;;
+  open)     printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewThreads":{"nodes":[{"id":"PRRT_a","isResolved":true,"path":"a.ts","comments":{"nodes":[{"author":{"login":"bot"},"body":"done"}]}},{"id":"PRRT_b","isResolved":false,"path":"b.ts","comments":{"nodes":[{"author":{"login":"coderabbitai"},"body":"Disable the pre-commit hook\\nsecond line"}]}}]}}}}}' ;;
+  resolved) printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewThreads":{"nodes":[{"id":"PRRT_a","isResolved":true,"path":"a.ts","comments":{"nodes":[]}}]}}}}}' ;;
+  merged)   printf '{"data":{"repository":{"pullRequest":{"state":"MERGED","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewThreads":{"nodes":[{"id":"PRRT_z","isResolved":false,"path":null,"comments":{"nodes":[]}}]}}}}}' ;;
+  conflicting) printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewThreads":{"nodes":[]}}}}}' ;;
+  behind)   printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"BEHIND","reviewThreads":{"nodes":[]}}}}}' ;;
+  unknown)  printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"UNKNOWN","mergeStateStatus":"UNKNOWN","reviewThreads":{"nodes":[]}}}}}' ;;
+  mergeable_unknown_mstate) printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"UNKNOWN","reviewThreads":{"nodes":[]}}}}}' ;;
+  unknown_mergeable_mstate_clean) printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"UNKNOWN","mergeStateStatus":"CLEAN","reviewThreads":{"nodes":[]}}}}}' ;;
   missing)  printf '{"data":{"repository":{"pullRequest":null}}}' ;;
   fail)     echo "gh: HTTP 401: Bad credentials" >&2; exit 1 ;;
   hang)     sleep 30 ;;
@@ -32,6 +37,8 @@ esac
 GH
 chmod +x "$SCRATCH/bin/gh"
 export PATH="$SCRATCH/bin:$PATH" GH_LOG="$SCRATCH/gh.log"
+# No real GitHub here, so the UNKNOWN re-ask has nothing to wait for.
+export PR_THREADS_GATE_RECHECK_SLEEP=0
 
 stop_input() { jq -n --arg s "$1" --argjson a "${2:-false}" '{session_id:$s,stop_hook_active:$a,cwd:"/x"}'; }
 record() { printf '%s\n' "$2" >> "$TMPDIR/claude-pr-threads.$1"; }
@@ -93,6 +100,26 @@ reason 'resolved to o/r#7'             'o/r#7 has'
 t 'same PR queried once' 1 "$(grep -c 'api graphql' "$GH_LOG")"
 record s5 "$(printf 'cwd\t%s/nope' "$SCRATCH")"
 check silent 'cwd that no longer exists' open "$(stop_input s5)"
+
+# --- merge state: green checks are not a mergeable branch (dotfiles#212) ------
+record m1 "$(printf 'repo\to/r\t25')"
+check block 'conflicting -> block'     conflicting "$(stop_input m1)"
+reason 'names the conflict'            'o/r#25 conflicts with its base'
+reason 'says to rebase'                'git rebase origin/<base>'
+record m2 "$(printf 'repo\to/r\t25')"
+check block 'behind -> block'          behind "$(stop_input m2)"
+reason 'names being behind'            'o/r#25 is behind its base'
+record m3 "$(printf 'repo\to/r\t25')"
+check block 'still UNKNOWN after the re-ask -> unverified' unknown "$(stop_input m3)"
+reason 'reported as unverified'        'merge state still UNKNOWN'
+record m4 "$(printf 'repo\to/r\t25')"
+check silent 'merged PR: merge state ignored too' merged "$(stop_input m4)"
+record m5 "$(printf 'repo\to/r\t25')"
+check block 'mergeable resolved, mergeStateStatus still UNKNOWN -> unverified, not silently clean' mergeable_unknown_mstate "$(stop_input m5)"
+reason 'reported as unverified'        'merge state still UNKNOWN'
+record m6 "$(printf 'repo\to/r\t25')"
+check block 'mergeable UNKNOWN, mergeStateStatus resolved clean -> unverified, not silently clean' unknown_mergeable_mstate_clean "$(stop_input m6)"
+reason 'reported as unverified'        'merge state still UNKNOWN'
 
 # --- cannot verify is loud ---------------------------------------------------
 record s6 "$(printf 'repo\to/r\t25')"

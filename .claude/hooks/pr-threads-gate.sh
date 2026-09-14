@@ -1,6 +1,6 @@
 #!/bin/sh
 # Blocks the end of a turn while a PR this session touched still has an
-# unresolved review thread.
+# unresolved review thread, or cannot merge without a rebase.
 #
 # Why: the PR ownership rules say review threads are mine to reply to AND
 # resolve, and pr-ownership-context.sh puts that text in front of the session.
@@ -73,7 +73,7 @@ while IFS="$(printf '\t')" read -r repo num; do
   ( $TO gh api graphql -f owner="$owner" -f name="$name" -F number="$num" -f query='
     query($owner:String!,$name:String!,$number:Int!){
       repository(owner:$owner,name:$name){ pullRequest(number:$number){
-        state
+        state mergeable mergeStateStatus
         reviewThreads(first:100){ nodes{ id isResolved path
           comments(first:1){ nodes{ author{login} body } } } } } } }' > "$WORK/$n.out" 2>&1
     echo $? > "$WORK/$n.rc" ) &
@@ -83,6 +83,7 @@ EOF
 wait
 
 open=""
+stale=""
 failed=""
 i=0
 while [ "$i" -lt "$n" ]; do
@@ -100,16 +101,52 @@ while [ "$i" -lt "$n" ]; do
   [ "$state" = "OPEN" ] || continue
   threads=$(printf '%s' "$out" | jq -r '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved|not)
     | "  - \(.id)  \(.path // "(no file)")  @\(.comments.nodes[0].author.login // "?"): \((.comments.nodes[0].body // "") | split("\n")[0] | .[0:100])"')
+  # Merge state, from the same fetch. `gh pr checks` is green on a branch that
+  # conflicts with main, which is how "it's green, your turn" kept being said
+  # about a PR that could not merge. CONFLICTING and BEHIND are both a rebase.
+  mergeable=$(printf '%s' "$out" | jq -r '.data.repository.pullRequest.mergeable // "UNKNOWN"')
+  mstate=$(printf '%s' "$out" | jq -r '.data.repository.pullRequest.mergeStateStatus // "UNKNOWN"')
+  # GitHub computes mergeability lazily, and a push seconds earlier is the
+  # normal case here, so UNKNOWN means "ask again", not "cannot merge". One
+  # re-ask; still UNKNOWN is reported as unverified rather than assumed fine.
+  if [ "$mergeable" = UNKNOWN ] || [ "$mstate" = UNKNOWN ]; then
+    sleep "${PR_THREADS_GATE_RECHECK_SLEEP:-2}"
+    owner=${repo%%/*}; name=${repo#*/}
+    # shellcheck disable=SC2016  # GraphQL variables, not shell ones
+    again=$($TO gh api graphql -f owner="$owner" -f name="$name" -F number="$num" -f query='
+      query($owner:String!,$name:String!,$number:Int!){
+        repository(owner:$owner,name:$name){ pullRequest(number:$number){
+          mergeable mergeStateStatus } } }' 2>/dev/null) || again=""
+    [ -n "$again" ] && {
+      mergeable=$(printf '%s' "$again" | jq -r '.data.repository.pullRequest.mergeable // "UNKNOWN"')
+      mstate=$(printf '%s' "$again" | jq -r '.data.repository.pullRequest.mergeStateStatus // "UNKNOWN"')
+    }
+  fi
+  # Checked independently, never concatenated: mergeable and mergeStateStatus
+  # are two separate GitHub-computed fields and don't resolve in lockstep, so
+  # "$mergeable$mstate" can land on a string neither case arm matches.
+  if [ "$mergeable" = CONFLICTING ]; then
+    stale="$stale
+- $repo#$num conflicts with its base branch (mergeable=CONFLICTING)"
+  elif [ "$mstate" = BEHIND ]; then
+    stale="$stale
+- $repo#$num is behind its base branch (mergeStateStatus=BEHIND)"
+  elif [ "$mergeable" = UNKNOWN ] || [ "$mstate" = UNKNOWN ]; then
+    failed="$failed
+- $repo#$num: merge state still UNKNOWN (GitHub had not finished computing it)"
+  fi
   [ -n "$threads" ] && open="$open
 - $repo#$num has $(printf '%s\n' "$threads" | wc -l | tr -d ' ') unresolved review thread(s):
 $threads"
 done
 
-[ -z "$open" ] && [ -z "$failed" ] && exit 0
+[ -z "$open" ] && [ -z "$stale" ] && [ -z "$failed" ] && exit 0
 
 msg="pr-threads-gate: this turn cannot end yet. Live GraphQL re-check of the PR(s) this session worked:"
 [ -n "$open" ] && msg="$msg
 $open"
+[ -n "$stale" ] && msg="$msg
+$stale"
 [ -n "$failed" ] && msg="$msg
 
 Could not verify:$failed"
@@ -117,5 +154,5 @@ msg="$msg
 
 For each open thread, in this order: read it (gh api graphql on the thread id, or the PR's review comments), fix or answer it, reply on the thread with the evidence, then resolve it by id --
   gh api graphql -f query='mutation(\$id:ID!){resolveReviewThread(input:{threadId:\$id}){thread{isResolved}}}' -f id=<threadId>
-One thread at a time, never a loop over all unresolved ids. A thread only the user can close (a decision, a question to them) stays open: say so in your final message, by id, with what they need to decide. Never report 'all threads resolved' unless this check passes. Then end the turn again; this gate does not fire twice in one turn."
+One thread at a time, never a loop over all unresolved ids. A thread only the user can close (a decision, a question to them) stays open: say so in your final message, by id, with what they need to decide. Never report 'all threads resolved' unless this check passes. Any PR listed as conflicting or behind is rebased, not reported as green: git fetch origin <base> && git rebase origin/<base>, resolve, then force-push your own branch. Never say a PR is ready while this check names it. Then end the turn again; this gate does not fire twice in one turn."
 block "$msg"
