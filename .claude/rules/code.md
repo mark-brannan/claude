@@ -96,9 +96,13 @@ project-specific facts belong in that project's own CLAUDE.md.
 - **Green before it is handed over.** The bar, in order:
   - every fast check the repo defines passes locally — formatter, lint,
     typecheck, build, tests; whatever that repo actually has;
-  - the branch has no merge conflict with its base — fetch and rebase onto
-    the current base before pushing, don't leave a conflict to be
-    discovered;
+  - the branch is current with its base and has no conflict — `git fetch
+    origin <base> && git rebase origin/<base>` before the first push AND
+    again immediately before handing the PR over. Main moves while a
+    session works; a branch that was clean an hour ago is not clean now;
+  - the merge state says so, not just the checks — `gh pr view --json
+    mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
+    conflicts with main, so green checks are not a mergeable PR;
   - where CI can be read before merge, read it — `gh pr checks --watch`
     after the first push, or the equivalent — and don't tell the user it's his
     turn until the checks are passing or the failure is one I've explained
