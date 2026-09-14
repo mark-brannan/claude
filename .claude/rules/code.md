@@ -262,6 +262,25 @@ public" section.
   session's last response is invisible the moment that session scrolls out
   of view.
 
+## Our own workflows and actions
+
+- **Call our own reusable workflows and composite actions at the tip of
+  `main`, never a SHA or a version tag.** `uses:
+  mark-brannan/.github/.github/workflows/<name>.yml@main`, and the same for
+  `.github/actions/<name>@main`. One copy to fix is the whole point of
+  putting them in `mark-brannan/.github`: a pin means a fix there does not
+  reach the repo that needs it until someone remembers to re-pin, across a
+  dozen repos, which nobody does. Ruled by Solace, 2026-09-14.
+- The supply-chain argument for pinning is about code we do not control.
+  These are the user's own repos under the user's own account, already
+  covered by the same branch protection as everything else, so the pin buys
+  a guarantee that was not missing and costs the fleet-wide fix.
+- **Third-party actions are the opposite** and keep their pins —
+  `actions/checkout@v7` and friends stay as the upstream publishes them.
+- If a shared workflow ever needs to change in a way callers cannot absorb,
+  the fix is to keep it backward-compatible or to change the callers, not to
+  strand them on an old ref.
+
 ## Provisional until decided
 
 - **A fast first version is not the design.** Decidedness is a gradient and
