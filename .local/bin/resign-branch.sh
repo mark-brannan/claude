@@ -14,20 +14,24 @@
 #
 # What it does, in order:
 #   1. fetches <remote>/<branch> into a throwaway worktree, so the checkout
-#      you run it from never changes branch (refuses if your local <branch>
-#      has commits the remote lacks — they would be orphaned)
-#   2. if every commit already verifies, every commit is authored as this
+#      you run it from never changes branch (refuses if <branch> in any
+#      clone of the repo on this machine has commits the remote lacks —
+#      they would be orphaned)
+#   2. resolves the rebase target: the base branch of the open PR for
+#      <branch>, so a stacked PR stays stacked; the default branch when
+#      no PR is open. RESIGN_BASE=<name> overrides the lookup
+#   3. if every commit already verifies, every commit is authored as this
 #      machine's user.email, there are no merge commits and the branch is
-#      up to date with <remote>/HEAD, exits 0 without touching anything —
+#      up to date with the base, exits 0 without touching anything —
 #      safe to run repeatedly
-#   3. otherwise rebases onto <remote>/HEAD with -S, which re-signs every
+#   4. otherwise rebases onto the base with -S, which re-signs every
 #      commit, reauthors any commit not authored as this machine's
 #      user.email (original identity kept as a Co-Authored-By trailer),
 #      drops any "Update branch" merge commits and brings the branch up
 #      to date — a signed, linear stand-in for GitHub's "Update branch"
 #      button; a conflict aborts the rebase and exits 1, branch untouched.
 #      Refuses if linearizing would drop content from a hand-resolved merge
-#   4. verifies every rewritten commit locally, then force-pushes with lease
+#   5. verifies every rewritten commit locally, then force-pushes with lease
 #
 # Rewrites history. Single-author PR branches only; it refuses to run
 # against the default branch.
@@ -70,20 +74,99 @@ if [ -z "$signers" ] || [ ! -f "$signers" ]; then
   export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=gpg.ssh.allowedSignersFile GIT_CONFIG_VALUE_0="$signers"
 fi
 
-# Fetch everything, not just the branch: a stale <remote>/HEAD would replay
-# commits main already has and leave the branch behind.
+# Fetch everything, not just the branch: a stale base would replay commits
+# the base already has and leave the branch behind.
 git fetch -q "$remote"
 git rev-parse --verify -q "$remote/$branch" >/dev/null || die "$remote has no branch $branch"
 git rev-parse --verify -q "$remote/HEAD" >/dev/null || git remote set-head -q "$remote" -a
-target="$remote/HEAD"
-default=$(git symbolic-ref --short "refs/remotes/$target")   # e.g. origin/main
+default=$(git symbolic-ref --short "refs/remotes/$remote/HEAD")   # e.g. origin/main
 [ "$remote/$branch" != "$default" ] || die "refusing to rewrite the default branch"
 old=$(git rev-parse "$remote/$branch")
+url=$(git remote get-url "$remote")
 
-if git rev-parse --verify -q "refs/heads/$branch" >/dev/null; then
-  ahead=$(git rev-list --count "$old..refs/heads/$branch")
-  [ "$ahead" -eq 0 ] || die "local $branch has $ahead commit(s) not on $remote/$branch — they would be orphaned by the rewrite. Push or rebase them onto $remote/$branch first."
+# Rebase onto the PR's base, not the default branch. A stacked PR -- one
+# whose base is another PR's branch -- would otherwise be flattened onto
+# main with no error anywhere: the rebase succeeds, the push goes through,
+# and the PR now shows its parent's commits as its own. GitHub is the only
+# authority on the base, so an unanswerable lookup is a stop, not a guess;
+# RESIGN_BASE=<name> is the way through when gh can't be used.
+if [ -n "${RESIGN_BASE:-}" ]; then
+  base=$RESIGN_BASE
+else
+  command -v gh >/dev/null 2>&1 || die "gh is not installed, so the PR's base branch can't be looked up. Set RESIGN_BASE=<branch> to name it (the default branch is ${default#"$remote/"})."
+  bases=$(gh pr list -R "$url" --head "$branch" --state open --json baseRefName --jq '.[].baseRefName') \
+    || die "gh could not list open PRs for $branch on $url (auth? network?). Set RESIGN_BASE=<branch> to name the base by hand."
+  nbases=$(printf '%s\n' "$bases" | grep -c .) || true
+  if [ "$nbases" -eq 0 ]; then
+    base=${default#"$remote/"}
+    echo "resign-branch: no open PR for $branch; rebasing onto the default branch $default" >&2
+  elif [ "$nbases" -gt 1 ]; then
+    die "$nbases open PRs have head $branch, with bases: $(printf '%s' "$bases" | tr '\n' ' '). Set RESIGN_BASE=<branch> to pick one."
+  else
+    base=$bases
+  fi
+  # The other half of a stack: PRs based on this branch will show its old
+  # commits as their own until they are re-signed onto the rewritten ones.
+  children=$(gh pr list -R "$url" --base "$branch" --state open --json number --jq '.[].number' 2>/dev/null | tr '\n' ' ') || children=""
+  [ -z "$children" ] || echo "resign-branch: $branch is the base of open PR(s) ${children% }; after this run, re-sign each of those too so they pick up the rewritten commits" >&2
 fi
+target="$remote/$base"
+git rev-parse --verify -q "$target" >/dev/null || die "$remote has no branch $base to rebase $branch onto"
+[ "$target" != "$remote/$branch" ] || die "$branch cannot be rebased onto itself"
+
+# Every clone of this repo on this machine has its own refs/heads/<branch>,
+# and any of them may be the one holding commits nobody pushed. The clone
+# this runs from is one. dotfiles has two more -- ~/dotfiles/.git and the
+# yadm repo -- and they count only when they are clones of the same remote.
+# A candidate that matches but can't be read is a hard stop, because from
+# here "not checked" and "nothing there" look identical.
+# Same repo, different remote form: git@host:owner/repo(.git) (SCP-style)
+# and scheme://[user@]host/owner/repo(.git) (ssh://, https://, git://) must
+# compare equal, or two clones of the same GitHub repo on different
+# protocols take the same silent-skip path as "not a clone of this repo" --
+# the exact failure finding 2 exists to close.
+norm_url() {
+  u=${1%/}; u=${u%.git}
+  case "$u" in
+    *://*) u=${u#*://}; u=${u#*@} ;;                               # scheme://[user@]host/path -> host/path
+    *@*:*) u=${u#*@}; u=$(printf '%s' "$u" | sed 's/:/\//') ;;      # user@host:path -> host/path
+    *:*) u=$(printf '%s' "$u" | sed 's/:/\//') ;;                   # host:path -> host/path
+  esac
+  printf '%s\n' "$u"
+}
+gitdir=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)
+gitdirs=$gitdir
+candidates="$HOME/dotfiles/.git"
+if command -v yadm >/dev/null 2>&1; then
+  yrepo=$(yadm introspect repo 2>/dev/null) || die "yadm is installed but 'yadm introspect repo' failed, so its clone can't be checked for an unpushed $branch"
+  candidates="$candidates
+$yrepo"
+fi
+while IFS= read -r d; do
+  [ -e "$d" ] || continue   # empty $d fails -e too
+  dabs=$(cd "$d" 2>/dev/null && pwd -P) || die "$d exists but can't be entered, so it can't be checked for an unpushed $branch"
+  [ "$dabs" != "$gitdir" ] || continue
+  git --git-dir="$dabs" rev-parse --git-dir >/dev/null 2>&1 || die "$dabs exists but git can't read it, so it can't be checked for an unpushed $branch"
+  durl=$(git --git-dir="$dabs" remote get-url "$remote" 2>/dev/null) || continue   # no remote by that name: not a clone of this repo
+  [ "$(norm_url "$durl")" = "$(norm_url "$url")" ] || continue
+  gitdirs="$gitdirs
+$dabs"
+done <<CANDIDATES
+$candidates
+CANDIDATES
+
+# The orphan guard proper. A clone that has never fetched $old can't
+# compare against it, so fetch there first; a fetch that fails is a stop.
+while IFS= read -r d; do
+  git --git-dir="$d" rev-parse --verify -q "refs/heads/$branch" >/dev/null || continue
+  git --git-dir="$d" cat-file -e "$old^{commit}" 2>/dev/null \
+    || git --git-dir="$d" fetch -q "$remote" \
+    || die "can't fetch $remote in $d, so its $branch can't be compared with $remote/$branch"
+  ahead=$(git --git-dir="$d" rev-list --count "$old..refs/heads/$branch")
+  [ "$ahead" -eq 0 ] || die "$branch in $d has $ahead commit(s) not on $remote/$branch — they would be orphaned by the rewrite. Push or rebase them onto $remote/$branch first."
+done <<GITDIRS
+$gitdirs
+GITDIRS
 
 # All the rewriting happens in a throwaway worktree, so the checkout this
 # runs from — which cron and other sessions may be using — never changes
@@ -103,7 +186,7 @@ count_unverified() {
 # Commits whose author or committer email isn't this machine's identity --
 # the case %G? can't see (see header comment).
 count_foreign() {
-  g log --pretty='%ae%n%ce' "$1" | grep -vic -F "$localemail" || true
+  g log --pretty='%ae%n%ce' "$1" | grep -vxcF -- "$localemail" || true
 }
 unverified=$(count_unverified "$target..HEAD")
 foreign=$(count_foreign "$target..HEAD")
@@ -112,11 +195,11 @@ total=$(g rev-list --count "$target..HEAD")
 behind=$(g rev-list --count "HEAD..$target")
 
 if [ "$unverified" -eq 0 ] && [ "$foreign" -eq 0 ] && [ "$merges" -eq 0 ] && [ "$behind" -eq 0 ]; then
-  echo "resign-branch: all $total commit(s) on $branch verify, all authored as $localemail, no merge commits, up to date with $default — nothing to do"
+  echo "resign-branch: all $total commit(s) on $branch verify, all authored as $localemail, no merge commits, up to date with $target — nothing to do"
   exit 0
 fi
 
-echo "resign-branch: $total commit(s) on $branch, $unverified unverified, $foreign not authored as $localemail, $merges merge commit(s), $behind behind $default; rebasing onto $default with -S"
+echo "resign-branch: $total commit(s) on $branch, $unverified unverified, $foreign not authored as $localemail, $merges merge commit(s), $behind behind $target; rebasing onto $target with -S"
 
 reauthor=$(mktemp)
 cat >"$reauthor" <<REAUTHOR
@@ -137,7 +220,7 @@ chmod +x "$reauthor"
 if ! GIT_SEQUENCE_EDITOR=true g rebase -q -S --force-rebase --exec "$reauthor" "$target"; then
   g rebase --abort 2>/dev/null || true
   rm -f "$reauthor"
-  die "rebase onto $default conflicted; $branch is untouched. Resolve by hand: git rebase -S $target $branch"
+  die "rebase onto $target conflicted; $branch is untouched. Resolve by hand: git rebase -S $target $branch"
 fi
 rm -f "$reauthor"
 
@@ -154,7 +237,7 @@ if [ "$merges" -gt 0 ]; then
   if [ -z "$want" ]; then
     die "$merges merge commit(s) on $branch and the equivalent merge does not apply cleanly, so the rebase result cannot be checked against it. $branch is untouched; resolve by hand."
   elif [ "$want" != "$got" ]; then
-    die "rebasing dropped content from $merges merge commit(s) on $branch -- the rebased tree differs from the merge result, which means a hand-resolved merge was replayed differently. $branch is untouched. Merge $default in instead: git merge $target, then re-sign with: git rebase -S --force-rebase \$(git merge-base $target HEAD)"
+    die "rebasing dropped content from $merges merge commit(s) on $branch -- the rebased tree differs from the merge result, which means a hand-resolved merge was replayed differently. $branch is untouched. Merge $target in instead: git merge $target, then re-sign with: git rebase -S --force-rebase \$(git merge-base $target HEAD)"
   fi
 fi
 
@@ -171,9 +254,13 @@ foreign=$(count_foreign "$target..HEAD")
 
 new=$(g rev-parse HEAD)
 g push --force-with-lease="refs/heads/$branch:$old" "$remote" "$new:refs/heads/$branch"
-if git rev-parse --verify -q "refs/heads/$branch" >/dev/null; then
-  git branch -f "$branch" "$new" 2>/dev/null \
-    || echo "resign-branch: local $branch is checked out somewhere and still points at $old; run: git checkout -B $branch $remote/$branch" >&2
-fi
+while IFS= read -r d; do
+  git --git-dir="$d" rev-parse --verify -q "refs/heads/$branch" >/dev/null || continue
+  git --git-dir="$d" cat-file -e "$new^{commit}" 2>/dev/null || git --git-dir="$d" fetch -q "$remote" || true
+  git --git-dir="$d" branch -f "$branch" "$new" 2>/dev/null \
+    || echo "resign-branch: $branch in $d is checked out somewhere and still points at $old; run there: git checkout -B $branch $remote/$branch" >&2
+done <<GITDIRS
+$gitdirs
+GITDIRS
 echo "resign-branch: pushed $branch to $remote; every commit verifies locally. Confirm on GitHub:"
 echo "  gh api repos/{owner}/{repo}/pulls/<n>/commits --jq '.[]|\"\\(.sha[0:7]) \\(.commit.verification.verified)\"'"
