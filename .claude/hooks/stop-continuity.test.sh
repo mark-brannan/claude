@@ -159,7 +159,11 @@ SORIGIN="$S/salvage-origin.git"; SWORK="$S/salvage-work"
 git init -q --bare "$SORIGIN"
 git init -q -b main "$SWORK"
 git -C "$SWORK" config user.name t; git -C "$SWORK" config user.email t@example.invalid
-git -C "$SWORK" config commit.gpgsign false
+# The salvage commit forces commit.gpgsign=true, so the fixture needs a key it
+# can actually sign with; ssh signing needs no gpg agent.
+ssh-keygen -q -t ed25519 -N "" -C t -f "$S/sign" </dev/null
+git -C "$SWORK" config gpg.format ssh
+git -C "$SWORK" config user.signingkey "$S/sign.pub"
 gitq "$SWORK" remote add origin "$SORIGIN"
 echo base > "$SWORK/f"; echo 'guard: no' > "$SWORK/hookpath"
 gitq "$SWORK" add f hookpath; gitq "$SWORK" commit -m base
@@ -193,6 +197,22 @@ has 'salvage happy path: committed and pushed' \
 eq 'the dirty change is no longer showing' '' "$(git -C "$SWORK" status --porcelain)"
 eq 'origin now has the pushed commit' \
   "$(git -C "$SWORK" rev-parse HEAD)" "$(git -C "$SORIGIN" rev-parse claude/salvage)"
+# The signature itself, not %G?: verifying an ssh signature would need an
+# allowedSignersFile this fixture has no reason to carry.
+eq 'the salvage commit is signed' 'gpgsig' \
+  "$(git -C "$SWORK" cat-file -p HEAD | awk '/^gpgsig/{print "gpgsig"; exit}')"
+
+# --- no signing key: refused rather than pushed unsigned (dotfiles#183) ----------
+# A cloud session has no key. Unsigned is how the salvage commit kept landing
+# unsigned commits on open pull requests, so the commit must fail instead.
+snapshot; git -C "$SWORK" config --unset gpg.format
+git -C "$SWORK" config --unset user.signingkey; echo unsigned-edit >> "$SWORK/f"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'no signing key: refused' 'refused: commit failed .hook or signing.' "$CKPT"
+untouched 'no signing key' ' M f'
+git -C "$SWORK" config gpg.format ssh
+git -C "$SWORK" config user.signingkey "$S/sign.pub"
+git -C "$SWORK" checkout -q -- f
 
 # --- under CI: refused before anything else is looked at --------------------------
 # The shared PR reviewer is Claude Code inside GitHub Actions with these hooks

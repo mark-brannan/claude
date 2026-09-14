@@ -329,9 +329,14 @@ EOF
     fi
   fi
 
-  # --- the commit: repo hooks and signing run as configured ----------------
+  # --- the commit: repo hooks run as configured, signing is required -------
+  # `commit.gpgsign=true` rather than the machine's setting: a cloud session
+  # has no signing key, so "as configured" meant unsigned, and the salvage
+  # commit is how unsigned commits kept reaching open pull requests. Fail
+  # closed -- the commit is refused and the files are left for a machine that
+  # can sign.
   if ! git -C "$work_root" add -A >/dev/null 2>&1 \
-     || ! git -C "$work_root" commit -q \
+     || ! timeout 30 git -C "$work_root" -c commit.gpgsign=true commit -q \
           -m "wip: session ${sid:0:8} at Stop ($today)" \
           -m "Co-Authored-By: Claude <noreply@anthropic.com>" >/dev/null 2>&1; then
     git -C "$work_root" reset -q >/dev/null 2>&1
