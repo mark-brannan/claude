@@ -21,7 +21,7 @@ For every card and every memo with a linked PR, issue, or ADR:
 2. **Superseded** — a memo that took a position later overtaken by an ADR,
    a PR, or a later memo, and says nothing about it.
 3. **"Pending:" tails** — a card or memo ending in an implicit unresolved
-   question with no typed contract. Flag it for `/sequence`, don't answer
+   question with no typed contract. Flag it for `/ruling`, don't answer
    it here.
 4. **Done cards claiming open state** — "awaiting review" a week after
    merge, "re-test after merging" past the merge.
@@ -38,7 +38,7 @@ For every card and every memo with a linked PR, issue, or ADR:
 
 A reconcile finds a mismatch between what's written and what `gh` (or the
 linked file) says. It never decides which one is right when both could be —
-that's a `/sequence` card.
+that's a `/ruling` card.
 
 ## Fixes, applied directly (no dialog — these are corrections, not calls)
 
@@ -48,13 +48,13 @@ that's a `/sequence` card.
   naming what superseded it. Never reword or delete the body.
 - **"Pending:" tail with no contract:** don't resolve it — rewrite it as a
   proper card with input (the exact question) and output type, or hand it
-  to `/sequence` if it needs judgment now.
+  to `/ruling` if it needs judgment now.
 - **Blocked issue whose blocker is closed or dated past:** relabel `ready`,
   proof in the commit.
 
 ## Output
 
 Under 15 lines: what was checked (counts, not a list), what was corrected
-and its proof link, what's left as a `/sequence` candidate. Commit the
+and its proof link, what's left as a `/ruling` candidate. Commit the
 board/memo corrections in the state repo with the `gh` evidence in the
 commit message.

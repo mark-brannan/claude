@@ -2,7 +2,7 @@
 # grind -- a zero-token orchestrator that works the Ready queue one
 # `claude -p` session at a time.
 #
-# Why: no skill executes work. `sequence` routes decisions, `worklist`
+# Why: no skill executes work. `ruling` routes decisions, `worklist`
 # reports, `sweep` and `reconcile` prune the record. This is the one that
 # does the work, and because it is a script rather than a model, measuring
 # and capping spend is free. Ruled 2026-09-09 (Solace).
