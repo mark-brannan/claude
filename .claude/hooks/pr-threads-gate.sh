@@ -153,6 +153,6 @@ Could not verify:$failed"
 msg="$msg
 
 For each open thread, in this order: read it (gh api graphql on the thread id, or the PR's review comments), fix or answer it, reply on the thread with the evidence, then resolve it by id --
-  gh api graphql -f query='mutation(\$id:ID!){resolveReviewThread(input:{threadId:\$id}){thread{isResolved}}}' -f id=<threadId>
-One thread at a time, never a loop over all unresolved ids. A thread only the user can close (a decision, a question to them) stays open: say so in your final message, by id, with what they need to decide. Never report 'all threads resolved' unless this check passes. Any PR listed as conflicting or behind is rebased, not reported as green: git fetch origin <base> && git rebase origin/<base>, resolve, then force-push your own branch. Never say a PR is ready while this check names it. Then end the turn again; this gate does not fire twice in one turn."
+  gh-resolve-thread <threadId>
+(a wrapper around the resolveReviewThread mutation; it is allowlisted, a raw gh api graphql call is not). One thread at a time, never a loop over all unresolved ids. A thread only the user can close (a decision, a question to them) stays open: say so in your final message, by id, with what they need to decide. Never report 'all threads resolved' unless this check passes. Any PR listed as conflicting or behind is rebased, not reported as green: git fetch origin <base> && git rebase origin/<base>, resolve, then force-push your own branch. Never say a PR is ready while this check names it. Then end the turn again; this gate does not fire twice in one turn."
 block "$msg"
