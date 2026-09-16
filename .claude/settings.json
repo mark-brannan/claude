@@ -131,6 +131,11 @@
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/no-foreign-worktree.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-foreign-worktree.sh is missing from $HOME/.claude/hooks or crashed, so a reach into a worktree owned by another session could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
             "statusMessage": "Checking for a reach into another worktree"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-delete-stacked-base.sh\"; { [ -f \"$h\" ] && sh \"$h\"; } || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no-delete-stacked-base.sh is missing from $HOME/.claude/hooks or crashed, so a remote-branch deletion could not be checked for open PRs stacked on it. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}'",
+            "statusMessage": "Checking for open PRs stacked on the branch being deleted"
           }
         ]
       },

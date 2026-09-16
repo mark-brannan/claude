@@ -76,6 +76,7 @@ INSTALL="
 .claude/hooks/no-checkout-home.sh
 .claude/hooks/no-rm-tree.sh
 .claude/hooks/no-foreign-worktree.sh
+.claude/hooks/no-delete-stacked-base.sh
 .claude/hooks/lib-shell-words.awk
 .claude/hooks/session-start-seed-refresh.sh
 .claude/hooks/guard-add-repo.sh
