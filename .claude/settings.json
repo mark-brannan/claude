@@ -187,6 +187,15 @@
         ]
       },
       {
+        "matcher": "Bash|mcp__.*__update_pull_request_branch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-update-branch.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
