@@ -381,6 +381,30 @@ public" section.
 
 ## Cost
 
+- **One action per Bash call; never chain what a gate might refuse.** A
+  permission rule matches a whole command, and the `lib-shell-words.awk`
+  gates judge every segment of a chain with ambiguity resolving toward deny.
+  So one refused segment kills the whole call, and the retry re-emits every
+  other segment with it. `git fetch && git rebase && git diff` is one block
+  plus a full re-send; as three calls it is three allowlist hits. Reads are
+  not exempt — they are the usual casualties, dragged down by a write they
+  were stapled to. Measured 2026-09-16 over 1334 blocked Bash calls
+  (`state/global/metrics/blocked/`): 919 (69%) were chains, and `git status`
+  and `git log` were blocked 176 times between them purely as passengers.
+- **A gate that redirects needs a small thing to redirect.** These hooks are
+  meant to send the work down a better path, not just refuse it; a redirect
+  landing on a five-command chain can't say which part to change, and costs
+  the whole chain to act on. Keep the call small enough that the hook's
+  reason is the next action.
+- **Don't paste a bulk allowlist to quiet the prompts.** Rules get proposed
+  in tables by frequency, which measures nothing about whether the rule is
+  safe or even load-bearing. Scar: 2026-09-16, a four-row table covering
+  4 of 1334 blocks — two rows already live at user scope, and
+  `Bash(gh api repos/*/contents/*)` labelled read-only while its trailing
+  `*` matched `-X DELETE` and every `-f` (which flips `gh api` to POST).
+  Write `*` only after the subcommand: Claude Code warns that a wildcard
+  before it, as in `Bash(git *)`, also approves injected `-c`/`--exec-path`,
+  which run arbitrary commands.
 - **Don't switch model or `/effort` mid-session** — pick both at start; a
   switch at ~50k context recomputes 65-100% of it (measured,
   `.claude/docs/token-budget.md`).
