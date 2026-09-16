@@ -98,6 +98,7 @@ INSTALL="
 .local/bin/prose-budget
 .local/bin/worklist
 .local/bin/pickup-list
+.local/bin/gh-resolve-thread
 "
 
 # --- what is wholly owned by this installer -------------------------------
