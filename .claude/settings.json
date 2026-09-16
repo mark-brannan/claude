@@ -9,6 +9,7 @@
       "Bash(git branch -d claude/*)",
       "Bash(git fetch *)",
       "Bash(git merge-base *)",
+      "Bash(gh-resolve-thread:*)",
       "Bash(git push origin HEAD:main)",
       "Bash(npm run generate:check)",
       "Bash(npm run typecheck)",

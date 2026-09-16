@@ -1,0 +1,30 @@
+#!/bin/sh
+# gh-resolve-thread <threadId> -- resolve one PR review thread by node id.
+#
+# Exists so thread resolution can be allowlisted as `Bash(gh-resolve-thread:*)`.
+# The alternative, a `gh api graphql:*` glob, would also approve deleteRef,
+# closePullRequest and every other mutation GitHub exposes. The mutation is
+# hard-coded; the only caller-controlled input is the id, and it is passed as
+# a GraphQL variable, never interpolated into the query.
+#
+# Exit: 0 when GitHub reports the thread resolved; 1 on usage error or when
+# the mutation ran but the thread is not resolved; gh's own status otherwise.
+set -u
+
+usage() { echo "usage: gh-resolve-thread <threadId>   (one PRRT_... id, no loop)" >&2; exit 1; }
+
+[ $# -eq 1 ] || usage
+id=$1
+case $id in
+  PRRT_*) ;;
+  *) echo "gh-resolve-thread: '$id' is not a review-thread id (expected PRRT_...)" >&2; exit 1 ;;
+esac
+
+# shellcheck disable=SC2016  # $id is a GraphQL variable, resolved by GitHub, not the shell
+out=$(gh api graphql \
+  -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
+  -f id="$id") || exit $?
+case $out in
+  *'"isResolved":true'*) echo "resolved $id"; exit 0 ;;
+  *) echo "gh-resolve-thread: $id not resolved:" >&2; printf '%s\n' "$out" >&2; exit 1 ;;
+esac
