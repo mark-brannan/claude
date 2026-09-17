@@ -83,6 +83,7 @@ chmod +x "$S/bin/gh"
 mkdir -p "$S/claude-replies"
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
@@ -184,6 +185,7 @@ JSON
 rm -f "$S/state/grind"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 echo "\$*" >> "$CLAUDE_LOG"
 echo '{"type":"assistant","message":{"usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":20000,"cache_creation_input_tokens":3000}}}'
@@ -211,6 +213,7 @@ JSON
 rm -f "$S/state/grind"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
@@ -391,6 +394,7 @@ export GRIND_BOARD="$S/kanban.md"
 : > "$GRIND_BOARD"
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 echo "\$*" >> "$CLAUDE_LOG"
 sleep 1.1
@@ -407,6 +411,7 @@ unset GRIND_BOARD
 # --- blocked: a third status, logged, recorded, not retried ---------------------
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
@@ -512,6 +517,7 @@ rm -f "$S/state/grind"/*.json
 rm -f "$S/claude-replies"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
@@ -529,6 +535,7 @@ eq 'failed item is not recorded in state' 0 "$(jq '.items | length' "$sess")"
 # restore the real claude shim and confirm --resume retries the failed item
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
@@ -551,6 +558,7 @@ eq 'now recorded in state' 1 "$(jq '.items | length' "$sess")"
 rm -f "$S/state/grind"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
@@ -568,6 +576,7 @@ has 'logged as a failure' '^FAILED: o/alpha#7 .*will retry on --resume'
 # `[: Illegal number:` while deciding the item's status.
 has 'the non-zero exit status reaches the exit line' 'INFO  worker exited 1 after [0-9]+s'
 lacks 'no shell error from an empty exit status' 'Illegal number'
+has 'the worker result text is on the FAILED line' '^FAILED: o/alpha#7 .*worker reported an error: Budget exceeded \('
 sess=$(latest_session)
 eq 'recorded in state as failed' failed "$(jq -r '.items[0].status' "$sess")"
 eq 'its cost is kept' 5.00 "$(jq -r '.items[0].cost' "$sess")"
@@ -585,6 +594,7 @@ eq 'failed-with-cost item retried on resume' 1 "$(calls_claude)"
 rm -f "$S/state/grind"/*.json
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
@@ -605,6 +615,7 @@ eq 'recorded failed on exit status alone' failed "$(jq -r '.items[0].status' "$s
 # restore the real claude shim
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
@@ -680,6 +691,28 @@ eq 'the item still ran' 1 "$(calls_claude)"
 assert 'lock directory released again after this clean exit' bash -c '[ ! -d "'"$lock_dir"'" ]'
 assert 'the rename-based reclaim leaves no quarantined .stale.* dir behind' \
   bash -c '! ls -d "'"$lock_dir"'".stale.* >/dev/null 2>&1'
+
+# --- a logged-out claude is refused before any worktree or state file -------
+# The observed failure (2026-09-16): every item came back $0, 0 tokens,
+# "OAuth session expired", three runs in a row, and grind said only "worker
+# reported an error".
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":false,"authMethod":"none"}'; exit 0; }
+echo "\$*" >> "$CLAUDE_LOG"
+cat > "$S/prompt.txt"
+echo '{"type":"result","is_error":true,"total_cost_usd":0,"usage":{},"result":"Failed to authenticate: OAuth session expired and could not be refreshed"}'
+GH
+chmod +x "$S/bin/claude"
+rm -f "$S/state/grind"/*.json
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 10
+eq 'exit 1 when claude is logged out' 1 "$RC"
+has 'says how to fix it' 'claude is not logged in .*claude auth login'
+eq 'no worker invocation' 0 "$(calls_claude)"
+assert 'no state file written' bash -c '! ls '"$S"'/state/grind/*.json >/dev/null 2>&1'
+run --dry-run
+eq 'dry-run does not consult auth' 0 "$RC"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

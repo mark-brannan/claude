@@ -127,6 +127,22 @@ done
 command -v jq >/dev/null 2>&1 || { echo "grind: needs jq" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }
 
+# A logged-out claude fails every item the same way -- a $0, 0-token result
+# whose only content is "OAuth session expired" -- and until 2026-09-16 that
+# text was dropped, so three runs in a row reported "worker reported an
+# error" with nothing to act on. Check once, before any worktree is cut.
+# Older CLIs without `auth status` print nothing parseable: skip the check
+# rather than block, and let the worker's own result text (now surfaced on
+# FAILED lines) say what went wrong.
+if [ "$dry_run" -eq 0 ]; then
+  auth_json=$(claude auth status </dev/null 2>/dev/null || true)
+  if printf '%s' "$auth_json" | jq -e . >/dev/null 2>&1 \
+     && [ "$(printf '%s' "$auth_json" | jq -r '.loggedIn == false')" = true ]; then
+    printf 'grind: claude is not logged in (claude auth status: loggedIn=false); run `claude auth login` first\n' >&2
+    exit 1
+  fi
+fi
+
 state_root=${XDG_STATE_HOME:-$HOME/.local/state}/grind
 mkdir -p "$state_root" 2>/dev/null || true
 
@@ -594,8 +610,12 @@ while [ "$i" -lt "$count" ]; do
 
   percent=$(pct "$running_total" "$session_budget")
   if [ "$status" = failed ]; then
-    printf 'FAILED: %s -- %s -- worker reported an error (%s, %s tokens, running %s / %s -- %s%%); will retry on --resume\n' \
-      "$ref" "$title" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent" >&2
+    # The result text is the only diagnosis there is (an auth failure, a
+    # budget cap, an API error): first line, trimmed, so the FAILED line
+    # says why and not just that.
+    why=$(printf '%s' "$text" | sed -n '1p' | cut -c1-200)
+    printf 'FAILED: %s -- %s -- worker reported an error: %s (%s, %s tokens, running %s / %s -- %s%%); will retry on --resume\n' \
+      "$ref" "$title" "${why:-no result text}" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent" >&2
   elif [ "$status" = unverified ]; then
     printf 'UNVERIFIED: %s -- %s -- worker claimed success but %s (%s, %s tokens, running %s / %s -- %s%%); will retry on --resume\n' \
       "$ref" "$title" "$unverified_why" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent" >&2
