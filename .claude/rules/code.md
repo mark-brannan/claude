@@ -82,6 +82,15 @@ project-specific facts belong in that project's own CLAUDE.md.
 
 ## PR ownership: never a draft, never red
 
+- **Read the conversation before you watch the checks.** On any PR — mine or
+  one I am reviewing — the order is: review comments and unresolved threads
+  first, then the fix and the push, then CI. Waiting on a check is the lowest
+  priority thing a session can be doing, and never the only thing: a long
+  local suite or a running GitHub check is background, so start it and go work
+  the threads while it runs. A session idling on `gh pr checks --watch` or a
+  test run while an unanswered comment sits on the PR is wasting the one
+  resource that matters. `--watch` is for the last look before hand-over,
+  after the threads are answered — not for the middle of the work.
 - **Never open a PR as a draft.** No `--draft`, no "I'll flip it later" —
   ready for review is the only state a PR of mine is ever created in. A
   draft gets no review at all — CodeRabbit and claude-review both skip
@@ -117,7 +126,8 @@ project-specific facts belong in that project's own CLAUDE.md.
     mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
     conflicts with main, so green checks are not a mergeable PR;
   - where CI can be read before merge, read it — `gh pr checks --watch`
-    after the first push, or the equivalent — and don't tell the user it's his
+    before hand-over (not as a way to pass the time after the first push),
+    or the equivalent — and don't tell the user it's his
     turn until the checks are passing or the failure is one I've explained
     and can't fix.
 - **A PR handed to the user needs a judgment pass, not a "did this even build"
