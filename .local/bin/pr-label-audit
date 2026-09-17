@@ -1,0 +1,189 @@
+#!/bin/sh
+# Reports every open pull request whose `awaiting-human` label disagrees with
+# the facts GitHub can see, and every repository where the label can never be
+# applied at all.
+#
+# Why this exists: the label is computed by Mergify (mark-brannan/.github
+# .mergify.yml) from `check-success=ci-gate / gate` and
+# `#review-threads-unresolved=0`. That computation is correct and it toggles,
+# so it never says something stale. What it cannot do is tell anyone. A pull
+# request that goes green after its session ended gets labelled with nobody
+# watching; one that goes red again gets un-labelled the same way. Both end as
+# an open pull request nobody is looking at.
+#
+# Since .github#24 the label is also load-bearing rather than advisory:
+# Mergify only updates a branch that carries it, and no-update-branch.sh
+# forbids the session from using GitHub's own Update branch. An unlabelled
+# pull request is therefore one that nothing will ever bring up to date.
+#
+# Read-only. It reports; it never labels, pushes or merges.
+set -u
+
+OWNER=${PR_LABEL_AUDIT_OWNER:-mark-brannan}
+LABEL=awaiting-human
+GATE='ci-gate / gate'
+
+for tool in gh jq; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "pr-label-audit: $tool is required" >&2; exit 1; }
+done
+
+# One search, not one call per repository: the REST route rate-limited at ~12
+# repositories when this was written, and the audit is worth nothing if it
+# only sometimes completes.
+query='
+query($q: String!, $after: String) {
+  search(query: $q, type: ISSUE, first: 100, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      ... on PullRequest {
+        number
+        title
+        isDraft
+        url
+        repository { name }
+        mergeable
+        labels(first: 20) { nodes { name } }
+        reviewThreads(first: 100) { nodes { isResolved } }
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    ... on CheckRun { name conclusion }
+                    ... on StatusContext { context state }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+
+# Mergify's label action does not create a label that the repository does not
+# define: the rule matches, the action is a no-op, and nothing anywhere says so.
+# That is one of the two ways the label silently never appears (the other is a
+# missing gate check), and the two need different fixes, so the audit asks each
+# repository whether the label exists rather than guessing from the symptom.
+search_page() {  # search_page [cursor]
+  if [ -n "${1:-}" ]
+  then gh api graphql -f query="$query" -f q="$SEARCH" -f after="$1"
+  else gh api graphql -f query="$query" -f q="$SEARCH"
+  fi
+}
+
+# `first: 100` is the page, not the answer. An unpaginated search truncates
+# silently at 100 open pull requests and a truncated report looks exactly like
+# a complete one -- the same "only sometimes completes, and nothing says so"
+# failure the REST route had. So: follow the cursor, and when the cursor runs
+# past GitHub search's own 1000-result ceiling, fail rather than under-report.
+SEARCH="is:pr is:open archived:false user:$OWNER"
+pages=''
+cursor=''
+page_count=0
+while :; do
+  page=$(search_page "$cursor") || {
+    echo "pr-label-audit: the GitHub query failed" >&2; exit 1; }
+  pages="$pages$page"
+  page_count=$((page_count + 1))
+  if [ "$page_count" -ge 10 ]; then
+    echo "pr-label-audit: more than 1000 open pull requests -- GitHub search" >&2
+    echo "  cannot return them all, so this report would be incomplete." >&2
+    echo "  Narrow it with PR_LABEL_AUDIT_OWNER, or split the query by repo." >&2
+    exit 1
+  fi
+  cursor=$(printf '%s' "$page" |
+    jq -r '.data.search.pageInfo | if .hasNextPage then .endCursor else empty end')
+  [ -n "$cursor" ] || break
+done
+raw=$(printf '%s' "$pages" | jq -s '{data: {search: {nodes: map(.data.search.nodes[]?)}}}') || {
+  echo "pr-label-audit: the GitHub query returned something unreadable" >&2; exit 1; }
+
+# Three outcomes, not two. `2>/dev/null` on its own would fold a transient
+# failure, a permission hiccup and a repo renamed out from under the search
+# into "this repo lacks the label" -- and then print `gh label create` as the
+# fix, which is wrong advice for all three. A lookup that did not complete is
+# reported as not checked, so the reader knows the difference.
+repos=$(printf '%s' "$raw" | jq -r '[.data.search.nodes[]?.repository.name] | unique[]')
+defines=""
+unchecked=""
+for repo in $repos; do
+  if labels=$(gh api "repos/$OWNER/$repo/labels" --paginate -q '.[].name' 2>/dev/null); then
+    printf '%s\n' "$labels" | grep -qx "$LABEL" && defines="$defines $repo"
+  else
+    unchecked="$unchecked $repo"
+  fi
+done
+
+printf '%s' "$raw" | jq -r --arg defines "$defines" --arg unchecked "$unchecked" --arg label "$LABEL" --arg gate "$GATE" --arg owner "$OWNER" '
+  def checks: [.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
+               | {name: (.name // .context), result: (.conclusion // .state)}];
+  def gate_result: (first(checks[] | select(.name == $gate) | .result) // "absent");
+  def unresolved: [.reviewThreads.nodes[]? | select(.isResolved | not)] | length;
+
+  def section($title; $note; $rows):
+    if ($rows | length) > 0
+    then ["## \($title)", "", $note, ""] + ($rows | map("  - \(.)")) + [""]
+    else [] end;
+
+  def line: "\(.repo)#\(.number) \(.title[0:58])\n    \(.url)";
+  def vline: "\(.repo)#\(.number) [\(.verdict)] \(.title[0:58])\n    \(.url)";
+
+  ( ($defines | split(" ") | map(select(. != ""))) ) as $defines_label
+  | ( ($unchecked | split(" ") | map(select(. != ""))) ) as $unchecked_label
+  | ( [ .data.search.nodes[]
+      | select(.isDraft | not)
+      | .repository.name as $repo
+      | { repo: $repo, number: .number, title: .title, url: .url,
+          gate: gate_result, unresolved: unresolved,
+          labelled: (([.labels.nodes[].name] | index($label)) != null),
+          mergeable: .mergeable,
+          defines_label: (($defines_label | index($repo)) != null),
+          unchecked_label: (($unchecked_label | index($repo)) != null) } ]
+    | unique_by("\(.repo)#\(.number)")
+    | map(. + { verdict:
+        (if .gate == "absent" then "no-gate"
+         elif .mergeable == "CONFLICTING" then "conflicted"
+         elif .gate != "SUCCESS" then "not-green"
+         elif .unresolved > 0 then "threads-open"
+         else "green" end) }) ) as $prs
+
+  | ( section(
+        "Repositories whose labels could not be read";
+        "The label lookup failed, so these are neither confirmed missing nor\nconfirmed present -- do NOT create the label here on the strength of this\nreport. Re-run; if it persists, check `gh auth status` and whether the\nrepository was renamed, archived or lost its permission.";
+        [$prs[] | select(.unchecked_label) | .repo] | unique)
+
+    + section(
+        "Repositories that do not define the `\($label)` label";
+        "Mergify matches its rule and then does nothing: its label action will not\ncreate a label the repository is missing, and it reports no error. Fix with\n  gh label create \($label) -R \($owner)/<repo> -d \"Green and thread-free: it is your turn\"";
+        [$prs[] | select((.defines_label | not) and (.unchecked_label | not)) | .repo] | unique)
+
+    + section(
+        "No `\($gate)` check -- the label can never apply";
+        "Mergify evaluates its rule, the check is simply absent, and nothing is\never labelled or updated. Adopt the reusable ci-gate workflow, or accept\nthat these pull requests are entirely manual.";
+        [$prs[] | select(.verdict == "no-gate") | line])
+
+    + section(
+        "Gated, unlabelled -- a session left these unfinished";
+        "Not handed over, so nothing updates them and nobody is waiting on you.\nEach needs a session to pick it up and finish it.";
+        [$prs[] | select(.verdict == "not-green" or .verdict == "conflicted" or .verdict == "threads-open") | vline])
+
+    + section(
+        "Green and thread-free but NOT labelled";
+        "Mergify should have labelled these, and the two ordinary excuses --\nno gate, no label defined -- do not apply. A non-empty list here means the\nlabelling rule itself is broken: read .mergify.yml before anything else.";
+        [$prs[] | select(.verdict == "green" and (.labelled | not) and .defines_label) | line])
+
+    + section(
+        "Labelled but no longer green";
+        "The toggle has not caught up, or a check went back to pending. Do not\ntreat these as your turn without re-checking.";
+        [$prs[] | select(.labelled and .verdict != "green") | vline])
+
+    + ["## Your turn (\([$prs[] | select(.labelled and .verdict == "green")] | length))", ""]
+    + ( [$prs[] | select(.labelled and .verdict == "green") | "  - " + line]
+        | if length == 0 then ["  nothing"] else . end )
+    + ["", "https://github.com/pulls?q=is%3Aopen+user%3A\($owner)+label%3A\($label)"]
+  ) | .[]
+'

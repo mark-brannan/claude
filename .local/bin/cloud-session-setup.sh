@@ -99,6 +99,7 @@ INSTALL="
 .local/bin/worklist
 .local/bin/pickup-list
 .local/bin/gh-resolve-thread
+.local/bin/pr-label-audit
 "
 
 # --- what is wholly owned by this installer -------------------------------
