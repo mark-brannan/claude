@@ -64,13 +64,29 @@ BIN="$S/bin"; mkdir -p "$BIN"
 cat > "$BIN/gh" <<'EOF'
 #!/bin/sh
 # graphql: the search payload, or a failure when GH_FAIL is set. A call
-# carrying `after=` is asking for page two, and gets SEARCH_JSON_2 if one is set.
+# carrying `after=` is asking for page two, and gets SEARCH_JSON_2 if one is
+# set, or -- for the exact-page-count boundary test -- counts pages against
+# COUNTFILE and swaps in SEARCH_JSON_SEQ_LAST once SEARCH_JSON_SEQ_LAST_AT is
+# reached.
+COUNTFILE="$(dirname "$0")/.count"
 case "$*" in
   *graphql*)
     [ "${GH_FAIL:-0}" = 1 ] && { echo "gh: API rate limit exceeded" >&2; exit 1; }
     case "$*" in
-      *after=*) cat "${SEARCH_JSON_2:-$SEARCH_JSON}" ;;
-      *)        cat "$SEARCH_JSON" ;;
+      *after=*)
+        if [ -n "${SEARCH_JSON_SEQ_LAST:-}" ]; then
+          n=$(( $(cat "$COUNTFILE" 2>/dev/null || echo 1) + 1 ))
+          echo "$n" > "$COUNTFILE"
+          if [ "$n" -ge "${SEARCH_JSON_SEQ_LAST_AT:-10}" ]; then
+            cat "$SEARCH_JSON_SEQ_LAST"
+          else
+            cat "$SEARCH_JSON"
+          fi
+        else
+          cat "${SEARCH_JSON_2:-$SEARCH_JSON}"
+        fi
+        ;;
+      *) cat "$SEARCH_JSON" ;;
     esac
     exit 0 ;;
 esac
@@ -174,6 +190,17 @@ run
 eq 'runaway pagination exits non-zero' 1 "$RC"
 has 'and says the report would be incomplete' 'more than 1000 open pull requests'
 hasnt 'rather than printing a partial report' '## Your turn'
+
+# --- exactly 1000 results (10 full pages, no more) is not a refusal --------------------
+# The 10th page completing with hasNextPage:false is a finished report, not the
+# runaway case above -- the refusal must check the cursor before counting pages.
+rm -f "$BIN/.count"
+page true "$(pr alpha 1 'on an early page' false MERGEABLE "$lab" '[]' "$green")" > "$S/search.json"
+page false "$(pr alpha 2 'on the last page' false MERGEABLE "$lab" '[]' "$green")" > "$S/last.json"
+SEARCH_JSON_SEQ_LAST="$S/last.json" run
+eq 'a report that completes on page ten is not a refusal' 0 "$RC"
+has 'the last page is still counted' 'alpha#2 on the last page'
+unset SEARCH_JSON_SEQ_LAST
 
 # --- a label lookup that FAILED is not a repo that lacks the label -------------------------
 # Folding the two together prints `gh label create` as the fix for a transient

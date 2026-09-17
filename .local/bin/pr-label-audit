@@ -89,15 +89,15 @@ while :; do
     echo "pr-label-audit: the GitHub query failed" >&2; exit 1; }
   pages="$pages$page"
   page_count=$((page_count + 1))
+  cursor=$(printf '%s' "$page" |
+    jq -r '.data.search.pageInfo | if .hasNextPage then .endCursor else empty end')
+  [ -n "$cursor" ] || break
   if [ "$page_count" -ge 10 ]; then
     echo "pr-label-audit: more than 1000 open pull requests -- GitHub search" >&2
     echo "  cannot return them all, so this report would be incomplete." >&2
     echo "  Narrow it with PR_LABEL_AUDIT_OWNER, or split the query by repo." >&2
     exit 1
   fi
-  cursor=$(printf '%s' "$page" |
-    jq -r '.data.search.pageInfo | if .hasNextPage then .endCursor else empty end')
-  [ -n "$cursor" ] || break
 done
 raw=$(printf '%s' "$pages" | jq -s '{data: {search: {nodes: map(.data.search.nodes[]?)}}}') || {
   echo "pr-label-audit: the GitHub query returned something unreadable" >&2; exit 1; }
