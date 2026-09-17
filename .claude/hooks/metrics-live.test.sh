@@ -242,12 +242,13 @@ TP3="$SCRATCH/stop.jsonl"; turn "$TP3" 1000
 # "Stand up" asks for five minutes out of the chair and the same session back;
 # it is not a wrap-up. Arming the block on it made every hour a demand for a
 # resume block. Two hours is the sitting clock's actual verdict, and the only
-# crossing on it that blocks. METRICS_STOP_HOUR=23 keeps the late-hour arm out
+# crossing on it that blocks. METRICS_STOP_HOUR=24 is an hour the clock never
+# reaches, which keeps the late-hour arm out
 # of the way so what is under test is the crossing alone.
 arm() {  # arm <session id> <minutes on the shared clock>
   clock "$2" 10
   payload "$TP3" "$1" "$REPO" | bash "$HOOK" prompt 0 >/dev/null 2>&1
-  payload "$TP3" "$1" "$REPO" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1
+  payload "$TP3" "$1" "$REPO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1
 }
 o=$(arm arm1 61)
 has 'the one-hour crossing is still reported' '⏱ sitting 1h00' \
@@ -293,7 +294,7 @@ o=$(S3); t 'and stays quiet after' '' "$(printf '%s' "$o" | jq -r '.decision // 
 # A crossing that arms the Stop is consumed by it, so the block reason has to
 # carry the line -- otherwise the threshold that caused the block is never seen.
 TP4="$SCRATCH/cross.jsonl"; turn "$TP4" 103000
-o=$(payload "$TP4" stop4 "$REPO" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+o=$(payload "$TP4" stop4 "$REPO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t   'a context crossing at Stop blocks' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 has 'and the reason carries the crossing line' '⛁ 103k/100k' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
@@ -316,7 +317,7 @@ git -C "$REPOO" remote add origin "$SCRATCH/repoo.git"
 git -C "$REPOO" push -q -u origin feat/order
 
 TPO="$SCRATCH/order.jsonl"; turn "$TPO" 103000
-oO1=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+oO1=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t 'order setup: the first Stop blocks' block "$(printf '%s' "$oO1" | jq -r '.decision // ""')"
 
 printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repoo-orderx.md"
@@ -324,7 +325,7 @@ printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repoo-orderx.md"
 # Second Stop: also crosses 150k while confirming the resume block, so a
 # nag, the block, and the archival tail all fire together -- no re-block.
 turn "$TPO" 152000
-oO2=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+oO2=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t 'order: the confirming Stop does not re-block' '' "$(printf '%s' "$oO2" | jq -r '.decision // ""')"
 msgO2=$(msg "$oO2")
 nag_at=$(printf '%s\n' "$msgO2" | grep -n '⛁⛁ 152k/150k' | head -1 | cut -d: -f1)
@@ -525,12 +526,12 @@ TP8="$SCRATCH/repo8.jsonl"; turn "$TP8" 1000
 
 git -C "$REPO8" checkout -q -b feat/ahead
 git -C "$REPO8" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
-o8=$(payload "$TP8" stop8a "$REPO8" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+o8=$(payload "$TP8" stop8a "$REPO8" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 has 'no upstream, ahead of origin/main: not archivable' \
     'has no upstream \(never pushed\)' "$(msg "$o8")"
 
 git -C "$REPO8" checkout -q -b feat/nothing-to-lose main
-o8b=$(payload "$TP8" stop8b "$REPO8" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+o8b=$(payload "$TP8" stop8b "$REPO8" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 hasnt 'no upstream, nothing ahead of origin/main: not flagged' \
       'has no upstream' "$(msg "$o8b")"
 
@@ -543,12 +544,12 @@ REPO9="$SCRATCH/repo9"; mkdir -p "$REPO9"
 git -C "$REPO9" init -q -b main
 git -C "$REPO9" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 TP9="$SCRATCH/repo9.jsonl"; turn "$TP9" 1000
-o9=$(payload "$TP9" show9 "$REPO9" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+o9=$(payload "$TP9" show9 "$REPO9" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 has 'a clean tree still prints the turns line' '⇢ [0-9]+ ⚙ [0-9]+' "$(msg "$o9")"
 hasnt 'and says nothing about git state' '⎇' "$(msg "$o9")"
 
 : > "$REPO9/scratch-file"
-o9b=$(payload "$TP9" show9b "$REPO9" Stop | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show 2>&1)
+o9b=$(payload "$TP9" show9b "$REPO9" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 has 'a dirty tree appends git state to the same line' '⇢ [0-9]+ ⚙ [0-9]+ ⎇ 1~' "$(msg "$o9b")"
 
 # --- 10. the block survives $OUT being deleted mid-run -----------------------
@@ -585,7 +586,7 @@ GH
 chmod +x "$SCRATCH/bin/gh"
 OUT10="$STATE/metrics/live/race.json"
 payload "$TP10" race "$REPO10" Stop \
-  | METRICS_STOP_HOUR=23 bash "$HOOK" stop 0 show > "$SCRATCH/o10.out" 2>&1 &
+  | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show > "$SCRATCH/o10.out" 2>&1 &
 hook_pid=$!
 until [ -f "$OUT10" ]; do :; done
 rm -f "$OUT10"
