@@ -443,7 +443,7 @@ while [ "$i" -lt "$count" ]; do
   hb_pid=""
   if [ "$heartbeat" -gt 0 ]; then
     # The sleep child would otherwise outlive the kill and hold stdout open.
-    ( trap 'kill "$sp" 2>/dev/null; exit 0' TERM
+    ( trap 'kill "$sp" 2>/dev/null || true; exit 0' TERM
       while :; do
         sleep "$heartbeat" & sp=$!; wait "$sp" || exit 0
         elapsed_m=$(( ($(date +%s) - started) / 60 ))
@@ -522,7 +522,13 @@ while [ "$i" -lt "$count" ]; do
   result_json=$(cat "$result_file" 2>/dev/null || echo "")
   rm -f "$live_file" "$result_file" "$rc_file"
 
-  if [ -n "$hb_pid" ]; then kill "$hb_pid" 2>/dev/null; wait "$hb_pid" 2>/dev/null || true; fi
+  # `kill` here is bare under `set -e`: if the heartbeat already exited on
+  # its own -- it does, whenever its `wait` was interrupted -- the failed
+  # kill takes the whole grind run down between items, not just this one.
+  if [ -n "$hb_pid" ]; then
+    kill "$hb_pid" 2>/dev/null || true
+    wait "$hb_pid" 2>/dev/null || true
+  fi
   info "worker exited $claude_rc after $(( $(date +%s) - started ))s"
 
   # Unparseable/empty JSON means the worker never produced a result, so its
