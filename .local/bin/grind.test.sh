@@ -655,6 +655,8 @@ assert 'lock directory released on clean exit' bash -c '! ls -d '"$S"'/state/gri
 
 # --- a held lock refuses a second grind, no work done -----------------------
 mkdir -p "$lock_dir"
+jq -n --argjson pid "$$" --arg host "$(uname -n)" \
+  '{pid:$pid, hostname:$host, lock_acquired_at:"x"}' > "$lock_dir/meta.json"
 rm -f "$S/state/grind"/*.json
 : > "$CLAUDE_LOG"
 run --session-budget 100 --pause-every 10
@@ -662,6 +664,22 @@ eq 'exit 1 when another grind holds the lock' 1 "$RC"
 has 'says another grind is running' 'another grind is already running against o/alpha'
 eq 'no claude invocation while locked out' 0 "$(calls_claude)"
 rm -rf "$lock_dir"
+
+# --- a stale lock (recorded pid is dead) is reclaimed, run proceeds ----------
+mkdir -p "$lock_dir"
+jq -n --arg host "$(uname -n)" \
+  '{pid:999999999, hostname:$host, lock_acquired_at:"x"}' > "$lock_dir/meta.json"
+rm -f "$S/state/grind"/*.json
+rm -f "$S/claude-replies"/*.json
+reply 0.10 "done" 1
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 10
+eq 'exit 0, the stale lock did not block the run' 0 "$RC"
+has 'WARN about reclaiming the stale lock' 'WARN  reclaiming stale lock on o/alpha'
+eq 'the item still ran' 1 "$(calls_claude)"
+assert 'lock directory released again after this clean exit' bash -c '[ ! -d "'"$lock_dir"'" ]'
+assert 'the rename-based reclaim leaves no quarantined .stale.* dir behind' \
+  bash -c '! ls -d "'"$lock_dir"'".stale.* >/dev/null 2>&1'
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

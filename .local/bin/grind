@@ -180,14 +180,28 @@ fi
 # --- single-flight lock, one grind per repo -----------------------------------
 # Two grinds against the same repo would fight over the same worktree paths
 # and branch names (grind-<n>): the second's `git branch -D` can delete a
-# worktree the first still has checked out. mkdir is the mutex -- atomic,
-# no flock dependency, and the directory's own existence is the lock.
+# worktree the first still has checked out. mkdir is the mutex -- atomic, no
+# flock dependency, and the directory's own existence is the lock; meta.json
+# inside it tells a live lock from one a dead process left behind.
+hostname_now=$(uname -n 2>/dev/null || echo unknown)
+lock_root="$state_root/locks"
+lock_dir="$lock_root/$(printf '%s' "$repo" | tr '/' '_').lock"
+lock_meta="$lock_dir/meta.json"
+
 if [ "$dry_run" -eq 0 ]; then
-  lock_dir="$state_root/locks/$(printf '%s' "$repo" | tr '/' '_').lock"
-  mkdir -p "$state_root/locks" 2>/dev/null || true
+  mkdir -p "$lock_root" 2>/dev/null || true
   if ! mkdir "$lock_dir" 2>/dev/null; then
-    printf 'grind: another grind is already running against %s (%s)\n' "$repo" "$lock_dir" >&2
-    exit 1
+    set -- $(jq -r '(.pid // 0), (.hostname // "")' "$lock_meta" 2>/dev/null)
+    other_pid=${1:-0}; other_host=${2:-}
+    if [ "$other_host" = "$hostname_now" ] && ! kill -0 "$other_pid" 2>/dev/null; then
+      warn "reclaiming stale lock on $repo at $lock_dir (pid $other_pid not running)"
+      stale_dir="$lock_dir.stale.$$"  # rename first: atomic, a racer's mkdir below loses cleanly
+      mv "$lock_dir" "$stale_dir" 2>/dev/null && rm -rf "$stale_dir" && mkdir "$lock_dir" \
+        || { err "lock changed while reclaiming it"; exit 1; }
+    else
+      printf 'grind: another grind is already running against %s\n' "$repo" >&2
+      cat "$lock_meta" >&2; exit 1
+    fi
   fi
   # An EXIT trap alone is not enough: dash (this script's shell, /bin/sh on
   # Debian/Ubuntu) does not run it when the process dies to an unhandled
@@ -199,6 +213,8 @@ if [ "$dry_run" -eq 0 ]; then
   trap 'rm -rf "$lock_dir"' EXIT
   trap 'rm -rf "$lock_dir"; exit 143' TERM
   trap 'rm -rf "$lock_dir"; exit 130' INT
+  jq -n --argjson pid "$$" --arg host "$hostname_now" --arg acquired "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{pid:$pid, hostname:$host, lock_acquired_at:$acquired}' > "$lock_meta" 2>/dev/null || true
 fi
 
 # refs (owner/repo#N) already accounted for from a prior run of this session,
