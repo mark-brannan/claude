@@ -100,6 +100,19 @@ project-specific facts belong in that project's own CLAUDE.md.
     origin <base> && git rebase origin/<base>` before the first push AND
     again immediately before handing the PR over. Main moves while a
     session works; a branch that was clean an hour ago is not clean now;
+  - **when that rebase conflicts, merge instead of rebasing.** `git merge
+    origin/<base>`, resolve, commit — the merge commit is signed like any
+    other and carries the hand-resolution in its tree — then push it as a
+    plain fast-forward. Do NOT then `git rebase`/`resign-branch.sh` to
+    linearize it: a rebase replays only single-parent commits, so every
+    edit that lives only in the merge commit's tree is silently dropped
+    (`resign-branch.sh` refuses this case for that reason). Two traps
+    on the push: mergify-cli's pre-push hook blocks any push when the
+    *checked-out* branch has `Change-Id` trailers, whatever ref is being
+    pushed — push from a detached throwaway worktree, not `--no-verify`;
+    and `mergify stack push` is only for a branch whose commits map to
+    PRs in `mergify stack list` — a Change-Id trailer alone does not make
+    a stack, and on a plain PR branch it opens one new PR per commit;
   - the merge state says so, not just the checks — `gh pr view --json
     mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
     conflicts with main, so green checks are not a mergeable PR;

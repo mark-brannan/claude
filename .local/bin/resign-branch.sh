@@ -235,9 +235,9 @@ if [ "$merges" -gt 0 ]; then
   want=$(g merge-tree --write-tree "$target" "$old" 2>/dev/null | head -1) || want=""
   got=$(g rev-parse 'HEAD^{tree}')
   if [ -z "$want" ]; then
-    die "$merges merge commit(s) on $branch and the equivalent merge does not apply cleanly, so the rebase result cannot be checked against it. $branch is untouched; resolve by hand."
+    die "$merges merge commit(s) on $branch and the equivalent merge does not apply cleanly, so the rebase result cannot be checked against it. $branch is untouched; resolve by hand: git merge $target, fix the conflicts, commit (signed like any other commit), push as a plain fast-forward. Do not rebase or re-run this script afterwards -- a rebase drops whatever lives solely in the merge commit's tree. If the push is refused by mergify-cli's pre-push hook, it is keying on the checked-out branch's Change-Id trailers, not the ref you push: push from a detached throwaway worktree."
   elif [ "$want" != "$got" ]; then
-    die "rebasing dropped content from $merges merge commit(s) on $branch -- the rebased tree differs from the merge result, which means a hand-resolved merge was replayed differently. $branch is untouched. Merge $target in instead: git merge $target, then re-sign with: git rebase -S --force-rebase \$(git merge-base $target HEAD)"
+    die "rebasing dropped content from $merges merge commit(s) on $branch -- the rebased tree differs from the merge result, which means a hand-resolved merge was replayed differently. $branch is untouched. Merge $target in instead: git merge $target, resolve, commit (the merge commit signs like any other; if it did not, git commit --amend -S --no-edit keeps both parents), then push it as a plain fast-forward. Do not rebase or re-run this script afterwards -- a rebase replays only single-parent commits and drops whatever lives solely in the merge commit's tree."
   fi
 fi
 
