@@ -562,6 +562,12 @@ chmod +x "$S/bin/claude"
 : > "$CLAUDE_LOG"
 run --session-budget 100 --pause-every 10
 has 'logged as a failure' '^FAILED: o/alpha#7 .*will retry on --resume'
+# The worker's exit status has to survive the subshell that runs it: under
+# `set -e` a non-zero `wait` used to kill that subshell before it wrote the
+# rc file, so grind reported `worker exited ` and then died on
+# `[: Illegal number:` while deciding the item's status.
+has 'the non-zero exit status reaches the exit line' 'INFO  worker exited 1 after [0-9]+s'
+lacks 'no shell error from an empty exit status' 'Illegal number'
 sess=$(latest_session)
 eq 'recorded in state as failed' failed "$(jq -r '.items[0].status' "$sess")"
 eq 'its cost is kept' 5.00 "$(jq -r '.items[0].cost' "$sess")"
@@ -570,6 +576,31 @@ session_id=$(basename "$sess" .json)
 : > "$CLAUDE_LOG"
 run --resume "$session_id"
 eq 'failed-with-cost item retried on resume' 1 "$(calls_claude)"
+
+# --- a non-zero exit alone makes the item failed, even on a clean result ----------
+# Nothing in the result event says anything went wrong here: `is_error` is
+# absent and the worker even claims done. Only claude's exit status carries
+# the failure, so this is the case that goes silently wrong the moment the
+# rc file is lost.
+rm -f "$S/state/grind"/*.json
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+cat > "$S/prompt.txt"
+n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
+echo "\$n \$*" >> "$CLAUDE_LOG"
+echo \$((n + 1)) > "$S/claude-next"
+echo '{"type":"result","total_cost_usd":0.25,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: done"}'
+exit 3
+GH
+chmod +x "$S/bin/claude"
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 10
+has 'the exact exit status is reported' 'INFO  worker exited 3 after [0-9]+s'
+lacks 'no shell error deciding the status' 'Illegal number'
+has 'a non-zero exit is a failure whatever the result claims' '^FAILED: o/alpha#7'
+lacks 'not reported as a normal completed item' '^o/alpha#7: Flaky item --'
+sess=$(latest_session)
+eq 'recorded failed on exit status alone' failed "$(jq -r '.items[0].status' "$sess")"
 
 # restore the real claude shim
 cat > "$S/bin/claude" <<GH

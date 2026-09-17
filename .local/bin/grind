@@ -466,9 +466,17 @@ while [ "$i" -lt "$count" ]; do
          --max-budget-usd "$item_budget" --model "$model" --effort "$effort" \
          --permission-mode "$permission_mode" &
     cpid=$!
-    wait "$cpid"
-    crc=$?
-    command -v pkill >/dev/null 2>&1 && { pkill -TERM -P "$cpid" 2>/dev/null || true; }
+    # `wait` and the `command -v` test both report non-zero in the ordinary
+    # course of things -- a worker that failed, a host without pkill -- and
+    # under `set -e` either one kills this subshell before it can write
+    # rc_file. An empty rc_file reads back as an empty claude_rc, which is
+    # neither 0 nor a number: the caller's `[ "$claude_rc" -ne 0 ]` dies with
+    # "Illegal number" and the item's real exit status is lost. Keep nothing
+    # on this path in a position for `set -e` to trip on.
+    crc=0; wait "$cpid" || crc=$?
+    if command -v pkill >/dev/null 2>&1; then
+      pkill -TERM -P "$cpid" 2>/dev/null || true
+    fi
     echo "$crc" > "$rc_file"
   ) | while IFS= read -r line; do
       etype=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || continue
@@ -490,7 +498,11 @@ while [ "$i" -lt "$count" ]; do
           ;;
       esac
     done
+  # An unwritten or non-numeric rc means the worker's exit status never made
+  # it out of the subshell: treat the unknown as a failure rather than
+  # letting `[ -ne ]` abort on it, so --resume retries the item.
   claude_rc=$(cat "$rc_file" 2>/dev/null || echo 1)
+  case "$claude_rc" in "" | *[!0-9]*) claude_rc=1 ;; esac
   result_json=$(cat "$result_file" 2>/dev/null || echo "")
   rm -f "$live_file" "$result_file" "$rc_file"
 
