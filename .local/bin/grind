@@ -196,16 +196,40 @@ fi
 # --- single-flight lock, one grind per repo -----------------------------------
 # Two grinds against the same repo would fight over the same worktree paths
 # and branch names (grind-<n>): the second's `git branch -D` can delete a
-# worktree the first still has checked out. mkdir is the mutex -- atomic, no
-# flock dependency, and the directory's own existence is the lock; meta.json
-# inside it tells a live lock from one a dead process left behind.
+# worktree the first still has checked out. mkdir is the mutex (atomic, no
+# flock dependency); meta.json tells a live lock from a stale one, and also
+# carries per-run diagnostics (ppid, user, tty, cwd, rev, session, current
+# item) mirrored into the session state file's "lock" key -- a human staring
+# at a stuck lock or a stale state file needs exactly this.
 hostname_now=$(uname -n 2>/dev/null || echo unknown)
+whoami_now=$(id -un 2>/dev/null || whoami 2>/dev/null || echo unknown)
+tty_now=$(tty 2>/dev/null || echo none)
+grind_rev=$(git -C "$(dirname "$0")" rev-parse --short HEAD 2>/dev/null || echo unknown)
+claude_session=${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-none}}
 lock_root="$state_root/locks"
+mkdir -p "$lock_root" 2>/dev/null || true
 lock_dir="$lock_root/$(printf '%s' "$repo" | tr '/' '_').lock"
 lock_meta="$lock_dir/meta.json"
 
+write_lock() {
+  # $1 = current item ref (or empty), $2 = its start unix ts (or empty)
+  lock_item=${1:-}; lock_item_started=${2:-}
+  jq -n --argjson pid "$$" --argjson ppid "${PPID:-0}" --arg host "$hostname_now" \
+        --arg user "$whoami_now" --arg tty "$tty_now" --arg cwd "$invoked_cwd" \
+        --arg rev "$grind_rev" --arg claude_session "$claude_session" \
+        --arg acquired "$lock_acquired_at" --arg hb "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg item "$lock_item" --arg item_started "$lock_item_started" \
+    '{pid:$pid, ppid:$ppid, hostname:$host, user:$user, tty:$tty, invoked_cwd:$cwd,
+      grind_rev:$rev, claude_session_id:$claude_session, lock_acquired_at:$acquired,
+      last_heartbeat_at:$hb, current_item: (if $item == "" then null else $item end),
+      current_item_started_at: (if $item_started == "" then null else ($item_started|tonumber) end)}' \
+    > "$lock_meta" 2>/dev/null || true
+  [ -f "$state_file" ] && jq --slurpfile lk "$lock_meta" '.lock = $lk[0]' "$state_file" \
+    > "$state_file.tmp" 2>/dev/null && mv "$state_file.tmp" "$state_file" || true
+}
+
 if [ "$dry_run" -eq 0 ]; then
-  mkdir -p "$lock_root" 2>/dev/null || true
+  invoked_cwd=$(pwd)
   if ! mkdir "$lock_dir" 2>/dev/null; then
     set -- $(jq -r '(.pid // 0), (.hostname // "")' "$lock_meta" 2>/dev/null)
     other_pid=${1:-0}; other_host=${2:-}
@@ -229,8 +253,8 @@ if [ "$dry_run" -eq 0 ]; then
   trap 'rm -rf "$lock_dir"' EXIT
   trap 'rm -rf "$lock_dir"; exit 143' TERM
   trap 'rm -rf "$lock_dir"; exit 130' INT
-  jq -n --argjson pid "$$" --arg host "$hostname_now" --arg acquired "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{pid:$pid, hostname:$host, lock_acquired_at:$acquired}' > "$lock_meta" 2>/dev/null || true
+  lock_acquired_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  write_lock
 fi
 
 # refs (owner/repo#N) already accounted for from a prior run of this session,
@@ -443,6 +467,7 @@ while [ "$i" -lt "$count" ]; do
   started_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   marker="$state_root/${session_id}.marker"
   : > "$marker"
+  write_lock "$ref" "$started"
   info "worker running: claude -p --model $model --effort $effort --max-budget-usd $item_budget --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
 
   # live_file holds "input output cache_read cache_creation" running totals,
@@ -462,6 +487,7 @@ while [ "$i" -lt "$count" ]; do
     ( trap 'kill "$sp" 2>/dev/null || true; exit 0' TERM
       while :; do
         sleep "$heartbeat" & sp=$!; wait "$sp" || exit 0
+        write_lock "$ref" "$started"
         elapsed_m=$(( ($(date +%s) - started) / 60 ))
         live=$(cat "$live_file" 2>/dev/null || printf '0 0 0 0')
         set -- $live
@@ -546,6 +572,7 @@ while [ "$i" -lt "$count" ]; do
     wait "$hb_pid" 2>/dev/null || true
   fi
   info "worker exited $claude_rc after $(( $(date +%s) - started ))s"
+  write_lock
 
   # Unparseable/empty JSON means the worker never produced a result, so its
   # spend is unknown: don't record it, and let --resume retry it.

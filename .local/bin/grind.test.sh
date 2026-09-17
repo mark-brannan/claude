@@ -663,6 +663,10 @@ lock_dir="$S/state/grind/locks/o_alpha.lock"
 run --session-budget 100 --pause-every 10
 eq 'exit 0 on a clean run' 0 "$RC"
 assert 'lock directory released on clean exit' bash -c '! ls -d '"$S"'/state/grind/locks/*.lock >/dev/null 2>&1'
+sess=$(latest_session)
+eq 'lock diagnostics land in the state file: user' "$(id -un)" "$(jq -r '.lock.user' "$sess")"
+eq 'lock diagnostics land in the state file: hostname' "$(uname -n)" "$(jq -r '.lock.hostname' "$sess")"
+eq 'lock cleared current_item after the item finished' null "$(jq -r '.lock.current_item' "$sess")"
 
 # --- a held lock refuses a second grind, no work done -----------------------
 mkdir -p "$lock_dir"
