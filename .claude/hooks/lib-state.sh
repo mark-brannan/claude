@@ -193,3 +193,31 @@ archivable_reasons() {
 
   printf '%s' "$reasons"
 }
+
+# pr_base_refs <repo-path> <branch> [<remote>] -- base branch names of the
+# open PRs whose head is <branch>, one per line.
+#
+# Empty output with status 0 means "no open PR"; non-zero means the lookup
+# could not be made at all (no gh, no such remote, gh failed). Those are
+# different answers and flattening them into each other is how a stacked PR
+# gets silently rebased onto main -- resign-branch.sh's header argues it at
+# length. Policy on 0/1/many stays with the caller, which is why this
+# function has none; a later PR (dotfiles#266, branch_brief) adopts it.
+pr_base_refs() {
+  local url out
+  command -v gh >/dev/null 2>&1 || return 1
+  url=$(git -C "$1" remote get-url "${3:-origin}" 2>/dev/null) || return 1
+  out=$(gh pr list -R "$url" --head "$2" --state open \
+          --json baseRefName --jq '.[].baseRefName' 2>/dev/null) || return 1
+  printf '%s' "$out"
+}
+
+# default_branch <repo-path> [<remote>] -- the remote's default branch, short
+# name, or non-zero when this clone has never recorded one. Read-only by
+# contract: no `git remote set-head`, so a caller that wants the write has to
+# make it itself.
+default_branch() {
+  local r="${2:-origin}" ref
+  ref=$(git -C "$1" symbolic-ref -q --short "refs/remotes/$r/HEAD" 2>/dev/null) || return 1
+  printf '%s' "${ref#"$r/"}"
+}
