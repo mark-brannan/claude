@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# prune-branches [--delete] [--days N] [--no-fetch] [--repo DIR]... [--list FILE]
+#
+# Deletes (dry run unless --delete) local branches, in every repo named in
+# ~/.local/share/vended-repos.txt plus ~/dotfiles and yadm, that are
+#   older than --days (default 14), not on the remote by name, and
+#   either upstream-gone (PR merged; squash leaves nothing to contain)
+#   or fully contained in a remote ref.
+# Keeps and names anything with commits found nowhere else, and any dirty
+# worktree. Prints an undo per deletion. Exit 1 if a repo could not be read.
+set -uo pipefail
+
+days=14 delete=0 fetch=1 list="$HOME/.local/share/vended-repos.txt"
+repos=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --delete)   delete=1 ;;
+    --dry-run)  delete=0 ;;
+    --days)     days=$2; shift ;;
+    --days=*)   days=${1#--days=} ;;
+    --no-fetch) fetch=0 ;;
+    --repo)     repos+=("$2"); shift ;;
+    --list)     list=$2; shift ;;
+    -h|--help)  sed -n '2,/^set -uo/{/^set -uo/!s/^# \{0,1\}//p}' "$0"; exit 0 ;;
+    *) echo "prune-branches: unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+case "$days" in ''|*[!0-9]*) echo "prune-branches: --days wants a number" >&2; exit 2 ;; esac
+
+# A repo is a directory, or gitdir=<path> for yadm (worktree $HOME).
+if [ ${#repos[@]} -eq 0 ]; then
+  [ -r "$list" ] && while IFS= read -r name; do
+    name=${name%%#*}; name=${name// /}
+    [ -n "$name" ] && [ -d "$HOME/$name/.git" ] && repos+=("$HOME/$name")
+  done < "$list"
+  [ -d "$HOME/dotfiles/.git" ] && repos+=("$HOME/dotfiles")
+  yadm_dir="${YADM_REPO:-$HOME/.local/share/yadm/repo.git}"
+  [ -d "$yadm_dir" ] && repos+=("gitdir=$yadm_dir")
+fi
+
+cutoff=$(( $(date +%s) - days * 86400 ))
+verb='would delete'; [ "$delete" = 1 ] && verb='deleted'
+status=0 n_cand=0 n_kept=0
+
+for repo in "${repos[@]}"; do
+  case "$repo" in
+    gitdir=*) g=(git --git-dir="${repo#gitdir=}" --work-tree="$HOME"); label="yadm" ;;
+    *)        g=(git -C "$repo"); label=${repo#"$HOME/"} ;;
+  esac
+
+  if ! "${g[@]}" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "$label: not a git repository -- skipped" >&2; status=1; continue
+  fi
+  if [ "$fetch" = 1 ] && ! "${g[@]}" fetch --prune --quiet 2>/dev/null; then
+    echo "$label: fetch failed -- skipped (--no-fetch to inspect anyway)" >&2; status=1; continue
+  fi
+
+  primary=$("${g[@]}" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+  primary_branch=$("${g[@]}" symbolic-ref -q --short HEAD 2>/dev/null || true)
+
+  while IFS='|' read -r branch tip date upstream track wt; do
+    case "$branch" in main|master|"$primary_branch") continue ;; esac
+    [ "$date" -ge "$cutoff" ] && continue
+    [ "$wt" = "$primary" ] && [ -n "$wt" ] && continue
+
+    [ -n "$("${g[@]}" for-each-ref --format='%(refname)' "refs/remotes/*/$branch" 2>/dev/null)" ] && continue
+
+    reason=''
+    if [ -n "$upstream" ] && [ "$track" = '[gone]' ]; then
+      reason="upstream $upstream gone"
+    else
+      base=$("${g[@]}" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
+      holder=$("${g[@]}" for-each-ref --format='%(refname)' --contains "$tip" refs/remotes 2>/dev/null \
+                 | grep -v '/HEAD$' | sed 's|^refs/remotes/||' | grep -x -F "$base" -m1 || true)
+      [ -n "$holder" ] || holder=$("${g[@]}" for-each-ref --format='%(refname)' --contains "$tip" refs/remotes 2>/dev/null \
+                 | grep -v '/HEAD$' | sed 's|^refs/remotes/||' | head -1)
+      if [ -n "$holder" ]; then
+        reason="contained in $holder"
+      else
+        unique=$("${g[@]}" rev-list --count "$base..$branch" 2>/dev/null || echo '?')
+        echo "$label: keep $branch -- $unique commit(s) not on any remote"
+        n_kept=$((n_kept + 1)); continue
+      fi
+    fi
+
+    age=$(( ( $(date +%s) - date ) / 86400 ))
+    if [ -n "$wt" ]; then
+      if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+        echo "$label: keep $branch -- worktree dirty: $wt"
+        n_kept=$((n_kept + 1)); continue
+      fi
+      if [ "$delete" = 1 ] && ! "${g[@]}" worktree remove "$wt" >/dev/null 2>&1; then
+        echo "$label: keep $branch -- could not remove worktree $wt" >&2
+        n_kept=$((n_kept + 1)); status=1; continue
+      fi
+    fi
+    if [ "$delete" = 1 ] && ! "${g[@]}" branch -D "$branch" >/dev/null 2>&1; then
+      echo "$label: keep $branch -- git branch -D failed" >&2
+      n_kept=$((n_kept + 1)); status=1; continue
+    fi
+    echo "$label: $verb $branch ($age d, $reason)${wt:+ +worktree}  undo: ${g[*]} branch $branch ${tip:0:12}"
+    n_cand=$((n_cand + 1))
+  done < <("${g[@]}" for-each-ref refs/heads \
+             --format='%(refname:short)|%(objectname)|%(committerdate:unix)|%(upstream:short)|%(upstream:track)|%(worktreepath)' 2>/dev/null)
+done
+
+echo "$verb $n_cand branch(es), kept $n_kept, across ${#repos[@]} repo(s)"
+[ "$delete" = 0 ] && [ "$n_cand" -gt 0 ] && echo "rerun with --delete to act"
+exit $status
