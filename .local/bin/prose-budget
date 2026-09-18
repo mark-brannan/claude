@@ -380,11 +380,15 @@ def parse_config(cfg):
                                              "exempt": ["Where things are"]}, True)
     budgeted = set(r["lines"]["files"]) if r["lines"] else set()
     r["delta"] = _rule(cfg, "delta", {"targets": None, "max_words": 40}, True)
-    if r["delta"] and r["delta"]["targets"] is None:
-        r["delta"]["targets"] = MD_TARGETS
+    if r["delta"]:
+        if r["delta"]["targets"] is None:
+            r["delta"]["targets"] = MD_TARGETS
+        # A file with its own line budget is governed by that budget, not by
+        # the per-change word delta, and naming targets is about *which* files
+        # the delta watches -- not about revoking the budget exemption. Tying
+        # the two together meant a config that excluded one directory silently
+        # put every budgeted document under a 40-word-per-change cap.
         r["delta"]["exclude"] = budgeted
-    elif r["delta"]:
-        r["delta"]["exclude"] = set()
     r["json_prose"] = _rule(cfg, "json_prose", {"targets": [], "keys": PROSE_KEYS, "max_chars": 450,
                                                  "grandfathered": []}, False)
     r["narration"] = _rule(cfg, "narration", {"targets": MD_TARGETS, "patterns": {}, "disable": [],

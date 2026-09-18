@@ -319,6 +319,30 @@ class DeltaTest(RepoCase):
         self.assertEqual(self.rules("--base", "main"), ["delta"])
         self.assertEqual(self.findings("--tree"), [], "delta never runs on the tree")
 
+    def test_explicit_targets_still_skip_files_with_a_line_budget(self):
+        self.config({"lines": {"docs/big.md": 500},
+                     "delta": {"targets": ["docs/**/*.md", "!docs/drafts/**"]}})
+        self.write("docs/big.md", "seed\n")
+        self.write("docs/small.md", "seed\n")
+        self.commit("docs/big.md", "docs/small.md", ".prose-budgets.json")
+        self.git("checkout", "-qb", "feature")
+        self.write("docs/big.md", "## A\n\n" + ("word " * 100) + "\n")
+        self.commit("docs/big.md")
+        self.assertEqual(self.findings("--base", "main"), [],
+                         "a budgeted file stays exempt when targets are named")
+        self.write("docs/small.md", "## A\n\n" + ("word " * 100) + "\n")
+        self.commit("docs/small.md")
+        self.assertEqual(self.rules("--base", "main"), ["delta"])
+
+    def test_excluded_directory_is_out_of_the_delta(self):
+        self.config({"delta": {"targets": ["docs/**/*.md", "!docs/drafts/**"]}})
+        self.write("docs/a.md", "seed\n")
+        self.commit("docs/a.md", ".prose-budgets.json")
+        self.git("checkout", "-qb", "feature")
+        self.write("docs/drafts/new.md", "## S\n\n" + ("word " * 200) + "\n")
+        self.commit("docs/drafts/new.md")
+        self.assertEqual(self.findings("--base", "main"), [])
+
 
 class LandAloneTest(RepoCase):
     def stage(self, *paths):
