@@ -202,7 +202,8 @@ archivable_reasons() {
 # different answers and flattening them into each other is how a stacked PR
 # gets silently rebased onto main -- resign-branch.sh's header argues it at
 # length. Policy on 0/1/many stays with the caller, which is why this
-# function has none; a later PR (dotfiles#266, branch_brief) adopts it.
+# function has none; resign-branch.sh adopts it in a later PR (dotfiles#266,
+# churn guard).
 pr_base_refs() {
   local url out
   command -v gh >/dev/null 2>&1 || return 1
@@ -220,4 +221,118 @@ default_branch() {
   local r="${2:-origin}" ref
   ref=$(git -C "$1" symbolic-ref -q --short "refs/remotes/$r/HEAD" 2>/dev/null) || return 1
   printf '%s' "${ref#"$r/"}"
+}
+
+# branch_brief <repo-path> <branch> -- the facts a session starting on an
+# existing branch keeps getting wrong, one per line, ending in exactly one
+# recommended command. Read-only: it never fetches, commits or pushes.
+#
+# It exists because those facts already lived in four places and consumers
+# re-derived them badly anyway (#206, #185): no-unsigned-push.sh owns the
+# unsigned test, resign-branch.sh the PR-base lookup, this file
+# unpushed_state, /pickup step 3 the checkout rules. One printer, one answer,
+# and consumers stop deriving.
+#
+# Lines: worktrees, base, ahead, behind, conflicts, unsigned, merges,
+# recommend. A fact that cannot be taken prints `unknown` rather than a
+# guess -- read-only means no fetch, so a base ref this machine has never
+# fetched is genuinely not known here, and saying "0 behind" would be a lie
+# in the direction that loses work.
+#
+# `unsigned` is the presence of a `gpgsig` header, which is the test
+# no-unsigned-push.sh makes and not `%G?`: on a machine with no
+# allowed-signers file -- every cloud VM -- `%G?` reports every signed commit
+# unverified, so a brief built on it would demand a resign on a branch that
+# is already fine.
+#
+# Worktrees holding the branch are reported, not judged. Whether the session
+# that holds one is still alive is dotfiles#167.
+#
+# The recommendation ladder is ordered by what is unrecoverable, not by what
+# is common, and follows code.md's "Green before it is handed over":
+# merge commits outrank everything (a rebase drops whatever lives only in a
+# hand-resolved merge's tree), then conflicts, then signing, then the plain
+# rebase that a clean branch wants.
+branch_brief() {
+  local root="$1" br="$2" bases nb base wts lr ahead behind conf revs uns mg mb
+  _bb() { git -C "$root" "$@"; }
+
+  _bb rev-parse --verify -q "refs/heads/$br" >/dev/null 2>&1 \
+    || { printf 'error: no branch %s in %s\n' "$br" "$root"; return 1; }
+
+  wts=$(_bb worktree list --porcelain \
+          | awk -v b="branch refs/heads/$br" '/^worktree /{p=substr($0,10)} $0==b{print p}' \
+          | tr '\n' ' ')
+  printf 'worktrees: %s\n' "${wts:-none}"
+
+  if bases=$(pr_base_refs "$root" "$br"); then
+    nb=$(printf '%s' "$bases" | grep -c . || true)
+  else
+    nb=unknown
+  fi
+  base=""
+  case "$nb" in
+    1) base=$bases; printf 'base: %s (open PR)\n' "$base" ;;
+    0) base=$(default_branch "$root") || base=""
+       printf 'base: %s (default branch, no open PR)\n' "${base:-unknown}" ;;
+    unknown)
+       base=$(default_branch "$root") || base=""
+       printf 'base: %s (assumed: the open-PR lookup failed, so a stacked base would not show)\n' "${base:-unknown}" ;;
+    *) printf 'base: ambiguous -- %s open PRs, bases: %s\n' \
+              "$nb" "$(printf '%s' "$bases" | tr '\n' ' ')" ;;
+  esac
+
+  if [ -z "$base" ] || ! _bb rev-parse --verify -q "origin/$base" >/dev/null 2>&1; then
+    printf 'ahead: unknown\nbehind: unknown\nconflicts: unknown\nunsigned: unknown\nmerges: unknown\n'
+    printf 'recommend: no base to compare against here -- `git fetch origin` and re-run, or name the base by hand\n'
+    return 0
+  fi
+
+  if lr=$(_bb rev-list --left-right --count "origin/$base...$br" 2>/dev/null); then
+    behind=${lr%%[!0-9]*}
+    ahead=${lr##*[!0-9]}
+  else
+    ahead=unknown; behind=unknown
+  fi
+  printf 'ahead: %s\nbehind: %s\n' "$ahead" "$behind"
+
+  # merge-tree returns 0 clean, 1 conflicted, and something else for any
+  # other failure -- a git too old for --write-tree included. Reading every
+  # non-zero as "conflicted" would recommend a merge commit onto a branch
+  # that does not need one.
+  if _bb merge-tree --write-tree "origin/$base" "$br" >/dev/null 2>&1; then
+    conf=no
+  else
+    case $? in 1) conf=yes ;; *) conf=unknown ;; esac
+  fi
+
+  if revs=$(_bb rev-list "origin/$base..$br" 2>/dev/null); then
+    uns=$(printf '%s\n' "$revs" | while read -r s; do
+            [ -n "$s" ] || continue
+            _bb cat-file -p "$s" | grep -q '^gpgsig' || printf 'x\n'
+          done | grep -c . || true)
+  else
+    uns=unknown
+  fi
+  mg=$(_bb rev-list --count --merges "origin/$base..$br" 2>/dev/null) || mg=unknown
+  printf 'conflicts: %s\nunsigned: %s\nmerges: %s\n' "$conf" "$uns" "$mg"
+
+  mb=$(_bb merge-base "origin/$base" "$br" 2>/dev/null || printf '%s' "origin/$base")
+  if [ "$mg" = unknown ]; then
+    printf 'recommend: count the merge commits by hand before touching history -- git could not count them between %s and origin/%s\n' "$br" "$base"
+  elif [ "$mg" -gt 0 ]; then
+    printf 'recommend: do not rebase and do not resign -- %s merge commit(s) on the branch; `git merge origin/%s`, resolve, commit signed, push as a fast-forward\n' "$mg" "$base"
+  elif [ "$conf" = yes ]; then
+    printf 'recommend: git merge origin/%s   # conflicts against the base; resolve, commit, and never linearize the branch afterwards\n' "$base"
+  elif [ "$conf" = unknown ]; then
+    printf 'recommend: check the merge by hand before touching history -- git merge-tree could not answer whether %s conflicts with origin/%s\n' "$br" "$base"
+  elif [ "$uns" = unknown ]; then
+    printf 'recommend: check the signatures by hand before pushing -- git could not list the commits between origin/%s and %s\n' "$base" "$br"
+  elif [ "$uns" -gt 0 ] && _bb config user.signingkey >/dev/null 2>&1; then
+    printf 'recommend: git rebase -S --force-rebase %s   # %s unsigned commit(s); if %s is already on the remote, resign-branch.sh %s instead\n' "$mb" "$uns" "$br" "$br"
+  elif [ "$uns" -gt 0 ]; then
+    printf 'recommend: cannot sign on this machine (no user.signingkey) -- %s unsigned commit(s) will block the PR; hand over saying resign-branch.sh %s has to run where the key is\n' "$uns" "$br"
+  else
+    printf 'recommend: git fetch origin %s && git rebase origin/%s\n' "$base" "$base"
+  fi
 }
