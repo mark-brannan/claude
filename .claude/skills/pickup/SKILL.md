@@ -171,9 +171,15 @@ do not paraphrase it into a second version that can drift from this one.
    run that line. An unsigned commit fails the gate, so a shortcut here buys
    nothing and costs the branch.
 
-5. **Push with `--force-with-lease`,** never a bare `--force`. A refused
-   lease is not an obstacle to retry past: it means someone else pushed to
-   this branch while you worked. Stop, and say whose push you found.
+5. **Push with `--force-with-lease`,** never a bare `--force`, from your own
+   checkout — unless the branch carries mergify-cli `Change-Id` trailers, in
+   which case its pre-push hook blocks any push from that checkout whatever
+   ref is being pushed. There, push from a detached throwaway worktree
+   instead, per `code.md`'s PR-ownership section: `git worktree add --detach
+   <tmp> <sha>`, push `--force-with-lease` from there, then remove it. A
+   refused lease is not an obstacle to retry past either way: it means
+   someone else pushed to this branch while you worked. Stop, and say whose
+   push you found.
 
 6. **Finish is `awaiting-human` back on the PR** — and Mergify puts it there,
    computed from a green `ci-gate / gate` and no unresolved thread. The

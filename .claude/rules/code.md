@@ -420,6 +420,14 @@ public" section.
 - **Don't switch model or `/effort` mid-session** — pick both at start; a
   switch at ~50k context recomputes 65-100% of it (measured,
   `.claude/docs/token-budget.md`).
+- **A classifier denial is a stop and a report, not a prompt to reach the
+  same outcome another way.** The classifier reads the transcript, not just
+  the one command, so a second route to an already-denied outcome gets
+  denied too, under a different label, and can cascade into denying plain
+  reads. Report what was denied and why; the workaround is the user's call.
+  Scar: 2026-09-22, colregs-engine PR #138 — three different pushes at the
+  same denied outcome (branch rename, detach, plain refspec), three denial
+  labels, then reads started failing.
 
 ## Tests
 
