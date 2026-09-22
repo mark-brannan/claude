@@ -341,6 +341,12 @@
           },
           {
             "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/claim-stamp.sh\"; [ -f \"$h\" ] && sh \"$h\" session-start || true",
+            "timeout": 30,
+            "statusMessage": "Claiming this branch on its card"
+          },
+          {
+            "type": "command",
             "command": "h=\"$HOME/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
           },
           {

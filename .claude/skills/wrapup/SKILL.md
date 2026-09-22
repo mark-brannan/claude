@@ -105,7 +105,17 @@ cut short here still leaves both behind. Nothing else here — no board edits,
 no issue listing, no checking what merged. `worklist` reads GitHub live; a
 wrap-up that copies it is a second copy.
 
-## 4. The closing message
+## 4. Release the branch
+
+`~/.claude/hooks/claim-stamp.sh release -C . --scan <this session id>` — it deletes
+this session's claim stamp from the card and costs nothing when there is none.
+Skip it only when the session is *pausing* mid-work and keeping its worktree;
+then the branch is still held and the stamp should say so.
+
+The Stop hook does this by itself whenever the verdict is `archivable`, so a
+session that archived in step 0 has nothing to do here.
+
+## 5. The closing message
 
 The closing message holds exactly two things: the hand-off prompt, and links
 to the `## Needs ruling` and `## Solace's` cards this session wrote. Nothing

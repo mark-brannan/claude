@@ -185,5 +185,29 @@ ok 'jq missing blocks with valid JSON' [ "$(printf '%s' "$LAST" | jq -r .decisio
 LAST=$(stop_input u4 "$WORK" true | PATH="$SCRATCH/nojq" /bin/sh "$GATE" 2>&1)
 ok 'jq missing on a retry is quiet'    [ -z "$LAST" ]
 
+# --- --card: the machine-readable card, for claim-stamp.sh --------------------
+card() { sh "$GATE" --card "${1:-$WORK}" 2>&1; }
+cardis() { if [ "$(card "${3:-$WORK}")" = "$2" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s (want %s, got %s)\n' "$1" "$2" "$(card "${3:-$WORK}")"; fi; }
+
+setup_repo claude/carded
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' \
+  cardis 'a PR is the card'              'pr https://github.com/o/r/pull/7'
+export GH_PRS='[]'
+GH_ISSUES='[{"number":4,"title":"t","body":"work on claude/carded","url":"https://github.com/o/r/issues/4"}]' \
+  cardis 'an issue is the card'          'issue https://github.com/o/r/issues/4'
+cardis 'nothing is none'                 'none'
+GH_FAIL=1 cardis 'a failed lookup says so' 'unverified: gh pr list failed (not authenticated here?)'
+
+# The local board is a home but not a card: a private file on one machine is
+# not something a second machine can read a claim off.
+printf -- '- [ ] **Design lives on `claude/carded`** ([log](log/d.md))\n' >> "$BOARD"
+cardis 'a board card is not a card here' 'none'
+gitq "$SR" checkout -- state/global/kanban.md 2>/dev/null || \
+  printf '# Open loops\n\n## Claude'"'"'s\n- [ ] **Something else** ([log](log/x.md))\n' > "$BOARD"
+
+setup_repo ""
+cardis 'the default branch has no card'  'none'
+cardis 'and neither does a non-repo'     'none' "$SCRATCH"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -43,19 +43,42 @@
 #   home: <why>          a PR, a card or an issue names it; or nothing to strand
 #   none                 ahead of the default branch with no home
 #   unverified: <why>    could not look (no gh, not authenticated, no jq)
+#
+#   branch-home-gate.sh --card [dir]
+#
+# Third entry point, read-only, same lookup: the machine-readable *card* this
+# branch belongs to, for claim-stamp.sh (dotfiles#287). Exactly one line:
+#   pr <url>             an open or closed PR has this head
+#   issue <url>          an open issue names the branch
+#   none                 no remote card -- including every quiet-path exit
+#   unverified: <why>    could not look
+#
+# The local board is deliberately not consulted in this mode: a card in a
+# private file on one machine is a home, but it is not something a second
+# machine can read a claim off. Only a card with a URL counts here.
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=lib-state.sh
 . "$HERE/lib-state.sh"
 
-CHECK=0; check_cwd=
-if [ "${1:-}" = "--check" ]; then CHECK=1; check_cwd=${2:-$PWD}; fi
+CHECK=0; CARD=0; check_cwd=
+case "${1:-}" in
+  --check) CHECK=1; check_cwd=${2:-$PWD} ;;
+  --card)  CHECK=1; CARD=1; check_cwd=${2:-$PWD} ;;
+esac
 # In --check mode every path that would exit quietly (default branch, nothing
 # ahead, no origin, not a repo) is a pass: there is nothing to strand, so
 # nothing there blocks an archive. Silence would read as "no answer" to the
 # caller, so say it.
-quiet_exit() { [ "$CHECK" = 1 ] && printf 'home: %s\n' "${1:-nothing to strand}"; exit 0; }
+# In --card mode a quiet exit is `none`: there is no branch card to stamp
+# on the default branch, on a detached HEAD, or before the branch is ahead of
+# anything -- and a claim written to nowhere is worse than no claim.
+quiet_exit() {
+  if [ "$CARD" = 1 ]; then printf 'none\n'
+  elif [ "$CHECK" = 1 ]; then printf 'home: %s\n' "${1:-nothing to strand}"; fi
+  exit 0
+}
 
 # json_str(), block() and names_branch() come from lib-state.sh, sourced above.
 
@@ -131,8 +154,9 @@ fi
 # read before anything costs a network call.
 found=
 unverified=
+card=
 board="$(state_dir)/kanban.md"
-if [ -f "$board" ] && names_branch "$branch" < "$board" 2>/dev/null; then
+if [ "$CARD" != 1 ] && [ -f "$board" ] && names_branch "$branch" < "$board" 2>/dev/null; then
   found="a card on $board names it"
 fi
 
@@ -142,7 +166,7 @@ if [ -z "$found" ]; then
     # merged or closed one is still a durable record naming the branch.
     if prs=$( (cd "$work_root" && run_to 30 gh pr list --head "$branch" --state all --limit 5 --json url) 2>/dev/null ); then
       url=$(printf '%s' "$prs" | jq -r '.[0].url // empty' 2>/dev/null)
-      [ -n "$url" ] && found="$url has this head"
+      [ -n "$url" ] && { found="$url has this head"; card="pr $url"; }
     else
       unverified="gh pr list failed (not authenticated here?)"
     fi
@@ -158,7 +182,7 @@ if [ -z "$found" ]; then
                           | ($h | startswith("stack/"))
                             and (($h | split("/"))[2:] | join("/") | startswith($b + "/")))
            ][0].url // empty' 2>/dev/null)
-        [ -n "$url" ] && found="$url has this head (a mergify stack PR)"
+        [ -n "$url" ] && { found="$url has this head (a mergify stack PR)"; card="pr $url"; }
       else
         unverified="gh pr list failed (not authenticated here?)"
       fi
@@ -169,19 +193,32 @@ if [ -z "$found" ]; then
 fi
 
 if [ -z "$found" ] && [ -z "$unverified" ]; then
-  if iss=$( (cd "$work_root" && run_to 30 gh issue list --state open --limit 200 --json number,title,body) 2>/dev/null ); then
+  if iss=$( (cd "$work_root" && run_to 30 gh issue list --state open --limit 200 --json number,title,body,url) 2>/dev/null ); then
     # Whole-token match via names_branch, same as the board check: jq's
     # `contains` is a plain substring test and gives claude/foobar's issue
     # to claude/foo too.
-    num=$(printf '%s' "$iss" | jq -r \
-      '.[] | [.number, (((.title // "") + " " + (.body // "")) | gsub("\n";" "))] | @tsv' 2>/dev/null \
-      | while IFS="$(printf '\t')" read -r n text; do
-          printf '%s' "$text" | names_branch "$branch" && { printf '%s\n' "$n"; break; }
+    hit=$(printf '%s' "$iss" | jq -r \
+      '.[] | [.number, (.url // "-"), (((.title // "") + " " + (.body // "")) | gsub("\n";" "))] | @tsv' 2>/dev/null \
+      | while IFS="$(printf '\t')" read -r n iurl text; do
+          [ "$iurl" = "-" ] && iurl=""
+          printf '%s' "$text" | names_branch "$branch" && { printf '%s\t%s\n' "$n" "$iurl"; break; }
         done)
-    [ -n "$num" ] && found="open issue #$num names it"
+    num=${hit%%	*}
+    if [ -n "$num" ]; then
+      found="open issue #$num names it"
+      iurl=${hit#*	}
+      [ -n "$iurl" ] && card="issue $iurl"
+    fi
   else
     unverified="gh issue list failed (not authenticated here?)"
   fi
+fi
+
+if [ "$CARD" = 1 ]; then
+  if [ -n "$card" ]; then printf '%s\n' "$card"
+  elif [ -n "$unverified" ]; then printf 'unverified: %s\n' "$unverified"
+  else printf 'none\n'; fi
+  exit 0
 fi
 
 if [ "$CHECK" = 1 ]; then

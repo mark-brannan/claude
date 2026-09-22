@@ -25,6 +25,12 @@ set -u
 OWNER=${PR_LABEL_AUDIT_OWNER:-mark-brannan}
 LABEL=awaiting-human
 FIXUP_LABEL=fixup-hard
+# Written by claim-stamp.sh alongside the claim stamp on the card
+# (dotfiles#287). Reported, never acted on: the label is the cheap filter --
+# one search across the fleet, where reading every card's comments is one call
+# per card -- and the stamp under it is the truth. A `claimed` PR with no
+# stamp means a session died between the two writes, not that it is held.
+CLAIM_LABEL=claimed
 GATE='ci-gate / gate'
 
 JSON=0
@@ -248,7 +254,7 @@ mode=text
 # target list is the same computation the report shows, selected by $mode --
 # never a second copy of the verdict logic that could drift from the first.
 audit() {  # audit <jq-flags> <mode>
-  printf '%s' "$raw" | jq "$1" --arg defines "$defines" --arg unchecked "$unchecked" --arg defines_fixup "$defines_fixup" --arg label "$LABEL" --arg fixup_label "$FIXUP_LABEL" --arg gate "$GATE" --arg owner "$OWNER" --arg mode "$2" --argjson single_pr "$single_pr" "$audit_jq"
+  printf '%s' "$raw" | jq "$1" --arg defines "$defines" --arg unchecked "$unchecked" --arg defines_fixup "$defines_fixup" --arg label "$LABEL" --arg fixup_label "$FIXUP_LABEL" --arg claim_label "$CLAIM_LABEL" --arg gate "$GATE" --arg owner "$OWNER" --arg mode "$2" --argjson single_pr "$single_pr" "$audit_jq"
 }
 audit_jq='
   # A CheckRun still queued or running has a null conclusion; fall through to
@@ -287,6 +293,7 @@ audit_jq='
             | {name: .name, url: .url} ],
           last_comment: (.lastComments.nodes[0] // null),
           labelled: (([.labels.nodes[].name] | index($label)) != null),
+          claimed: (([.labels.nodes[].name] | index($claim_label)) != null),
           mergeable: .mergeable,
           defines_label: (($defines_label | index($repo)) != null),
           unchecked_label: (($unchecked_label | index($repo)) != null),

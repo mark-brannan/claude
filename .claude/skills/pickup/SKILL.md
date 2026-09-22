@@ -82,6 +82,20 @@ a live claim by a session that has not released it. Say so — name the branch
 and the worktree git named — and stop. Don't take it away from them, and
 don't work anywhere else on the same branch.
 
+Then claim it on the card, so a session on *another machine* — which git
+cannot see — knows too:
+
+```
+~/.claude/hooks/claim-stamp.sh claim -C . <this session id>
+```
+
+It prints nothing when the branch is free. When it prints a warning, another
+session holds the branch right now: relay it to Solace in one line, naming the
+session and how old the claim is, and don't push to the branch until you know
+that session has let go. The SessionStart hook claims automatically for a
+session that *opens* on the branch; a pickup checks the branch out afterwards,
+so this is the one place the claim has to be asked for.
+
 Everything the previous session wanted handed over is on the remote. If it
 isn't pushed, it isn't handed over: work from the pushed state and say in one
 line what you found missing.

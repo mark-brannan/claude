@@ -353,6 +353,23 @@ sc_salvage
 # and pushed is not "dirty, unpushed".
 set_verdict
 
+# The session claim stamp on the branch's card (dotfiles#287). Archivable
+# means this session is done with the branch, so the claim comes off; anything
+# else means it is still holding it, so the timestamp is bumped -- which is
+# what makes another machine able to tell a live session from a dead one.
+#
+# Free when this session never claimed anything: both paths read a per-session
+# record under TMPDIR first and return without a network call when there is
+# none, and the refresh is debounced besides. Stop fires on every turn, so
+# that has to stay true.
+if [ -n "$work_root" ] && [ -x "$HOOK_DIR/claim-stamp.sh" ]; then
+  if [ "$verdict" = archivable ]; then
+    sh "$HOOK_DIR/claim-stamp.sh" release -C "$work_root" "$sid" >/dev/null 2>&1 || true
+  else
+    sh "$HOOK_DIR/claim-stamp.sh" refresh -C "$work_root" "$sid" >/dev/null 2>&1 || true
+  fi
+fi
+
 # ------------------------------------------------------------ state repo
 state_is_repo || exit 0
 SR=$(state_repo) || exit 0
