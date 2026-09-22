@@ -206,7 +206,7 @@ note "blocked: \`$branch\` is $ahead commit(s) ahead of $base with no PR and no 
 block "branch-home-gate: this session cannot end yet. Branch \`$branch\` in $repo is $ahead commit(s) ahead of $base with no PR and no pointer: no PR has this head, no open issue names the branch, and no card on the board does either.
 
 Take one of the two ways out, then end the turn again:
-  - open the PR (not draft), or
+  - open the PR, or
   - file a pointer card (/card-write) naming the branch and what it holds -- a card on the global board or an open issue, either counts.
 
 Detection is not closure -- a pushed branch nobody points at is how two pieces of design work were lost. This gate fires once per session."

@@ -25,13 +25,13 @@
 # and current exits 0 untouched -- so it is safe to run periodically and
 # defensively rather than only once something is broken.
 #
-# Fails OPEN on a missing jq, like no-draft-pr.sh and unlike the $HOME gates:
+# Fails OPEN on a missing jq, unlike the $HOME gates:
 # what this protects is recoverable (resign-branch.sh repairs the damage after
 # the fact), so denying every gh call because jq is absent would cost more
 # than it saves.
 #
-# Match structurally, not by substring. `no-draft-pr.sh` was tripped twice in
-# one session by commit messages that merely *mentioned* the flag it guards;
+# Match structurally, not by substring. A sibling hook was tripped twice in
+# one session by commit messages that merely *mentioned* the flag it guarded;
 # this hook will be written about in RUNBOOK.md and PR comments, so the same
 # trap is waiting. The command is tokenized the way a shell would be, and the
 # three words must be adjacent within a single command segment.

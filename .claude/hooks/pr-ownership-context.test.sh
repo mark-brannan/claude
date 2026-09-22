@@ -21,9 +21,9 @@ cat > "$HOME/.claude/rules/code.md" <<'MD'
 
 - git stuff, not wanted
 
-## PR ownership: never a draft, never red
+## PR ownership: never red
 
-- **Never open a PR as a draft.** Quoted "text", a `backtick`, a	tab and a \backslash.
+- **Green before it is handed over.** Quoted "text", a `backtick`, a	tab and a \backslash.
 - **"Resolve conversation" is mine to do.**
 
 ### A board-only PR merges itself

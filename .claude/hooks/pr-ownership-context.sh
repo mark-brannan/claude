@@ -5,8 +5,8 @@
 # Why: code.md is a path-globbed rule. It loads when a session reads or edits
 # a source file, and not otherwise -- so a session that opens with `gh pr
 # view`, reads the review comments and starts answering them has never seen
-# the section that says answer *and resolve* the threads, never open a draft,
-# never hand over red. The one-line pointer in ~/.claude/CLAUDE.md was the
+# the section that says answer *and resolve* the threads and never hand over
+# red. The one-line pointer in ~/.claude/CLAUDE.md was the
 # stopgap; it relies on the model noticing it, which is the failure it was
 # meant to fix. This hook is the mechanical version: the text arrives because
 # a PR-shaped tool call happened, not because anyone remembered.
@@ -131,10 +131,10 @@ if [ -n "$sid" ]; then
 fi
 
 rules="$HOME/.claude/rules/code.md"
-[ -f "$rules" ] || note "pr-ownership-context: $rules is missing, so the PR ownership rules could not be injected. Run dotsync (or cloud-session-setup.sh); until then, treat review threads as yours to reply to AND resolve, never open a draft, never hand over red."
+[ -f "$rules" ] || note "pr-ownership-context: $rules is missing, so the PR ownership rules could not be injected. Run dotsync (or cloud-session-setup.sh); until then, treat review threads as yours to reply to AND resolve, and never hand over red."
 
 section=$(awk '/^## PR ownership/{p=1} p && /^## / && !/^## PR ownership/{exit} p' "$rules")
-[ -n "$section" ] || note "pr-ownership-context: no '## PR ownership' heading in $rules, so the rules could not be injected. Until that is fixed: review threads are yours to reply to AND resolve, never open a draft, never hand over red."
+[ -n "$section" ] || note "pr-ownership-context: no '## PR ownership' heading in $rules, so the rules could not be injected. Until that is fixed: review threads are yours to reply to AND resolve, and never hand over red."
 
 note "PR work detected. These are the PR ownership rules from $rules, injected once per session by pr-ownership-context.sh because path-globbed rules do not load on a gh call. They apply to this PR from here on.
 

@@ -4,8 +4,8 @@
 # The cases that matter are the false positives. This hook is documented in
 # RUNBOOK.md and argued about in PR comments, so the command it denies will
 # appear verbatim inside commit messages and `gh pr comment` bodies -- which
-# is precisely how no-draft-pr.sh blocked its own documentation twice in one
-# session.
+# is precisely how a substring-matching sibling hook blocked its own
+# documentation twice in one session.
 set -uo pipefail
 
 HOOK="$(cd "$(dirname "$0")" && pwd)/no-update-branch.sh"

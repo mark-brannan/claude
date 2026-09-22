@@ -181,15 +181,6 @@
         ]
       },
       {
-        "matcher": "Bash|mcp__.*__create_pull_request",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/no-draft-pr.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
-          }
-        ]
-      },
-      {
         "matcher": "Bash|mcp__.*__update_pull_request_branch",
         "hooks": [
           {

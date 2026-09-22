@@ -70,7 +70,6 @@ INSTALL="
 .claude/hooks/no-late-pr-subscribe.sh
 .claude/hooks/pr-ownership-context.sh
 .claude/hooks/pr-threads-gate.sh
-.claude/hooks/no-draft-pr.sh
 .claude/hooks/no-unsigned-push.sh
 .claude/hooks/no-update-branch.sh
 .claude/hooks/no-git-footguns.sh
