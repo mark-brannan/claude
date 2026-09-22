@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copy-paste source for the "Default (with tailscale)" cloud environment's
-# setup-script field, per RUNBOOK.md § Create a cloud environment.
+# setup-script field, per .claude/RUNBOOK.md § Create a cloud environment.
 #
 # The platform does not execute this file — the setup-script field only takes
 # pasted text, and this variant installs tailscale before the seed exists to
