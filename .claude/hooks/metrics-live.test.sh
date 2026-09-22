@@ -361,6 +361,10 @@ if [ -f "$FIX" ]; then
   t 'and fires once, not every turn' '0' \
     "$(printf '%s' "$ctx2" | grep -c 'corrections or rebukes' | tr -d ' ')"
 
+  scr=$(msg "$(payload "$FIX" fric2 "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)")
+  has 'friction past its nag threshold trips the reason cluster' \
+    '⚡.*propose stopping' "$scr"
+
 else
   printf 'SKIP: %s is missing\n' "$FIX"
 fi
@@ -658,6 +662,13 @@ has 'past the hot rung the glyph changes'     '⏱2h30(⏱️|🌙){3}⏰⏰' "$
 o11c=$(msg "$(payload "$TP11" calm3 "$SCRATCH" | METRICS_SIT_HOT_RUNG=9 \
   bash "$HOOK" posttooluse 0 show 2>&1)")
 has 'and the rung is a knob like every other' '⏱2h30(⏱️|🌙){5} ' "$o11c"
+
+# dotfiles#137: the reason cluster trips on the same hot rung as the glyph
+# itself, no second threshold to keep in sync.
+has 'the sitting reason glyph trips at the hot rung' '⏱️.*propose stopping' "$o11b"
+o11d=$(msg "$(payload "$TP11" calm4 "$SCRATCH" | METRICS_SIT_HOT_RUNG=9 \
+  bash "$HOOK" posttooluse 0 show 2>&1)")
+hasnt 'and stays quiet while the rung is raised past it' 'propose stopping' "$o11d"
 rm -f "$SITF11"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

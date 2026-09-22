@@ -809,6 +809,15 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
   bl_reason=""; bl_propose=0
   [ "${ctx_stop_line:-0}" -gt 0 ] && { bl_reason="${bl_reason}💸"; bl_propose=1; }
   [ "${bl_dec:-0}" -gt 3 ]        && { bl_reason="${bl_reason}🤔"; bl_propose=1; }
+  [ "${bl_fric:-0}" -ge 2 ]       && { bl_reason="${bl_reason}⚡"; bl_propose=1; }
+  # Night reuses the sitting cluster's own "is it night right now" read (sg)
+  # and rung count (r) rather than a separate clock -- one signal, not two.
+  [ "${sit_start:-0}" -gt 0 ] && [ "${sg:-}" = "🌙" ] && [ "${r:-0}" -ge 1 ] \
+    && { bl_reason="${bl_reason}🌙"; bl_propose=1; }
+  # Sitting fires at the same rung the glyph itself turns to ⏰ -- one
+  # config knob (NAG_SIT_HOT_RUNG), not a second threshold to keep in sync.
+  [ "${sit_start:-0}" -gt 0 ] && [ "${r:-0}" -ge $((NAG_SIT_HOT_RUNG + 1)) ] \
+    && { bl_reason="${bl_reason}⏱️"; bl_propose=1; }
   [ "${bl_blocked:-0}" -ge 3 ]    && { bl_reason="${bl_reason}⛔"; bl_propose=1; }
   bl_verdict="still room"
   [ "$bl_propose" -eq 1 ] && bl_verdict="propose stopping"
