@@ -7,16 +7,28 @@ governs. Values in the examples are tuning, not part of the ruling.
 
 ## What is shown, and how often
 
-**Every threshold crossed prints its own line.** A jump across several
-thresholds prints one line per threshold, never a merged one. Louder and
-more frequent is the direction; going quieter is never a cleanup. Display
-lines cost no tokens, so frequency is free. One jump to 350k, two of the
-rungs it crossed; the second number on each line is the rung.
+**A notice on every event, and one notice per event.** On every Stop and on
+most tool invocations — high frequency, one block each time. Louder and *more
+often* is the direction; going quieter is never a cleanup, and display lines
+cost no tokens, so frequency is free.
+
+This corrects what was written here before. `#149` was read as a ruling about
+lines *per event*: "more lines, not fewer... do not coalesce, dedupe or fire
+at the right time", so a jump across four rungs printed four lines. Ruled by
+Solace, 2026-09-22 ([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)):
+that was never the ask. He was pushing back on repeated attempts to make the
+readout appear **less often**. Frequency, not line count. A four-rung jump
+renders one block with four ⛁ in it.
 
 ```
-⛁⛁⛁ 350k/120k ⚖0 — still room.
-⛁⛁⛁⛁ 350k/150k ⚖0 — propose stopping.
+⛁⛁⛁⛁ 46k/155k ⚖(x1) 🔧⛔(x2) ⏱1h33⏱️⏱️⏱️⏱️ — 💸 propose stopping.
+⇢ 1 ⚙ 59
 ```
+
+**A rung value is never a number on screen.** The block's only `a/b` is
+`output_tokens/context_peak`; a rung reaches the reader as glyph repetitions
+and nothing else. The threshold lines rendered `context_peak/rung` — the same
+shape, one line away, meaning something different.
 
 **The persistent block appears on every displayed event,** with no counter
 or throttle. It always has its status line and its turns line. The turns
@@ -34,7 +46,7 @@ at the top rather than going quiet; the overflow count is the settled
 shape for that.
 
 ```
-⛁⛁⛁⛁⛁(x6) 350k/220k ⚖0 — propose stopping.
+⛁⛁⛁⛁⛁(x9) 10/350k 🔧✅(x0) ⏱0m — 💸 propose stopping.
 ```
 
 **Bias toward more information.** Adding a number or a line never needs a
@@ -44,9 +56,6 @@ the display proves stable and legible, the user may later ask for more
 measured output. Until then, more.
 
 ## The ratio in the persistent block
-
-This section is about the block's status line only. A threshold line is a
-different thing: its second number is the rung it reports crossing.
 
 The ratio shown is two real, measured numbers from the session:
 `output_tokens` on top, `context_peak` on bottom.
@@ -59,13 +68,14 @@ output-tokens badge — settled after repeated attempts on
 re-propose them.
 
 ```
-⛁⛁⛁⛁ 30/152k 🔧✅(x0) — 💸 propose stopping.
+⛁⛁⛁⛁ 20/152k 🔧✅(x0) ⏱0m — 💸 propose stopping.
 ```
 
 ## Stop output
 
-**Order on Stop:** threshold lines, then the block, then the archival line
-last.
+**Order on Stop:** the block, then the archival line last. The bucket ahead
+of the block still exists — the sitting and gate lines feed it — and still
+prints first when it has anything in it.
 
 **The archival line always appears on Stop,** with reasons when the session
 is not archivable, and both Stop hooks read those reasons from one shared

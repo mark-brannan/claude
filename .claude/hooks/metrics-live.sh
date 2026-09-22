@@ -35,8 +35,8 @@
 # Changes here are small and contained -- one glyph/family at a time. Never
 # a wholesale rewrite: don't drop an existing glyph, family, or behavior
 # without her explicit call to drop it. That includes cadence: don't make
-# a line fire less often, coalesce, dedupe, or go quiet as a "cleanup" --
-# she has said explicitly she wants this louder and more frequent, not
+# the readout appear less often as a "cleanup" -- that is frequency, never
+# lines per event (dotfiles#137). She wants this more frequent, not
 # calmer. Edge-triggered (once per new crossing) is the floor, not a ceiling
 # to defend; if a change would make the reader see this line less, it is
 # out of scope for a "small, contained" edit and needs to be asked about.
@@ -482,10 +482,8 @@ if [ "$run_engine" -eq 1 ]; then
   # context -- lines ascending, so a jump past several of them reports each in
   # order. The ladder is the configured lines, then NAG_CONTEXT_STEP forever
   # past the last one, so a session that blows through every configured line
-  # keeps getting a line instead of going quiet. ⛁ repeats once per rung
-  # crossed this session (glyphs(); capped at 5, then "(xN)") -- the same
-  # escalation as ⚡, keyed off the friction total instead of the rung count.
-  # ⚖ stays a plain digit; no rung tracks gate decisions.
+  # keeps counting instead of going quiet. The rung count reaches the screen
+  # only through the block's ⛁ cluster; the rung value never does.
   ladder="$NAG_CONTEXT_LINES"
   last_cfg=0
   for L in $NAG_CONTEXT_LINES; do last_cfg=$L; done
@@ -497,22 +495,13 @@ if [ "$run_engine" -eq 1 ]; then
     done
   fi
   # A single invocation can cross several rungs at once (a big tool result
-  # landing between prompts, or a subagent's output). Each still gets its own
-  # screen line -- "reports each in order" above. The model injection below
-  # is one line per prompt whatever the screen did, on its own ladder.
+  # landing between prompts, or a subagent's output). Each is counted, none
+  # is spoken: one notice per event, and that notice is the block.
   for L in $ladder; do
     if [ "$ctx" -ge "$L" ] && [ "$L" -gt "$ctx_line" ]; then
       ctx_rungs=$((ctx_rungs + 1))
-      if [ "$L" -ge "$NAG_CONTEXT_STOP_AT" ]; then
-        verdict="propose stopping"
-        ctx_stop_line=$L
-      else
-        verdict="still room"
-      fi
-      fpart=""
-      [ "$fric_total" -gt 0 ] && fpart=" $(glyphs "$fric_total" "⚡") $fric_total"
-      t="$(glyphs "$ctx_rungs" "⛁") $(kfmt "$ctx")/$(kfmt "$L") ⚖${gates}${fpart} — ${verdict}."
-      add_line "$t"; record_crossing context "$L" "$t"
+      [ "$L" -ge "$NAG_CONTEXT_STOP_AT" ] && ctx_stop_line=$L
+      record_crossing context "$L" ""
       ctx_line=$L; since_nag=1
     fi
   done

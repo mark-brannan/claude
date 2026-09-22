@@ -49,21 +49,23 @@ hasnt() {
   else pass=$((pass+1)); fi
 }
 
-# --- 1. two context lines, in order ------------------------------------------
+# --- 1. context rungs are counted, never spoken ------------------------------
+# Ruled on dotfiles#137, 2026-09-22: one notice per event, and that notice is
+# the block. A context crossing moves the block's ⛁ cluster and prints no
+# line of its own -- least of all one naming the rung, which reused the a/b
+# shape the block spends on output_tokens/context_peak.
 TP="$SCRATCH/ctx.jsonl"; SID=ctx1
 turn "$TP" 103000
 out1=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 turn "$TP" 152000
-out2=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-out3=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+out2=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
 
-has  'first crossing names 100k'      '103k/100k' "$(msg "$out1")"
-hasnt 'first crossing does not propose stopping' 'propose stopping' "$(msg "$out1")"
-has  'second crossing names 150k'     '152k/150k' "$(msg "$out2")"
-has  'second crossing proposes stopping' 'propose stopping' "$(msg "$out2")"
-has  'first crossing shows one ⛁ glyph'  '⛁ 103k' "$(msg "$out1")"
-has  'second crossing shows two ⛁ glyphs' '⛁⛁ 152k' "$(msg "$out2")"
-t    'nothing fires a third time'     '' "$(msg "$out3")"
+t     'a crossing on a prompt says nothing at all' '' "$(msg "$out1")"
+has   'the block counts both rungs'          '^⛁⛁ ' "$(msg "$out2")"
+hasnt 'and never names the rung it crossed'  '/(100|150)k' "$(msg "$out2")"
+hasnt 'no threshold line rides in front of it' 'still room' "$(msg "$out2")"
+has   'the stop rung still reaches the verdict' '💸 propose stopping' "$(msg "$out2")"
 
 CROSS="$STATE/metrics/crossings/$SID.jsonl"
 t 'both crossings are recorded, in order' \
@@ -291,12 +293,13 @@ has   'and reports the block as missing' 'no `## Resume` block' "$(msg "$o")"
 hasnt 'never claims it was written'      'Resume block written' "$(msg "$o")"
 o=$(S3); t 'and stays quiet after' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
 
-# A crossing that arms the Stop is consumed by it, so the block reason has to
-# carry the line -- otherwise the threshold that caused the block is never seen.
+# A context crossing still arms the Stop. It no longer speaks on the way: the
+# reason carries the resume instruction, and the metrics land in the block on
+# the next Stop, which is the one that passes.
 TP4="$SCRATCH/cross.jsonl"; turn "$TP4" 103000
 o=$(payload "$TP4" stop4 "$REPO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t   'a context crossing at Stop blocks' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
-has 'and the reason carries the crossing line' '⛁ 103k/100k' \
+hasnt 'and the reason carries no threshold line' '⛁' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
 
 # A dirty tree is not archivable, so nothing blocks however late it is.
@@ -304,11 +307,12 @@ has 'and the reason carries the crossing line' '⛁ 103k/100k' \
 o4=$(payload "$TP3" stop2 "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
 t 'a dirty tree is never archivable' '' "$(printf '%s' "$o4" | jq -r '.decision // ""')"
 
-# --- 3c. order: nags before the block, archival after it ---------------------
-# dotfiles#149 step 4's whole point. A nag that fires on the same Stop that
-# also confirms a pending resume block must render before the block, with
-# the archival verdict after it -- never interleaved. Own repo so this does
-# not depend on section 3's ordering or its dirty-tree flip above.
+# --- 3c. order: the block first, the archival verdict after it ---------------
+# dotfiles#149 step 4's whole point, minus the context line #137 removed. The
+# nag bucket still prints ahead of the block -- the sitting and gate lines
+# feed it -- but no producer of it co-occurs with a Stop, so what is left to
+# pin here is the block against the archival tail. Own repo so this does not
+# depend on section 3's ordering or its dirty-tree flip above.
 REPOO="$SCRATCH/repoo"; mkdir -p "$REPOO"
 git -C "$REPOO" init -q -b feat/order
 git -C "$REPOO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
@@ -328,13 +332,12 @@ turn "$TPO" 152000
 oO2=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t 'order: the confirming Stop does not re-block' '' "$(printf '%s' "$oO2" | jq -r '.decision // ""')"
 msgO2=$(msg "$oO2")
-nag_at=$(printf '%s\n' "$msgO2" | grep -n '⛁⛁ 152k/150k' | head -1 | cut -d: -f1)
+status_at=$(printf '%s\n' "$msgO2" | grep -n '— ' | head -1 | cut -d: -f1)
 block_at=$(printf '%s\n' "$msgO2" | grep -n '⇢ ' | head -1 | cut -d: -f1)
 arch_at=$(printf '%s\n' "$msgO2" | grep -n '📦' | head -1 | cut -d: -f1)
-t 'all three sections are present' yes \
-  "$( [ -n "$nag_at" ] && [ -n "$block_at" ] && [ -n "$arch_at" ] && echo yes || echo no )"
-t 'the nag line renders before the block' yes \
-  "$( [ "${nag_at:-0}" -lt "${block_at:-0}" ] 2>/dev/null && echo yes || echo no )"
+t 'both sections are present' yes \
+  "$( [ -n "$status_at" ] && [ -n "$block_at" ] && [ -n "$arch_at" ] && echo yes || echo no )"
+t 'the block opens the message, no line in front of it' 1 "${status_at:-0}"
 t 'the archival verdict renders after the block' yes \
   "$( [ "${block_at:-0}" -lt "${arch_at:-0}" ] 2>/dev/null && echo yes || echo no )"
 has 'and reports the resume block it found' 'Resume block written' "$msgO2"
@@ -364,14 +367,15 @@ fi
 
 # --- 5. the ladder extends past the configured lines, forever ----------------
 # dotfiles#132: NAG_CONTEXT_LINES stops at 200k by default, but a session that
-# blows straight past it must keep getting a line every NAG_CONTEXT_STEP,
-# not go quiet. A single jump to 320k crosses five rungs at once (100k, 150k,
-# 200k, 250k, 300k) and the glyph count escalates with each: the fifth rung is
-# capped at 5 ⛁ and switches to "(xN)".
+# blows straight past it must keep counting every NAG_CONTEXT_STEP, not go
+# quiet. A single jump to 350k crosses six rungs at once (100k through 350k)
+# and the glyph count escalates with each: past the fifth it caps at 5 ⛁
+# and switches to "(xN)".
 TP5="$SCRATCH/ladder.jsonl"; SID5=ladder
 turn "$TP5" 350000
-out5=$(payload "$TP5" "$SID5" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has 'the ladder reaches past the last configured line' '350k/350k' "$(msg "$out5")"
+payload "$TP5" "$SID5" "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+out5=$(payload "$TP5" "$SID5" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+has 'the ladder reaches past the last configured line' '/350k' "$(msg "$out5")"
 has 'and the glyph count is capped, with the total after it' \
     '⛁⛁⛁⛁⛁\(x6\)' "$(msg "$out5")"
 t 'six rungs cross in one jump, in order' \

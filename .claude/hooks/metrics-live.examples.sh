@@ -19,22 +19,28 @@ export CLAUDE_STATE_REPO=""
 
 show() { printf '\n### %s\n' "$1"; }
 
+# The crossing engine runs on a prompt and on a Stop; the block renders on
+# every shown event. A crossing prints nothing of its own (dotfiles#137), so
+# each case below is a prompt to move the rungs, then a shown event to see
+# where they landed.
+block() { payload "$1" "$2" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1; }
+
 show "first context crossing (100k)"
 TP="$SCRATCH/a.jsonl"; turn "$TP" 103000
-out=$(payload "$TP" a "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-printf '  %s\n' "$(msg "$out")"
+payload "$TP" a "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+printf '%s\n' "$(msg "$(block "$TP" a)")" | sed 's/^/  /'
 
 show "second crossing, same session (150k)"
 turn "$TP" 152000
-out=$(payload "$TP" a "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-printf '  %s\n' "$(msg "$out")"
+payload "$TP" a "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+printf '%s\n' "$(msg "$(block "$TP" a)")" | sed 's/^/  /'
 
 show "one jump crosses six rungs at once (350k)"
 TP2="$SCRATCH/b.jsonl"; turn "$TP2" 350000
-out=$(payload "$TP2" b "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-printf '%s\n' "$(msg "$out")" | sed 's/^/  /'
+payload "$TP2" b "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+printf '%s\n' "$(msg "$(block "$TP2" b)")" | sed 's/^/  /'
 
-show "model injection: below stop threshold (103k) -- screen only"
+show "model injection: below stop threshold (103k) -- nothing to the model"
 TP3="$SCRATCH/c.jsonl"; turn "$TP3" 103000
 out=$(payload "$TP3" c "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 printf '  additionalContext: [%s]\n' "$(ctx "$out")"
