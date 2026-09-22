@@ -383,9 +383,10 @@ t 'six rungs cross in one jump, in order' \
   "$(jq -r 'select(.kind == "context") | .at' "$STATE/metrics/crossings/$SID5.jsonl" 2>/dev/null)"
 
 # --- 6. model injection rides its own context ladder -------------------------
-# Below the first rung, nothing reaches the model. At or above it, the first
-# prompt offers a stopping point and every prompt after says it was already
-# raised.
+# Below the first rung, nothing reaches the model. At or above it, the prompt
+# that crosses a rung offers a stopping point, a later rung says it was
+# already raised, and the prompts in between say nothing at all
+# (dotfiles#282: the injection is edge-triggered, like the screen line).
 TP6="$SCRATCH/inject.jsonl"; SID6=inject
 turn "$TP6" 103000
 ctx6a=$(payload "$TP6" "$SID6" "$SCRATCH" \
@@ -403,6 +404,12 @@ ctx6c=$(payload "$TP6" "$SID6" "$SCRATCH" \
         | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 has  'a later crossing says it was already raised'  'Already raised at 125k' "$ctx6c"
 hasnt 'and does not repeat the stopping-point offer' 'a stopping point'      "$ctx6c"
+
+# dotfiles#282: a prompt that crosses no new rung carries no context line.
+turn "$TP6" 261000
+ctx6c2=$(payload "$TP6" "$SID6" "$SCRATCH" \
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+t 'and the next prompt over the same rung says nothing' '' "$ctx6c2"
 
 # A single call can cross more than one stop-eligible rung at once (a big
 # tool result landing between prompts). That must still emit exactly one
@@ -433,6 +440,11 @@ out6g=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 has 'a later sitting crossing names the earlier rung raised' \
     'Already raised at 1h00' "$(ctx "$out6g")"
 hasnt 'and does not repeat the break offer' 'offer a break' "$(ctx "$out6g")"
+
+# dotfiles#282: still past 2h, no new rung -- silence, not a re-nag.
+clock 125 10
+out6g2=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+t 'and the next prompt inside the same rung says nothing' '' "$(ctx "$out6g2")"
 
 clock 5 2
 out6h=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
@@ -466,6 +478,20 @@ hasnt 'the in-flight rung is not spent -- no "already raised"' \
       'Already raised' "$(ctx "$out6k")"
 hasnt 'and two hours in flight still does not order /wrapup' \
       'Stop here and run /wrapup' "$(ctx "$out6k")"
+
+# dotfiles#282: unspent is not the same as unlimited -- the in-flight line
+# still fires once per rung, not on every prompt.
+clock 125 10
+out6k2=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
+t 'the in-flight line does not repeat inside its rung' '' "$(ctx "$out6k2")"
+
+# ...and the unspent offer still arrives on the prompt after the work lands,
+# at the rung that was already spoken in flight.
+git -C "$WT" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+rm -f "$WT/dirty.txt"
+out6k3=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
+has 'and once the work lands the unspent offer fires' \
+    'Stop here and run /wrapup' "$(ctx "$out6k3")"
 clock_clear
 
 # --- 6c. model injection: decision load, mirrors section 6 --------------------
@@ -500,6 +526,11 @@ ctx6l=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
 has 'a later decision crossing names the earlier rung raised' \
     'past 5\. Already raised at 3 and not acted on\.' "$ctx6l"
 hasnt 'and does not repeat the front-load offer' 'Front-load or card the rest\.' "$ctx6l"
+
+# dotfiles#282: no new decision, no line.
+ctx6m=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+t 'and a prompt adding no decision says nothing' '' "$ctx6m"
 
 # --- 7. the sitting line carries git state once #129 makes it safe to ---------
 # dotfiles#132's third deferred item, reconciled now that #129 landed: a dirty

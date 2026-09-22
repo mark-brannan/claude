@@ -100,6 +100,11 @@ The two are never concatenated into one string.
 additionalContext: Sitting 2h03, past 2h00. Already raised at 1h00 and not acted on. Stop here and run /wrapup.
 ```
 
+**One injection per rung crossed, never a repeat.** A model line fires on
+the prompt that crosses a rung and says nothing on the prompts after it,
+the same edge-triggered cadence the screen lines use
+([dotfiles#282](https://github.com/mark-brannan/dotfiles/issues/282)).
+
 **The screen ladder and the model-facing ladder are separate.** Whether
 their values coincide is tuning. Both are adjusted in the same place as
 every other threshold.

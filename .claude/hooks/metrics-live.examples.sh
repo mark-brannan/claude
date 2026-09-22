@@ -80,6 +80,11 @@ turn "$TP5" 42000
 out=$(payload "$TP5" f "$SCRATCH" | METRICS_SIT_EVERY_MIN=60 bash "$HOOK" prompt 0 2>&1)
 printf '  screen:           %s\n' "$(msg "$out")"
 printf '  additionalContext: %s\n' "$(ctx "$out")"
+show "model injection: sitting still past 2h, no new rung (silent)"
+turn "$TP5" 43000
+out=$(payload "$TP5" f "$SCRATCH" | METRICS_SIT_EVERY_MIN=60 bash "$HOOK" prompt 0 2>&1)
+printf '  screen:           [%s]\n' "$(msg "$out")"
+printf '  additionalContext: [%s]\n' "$(ctx "$out")"
 unset METRICS_MODEL_CONTEXT_LINES
 
 rm -f "$SITFILE"

@@ -68,7 +68,8 @@ SHOW="${3:-}"               # "show" -> also print a systemMessage block
 #             the last configured line by CONTEXT_STEP forever, so it keeps
 #             escalating instead of going quiet at the top. At or above
 #             CONTEXT_STOP_AT it also reaches the model: once as an offer to
-#             stop, and plainly, not repeated, on every rung after that
+#             stop, and plainly on each further rung, never twice for the
+#             same one
 #   sitting   elapsed, context, verdict -- driven entirely by prompts: it
 #             starts at the first one, restarts when the gap between two of
 #             them runs past SIT_GAP_MIN (a session picked up after dinner is
@@ -91,8 +92,8 @@ NAG_FRICTION_TURNS="${METRICS_FRICTION_TURNS:-20}"
 NAG_GATE_EVERY="${METRICS_GATE_EVERY:-5}"
 # Model-facing ladders. Separate from the screen ladders above: the screen
 # line is a glance, the injection is an instruction, and they escalate on
-# different numbers. Level-triggered, not edge -- once over the lowest rung
-# every prompt carries the line until the session ends.
+# different numbers. Edge-triggered, the same as the screen lines: one
+# injection per rung crossed, and silence on the prompts in between.
 NAG_MODEL_CONTEXT_LINES="${METRICS_MODEL_CONTEXT_LINES:-105000 125000 175000 200000}"
 NAG_MODEL_CONTEXT_STEP="${METRICS_MODEL_CONTEXT_STEP:-50000}"
 NAG_MODEL_DECISION_LINES="${METRICS_MODEL_DECISION_LINES:-3 5 8 13 21}"
@@ -287,10 +288,10 @@ save_sitting() {
 # the prompt that restarted it, and they must be free to speak again.
 ctx_line=0; ctx_rungs=0; ctx_stop_line=0; time_line=0; tl_sitting=0; gate_line=0; fric_tripped=0
 since_nag=0; resume_ts=0; nag_pending=0; late_nagged=0
-m_ctx_at=0; m_sit_at=0; m_dec_at=0
+m_ctx_at=0; m_sit_at=0; m_sit_said=0; m_dec_at=0
 if [ -f "$NAGF" ]; then
   IFS=$'\t' read -r ctx_line ctx_rungs ctx_stop_line time_line tl_sitting gate_line fric_tripped \
-                    since_nag resume_ts nag_pending late_nagged m_ctx_at m_sit_at m_dec_at \
+                    since_nag resume_ts nag_pending late_nagged m_ctx_at m_sit_at m_sit_said m_dec_at \
     <<<"$(jq -r '[(.context_line // 0), (.context_rungs // 0), (.context_stop_line // 0),
                   (.time_line // 0), (.time_line_sitting // -1),
                   (.gate_line // 0),
@@ -300,10 +301,11 @@ if [ -f "$NAGF" ]; then
                   (if .nag_pending then 1 else 0 end),
                   (if .late_nagged then 1 else 0 end),
                   (.model_context_at // 0), (.model_sitting_at // 0),
+                  (.model_sitting_said // .model_sitting_at // 0),
                   (.model_decision_at // 0)] | @tsv' "$NAGF" 2>/dev/null)"
 fi
 for v in ctx_line ctx_rungs ctx_stop_line time_line tl_sitting gate_line fric_tripped \
-         since_nag resume_ts nag_pending late_nagged m_ctx_at m_sit_at m_dec_at; do
+         since_nag resume_ts nag_pending late_nagged m_ctx_at m_sit_at m_sit_said m_dec_at; do
   [ -n "${!v}" ] || eval "$v=0"
 done
 # -1 is a nag file written before the clock moved out of it: its time_line
@@ -341,13 +343,15 @@ save_nag() {
         --argjson gl "$gate_line" --argjson ft "$fric_tripped" \
         --argjson sn "$since_nag" --argjson rt "$resume_ts" --argjson np "$nag_pending" \
         --argjson ln "$late_nagged" \
-        --argjson mc "$m_ctx_at" --argjson ms "$m_sit_at" --argjson md "$m_dec_at" \
+        --argjson mc "$m_ctx_at" --argjson ms "$m_sit_at" \
+        --argjson mss "$m_sit_said" --argjson md "$m_dec_at" \
     '{context_line: $cl, context_rungs: $cr, context_stop_line: $cs,
       time_line: $tl, time_line_sitting: $ts, gate_line: $gl,
       friction_tripped: ($ft == 1),
       since_nag: ($sn == 1), resume_ts: $rt, nag_pending: ($np == 1),
       late_nagged: ($ln == 1),
-      model_context_at: $mc, model_sitting_at: $ms, model_decision_at: $md}' \
+      model_context_at: $mc, model_sitting_at: $ms,
+      model_sitting_said: $mss, model_decision_at: $md}' \
     > "$NAGF.$$" 2>/dev/null \
     && mv -f "$NAGF.$$" "$NAGF" 2>/dev/null || rm -f "$NAGF.$$" 2>/dev/null
 }
@@ -496,7 +500,9 @@ if [ "$run_engine" -eq 1 ]; then
   fi
   # A single invocation can cross several rungs at once (a big tool result
   # landing between prompts, or a subagent's output). Each is counted, none
-  # is spoken: one notice per event, and that notice is the block.
+  # is spoken: one notice per event, and that notice is the block. The model
+  # injection below is one line per crossing of its own ladder, however many
+  # rungs went by here.
   for L in $ladder; do
     if [ "$ctx" -ge "$L" ] && [ "$L" -gt "$ctx_line" ]; then
       ctx_rungs=$((ctx_rungs + 1))
@@ -505,19 +511,21 @@ if [ "$run_engine" -eq 1 ]; then
       ctx_line=$L; since_nag=1
     fi
   done
-  # Model injection rides its own ladder and its own cadence: every prompt
-  # while the number is over the lowest rung, not once per crossing. The
-  # first one offers a stopping point; every one after names the rung it is
-  # past and that the offer already went out.
+  # Model injection rides its own ladder, edge-triggered like everything
+  # else here: once per rung, on the prompt that crossed it, and nothing on
+  # the prompts after (dotfiles#282 -- a line repeated with no new number in
+  # it is the level-triggered nag the engine exists to replace). The first
+  # one offers a stopping point; a later rung names the one already spoken,
+  # which is new information because the number has moved.
   if [ "$is_prompt" -eq 1 ]; then
     r=$(rung_of "$NAG_MODEL_CONTEXT_LINES" "$NAG_MODEL_CONTEXT_STEP" "$ctx")
-    if [ "$r" -gt 0 ]; then
+    if [ "$r" -gt "$m_ctx_at" ]; then
       if [ "$m_ctx_at" -eq 0 ]; then
-        m_ctx_at=$r
         add_model "Context at $(kfmt "$ctx"), past $(kfmt "$r") — a stopping point. Offer one, or /wrapup."
       else
         add_model "Context at $(kfmt "$ctx"), past $(kfmt "$r"). Already raised at $(kfmt "$m_ctx_at") and not acted on."
       fi
+      m_ctx_at=$r
     fi
   fi
 
@@ -554,13 +562,19 @@ if [ "$run_engine" -eq 1 ]; then
   # Model side of the sitting clock. Reads the same thresholds the screen
   # line does and defines none of its own; a rung of 0 means the shared clock
   # restarted, which spends the injection with it.
+  #
+  # Two markers, not one: m_sit_said is the last rung this session spoke, and
+  # gates the repeat (dotfiles#282); m_sit_at is the last rung whose *offer*
+  # was made, which the in-flight branch deliberately leaves unspent so the
+  # offer still fires at the same rung once the work has landed.
   if [ "$is_prompt" -eq 1 ] && [ "$NAG_SIT_EVERY_MIN" -gt 0 ] \
      && [ "$sit_start" -gt 0 ]; then
     m_min=$(( (now_ts - sit_start) / 60 ))
     r=$(rung_of "$NAG_SIT_EVERY_MIN" "$NAG_SIT_EVERY_MIN" "$m_min")
     if [ "$r" -eq 0 ]; then
-      m_sit_at=0
-    else
+      m_sit_at=0; m_sit_said=0
+    elif [ "$r" -gt "$m_sit_said" ] \
+         || { [ "$m_sit_at" -eq 0 ] && ! in_flight; }; then
       inf=""; in_flight && inf=" with work in flight ($in_flight_memo)"
       if [ -n "$inf" ]; then sv="Do not offer a break or /wrapup yet: land this without asking -- commit, push, open the PR -- then offer."
       elif [ "$r" -ge $((NAG_SIT_EVERY_MIN * 2)) ]; then sv="Stop here and run /wrapup."
@@ -570,7 +584,9 @@ if [ "$run_engine" -eq 1 ]; then
         add_model "Sitting $(hm "$m_min") at this machine, past $(hm "$r")$inf. $sv"
       else
         add_model "Sitting $(hm "$m_min"), past $(hm "$r"). Already raised at $(hm "$m_sit_at") and not acted on. $sv"
+        m_sit_at=$r
       fi
+      m_sit_said=$r
     fi
   fi
 
@@ -590,13 +606,13 @@ if [ "$run_engine" -eq 1 ]; then
   # capacity that runs out is the capacity to decide, whatever kind.
   if [ "$is_prompt" -eq 1 ]; then
     r=$(rung_of "$NAG_MODEL_DECISION_LINES" "$NAG_MODEL_DECISION_STEP" "$decisions")
-    if [ "$r" -gt 0 ]; then
+    if [ "$r" -gt "$m_dec_at" ]; then
       if [ "$m_dec_at" -eq 0 ]; then
-        m_dec_at=$r
         add_model "$decisions decisions pushed to Solace this session ($gates of them gates), past $r. Front-load or card the rest."
       else
         add_model "$decisions decisions pushed to Solace this session ($gates of them gates), past $r. Already raised at $m_dec_at and not acted on."
       fi
+      m_dec_at=$r
     fi
   fi
 
