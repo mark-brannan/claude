@@ -1,6 +1,6 @@
 ---
 name: pickup
-description: Pick up a session where an earlier one left it, from the resume block that session wrote into its own checkpoint. Use when Solace says "resume", "pick up", "/pickup", "/pickup <branch>", "pick up where we left off", or opens a session meaning to continue work rather than choose new work. Not `/resume` — that name is claimed by Claude Code's own terminal-session resume.
+description: Pick up a session where an earlier one left it, from the resume block that session wrote into its own checkpoint. Use when Solace says "resume", "pick up", "/pickup", "/pickup <branch>", "/pickup owner/repo#n" or a PR URL, "fix up this PR", "pick up where we left off", or opens a session meaning to continue work rather than choose new work. Not `/resume` — that name is claimed by Claude Code's own terminal-session resume.
 ---
 
 # Pickup
@@ -12,6 +12,13 @@ A session opened this way starts **from the block, not from `worklist`**.
 Don't run `worklist`, don't survey the project, don't re-derive what to do:
 the previous session already decided, and re-deciding is the cost this exists
 to avoid.
+
+## 0. Which form was it
+
+`/pickup owner/repo#n`, or a pull request URL, is a **PR fixup**: a branch
+with more facts on it and a clearer finish line than a resume block has. Skip
+§1 and §4 entirely — there is no block to pick and none to consume — and take
+§2, §3, §6 in that order. Everything else is a resume block: §1.
 
 ## 1. Read the list
 
@@ -34,9 +41,21 @@ Resuming <branch> (<repo>) — <the block's next step, verbatim>
 Model: <model> · Effort: <effort>
 ```
 
+For a PR fixup there is no block, so the three lines come from the PR:
+
+```
+Fixing up <owner/repo#n> — <its title>
+<the PR URL>
+Model: <model> · Effort: <effort>
+```
+
 The block's `model` and `effort` are the *previous* session's
 recommendation for this work. If the running session is on something else,
 say so in one line — never silently.
+
+For a PR fixup there is no block, so read them off the PR instead: the
+hand-off prompt in its description or its own last comment, if one named
+them. If none did, that's the session's own call to make and state.
 
 Then read the link — the PR, issue or card — for live state. The block
 names where the work is; it does not carry its state, which is stale the
@@ -67,6 +86,27 @@ Everything the previous session wanted handed over is on the remote. If it
 isn't pushed, it isn't handed over: work from the pushed state and say in one
 line what you found missing.
 
+For a **PR fixup** the branch is the PR's head branch, and the same three
+rules hold — your own worktree, fetch first, refuse a branch another worktree
+holds:
+
+```
+gh pr checkout <n> --repo <owner/repo>     # or: git fetch origin && git checkout <head branch>
+```
+
+Then read the two briefs, and act on the one command they name. Nothing else
+in this skill makes a branch decision, and neither do you:
+
+```
+pr-label-audit --pr <owner/repo#n>          # the GitHub side: verdict, threads, failing checks
+branch_brief <repo root> <head branch>      # the local side: base, ahead/behind, conflicts, unsigned
+```
+
+`branch_brief` is a shell function in `~/.claude/hooks/lib-state.sh`, so
+`. ~/.claude/hooks/lib-state.sh` first. Its last line is `recommend:` followed
+by one command — rebase, merge, resign, or a refusal to guess. That line is
+the base decision. Run it; do not second-guess it from the diff.
+
 ## 4. Mark it consumed
 
 Do this **as you start**, not at the end: a session that dies mid-work
@@ -89,6 +129,47 @@ stays as a record of who took it.
 Nothing else belongs to this skill. Blocks are dropped on their own when the
 branch goes level with the default branch or its PR merges, so there is no
 tidying to do.
+
+## 6. The fixup contract
+
+One text, two runners: this section is what a session works a PR to, and it
+is the same text `grind --prs` hands its headless workers. Lift it verbatim;
+do not paraphrase it into a second version that can drift from this one.
+
+1. **Threads first.** Address every unresolved review thread, reply on it,
+   resolve it. Before the checks, always: a session watching CI with an
+   unanswered comment on the PR is spending the only resource that matters on
+   the lowest-priority thing there is.
+
+2. **Base second.** Run the one command `branch_brief` printed on its
+   `recommend:` line. Rebase when the branch is clean; merge when it
+   conflicts — and once you have merged, never linearize the branch
+   afterwards. A merge commit carries the hand-resolution in its tree and a
+   later rebase throws it away.
+
+3. **CI third.** Fix what is red. A failure that originates in another
+   repository — a reusable workflow, a dependency this PR does not own — is
+   hard, not yours: it goes to the stop rule in 6.
+
+4. **Commits sign themselves on this machine.** Never
+   `-c commit.gpgsign=false`, never `git commit-tree`. If
+   `no-unsigned-push.sh` denies the push, it prints the line that fixes it —
+   run that line. An unsigned commit fails the gate, so a shortcut here buys
+   nothing and costs the branch.
+
+5. **Push with `--force-with-lease`,** never a bare `--force`. A refused
+   lease is not an obstacle to retry past: it means someone else pushed to
+   this branch while you worked. Stop, and say whose push you found.
+
+6. **Finish is `awaiting-human` back on the PR** — and Mergify puts it there,
+   computed from a green `ci-gate / gate` and no unresolved thread. The
+   session never applies that label and never merges the PR.
+
+   After **one honest attempt**, or about **$1 of spend**, stop instead:
+   label the PR `fixup-hard`, leave exactly one comment saying what was
+   tried, why it is hard and what it cost, and end. That comment is the
+   entire handover — a human, or a bigger session, reads it and nothing
+   else. Giving up loudly and cheaply is the wanted outcome, not a failure.
 
 ## Writing a block
 
