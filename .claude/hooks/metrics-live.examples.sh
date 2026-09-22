@@ -87,6 +87,11 @@ printf '  screen:           [%s]\n' "$(msg "$out")"
 printf '  additionalContext: [%s]\n' "$(ctx "$out")"
 unset METRICS_MODEL_CONTEXT_LINES
 
+show "sitting cluster: the ⏰ tier past the 90-minute rung"
+sed -i "s/\"sitting_start\": *[0-9]*/\"sitting_start\": $((now - 9000))/" \
+  "$SITFILE" 2>/dev/null
+printf '%s\n' "$(msg "$(block "$TP5" f)")" | sed 's/^/  /'
+
 rm -f "$SITFILE"
 
 show "model injection: decision load past 3, then past 5"

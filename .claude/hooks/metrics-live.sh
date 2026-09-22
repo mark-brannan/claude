@@ -87,6 +87,8 @@ NAG_CONTEXT_STOP_AT="${METRICS_CONTEXT_STOP_AT:-150000}"
 NAG_CONTEXT_STEP="${METRICS_CONTEXT_STEP:-35000}"
 NAG_SIT_EVERY_MIN="${METRICS_SIT_EVERY_MIN:-60}"
 NAG_SIT_GAP_MIN="${METRICS_SIT_GAP_MIN:-15}"
+# Sitting rungs from here up draw ⏰ instead of ⏱️/🌙. 3 = past 90 min.
+NAG_SIT_HOT_RUNG="${METRICS_SIT_HOT_RUNG:-3}"
 NAG_FRICTION_N="${METRICS_FRICTION_N:-3}"
 NAG_FRICTION_TURNS="${METRICS_FRICTION_TURNS:-20}"
 NAG_GATE_EVERY="${METRICS_GATE_EVERY:-5}"
@@ -769,7 +771,7 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
   bl_ctx_glyphs="»"; [ "${ctx_rungs:-0}" -gt 0 ] && bl_ctx_glyphs=$(glyphs "$ctx_rungs" "⛁")
   bl_ctx_cluster="$bl_ctx_glyphs $(kfmt "$bl_out")/$(kfmt "$bl_ctx")"
 
-  bl_dec_cluster=""
+  bl_dec_cluster="🧘‍♀️(x0)"
   if [ "${bl_dec:-0}" -gt 0 ]; then
     r=$(fib_rungs "$bl_dec")
     g=""; for ((i = 0; i < r; i++)); do g="${g}⚖"; done
@@ -777,7 +779,9 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
     bl_dec_cluster="${p}${g}(x${bl_dec})"
   fi
 
-  bl_fric_cluster=""
+  # A zero that shows beats a field that vanishes -- ✅ has done this for
+  # blocked since #137's spec landed. 🧘‍♀️ decisions, 🌌 friction, no family prefix.
+  bl_fric_cluster="🌌(x0)"
   if [ "${bl_fric:-0}" -gt 0 ]; then
     r=$(fib_rungs "$bl_fric")
     g=""; for ((i = 0; i < r; i++)); do g="${g}⚡"; done
@@ -793,7 +797,12 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
     r=$(time_rungs "$sit_min")
     pac_hour=$(( ( ($(date +%s) + TZOFF) / 3600 ) % 24 ))
     sg="⏱️"; { [ "$pac_hour" -ge 22 ] || [ "$pac_hour" -lt 5 ]; } && sg="🌙"
-    reps=""; for ((i = 0; i < r; i++)); do reps="${reps}${sg}"; done
+    # Louder past the hot rung, night or day: 🌙🌙🌙⏰⏰ keeps both signals.
+    reps=""
+    for ((i = 0; i < r; i++)); do
+      if [ "$i" -ge "$NAG_SIT_HOT_RUNG" ]; then reps="${reps}⏰"
+      else reps="${reps}${sg}"; fi
+    done
     bl_sit_cluster="⏱$(hm "$sit_min")${reps}"
   fi
 

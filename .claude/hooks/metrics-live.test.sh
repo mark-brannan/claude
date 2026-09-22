@@ -636,5 +636,29 @@ echo 1
 GH
 chmod +x "$SCRATCH/bin/gh"
 
+# --- 11. calm states, and the ⏰ tier ---------------------------------------
+# ✅ has shown blocked=0 since the #137 spec landed; friction and decisions
+# vanished at zero instead, so "no friction" and "this field does not exist"
+# looked the same. Ruled 2026-09-22: 🌌 friction, 🧘‍♀️ decisions, bare --
+# the glyph names its own field, so no ⚡/⚖ prefix.
+TP11="$SCRATCH/calm.jsonl"; turn "$TP11" 1000
+o11=$(msg "$(payload "$TP11" calm "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)")
+has 'friction at zero shows its calm glyph'  '🌌\(x0\)' "$o11"
+has 'decisions at zero show theirs'          '🧘‍♀️\(x0\)' "$o11"
+has 'and blocked is unchanged'               '🔧✅\(x0\)' "$o11"
+
+# The sitting cluster gets louder past NAG_SIT_HOT_RUNG rungs, night or day,
+# so the night glyph still reads at the front of a long evening.
+SITF11=$STATE/metrics/sitting.json
+mkdir -p "$(dirname "$SITF11")"
+jq -nc --argjson s "$(( $(date +%s) - 9000 ))" \
+  '{sitting_start: $s, last_prompt: $s}' > "$SITF11"
+o11b=$(msg "$(payload "$TP11" calm2 "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)")
+has 'past the hot rung the glyph changes'     '⏱2h30(⏱️|🌙){3}⏰⏰' "$o11b"
+o11c=$(msg "$(payload "$TP11" calm3 "$SCRATCH" | METRICS_SIT_HOT_RUNG=9 \
+  bash "$HOOK" posttooluse 0 show 2>&1)")
+has 'and the rung is a knob like every other' '⏱2h30(⏱️|🌙){5} ' "$o11c"
+rm -f "$SITF11"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
