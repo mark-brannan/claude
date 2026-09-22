@@ -115,10 +115,21 @@ The two are never concatenated into one string.
 additionalContext: Sitting 2h03, past 2h00. Already raised at 1h00 and not acted on. Stop here and run /wrapup.
 ```
 
-**One injection per rung crossed, never a repeat.** A model line fires on
-the prompt that crosses a rung and says nothing on the prompts after it,
-the same edge-triggered cadence the screen lines use
+**One injection per rung crossed, and one deliberate repeat.** A model line
+fires on the event that crosses a rung and says nothing on the events after
+it, the same edge-triggered cadence the screen lines use
 ([dotfiles#282](https://github.com/mark-brannan/dotfiles/issues/282)).
+
+The exception is context, and only context. A rung raised and not acted on
+is said again after `METRICS_MODEL_CONTEXT_REPEAT` tool calls of silence,
+with the tool count as the new number. Context is the one counter that
+climbs while the model works rather than between prompts, so an autonomous
+run can spend a whole rung's worth without ever reaching a prompt — and
+edge-triggered there means the line is said once, tens of thousands of
+tokens before it matters, and never again. Injections also run on
+PostToolUse, not prompts alone, so the rung is spoken when it is crossed.
+Ruled by Solace, 2026-09-22
+([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)).
 
 **The screen ladder and the model-facing ladder are separate.** Whether
 their values coincide is tuning. Both are adjusted in the same place as

@@ -9,13 +9,14 @@
 # fire several times a second). The statusline just prints what is already on
 # disk, and recomputes only past its own staleness age.
 #
-# Three wirings, and only three: UserPromptSubmit (silent readout, may carry a
-# crossing line), Stop and SubagentStop. It used to be wired to nine events,
-# eight of them with `show`, which meant a jq pass over the transcript after
-# every single tool call and a readout that spoke often enough to be tuned
-# out. That is a level-triggered nag. What replaced it is the crossing engine
-# below: a line fires once, when a threshold is first crossed, and then says
-# nothing until the next line.
+# Four wirings: UserPromptSubmit (silent readout, may carry a crossing line),
+# PostToolUse, Stop and SubagentStop. It used to be wired to nine events,
+# eight of them with `show`, and the readout spoke often enough to be tuned
+# out -- a level-triggered nag. What replaced it is not a lower frequency but
+# the crossing engine below: a line fires once, when a threshold is first
+# crossed, and then says nothing until the next line. PostToolUse renders the
+# block on every tool call and drives the engine, which is how a context rung
+# crossed mid-turn is spoken when it happens rather than at the next prompt.
 #
 # One file per session, keyed by session_id: parallel sessions are normal
 # here, and per-session paths mean two of them never write the same file.
@@ -98,6 +99,12 @@ NAG_GATE_EVERY="${METRICS_GATE_EVERY:-5}"
 # injection per rung crossed, and silence on the prompts in between.
 NAG_MODEL_CONTEXT_LINES="${METRICS_MODEL_CONTEXT_LINES:-105000 125000 175000 200000}"
 NAG_MODEL_CONTEXT_STEP="${METRICS_MODEL_CONTEXT_STEP:-50000}"
+# Tool calls of silence after a context rung was raised and not acted on,
+# before the line is said again. The one deliberate repeat in the engine:
+# context is the only counter that climbs while the model works rather than
+# between prompts, so a rung crossed mid-turn would otherwise go unsaid until
+# the next prompt -- which may be thousands of tokens later. 0 disables it.
+NAG_MODEL_CONTEXT_REPEAT="${METRICS_MODEL_CONTEXT_REPEAT:-20}"
 NAG_MODEL_DECISION_LINES="${METRICS_MODEL_DECISION_LINES:-3 5 8 13 21}"
 NAG_MODEL_DECISION_STEP="${METRICS_MODEL_DECISION_STEP:-21}"
 # Local hour from which a Stop on an archivable session is worth interrupting.
@@ -290,10 +297,11 @@ save_sitting() {
 # the prompt that restarted it, and they must be free to speak again.
 ctx_line=0; ctx_rungs=0; ctx_stop_line=0; time_line=0; tl_sitting=0; gate_line=0; fric_tripped=0
 since_nag=0; resume_ts=0; nag_pending=0; late_nagged=0
-m_ctx_at=0; m_sit_at=0; m_sit_said=0; m_dec_at=0
+m_ctx_at=0; m_sit_at=0; m_sit_said=0; m_dec_at=0; m_ctx_tools=0
 if [ -f "$NAGF" ]; then
   IFS=$'\t' read -r ctx_line ctx_rungs ctx_stop_line time_line tl_sitting gate_line fric_tripped \
                     since_nag resume_ts nag_pending late_nagged m_ctx_at m_sit_at m_sit_said m_dec_at \
+                    m_ctx_tools \
     <<<"$(jq -r '[(.context_line // 0), (.context_rungs // 0), (.context_stop_line // 0),
                   (.time_line // 0), (.time_line_sitting // -1),
                   (.gate_line // 0),
@@ -304,10 +312,12 @@ if [ -f "$NAGF" ]; then
                   (if .late_nagged then 1 else 0 end),
                   (.model_context_at // 0), (.model_sitting_at // 0),
                   (.model_sitting_said // .model_sitting_at // 0),
-                  (.model_decision_at // 0)] | @tsv' "$NAGF" 2>/dev/null)"
+                  (.model_decision_at // 0),
+                  (.model_context_tools // 0)] | @tsv' "$NAGF" 2>/dev/null)"
 fi
 for v in ctx_line ctx_rungs ctx_stop_line time_line tl_sitting gate_line fric_tripped \
-         since_nag resume_ts nag_pending late_nagged m_ctx_at m_sit_at m_sit_said m_dec_at; do
+         since_nag resume_ts nag_pending late_nagged m_ctx_at m_sit_at m_sit_said m_dec_at \
+         m_ctx_tools; do
   [ -n "${!v}" ] || eval "$v=0"
 done
 # -1 is a nag file written before the clock moved out of it: its time_line
@@ -347,24 +357,42 @@ save_nag() {
         --argjson ln "$late_nagged" \
         --argjson mc "$m_ctx_at" --argjson ms "$m_sit_at" \
         --argjson mss "$m_sit_said" --argjson md "$m_dec_at" \
+        --argjson mct "$m_ctx_tools" \
     '{context_line: $cl, context_rungs: $cr, context_stop_line: $cs,
       time_line: $tl, time_line_sitting: $ts, gate_line: $gl,
       friction_tripped: ($ft == 1),
       since_nag: ($sn == 1), resume_ts: $rt, nag_pending: ($np == 1),
       late_nagged: ($ln == 1),
       model_context_at: $mc, model_sitting_at: $ms,
-      model_sitting_said: $mss, model_decision_at: $md}' \
+      model_sitting_said: $mss, model_decision_at: $md,
+      model_context_tools: $mct}' \
     > "$NAGF.$$" 2>/dev/null \
     && mv -f "$NAGF.$$" "$NAGF" 2>/dev/null || rm -f "$NAGF.$$" 2>/dev/null
 }
 
-# Only the three wired events drive the engine. The statusline reaches this
+# Only the four wired events drive the engine. The statusline reaches this
 # file too, several times a minute, and must never consume a crossing.
-is_prompt=0; run_engine=0
+#
+# can_inject is narrower than run_engine and wider than is_prompt: it is the
+# set of events where Claude Code accepts hookSpecificOutput.additionalContext
+# at all. UserPromptSubmit and PostToolUse do; Stop and SubagentStop do not,
+# and a Stop says its piece through the block's reason instead.
+#
+# is_prompt stays the gate for anything wound by the user's own rhythm -- the
+# sitting clock, decision load. Those are counted between prompts and must not
+# advance because a tool ran.
+is_prompt=0; run_engine=0; can_inject=0
 case "$EVENT" in
-  prompt|userpromptsubmit)   is_prompt=1; run_engine=1 ;;
+  prompt|userpromptsubmit)   is_prompt=1; run_engine=1; can_inject=1 ;;
+  posttooluse)               run_engine=1; can_inject=1 ;;
   stop|subagentstop)         run_engine=1 ;;
 esac
+
+# The hookEventName a hookSpecificOutput must carry back. It has to match the
+# event Claude Code dispatched, not the argument the statusline or a test
+# passed, or the injection is discarded silently.
+inject_event="UserPromptSubmit"
+[ "$EVENT" = posttooluse ] && inject_event="PostToolUse"
 
 kfmt() { awk -v n="$1" 'BEGIN { if (n >= 1000) printf "%dk", int(n / 1000); else printf "%d", n }'; }
 hm()   { awk -v m="$1" 'BEGIN { if (m >= 60) printf "%dh%02d", int(m / 60), m % 60; else printf "%dm", m }'; }
@@ -514,12 +542,18 @@ if [ "$run_engine" -eq 1 ]; then
     fi
   done
   # Model injection rides its own ladder, edge-triggered like everything
-  # else here: once per rung, on the prompt that crossed it, and nothing on
-  # the prompts after (dotfiles#282 -- a line repeated with no new number in
+  # else here: once per rung, on the event that crossed it, and nothing on
+  # the events after (dotfiles#282 -- a line repeated with no new number in
   # it is the level-triggered nag the engine exists to replace). The first
   # one offers a stopping point; a later rung names the one already spoken,
   # which is new information because the number has moved.
-  if [ "$is_prompt" -eq 1 ]; then
+  #
+  # It runs on can_inject, not is_prompt: context is the one counter that
+  # climbs while the model works, and a rung crossed by a large tool result
+  # mid-turn is exactly the moment worth saying so. Waiting for the next
+  # prompt means saying it tens of thousands of tokens late, or never, in a
+  # turn that runs long enough to hit the ceiling on its own.
+  if [ "$can_inject" -eq 1 ]; then
     r=$(rung_of "$NAG_MODEL_CONTEXT_LINES" "$NAG_MODEL_CONTEXT_STEP" "$ctx")
     if [ "$r" -gt "$m_ctx_at" ]; then
       if [ "$m_ctx_at" -eq 0 ]; then
@@ -527,7 +561,21 @@ if [ "$run_engine" -eq 1 ]; then
       else
         add_model "Context at $(kfmt "$ctx"), past $(kfmt "$r"). Already raised at $(kfmt "$m_ctx_at") and not acted on."
       fi
-      m_ctx_at=$r
+      m_ctx_at=$r; m_ctx_tools=0
+    elif [ "$EVENT" = posttooluse ] && [ "$m_ctx_at" -gt 0 ] \
+         && [ "$NAG_MODEL_CONTEXT_REPEAT" -gt 0 ]; then
+      # The one repeat in the engine, and it is deliberate. A rung raised
+      # and not acted on goes quiet for NAG_MODEL_CONTEXT_REPEAT tool calls
+      # and then says so again, with the tool count as the new number -- a
+      # long autonomous run can burn a whole rung's worth of context without
+      # ever reaching a prompt, and silence there reads as permission.
+      # Counted in tool calls, not prompts: tool calls are what is spending
+      # the context during the stretch this arm exists to cover.
+      m_ctx_tools=$((m_ctx_tools + 1))
+      if [ "$m_ctx_tools" -ge "$NAG_MODEL_CONTEXT_REPEAT" ]; then
+        add_model "Context at $(kfmt "$ctx"), past $(kfmt "$m_ctx_at") for $m_ctx_tools tool calls and not acted on. Offer a stopping point, or /wrapup."
+        m_ctx_tools=0
+      fi
     fi
   fi
 
@@ -732,19 +780,29 @@ fi
 
 [ "$run_engine" -eq 1 ] && save_nag
 
-# The crossing lines reach the user on every wired event; the friction line is
-# the one that reaches the model, and only on UserPromptSubmit, where a hook
+# The crossing lines reach the user on every wired event; the model line is
+# the one that reaches the model, and only on a can_inject event, where a hook
 # can add context at all.
-if [ -n "$sys_lines" ] || [ -n "$model_line" ]; then
-  if [ "$is_prompt" -eq 1 ]; then
-    jq -nc --arg s "$sys_lines" --arg a "$model_line" \
-      '(if $s == "" then {} else {systemMessage: $s} end)
-       + (if $a == "" then {}
-          else {hookSpecificOutput: {hookEventName: "UserPromptSubmit",
-                                     additionalContext: $a}} end)'
-    exit 0
-  fi
+#
+# A prompt has no block to ride on -- SHOW was cleared for it above -- so it
+# emits here and exits. PostToolUse carries `show`, so it falls through to the
+# block below and the injection is merged into that one emit instead: two
+# hookSpecificOutputs from one hook invocation would be one JSON object too
+# many, and the second would be the one that was dropped.
+if [ "$is_prompt" -eq 1 ] && { [ -n "$sys_lines" ] || [ -n "$model_line" ]; }; then
+  jq -nc --arg s "$sys_lines" --arg a "$model_line" --arg e "$inject_event" \
+    '(if $s == "" then {} else {systemMessage: $s} end)
+     + (if $a == "" then {}
+        else {hookSpecificOutput: {hookEventName: $e,
+                                   additionalContext: $a}} end)'
+  exit 0
 fi
+
+# Past the prompt emit, the model line survives only on an event that may
+# carry one. A Stop's crossings have already been folded into its block reason
+# above; re-emitting them here would say the same thing twice.
+inject_model_line=""
+[ "$can_inject" -eq 1 ] && inject_model_line="$model_line"
 
 # ------------------------------------------------------------ event block
 # Shown to the user at the end of a turn -- never sent to the model, so the
@@ -838,10 +896,23 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
   [ -n "$bl_second" ] && bl_block="$bl_block
 $bl_second"
 
+  # The model line rides out with the block rather than as a message of its
+  # own: on PostToolUse both are produced by the same invocation, and a hook
+  # returns one object. Screen text and model text are still separate fields
+  # and are never concatenated -- the requirements doc is explicit about that.
   jq -nc --arg s "$sys_lines" --arg b "$bl_block" --arg a "$arch_lines" \
-    '[$s, $b, $a] | map(select(. != "")) | join("\n") | {systemMessage: .}'
-elif [ -n "$sys_lines" ] || [ -n "$arch_lines" ]; then
+         --arg m "$inject_model_line" --arg e "$inject_event" \
+    '{systemMessage: ([$s, $b, $a] | map(select(. != "")) | join("\n"))}
+     + (if $m == "" then {}
+        else {hookSpecificOutput: {hookEventName: $e,
+                                   additionalContext: $m}} end)'
+elif [ -n "$sys_lines" ] || [ -n "$arch_lines" ] || [ -n "$inject_model_line" ]; then
   jq -nc --arg s "$sys_lines" --arg a "$arch_lines" \
-    '[$s, $a] | map(select(. != "")) | join("\n") | {systemMessage: .}'
+         --arg m "$inject_model_line" --arg e "$inject_event" \
+    '(([$s, $a] | map(select(. != "")) | join("\n")) as $t
+      | if $t == "" then {} else {systemMessage: $t} end)
+     + (if $m == "" then {}
+        else {hookSpecificOutput: {hookEventName: $e,
+                                   additionalContext: $m}} end)'
 fi
 exit 0

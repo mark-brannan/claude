@@ -115,6 +115,36 @@ out=$(payload "$TP6" g "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 printf '  additionalContext: %s\n' "$(ctx "$out")"
 rm -f "$SITFILE"
 
+# --- PostToolUse -------------------------------------------------------------
+# The engine runs on tool calls too, so a context rung crossed by a large tool
+# result mid-turn is spoken when it happens rather than at the next prompt. The
+# block and the injection ride out together -- one hook invocation, one object.
+show "PostToolUse: a tool result crosses a rung mid-turn (block + injection)"
+TP7="$SCRATCH/h.jsonl"; turn "$TP7" 40000
+payload "$TP7" h "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+turn "$TP7" 152000
+out=$(payload "$TP7" h "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+printf '  screen:            %s\n' "$(msg "$out" | head -1)"
+printf '  additionalContext: %s\n' "$(ctx "$out")"
+
+show "PostToolUse: next tool call, no new rung (block only, model silent)"
+turn "$TP7" 153000
+out=$(payload "$TP7" h "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+printf '  screen:            %s\n' "$(msg "$out" | head -1)"
+printf '  additionalContext: [%s]\n' "$(ctx "$out")"
+
+show "PostToolUse: the repeat arm at METRICS_MODEL_CONTEXT_REPEAT=3"
+# 3 rather than the shipped 20 so the example is three lines instead of
+# twenty; the arm is the same one, counting tool calls of unacted silence.
+TP8="$SCRATCH/i.jsonl"; turn "$TP8" 152000
+payload "$TP8" i "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+for n in 1 2 3 4; do
+  turn "$TP8" $((153000 + n))
+  out=$(payload "$TP8" i "$SCRATCH" \
+        | METRICS_MODEL_CONTEXT_REPEAT=3 bash "$HOOK" posttooluse 0 show 2>&1)
+  printf '  tool call %d:       [%s]\n' "$n" "$(ctx "$out")"
+done
+
 show "friction crossing (committed contentious fixture)"
 FIX="$(dirname "$HOOK")/fixtures/friction-contentious.jsonl"
 if [ -f "$FIX" ]; then

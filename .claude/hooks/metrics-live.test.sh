@@ -671,5 +671,51 @@ o11d=$(msg "$(payload "$TP11" calm4 "$SCRATCH" | METRICS_SIT_HOT_RUNG=9 \
 hasnt 'and stays quiet while the rung is raised past it' 'propose stopping' "$o11d"
 rm -f "$SITF11"
 
+# --- 12. PostToolUse drives the engine and may carry an injection ------------
+# dotfiles#137, ruled 2026-09-22. Context is the one counter that climbs while
+# the model works, so its rung is spoken on the tool call that crosses it and
+# repeated after NAG_MODEL_CONTEXT_REPEAT tool calls of unacted silence. Both
+# are behaviour a prompt-only engine could not have.
+TP12="$SCRATCH/ptu.jsonl"
+turn "$TP12" 40000
+payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+turn "$TP12" 152000
+o12=$(payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+has 'a rung crossed by a tool call injects on that call'     'Context at 152k' "$(ctx "$o12")"
+t   'and the injection names PostToolUse, not the prompt event' PostToolUse     "$(printf '%s' "$o12" | jq -r '.hookSpecificOutput.hookEventName // ""')"
+has 'while the block still renders in the same object' 'propose stopping'     "$(msg "$o12")"
+
+turn "$TP12" 153000
+o12b=$(payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+t   'the next tool call injects nothing -- no new rung' '' "$(ctx "$o12b")"
+has 'though the block is unaffected' 'propose stopping' "$(msg "$o12b")"
+
+# The repeat arm, at 3 rather than the shipped 20 so the case is three calls.
+for n in 2 3; do
+  turn "$TP12" $((153000 + n))
+  o12c=$(payload "$TP12" ptu "$SCRATCH" \
+         | METRICS_MODEL_CONTEXT_REPEAT=3 bash "$HOOK" posttooluse 0 show 2>&1)
+done
+has 'a raised rung is said again after the repeat count'     'for 3 tool calls and not acted on' "$(ctx "$o12c")"
+turn "$TP12" 154000
+o12d=$(payload "$TP12" ptu "$SCRATCH" \
+       | METRICS_MODEL_CONTEXT_REPEAT=3 bash "$HOOK" posttooluse 0 show 2>&1)
+t   'and the counter resets, so it does not repeat every call' '' "$(ctx "$o12d")"
+
+# A Stop takes no injection: hookSpecificOutput is not a thing it may carry,
+# and its crossings reach the model through the block reason instead.
+TP12s="$SCRATCH/ptu-stop.jsonl"
+turn "$TP12s" 152000
+o12e=$(payload "$TP12s" ptustop "$SCRATCH" | bash "$HOOK" stop 0 show 2>&1)
+t   'a Stop never carries an additionalContext' '' "$(ctx "$o12e")"
+
+# Prompts still own the counters wound by the user's rhythm: a tool call must
+# not advance the sitting clock or the decision ladder.
+SITF12=$STATE/metrics/sitting.json
+before12=$(jq -r '.sitting_start // 0' "$SITF12" 2>/dev/null || echo 0)
+payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show >/dev/null 2>&1
+t   'a tool call leaves the sitting clock where it found it' "$before12" \
+    "$(jq -r '.sitting_start // 0' "$SITF12" 2>/dev/null || echo 0)"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
