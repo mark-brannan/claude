@@ -374,5 +374,71 @@ eq 'already-refreshed within 24h: exits 0' 0 "$RC"
 [ -f "$BIN/.comments" ] && { fail=$((fail + 1)); echo "FAIL: idempotency: reposted anyway"; } || pass=$((pass + 1))
 unset GH_LOGIN
 
+# --- a nested connection that truncates is a refusal, not an under-report (dotfiles#277) --
+# `pr()` never sets totalCount, so it defaults to 0 and never trips this --
+# these fixtures set it by hand to simulate GitHub reporting more items than
+# the `first:` page actually returned.
+trunc_labels='{ "number": 30, "title": "truncated labels", "isDraft": false,
+  "url": "https://github.com/testowner/alpha/pull/30",
+  "repository": { "name": "alpha", "owner": {"login": "testowner"} }, "mergeable": "MERGEABLE",
+  "labels": { "totalCount": 25, "nodes": [{"name":"awaiting-human"}] },
+  "reviewThreads": { "nodes": [] },
+  "commits": { "nodes": [ { "commit": { "oid": "abc", "committedDate": "2026-01-01T00:00:00Z",
+    "statusCheckRollup": '"$green"' } } ] } }'
+page false "$trunc_labels" > "$S/search.json"
+run
+eq 'a truncated labels connection is a refusal' 1 "$RC"
+has 'and names the PR and which connection truncated' 'alpha#30: labels truncated \(25 total, 1 fetched\)'
+hasnt 'rather than a report built on partial data' '## Your turn'
+
+trunc_threads='{ "number": 31, "title": "truncated threads", "isDraft": false,
+  "url": "https://github.com/testowner/alpha/pull/31",
+  "repository": { "name": "alpha", "owner": {"login": "testowner"} }, "mergeable": "MERGEABLE",
+  "labels": { "nodes": [] },
+  "reviewThreads": { "totalCount": 150, "nodes": [] },
+  "commits": { "nodes": [ { "commit": { "oid": "abc", "committedDate": "2026-01-01T00:00:00Z",
+    "statusCheckRollup": '"$green"' } } ] } }'
+page false "$trunc_threads" > "$S/search.json"
+run
+eq 'a truncated reviewThreads connection is a refusal too' 1 "$RC"
+has 'named specifically' 'alpha#31: reviewThreads truncated \(150 total, 0 fetched\)'
+
+trunc_checks='{ "number": 32, "title": "truncated checks", "isDraft": false,
+  "url": "https://github.com/testowner/alpha/pull/32",
+  "repository": { "name": "alpha", "owner": {"login": "testowner"} }, "mergeable": "MERGEABLE",
+  "labels": { "nodes": [] }, "reviewThreads": { "nodes": [] },
+  "commits": { "nodes": [ { "commit": { "oid": "abc", "committedDate": "2026-01-01T00:00:00Z",
+    "statusCheckRollup": {"contexts": {"totalCount": 120,
+      "nodes": [{"name":"ci-gate / gate","conclusion":"SUCCESS"}]}} } } ] } }'
+page false "$trunc_checks" > "$S/search.json"
+run
+eq 'a truncated check-contexts connection is a refusal too' 1 "$RC"
+has 'named specifically' 'alpha#32: checks truncated \(120 total, 1 fetched\)'
+
+# A PR with no truncation at all, alongside the exact page sizes (20 labels,
+# 100 threads, 100 contexts), must not false-positive.
+full_labels=$(seq 1 20 | { i=0; out='['; while read -r n; do [ "$i" -gt 0 ] && out="$out,"; out="$out{\"name\":\"label-$n\"}"; i=$((i+1)); done; echo "$out]"; })
+exact_pr='{ "number": 33, "title": "exactly at the page size", "isDraft": false,
+  "url": "https://github.com/testowner/alpha/pull/33",
+  "repository": { "name": "alpha", "owner": {"login": "testowner"} }, "mergeable": "MERGEABLE",
+  "labels": { "totalCount": 20, "nodes": '"$full_labels"' },
+  "reviewThreads": { "totalCount": 0, "nodes": [] },
+  "commits": { "nodes": [ { "commit": { "oid": "abc", "committedDate": "2026-01-01T00:00:00Z",
+    "statusCheckRollup": {"contexts": {"totalCount": 1,
+      "nodes": [{"name":"ci-gate / gate","conclusion":"SUCCESS"}]}} } } ] } }'
+page false "$exact_pr" > "$S/search.json"
+run
+eq 'totalCount equal to the fetched count is not a truncation' 0 "$RC"
+has 'the PR is reported normally' 'alpha#33'
+
+# --- --pr mode goes through the same truncation check -----------------------------------
+cat > "$PR_SINGLE_JSON" <<EOF
+{"data":{"repository":{"pullRequest":$trunc_labels}}}
+EOF
+runargs --pr mark-brannan/alpha#30
+eq '--pr on a truncated PR is a refusal too' 1 "$RC"
+has 'with the same message' 'alpha#30: labels truncated'
+unset PR_SINGLE_JSON
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

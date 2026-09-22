@@ -50,7 +50,11 @@ done
 
 # One field set, spread into both the fleet-wide search query and the
 # single-PR query below, so `--pr` cannot silently drift from what the
-# ordinary audit sees.
+# ordinary audit sees. `totalCount` on each nested connection is what lets
+# the truncation check below refuse instead of silently under-reporting
+# (dotfiles#277) -- labels, reviewThreads and check contexts can each hold
+# more than their `first:` page, and a search result cannot paginate them
+# inline (the outer `after` only advances the search cursor).
 frag='
 fragment PrFields on PullRequest {
   id
@@ -61,8 +65,9 @@ fragment PrFields on PullRequest {
   author { login }
   repository { name owner { login } }
   mergeable
-  labels(first: 20) { nodes { name } }
+  labels(first: 20) { totalCount nodes { name } }
   reviewThreads(first: 100) {
+    totalCount
     nodes {
       id
       isResolved
@@ -80,6 +85,7 @@ fragment PrFields on PullRequest {
         committedDate
         statusCheckRollup {
           contexts(first: 100) {
+            totalCount
             nodes {
               ... on CheckRun { name status conclusion detailsUrl }
               ... on StatusContext { context state targetUrl }
@@ -170,6 +176,39 @@ else
   done
   raw=$(printf '%s' "$pages" | jq -s '{data: {search: {nodes: map(.data.search.nodes[]?)}}}') || {
     echo "pr-label-audit: the GitHub query returned something unreadable" >&2; exit 1; }
+fi
+
+# A nested connection (labels, reviewThreads, check contexts) that reports
+# more items than it returned is the same silent-truncation failure the
+# cursor loop above exists to prevent, one level down. Refuse rather than
+# print a report that looks complete and is not (dotfiles#277).
+# A standalone assignment, not a literal embedded in the $(...) below: sh's
+# command-substitution boundary scanner can misparse unquoted parens inside
+# a single-quoted jq program when it's written directly inline (matches the
+# `audit_jq` pattern further down, for the same reason).
+trunc_jq='
+  def trunc($total; $count; $what):
+    if ($total // 0) > $count
+    then "\($what) truncated (\($total) total, \($count) fetched)"
+    else empty end;
+
+  # Drafts never reach the report (audit_jq filters them out below), so a
+  # truncated connection on a draft must not block everyone else'"'"'s report.
+  .data.search.nodes[]? | select(.isDraft | not) as $n
+  | ($n.repository.name + "#" + ($n.number | tostring)) as $id
+  | ( trunc($n.labels.totalCount; ($n.labels.nodes | length); "labels")
+    , trunc($n.reviewThreads.totalCount; ($n.reviewThreads.nodes | length); "reviewThreads")
+    , ( ($n.commits.nodes[0].commit.statusCheckRollup.contexts // {totalCount:0,nodes:[]}) as $c
+        | trunc($c.totalCount; ($c.nodes | length); "checks") )
+    ) as $what
+  | "\($id): \($what)"
+'
+truncated=$(printf '%s' "$raw" | jq -r "$trunc_jq")
+if [ -n "$truncated" ]; then
+  echo "pr-label-audit: a page returned more items than it fetched -- the report" >&2
+  echo "  would be incomplete, so refusing rather than under-reporting:" >&2
+  printf '%s\n' "$truncated" | sed 's/^/  - /' >&2
+  exit 1
 fi
 
 # Three outcomes, not two. `2>/dev/null` on its own would fold a transient
