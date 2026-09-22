@@ -15,6 +15,8 @@
       "Bash(npm run typecheck)",
       "Bash(npm test)",
       "Bash(yadm log *)",
+      "Bash(resign-branch.sh *)",
+      "Bash(/home/solace/.local/bin/resign-branch.sh *)",
       "mcp__Claude_Code_Remote__add_repo"
     ],
     "deny": [
@@ -386,6 +388,12 @@
         "repo": "sailingnaturali/claude-skills"
       }
     }
+  },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Running ~/.local/bin/resign-branch.sh <branch> [<remote>] is always allowed, including its rebase (-S resign) and force-push-with-lease. It is a reviewed, idempotent personal script for the one operational fix for unsigned-commit blocks on a ruleset-protected repo: it refuses to run against the default branch, refuses if the branch has local commits the remote lacks, and aborts without touching anything on a rebase conflict."
+    ]
   },
   "theme": "dark",
   "crossSessionInbound": "hold",
