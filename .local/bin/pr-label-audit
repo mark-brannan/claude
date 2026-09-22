@@ -16,45 +16,73 @@
 # forbids the session from using GitHub's own Update branch. An unlabelled
 # pull request is therefore one that nothing will ever bring up to date.
 #
-# Read-only. It reports; it never labels, pushes or merges.
+# Read-only by default. It reports; it never labels or merges. `--refresh` is
+# the one exception: it may post a single `@mergifyio refresh` comment per
+# stale/missing-label PR, to make Mergify re-look -- it never edits the label
+# itself, Mergify stays the label's only writer.
 set -u
 
 OWNER=${PR_LABEL_AUDIT_OWNER:-mark-brannan}
 LABEL=awaiting-human
+FIXUP_LABEL=fixup-hard
 GATE='ci-gate / gate'
+
+JSON=0
+REFRESH=0
+PR_TARGET=''
+usage() { echo "usage: pr-label-audit [--json] [--refresh] [--pr owner/repo#number]" >&2; exit 1; }
+# Strict: an unknown flag or a bare `--pr` is an error, not a silent fleet
+# audit -- `--refresh` writes, so a typo must not quietly widen its target.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) JSON=1 ;;
+    --refresh) REFRESH=1 ;;
+    --pr=*) PR_TARGET=${1#--pr=} ;;
+    --pr) [ $# -ge 2 ] || usage; shift; PR_TARGET=$1 ;;
+    *) echo "pr-label-audit: unknown argument: $1" >&2; usage ;;
+  esac
+  shift
+done
 
 for tool in gh jq; do
   command -v "$tool" >/dev/null 2>&1 || { echo "pr-label-audit: $tool is required" >&2; exit 1; }
 done
 
-# One search, not one call per repository: the REST route rate-limited at ~12
-# repositories when this was written, and the audit is worth nothing if it
-# only sometimes completes.
-query='
-query($q: String!, $after: String) {
-  search(query: $q, type: ISSUE, first: 100, after: $after) {
-    pageInfo { hasNextPage endCursor }
+# One field set, spread into both the fleet-wide search query and the
+# single-PR query below, so `--pr` cannot silently drift from what the
+# ordinary audit sees.
+frag='
+fragment PrFields on PullRequest {
+  id
+  number
+  title
+  isDraft
+  url
+  author { login }
+  repository { name owner { login } }
+  mergeable
+  labels(first: 20) { nodes { name } }
+  reviewThreads(first: 100) {
     nodes {
-      ... on PullRequest {
-        number
-        title
-        isDraft
-        url
-        repository { name }
-        mergeable
-        labels(first: 20) { nodes { name } }
-        reviewThreads(first: 100) { nodes { isResolved } }
-        commits(last: 1) {
-          nodes {
-            commit {
-              statusCheckRollup {
-                contexts(first: 100) {
-                  nodes {
-                    ... on CheckRun { name conclusion }
-                    ... on StatusContext { context state }
-                  }
-                }
-              }
+      id
+      isResolved
+      path
+      comments(first: 1) { nodes { body } }
+    }
+  }
+  lastComments: comments(last: 1) {
+    nodes { author { login } body createdAt }
+  }
+  commits(last: 1) {
+    nodes {
+      commit {
+        oid
+        committedDate
+        statusCheckRollup {
+          contexts(first: 100) {
+            nodes {
+              ... on CheckRun { name status conclusion detailsUrl }
+              ... on StatusContext { context state targetUrl }
             }
           }
         }
@@ -63,11 +91,27 @@ query($q: String!, $after: String) {
   }
 }'
 
+query="$frag"'
+query($q: String!, $after: String) {
+  search(query: $q, type: ISSUE, first: 100, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes { ... on PullRequest { ...PrFields } }
+  }
+}'
+
+single_query="$frag"'
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { ...PrFields }
+  }
+}'
+
 # Mergify's label action does not create a label that the repository does not
-# define: the rule matches, the action is a no-op, and nothing anywhere says so.
-# That is one of the two ways the label silently never appears (the other is a
-# missing gate check), and the two need different fixes, so the audit asks each
-# repository whether the label exists rather than guessing from the symptom.
+# define: the rule matches, the action is a no-op, and nothing anywhere says
+# so. That is one of the two ways `awaiting-human` silently never appears (the
+# other is a missing gate check); `fixup-hard` fails the same way for a
+# different rule. The two need different fixes, so the audit asks each
+# repository whether it defines each label rather than guessing from symptoms.
 search_page() {  # search_page [cursor]
   if [ -n "${1:-}" ]
   then gh api graphql -f query="$query" -f q="$SEARCH" -f after="$1"
@@ -75,32 +119,58 @@ search_page() {  # search_page [cursor]
   fi
 }
 
-# `first: 100` is the page, not the answer. An unpaginated search truncates
-# silently at 100 open pull requests and a truncated report looks exactly like
-# a complete one -- the same "only sometimes completes, and nothing says so"
-# failure the REST route had. So: follow the cursor, and when the cursor runs
-# past GitHub search's own 1000-result ceiling, fail rather than under-report.
-SEARCH="is:pr is:open archived:false user:$OWNER"
-pages=''
-cursor=''
-page_count=0
-while :; do
-  page=$(search_page "$cursor") || {
+if [ -n "$PR_TARGET" ]; then
+  # owner/repo#n -- read via the `repository(owner:,name:){pullRequest(...)}`
+  # shape, not search, because a single known PR needs no pagination and no
+  # search-index lag.
+  case "$PR_TARGET" in
+    */*'#'*) : ;;
+    *) echo "pr-label-audit: --pr wants owner/repo#number" >&2; exit 1 ;;
+  esac
+  pr_owner=${PR_TARGET%%/*}
+  rest=${PR_TARGET#*/}
+  pr_repo=${rest%%#*}
+  pr_number=${rest##*#}
+  page=$(gh api graphql -f query="$single_query" -f owner="$pr_owner" -f name="$pr_repo" -F number="$pr_number") || {
     echo "pr-label-audit: the GitHub query failed" >&2; exit 1; }
-  pages="$pages$page"
-  page_count=$((page_count + 1))
-  cursor=$(printf '%s' "$page" |
-    jq -r '.data.search.pageInfo | if .hasNextPage then .endCursor else empty end')
-  [ -n "$cursor" ] || break
-  if [ "$page_count" -ge 10 ]; then
-    echo "pr-label-audit: more than 1000 open pull requests -- GitHub search" >&2
-    echo "  cannot return them all, so this report would be incomplete." >&2
-    echo "  Narrow it with PR_LABEL_AUDIT_OWNER, or split the query by repo." >&2
-    exit 1
+  raw=$(printf '%s' "$page" | jq '{data: {search: {nodes: [.data.repository.pullRequest] | map(select(. != null))}}}') || {
+    echo "pr-label-audit: the GitHub query returned something unreadable" >&2; exit 1; }
+  # Drafts are excluded from the audit; for one named PR an empty report would
+  # look like a query that returned nothing, so say why on stderr.
+  if [ "$(printf '%s' "$raw" | jq -r '.data.search.nodes[0].isDraft')" = true ]; then
+    echo "pr-label-audit: $PR_TARGET is a draft -- drafts are excluded from the audit" >&2
+    exit 0
   fi
-done
-raw=$(printf '%s' "$pages" | jq -s '{data: {search: {nodes: map(.data.search.nodes[]?)}}}') || {
-  echo "pr-label-audit: the GitHub query returned something unreadable" >&2; exit 1; }
+  OWNER=$pr_owner
+else
+  # `first: 100` is the page, not the answer. An unpaginated search truncates
+  # silently at 100 open pull requests and a truncated report looks exactly
+  # like a complete one -- the same "only sometimes completes, and nothing
+  # says so" failure the REST route had. So: follow the cursor, and when the
+  # cursor runs past GitHub search's own 1000-result ceiling, fail rather than
+  # under-report.
+  SEARCH="is:pr is:open archived:false user:$OWNER"
+  pages=''
+  cursor=''
+  page_count=0
+  while :; do
+    page=$(search_page "$cursor") || {
+      echo "pr-label-audit: the GitHub query failed" >&2; exit 1; }
+    pages="$pages$page"
+    page_count=$((page_count + 1))
+    cursor=$(printf '%s' "$page" |
+      jq -r '.data.search.pageInfo | if .hasNextPage then .endCursor else empty end')
+    [ -n "$cursor" ] || break
+    if [ "$page_count" -ge 10 ]; then
+      echo "pr-label-audit: more than 1000 open pull requests -- GitHub search" >&2
+      echo "  cannot return them all, so this report would be incomplete." >&2
+      echo "  Narrow it with PR_LABEL_AUDIT_OWNER, or split the query by repo." >&2
+      exit 1
+    fi
+  done
+  raw=$(printf '%s' "$pages" | jq -s '{data: {search: {nodes: map(.data.search.nodes[]?)}}}') || {
+    echo "pr-label-audit: the GitHub query returned something unreadable" >&2; exit 1; }
+fi
 
 # Three outcomes, not two. `2>/dev/null` on its own would fold a transient
 # failure, a permission hiccup and a repo renamed out from under the search
@@ -109,18 +179,44 @@ raw=$(printf '%s' "$pages" | jq -s '{data: {search: {nodes: map(.data.search.nod
 # reported as not checked, so the reader knows the difference.
 repos=$(printf '%s' "$raw" | jq -r '[.data.search.nodes[]?.repository.name] | unique[]')
 defines=""
+defines_fixup=""
 unchecked=""
 for repo in $repos; do
+  # One label list read per repository serves both labels -- a second
+  # round-trip per repo per label would double the rate-limit cost for no
+  # reason, since `gh api .../labels` already returns every label at once.
   if labels=$(gh api "repos/$OWNER/$repo/labels" --paginate -q '.[].name' 2>/dev/null); then
     printf '%s\n' "$labels" | grep -qx "$LABEL" && defines="$defines $repo"
+    printf '%s\n' "$labels" | grep -qx "$FIXUP_LABEL" && defines_fixup="$defines_fixup $repo"
   else
     unchecked="$unchecked $repo"
   fi
 done
 
-printf '%s' "$raw" | jq -r --arg defines "$defines" --arg unchecked "$unchecked" --arg label "$LABEL" --arg gate "$GATE" --arg owner "$OWNER" '
+# `--refresh`'s account and idempotency check. Only fetched when the flag is
+# passed -- the default (no `--refresh`) is fully read-only and must never
+# shell out to see who it's authenticated as.
+if [ "$REFRESH" -eq 1 ]; then
+  login=$(gh api user -q .login) || { echo "pr-label-audit: could not read the authenticated user" >&2; exit 1; }
+fi
+
+single_pr=0
+[ -n "$PR_TARGET" ] && single_pr=1
+mode=text
+[ "$JSON" -eq 1 ] && mode=json
+
+# One jq program for every output. `--refresh` performs a live write, so its
+# target list is the same computation the report shows, selected by $mode --
+# never a second copy of the verdict logic that could drift from the first.
+audit() {  # audit <jq-flags> <mode>
+  printf '%s' "$raw" | jq "$1" --arg defines "$defines" --arg unchecked "$unchecked" --arg defines_fixup "$defines_fixup" --arg label "$LABEL" --arg fixup_label "$FIXUP_LABEL" --arg gate "$GATE" --arg owner "$OWNER" --arg mode "$2" --argjson single_pr "$single_pr" "$audit_jq"
+}
+audit_jq='
+  # A CheckRun still queued or running has a null conclusion; fall through to
+  # its status so it reads as IN_PROGRESS, not as a failure.
   def checks: [.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
-               | {name: (.name // .context), result: (.conclusion // .state)}];
+               | {name: (.name // .context), result: (.conclusion // .status // .state), url: (.detailsUrl // .targetUrl // null)}];
+  def not_failed: ["SUCCESS", "NEUTRAL", "SKIPPED", "QUEUED", "IN_PROGRESS", "PENDING", "EXPECTED", null];
   def gate_result: (first(checks[] | select(.name == $gate) | .result) // "absent");
   def unresolved: [.reviewThreads.nodes[]? | select(.isResolved | not)] | length;
 
@@ -134,24 +230,54 @@ printf '%s' "$raw" | jq -r --arg defines "$defines" --arg unchecked "$unchecked"
 
   ( ($defines | split(" ") | map(select(. != ""))) ) as $defines_label
   | ( ($unchecked | split(" ") | map(select(. != ""))) ) as $unchecked_label
+  | ( ($defines_fixup | split(" ") | map(select(. != ""))) ) as $defines_fixup_label
   | ( [ .data.search.nodes[]
       | select(.isDraft | not)
       | .repository.name as $repo
       | { repo: $repo, number: .number, title: .title, url: .url,
+          id: .id, owner: .repository.owner.login,
+          author: (.author.login // null),
+          draft: .isDraft,
+          labels: [.labels.nodes[].name],
+          head_sha: .commits.nodes[0].commit.oid,
+          head_committed_at: .commits.nodes[0].commit.committedDate,
           gate: gate_result, unresolved: unresolved,
+          unresolved_threads: [ .reviewThreads.nodes[]? | select(.isResolved | not)
+            | { id: .id, path: .path, first_line: (.comments.nodes[0].body // "" | split("\n")[0]) } ],
+          failing_checks: [ checks[] | select([.result] | inside(not_failed) | not)
+            | {name: .name, url: .url} ],
+          last_comment: (.lastComments.nodes[0] // null),
           labelled: (([.labels.nodes[].name] | index($label)) != null),
           mergeable: .mergeable,
           defines_label: (($defines_label | index($repo)) != null),
-          unchecked_label: (($unchecked_label | index($repo)) != null) } ]
+          unchecked_label: (($unchecked_label | index($repo)) != null),
+          defines_fixup: (($defines_fixup_label | index($repo)) != null) } ]
     | unique_by("\(.repo)#\(.number)")
     | map(. + { verdict:
         (if .gate == "absent" then "no-gate"
          elif .mergeable == "CONFLICTING" then "conflicted"
          elif .gate != "SUCCESS" then "not-green"
          elif .unresolved > 0 then "threads-open"
-         else "green" end) }) ) as $prs
+         else "green" end) })
+    | map(. + { section:
+        (if (.labelled and .verdict == "green") then "your-turn"
+         elif .verdict == "no-gate" then "no-gate"
+         elif (.labelled and .verdict != "green") then "stale-label"
+         elif (.verdict == "not-green" or .verdict == "conflicted" or .verdict == "threads-open") then "unfinished"
+         elif (.verdict == "green" and (.labelled | not) and .defines_label) then "green-unlabelled"
+         else "no-label-repo" end) })
+    | map(. + { refresh_target: (.section == "stale-label" or .section == "green-unlabelled") }) ) as $prs
 
-  | ( section(
+  | ( [$prs[] | select((.unchecked_label | not) and (.defines_fixup | not)) | .repo] | unique ) as $fixup_missing
+
+  | if $mode == "refresh" then
+      ( $prs[] | select(.refresh_target) | {owner, repo, number, last_comment} )
+    elif $mode == "json" then
+      ( $prs[] | del(.unresolved, .defines_label, .unchecked_label, .refresh_target, .defines_fixup) )
+      , ( if $single_pr == 1 then empty else { repos_missing_fixup_hard: $fixup_missing } end )
+    else
+
+  ( section(
         "Repositories whose labels could not be read";
         "The label lookup failed, so these are neither confirmed missing nor\nconfirmed present -- do NOT create the label here on the strength of this\nreport. Re-run; if it persists, check `gh auth status` and whether the\nrepository was renamed, archived or lost its permission.";
         [$prs[] | select(.unchecked_label) | .repo] | unique)
@@ -160,6 +286,11 @@ printf '%s' "$raw" | jq -r --arg defines "$defines" --arg unchecked "$unchecked"
         "Repositories that do not define the `\($label)` label";
         "Mergify matches its rule and then does nothing: its label action will not\ncreate a label the repository is missing, and it reports no error. Fix with\n  gh label create \($label) -R \($owner)/<repo> -d \"Green and thread-free: it is your turn\"";
         [$prs[] | select((.defines_label | not) and (.unchecked_label | not)) | .repo] | unique)
+
+    + section(
+        "Repositories that do not define the `\($fixup_label)` label";
+        "A fixer session gave up and there is nowhere to record it: Mergify matches\nits rule and the label action is a no-op, and nothing says so. Fix with\n  gh label create \($fixup_label) -R \($owner)/<repo> -d \"A fixer session gave up; needs a bigger session or a human\"";
+        $fixup_missing)
 
     + section(
         "No `\($gate)` check -- the label can never apply";
@@ -186,4 +317,39 @@ printf '%s' "$raw" | jq -r --arg defines "$defines" --arg unchecked "$unchecked"
         | if length == 0 then ["  nothing"] else . end )
     + ["", "https://github.com/pulls?q=is%3Aopen+user%3A\($owner)+label%3A\($label)"]
   ) | .[]
+  end
 '
+render=$(audit -r "$mode") || { echo "pr-label-audit: rendering failed" >&2; exit 1; }
+
+printf '%s\n' "$render"
+
+# `--refresh`: nudge Mergify to re-look at PRs whose label disagrees with
+# reality. Never runs unless the flag is passed -- everything above this is
+# read-only.
+if [ "$REFRESH" -eq 1 ]; then
+  # Selected outside the pipe: a jq failure inside `| while` would exit 0 with
+  # zero targets, which reads exactly like "nothing to refresh".
+  targets=$(audit -c refresh) || { echo "pr-label-audit: selecting refresh targets failed" >&2; exit 1; }
+  printf '%s\n' "$targets" | while IFS= read -r target; do
+    [ -n "$target" ] || continue
+    t_owner=$(printf '%s' "$target" | jq -r '.owner')
+    t_repo=$(printf '%s' "$target" | jq -r '.repo')
+    t_number=$(printf '%s' "$target" | jq -r '.number')
+    # Idempotent: skip when the PR's own last comment is already exactly this
+    # text, from this account, within the last 24h -- otherwise a repeated
+    # audit run would spam the same PR every time it's invoked.
+    already=$(printf '%s' "$target" | jq -r --arg login "$login" '
+      .last_comment as $c
+      | if $c == null then "no"
+        elif $c.author.login != $login then "no"
+        elif $c.body != "@mergifyio refresh" then "no"
+        elif (now - ($c.createdAt | fromdateiso8601)) >= 86400 then "no"
+        else "yes" end')
+    if [ "$already" = yes ]; then
+      continue
+    fi
+    # `gh pr comment` reads `owner/repo#n` as a branch name; the repo goes in -R.
+    gh pr comment "$t_number" -R "$t_owner/$t_repo" --body '@mergifyio refresh' >/dev/null || \
+      echo "pr-label-audit: could not post the refresh comment on $t_owner/$t_repo#$t_number" >&2
+  done
+fi

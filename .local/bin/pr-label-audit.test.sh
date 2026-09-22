@@ -30,9 +30,10 @@ pr() { # pr <repo> <number> <title> <draft> <mergeable> <labels-json> <threads-j
   cat <<EOF
 { "number": $2, "title": "$3", "isDraft": $4,
   "url": "https://github.com/testowner/$1/pull/$2",
-  "repository": { "name": "$1" }, "mergeable": "$5",
+  "repository": { "name": "$1", "owner": { "login": "testowner" } }, "mergeable": "$5",
   "labels": { "nodes": $6 }, "reviewThreads": { "nodes": $7 },
-  "commits": { "nodes": [ { "commit": { "statusCheckRollup": $8 } } ] } }
+  "commits": { "nodes": [ { "commit": { "oid": "abc", "committedDate": "2026-01-01T00:00:00Z",
+    "statusCheckRollup": $8 } } ] } }
 EOF
 }
 green='{"contexts":{"nodes":[{"name":"ci-gate / gate","conclusion":"SUCCESS"}]}}'
@@ -73,6 +74,12 @@ case "$*" in
   *graphql*)
     [ "${GH_FAIL:-0}" = 1 ] && { echo "gh: API rate limit exceeded" >&2; exit 1; }
     case "$*" in
+      *pullRequest\(number:*)
+        # --pr mode: a single-PR lookup, not a search page.
+        cat "$PR_SINGLE_JSON"
+        exit 0 ;;
+    esac
+    case "$*" in
       *after=*)
         if [ -n "${SEARCH_JSON_SEQ_LAST:-}" ]; then
           n=$(( $(cat "$COUNTFILE" 2>/dev/null || echo 1) + 1 ))
@@ -96,8 +103,20 @@ for r in ${GH_LABEL_FAIL:-}; do
   case "$*" in *"/$r/labels"*) echo "gh: Not Found" >&2; exit 1 ;; esac
 done
 case "$*" in
-  */alpha/labels*) echo awaiting-human; echo bug; exit 0 ;;
+  */alpha/labels*) echo awaiting-human; echo bug; echo fixup-hard; exit 0 ;;
   */labels*)       echo bug; exit 0 ;;
+esac
+# `gh api user -q .login`: the account `--refresh` posts as.
+case "$*" in
+  *"api user"*) echo "${GH_LOGIN:-mergify-bot}"; exit 0 ;;
+esac
+# `gh pr comment <n> -R owner/repo --body ...`: record it instead of posting,
+# so the test can assert on what would have been sent.
+case "$*" in
+  "pr comment "*)
+    [ "${GH_COMMENT_FAIL:-0}" = 1 ] && { echo "gh: could not comment" >&2; exit 1; }
+    echo "$*" >> "$(dirname "$0")/.comments"
+    exit 0 ;;
 esac
 exit 1
 EOF
@@ -232,6 +251,128 @@ EMPTY="$S/empty"; mkdir -p "$EMPTY"
 OUT=$(PATH="$EMPTY" /bin/sh "$AUDIT" 2>&1); RC=$?
 eq 'no gh: exit 1' 1 "$RC"
 has 'no gh: names the tool' 'pr-label-audit: gh is required'
+
+# --- --json: one row per PR, mapped 1:1 onto the human section headings ----------------
+# repo `nolabel` still lacks both labels here (fixup-hard is added back to its
+# label list where a test needs it defined instead).
+runargs() { OUT=$(sh "$AUDIT" "$@" 2>&1); RC=$?; }
+# How many recorded `gh pr comment` calls match a pattern -- 0 when none, or
+# when nothing was recorded at all. (`grep -c` prints 0 AND exits 1 on no
+# match, so `|| echo 0` would print a second 0.)
+posted() { { grep -c -- "$1" "$BIN/.comments" 2>/dev/null; } | { read -r n; echo "${n:-0}"; }; }
+row() { # row <repo#number> -- the one JSON object for that PR, from ndjson output
+  printf '%s\n' "$OUT" | jq -c "select(has(\"number\")) | select(\"\\(.repo)#\\(.number)\" == \"$1\")"
+}
+
+{
+  printf '{"data":{"search":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":['
+  pr alpha 1 "green and labelled"   false MERGEABLE   "$lab" '[]' "$green"
+  printf ,; pr alpha 2 "green unlabelled" false MERGEABLE '[]' '[]' "$green"
+  printf ,; pr alpha 3 "stale label"      false MERGEABLE "$lab" '[]' "$red"
+  printf ,; pr alpha 4 "no gate at all"   false MERGEABLE '[]' '[]' 'null'
+  printf ,; pr nolabel 1 "repo lacks the label" false MERGEABLE '[]' '[]' "$green"
+  printf ']}}}\n'
+} > "$S/search.json"
+runargs --json
+eq '--json exits 0' 0 "$RC"
+eq 'green + labelled maps to your-turn' 'your-turn' "$(row 'alpha#1' | jq -r .section)"
+eq 'green + unlabelled maps to green-unlabelled' 'green-unlabelled' "$(row 'alpha#2' | jq -r .section)"
+eq 'labelled + red maps to stale-label (one row, not two)' 'stale-label' "$(row 'alpha#3' | jq -r .section)"
+eq 'no gate maps to no-gate' 'no-gate' "$(row 'alpha#4' | jq -r .section)"
+eq 'green + unlabelled + repo missing the label maps to no-label-repo' 'no-label-repo' "$(row 'nolabel#1' | jq -r .section)"
+eq 'exactly one JSON row per PR' 1 "$(printf '%s\n' "$OUT" | jq -c 'select(has("number"))' | grep -c 'alpha#3\|"number":3')"
+has '--json also carries the repo-level fixup-hard fact' 'repos_missing_fixup_hard'
+eq 'nolabel is missing fixup-hard' 'nolabel' "$(printf '%s\n' "$OUT" | jq -r 'select(has("repos_missing_fixup_hard")) | .repos_missing_fixup_hard[]' | grep -x nolabel)"
+eq 'each row carries mergeable' 'MERGEABLE' "$(row 'alpha#1' | jq -r .mergeable)"
+eq 'and its labels array' '["awaiting-human"]' "$(row 'alpha#1' | jq -c .labels)"
+
+# --- --pr: a single PR, restricted to one repository's query --------------------------
+PR_SINGLE_JSON="$S/single.json"
+cat > "$PR_SINGLE_JSON" <<EOF
+{"data":{"repository":{"pullRequest":
+$(pr colregs 193 "single PR lookup" false CONFLICTING '[]' '[]' "$green")
+}}}
+EOF
+export PR_SINGLE_JSON
+runargs --pr mark-brannan/colregs#193
+eq '--pr exits 0' 0 "$RC"
+has '--pr text mode still renders the human report' 'colregs#193'
+runargs --pr mark-brannan/colregs#193 --json
+eq '--pr --json exits 0' 0 "$RC"
+eq '--pr --json is a single object, addressable with plain jq .field' \
+  'CONFLICTING' "$(printf '%s\n' "$OUT" | jq -r 'select(has("number")) | .mergeable')"
+eq '--pr --json has no repos_missing_fixup_hard line -- it is a fleet-wide fact, out of scope for one PR' \
+  '' "$(printf '%s\n' "$OUT" | jq -r 'select(has("repos_missing_fixup_hard"))')"
+eq '--pr --json carries the head commit date, not the API-deprecated pushedDate' \
+  '2026-01-01T00:00:00Z' "$(printf '%s\n' "$OUT" | jq -r 'select(has("number")) | .head_committed_at')"
+
+cat > "$PR_SINGLE_JSON" <<EOF
+{"data":{"repository":{"pullRequest":
+$(pr colregs 194 "a draft" true MERGEABLE '[]' '[]' "$green")
+}}}
+EOF
+runargs --pr mark-brannan/colregs#194 --json
+eq '--pr on a draft exits 0' 0 "$RC"
+has '--pr on a draft says so instead of printing nothing' 'colregs#194 is a draft'
+hasnt '--pr on a draft emits no row' '"number"'
+
+# --- argument parsing: strict, because --refresh writes ------------------------------
+runargs --jsno
+eq 'an unknown flag exits 1' 1 "$RC"
+has 'and names it' 'unknown argument: --jsno'
+runargs --pr
+eq 'a bare --pr exits 1' 1 "$RC"
+has 'and prints usage' 'usage: pr-label-audit'
+runargs --pr nonsense
+eq '--pr without owner/repo#n exits 1' 1 "$RC"
+
+# --- failing_checks: only checks that finished badly ---------------------------------
+mixed='{"contexts":{"nodes":[{"name":"ci-gate / gate","conclusion":"SUCCESS"},{"name":"slow","status":"IN_PROGRESS","conclusion":null},{"name":"skipped","conclusion":"SKIPPED"},{"name":"lint","conclusion":"FAILURE","detailsUrl":"https://example.test/lint"},{"context":"legacy","state":"PENDING"}]}}'
+page false "$(pr alpha 9 'mixed checks' false MERGEABLE '[]' '[]' "$mixed")" > "$S/search.json"
+runargs --json
+eq 'a running, skipped or pending check is not a failing one' '["lint"]' "$(row 'alpha#9' | jq -c '[.failing_checks[].name]')"
+eq 'and a failing check carries its url' 'https://example.test/lint' "$(row 'alpha#9' | jq -r '.failing_checks[0].url')"
+
+# --- --refresh: idempotent, and never fires without the flag ---------------------------
+rm -f "$BIN/.comments"
+page false "$(pr alpha 1 'stale label' false MERGEABLE "$lab" '[]' "$red")" > "$S/search.json"
+run
+eq 'default (no --refresh) still exits 0' 0 "$RC"
+[ -f "$BIN/.comments" ] && { fail=$((fail + 1)); echo "FAIL: no --refresh: a comment was posted anyway"; } || pass=$((pass + 1))
+
+rm -f "$BIN/.comments"
+GH_LOGIN=mergify-bot runargs --refresh
+eq '--refresh (nothing already posted) exits 0' 0 "$RC"
+eq 'exactly one comment was posted, to the stale-label PR, by number and -R repo' 1 \
+  "$(posted '^pr comment 1 -R testowner/alpha ')"
+eq 'the comment text is exactly the refresh trigger' 1 \
+  "$(posted '--body @mergifyio refresh')"
+
+# A green-but-unlabelled PR in a repo that defines the label is the other
+# refresh target; a green-and-labelled one is not.
+rm -f "$BIN/.comments"
+page false "$(pr alpha 2 'green unlabelled' false MERGEABLE '[]' '[]' "$green"),$(pr alpha 1 'green and labelled' false MERGEABLE "$lab" '[]' "$green")" > "$S/search.json"
+GH_LOGIN=mergify-bot runargs --refresh
+eq 'green-unlabelled is refreshed' 1 "$(posted '^pr comment 2 -R testowner/alpha ')"
+eq 'green-and-labelled is left alone' 0 "$(posted '^pr comment 1 ')"
+
+# Re-running --refresh right after must not repost: the fixture's PR now
+# carries a lastComments entry matching what was just "posted".
+page false "$(cat <<JSON
+{ "number": 1, "title": "stale label", "isDraft": false,
+  "url": "https://github.com/testowner/alpha/pull/1",
+  "repository": { "name": "alpha", "owner": {"login": "testowner"} }, "mergeable": "MERGEABLE",
+  "labels": { "nodes": $lab }, "reviewThreads": { "nodes": [] },
+  "lastComments": { "nodes": [ { "author": {"login": "mergify-bot"}, "body": "@mergifyio refresh",
+    "createdAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" } ] },
+  "commits": { "nodes": [ { "commit": { "oid": "abc", "pushedDate": "2026-01-01T00:00:00Z", "statusCheckRollup": $red } } ] } }
+JSON
+)" > "$S/search.json"
+rm -f "$BIN/.comments"
+GH_LOGIN=mergify-bot runargs --refresh
+eq 'already-refreshed within 24h: exits 0' 0 "$RC"
+[ -f "$BIN/.comments" ] && { fail=$((fail + 1)); echo "FAIL: idempotency: reposted anyway"; } || pass=$((pass + 1))
+unset GH_LOGIN
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
