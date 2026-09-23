@@ -684,8 +684,13 @@ chmod +x "$SCRATCH/bin/gh"
 # vanished at zero instead, so "no friction" and "this field does not exist"
 # looked the same. Ruled 2026-09-22: 🌌 friction, 🧘 decisions, bare --
 # the glyph names its own field, so no ⚡/⚖ prefix.
+# DAY forces the night window shut: a leftover sitting clock plus a real
+# Pacific hour past 22:00 otherwise trips the night reason and every "calm"
+# assertion below reads red between 22:00 and 05:00 (#362, #347).
+DAY=(METRICS_STOP_HOUR=24 METRICS_NIGHT_END_HOUR=0)
+rm -f "$STATE/metrics/sitting.json"
 TP11="$SCRATCH/calm.jsonl"; turn "$TP11" 1000
-o11=$(msg "$(payload "$TP11" calm "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)")
+o11=$(msg "$(payload "$TP11" calm "$SCRATCH" | env "${DAY[@]}" bash "$HOOK" posttooluse 0 show 2>&1)")
 has 'friction at zero shows its calm glyph'  '🌌\(x0\)' "$o11"
 has 'decisions at zero show theirs'          '🧘\(x0\)' "$o11"
 has 'and blocked is unchanged'               '🔧✅\(x0\)' "$o11"
@@ -703,18 +708,27 @@ SITF11=$STATE/metrics/sitting.json
 mkdir -p "$(dirname "$SITF11")"
 jq -nc --argjson s "$(( $(date +%s) - 9000 ))" \
   '{sitting_start: $s, last_prompt: $s}' > "$SITF11"
-o11b=$(msg "$(payload "$TP11" calm2 "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)")
+o11b=$(msg "$(payload "$TP11" calm2 "$SCRATCH" | env "${DAY[@]}" bash "$HOOK" posttooluse 0 show 2>&1)")
 has 'past the hot rung the glyph changes'     '⏱2h30(⏱️|🌙){3}⏰⏰' "$o11b"
-o11c=$(msg "$(payload "$TP11" calm3 "$SCRATCH" | METRICS_SIT_HOT_RUNG=9 \
+o11c=$(msg "$(payload "$TP11" calm3 "$SCRATCH" | env "${DAY[@]}" METRICS_SIT_HOT_RUNG=9 \
   bash "$HOOK" posttooluse 0 show 2>&1)")
 has 'and the rung is a knob like every other' '⏱2h30(⏱️|🌙){5}' "$o11c"
 
 # dotfiles#137: the reason cluster trips on the same hot rung as the glyph
 # itself, no second threshold to keep in sync.
 has 'the sitting reason glyph trips at the hot rung' '⏱️.*propose stopping' "$o11b"
-o11d=$(msg "$(payload "$TP11" calm4 "$SCRATCH" | METRICS_SIT_HOT_RUNG=9 \
+o11d=$(msg "$(payload "$TP11" calm4 "$SCRATCH" | env "${DAY[@]}" METRICS_SIT_HOT_RUNG=9 \
   bash "$HOOK" posttooluse 0 show 2>&1)")
 hasnt 'and stays quiet while the rung is raised past it' 'propose stopping' "$o11d"
+
+# The night arm of the same window, forced open rather than waited for: a
+# sitting clock past one rung proposes stopping at night however calm the
+# rest of the block is. This is the behaviour that used to reach CI only
+# between 22:00 and 05:00 Pacific, as a failure.
+o11n=$(msg "$(payload "$TP11" calm5 "$SCRATCH" | env METRICS_STOP_HOUR=0 \
+  METRICS_NIGHT_END_HOUR=24 METRICS_SIT_HOT_RUNG=9 \
+  bash "$HOOK" posttooluse 0 show 2>&1)")
+has 'at night a sitting clock alone proposes stopping' '🌙 propose stopping' "$o11n"
 rm -f "$SITF11"
 
 # --- 12. PostToolUse drives the engine and may carry an injection ------------

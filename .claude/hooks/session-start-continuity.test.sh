@@ -50,8 +50,11 @@ run() {
 }
 ok()   { pass=$((pass + 1)); }
 bad()  { fail=$((fail + 1)); printf 'FAIL: %s\n' "$1"; [ -n "${2:-}" ] && printf '  %s\n' "$2"; }
-has()    { if printf '%s' "$CTX" | grep -Fq -- "$2"; then ok; else bad "$1 (context lacks [$2])" "$(printf '%s' "$CTX" | head -20)"; fi; }
-lacks()  { if printf '%s' "$CTX" | grep -Fq -- "$2"; then bad "$1 (context has [$2])"; else ok; fi; }
+# grep -Fq exits on the first match, which SIGPIPEs a `printf |` upstream;
+# under `pipefail` that 141 becomes the pipeline's status and a matching
+# assertion reports FAIL. A here-string has no upstream to kill.
+has()    { if grep -Fq -- "$2" <<<"$CTX"; then ok; else bad "$1 (context lacks [$2])" "$(head -20 <<<"$CTX")"; fi; }
+lacks()  { if grep -Fq -- "$2" <<<"$CTX"; then bad "$1 (context has [$2])"; else ok; fi; }
 valid_json() { if [ -n "$CTX" ]; then ok; else bad "$1: no SessionStart additionalContext" "$RAW"; fi; }
 
 # --- worklist present and fast -----------------------------------------------

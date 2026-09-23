@@ -109,8 +109,11 @@ NAG_MODEL_CONTEXT_STEP="${METRICS_MODEL_CONTEXT_STEP:-50000}"
 NAG_MODEL_CONTEXT_REPEAT="${METRICS_MODEL_CONTEXT_REPEAT:-20}"
 NAG_MODEL_DECISION_LINES="${METRICS_MODEL_DECISION_LINES:-3 5 8 13 21}"
 NAG_MODEL_DECISION_STEP="${METRICS_MODEL_DECISION_STEP:-21}"
-# Local hour from which a Stop on an archivable session is worth interrupting.
+# Local hour from which a Stop on an archivable session is worth interrupting,
+# and the hour night ends. The block's night glyph reads the same two, so
+# "when is it night" is one pair of knobs and the tests can force either side.
 NAG_STOP_HOUR="${METRICS_STOP_HOUR:-22}"
+NAG_NIGHT_END_HOUR="${METRICS_NIGHT_END_HOUR:-5}"
 
 # One jq for all three fields: the statusline reaches this code on every
 # render, and three spawns before the staleness check was most of its cost.
@@ -862,7 +865,9 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
     sit_min=$(( (now_ts - sit_start) / 60 ))
     r=$(time_rungs "$sit_min")
     pac_hour=$(( ( ($(date +%s) + TZOFF) / 3600 ) % 24 ))
-    sg="⏱️"; { [ "$pac_hour" -ge 22 ] || [ "$pac_hour" -lt 5 ]; } && sg="🌙"
+    sg="⏱️"
+    { [ "$pac_hour" -ge "$NAG_STOP_HOUR" ] \
+      || [ "$pac_hour" -lt "$NAG_NIGHT_END_HOUR" ]; } && sg="🌙"
     # Louder past the hot rung, night or day: 🌙🌙🌙⏰⏰ keeps both signals.
     reps=""
     for ((i = 0; i < r; i++)); do
