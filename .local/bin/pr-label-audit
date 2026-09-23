@@ -262,6 +262,7 @@ audit_jq='
   def checks: [.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
                | {name: (.name // .context), result: (.conclusion // .status // .state), url: (.detailsUrl // .targetUrl // null)}];
   def not_failed: ["SUCCESS", "NEUTRAL", "SKIPPED", "QUEUED", "IN_PROGRESS", "PENDING", "EXPECTED", null];
+  def failing: [checks[] | select([.result] | inside(not_failed) | not)];
   def gate_result: (first(checks[] | select(.name == $gate) | .result) // "absent");
   def unresolved: [.reviewThreads.nodes[]? | select(.isResolved | not)] | length;
 
@@ -289,8 +290,11 @@ audit_jq='
           gate: gate_result, unresolved: unresolved,
           unresolved_threads: [ .reviewThreads.nodes[]? | select(.isResolved | not)
             | { id: .id, path: .path, first_line: (.comments.nodes[0].body // "" | split("\n")[0]) } ],
-          failing_checks: [ checks[] | select([.result] | inside(not_failed) | not)
-            | {name: .name, url: .url} ],
+          failing_checks: [ failing[] | {name: .name, url: .url} ],
+          # A gate that never ran (cancelled, not failed) is not a signal a
+          # fixup session can act on -- grind --prs reruns it instead of
+          # spending a worker budget watching the same cancellation again.
+          cancelled_only: ((failing | length) > 0 and (failing | all(.result == "CANCELLED"))),
           last_comment: (.lastComments.nodes[0] // null),
           labelled: (([.labels.nodes[].name] | index($label)) != null),
           claimed: (([.labels.nodes[].name] | index($claim_label)) != null),
