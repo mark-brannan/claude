@@ -7,10 +7,14 @@ governs. Values in the examples are tuning, not part of the ruling.
 
 ## What is shown, and how often
 
-**A notice on every event, and one notice per event.** On every Stop and on
-most tool invocations — high frequency, one block each time. Louder and *more
-often* is the direction; going quieter is never a cleanup, and display lines
-cost no tokens, so frequency is free.
+**A notice on every event, and one notice per event.** On every Stop, every
+tool invocation, and every prompt (`UserPromptSubmit` renders the block too,
+ruled 2026-09-22, [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137))
+— high frequency, one block each time. Louder and *more often* is the
+direction; going quieter is never a cleanup, and display lines cost no
+tokens, so frequency is free. This is the default for any new wiring too:
+don't ask per-event whether high frequency applies — it does, unless told
+otherwise for that specific case.
 
 This corrects what was written here before. `#149` was read as a ruling about
 lines *per event*: "more lines, not fewer... do not coalesce, dedupe or fire
@@ -50,8 +54,13 @@ or throttle. It always has its status line and its turns line. The turns
 line never disappears on a clean tree; git state is appended only when
 there is some.
 
+**The verdict tail only appears when something is wrong.** No "still room"
+filler, no replacement wording — the whole `— …` tail is absent when nothing
+proposes stopping. Ruled by Solace, 2026-09-22
+([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)).
+
 ```
-» 20/41k 🧘‍♀️(x0) 🌌(x0) 🔧✅(x0) ⏱0m — still room.
+» 20/41k 🧘‍♀️(x0) 🌌(x0) 🔧✅(x0) ⏱0m
 ⇢ 3 ⚙ 0 ⎇ 1~
 ```
 

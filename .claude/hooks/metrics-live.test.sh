@@ -650,6 +650,13 @@ o11=$(msg "$(payload "$TP11" calm "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2
 has 'friction at zero shows its calm glyph'  '🌌\(x0\)' "$o11"
 has 'decisions at zero show theirs'          '🧘‍♀️\(x0\)' "$o11"
 has 'and blocked is unchanged'               '🔧✅\(x0\)' "$o11"
+hasnt 'a calm block carries no verdict tail' ' — ' "$o11"
+
+# dotfiles#137: UserPromptSubmit renders the block same as every other wired
+# event now -- high frequency was the explicit ask, not a per-event opt-in.
+TP11P="$SCRATCH/calm-prompt.jsonl"; turn "$TP11P" 1000
+o11p=$(msg "$(payload "$TP11P" calmprompt "$SCRATCH" | bash "$HOOK" prompt 0 show 2>&1)")
+has 'UserPromptSubmit renders the block too' '^(»|⛁)' "$o11p"
 
 # The sitting cluster gets louder past NAG_SIT_HOT_RUNG rungs, night or day,
 # so the night glyph still reads at the front of a long evening.
@@ -661,7 +668,7 @@ o11b=$(msg "$(payload "$TP11" calm2 "$SCRATCH" | bash "$HOOK" posttooluse 0 show
 has 'past the hot rung the glyph changes'     '⏱2h30(⏱️|🌙){3}⏰⏰' "$o11b"
 o11c=$(msg "$(payload "$TP11" calm3 "$SCRATCH" | METRICS_SIT_HOT_RUNG=9 \
   bash "$HOOK" posttooluse 0 show 2>&1)")
-has 'and the rung is a knob like every other' '⏱2h30(⏱️|🌙){5} ' "$o11c"
+has 'and the rung is a knob like every other' '⏱2h30(⏱️|🌙){5}' "$o11c"
 
 # dotfiles#137: the reason cluster trips on the same hot rung as the glyph
 # itself, no second threshold to keep in sync.

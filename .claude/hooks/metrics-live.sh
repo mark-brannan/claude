@@ -9,8 +9,10 @@
 # fire several times a second). The statusline just prints what is already on
 # disk, and recomputes only past its own staleness age.
 #
-# Four wirings: UserPromptSubmit (silent readout, may carry a crossing line),
-# PostToolUse, Stop and SubagentStop. It used to be wired to nine events,
+# Four wirings: UserPromptSubmit, PostToolUse, Stop and SubagentStop.
+# UserPromptSubmit renders the block same as the rest (#137) -- high
+# frequency is the explicit ask, not a per-event opt-in. It used to be
+# wired to nine events,
 # eight of them with `show`, and the readout spoke often enough to be tuned
 # out -- a level-triggered nag. What replaced it is not a lower frequency but
 # the crossing engine below: a line fires once, when a threshold is first
@@ -129,10 +131,11 @@ else
   EVENT=$(printf '%s' "${hook_name:-tool}" | tr '[:upper:]' '[:lower:]')
 fi
 
-# `show` on UserPromptSubmit would make the readout model context rather than
-# display, every turn. The crossing lines below still reach the screen there;
-# it is the whole block that stays suppressed.
-case "$EVENT" in prompt|userpromptsubmit|statusline) SHOW="" ;; esac
+# statusline reaches this code several times a second and is not a hook
+# event Claude Code will render a systemMessage for -- SHOW stays cleared
+# there. UserPromptSubmit renders the block like every other wired event
+# now (#137): high frequency was the explicit ask, not a per-event opt-in.
+case "$EVENT" in statusline) SHOW="" ;; esac
 
 # HUMAN NOTE: The statement "the jq pass is too expensive" is categorically wrong.
 # Do not consider jq passes to be "too expensive" even if the code is suboptimal;
@@ -780,27 +783,14 @@ fi
 
 [ "$run_engine" -eq 1 ] && save_nag
 
-# The crossing lines reach the user on every wired event; the model line is
-# the one that reaches the model, and only on a can_inject event, where a hook
-# can add context at all.
+# UserPromptSubmit carries `show` now (#137), so it falls through to the
+# block below like PostToolUse, and the injection merges into that one emit:
+# two hookSpecificOutputs from one hook invocation would be one JSON object
+# too many, and the second would be the one that was dropped.
 #
-# A prompt has no block to ride on -- SHOW was cleared for it above -- so it
-# emits here and exits. PostToolUse carries `show`, so it falls through to the
-# block below and the injection is merged into that one emit instead: two
-# hookSpecificOutputs from one hook invocation would be one JSON object too
-# many, and the second would be the one that was dropped.
-if [ "$is_prompt" -eq 1 ] && { [ -n "$sys_lines" ] || [ -n "$model_line" ]; }; then
-  jq -nc --arg s "$sys_lines" --arg a "$model_line" --arg e "$inject_event" \
-    '(if $s == "" then {} else {systemMessage: $s} end)
-     + (if $a == "" then {}
-        else {hookSpecificOutput: {hookEventName: $e,
-                                   additionalContext: $a}} end)'
-  exit 0
-fi
-
-# Past the prompt emit, the model line survives only on an event that may
-# carry one. A Stop's crossings have already been folded into its block reason
-# above; re-emitting them here would say the same thing twice.
+# The model line survives only on an event that may carry one. A Stop's
+# crossings have already been folded into its block reason above; re-emitting
+# them here would say the same thing twice.
 inject_model_line=""
 [ "$can_inject" -eq 1 ] && inject_model_line="$model_line"
 
@@ -877,16 +867,16 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
   [ "${sit_start:-0}" -gt 0 ] && [ "${r:-0}" -ge $((NAG_SIT_HOT_RUNG + 1)) ] \
     && { bl_reason="${bl_reason}⏱️"; bl_propose=1; }
   [ "${bl_blocked:-0}" -ge 3 ]    && { bl_reason="${bl_reason}⛔"; bl_propose=1; }
-  bl_verdict="still room"
-  [ "$bl_propose" -eq 1 ] && bl_verdict="propose stopping"
-  [ -n "$bl_reason" ] && bl_reason="${bl_reason} "
-
   bl_main="$bl_ctx_cluster"
   [ -n "$bl_dec_cluster" ] && bl_main="$bl_main $bl_dec_cluster"
   [ -n "$bl_fric_cluster" ] && bl_main="$bl_main $bl_fric_cluster"
   bl_main="$bl_main $bl_blocked_cluster"
   [ -n "$bl_sit_cluster" ] && bl_main="$bl_main $bl_sit_cluster"
-  bl_main="$bl_main — ${bl_reason}${bl_verdict}."
+  # The tail is a verdict, not decoration -- Solace ruled it disappears
+  # entirely when nothing proposes stopping, no "still room" filler (#137).
+  if [ "$bl_propose" -eq 1 ]; then
+    bl_main="$bl_main — ${bl_reason:+$bl_reason }propose stopping."
+  fi
 
   bl_second=$(printf '%s\n' "$merged" | jq -r -L "$HOOK_DIR" \
     'include "lib-metrics-fmt";
