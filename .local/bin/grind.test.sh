@@ -252,6 +252,25 @@ eq 'no more items to run -- queue already exhausted' 0 "$(calls_claude)"
 has 'says the queue is done' 'Ready queue exhausted'
 eq 'state file unchanged (still 2 items)' 2 "$(jq '.items | length' "$sess")"
 
+# --- --resume refreshes session identity (pid, claude_session_id) in the
+# state file, not just budgets/model/repo (#190): the original session's pid
+# is long dead by the time --resume runs it from a fresh process, so the
+# state file's diagnostics must reflect the resuming process, not the one
+# that crashed. Two resumes, two different CLAUDE_SESSION_ID values -------------
+export CLAUDE_SESSION_ID=resume-probe-before
+run --resume "$session_id"
+before_pid=$(jq -r '.lock.pid' "$sess")
+before_claude_session=$(jq -r '.lock.claude_session_id' "$sess")
+export CLAUDE_SESSION_ID=resume-probe-after
+run --resume "$session_id"
+after_pid=$(jq -r '.lock.pid' "$sess")
+after_claude_session=$(jq -r '.lock.claude_session_id' "$sess")
+unset CLAUDE_SESSION_ID
+assert 'each --resume records the resuming process'"'"'s own pid, not a stale one' \
+  bash -c "[ '$before_pid' != '$after_pid' ]"
+eq 'the first resume picked up its own claude_session_id' 'resume-probe-before' "$before_claude_session"
+eq 'the second resume refreshed claude_session_id again' 'resume-probe-after' "$after_claude_session"
+
 # --- a worktree that cannot be created is a WARN, counted, and fails the run ----
 # grind-5 already exists from earlier runs; checking it out elsewhere makes
 # grind's branch -D and worktree add -b both fail for #5.
