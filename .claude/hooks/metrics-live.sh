@@ -562,7 +562,7 @@ if [ "$run_engine" -eq 1 ]; then
       if [ "$m_ctx_at" -eq 0 ]; then
         add_model "Context at $(kfmt "$ctx"), past $(kfmt "$r") — a stopping point. Offer one, or /wrapup."
       else
-        add_model "Context at $(kfmt "$ctx"), past $(kfmt "$r"). Already raised at $(kfmt "$m_ctx_at") and not acted on."
+        add_model "Context at $(kfmt "$ctx"), past $(kfmt "$r") (last offered at $(kfmt "$m_ctx_at"))."
       fi
       m_ctx_at=$r; m_ctx_tools=0
     elif [ "$EVENT" = posttooluse ] && [ "$m_ctx_at" -gt 0 ] \
@@ -576,7 +576,7 @@ if [ "$run_engine" -eq 1 ]; then
       # the context during the stretch this arm exists to cover.
       m_ctx_tools=$((m_ctx_tools + 1))
       if [ "$m_ctx_tools" -ge "$NAG_MODEL_CONTEXT_REPEAT" ]; then
-        add_model "Context at $(kfmt "$ctx"), past $(kfmt "$m_ctx_at") for $m_ctx_tools tool calls and not acted on. Offer a stopping point, or /wrapup."
+        add_model "Context at $(kfmt "$ctx"), past $(kfmt "$m_ctx_at") for $m_ctx_tools tool calls. If there's a stopping point, offer it, or /wrapup."
         m_ctx_tools=0
       fi
     fi
@@ -630,13 +630,19 @@ if [ "$run_engine" -eq 1 ]; then
          || { [ "$m_sit_at" -eq 0 ] && ! in_flight; }; then
       inf=""; in_flight && inf=" with work in flight ($in_flight_memo)"
       if [ -n "$inf" ]; then sv="Do not offer a break or /wrapup yet: land this without asking -- commit, push, open the PR -- then offer."
-      elif [ "$r" -ge $((NAG_SIT_EVERY_MIN * 2)) ]; then sv="Stop here and run /wrapup."
+      elif [ "$r" -ge $((NAG_SIT_EVERY_MIN * 2)) ]; then
+        # Only a genuine repeat (m_sit_at already spent) gets the softened
+        # wording -- a first crossing, including the deferred offer that
+        # fires once in-flight work lands, keeps the original imperative.
+        if [ "$m_sit_at" -eq 0 ]; then sv="Stop here and run /wrapup."
+        else sv="If the work is landed, this is a good place to stop; if not, land it and then offer."
+        fi
       else sv="Say so and offer a break."; fi
       if [ "$m_sit_at" -eq 0 ]; then
         [ -n "$inf" ] || m_sit_at=$r   # unspent while in flight: fires once landed
         add_model "Sitting $(hm "$m_min") at this machine, past $(hm "$r")$inf. $sv"
       else
-        add_model "Sitting $(hm "$m_min"), past $(hm "$r"). Already raised at $(hm "$m_sit_at") and not acted on. $sv"
+        add_model "Sitting $(hm "$m_min"), past $(hm "$r") (last offered at $(hm "$m_sit_at")). $sv"
         m_sit_at=$r
       fi
       m_sit_said=$r
@@ -663,7 +669,7 @@ if [ "$run_engine" -eq 1 ]; then
       if [ "$m_dec_at" -eq 0 ]; then
         add_model "$decisions decisions pushed to Solace this session ($gates of them gates), past $r. Front-load or card the rest."
       else
-        add_model "$decisions decisions pushed to Solace this session ($gates of them gates), past $r. Already raised at $m_dec_at and not acted on."
+        add_model "$decisions decisions pushed to Solace this session ($gates of them gates), past $r (last noted at $m_dec_at)."
       fi
       m_dec_at=$r
     fi
@@ -672,11 +678,23 @@ if [ "$run_engine" -eq 1 ]; then
   # FROZEN -- THAW CAREFULLY.
   # friction -- measured in human turns, so only a prompt can trip it, and it
   # is addressed to the model, which is the thing the capacity rule asks of.
+  #
+  # Work in flight (in_flight(), dotfiles#192) gets the same land-it redirect
+  # as the sitting clock: fric_tripped is left unset, so this line repeats on
+  # every prompt while the window stays over threshold, and the ordinary
+  # capacity-rule line still fires -- unspent -- once the work lands and this
+  # falls to the else branch below. No record_crossing here on purpose: the
+  # real crossing is the one that trips fric_tripped, not each in-flight repeat.
   if [ "$is_prompt" -eq 1 ] && [ "$fric_tripped" -ne 1 ] \
      && [ "$fric_win" -ge "$NAG_FRICTION_N" ]; then
-    fm="$fric_win corrections or rebukes in the last $NAG_FRICTION_TURNS turns. Apply the capacity rule from the standing orders, once."
-    add_model "$fm"; record_crossing friction "$fric_win" "$fm"
-    fric_tripped=1; since_nag=1
+    if in_flight; then
+      fm="$fric_win corrections or rebukes in the last $NAG_FRICTION_TURNS turns, with work in flight. Do not raise capacity or offer a stopping point yet: land this without asking -- commit, push, open the PR -- then apply the capacity rule."
+      add_model "$fm"
+    else
+      fm="$fric_win corrections or rebukes in the last $NAG_FRICTION_TURNS turns. Apply the capacity rule from the standing orders, once."
+      add_model "$fm"; record_crossing friction "$fric_win" "$fm"
+      fric_tripped=1; since_nag=1
+    fi
   fi
 fi
 

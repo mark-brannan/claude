@@ -121,7 +121,7 @@ context past the stop rung, the sitting clock, decision load, friction.
 The two are never concatenated into one string.
 
 ```
-additionalContext: Sitting 2h03, past 2h00. Already raised at 1h00 and not acted on. Stop here and run /wrapup.
+additionalContext: Sitting 2h03, past 2h00 (last offered at 1h00). If the work is landed, this is a good place to stop; if not, land it and then offer.
 ```
 
 **One injection per rung crossed, and one deliberate repeat.** A model line
