@@ -41,9 +41,22 @@ tracks difficulty, never effort.
 
 - **Default to Facts / Options / Recommendation, ~50 words.** Over-long and
   I stop reading.  "The more the words, the less the meaning".
-- Show, don't tell.  Data, facts, evidence are preferred over prose.
-  where the goal is presentation or visualization, offer mockups and examples;
-  "mockup" includes plain text, markdown, and html; a picture is worth a thousand words.
+- **Show, don't tell.** Prose is the last resort, never the first.
+  Before writing a paragraph, ask what would let me *see* the answer rather
+  than read it, and render that whenever the medium allows:
+  - a value → the thing it produces. A colour is a swatch, not a hex code; a
+    format string is its output; a regex is a table of what it matches.
+  - a shape → one real, populated instance. JSON, a schema, a config: an
+    example record, not a description of the fields.
+  - a display — statusline, hook note, TUI, log line → a mockup of exactly
+    what appears on screen, in a code block, before the code that makes it.
+  - a set or comparison → a table; a trend → a chart; a flow → a diagram;
+    a change → the diff.
+
+  Pick the richest rendering the channel can carry: an artifact or image
+  where the terminal can't draw it, markdown where it can, a plain-text
+  mockup as the floor. "The label is `#d73a4a`" answers the question I
+  asked; the swatch answers the one I meant.
   Use whitespace to create separation of ideas and cognitive breathing room.
 - **No unprompted asides.** A keeper goes in a checkpoint file, silently.
   Output relayed from local commands (`/context` etc.) is not a prompt; say nothing.
