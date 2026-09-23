@@ -332,6 +332,11 @@ page false "$(pr alpha 9 'mixed checks' false MERGEABLE '[]' '[]' "$mixed")" > "
 runargs --json
 eq 'a running, skipped or pending check is not a failing one' '["lint"]' "$(row 'alpha#9' | jq -c '[.failing_checks[].name]')"
 eq 'and a failing check carries its url' 'https://example.test/lint' "$(row 'alpha#9' | jq -r '.failing_checks[0].url')"
+run
+eq 'a red check outside the gate is unfinished work -- Mergify wants #check-failure=0' \
+  '## Gated, unlabelled -- a session left these unfinished' "$(section_of 'alpha#9')"
+has 'and the report names the check' 'alpha#9 \[checks-red: lint\]'
+hasnt 'rather than indicting the rule' 'Green and thread-free but NOT labelled'
 
 # --- --refresh: idempotent, and never fires without the flag ---------------------------
 rm -f "$BIN/.comments"

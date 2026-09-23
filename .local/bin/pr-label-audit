@@ -271,7 +271,7 @@ audit_jq='
     else [] end;
 
   def line: "\(.repo)#\(.number) \(.title[0:58])\n    \(.url)";
-  def vline: "\(.repo)#\(.number) [\(.verdict)] \(.title[0:58])\n    \(.url)";
+  def vline: "\(.repo)#\(.number) [\(.verdict)\(if .verdict == "checks-red" then ": " + ([.failing_checks[].name] | join(" ")) else "" end)] \(.title[0:58])\n    \(.url)";
 
   ( ($defines | split(" ") | map(select(. != ""))) ) as $defines_label
   | ( ($unchecked | split(" ") | map(select(. != ""))) ) as $unchecked_label
@@ -303,13 +303,17 @@ audit_jq='
         (if .gate == "absent" then "no-gate"
          elif .mergeable == "CONFLICTING" then "conflicted"
          elif .gate != "SUCCESS" then "not-green"
+         # The Mergify rule also wants `#check-failure=0`: a red check outside
+         # the gate (churn-guard, secret-scan) holds the label back correctly,
+         # and reporting that PR as "green" would indict a rule that is right.
+         elif (.failing_checks | length) > 0 then "checks-red"
          elif .unresolved > 0 then "threads-open"
          else "green" end) })
     | map(. + { section:
         (if (.labelled and .verdict == "green") then "your-turn"
          elif .verdict == "no-gate" then "no-gate"
          elif (.labelled and .verdict != "green") then "stale-label"
-         elif (.verdict == "not-green" or .verdict == "conflicted" or .verdict == "threads-open") then "unfinished"
+         elif (.verdict == "not-green" or .verdict == "conflicted" or .verdict == "checks-red" or .verdict == "threads-open") then "unfinished"
          elif (.verdict == "green" and (.labelled | not) and .defines_label) then "green-unlabelled"
          else "no-label-repo" end) })
     | map(. + { refresh_target: (.section == "stale-label" or .section == "green-unlabelled") }) ) as $prs
@@ -346,7 +350,7 @@ audit_jq='
     + section(
         "Gated, unlabelled -- a session left these unfinished";
         "Not handed over, so nothing updates them and nobody is waiting on you.\nEach needs a session to pick it up and finish it.";
-        [$prs[] | select(.verdict == "not-green" or .verdict == "conflicted" or .verdict == "threads-open") | vline])
+        [$prs[] | select(.verdict == "not-green" or .verdict == "conflicted" or .verdict == "checks-red" or .verdict == "threads-open") | vline])
 
     + section(
         "Green and thread-free but NOT labelled";

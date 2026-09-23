@@ -756,6 +756,7 @@ audit_row() { # audit_row <n> <section> <verdict> <labels json> <author> <when>
   audit_row 43 unfinished conflicted '[]' 'release-please[bot]' "$(old)"
   audit_row 44 unfinished conflicted '[]' solace "$(fresh)"
   audit_row 45 unfinished conflicted '[]' solace "$(old)"
+  audit_row 46 unfinished conflicted '[]' solace "$(fresh)"
   audit_row 50 green green '["awaiting-human"]' solace "$(old)"
   jq -nc '{repos_missing_fixup_hard:[]}'
 } > "$S/audit.json"
@@ -783,7 +784,12 @@ prview() { # prview <n> <label names json> <commits json>
   jq -n --arg b "fix-$1" --argjson l "$2" --argjson c "$3" \
     '{headRefName:$b, baseRefName:"main", labels:($l | map({name:.})), commits:$c}' > "$S/pr-$1.json"
 }
-for n in 30 11 40 41 42 43 44 45; do prview "$n" '[]' '[]'; done
+for n in 30 11 40 41 42 43 45; do prview "$n" '[]' '[]'; done
+# 44: a session pushed minutes ago. 46: the session pushed days ago and the
+# fresh head is Mergify merging main in -- workable, whatever the head date says.
+prview 44 '[]' "$(jq -nc --arg t "$(fresh)" '[{committedDate:$t, authors:[{login:"solace"}]}]')"
+prview 46 '[]' "$(jq -nc --arg o "$(old)" --arg t "$(fresh)" '[{committedDate:$o, authors:[{login:"solace"}]}, {committedDate:$t, authors:[{login:"mergify[bot]"}]}]')"
+
 cat > "$S/bin/gh" <<GH
 #!/bin/sh
 echo "\$*" >> "$GH_LOG"
@@ -815,18 +821,20 @@ git config user.signingkey TESTKEY
 run --prs --dry-run
 eq 'dry-run exits 0' 0 "$RC"
 eq 'dry-run spends nothing' 0 "$(calls_claude)"
-has 'stale-label PR is an item, lowest number first' '^\[1/8\] .*#11 -- \[not-green\] PR 11$'
-has 'unfinished PR is an item, with its verdict' '^\[[0-9]+/8\] .*#30 -- \[conflicted\] PR 30$'
+has 'stale-label PR is an item, lowest number first' '^\[1/9\] .*#11 -- \[not-green\] PR 11$'
+has 'unfinished PR is an item, with its verdict' '^\[[0-9]+/9\] .*#30 -- \[conflicted\] PR 30$'
 lacks 'a green, labelled PR is not an item' '#50'
 has 'the checkout is onto the PR head branch, not a new one' 'git worktree add -B fix-11 .* origin/fix-11'
 has 'the command names the briefs and the contract' 'claude -p <.*#11 briefs \+ fixup contract>.*--max-budget-usd 1 --model sonnet'
 
 # --- every skip rule fires, with its reason ------------------------------------------
-has 'fixup-hard is skipped'      '^\[[0-9]+/8\] .*#40 -- SKIP: labelled fixup-hard$'
-has 'blocked is skipped'         '^\[[0-9]+/8\] .*#41 -- SKIP: labelled blocked$'
-has 'dependabot is skipped'      '^\[[0-9]+/8\] .*#42 -- SKIP: opened by a bot'
-has 'release-please is skipped'  '^\[[0-9]+/8\] .*#43 -- SKIP: opened by a bot'
-has 'a head under 4h is skipped' '^\[[0-9]+/8\] .*#44 -- SKIP: head is less than 4h old$'
+has 'fixup-hard is skipped'      '^\[[0-9]+/9\] .*#40 -- SKIP: labelled fixup-hard$'
+has 'blocked is skipped'         '^\[[0-9]+/9\] .*#41 -- SKIP: labelled blocked$'
+has 'dependabot is skipped'      '^\[[0-9]+/9\] .*#42 -- SKIP: opened by a bot'
+has 'release-please is skipped'  '^\[[0-9]+/9\] .*#43 -- SKIP: opened by a bot'
+has 'a head under 4h is skipped' '^\[[0-9]+/9\] .*#44 -- SKIP: head is less than 4h old$'
+lacks 'a fresh head that is only a Mergify update is not' '#46 -- SKIP'
+has 'and that PR is an item' '^\[[0-9]+/9\] .*#46 -- \[conflicted\] PR 46$'
 lacks 'nothing is skipped without a reason' 'SKIP: *$'
 
 # --- a branch a local worktree holds belongs to a live session -----------------------

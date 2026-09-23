@@ -400,7 +400,8 @@ worktree_root=${TMPDIR:-/tmp}/grind-worktrees
 # branch wholesale so any fix is thrown away, a branch a local worktree holds
 # belongs to a live session, and a head this new is probably still being
 # pushed to. `head_committed_at` is a commit date, not a push time -- the
-# closest thing the audit carries, and wrong only in the safe direction.
+# closest thing the audit carries -- and it is Mergify's merge commit as
+# often as a session's, so a fresh one is re-aged by the last human commit.
 pr_skip() {
   for l in $(printf '%s' "$1" | jq -r '.labels[]?'); do
     case $l in fixup-hard|blocked) printf 'labelled %s' "$l"; return ;; esac
@@ -423,7 +424,19 @@ pr_skip() {
   if [ "$(printf '%s' "$1" | jq -r '
         (.head_committed_at // "1970-01-01T00:00:00Z")
         | if (now - fromdateiso8601) < 14400 then "y" else "n" end')" = y ]; then
-    printf 'head is less than 4h old'
+    # A fresh head is usually not a session's. Mergify's update rule merges
+    # main into every labelled PR each time main moves -- five merge commits
+    # in 100 minutes on one PR the night this was written -- so on a busy
+    # evening every PR in the repo is "less than 4h old" and --prs works
+    # nothing. Age the PR by its newest commit that Mergify did not write.
+    # If that cannot be read, keep the skip: wrong in the safe direction.
+    last_human=$(gh pr view "$(printf '%s' "$1" | jq -r '.number')" --repo "$repo" --json commits --jq '
+        [.commits[] | select(all(.authors[]?; (.login // "") != "mergify[bot]")) | .committedDate]
+        | max // "1970-01-01T00:00:00Z"' 2>/dev/null) || last_human=""
+    if [ -z "$last_human" ] || [ "$(printf '%s' "$last_human" | jq -R -r '
+          if (now - fromdateiso8601) < 14400 then "y" else "n" end')" = y ]; then
+      printf 'head is less than 4h old'
+    fi
   fi
 }
 
