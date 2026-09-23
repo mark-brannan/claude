@@ -33,6 +33,7 @@ Procedures only. The hook designs and the scars behind them are in
 - [Audit the `awaiting-human` label](#audit-the-awaiting-human-label)
 - [Find out which session holds a branch](#find-out-which-session-holds-a-branch)
 - [Waive the churn gate on a PR](#waive-the-churn-gate-on-a-pr)
+- [Run the PR fixer on a timer](#run-the-pr-fixer-on-a-timer)
 
 **Troubleshooting**
 - [Session state went to `~/.claude/state/global`](#session-state-went-to-claudestateglobal)
@@ -578,6 +579,67 @@ repo yet — create it once:
 ```bash
 gh label create churn-ok --repo mark-brannan/dotfiles --color FBCA04 --description "Waives the churn-diff gate (human-applied only)"
 ```
+
+## Run the PR fixer on a timer
+
+`grind --prs` every four hours, on one repository checkout. Do this **only on
+the machine that holds the signing key** — elsewhere grind refuses the run and
+the wakeup is wasted.
+
+The unit is templated on the path below `$HOME`, with `/` written as `-`:
+
+```bash
+systemd-escape "src/colregs"          # prints src-colregs; a repo at ~/dotfiles is just `dotfiles`
+```
+
+Enable it, then run it once by hand rather than waiting four hours for the
+first answer:
+
+```bash
+systemctl --user daemon-reload
+```
+
+```bash
+systemctl --user enable --now grind-prs@dotfiles.timer
+```
+
+```bash
+systemctl --user start grind-prs@dotfiles.service
+```
+
+**Verify**, and read the log rather than the timer — three of the four ways
+this fails leave the timer looking perfectly healthy:
+
+```bash
+systemctl --user list-timers grind-prs@dotfiles.timer
+```
+
+```bash
+tail -30 ~/.local/state/grind/timer-dotfiles.log
+```
+
+The log ends in a tally — `done: PR queue exhausted. Running total $N / $5.00. N skipped.`
+— or `grind: no unfinished PRs on <repo>`, with a timestamp inside the window.
+Anything else is one of these, and each says so on its own line:
+
+- `needs a signing key` — the key is not on this machine, or the user manager
+  cannot see the agent that holds it. Wrong machine, or enable lingering.
+- `current directory is not a checkout of` — the instance name does not match
+  a repo under `$HOME`. Re-run `systemd-escape`.
+- every item `FAILED` with no result text — `claude` is not on the unit's
+  PATH. Put the real one in `~/.config/grind-prs.env`:
+
+  ```bash
+  printf 'PATH=%s\n' "$PATH" > ~/.config/grind-prs.env
+  ```
+
+Stop it:
+
+```bash
+systemctl --user disable --now grind-prs@dotfiles.timer
+```
+
+---
 
 ## Session state went to `~/.claude/state/global`
 

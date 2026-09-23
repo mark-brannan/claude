@@ -1,0 +1,40 @@
+# grind --prs on a timer, one instance per repository checkout under $HOME.
+# The instance is the path below $HOME with `/` written as `-`, so
+# `grind-prs@dotfiles` works $HOME/dotfiles and `grind-prs@src-colregs` works
+# $HOME/src/colregs. `systemd-escape` writes the name for you.
+#
+# Why a timer and not the Stop hook: a fixer session ending is itself a Stop,
+# so the hook would re-trigger the thing that just ran, and in any case a
+# session ending is not evidence that any PR needs fixing. Why not a cloud
+# `schedule` routine: it can neither enforce grind's spend caps nor sign a
+# commit, and an unsigned commit fails the gate this is meant to get past.
+#
+# Enable only where the signing key is. Elsewhere grind refuses the run
+# outright and the log says which setting is empty, which is the wanted
+# behaviour but a waste of a wakeup.
+
+[Unit]
+Description=grind --prs on %I -- fix up the pull requests a session left unfinished
+Documentation=https://github.com/mark-brannan/dotfiles/issues/270
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/%I
+StateDirectory=grind
+
+# A user unit does not inherit a login shell's PATH, and grind needs git, gh,
+# jq and claude on it. Override the whole line in ~/.config/grind-prs.env when
+# claude lives somewhere else (a version manager, ~/.claude/local).
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-%h/.config/grind-prs.env
+
+ExecStart=%h/.local/bin/grind --prs
+
+# Both streams to one file, appended: the tally line and the WARN lines that
+# explain it are the same story and belong in the same order.
+StandardOutput=append:%S/grind/timer-%i.log
+StandardError=append:%S/grind/timer-%i.log
+
+# A bound, not a guess at the work: the default caps stop a run at $5, and a
+# run still going after two hours is stuck rather than busy.
+TimeoutStartSec=2h

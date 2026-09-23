@@ -1,0 +1,17 @@
+# Pairs with grind-prs@.service. Enable per repository:
+#   systemctl --user enable --now grind-prs@dotfiles.timer
+
+[Unit]
+Description=Run grind --prs on %I every four hours
+
+[Timer]
+OnCalendar=*-*-* 00/4:00:00
+# Spread the wakeups: several enabled instances would otherwise all start at
+# once and fight over the same rate limit.
+RandomizedDelaySec=15m
+# A laptop that was asleep at 04:00 runs once when it wakes, rather than
+# silently skipping to 08:00.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
