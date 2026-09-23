@@ -65,7 +65,8 @@
 # PR. The prompt is the two briefs (`pr-label-audit --pr` and `branch_brief`)
 # plus the fixup contract read out of the pickup skill: one text, two runners,
 # so a session and a headless worker cannot be working to different rules.
-# And `done` is checked against the label Mergify computes, not a PR existing.
+# `done` is checked against Mergify's label, not a PR existing; a PR whose
+# checks are all `cancelled` gets `gh run rerun --failed` instead of a worker.
 #
 # Output: one INFO line per unit of work started and finished, a heartbeat
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
@@ -379,6 +380,7 @@ if [ "$dry_run" -eq 0 ]; then
   info "state: $state_file"
 fi
 skipped=0
+rerun_used=0
 
 # Every way out of the loop goes through here so a skipped item fails the
 # run whether it ended by pause or by exhausting the queue.
@@ -438,6 +440,23 @@ pr_skip() {
       printf 'head is less than 4h old'
     fi
   fi
+}
+
+# pr_cancelled_rerun <item json> -- nothing failed, so rerun the cancelled
+# run(s) rather than spend a worker on it. Skips a 2nd-attempt run, and
+# reruns at most one PR per pass ($rerun_used, set by the caller).
+pr_cancelled_rerun() {
+  [ "$rerun_used" -eq 0 ] || { printf 'this pass already reran a PR'; return; }
+  run_ids=$(printf '%s' "$1" | jq -r '.failing_checks[]?.url // empty' | sed -n 's#.*/runs/\([0-9]*\)/.*#\1#p' | sort -u)
+  [ -n "$run_ids" ] || { printf 'no run id could be read from the failing checks'; return; }
+  reran=""
+  for rid in $run_ids; do
+    attempt=$(gh api "repos/$repo/actions/runs/$rid" --jq .run_attempt 2>/dev/null) || attempt=1
+    [ "${attempt:-1}" -ge 2 ] && continue
+    gh run rerun "$rid" --repo "$repo" --failed >/dev/null 2>&1 && reran="$reran $rid"
+  done
+  [ -n "$reran" ] && printf 'all checks were cancelled -- reran run(s)%s' "$reran" \
+    || printf 'all checks were cancelled, but nothing was eligible to rerun'
 }
 
 # build_pr_prompt <ref> <branch> <worktree> -- the two briefs, then the one
@@ -629,6 +648,15 @@ while [ "$i" -lt "$count" ]; do
     verdict=$(printf '%s' "$item" | jq -r '.verdict')
     reason=$(pr_skip "$item" "$branch")
     [ -n "$branch" ] || reason="could not read its head branch"
+    if [ -z "$reason" ] && [ "$verdict" = "not-green" ] \
+       && [ "$(printf '%s' "$item" | jq -r '.cancelled_only // false')" = true ]; then
+      if [ "$dry_run" -eq 1 ]; then
+        reason="all checks are cancelled -- would rerun rather than work it"
+      else
+        reason=$(pr_cancelled_rerun "$item")
+        case "$reason" in *"reran run"*) rerun_used=1 ;; esac
+      fi
+    fi
     if [ -n "$reason" ]; then
       if [ "$dry_run" -eq 1 ]; then
         printf '[%d/%d] %s -- SKIP: %s\n' "$i" "$count" "$ref" "$reason"
