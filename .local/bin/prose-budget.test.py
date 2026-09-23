@@ -367,6 +367,31 @@ class LandAloneTest(RepoCase):
         self.stage("scripts/foo.py", "ansible/x.yml")
         self.assertEqual(self.findings("--staged"), [])
 
+    def test_merge_commit_is_not_charged_for_the_other_side(self):
+        # The other parent brings a runbook edit next to a script, 50 net prose
+        # words and a voice phrase: land_alone, delta and voice all fire on a
+        # plain staged diff, so any one still firing here is the regression.
+        self.config({})
+        self.write("RUNBOOK.md", "## A\n\nseed\n")
+        self.commit("RUNBOOK.md", ".prose-budgets.json")
+        self.git("checkout", "-qb", "feature")
+        self.write("scripts/foo.py", "x\n")
+        self.commit("scripts/foo.py")
+        self.git("checkout", "-q", "main")
+        self.write("RUNBOOK.md", "## A\n\nseed\nIt's worth noting that " + "word " * 50 + "\n")
+        self.write("scripts/bar.py", "y\n")
+        self.commit("RUNBOOK.md", "scripts/bar.py")
+        self.git("checkout", "-q", "feature")
+        self.git("merge", "-q", "--no-ff", "--no-commit", "main")
+        self.assertTrue((self.root / ".git" / "MERGE_HEAD").exists())
+        code, out, err = self.cli("--staged")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("mid-merge", err)
+        self.assertIn("0 file(s) checked", out)
+        # Without MERGE_HEAD the same index is charged in full.
+        self.git("merge", "--abort")
+        self.git("checkout", "-q", "main", "--", "RUNBOOK.md", "scripts/bar.py")
+        self.assertEqual(self.rules("--staged"), ["delta", "land_alone", "voice"])
 
 class ConfigRelaxTest(RepoCase):
     """The guard's own config is a file like any other; weakening it lands alone."""

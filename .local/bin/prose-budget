@@ -526,6 +526,19 @@ class Repo:
         r = self.git("diff", "--cached", "--no-renames", "--name-only", "--diff-filter=ACMRD")
         return [p for p in r.stdout.splitlines() if p.strip()]
 
+    def is_merging(self):
+        """True mid-merge (MERGE_HEAD exists).
+
+        `--staged` diffs the index against HEAD, one parent. Mid-merge every
+        file the *other* parent touched reads as newly-staged prose even
+        though it already landed, reviewed, on that branch -- and there is
+        no single-ref diff that reliably separates "the merge resolution
+        added this" from "the other side already had this". `--staged`
+        skips entirely in that case; CI's `--base` gate still runs the real
+        PR diff after push, so real churn is still caught, just not here.
+        """
+        return self.git("rev-parse", "--verify", "-q", "MERGE_HEAD").returncode == 0
+
     def changed_paths(self, a, b):
         r = self.git("diff", "--no-renames", "--name-only", a, b)
         return [p for p in r.stdout.splitlines() if p.strip()]
@@ -558,12 +571,13 @@ class Checker:
         self.info = []
         self._bad_json = set()
         self.full = mode in ("tree", "base") and only is None
+        self.merging = mode == "staged" and only is None and repo.is_merging()
         if only is not None:
             self.files = [f for f in only if os.path.isfile(os.path.join(repo.root, f))]
             self.read = repo.read_disk
         elif mode == "staged":
             deleted = set(repo.git("diff", "--cached", "--name-only", "--diff-filter=D").stdout.split())
-            self.files = [p for p in repo.staged_paths() if p not in deleted]
+            self.files = [] if self.merging else [p for p in repo.staged_paths() if p not in deleted]
             self.read = lambda p: repo.show(":", p)
         else:
             self.files = repo.all_files()
@@ -591,6 +605,10 @@ class Checker:
 
     def run(self):
         r = self.rules
+        if self.merging:
+            self.info.append("staged: mid-merge (MERGE_HEAD present), every check skipped; "
+                             "CI --base gates the real diff after push")
+            return self.findings
         for name in ("lines", "sections", "json_prose", "narration", "voice", "headers", "unique_ids"):
             if r[name]:
                 getattr(self, "check_" + name)(r[name])
