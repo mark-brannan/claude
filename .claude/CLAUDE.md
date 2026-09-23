@@ -121,6 +121,13 @@ I'm fine, drop it.
   before-state somewhere disposable.
 - **Give yourself a way to verify:** tests, diff, browser, second agent,
   formal methods where feasible.
+- **CI runs in minutes per push, never hours.** Before adding a test, a
+  matrix leg or a workflow, state its cost per push and the account-wide
+  concurrent-job cap it draws on. Exhaustive walks, conformance sweeps and
+  proofs run weekly or on dispatch, gated on a small sample per PR. A job
+  over ~5 minutes or a matrix past a handful of legs is a ruling, not a
+  knob; a timeout is set to the measured cost and read as a signal, never
+  padded.
 
 ## Continuity
 
