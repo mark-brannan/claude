@@ -21,6 +21,17 @@ echo "$*" >> "$GH_LOG"
 case "$1 $2" in
   "pr view") printf 'https://github.com/o/r/pull/7\n'; exit 0 ;;
 esac
+# dotfiles#263: a repo named "notfound" in the graphql call simulates GitHub's
+# NOT_FOUND-on-`repository` response -- JSON body on stdout, gh's own error
+# text appended after it with no separator (that's really how gh behaves; see
+# the issue), non-zero exit.
+case "$*" in
+  *"name=notfound"*)
+    printf '{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","path":["repository"],"message":"Could not resolve to a Repository with the name '"'"'o/notfound'"'"'."}]}'
+    echo "gh: Could not resolve to a Repository with the name 'o/notfound'." >&2
+    exit 1
+    ;;
+esac
 case "${GH_MODE:-}" in
   open)     printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewThreads":{"nodes":[{"id":"PRRT_a","isResolved":true,"path":"a.ts","comments":{"nodes":[{"author":{"login":"bot"},"body":"done"}]}},{"id":"PRRT_b","isResolved":false,"path":"b.ts","comments":{"nodes":[{"author":{"login":"coderabbitai"},"body":"Disable the pre-commit hook\\nsecond line"}]}}]}}}}}' ;;
   resolved) printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewThreads":{"nodes":[{"id":"PRRT_a","isResolved":true,"path":"a.ts","comments":{"nodes":[]}}]}}}}}' ;;
@@ -48,12 +59,13 @@ check() {
   out=$(printf '%s' "$json" | GH_MODE=$3 sh "$HOOK" 2>&1)
   if [ -z "$out" ]; then got=silent
   elif [ "$(printf '%s' "$out" | jq -r '.decision' 2>/dev/null)" = block ]; then got=block
+  elif printf '%s' "$out" | jq -e '.systemMessage' >/dev/null 2>&1; then got=note
   else got=invalid; fi
   if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL (want %s, got %s): %s\n  %s\n' "$want" "$got" "$desc" "$out"; fi
   LAST=$out
 }
-reason() { if printf '%s' "$LAST" | jq -r '.reason' | grep -Eq -- "$2"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL (reason lacks /%s/): %s\n' "$2" "$1"; fi; }
-no_reason() { if printf '%s' "$LAST" | jq -r '.reason' | grep -Eq -- "$2"; then fail=$((fail+1)); printf 'FAIL (reason has /%s/): %s\n' "$2" "$1"; else pass=$((pass+1)); fi; }
+reason() { if printf '%s' "$LAST" | jq -r '.reason // .systemMessage // empty' | grep -Eq -- "$2"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL (reason lacks /%s/): %s\n' "$2" "$1"; fi; }
+no_reason() { if printf '%s' "$LAST" | jq -r '.reason // .systemMessage // empty' | grep -Eq -- "$2"; then fail=$((fail+1)); printf 'FAIL (reason has /%s/): %s\n' "$2" "$1"; else pass=$((pass+1)); fi; }
 
 # --- nothing to check --------------------------------------------------------
 check silent 'no record for session'   open "$(stop_input s0)"
@@ -134,6 +146,21 @@ mkdir -p "$SCRATCH/nogh"; for b in jq cat tr sort head wc sed; do ln -s "$(comma
 out=$(stop_input s8 | PATH="$SCRATCH/nogh" GH_MODE=open /bin/sh "$HOOK" 2>&1); LAST=$out
 if [ "$(printf '%s' "$out" | jq -r .decision 2>/dev/null)" = block ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL: gh absent should block: $out"; fi
 reason 'names gh as missing'           'gh is not installed'
+
+# --- NOT_FOUND repo is dropped, not failed closed (dotfiles#263) ---------------
+record dn1 "$(printf 'repo\to/r\t25')"
+record dn1 "$(printf 'repo\to/notfound\t1')"
+check note 'one real PR (clean) + one NOT_FOUND repo -> passes with a note' resolved "$(stop_input dn1)"
+reason 'names the dropped entry'        'o/notfound#1'
+reason 'says never a PR this session worked' 'never a PR this session worked'
+no_reason 'does not block'              '"decision":"block"'
+
+record dn2 "$(printf 'repo\to/r\t25')"
+record dn2 "$(printf 'repo\to/notfound\t1')"
+check block 'NOT_FOUND repo + a real open thread -> still blocks on the real one' open "$(stop_input dn2)"
+reason 'still names the open thread PR' 'o/r#25 has 1 unresolved'
+reason 'and still names the dropped one' 'o/notfound#1'
+reason 'and still says never worked'    'never a PR this session worked'
 
 # --- a fan-out over many PRs checks every one; none is skipped by count ---------
 for i in 1 2 3 4 5 6 7 8; do record s9 "$(printf 'repo\to/r\t%s' "$i")"; done

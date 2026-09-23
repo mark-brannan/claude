@@ -25,6 +25,13 @@
 # GATE: no jq, no gh, gh failing, PR not found -> block once, saying the
 # state could not be verified. A gate that goes quiet when it can't look is
 # indistinguishable from one that looked and found nothing.
+#
+# EXCEPTION, dotfiles#263: a GraphQL error of type NOT_FOUND on the
+# `repository` field is a fact about the record, not the network -- the repo
+# named in that record does not exist (a typo'd --repo, most often), so the
+# entry was never a PR this session worked. That one entry is dropped and
+# named in a non-blocking note instead of joining the block; timeouts, auth
+# failures and every other fetch failure still fail closed as before.
 set -u
 
 json_str() { printf '%s' "$1" | jq -Rs .; }
@@ -85,6 +92,7 @@ wait
 open=""
 stale=""
 failed=""
+dropped=""
 i=0
 while [ "$i" -lt "$n" ]; do
   i=$((i + 1))
@@ -93,6 +101,20 @@ while [ "$i" -lt "$n" ]; do
   rc=$(cat "$WORK/$i.rc" 2>/dev/null)
   if [ "$rc" = 124 ]; then failed="$failed
 - $repo#$num: fetch timed out"; continue; fi
+  # `gh api graphql` exits non-zero whenever the response carries an `errors`
+  # array, even though the body is still valid JSON up to that array -- jq
+  # parses the leading value fine and only complains (to its own stderr,
+  # never $out) about the trailing text gh appends. NOT_FOUND on `repository`
+  # specifically means the repo doesn't exist; any other error (auth, rate
+  # limit, a real outage) falls through to the generic failed-closed case
+  # right below.
+  nf=$(printf '%s' "$out" | jq -r '[.errors[]? | select(.type=="NOT_FOUND" and ((.path // [])[0]=="repository"))] | length' 2>/dev/null)
+  nf=${nf:-0}
+  if [ "$nf" -gt 0 ] 2>/dev/null; then
+    dropped="$dropped
+- $repo#$num: repository not found over GraphQL (NOT_FOUND) -- dropped; this record was never a PR this session worked"
+    continue
+  fi
   [ "$rc" = 0 ] || { failed="$failed
 - $repo#$num: $(printf '%s' "$out" | head -3 | tr '\n' ' ')"; continue; }
   state=$(printf '%s' "$out" | jq -r '.data.repository.pullRequest.state // empty')
@@ -140,7 +162,12 @@ while [ "$i" -lt "$n" ]; do
 $threads"
 done
 
-[ -z "$open" ] && [ -z "$stale" ] && [ -z "$failed" ] && exit 0
+if [ -z "$open" ] && [ -z "$stale" ] && [ -z "$failed" ]; then
+  if [ -n "$dropped" ]; then
+    printf '{"systemMessage":%s}\n' "$(json_str "pr-threads-gate: dropped from this session's PR record (repository not found over GraphQL; never a PR this session worked):$dropped")"
+  fi
+  exit 0
+fi
 
 msg="pr-threads-gate: this turn cannot end yet. Live GraphQL re-check of the PR(s) this session worked:"
 [ -n "$open" ] && msg="$msg
@@ -150,6 +177,9 @@ $stale"
 [ -n "$failed" ] && msg="$msg
 
 Could not verify:$failed"
+[ -n "$dropped" ] && msg="$msg
+
+Dropped (repository not found over GraphQL; never a PR this session worked):$dropped"
 msg="$msg
 
 For each open thread, in this order: read it (gh api graphql on the thread id, or the PR's review comments), fix or answer it, reply on the thread with the evidence, then resolve it by id --
