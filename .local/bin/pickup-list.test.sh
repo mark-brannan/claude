@@ -221,6 +221,12 @@ run --brief
 has 'so the next brief shows it' 'o/colregs#193 \[hard\]'
 eq 'without a call of its own' 0 "$(grep -c . "$S/gh-api.log")"
 
+# The detached run is --_refresh: the search and the cache, nothing else.
+somehard
+run --_refresh
+eq '--_refresh prints nothing' 0 "$(grep -c . <<<"$OUT")"
+assert 'and fills the cache' test -s "$hard_cache"
+
 nohard
 : > "$S/gh-api.log"
 run --files

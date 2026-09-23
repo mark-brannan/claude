@@ -29,11 +29,12 @@ set -u
 
 usage() { printf 'usage: pickup-list [--brief] [--files]\n'; }
 
-brief=0; files=0
+brief=0; files=0; refresh=0
 while [ $# -gt 0 ]; do
   case $1 in
     --brief) brief=1 ;;
     --files) files=1 ;;
+    --_refresh) refresh=1 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'pickup-list: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -64,24 +65,23 @@ fi
 # shape and under its owner setting so the two cannot drift; review bots post
 # after the fixer's handover comment, so the last human comment is shown.
 # Cached an hour. --brief is the SessionStart path and its five seconds are
-# already spent: it renders the cache and a detached full run refills it for
-# the next brief. Printing nothing is always allowed -- the listing is the job.
+# already spent: it renders the cache and a detached --_refresh, which does
+# only the search, refills it for the next brief. Printing nothing is always
+# allowed -- the listing is the job.
 if [ "$files" = 0 ]; then
   run_t() { if command -v timeout >/dev/null 2>&1; then timeout 5 "$@"; else "$@"; fi; }
   hard_cache=${XDG_CACHE_HOME:-$HOME/.cache}/pickup-list/fixup-hard; mkdir -p "${hard_cache%/*}" 2>/dev/null
+  fetch_hard() { run_t gh api graphql \
+      -f q="is:pr is:open archived:false user:${PR_LABEL_AUDIT_OWNER:-mark-brannan} label:fixup-hard" \
+      -f query='query($q:String!){search(query:$q,type:ISSUE,first:20){nodes{... on PullRequest{
+        number url title repository{nameWithOwner} comments(last:10){nodes{author{__typename} body}}}}}}' \
+      --jq '.data.search.nodes[] | "  - \(.repository.nameWithOwner)#\(.number) [hard] \(.title)\n    \(.url)\n    \(([.comments.nodes[] | select(.author.__typename != "Bot")] | last | .body // "no comment from the fixer") | split("\n")[0])"' \
+      > "$hard_cache.tmp.$$" 2>/dev/null && mv -f "$hard_cache.tmp.$$" "$hard_cache" || rm -f "$hard_cache.tmp.$$"; }
+  [ "$refresh" = 1 ] && { fetch_hard; exit 0; }
   if [ -z "$(find "$hard_cache" -mmin -60 2>/dev/null)" ] && command -v gh >/dev/null 2>&1; then
-    if [ "$brief" = 1 ]; then
-      if command -v setsid >/dev/null 2>&1; then setsid nohup sh "$self" >/dev/null 2>&1 </dev/null &
-      else nohup sh "$self" >/dev/null 2>&1 </dev/null & fi
-    else
-      run_t gh api graphql \
-        -f q="is:pr is:open archived:false user:${PR_LABEL_AUDIT_OWNER:-mark-brannan} label:fixup-hard" \
-        -f query='query($q:String!){search(query:$q,type:ISSUE,first:20){nodes{... on PullRequest{
-          number url title repository{nameWithOwner} comments(last:10){nodes{author{__typename} body}}}}}}' \
-        --jq '.data.search.nodes[] | "  - \(.repository.nameWithOwner)#\(.number) [hard] \(.title)\n    \(.url)\n    \(([.comments.nodes[] | select(.author.__typename != "Bot")] | last | .body // "no comment from the fixer") | split("\n")[0])"' \
-        > "$hard_cache.tmp.$$" 2>/dev/null \
-        && mv -f "$hard_cache.tmp.$$" "$hard_cache" || rm -f "$hard_cache.tmp.$$"
-    fi
+    if [ "$brief" = 0 ]; then fetch_hard
+    elif command -v setsid >/dev/null 2>&1; then setsid nohup sh "$self" --_refresh >/dev/null 2>&1 </dev/null &
+    else nohup sh "$self" --_refresh >/dev/null 2>&1 </dev/null & fi
   fi
   hard=$(cat "$hard_cache" 2>/dev/null) || hard=""
   [ -n "$hard" ] && printf 'Hard -- a fixer gave up on these; take one before any block\n\n%s\n\n' "$hard"
