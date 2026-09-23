@@ -57,11 +57,11 @@ check() {
 }
 # context <description> <grep -E pattern that must match the injected text>
 context() {
-  if printf '%s' "$LAST" | jq -r '.hookSpecificOutput.additionalContext' | grep -Eq -- "$2"; then pass=$((pass + 1))
+  if grep -Eq -- "$2" <<<"$(jq -r '.hookSpecificOutput.additionalContext' <<<"$LAST")"; then pass=$((pass + 1))
   else fail=$((fail + 1)); printf 'FAIL (context lacks /%s/): %s\n' "$2" "$1"; fi
 }
 no_context() {
-  if printf '%s' "$LAST" | jq -r '.hookSpecificOutput.additionalContext' | grep -Eq -- "$2"; then
+  if grep -Eq -- "$2" <<<"$(jq -r '.hookSpecificOutput.additionalContext' <<<"$LAST")"; then
     fail=$((fail + 1)); printf 'FAIL (context contains /%s/): %s\n' "$2" "$1"
   else pass=$((pass + 1)); fi
 }

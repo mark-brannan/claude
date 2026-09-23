@@ -13,7 +13,7 @@ HOOKS="$(cd "$(dirname "$0")" && pwd)"
 pass=0; fail=0
 
 want_line() {  # <brief> <expected line> <desc>
-  if printf '%s\n' "$1" | grep -qxF -- "$2"; then
+  if grep -qxF -- "$2" <<<"$1"; then
     pass=$((pass + 1))
   else
     fail=$((fail + 1))
@@ -21,7 +21,7 @@ want_line() {  # <brief> <expected line> <desc>
   fi
 }
 want_grep() {  # <brief> <pattern> <desc>
-  if printf '%s\n' "$1" | grep -qE -- "$2"; then
+  if grep -qE -- "$2" <<<"$1"; then
     pass=$((pass + 1))
   else
     fail=$((fail + 1))

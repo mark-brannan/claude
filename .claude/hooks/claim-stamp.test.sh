@@ -106,8 +106,8 @@ ncalls() { grep -c . "$STORE/calls" 2>/dev/null || true; }   # grep prints 0 its
 
 ok()   { if "${@:2}"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n' "$1"; fi; }
 eq()   { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s (want %s, got %s)\n' "$1" "$3" "$2"; fi; }
-has()  { if printf '%s' "$2" | grep -Eq -- "$3"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s (no /%s/ in): %s\n' "$1" "$3" "$2"; fi; }
-hasnt(){ if printf '%s' "$2" | grep -Eq -- "$3"; then fail=$((fail+1)); printf 'FAIL: %s (unwanted /%s/ in): %s\n' "$1" "$3" "$2"; else pass=$((pass+1)); fi; }
+has()  { if grep -Eq -- "$3" <<<"$2"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s (no /%s/ in): %s\n' "$1" "$3" "$2"; fi; }
+hasnt(){ if grep -Eq -- "$3" <<<"$2"; then fail=$((fail+1)); printf 'FAIL: %s (unwanted /%s/ in): %s\n' "$1" "$3" "$2"; else pass=$((pass+1)); fi; }
 
 export GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]'
 

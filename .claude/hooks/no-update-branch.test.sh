@@ -15,7 +15,7 @@ fail=0
 check() {
   local want=$1 desc=$2 json=$3 out got
   out=$(printf '%s' "$json" | bash "$HOOK" 2>&1)
-  if printf '%s' "$out" | grep -q '"permissionDecision": *"deny"'; then
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then
     got=deny
   else
     got=allow

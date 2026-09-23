@@ -11,7 +11,7 @@ pass=0; fail=0
 check() {
   local want=$1 desc=$2 file=$3 out got
   out=$(jq -n --arg f "$file" '{tool_name:"Edit",tool_input:{file_path:$f}}' | timeout 20 bash "$HOOK" 2>&1)
-  if printf '%s' "$out" | grep -q '"additionalContext"'; then got=context; else got=silent; fi
+  if grep -q '"additionalContext"' <<<"$out"; then got=context; else got=silent; fi
   if [ "$got" = "$want" ]; then pass=$((pass + 1)); else
     fail=$((fail + 1)); printf 'FAIL (want %s, got %s): %s\n' "$want" "$got" "$desc"
     [ -n "$out" ] && printf '  hook output: %s\n' "$out"
@@ -30,7 +30,7 @@ NOCONF=$(mktemp -d); printf 'a robust line\n' > "$NOCONF/README.md"
 trap 'rm -rf "$REPO" "$NOCONF"' EXIT
 
 check context 'file over its line budget'         "$REPO/README.md"
-printf '%s' "$LAST" | grep -q 'README.md:3: lines' || { fail=$((fail + 1)); echo 'FAIL: context lacks the finding'; }
+grep -q 'README.md:3: lines' <<<"$LAST" || { fail=$((fail + 1)); echo 'FAIL: context lacks the finding'; }
 check context 'voice word in a docs file'         "$REPO/docs/x.md"
 check silent  'clean file'                        "$REPO/CLAUDE.md"
 check silent  'json outside any json_prose target' "$REPO/data.json"

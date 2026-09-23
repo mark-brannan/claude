@@ -94,7 +94,7 @@ check() {
   else got=invalid; fi
   if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL (want %s, got %s): %s\n  %s\n' "$want" "$got" "$desc" "$LAST"; fi
 }
-reason() { if printf '%s' "$LAST" | jq -r '.reason // .systemMessage // empty' | grep -Eq -- "$2"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL (message lacks /%s/): %s\n  %s\n' "$2" "$1" "$LAST"; fi; }
+reason() { if grep -Eq -- "$2" <<<"$(jq -r '.reason // .systemMessage // empty' <<<"$LAST")"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL (message lacks /%s/): %s\n  %s\n' "$2" "$1" "$LAST"; fi; }
 ok()     { if "${@:2}"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n' "$1"; fi; }
 rec_for() { printf '%s/claude-branch-home.%s' "$TMPDIR" "$1"; }
 

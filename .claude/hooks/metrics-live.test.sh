@@ -40,11 +40,11 @@ t() {  # t <desc> <want> <got>
   else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi
 }
 has() {  # has <desc> <pattern> <text>
-  if printf '%s' "$3" | grep -Eq -- "$2"; then pass=$((pass+1))
+  if grep -Eq -- "$2" <<<"$3"; then pass=$((pass+1))
   else fail=$((fail+1)); printf 'FAIL (no /%s/): %s\n  in [%s]\n' "$2" "$1" "$3"; fi
 }
 hasnt() {
-  if printf '%s' "$3" | grep -Eq -- "$2"; then
+  if grep -Eq -- "$2" <<<"$3"; then
     fail=$((fail+1)); printf 'FAIL (has /%s/): %s\n  in [%s]\n' "$2" "$1" "$3"
   else pass=$((pass+1)); fi
 }

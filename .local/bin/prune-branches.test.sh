@@ -19,8 +19,8 @@ commit_new() { GIT_COMMITTER_DATE="$NEW" GIT_AUTHOR_DATE="$NEW" gitq "$1" commit
 
 ok()   { pass=$((pass+1)); }
 bad()  { fail=$((fail+1)); echo "FAIL: $1"; [ -n "${2:-}" ] && printf '%s\n' "$2" | sed 's/^/    /'; }
-has()  { printf '%s' "$2" | grep -q -- "$1" && ok || bad "expected /$1/ in: $3" "$2"; }
-hasnt(){ printf '%s' "$2" | grep -q -- "$1" && bad "did not expect /$1/ in: $3" "$2" || ok; }
+has()  { grep -q -- "$1" <<<"$2" && ok || bad "expected /$1/ in: $3" "$2"; }
+hasnt(){ grep -q -- "$1" <<<"$2" && bad "did not expect /$1/ in: $3" "$2" || ok; }
 
 # --- a remote and a clone with one branch per rule ---------------------------
 REMOTE="$S/remote.git"; git init -q --bare "$REMOTE"

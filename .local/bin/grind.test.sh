@@ -107,8 +107,8 @@ reply() {
 
 ok()   { pass=$((pass + 1)); }
 bad()  { fail=$((fail + 1)); printf 'FAIL: %s\n' "$1"; [ -n "${2:-}" ] && printf '%s\n' "$2" | sed 's/^/    /'; }
-has()  { if printf '%s\n' "$OUT" | grep -Eq -- "$2"; then ok; else bad "$1 (missing /$2/)" "$OUT"; fi; }
-lacks(){ if printf '%s\n' "$OUT" | grep -Eq -- "$2"; then bad "$1 (has /$2/)" "$OUT"; else ok; fi; }
+has()  { if grep -Eq -- "$2" <<<"$OUT"; then ok; else bad "$1 (missing /$2/)" "$OUT"; fi; }
+lacks(){ if grep -Eq -- "$2" <<<"$OUT"; then bad "$1 (has /$2/)" "$OUT"; else ok; fi; }
 eq()   { if [ "$2" = "$3" ]; then ok; else bad "$1: want [$2] got [$3]"; fi; }
 assert() { local d=$1; shift; if "$@"; then ok; else bad "$d"; fi; }
 run() { rm -f "$S/claude-next"; OUT=$(sh "$GRIND" "$@" 2>&1); RC=$?; }
@@ -164,7 +164,7 @@ assert '--permission-mode still overrides the default' \
 
 # --- the prompt contract names the branch and all three statuses -----------------
 PROMPT=$(cat "$S/prompt.txt")
-prompt_has() { if printf '%s\n' "$PROMPT" | grep -Fq -- "$2"; then ok; else bad "$1 (missing [$2])"; fi; }
+prompt_has() { if grep -Fq -- "$2" <<<"$PROMPT"; then ok; else bad "$1 (missing [$2])"; fi; }
 prompt_has 'the issue body is the prompt' 'do the first thing'
 prompt_has 'the contract names the item' 'Grind orchestration contract for o/alpha#5'
 prompt_has 'it names the branch the worker is on' 'branch grind-5'

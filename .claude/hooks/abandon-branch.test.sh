@@ -32,7 +32,7 @@ setup_repo() {  # setup_repo <branch> [pushed=1]
 
 ok() { if "${@:2}"; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n' "$1"; fi; }
 no() { if "${@:2}"; then fail=$((fail+1)); printf 'FAIL: %s\n' "$1"; else pass=$((pass+1)); fi; }
-says() { printf '%s' "$1" | grep -qF -- "$2"; }  # says <text> <substring>, use via ok/no
+says() { grep -qF -- "$2" <<<"$1"; }  # says <text> <substring>, use via ok/no
 
 # --- deletes both sides when the remote is reachable --------------------------
 setup_repo claude/gone

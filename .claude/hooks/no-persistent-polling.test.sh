@@ -68,7 +68,7 @@ done
 no_jq_out=$(printf '%s' '{"tool_name":"mcp__symphony__send_later","tool_input":{}}' \
   | env -i PATH="$no_jq_dir" HOME="$HOME" "$BASH_BIN" "$HOOK" 2>&1)
 rm -rf "$no_jq_dir"
-if printf '%s' "$no_jq_out" | grep -q '"permissionDecision":"deny"'; then
+if grep -q '"permissionDecision":"deny"' <<<"$no_jq_out"; then
   pass=$((pass + 1))
 else
   fail=$((fail + 1))
