@@ -52,9 +52,20 @@
 # any exit. A second invocation fails fast rather than fighting the first
 # over shared worktree paths and branch names.
 #
-#   grind [--dry-run] [--repo owner/name] [--model <m>] [--effort <e>]
+#   grind [--dry-run] [--prs] [--repo owner/name] [--model <m>] [--effort <e>]
 #         [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]
 #         [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]
+#
+# --prs works open pull requests instead of the Ready queue: the ones
+# pr-label-audit puts in "Gated, unlabelled" or "Labelled but no longer green",
+# which is to say the ones a session left unfinished. Everything below still
+# holds -- the caps, the lock, the claim-checking -- with three differences.
+# The orchestrator does the checkout, onto the PR's own head branch rather
+# than a fresh one, because a fixup that makes a new branch has not fixed the
+# PR. The prompt is the two briefs (`pr-label-audit --pr` and `branch_brief`)
+# plus the fixup contract read out of the pickup skill: one text, two runners,
+# so a session and a headless worker cannot be working to different rules.
+# And `done` is checked against the label Mergify computes, not a PR existing.
 #
 # Output: one INFO line per unit of work started and finished, a heartbeat
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
@@ -75,7 +86,7 @@
 set -eu
 
 usage() {
-  printf 'usage: grind [--dry-run] [--repo owner/name] [--model <m>] [--effort <e>]\n'
+  printf 'usage: grind [--dry-run] [--prs] [--repo owner/name] [--model <m>] [--effort <e>]\n'
   printf '             [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]\n'
   printf '             [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]\n'
 }
@@ -97,6 +108,9 @@ item_budget=5
 session_budget=20
 pause_every=3
 dry_run=0
+prs=0
+item_budget_set=0
+session_budget_set=0
 repo=""
 resume_id=""
 heartbeat=60
@@ -108,11 +122,12 @@ board_file=${GRIND_BOARD:-$HOME/claude_prompts_scratch/state/global/kanban.md}
 while [ $# -gt 0 ]; do
   case $1 in
     --dry-run) dry_run=1 ;;
+    --prs) prs=1 ;;
     --repo) shift; repo=${1:-} ;;
     --model) shift; model=${1:-} ;;
     --effort) shift; effort=${1:-} ;;
-    --item-budget) shift; item_budget=${1:-} ;;
-    --session-budget) shift; session_budget=${1:-} ;;
+    --item-budget) shift; item_budget=${1:-}; item_budget_set=1 ;;
+    --session-budget) shift; session_budget=${1:-}; session_budget_set=1 ;;
     --pause-every) shift; pause_every=${1:-} ;;
     --resume) shift; resume_id=${1:-} ;;
     --heartbeat) shift; heartbeat=${1:-} ;;
@@ -126,6 +141,38 @@ done
 
 command -v jq >/dev/null 2>&1 || { echo "grind: needs jq" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }
+
+# --- --prs: budgets, the signing key, and the one contract text ---------------
+# The audit, the brief and the contract all live at fixed paths in the dotfiles
+# tree, which is $HOME on a real machine and two levels up from this script in
+# a worktree. GRIND_ROOT overrides both, for tests and for a machine that keeps
+# the tree elsewhere.
+self_dir=$(cd "$(dirname "$0")" 2>/dev/null && pwd || printf '.')
+find_beside() {  # find_beside <path relative to the dotfiles tree>
+  for c in "${GRIND_ROOT:-$self_dir/../..}/$1" "$HOME/$1"; do
+    [ -f "$c" ] && { printf '%s' "$c"; return 0; }
+  done
+  return 1
+}
+audit_bin=$(find_beside .local/bin/pr-label-audit) || audit_bin=""
+lib_state=$(find_beside .claude/hooks/lib-state.sh) || lib_state=""
+contract_file=$(find_beside .claude/skills/pickup/SKILL.md) || contract_file=""
+
+# The contract is the pickup skill's section 6, read rather than copied
+# (dotfiles#267). Extracting it is what keeps the two runners on one text; a
+# copy in this file would drift the first time either side is edited.
+fixup_contract() {
+  [ -n "$contract_file" ] || return 1
+  awk '/^## 6\. The fixup contract/ { f = 1 } f && /^## Writing a block/ { exit } f' "$contract_file"
+}
+
+if [ "$prs" -eq 1 ]; then
+  # Proposed, not ruled (dotfiles#269): a fixup is meant to be cheap and to
+  # give up loudly, so the per-item cap is the ~$1 the contract's own stop
+  # rule names, and five of those is a session.
+  [ "$item_budget_set" -eq 0 ] && item_budget=1
+  [ "$session_budget_set" -eq 0 ] && session_budget=5
+fi
 
 # A logged-out claude fails every item the same way -- a $0, 0-token result
 # whose only content is "OAuth session expired" -- and until 2026-09-16 that
@@ -170,19 +217,46 @@ if [ -n "$resume_id" ]; then
   item_budget=$(jq -r '.item_budget' "$state_file")
   session_budget=$(jq -r '.session_budget' "$state_file")
   pause_every=$(jq -r '.pause_every' "$state_file")
+  # The mode is the session's, not the flag's: a --prs session's UNVERIFIED
+  # line promises a retry on --resume, and that retry has to read the same
+  # queue. A missing field is an older session file, which was always issues.
+  state_prs=$(jq -r '.prs // 0' "$state_file")
+  if [ "$prs" -eq 1 ] && [ "$state_prs" -ne 1 ]; then
+    printf 'grind: session %s worked the Ready queue, not PRs; drop --prs to resume it\n' "$resume_id" >&2; exit 1
+  fi
+  prs=$state_prs
 else
   session_id=grind-$(new_session_id)
   state_file="$state_root/$session_id.json"
   [ -n "$repo" ] || repo=$(cwd_repo) || { printf 'grind: not in a GitHub repo; pass --repo owner/name\n' >&2; exit 1; }
   if [ "$dry_run" -eq 0 ]; then
     jq -n --arg repo "$repo" --arg model "$model" --arg effort "$effort" \
-          --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson pe "$pause_every" \
-      '{repo:$repo, model:$model, effort:$effort, item_budget:$ib, session_budget:$sb, pause_every:$pe, items:[]}' \
+          --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson pe "$pause_every" --argjson prs "$prs" \
+      '{repo:$repo, model:$model, effort:$effort, item_budget:$ib, session_budget:$sb, pause_every:$pe, prs:$prs, items:[]}' \
       > "$state_file"
   fi
 fi
 
 resume_cmd="grind --resume $session_id"
+
+# --prs preconditions, checked once the mode is settled -- a --resume takes it
+# from the session file, so this cannot run before that is read.
+if [ "$prs" -eq 1 ]; then
+  # Every commit a fixup makes has to sign, and the contract forbids the
+  # worker from working around that. A machine without a key cannot finish a
+  # single item, so refuse the run rather than spend the budget rediscovering
+  # it once per PR.
+  if [ -z "$(git config --get user.signingkey 2>/dev/null)" ]; then
+    echo "grind: --prs needs a signing key on this machine (git config user.signingkey is empty)" >&2
+    exit 1
+  fi
+  [ -n "$audit_bin" ] || { echo "grind: --prs needs pr-label-audit; not found beside grind or under \$HOME" >&2; exit 1; }
+  [ -n "$lib_state" ] || { echo "grind: --prs needs .claude/hooks/lib-state.sh for branch_brief" >&2; exit 1; }
+  # No contract means the worker would be handed a PR and no rules at all.
+  if [ -z "$(fixup_contract || true)" ]; then
+    echo "grind: --prs needs the fixup contract in .claude/skills/pickup/SKILL.md" >&2; exit 1
+  fi
+fi
 
 # Worktrees are cut from the current directory's repository, so it must be
 # a checkout of $repo -- otherwise the worker is handed the wrong codebase.
@@ -271,23 +345,37 @@ is_done_ref() {
   return 1
 }
 
-# --- fetch the Ready queue, top (lowest number) first -------------------------
-ready_json=$(gh issue list --repo "$repo" --label ready --state open --limit 100 \
-  --json number,title,body,url,labels 2>&1) \
-  || { printf 'grind: could not list issues on %s: %s\n' "$repo" "$ready_json" >&2; exit 1; }
+# --- the queue, top (lowest number) first -------------------------------------
+if [ "$prs" -eq 1 ]; then
+  # pr-label-audit audits the whole account; grind is repo-scoped by its lock,
+  # its worktree source and its --repo check, so the audit is filtered to this
+  # repo rather than grind being widened to the fleet. The trailing
+  # repos_missing_fixup_hard object carries no .repo and drops out here.
+  audit_json=$("$audit_bin" --json 2>&1) \
+    || { printf 'grind: pr-label-audit failed: %s\n' "$audit_json" >&2; exit 1; }
+  items=$(printf '%s' "$audit_json" | jq -s -c --arg name "${repo##*/}" '
+    [ .[] | select(.repo? == $name)
+          | select(.section == "unfinished" or .section == "stale-label") ]
+    | sort_by(.number)') \
+    || { echo "grind: could not read pr-label-audit --json" >&2; exit 1; }
+else
+  ready_json=$(gh issue list --repo "$repo" --label ready --state open --limit 100 \
+    --json number,title,body,url,labels 2>&1) \
+    || { printf 'grind: could not list issues on %s: %s\n' "$repo" "$ready_json" >&2; exit 1; }
 
-items=$(printf '%s' "$ready_json" | jq -c '
-  map(select((.labels | map(.name) | index("blocked")) == null))
-  | sort_by(.number)')
+  items=$(printf '%s' "$ready_json" | jq -c '
+    map(select((.labels | map(.name) | index("blocked")) == null))
+    | sort_by(.number)')
+fi
 
 count=$(printf '%s' "$items" | jq 'length')
 if [ "$count" -eq 0 ]; then
-  echo "grind: no Ready items on $repo"
+  if [ "$prs" -eq 1 ]; then echo "grind: no unfinished PRs on $repo"; else echo "grind: no Ready items on $repo"; fi
   exit 0
 fi
 
 if [ "$dry_run" -eq 0 ]; then
-  info "session $session_id on $repo: $count Ready item(s), $model/$effort, cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
+  info "session $session_id on $repo: $count $( [ "$prs" -eq 1 ] && printf 'unfinished PR' || printf 'Ready item')(s), $model/$effort, cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
   info "state: $state_file"
 fi
 skipped=0
@@ -304,6 +392,68 @@ finish() {
 
 # --- one worktree per item -----------------------------------------------------
 worktree_root=${TMPDIR:-/tmp}/grind-worktrees
+
+# pr_skip <item json> <head branch> -- the reason this PR is not workable, or
+# empty. Each is a skip rather than an attempt because attempting it spends
+# the budget and changes nothing: a `fixup-hard` PR already had its cheap
+# pass, `blocked` is not a session's to reopen, a bot regenerates its own
+# branch wholesale so any fix is thrown away, a branch a local worktree holds
+# belongs to a live session, and a head this new is probably still being
+# pushed to. `head_committed_at` is a commit date, not a push time -- the
+# closest thing the audit carries, and wrong only in the safe direction.
+pr_skip() {
+  for l in $(printf '%s' "$1" | jq -r '.labels[]?'); do
+    case $l in fixup-hard|blocked) printf 'labelled %s' "$l"; return ;; esac
+  done
+  case "$(printf '%s' "$1" | jq -r '.author // ""')" in
+    dependabot*|*release-please*) printf 'opened by a bot that regenerates its own branch'; return ;;
+  esac
+  # grind's own leftovers under $worktree_root are not a live claim -- an
+  # unverified item deliberately keeps its worktree for inspection, and
+  # counting that as someone else's claim would lock the PR out of the
+  # --resume retry the UNVERIFIED line promises. The loop clears its own
+  # path before every attempt anyway.
+  if [ -n "$2" ] && git worktree list --porcelain 2>/dev/null | awk -v root="$worktree_root/" \
+       -v b="branch refs/heads/$2" '
+         /^worktree / { p = substr($0, 10) }
+         $0 == b && index(p, root) != 1 { found = 1 }
+         END { exit !found }'; then
+    printf 'a local worktree holds %s' "$2"; return
+  fi
+  if [ "$(printf '%s' "$1" | jq -r '
+        (.head_committed_at // "1970-01-01T00:00:00Z")
+        | if (now - fromdateiso8601) < 14400 then "y" else "n" end')" = y ]; then
+    printf 'head is less than 4h old'
+  fi
+}
+
+# build_pr_prompt <ref> <branch> <worktree> -- the two briefs, then the one
+# contract. The briefs are run here rather than described, so the worker reads
+# the same base recommendation a session would and makes no branch decision of
+# its own.
+build_pr_prompt() {
+  printf 'Fix up pull request %s.\n\nTwo briefs. Read both before you touch anything.\n\n' "$1"
+  printf -- '=== pr-label-audit --pr %s ===\n' "$1"
+  "$audit_bin" --pr "$1" 2>&1 || printf '(the audit failed -- read the PR with gh before deciding anything)\n'
+  printf -- '\n=== branch_brief %s %s ===\n' "$3" "$2"
+  # shellcheck disable=SC1090
+  ( . "$lib_state" && branch_brief "$3" "$2" ) 2>&1 \
+    || printf '(the brief failed -- do not guess the base; stop and say so)\n'
+  printf -- '\n---\n\n'
+  fixup_contract
+  printf '\nYou are alone in a fresh worktree at %s, on %s -- the PR\047s own head\n' "$3" "$2"
+  printf 'branch. Make no other branch. The worktree is deleted when you exit, so\n'
+  printf 'anything not committed and pushed is lost.\n\n'
+  printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
+  printf '  GRIND_STATUS: done     you finished. grind checks the PR for the\n'
+  printf '                         awaiting-human label Mergify computes, or for a\n'
+  printf '                         head that moved with every commit signed, and\n'
+  printf '                         records the item unverified if it finds neither.\n'
+  printf '  GRIND_STATUS: blocked  you hit the contract\047s stop rule. Its terms are\n'
+  printf '                         not optional: the fixup-hard label and one\n'
+  printf '                         comment saying what was tried, why it is hard and\n'
+  printf '                         what it cost. grind checks the label is there.\n'
+}
 
 # build_prompt <issue body> <ref> <branch>
 build_prompt() {
@@ -344,6 +494,33 @@ verify_pr() {
         --jq "[.[] | select(.createdAt >= \"$2\" or (.state == \"OPEN\" and .updatedAt >= \"$2\"))] | length" 2>/dev/null) || return 1
   case "$n" in ''|*[!0-9]*) return 1 ;; esac
   [ "$n" -gt 0 ]
+}
+
+# pr_labels <pr number> -- one label per line; fails closed on a gh error, so
+# a lookup that did not complete never reads as "the label is absent".
+pr_labels() { gh pr view "$1" --repo "$repo" --json labels --jq '.labels[].name' 2>/dev/null; }
+
+# verify_pr_fixup <pr number> <branch> <worktree> <worker start, ISO 8601>
+# Two ways to be finished, and neither is the worker's word for it: Mergify
+# put `awaiting-human` on the PR, or the head moved while the worker ran and
+# every commit between the base and the head verifies. A signature grind
+# cannot read is not a signature -- %G? is checked against G and U only, so an
+# unsigned commit (N) or a bad one (B/E) fails this, which is the whole
+# reason the contract forbids working around the signing hook.
+verify_pr_fixup() {
+  pr_labels "$1" | grep -qx awaiting-human && return 0
+  base=$(gh pr view "$1" --repo "$repo" --json baseRefName --jq .baseRefName 2>/dev/null) || return 1
+  [ -n "$base" ] || return 1
+  moved=$(gh pr view "$1" --repo "$repo" --json commits \
+            --jq "[.commits[] | select(.committedDate >= \"$4\")] | length" 2>/dev/null) || return 1
+  case "$moved" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$moved" -gt 0 ] || return 1
+  git -C "$3" fetch -q origin "$base" 2>/dev/null || return 1
+  # A range git cannot read, or an empty one, verifies nothing: the previous
+  # form counted zero unreadable lines as zero bad signatures.
+  sigs=$(git -C "$3" log --format='%G?' "origin/$base..$2" 2>/dev/null) || return 1
+  [ -n "$sigs" ] || return 1
+  ! printf '%s\n' "$sigs" | grep -qvx '[GU]'
 }
 
 # verify_carded <issue number> <marker file> <worker start, ISO 8601>
@@ -433,14 +610,36 @@ while [ "$i" -lt "$count" ]; do
     fi
   fi
 
-  branch="grind-$number"
-  wt_path="$worktree_root/$number"
+  if [ "$prs" -eq 1 ]; then
+    branch=$(gh pr view "$number" --repo "$repo" --json headRefName --jq .headRefName 2>/dev/null) || branch=""
+    wt_path="$worktree_root/pr-$number"
+    verdict=$(printf '%s' "$item" | jq -r '.verdict')
+    reason=$(pr_skip "$item" "$branch")
+    [ -n "$branch" ] || reason="could not read its head branch"
+    if [ -n "$reason" ]; then
+      if [ "$dry_run" -eq 1 ]; then
+        printf '[%d/%d] %s -- SKIP: %s\n' "$i" "$count" "$ref" "$reason"
+      else
+        warn "skipping $ref -- $reason"
+      fi
+      continue
+    fi
+  else
+    branch="grind-$number"
+    wt_path="$worktree_root/$number"
+    verdict=""
+  fi
 
   cmd_display="claude -p <issue $ref body> --output-format stream-json --verbose --max-budget-usd $item_budget --model $model --effort $effort"
+  [ "$prs" -eq 1 ] && cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $item_budget --model $model --effort $effort"
 
   if [ "$dry_run" -eq 1 ]; then
-    printf '[%d/%d] %s -- %s\n' "$((i))" "$count" "$ref" "$title"
-    printf '  worktree: git worktree add -b %s %s\n' "$branch" "$wt_path"
+    printf '[%d/%d] %s -- %s%s\n' "$((i))" "$count" "$ref" "${verdict:+[$verdict] }" "$title"
+    if [ "$prs" -eq 1 ]; then
+      printf '  worktree: git worktree add -B %s %s origin/%s\n' "$branch" "$wt_path" "$branch"
+    else
+      printf '  worktree: git worktree add -b %s %s\n' "$branch" "$wt_path"
+    fi
     printf '  command:  %s\n' "$cmd_display"
     continue
   fi
@@ -452,15 +651,30 @@ while [ "$i" -lt "$count" ]; do
   # branch a registered worktree holds.
   rm -rf "$wt_path"
   git worktree prune >/dev/null 2>&1 || true
-  git branch -D "$branch" >/dev/null 2>&1 || true
-  if ! wt_err=$(git worktree add -q -b "$branch" "$wt_path" 2>&1 >/dev/null); then
+  # Only in issue mode: `$branch` is the synthetic `grind-<number>` there, so
+  # deleting it is safe. In `--prs` mode it is the PR's real head branch name,
+  # which a human may also hold locally with unpushed commits -- and `-B`
+  # below resets it from the remote anyway, so the delete would be pure risk.
+  [ "$prs" -eq 1 ] || git branch -D "$branch" >/dev/null 2>&1 || true
+  if [ "$prs" -eq 1 ]; then
+    # The PR's own head branch, reset to the remote: the worker fixes this
+    # pull request or it has not fixed anything. `-B` resets any local copy,
+    # and a branch a worktree still holds was skipped.
+    wt_err=$(git fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>&1) \
+      && wt_err=$(git worktree add -q -B "$branch" "$wt_path" "origin/$branch" 2>&1 >/dev/null) \
+      || { warn "skipping $ref -- could not check out $branch: $wt_err"; skipped=$((skipped + 1)); continue; }
+  elif ! wt_err=$(git worktree add -q -b "$branch" "$wt_path" 2>&1 >/dev/null); then
     warn "skipping $ref -- could not create worktree $wt_path on branch $branch: $wt_err"
     skipped=$((skipped + 1))
     continue
   fi
   info "worktree $wt_path on branch $branch"
 
-  prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')" "$ref" "$branch")
+  if [ "$prs" -eq 1 ]; then
+    prompt=$(build_pr_prompt "$ref" "$branch" "$wt_path")
+  else
+    prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')" "$ref" "$branch")
+  fi
   started=$(date +%s)
   # Reference points for the carded check: a marker the board file must be
   # newer than, and the wall-clock instant a new issue comment must follow.
@@ -607,8 +821,23 @@ while [ "$i" -lt "$count" ]; do
   unverified_why=""
   case "$status" in
     done)
-      if ! verify_pr "$branch" "$started_iso"; then
+      if [ "$prs" -eq 1 ]; then
+        if ! verify_pr_fixup "$number" "$branch" "$wt_path" "$started_iso"; then
+          unverified_why="no awaiting-human label, and no signed commit pushed to $branch"
+          status=unverified
+        fi
+      elif ! verify_pr "$branch" "$started_iso"; then
         unverified_why="no PR opened or pushed to on head branch $branch"
+        status=unverified
+      fi
+      ;;
+    blocked)
+      # Ordinarily `blocked` asserts nothing about the world. Under --prs it
+      # does: the contract's stop rule says what giving up leaves behind, and
+      # a PR given up on silently is indistinguishable from one nobody
+      # touched -- which is exactly the state this mode exists to clear.
+      if [ "$prs" -eq 1 ] && ! pr_labels "$number" | grep -qx fixup-hard; then
+        unverified_why="gave up without labelling the PR fixup-hard"
         status=unverified
       fi
       ;;
@@ -698,5 +927,5 @@ if [ "$dry_run" -eq 1 ]; then
   exit 0
 fi
 
-printf 'done: Ready queue exhausted. Running total %s / %s. %d skipped.\n' "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$skipped"
+printf 'done: %s exhausted. Running total %s / %s. %d skipped.\n' "$( [ "$prs" -eq 1 ] && printf 'PR queue' || printf 'Ready queue')" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$skipped"
 finish
