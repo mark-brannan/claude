@@ -57,6 +57,36 @@ if [ -z "$lib" ]; then
 fi
 # shellcheck disable=SC1090
 . "$lib"
+
+# --- PRs a fixer gave up on, first and always ---------------------------------
+# A `fixup-hard` PR has had its cheap attempt spent and a human is otherwise
+# its next reader, which outranks any block. One search, in pr-label-audit's
+# shape and under its owner setting so the two cannot drift; review bots post
+# after the fixer's handover comment, so the last human comment is shown.
+# Cached an hour. --brief is the SessionStart path and its five seconds are
+# already spent: it renders the cache and a detached full run refills it for
+# the next brief. Printing nothing is always allowed -- the listing is the job.
+if [ "$files" = 0 ]; then
+  run_t() { if command -v timeout >/dev/null 2>&1; then timeout 5 "$@"; else "$@"; fi; }
+  hard_cache=${XDG_CACHE_HOME:-$HOME/.cache}/pickup-list/fixup-hard; mkdir -p "${hard_cache%/*}" 2>/dev/null
+  if [ -z "$(find "$hard_cache" -mmin -60 2>/dev/null)" ] && command -v gh >/dev/null 2>&1; then
+    if [ "$brief" = 1 ]; then
+      if command -v setsid >/dev/null 2>&1; then setsid nohup sh "$self" >/dev/null 2>&1 </dev/null &
+      else nohup sh "$self" >/dev/null 2>&1 </dev/null & fi
+    else
+      run_t gh api graphql \
+        -f q="is:pr is:open archived:false user:${PR_LABEL_AUDIT_OWNER:-mark-brannan} label:fixup-hard" \
+        -f query='query($q:String!){search(query:$q,type:ISSUE,first:20){nodes{... on PullRequest{
+          number url title repository{nameWithOwner} comments(last:10){nodes{author{__typename} body}}}}}}' \
+        --jq '.data.search.nodes[] | "  - \(.repository.nameWithOwner)#\(.number) [hard] \(.title)\n    \(.url)\n    \(([.comments.nodes[] | select(.author.__typename != "Bot")] | last | .body // "no comment from the fixer") | split("\n")[0])"' \
+        > "$hard_cache.tmp.$$" 2>/dev/null \
+        && mv -f "$hard_cache.tmp.$$" "$hard_cache" || rm -f "$hard_cache.tmp.$$"
+    fi
+  fi
+  hard=$(cat "$hard_cache" 2>/dev/null) || hard=""
+  [ -n "$hard" ] && printf 'Hard -- a fixer gave up on these; take one before any block\n\n%s\n\n' "$hard"
+fi
+
 auto="$(state_dir)/log/auto"
 if [ ! -d "$auto" ]; then
   [ "$files" = 1 ] || printf 'Resume: none\n'

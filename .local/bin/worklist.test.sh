@@ -103,6 +103,8 @@ case "$1 $2" in
   "search issues") printf '[{"number":1},{"number":2}]\n' ;;
   "api graphql")
     name=""; for a in "$@"; do case $a in name=*) name=${a#name=} ;; esac; done
+    # pickup-list's fixup-hard search: no name=, a q= instead.
+    case " $* " in *" q=is:pr "*) printf '{"data":{"search":{"nodes":[]}}}\n'; exit 0 ;; esac
     if [ "$mode" = 403 ] && [ "$name" = beta ]; then echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; fi
     if [ "$mode" = many ] && [ "$name" = alpha ]; then name=alpha-many; fi
     cat "$FIXTURES/$name.json" ;;
@@ -124,6 +126,12 @@ assert() { local d=$1; shift; if "$@"; then ok; else bad "$d"; fi; }
 section() { printf '%s\n' "$OUT_ALL" | awk -v h="$1" 'f && NF > 0 && !/^-/ && !/^\|/ {exit} f {print} index($0, h) == 1 {f=1}'; }
 run() { OUT=$(sh "$WL" "$@" 2>&1); RC=$?; OUT_ALL=$OUT; }
 calls() { grep -c -- "$1" "$GH_LOG"; }
+
+# The resume section is pickup-list's, and pickup-list now looks up the PRs a
+# fixer gave up on -- once an hour, cached. Seed that cache fresh and empty so
+# the counts below stay a measurement of worklist's own fetching, which is
+# what every assertion here is actually about.
+mkdir -p "$XDG_CACHE_HOME/pickup-list"; : > "$XDG_CACHE_HOME/pickup-list/fixup-hard"
 wait_refresh() { # until the cache written_at is newer than $1, at most 15 s
   local i=0
   while [ "$i" -lt 15 ] && [ "$(jq -r .written_at "$CACHE/o-demo.json")" -le "$1" ]; do sleep 1; i=$((i + 1)); done
