@@ -168,9 +168,10 @@ flock -w 90 9 2>/dev/null || exit 0
 
 # ------------------------------------------------------------ work repo
 # Salvage whatever the session left uncommitted in the repo it worked on:
-# commit to the current branch and push. Silent when there is nothing to
-# do; every refusal after that is named in the checkpoint so it can carry
-# whatever detail turns out to be useful.
+# commit it to this session's own `wip/<session-id>` ref and push that, never
+# the branch the session is working on. Silent when there is nothing to do;
+# every refusal after that is named in the checkpoint so it can carry whatever
+# detail turns out to be useful.
 sc_note() { printf '\n## Stop-commit\n\n%s\n' "$1" >> "$ckpt"; }
 
 # ------------------------------------------------------------ the verdict
@@ -249,10 +250,16 @@ sc_salvage() {
   work_branch=$(git -C "$work_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
   # --- named refusals: something is dirty but we will not touch it ---------
-  # These three cases are a provisional best-effort fallback, NOT a decided
-  # policy. Real per-repo policy -- where it lives, which repos commit
-  # direct to main, what the fallback should be -- is open in issue #61.
-  # Don't treat what runs here as the intended design just because it runs.
+  # Settled policy, ruled by Solace on 2026-09-22 in issue #61: there is no
+  # policy table and none is coming. The conservative default lives here, in
+  # this public repo, reviewable beside the code it governs; the only inputs
+  # from outside are reduce-only (CLAUDE_STOP_COMMIT=off, the CI refusal), so
+  # nothing outside this file can grant the hook privilege it does not have.
+  # Only the private state repo goes direct to main -- its own code path at
+  # the bottom of this script, not a policy entry -- and the fallback for
+  # everything else is the `wip/<session>` ref below, never the session's own
+  # branch. These refusals fail closed on purpose: the files stay on disk,
+  # with the reason in the checkpoint.
   # dotfiles: the worktree is $HOME and only yadm's pre_commit gate may
   # commit there.
   if [ "$work_root" = "$HOME" ]; then
@@ -329,28 +336,104 @@ EOF
     fi
   fi
 
+  # dotfiles#280: a worktree checked out before some upstream commit deleted
+  # a file still carries that file on disk, untracked, and `git add -A`
+  # cannot tell it from real new work. Path history alone doesn't settle it
+  # either -- a branch that itself added, deleted and is now legitimately
+  # recreating the same path leaves an identical trail. What distinguishes
+  # the two is content: only when the untracked file was tracked at some
+  # commit in HEAD's own history, is missing from `$base`, *and* the working
+  # copy still matches that commit's content byte for byte is it the old
+  # leftover rather than new work -- a session's freshly written file
+  # essentially never matches old bytes by chance. A shallow checkout can
+  # hide the commit that first added a long-lived path, so unshallow first;
+  # unable to, refuse rather than guess. Paths are read NUL-delimited so
+  # control characters and non-ASCII names survive intact.
+  if git -C "$work_root" rev-parse -q --verify "$base" >/dev/null 2>&1; then
+    if [ "$(git -C "$work_root" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ] \
+       && ! timeout 60 git -C "$work_root" fetch -q --unshallow origin >/dev/null 2>&1; then
+      sc_note "refused: repo is shallow and could not be unshallowed -- can't tell a real stale leftover from new work; not committing"
+      return 0
+    fi
+    stale=""
+    while IFS= read -r -d '' f; do
+      [ -n "$f" ] || continue
+      ever_tracked=$(git -C "$work_root" log -1 --format=%H HEAD -- "$f" 2>/dev/null)
+      [ -n "$ever_tracked" ] || continue
+      git -C "$work_root" cat-file -e "$base:$f" 2>/dev/null && continue
+      # The last commit to touch the path may be the one that deleted it, so
+      # there is no blob there to compare -- fall back to its parent, the
+      # last commit where the path actually existed.
+      last_live="$ever_tracked"
+      git -C "$work_root" cat-file -e "$last_live:$f" 2>/dev/null || last_live="$last_live^"
+      cmp -s <(git -C "$work_root" show "$last_live:$f" 2>/dev/null) "$work_root/$f" || continue
+      stale="$stale $f"
+    done < <(git -C "$work_root" ls-files -z --others --exclude-standard 2>/dev/null)
+    if [ -n "$stale" ]; then
+      sc_note "refused: untracked path(s) were tracked in this branch's history, are gone from \`$base\` now, and still match their last tracked content -- stale leftovers from before this checkout last synced, not new work; not committing:$stale"
+      return 0
+    fi
+  fi
+
   # --- the commit: repo hooks run as configured, signing is required -------
   # `commit.gpgsign=true` rather than the machine's setting: a cloud session
   # has no signing key, so "as configured" meant unsigned, and the salvage
   # commit is how unsigned commits kept reaching open pull requests. Fail
   # closed -- the commit is refused and the files are left for a machine that
   # can sign.
-  if ! git -C "$work_root" add -A >/dev/null 2>&1 \
+  #
+  # The commit is made on the current branch because that is the only way the
+  # repo's own hooks and signing config run over it -- and it is moved straight
+  # off again, below, before anything is pushed. The branch never keeps it.
+  wip_ref="wip/$sid"
+  head_before=$(git -C "$work_root" rev-parse HEAD 2>/dev/null)
+  if [ -z "$head_before" ] \
+     || ! git -C "$work_root" add -A >/dev/null 2>&1 \
      || ! timeout 30 git -C "$work_root" -c commit.gpgsign=true commit -q \
           -m "wip: session ${sid:0:8} at Stop ($today)" \
           -m "Co-Authored-By: Claude <noreply@anthropic.com>" >/dev/null 2>&1; then
     git -C "$work_root" reset -q >/dev/null 2>&1
     sc_note "refused: commit failed (hook or signing) — files left as they were"; return 0
   fi
-  if timeout 120 git -C "$work_root" push -q -u origin -- "$work_branch" >/dev/null 2>&1; then
-    sc_note "committed and pushed to \`$work_branch\`"
+
+  # --- and off the branch again: the destination is this session's wip ref --
+  # dotfiles#285, and the #61 ruling behind it. The session's branch is the
+  # head of an open PR; a machine commit pushed there is what #177, #196 and
+  # #280 have in common, and no reader can tell it from work a human meant to
+  # publish. So the commit lands on `refs/heads/wip/<session-id>` -- a ref no
+  # PR points at, named for the one session that writes it -- and the branch
+  # is put back where it was with a mixed reset, which leaves the files in the
+  # working tree exactly as the session left them. Salvage, not publication:
+  # the next session picks the ref up from the checkpoint.
+  salvaged=$(git -C "$work_root" rev-parse HEAD 2>/dev/null)
+  git -C "$work_root" update-ref "refs/heads/$wip_ref" "$salvaged" >/dev/null 2>&1
+  wrote_ref=$?
+  # Unconditional, and before the ref write is judged: whatever else happened,
+  # the work branch must not be left carrying the commit.
+  if ! git -C "$work_root" reset -q "$head_before" >/dev/null 2>&1; then
+    sc_note "committed \`${salvaged:-?}\` but could not put \`$work_branch\` back at \`$head_before\` — that commit is sitting on the branch; move or drop it before pushing"
+    return 0
+  fi
+  if [ "$wrote_ref" -ne 0 ]; then
+    sc_note "refused: could not write \`refs/heads/$wip_ref\` — nothing committed, files left as they were"; return 0
+  fi
+
+  # --force, and only ever this ref: `wip/<session-id>` has exactly one
+  # writer, and each Stop's snapshot is a sibling of the last (same parent,
+  # supersetting content), so a fast-forward push would fail from the second
+  # Stop of every session onwards.
+  if timeout 120 git -C "$work_root" push -q --force origin -- \
+       "refs/heads/$wip_ref:refs/heads/$wip_ref" >/dev/null 2>&1; then
+    sc_note "salvaged to \`$wip_ref\` and pushed it (\`$salvaged\`); \`$work_branch\` is untouched and the files are still in the working tree"
   else
-    sc_note "committed to \`$work_branch\` but push failed — push by hand"
+    sc_note "salvaged to \`$wip_ref\` (\`$salvaged\`) but the push failed — the commit is local only; \`$work_branch\` is untouched"
   fi
 }
 sc_salvage
-# After the salvage, not before: a session whose work this hook just committed
-# and pushed is not "dirty, unpushed".
+# After the salvage, not before: the verdict has to describe the tree the
+# salvage leaves behind. It leaves it dirty on purpose -- the work is safe on
+# the wip ref, not landed on the branch -- so "worktree dirty" stays the truth
+# and the session is not archivable until a human lands it.
 set_verdict
 
 # The session claim stamp on the branch's card (dotfiles#287). Archivable

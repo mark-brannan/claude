@@ -9,10 +9,12 @@
 # because the hook rewrites the whole checkpoint and eating the hand-off the
 # model was told to write would be silent and total.
 #
-# The salvage commit's refusals (dotfiles#196: CI, stale base, revert of the
-# branch's own work) are covered near the bottom, in a throwaway repo of
-# their own. The rest of the hook -- metrics shape, the state-repo push -- is
-# not covered here.
+# The salvage commit's destination (dotfiles#285: a `wip/<session>` ref, never
+# the branch the session's PR is on) and its refusals (dotfiles#196: CI, stale
+# base, revert of the branch's own work; dotfiles#280: a stale untracked
+# leftover from before the checkout synced) are covered near the bottom, in a
+# throwaway repo of their own. The rest of the hook -- metrics shape, the
+# state-repo push -- is not covered here.
 set -uo pipefail
 [ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 
@@ -182,25 +184,55 @@ stop_salvage() {  # stop_salvage [VAR=value ...] -- run the hook with the salvag
     | env -u GITHUB_ACTIONS -u CI CLAUDE_STOP_COMMIT=on "$@" bash "$HOOK" >/dev/null 2>&1
   CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
 }
-snapshot() { before_local=$(git -C "$SWORK" rev-parse HEAD); before_origin=$(git -C "$SORIGIN" rev-parse claude/salvage); }
+WIP="wip/$SID"
+snapshot() {
+  before_local=$(git -C "$SWORK" rev-parse HEAD)
+  before_origin=$(git -C "$SORIGIN" rev-parse claude/salvage)
+  before_wip=$(git -C "$SORIGIN" rev-parse "$WIP" 2>/dev/null || echo none)
+}
 untouched() {  # untouched <label> <expected porcelain> -- nothing committed or pushed
   eq "$1: local HEAD untouched" "$before_local" "$(git -C "$SWORK" rev-parse HEAD)"
   eq "$1: origin untouched" "$before_origin" "$(git -C "$SORIGIN" rev-parse claude/salvage)"
+  eq "$1: the wip ref untouched" "$before_wip" \
+    "$(git -C "$SORIGIN" rev-parse "$WIP" 2>/dev/null || echo none)"
   eq "$1: the edit is still sitting there, uncommitted" "$2" "$(git -C "$SWORK" status --porcelain)"
 }
+# salvaged <label> <expected porcelain> -- the commit went to the wip ref and
+# nowhere near the branch the session (and its PR) is on (dotfiles#285).
+salvaged() {
+  eq "$1: the branch head is unchanged locally" "$before_local" "$(git -C "$SWORK" rev-parse HEAD)"
+  eq "$1: the branch head is unchanged on origin" "$before_origin" \
+    "$(git -C "$SORIGIN" rev-parse claude/salvage)"
+  assert "$1: origin has the wip ref" \
+    git -C "$SORIGIN" rev-parse -q --verify "$WIP" >/dev/null
+  eq "$1: the wip commit sits on the branch head" "$before_local" \
+    "$(git -C "$SWORK" rev-parse "$WIP^")"
+  eq "$1: the files are still in the working tree" "$2" "$(git -C "$SWORK" status --porcelain)"
+  assert "$1: no wip: commit reached the branch" \
+    test -z "$(git -C "$SORIGIN" log --oneline --grep='^wip: session' claude/salvage)"
+}
 
-# --- happy path: dirty tree, HEAD even with @{u} -> commits and pushes -----------
-echo dirty >> "$SWORK/f"
+# --- happy path: dirty tree, HEAD even with @{u} -> salvaged to the wip ref ------
+# The failure this replaces: the same commit went onto the session's branch and
+# was pushed to the open PR (dotfiles#177, #196, #280).
+snapshot; echo dirty >> "$SWORK/f"
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
-has 'salvage happy path: committed and pushed' \
-  'committed and pushed to .claude/salvage.' "$CKPT"
-eq 'the dirty change is no longer showing' '' "$(git -C "$SWORK" status --porcelain)"
-eq 'origin now has the pushed commit' \
-  "$(git -C "$SWORK" rev-parse HEAD)" "$(git -C "$SORIGIN" rev-parse claude/salvage)"
+has 'salvage happy path: salvaged to the wip ref and pushed' \
+  "salvaged to .$WIP. and pushed it" "$CKPT"
+salvaged 'salvage happy path' ' M f'
+eq 'the wip commit carries the uncommitted content' 'dirty' \
+  "$(git -C "$SORIGIN" show "$WIP:f" | tail -1)"
 # The signature itself, not %G?: verifying an ssh signature would need an
 # allowedSignersFile this fixture has no reason to carry.
 eq 'the salvage commit is signed' 'gpgsig' \
-  "$(git -C "$SWORK" cat-file -p HEAD | awk '/^gpgsig/{print "gpgsig"; exit}')"
+  "$(git -C "$SWORK" cat-file -p "$WIP" | awk '/^gpgsig/{print "gpgsig"; exit}')"
+# A second Stop in the same session: the ref moves on, still off the branch.
+snapshot; echo dirtier >> "$SWORK/f"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+salvaged 'a second Stop' ' M f'
+eq 'the second Stop superseded the first on the wip ref' 'dirtier' \
+  "$(git -C "$SORIGIN" show "$WIP:f" | tail -1)"
+gitq "$SWORK" checkout -- f
 
 # --- no signing key: refused rather than pushed unsigned (dotfiles#183) ----------
 # A cloud session has no key. Unsigned is how the salvage commit kept landing
@@ -244,10 +276,57 @@ gitq "$SWORK" checkout -- f hookpath
 # revert of anything -- it is simply unchanged, and the tree is not dirty.
 # A file the branch changed, edited to something that is neither version,
 # is new work and commits.
-echo 'guard: yes, differently' > "$SWORK/hookpath"
+snapshot; echo 'guard: yes, differently' > "$SWORK/hookpath"
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
-has 'a real edit to a branch-changed file: committed' 'committed and pushed to .claude/salvage.' "$CKPT"
-eq 'and nothing is left dirty' '' "$(git -C "$SWORK" status --porcelain)"
+has 'a real edit to a branch-changed file: salvaged' "salvaged to .$WIP. and pushed it" "$CKPT"
+salvaged 'a real edit to a branch-changed file' ' M hookpath'
+gitq "$SWORK" checkout -- hookpath
+
+# --- an untracked path base once had: refused, not committed (dotfiles#280) ------
+# A worktree created before an upstream commit deleted a tracked file carries
+# it on disk as an untracked leftover for the rest of the worktree's life.
+# Give the branch's own history a commit that added stale.txt (so HEAD's
+# ancestry has it, same as inheriting it from old main) and a later one that
+# removed it (so HEAD's own tree is clean, same as after a rebase past the
+# upstream deletion) -- then put the bytes back by hand: exactly what a
+# stale leftover looks like on disk, whatever operation actually produced it.
+gitq "$SWORK" checkout claude/salvage
+echo history > "$SWORK/stale.txt"
+gitq "$SWORK" add stale.txt; gitq "$SWORK" commit -m "add stale.txt"
+gitq "$SWORK" rm -q stale.txt; gitq "$SWORK" commit -m "remove stale.txt"
+gitq "$SWORK" push origin claude/salvage
+echo history > "$SWORK/stale.txt"   # the stale leftover: untracked, on disk
+
+snapshot; echo dirty >> "$SWORK/f"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'stale untracked leftover: refused, path named' \
+  'refused: untracked path\(s\) were tracked .* stale\.txt' "$CKPT"
+untouched 'stale untracked leftover' $' M f\n?? stale.txt'
+
+# ... a genuinely new untracked file, never tracked anywhere, still commits.
+rm -f "$SWORK/stale.txt"
+gitq "$SWORK" checkout -- f
+echo brand-new > "$SWORK/new-file.txt"
+snapshot
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'a genuinely new untracked file: salvaged' "salvaged to .$WIP. and pushed it" "$CKPT"
+salvaged 'a genuinely new untracked file' '?? new-file.txt'
+eq 'the new file is on the wip ref' 'brand-new' "$(git -C "$SORIGIN" show "$WIP:new-file.txt")"
+rm -f "$SWORK/new-file.txt"
+
+# ... the branch's own add-delete-recreate of the same path: path history looks
+# identical to the stale-leftover case above, but the bytes are new -- this is
+# the session's own work, not dotfiles#280's upstream-deletion leftover, and
+# the content check is what tells them apart.
+echo 'new content, not history' > "$SWORK/stale.txt"
+snapshot
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop_salvage
+has 'recreate with new content: salvaged, not refused' \
+  "salvaged to .$WIP. and pushed it" "$CKPT"
+salvaged 'recreate with new content' '?? stale.txt'
+eq 'the recreated file carries the new content, not the old' \
+  'new content, not history' "$(git -C "$SORIGIN" show "$WIP:stale.txt")"
+rm -f "$SWORK/stale.txt"
 
 # --- HEAD behind @{u}: refused, not committed, not pushed (dotfiles#196) ---------
 # Simulate the remote moving on without this checkout -- a hand re-push, a

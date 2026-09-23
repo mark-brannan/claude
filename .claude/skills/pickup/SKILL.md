@@ -105,6 +105,16 @@ Everything the previous session wanted handed over is on the remote. If it
 isn't pushed, it isn't handed over: work from the pushed state and say in one
 line what you found missing.
 
+One exception, and it is not a hand-off: when the checkpoint's `## Stop-commit`
+section names a `wip/<session-id>` ref, the previous session ended with a dirty
+tree and the Stop hook salvaged it to that ref rather than onto the branch
+(dotfiles#285). It is a machine's snapshot of work nobody chose to publish, so
+offer it, don't merge it:
+
+```
+git fetch origin wip/<session-id> && git diff <branch>..FETCH_HEAD
+```
+
 For a **PR fixup** the branch is the PR's head branch, and the same three
 rules hold — your own worktree, fetch first, refuse a branch another worktree
 holds:
