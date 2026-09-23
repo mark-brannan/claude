@@ -819,7 +819,7 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
   bl_ctx_glyphs="»"; [ "${ctx_rungs:-0}" -gt 0 ] && bl_ctx_glyphs=$(glyphs "$ctx_rungs" "⛁")
   bl_ctx_cluster="$bl_ctx_glyphs $(kfmt "$bl_out")/$(kfmt "$bl_ctx")"
 
-  bl_dec_cluster="🧘‍♀️(x0)"
+  bl_dec_cluster="🧘(x0)"
   if [ "${bl_dec:-0}" -gt 0 ]; then
     r=$(fib_rungs "$bl_dec")
     g=""; for ((i = 0; i < r; i++)); do g="${g}⚖"; done

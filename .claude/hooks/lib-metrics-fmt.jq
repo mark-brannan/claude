@@ -15,7 +15,7 @@ def k: if . >= 1000 then "\(. / 1000 | floor)k" else "\(.)" end;
 # § ¶ ◊ ⁂ ‽ ⸎ ❖ ⌖ ◎ ⊙ ⦾ ⎊ • · ✦  ‖ ⁄ ⁞ ┄ — . ¤ ✎ ⚙  ⚑ ⚠
 #
 # emoji from 2026-09-10's mockup session, all now wired into metrics-live.sh's
-# event block (#137): 🧘‍♀️ decisions at zero, 🌌 friction at zero, ✅ blocked
+# event block (#137): 🧘 decisions at zero, 🌌 friction at zero, ✅ blocked
 # at zero, ⏰ the sitting cluster past its hot rung. Nothing is held in
 # reserve here any more -- the next candidate goes on this list before it
 # goes on screen.

@@ -643,12 +643,12 @@ chmod +x "$SCRATCH/bin/gh"
 # --- 11. calm states, and the ⏰ tier ---------------------------------------
 # ✅ has shown blocked=0 since the #137 spec landed; friction and decisions
 # vanished at zero instead, so "no friction" and "this field does not exist"
-# looked the same. Ruled 2026-09-22: 🌌 friction, 🧘‍♀️ decisions, bare --
+# looked the same. Ruled 2026-09-22: 🌌 friction, 🧘 decisions, bare --
 # the glyph names its own field, so no ⚡/⚖ prefix.
 TP11="$SCRATCH/calm.jsonl"; turn "$TP11" 1000
 o11=$(msg "$(payload "$TP11" calm "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)")
 has 'friction at zero shows its calm glyph'  '🌌\(x0\)' "$o11"
-has 'decisions at zero show theirs'          '🧘‍♀️\(x0\)' "$o11"
+has 'decisions at zero show theirs'          '🧘\(x0\)' "$o11"
 has 'and blocked is unchanged'               '🔧✅\(x0\)' "$o11"
 hasnt 'a calm block carries no verdict tail' ' — ' "$o11"
 

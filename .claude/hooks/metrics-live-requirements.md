@@ -34,7 +34,7 @@ renders one block with four ⛁ in it.
 and nothing else. The threshold lines rendered `context_peak/rung` — the same
 shape, one line away, meaning something different.
 
-**A counted field never vanishes; zero is a state with a glyph.** 🧘‍♀️
+**A counted field never vanishes; zero is a state with a glyph.** 🧘
 decisions, 🌌 friction, ✅ blocked — the field keeps its slot and its `(x0)`,
 so "nothing happened" and "this is not measured" never look the same. Ruled
 by Solace, 2026-09-22 ([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)).
@@ -60,7 +60,7 @@ proposes stopping. Ruled by Solace, 2026-09-22
 ([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)).
 
 ```
-» 20/41k 🧘‍♀️(x0) 🌌(x0) 🔧✅(x0) ⏱0m
+» 20/41k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m
 ⇢ 3 ⚙ 0 ⎇ 1~
 ```
 
@@ -70,7 +70,7 @@ at the top rather than going quiet; the overflow count is the settled
 shape for that.
 
 ```
-⛁⛁⛁⛁⛁(x9) 10/350k 🧘‍♀️(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸 propose stopping.
+⛁⛁⛁⛁⛁(x9) 10/350k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸 propose stopping.
 ```
 
 **Bias toward more information.** Adding a number or a line never needs a
@@ -92,7 +92,7 @@ output-tokens badge — settled after repeated attempts on
 re-propose them.
 
 ```
-⛁⛁⛁⛁ 20/152k 🧘‍♀️(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸 propose stopping.
+⛁⛁⛁⛁ 20/152k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸 propose stopping.
 ```
 
 ## Stop output
