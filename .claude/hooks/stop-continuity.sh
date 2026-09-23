@@ -205,7 +205,7 @@ set_verdict() {
   # disagree about what "archivable" means (#149).
   if [ "$_archivable_reasons_cached" -eq 0 ]; then
     if [ -n "$work_root" ]; then
-      _archivable_reasons=$(archivable_reasons "$work_root" "$work_branch")
+      _archivable_reasons=$(archivable_reasons "$work_root" "$work_branch" "$sid")
     else
       _archivable_reasons="no PR and no pointer for \`$work_branch\`"
     fi

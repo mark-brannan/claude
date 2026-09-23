@@ -472,7 +472,7 @@ record_crossing() {
 # clock is answered by landing the work. Memoized; can shell out to `gh`.
 in_flight() {
   [ -n "${in_flight_memo+x}" ] || in_flight_memo=$([ -n "$work_root" ] \
-    && archivable_reasons "$work_root" "$work_branch")
+    && archivable_reasons "$work_root" "$work_branch" "$sid")
   [ -n "$in_flight_memo" ]
 }
 
@@ -716,7 +716,7 @@ archivable() {
   else
     # archivable_reasons() is lib-state.sh's -- the home/dirty/unpushed
     # check shared with stop-continuity.sh's Stop-hook verdict (#149).
-    archival_reasons=$(archivable_reasons "$work_root" "$work_branch")
+    archival_reasons=$(archivable_reasons "$work_root" "$work_branch" "$sid")
   fi
 
   sr=$(state_repo 2>/dev/null) || sr=""
