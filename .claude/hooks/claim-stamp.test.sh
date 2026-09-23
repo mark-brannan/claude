@@ -38,6 +38,7 @@ cat > "$BIN/gh" <<'STUB'
 S=${CLAIM_STORE:?}
 printf '%s\n' "$*" >> "$S/calls"
 [ "${GH_FAIL:-0}" = 1 ] && exit 1
+[ "${GH_FAIL_API:-0}" = 1 ] && [ "$1" = api ] && exit 1
 case "$1" in
   pr) case " $* " in
         *" --head "*) printf '%s\n' "${GH_PRS:-[]}" ;;
@@ -270,6 +271,14 @@ printf '{"id":9,"body":"<!-- claim-stamp sid=deadbeef epoch=1 machine=host-00000
 out=$(sh "$CS" read -C "$WORK")
 has 'read reports the live claim'         "$out" 'live.*66666666'
 has 'read reports the stale one'          "$out" 'stale.*deadbeef'
+out=$(GH_FAIL_API=1 sh "$CS" read -C "$WORK"; echo "rc=$?")
+has 'a failed stamp read says unverified'  "$out" '^unverified: .*pull/7'
+hasnt 'and reports no stamp as live'      "$out" 'live|stale'
+has 'and still exits 0'                   "$out" 'rc=0'
+out=$(GH_FAIL=1 sh "$CS" read -C "$WORK")
+has 'a failed card lookup says unverified' "$out" '^unverified'
+setup_repo main
+eq  'a branch with no card says so'       "$(sh "$CS" read -C "$WORK")" 'no card'
 
 # --- the SessionStart entry point ---------------------------------------------
 setup_repo claude/session
