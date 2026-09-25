@@ -102,8 +102,12 @@ the next to pull; place a new card where it belongs.
 A ruling card carries your evaluation, so that the ruling is one word:
 
 ```markdown
-- [ ] **Short name** — the question ([link](https://...)) default: <what you would do> undo: <the reversal and its cost> until: <event or date it can wait for> risk: <consequence if the default is wrong>
+- [ ] **Short name** — the question ([link](https://...)) default: <what you would do> undo: <the reversal and its cost> until: <event or date it can wait for> risk: <consequence if the default is wrong> judgment: <values | risk | direction | legal | people>
 ```
+
+`judgment:` is the gate. A call you cannot file under one of those five
+kinds is toil however unsure you feel: take the default, record it where
+the work lands, and write no card.
 
 A click-work card carries two proofs:
 
@@ -132,7 +136,8 @@ repo's uncommitted board diff again at Stop. It rejects:
 5. a state word: merged, awaiting, not merged, CI green, open as;
 6. a card with no link;
 7. a ruling card with no `### <project>` group above it;
-8. a ruling card missing any of `default:`, `undo:`, `until:`, `risk:`;
+8. a ruling card missing any of `default:`, `undo:`, `until:`, `risk:`,
+   `judgment:`, or whose `judgment:` is not one of the five kinds;
 9. a `## Solace's` card missing `why you:`, or missing `why this:` when
    `why you:` is not `learn`.
 

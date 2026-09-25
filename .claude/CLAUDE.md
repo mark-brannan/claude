@@ -161,10 +161,16 @@ Hooks handle the mechanics unprompted.
 
 ## Open loops
 
-- **Write the issue or card when the loop is found, never at wrap-up** — by
-  then the evidence is compacted away — and only if you would pull it
-  yourself. "Verify X later" is never mine to hear about: run it now, or
+- **Write the card, or draft the issue, when the loop is found, never at
+  wrap-up** — by then the evidence is compacted away — and only if you
+  would pull it yourself. "Verify X later" is never mine to hear about: run it now, or
   queue it on `## Claude's`. Routing and format: `/card-write`.
+- **An issue is the exception, not the default** (Solace, 2026-09-25;
+  a repo's own rule overrides). Only for work that's multi-session,
+  high-level and genuinely ambiguous — not merely large. Draft it,
+  show me, file only on a later turn's explicit yes. Headless sessions
+  grind issues; they never file them. Sonnet over-files issues and
+  ruling cards alike; correct for it.
 - **One home per fact.** GitHub owns work state. One board, global, three
   sections: rulings, my click work, your queue. `worklist` reads, `/sweep`
   prunes with my tick, nothing else edits.
