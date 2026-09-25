@@ -81,6 +81,7 @@ INSTALL="
 .claude/hooks/lib-shell-words.awk
 .claude/hooks/session-start-seed-refresh.sh
 .claude/hooks/guard-add-repo.sh
+.claude/hooks/metrics-format.sh
 .claude/hooks/metrics-live.sh
 .claude/hooks/metrics-rollup.sh
 .claude/hooks/log-commit.sh
