@@ -212,6 +212,35 @@ archivable_reasons() {
   printf '%s' "$reasons"
 }
 
+# state_lock <dir> / state_unlock -- mkdir atomic test-and-set, copied from
+# grind's per-repo lock (no flock: macOS has none). meta carries pid+host; a
+# same-host dead pid is reclaimed via rename-then-rm. Installs no trap of its
+# own: `trap` overwrites rather than chains, and a caller (stop-continuity.sh
+# already arms one, e.g. `trap restore_board EXIT`) would have it silently
+# clobbered. The caller adds `state_unlock` to its own EXIT/TERM/INT traps.
+STATE_LOCK_DIR=""
+
+state_lock() {
+  local dir="$1" meta="" host pid
+  [ -n "$dir" ] || return 1
+  meta="$dir/meta"
+  host=$(uname -n 2>/dev/null || echo unknown)
+  if ! mkdir "$dir" 2>/dev/null; then
+    pid=$(awk -F= '$1 == "pid" { print $2 }' "$meta" 2>/dev/null)
+    { [ "$(awk -F= '$1 == "hostname" { print $2 }' "$meta" 2>/dev/null)" = "$host" ] \
+        && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; } || return 1
+    mv "$dir" "$dir.stale.$$" 2>/dev/null && rm -rf "$dir.stale.$$" && mkdir "$dir" 2>/dev/null \
+      || return 1
+  fi
+  printf 'pid=%s\nhostname=%s\n' "$$" "$host" > "$meta" 2>/dev/null
+  STATE_LOCK_DIR="$dir"
+}
+
+state_unlock() {
+  [ -n "$STATE_LOCK_DIR" ] && rm -rf "$STATE_LOCK_DIR"
+  STATE_LOCK_DIR=""
+}
+
 # pr_base_refs <repo-path> <branch> [<remote>] -- base branch names of the
 # open PRs whose head is <branch>, one per line.
 #
