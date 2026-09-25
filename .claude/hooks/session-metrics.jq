@@ -579,9 +579,28 @@ def price:
       cache_churn_pct: (sumu(.cache_read_input_tokens) as $r
         | if $r > 0 then ((sumu(.cache_creation_input_tokens) / $r * 100) | round)
           else null end),
-      context_peak: (([ $amsgs[] | .message.usage
+      # How full the window got, not what the session spent. Three things this
+      # is careful about, each measured on the transcripts on this machine
+      # (1,758 sessions, 91k assistant messages) rather than reasoned about:
+      #   the sum      input + cache_read + cache_creation is one request's
+      #                prompt, and it tracks a live window: across 7,541
+      #                consecutive main-chain requests it grew 7,534 times and
+      #                fell 7. The peaks well past 200k are real windows on a
+      #                million-token model, not a double count of the cached
+      #                part; the seven falls are a window that was reset.
+      #   the response output_tokens sits in the window from the next request
+      #                on, so occupancy at a request includes it.
+      #   sidechains   a Task agent's requests land in this transcript with
+      #                isSidechain set on some Claude Code versions. That is
+      #                the subagent's window, not this session's.
+      # Still an absolute count: no transcript record carries the model's
+      # window size, so the fraction a reader actually wants cannot be derived
+      # here, and any rung compared against this is a rung in tokens. See #294.
+      context_peak: (([ $amsgs[] | select((.isSidechain // false) | not)
+                        | .message.usage
                         | ((.input_tokens // 0) + (.cache_read_input_tokens // 0)
-                           + (.cache_creation_input_tokens // 0)) ] | max) // 0),
+                           + (.cache_creation_input_tokens // 0)
+                           + (.output_tokens // 0)) ] | max) // 0),
       files_written: (([ $tools[] | select(.name | IN("Write","Edit","NotebookEdit"))
                          | .input.file_path // .input.notebook_path ]
                        + [ $tools[] | select(.name == "Bash")
