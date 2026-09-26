@@ -127,12 +127,72 @@ rec_last() { cat "$TMPDIR/claude-pr-threads.$1" 2>/dev/null | tail -1; }
 check inject 'issue + PR in one compound command' \
   "$(bash_input cx1 "gh api repos/o/r/issues/73 --jq '.state' 2>&1; echo ---; gh api repos/o/r/pulls/80 --jq '.state' 2>&1")"
 t 'records the PR clause only, not the issue number' \
-  "$(printf 'repo\to/r\t80')" "$(rec_last cx1)"
+  "$(printf 'repo\to/r\t80\tread')" "$(rec_last cx1)"
 
 check inject 'two PRs, two repos, in one compound command' \
   "$(bash_input cx2 'gh pr view 73 -R mark-brannan/dotfiles --json state 2>&1; echo ---; gh pr view 80 -R markbrannan/dotfiles --json state 2>&1')"
 t 'records the first clause intact, not a cross-clause mix' \
-  "$(printf 'repo\tmark-brannan/dotfiles\t73')" "$(rec_last cx2)"
+  "$(printf 'repo\tmark-brannan/dotfiles\t73\tread')" "$(rec_last cx2)"
+
+# --- dotfiles#224: read vs work, on the record line -------------------------
+# A bare gh pr view/checks/diff/list (or a non-mutating gh api call) is a
+# read -- it must not put the PR on the Stop gate's hook. Everything else
+# naming `gh pr`, a mutating `gh api` call, or gh-resolve-thread is work.
+check inject 'gh pr view -> read' \
+  "$(bash_input rw1 'gh pr view 25 -R o/r --comments')"
+t 'recorded as read' "$(printf 'repo\to/r\t25\tread')" "$(rec_last rw1)"
+
+check inject 'gh pr checks -> read' \
+  "$(bash_input rw2 'gh pr checks 25 -R o/r')"
+t 'recorded as read' "$(printf 'repo\to/r\t25\tread')" "$(rec_last rw2)"
+
+check inject 'gh pr comment -> work' \
+  "$(bash_input rw3 'gh pr comment 25 -R o/r --body hi')"
+t 'recorded as work' "$(printf 'repo\to/r\t25\twork')" "$(rec_last rw3)"
+
+check inject 'gh pr merge -> work' \
+  "$(bash_input rw4 'gh pr merge 25 -R o/r --squash')"
+t 'recorded as work' "$(printf 'repo\to/r\t25\twork')" "$(rec_last rw4)"
+
+check inject 'gh pr close (unrecognized subcommand) -> work, fail closed' \
+  "$(bash_input rw5 'gh pr close 25 -R o/r')"
+t 'recorded as work' "$(printf 'repo\to/r\t25\twork')" "$(rec_last rw5)"
+
+check inject 'gh api GET on pulls -> read' \
+  "$(bash_input rw6 'gh api repos/o/r/pulls/25/comments')"
+t 'recorded as read' "$(printf 'repo\to/r\t25\tread')" "$(rec_last rw6)"
+
+check inject 'gh api -X PATCH on pulls -> work' \
+  "$(bash_input rw7 'gh api repos/o/r/pulls/25 -X PATCH -f state=closed')"
+t 'recorded as work' "$(printf 'repo\to/r\t25\twork')" "$(rec_last rw7)"
+
+check inject 'read then work on the same PR in one compound call -> work, not read' \
+  "$(bash_input rw7b 'gh pr diff 42 -R o/r --patch; gh pr comment 42 -R o/r --body "fixed in latest push"')"
+t 'recorded as work (a later work clause on the same PR upgrades kind)' \
+  "$(printf 'repo\to/r\t42\twork')" "$(rec_last rw7b)"
+
+check inject 'work then read on the same PR in one compound call -> stays work' \
+  "$(bash_input rw7c 'gh pr comment 42 -R o/r --body hi; gh pr diff 42 -R o/r --patch')"
+t 'recorded as work (never downgraded by a later read on the same PR)' \
+  "$(printf 'repo\to/r\t42\twork')" "$(rec_last rw7c)"
+
+check inject 'work on a different PR in a later clause -> first PR keeps its own kind' \
+  "$(bash_input rw7d 'gh pr view 42 -R o/r; gh pr comment 99 -R o/r --body hi')"
+t 'recorded as read (a later clause on a different PR never contributes)' \
+  "$(printf 'repo\to/r\t42\tread')" "$(rec_last rw7d)"
+
+check inject 'gh-resolve-thread -> injects and records cwd, not a repo line' \
+  "$(bash_input_cwd rw8 'gh-resolve-thread PRRT_abc' /repo/checkout)"
+t 'recorded as cwd (thread id carries no repo/number)' \
+  "$(printf 'cwd\t/repo/checkout')" "$(rec_last rw8)"
+
+check inject 'MCP pull_request_read -> read' \
+  "$(jq -n '{session_id:"rw9",tool_name:"mcp__github__pull_request_read",tool_input:{owner:"o",repo:"r",pullNumber:9}}')"
+t 'recorded as read' "$(printf 'repo\to/r\t9\tread')" "$(rec_last rw9)"
+
+check inject 'MCP merge_pull_request -> work' \
+  "$(jq -n '{session_id:"rw10",tool_name:"mcp__github__merge_pull_request",tool_input:{owner:"o",repo:"r",pullNumber:10}}')"
+t 'recorded as work' "$(printf 'repo\to/r\t10\twork')" "$(rec_last rw10)"
 
 # --- once per session ----------------------------------------------------------
 check inject 'first PR call in s8'   "$(bash_input s8 'gh pr view')"

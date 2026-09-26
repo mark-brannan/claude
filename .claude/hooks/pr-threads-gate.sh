@@ -32,6 +32,16 @@
 # entry was never a PR this session worked. That one entry is dropped and
 # named in a non-blocking note instead of joining the block; timeouts, auth
 # failures and every other fetch failure still fail closed as before.
+#
+# EXCEPTION, dotfiles#224: a "repo" record line carries a third field, read
+# or work, written by pr-ownership-context.sh (kind is empty on an older or
+# hand-written record, which this gate treats as work, same as before). A
+# read -- `gh pr view/checks/diff/list`, or a non-mutating `gh api` call --
+# is never fetched and never gates the Stop; a session working four PRs must
+# not inherit a fifth PR's open threads because it ran `gh pr view` on it for
+# evidence. "cwd" lines are unaffected: the PR they resolve to is the one
+# whose head branch this session's worktree holds, which gates on identity
+# alone regardless of what kind of call produced the entry.
 set -u
 
 json_str() { printf '%s' "$1" | jq -Rs .; }
@@ -50,9 +60,12 @@ command -v gh >/dev/null 2>&1 || block "pr-threads-gate: gh is not installed her
 # Every distinct PR the session touched, as owner/name<TAB>number. A cwd line
 # resolves through gh to whatever PR its current branch has; no PR there is
 # fine (a `gh pr list` from a repo with no branch PR, say).
-prs=$(sort -u "$record" | while IFS="$(printf '\t')" read -r kind a b; do
+prs=$(sort -u "$record" | while IFS="$(printf '\t')" read -r kind a b c; do
   case "$kind" in
-    repo) printf '%s\t%s\n' "$a" "$b" ;;
+    repo)
+      # dotfiles#224: a read never gates the Stop, whatever threads it has.
+      [ "$c" = read ] && continue
+      printf '%s\t%s\n' "$a" "$b" ;;
     cwd)
       [ -d "$a" ] || continue
       # The PR url names the base repo, which is where the threads live; the

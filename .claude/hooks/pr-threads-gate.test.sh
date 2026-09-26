@@ -76,14 +76,14 @@ check silent 'empty payload'           open ''
 rec() { printf '%s' "$2" | sh "$RECORDER" >/dev/null; cat "$TMPDIR/claude-pr-threads.$1" 2>/dev/null | tail -1; }
 bash_in() { jq -n --arg s "$1" --arg c "$2" '{session_id:$s,cwd:"/work/here",tool_name:"Bash",tool_input:{command:$c}}'; }
 t() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi; }
-t 'gh pr view N --repo'      "$(printf 'repo\to/r\t25')"  "$(rec r1 "$(bash_in r1 'gh pr view 25 --repo o/r --comments')")"
-t 'gh pr checks -R'          "$(printf 'repo\to/r\t3')"   "$(rec r1 "$(bash_in r1 'gh pr checks 3 -R o/r')")"
-t 'gh api pulls url'         "$(printf 'repo\to/r\t4')"   "$(rec r1 "$(bash_in r1 'gh api repos/o/r/pulls/4/comments')")"
+t 'gh pr view N --repo'      "$(printf 'repo\to/r\t25\tread')"  "$(rec r1 "$(bash_in r1 'gh pr view 25 --repo o/r --comments')")"
+t 'gh pr checks -R'          "$(printf 'repo\to/r\t3\tread')"   "$(rec r1 "$(bash_in r1 'gh pr checks 3 -R o/r')")"
+t 'gh api pulls url'         "$(printf 'repo\to/r\t4\tread')"   "$(rec r1 "$(bash_in r1 'gh api repos/o/r/pulls/4/comments')")"
 t 'gh pr view no number'     "$(printf 'cwd\t/work/here')" "$(rec r1 "$(bash_in r1 'gh pr view --json url')")"
 t 'gh pr N without repo'     "$(printf 'cwd\t/work/here')" "$(rec r1 "$(bash_in r1 'gh pr view 9')")"
-t 'MCP pull_request_read'    "$(printf 'repo\to/r\t8')"   "$(rec r1 "$(jq -n '{session_id:"r1",tool_name:"mcp__github__pull_request_read",tool_input:{owner:"o",repo:"r",pullNumber:8}}')")"
-t 'MCP without a PR number'  "$(printf 'repo\to/r\t8')"   "$(rec r1 "$(jq -n '{session_id:"r1",tool_name:"mcp__github__get_pull_request_review",tool_input:{owner:"o",repo:"r"}}')")"
-t 'second call still records' "$(printf 'repo\to/r\t26')" "$(rec r1 "$(bash_in r1 'gh pr merge 26 --repo o/r')")"
+t 'MCP pull_request_read'    "$(printf 'repo\to/r\t8\tread')"   "$(rec r1 "$(jq -n '{session_id:"r1",tool_name:"mcp__github__pull_request_read",tool_input:{owner:"o",repo:"r",pullNumber:8}}')")"
+t 'MCP without a PR number'  "$(printf 'repo\to/r\t8\tread')"   "$(rec r1 "$(jq -n '{session_id:"r1",tool_name:"mcp__github__get_pull_request_review",tool_input:{owner:"o",repo:"r"}}')")"
+t 'second call still records' "$(printf 'repo\to/r\t26\twork')" "$(rec r1 "$(bash_in r1 'gh pr merge 26 --repo o/r')")"
 
 # --- open thread blocks, once --------------------------------------------------
 record s1 "$(printf 'repo\to/r\t25')"
@@ -170,6 +170,32 @@ t 'all eight queried' 8 "$(grep -c 'api graphql' "$GH_LOG")"
 check block 'eight PRs, one open thread each -> block' open "$(stop_input s9)"
 reason 'names the eighth PR'            'o/r#8 has 1 unresolved'
 no_reason 'no count cap'                'not checked'
+
+# --- dotfiles#224: a read never gates the Stop, whatever threads it has --------
+record rd1 "$(printf 'repo\to/r\t25\tread')"
+check silent 'read-only record, open thread on that PR -> gate ignores it' open "$(stop_input rd1)"
+: > "$GH_LOG"
+check silent 'read is never even fetched' resolved "$(stop_input rd1)"
+t 'no graphql call made for a read-only record' 0 "$(grep -c 'api graphql' "$GH_LOG")"
+
+record rd2 "$(printf 'repo\to/r\t25\twork')"
+check block 'work record, open thread on that PR -> still blocks' open "$(stop_input rd2)"
+reason 'names the PR'                  'o/r#25 has 1 unresolved'
+
+record rd3 "$(printf 'repo\to/r\t25\tread')"
+record rd3 "$(printf 'repo\to/r\t26\twork')"
+check block 'a read (open threads) plus a clean work PR -> blocks only if the work PR is not clean' open "$(stop_input rd3)"
+no_reason 'the read PR never appears' 'o/r#25'
+reason 'the work PR does'             'o/r#26'
+
+record rd4 "$(printf 'repo\to/r\t25\tread')"
+record rd4 "$(printf 'repo\to/r\t26\twork')"
+check silent 'a read (open threads) plus a clean work PR, work PR clean -> silent' resolved "$(stop_input rd4)"
+
+# a record line with no third field at all (hand-written, or from an older
+# recorder) is treated as work -- fail closed, never a silent downgrade.
+record rd5 "$(printf 'repo\to/r\t25')"
+check block 'no kind field -> defaults to work' open "$(stop_input rd5)"
 
 # --- a hung fetch is reported as unverified, not skipped ------------------------
 if command -v timeout >/dev/null 2>&1; then
