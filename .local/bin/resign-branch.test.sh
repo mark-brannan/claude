@@ -33,6 +33,12 @@ G
 # --json body from gh.pr-body, and `pr edit ... --body <text>` captures
 # <text> into gh.edit-body so a test can inspect what would have been
 # written; gh.rc forces a failure of every gh call.
+# gh api graphql --input -: fakes createCommitOnBranch by replaying the
+# addition/deletion payload onto expectedHeadOid directly in origin.git and
+# moving the named branch, the same side effect the real mutation has.
+# gh api repos/.../commits/<oid>: fakes GitHub's verification check -- true
+# only for a commit the fake mutation built (GitHub signs those)
+# (or whatever "$T/gh.verify" says, when a test wants it to fail).
 cat > "$T/bin/gh" <<'G'
 #!/bin/sh
 rc=$(cat "$T/gh.rc" 2>/dev/null || echo 0); [ "$rc" -eq 0 ] || { echo "gh: boom" >&2; exit "$rc"; }
@@ -47,6 +53,37 @@ case "$*" in
   *"--head"*"--json number"*) cat "$T/gh.pr-number" 2>/dev/null ;;
   *"--base"*"--json number"*) cat "$T/gh.children" 2>/dev/null ;;
   *"--json body"*) cat "$T/gh.pr-body" 2>/dev/null ;;
+  *"api graphql"*)
+    payload=$(cat)
+    branch=$(printf '%s' "$payload" | jq -r '.variables.input.branch.branchName')
+    headline=$(printf '%s' "$payload" | jq -r '.variables.input.message.headline')
+    body=$(printf '%s' "$payload" | jq -r '.variables.input.message.body')
+    oid=$(printf '%s' "$payload" | jq -r '.variables.input.expectedHeadOid')
+    GD="$T/origin.git"
+    cur=$(git --git-dir="$GD" rev-parse "refs/heads/$branch" 2>/dev/null) || cur=""
+    [ "$cur" = "$oid" ] || { echo '{"errors":[{"message":"oid mismatch"}]}' >&2; exit 1; }
+    idx="$T/fake-gh-index"
+    GIT_INDEX_FILE="$idx" git --git-dir="$GD" read-tree "$oid"
+    printf '%s' "$payload" | jq -c '.variables.input.fileChanges.additions[]?' | while IFS= read -r a; do
+      p=$(printf '%s' "$a" | jq -r .path); c=$(printf '%s' "$a" | jq -r .contents)
+      blob=$(printf '%s' "$c" | base64 -d | git --git-dir="$GD" hash-object -w --stdin)
+      GIT_INDEX_FILE="$idx" git --git-dir="$GD" update-index --add --cacheinfo 100644,"$blob","$p"
+    done
+    printf '%s' "$payload" | jq -c '.variables.input.fileChanges.deletions[]?' | while IFS= read -r d; do
+      p=$(printf '%s' "$d" | jq -r .path)
+      GIT_INDEX_FILE="$idx" git --git-dir="$GD" update-index --remove --force-remove "$p" 2>/dev/null || true
+    done
+    tree=$(GIT_INDEX_FILE="$idx" git --git-dir="$GD" write-tree); rm -f "$idx"
+    msg="$headline"; [ -z "$body" ] || msg="$headline
+
+$body"
+    new=$(printf '%s' "$msg" | git --git-dir="$GD" commit-tree "$tree" -p "$oid")
+    git --git-dir="$GD" update-ref "refs/heads/$branch" "$new"
+    printf '%s\n' "$new" >> "$T/gh.signed"; printf '%s\n' "$new"
+    ;;
+  *"api repos/"*"/commits/"*)
+    if [ -f "$T/gh.verify" ]; then cat "$T/gh.verify"
+    elif grep -qx "${2##*/}" "$T/gh.signed" 2>/dev/null; then echo true; else echo false; fi ;;
   *--head*) cat "$T/gh.out" 2>/dev/null ;;
   *--base*) cat "$T/gh.children" 2>/dev/null ;;
 esac
@@ -200,6 +237,100 @@ mk_unsigned_branch feat-nopr
 run feat-nopr
 ok 'head-sha: no open PR, nothing edited' [ ! -s "$T/gh.edit-body" ]
 : > "$T/gh.pr-number"; : > "$T/gh.pr-body"
+
+# --- 10. no local signing key: falls back to GitHub-API-signed commits ---
+git -C "$W" config user.signingkey ""
+: > "$T/gh.out"; : > "$T/gh.children"
+git -C "$W" checkout -q -b feat-c main
+echo c1 > "$W/c" && git -C "$W" add c && git -C "$W" -c commit.gpgsign=false commit -q -m "feat-c 1"
+echo c2 >> "$W/c" && git -C "$W" add c && git -C "$W" -c commit.gpgsign=false commit -q --author="Not Me <notme@example.com>" -m "feat-c 2"
+git -C "$W" push -q origin feat-c
+run feat-c
+ok  'API fallback: exits 0' [ $rc -eq 0 ]
+has 'API fallback: names the path' 'no local signing key -- replaying'
+git -C "$W" fetch -q origin
+ok  'API fallback: same file content on the remote' [ "$(git -C "$W" show origin/feat-c:c)" = "$(printf 'c1\nc2\n')" ]
+ok  'API fallback: two commits replayed' [ "$(git -C "$W" rev-list --count origin/main..origin/feat-c)" = 2 ]
+trailer_log=$(git -C "$W" log origin/feat-c --format=%B -2)
+case "$trailer_log" in
+  *"Co-Authored-By: Not Me <notme@example.com>"*) ok 'API fallback: original author preserved as a trailer' true ;;
+  *) ok 'API fallback: original author preserved as a trailer' false ;;
+esac
+ok  'API fallback: scratch branch cleaned up' [ -z "$(git -C "$T/origin.git" for-each-ref 'refs/heads/resign-tmp/*' --format='%(refname)')" ]
+
+# --- 11. no local signing key, executable-bit change: refuses, remote untouched ---
+git -C "$W" checkout -q -b feat-d main
+echo x > "$W/x" && git -C "$W" add x && git -C "$W" -c commit.gpgsign=false commit -q -m "feat-d 1"
+chmod +x "$W/x" && git -C "$W" add x && git -C "$W" -c commit.gpgsign=false commit -q -m "feat-d 2 chmod +x"
+git -C "$W" push -q origin feat-d
+old_d=$(git -C "$W" rev-parse origin/feat-d)
+run feat-d
+ok  'API fallback mode change: refuses' [ $rc -eq 1 ]
+has 'API fallback mode change: says why' "the GitHub API fallback can only create or delete plain 100644 blobs"
+git -C "$W" fetch -q origin
+ok  'API fallback mode change: remote untouched' [ "$(git -C "$W" rev-parse origin/feat-d)" = "$old_d" ]
+
+# --- 12. no local signing key, GitHub fails final verification: the scratch
+# branch is left on the remote for inspection, not deleted by the EXIT trap.
+# This is the failure-path case the success-only cleanup fix (below) covers --
+# a die() after the scratch branch exists must not have it swept out from
+# under the die() message's own promise that it's "left on $remote".
+git -C "$W" checkout -q -b feat-e main
+echo e1 > "$W/e" && git -C "$W" add e && git -C "$W" -c commit.gpgsign=false commit -q -m "feat-e 1"
+git -C "$W" push -q origin feat-e
+echo false > "$T/gh.verify"
+run feat-e
+ok  'API fallback verify fails: refuses' [ $rc -eq 1 ]
+has 'API fallback verify fails: names the branch as untouched' 'feat-e is untouched'
+has 'API fallback verify fails: says the scratch branch is left for inspection' 'is left on origin for inspection'
+git -C "$W" fetch -q origin
+ok  'API fallback verify fails: scratch branch survives on the remote' \
+  [ -n "$(git -C "$T/origin.git" for-each-ref 'refs/heads/resign-tmp/feat-e.*' --format='%(refname)')" ]
+ok  'API fallback verify fails: real branch untouched' \
+  [ "$(git -C "$W" log -1 --format=%s origin/feat-e)" = "feat-e 1" ]
+git -C "$T/origin.git" for-each-ref 'refs/heads/resign-tmp/feat-e.*' --format='%(refname)' \
+  | while IFS= read -r r; do git -C "$T/origin.git" update-ref -d "$r"; done
+rm -f "$T/gh.verify"
+
+# --- 13. no local signing key, branch behind its base with the base editing
+# the same file: the replay must carry both edits, not overwrite the base's ---
+git -C "$W" checkout -q main
+printf '1\n2\n3\n4\n5\n' > "$W/f" && git -C "$W" add f && git -C "$W" -c commit.gpgsign=false commit -q -m "main f" && git -C "$W" push -q origin main
+git -C "$W" checkout -q -b feat-f main
+sed -i 's/^1$/1-branch/' "$W/f" && git -C "$W" add f && git -C "$W" -c commit.gpgsign=false commit -q -m "feat-f 1"
+git -C "$W" push -q origin feat-f
+git -C "$W" checkout -q main
+sed -i 's/^5$/5-main/' "$W/f" && git -C "$W" add f && git -C "$W" -c commit.gpgsign=false commit -q -m "main f 2" && git -C "$W" push -q origin main
+run feat-f
+ok  'API fallback behind base: exits 0' [ $rc -eq 0 ]
+git -C "$W" fetch -q origin
+ok  'API fallback behind base: keeps the base edit and the branch edit' \
+  [ "$(git -C "$W" show origin/feat-f:f)" = "$(printf '1-branch\n2\n3\n4\n5-main\n')" ]
+ok  'API fallback behind base: sits on the base tip' \
+  [ "$(git -C "$W" rev-parse origin/feat-f~1)" = "$(git -C "$W" rev-parse origin/main)" ]
+
+# --- 14. no local signing key, a second run after the fallback succeeded:
+# GitHub says every commit verifies, so nothing to do -- not another rewrite ---
+tip_f=$(git -C "$W" rev-parse origin/feat-f)
+run feat-f
+ok  'API fallback rerun: exits 0' [ $rc -eq 0 ]
+has 'API fallback rerun: nothing to do' 'nothing to do'
+git -C "$W" fetch -q origin
+ok  'API fallback rerun: branch not rewritten' [ "$(git -C "$W" rev-parse origin/feat-f)" = "$tip_f" ]
+
+# --- 15. no local signing key, a rebase conflict: refuses, nothing staged ---
+git -C "$W" checkout -q -b feat-g main
+sed -i 's/^3$/3-branch/' "$W/f" && git -C "$W" add f && git -C "$W" -c commit.gpgsign=false commit -q -m "feat-g 1"
+git -C "$W" push -q origin feat-g
+git -C "$W" checkout -q main
+sed -i 's/^3$/3-main/' "$W/f" && git -C "$W" add f && git -C "$W" -c commit.gpgsign=false commit -q -m "main f 3" && git -C "$W" push -q origin main
+old_g=$(git -C "$W" rev-parse origin/feat-g)
+run feat-g
+ok  'API fallback conflict: refuses' [ $rc -eq 1 ]
+has 'API fallback conflict: says why' 'conflicted'
+git -C "$W" fetch -q origin
+ok  'API fallback conflict: remote untouched' [ "$(git -C "$W" rev-parse origin/feat-g)" = "$old_g" ]
+ok  'API fallback conflict: no scratch branch' [ -z "$(git -C "$T/origin.git" for-each-ref 'refs/heads/resign-tmp/feat-g.*' --format='%(refname)')" ]
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
