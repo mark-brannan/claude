@@ -48,7 +48,7 @@ fi
 # two never interleave and a salvage push cannot resurrect the branch we are
 # deleting. Best effort: a machine without flock proceeds unlocked.
 if command -v flock >/dev/null 2>&1; then
-  exec 9>"${TMPDIR:-/tmp}/claude-state-push.lock" 2>/dev/null && flock -w 90 9 2>/dev/null
+  { exec 9>"${TMPDIR:-/tmp}/claude-state-push.lock"; } 2>/dev/null && flock -w 90 9 2>/dev/null
 fi
 
 sha=$(git -C "$work_root" rev-parse --short "$branch" 2>/dev/null || echo '?')
@@ -60,6 +60,20 @@ remote_rc=$?
 # dead remote) is "could not check", not "not there" -- and must not be
 # treated as license to delete the only copy.
 if [ "$remote_rc" -eq 0 ]; then
+  # Deleting the base or head of an open PR closes it, and the stacked-base
+  # scanner never sees this push (dotfiles#227). Fail closed: gh or jq
+  # missing, no auth, or a list long enough to be truncated all refuse.
+  prs=$(cd "$work_root" && gh pr list --state open --limit 1000 \
+    --json number,title,baseRefName,headRefName 2>/dev/null) || prs=
+  hits=$([ -n "$prs" ] && printf '%s' "$prs" | jq -r --arg b "$branch" \
+    'if length >= 1000 then error("truncated") else .[]
+     | select(.baseRefName == $b or .headRefName == $b)
+     | "#\(.number) \(.title)" end' 2>/dev/null) \
+    || { printf 'abandon-branch: refused -- could not check open PRs on `%s` (gh/jq missing, no auth, no network).\n' "$branch" >&2; exit 1; }
+  if [ -n "$hits" ]; then
+    printf 'abandon-branch: refused -- `%s` is the base or head of open PR(s):\n%s\nMerge or retarget first.\n' "$branch" "$hits" >&2
+    exit 1
+  fi
   # Refspec form, not --delete: a ref name is never mistaken for a flag.
   if run_to 60 git -C "$work_root" push -q origin ":refs/heads/$branch" >/dev/null 2>&1; then
     remote=deleted
