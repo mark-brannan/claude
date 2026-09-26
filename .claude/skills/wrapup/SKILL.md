@@ -1,6 +1,6 @@
 ---
 name: wrapup
-description: Close a session — write the narrative log to the state repo, list the issues the session opened or labelled, dry-run the board sweep, and end with a paste-ready hand-off prompt. Use when Solace says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
+description: Close a session — write the narrative log to the state repo, list the issues the session opened or labelled, and end with a paste-ready hand-off prompt. Use when Solace says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
 ---
 
 # Wrapping up
@@ -13,7 +13,7 @@ meant, what is still open, and how the next one starts.
 
 ## 0. Should this session wrap up at all
 
-Check first, every time. A wrap-up costs a log, a sweep and a prompt, and it
+Check first, every time. A wrap-up costs a log and a prompt, and it
 was being paid every session — including sessions whose work already had a
 home, where all it produced was a second copy of what GitHub held.
 
@@ -47,7 +47,6 @@ machine one is evidence, not a substitute. Put in it:
 - stamp the memos that argued a question when it's ruled — a dated
   one-line annotation under the memo's H1 naming what settled it, per
   `/reconcile`'s convention. Bodies stay as evidence, never reworded;
-- the `/sweep --dry-run` output from step 3;
 - observations worth keeping. They go here, silently — never as an aside in
   chat.
 
@@ -91,19 +90,9 @@ When you do write one, it must:
 Put it in the narrative log as well as the chat. The log survives; the chat
 does not.
 
-## 3. Board sweep — last, and announced
+## 3. No board sweep here
 
-Only now, after the log and hand-off prompt are already written: run
-`/sweep --dry-run`, announcing it first — "running `/sweep --dry-run` now —
-N cards to check" (N from counting `## Needs ruling` + `## Solace's` in
-`kanban.md`) — so it reads as a labelled, bounded step, not a silent delay
-before the useful output. Put its output in the narrative log. It's the slow
-step in this skill (O(cards) proof-hunts, not a cheap read — measured at
-~4s/card for a metadata-only check, more once comment content is read;
-dotfiles#211); running it after the log and hand-off exist means a session
-cut short here still leaves both behind. Nothing else here — no board edits,
-no issue listing, no checking what merged. `worklist` reads GitHub live; a
-wrap-up that copies it is a second copy.
+`/sweep` is a standalone command, run on request. Not a wrap-up step.
 
 ## 4. Release the branch
 
