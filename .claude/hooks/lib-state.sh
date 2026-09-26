@@ -237,8 +237,10 @@ state_lock() {
           && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; } || return 1
     else
       ref="$dir.age.$$"; cutoff=$(( $(date +%s) - STATE_LOCK_STALE_SECS ))
-      : > "$ref" 2>/dev/null && touch -t "$(date -d "@$cutoff" +%Y%m%d%H%M.%S 2>/dev/null \
-        || date -r "$cutoff" +%Y%m%d%H%M.%S)" "$ref" 2>/dev/null || return 1
+      if ! { : > "$ref" 2>/dev/null && touch -t "$(date -d "@$cutoff" +%Y%m%d%H%M.%S 2>/dev/null \
+        || date -r "$cutoff" +%Y%m%d%H%M.%S)" "$ref" 2>/dev/null; }; then
+        rm -f "$ref"; return 1
+      fi
       [ "$dir" -ot "$ref" ]; rc=$?; rm -f "$ref"; [ "$rc" -eq 0 ] || return 1
     fi
     mv "$dir" "$dir.stale.$$" 2>/dev/null && rm -rf "$dir.stale.$$" && mkdir "$dir" 2>/dev/null \

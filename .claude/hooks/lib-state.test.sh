@@ -179,6 +179,22 @@ EOF
 lock_check "fresh meta-less lock dir is not reclaimed" 1
 rm -rf "$LOCKDIR"
 
+# PR #379 review thread: if `: > "$ref"` succeeds but `touch -t` fails, the
+# meta-less-reclaim path must not leak the "$dir.age.$$" reference file.
+mkdir -p "$LOCKDIR"
+cat > "$CASE" <<EOF
+touch() { if [ "\$1" = "-t" ]; then return 1; fi; command touch "\$@"; }
+. "$HOOKS/lib-state.sh"
+state_lock "$LOCKDIR"
+EOF
+lock_check "touch -t failure on meta-less dir still fails" 1
+if find "$SCRATCH" -maxdepth 1 -name "x.lock.age.*" | grep -q .; then
+  fail=$((fail+1)); echo "FAIL touch -t failure leaks the age reference file"
+else
+  pass=$((pass+1))
+fi
+rm -rf "$LOCKDIR" "$SCRATCH"/x.lock.age.*
+
 
 # --- day_decisions -----------------------------------------------------------
 # The machine-wide decision store (dotfiles#301). CLAUDE_STATE_REPO points
