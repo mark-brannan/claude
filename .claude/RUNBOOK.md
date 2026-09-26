@@ -75,13 +75,9 @@ verbatim instead; it ends with the same clone-and-delegate. Neither variant is
 executed by the platform — both files exist only so the pasted text has an
 authoritative copy in git. Keep them in sync by hand if either changes.
 
-Measured cost on a cold VM: about 5s, against a ~5 minute window.
-
 Paste the matching variant into **every** environment, not just the one in
-front of you. An environment created before this existed has no seed at all,
-and a session started in it is indistinguishable from one that has it until
-something is missing — which was the whole failure. As of 2026-08-21 that
-means `Default (with tailscale)`, `Trusted` and `Full network access`.
+front of you — an environment with no seed is indistinguishable from one that
+has it until something is missing.
 
 **The setup script runs once, when the container is created**, and the
 container is then checkpointed and reused. So the blob's `git clone` is the
