@@ -209,8 +209,11 @@ do not paraphrase it into a second version that can drift from this one.
 ## Writing a block
 
 The other half, for a session that is *leaving* work: write the block into
-**your own** checkpoint — `state/global/log/auto/<date>-<repo>-<id>.md` — when
-the Stop nag blocks once, or when Solace says "update resume". Four lines,
+**your own** checkpoint — `state/global/log/auto/<date>-<repo>-<id>.md` — at
+`/wrapup` step 2b (every wrap-up that hands anything off), when the Stop nag
+blocks once, or when Solace says "update resume". The nag is a backstop, not
+the trigger: it arms on a context, clock or friction crossing, and a session
+that ends cleanly never sees it. Four lines,
 house hand-off spec, under a `## Resume` heading:
 
 ```

@@ -23,13 +23,17 @@ Read the verdict line at the top of this session's auto-checkpoint
 - **`archivable`** — the branch has a PR or a pointer, the worktree is clean,
   nothing is unpushed, the state repo pushed — **and** every open loop has a
   home (an issue, a PR or a card): say so in one line, name where the work
-  lives, and **stop**. No log, no hand-off prompt. Archivable means archive.
+  lives, and **stop**. No log, no hand-off prompt. Archivable means archive;
+  it does not mean silent: if a next session should continue there, write
+  the four-line block (spec in step 2b) with `link` = where the work lives
+  and `next` = the one thing that session does there first. There is no
+  step-2 prompt on this path to derive from, and none is needed.
 - **`not archivable: <reasons>`**, or a loop with no home: continue below.
   The reasons name what to fix; fixing them is usually cheaper than the
   wrap-up and sometimes turns it into an archive.
 
 If the session's only remaining need is "the next session should start here",
-that is a resume block (`/pickup`, four lines), not a wrap-up.
+that is a resume block (step 2b, four lines), not a wrap-up.
 
 ## 1. Narrative log
 
@@ -90,6 +94,47 @@ When you do write one, it must:
 Put it in the narrative log as well as the chat. The log survives; the chat
 does not.
 
+## 2b. Write the resume block — always
+
+`/pickup` reads nothing from the log and nothing from the chat. It reads one
+thing: the `## Resume` block in this session's own checkpoint
+(`state/global/log/auto/<date>-<repo>-<id>.md`). A hand-off prompt that is
+not also there is a hand-off to nobody — the next session runs
+`pickup-list`, sees no row, and truthfully reports there is nothing to
+resume. That is the amnesia this step exists to prevent.
+
+So every wrap-up that produced a hand-off in step 2 — the one-line
+`continue <link>` form included — also writes the block, before the closing
+message. **Push the branch first** (`git push -u origin <branch>`): the block
+points at a branch, `pickup-list` reads the local worktree and cannot tell,
+and a `/pickup` on another machine fetches a branch that is not on origin
+and finds nothing. Same four lines as `/pickup`'s spec. `link` is
+the home step 2 found and `next` is the prompt's first action — one
+derivation, not a second one that can drift from the prose. If the
+checkpoint already holds a block (the Stop nag may have asked for one before
+`/wrapup` ran), replace it; one block per checkpoint, never two:
+
+```
+## Resume
+
+- next: <one sentence, imperative — the prompt's first action>
+- link: <the branch, PR, issue or card the prompt names>
+- model: <opus | sonnet | haiku>
+- effort: <low | medium | high>
+```
+
+Then check it landed:
+
+```
+~/.local/bin/pickup-list
+```
+
+Your branch must be in the table. If it is not, the block is missing,
+malformed or already marked consumed — fix that before you close. Don't wait
+for the Stop nag: it arms on a context, clock or friction crossing, not on a
+wrap-up, and a session that wraps up cleanly is exactly the one it never
+asks.
+
 ## 3. No board sweep here
 
 `/sweep` is a standalone command, run on request. Not a wrap-up step.
@@ -106,7 +151,7 @@ session that archived in step 0 has nothing to do here.
 
 ## 5. The closing message
 
-The closing message holds exactly two things: the hand-off prompt, and links
-to the `## Needs ruling` and `## Solace's` cards this session wrote. Nothing
-else. If nothing hit a one-way door, that half is simply absent — a question
+Not before step 2b has passed its check. The closing message holds exactly
+two things: the hand-off prompt, and links to the `## Needs ruling` and
+`## Solace's` cards this session wrote. Nothing else. If nothing hit a one-way door, that half is simply absent — a question
 you worked around is reported in the PR body, not here.
