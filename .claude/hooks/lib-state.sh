@@ -218,17 +218,29 @@ archivable_reasons() {
 # own: `trap` overwrites rather than chains, and a caller (stop-continuity.sh
 # already arms one, e.g. `trap restore_board EXIT`) would have it silently
 # clobbered. The caller adds `state_unlock` to its own EXIT/TERM/INT traps.
+# A dir with no meta at all (a kill between mkdir and the meta write) has no
+# pid to check; one older than STATE_LOCK_STALE_SECS is reclaimed regardless
+# -- no `stat` (flags differ GNU/BSD), so age comes from `-ot` against a
+# reference file touched to the cutoff.
 STATE_LOCK_DIR=""
+STATE_LOCK_STALE_SECS="${STATE_LOCK_STALE_SECS:-5}"
 
 state_lock() {
-  local dir="$1" meta="" host pid
+  local dir="$1" meta="" host pid ref cutoff rc
   [ -n "$dir" ] || return 1
   meta="$dir/meta"
   host=$(uname -n 2>/dev/null || echo unknown)
   if ! mkdir "$dir" 2>/dev/null; then
-    pid=$(awk -F= '$1 == "pid" { print $2 }' "$meta" 2>/dev/null)
-    { [ "$(awk -F= '$1 == "hostname" { print $2 }' "$meta" 2>/dev/null)" = "$host" ] \
-        && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; } || return 1
+    if [ -f "$meta" ]; then
+      pid=$(awk -F= '$1 == "pid" { print $2 }' "$meta" 2>/dev/null)
+      { [ "$(awk -F= '$1 == "hostname" { print $2 }' "$meta" 2>/dev/null)" = "$host" ] \
+          && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; } || return 1
+    else
+      ref="$dir.age.$$"; cutoff=$(( $(date +%s) - STATE_LOCK_STALE_SECS ))
+      : > "$ref" 2>/dev/null && touch -t "$(date -d "@$cutoff" +%Y%m%d%H%M.%S 2>/dev/null \
+        || date -r "$cutoff" +%Y%m%d%H%M.%S)" "$ref" 2>/dev/null || return 1
+      [ "$dir" -ot "$ref" ]; rc=$?; rm -f "$ref"; [ "$rc" -eq 0 ] || return 1
+    fi
     mv "$dir" "$dir.stale.$$" 2>/dev/null && rm -rf "$dir.stale.$$" && mkdir "$dir" 2>/dev/null \
       || return 1
   fi
