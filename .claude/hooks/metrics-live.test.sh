@@ -797,5 +797,29 @@ payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show >/dev/null 2>&1
 t   'a tool call leaves the sitting clock where it found it' "$before12" \
     "$(jq -r '.sitting_start // 0' "$SITF12" 2>/dev/null || echo 0)"
 
+# --- 14. the nag lock never blocks the hook (dotfiles#161) -------------------
+# A concurrent invocation of the same session already holds
+# $LIVE/<sid>.lock (a live pid, so state_lock must not reclaim it as stale):
+# save_nag must skip its write rather than wait or fail the hook, and once
+# the lock is free again a later call writes normally and cleans up after
+# itself.
+TP14="$SCRATCH/lock.jsonl"; SID14=lockcase
+turn "$TP14" 103000
+LOCKDIR="$STATE/metrics/live/$SID14.lock"
+mkdir -p "$LOCKDIR"
+printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$LOCKDIR/meta"
+out14=$(payload "$TP14" "$SID14" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1); rc14=$?
+t    'a held lock never blocks the hook' 0 "$rc14"
+has  'the block still renders normally' '⛁' "$(msg "$out14")"
+t    'and the nag write is skipped while the lock is held' no \
+     "$([ -f "$STATE/metrics/live/$SID14.nag.json" ] && echo yes || echo no)"
+
+rm -rf "$LOCKDIR"
+payload "$TP14" "$SID14" "$SCRATCH" | bash "$HOOK" posttooluse 0 show >/dev/null 2>&1
+t    'once the lock is free, the same session writes normally' yes \
+     "$([ -f "$STATE/metrics/live/$SID14.nag.json" ] && echo yes || echo no)"
+t    'and releases the lock dir behind it' no \
+     "$([ -d "$LOCKDIR" ] && echo yes || echo no)"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

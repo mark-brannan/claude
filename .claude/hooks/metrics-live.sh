@@ -238,6 +238,10 @@ fi
 # of a session and the crossings have to outlive it.
 NAGF="$LIVE/$sid.nag.json"
 CROSSD="$(state_dir)/metrics/crossings"
+# state_lock installs no trap of its own (a caller's is easily clobbered);
+# this one covers every save_nag write below and every exit path, including
+# the Stop `block` decision's early `exit 0`.
+trap 'state_unlock' EXIT TERM INT
 
 # The sitting clock is the one piece of this state that is NOT per session.
 # A person with three chats open is one person in one chair: when the clock
@@ -358,6 +362,10 @@ fi
 [ "$ctx_stop_line" -eq 0 ] && [ "$ctx_line" -ge "$NAG_CONTEXT_STOP_AT" ] && ctx_stop_line=$ctx_line
 
 save_nag() {
+  # Never blocks the hook: a lock already held by a concurrent invocation
+  # of this same session (dotfiles#161 findings 1/2/4) just skips this
+  # write rather than waiting or failing the hook.
+  state_lock "$LIVE/$sid.lock" || return 0
   jq -n --argjson cl "$ctx_line" --argjson cr "$ctx_rungs" --argjson cs "$ctx_stop_line" \
         --argjson tl "$time_line" --argjson ts "$tl_sitting" \
         --argjson gl "$gate_line" --argjson ft "$fric_tripped" \
@@ -376,6 +384,7 @@ save_nag() {
       model_context_tools: $mct}' \
     > "$NAGF.$$" 2>/dev/null \
     && mv -f "$NAGF.$$" "$NAGF" 2>/dev/null || rm -f "$NAGF.$$" 2>/dev/null
+  state_unlock
 }
 
 # Only the four wired events drive the engine. The statusline reaches this
