@@ -4,8 +4,10 @@
 # Deletes (dry run unless --delete) local branches, in every repo named in
 # ~/.local/share/vended-repos.txt plus ~/dotfiles and yadm, that are
 #   older than --days (default 14), not on the remote by name, and
-#   either upstream-gone (PR merged; squash leaves nothing to contain)
-#   or fully contained in a remote ref.
+#   either upstream-gone (PR merged; squash leaves nothing to contain),
+#   fully contained in a remote ref, or patch-equivalent to the default
+#   branch (every commit's diff, or the whole branch's diff as one squash,
+#   already landed there under a different sha).
 # Keeps and names anything with commits found nowhere else, and any dirty
 # worktree. Prints an undo per deletion. Exit 1 if a repo could not be read.
 set -uo pipefail
@@ -78,9 +80,27 @@ for repo in "${repos[@]}"; do
       if [ -n "$holder" ]; then
         reason="contained in $holder"
       else
-        unique=$("${g[@]}" rev-list --count "$base..$branch" 2>/dev/null || echo '?')
-        echo "$label: keep $branch -- $unique commit(s) not on any remote"
-        n_kept=$((n_kept + 1)); continue
+        # Not contained by sha; compare patch ids. `git cherry` marks each
+        # commit `-` when its diff is on $base (any `+` is real work); the
+        # whole branch's diff on $base is a multi-commit squash. Ids ignore
+        # messages, so a branch with no net diff proves nothing: keep it.
+        cherry='' squashed=''
+        mb=$("${g[@]}" merge-base "$base" "$branch" 2>/dev/null) || mb=''
+        if [ -n "$mb" ] && ! "${g[@]}" diff --quiet "$mb" "$branch" 2>/dev/null; then
+          cherry=$("${g[@]}" cherry "$base" "$branch" 2>/dev/null) || cherry=''
+          id=$("${g[@]}" diff "$mb" "$branch" 2>/dev/null | "${g[@]}" patch-id --stable | cut -d' ' -f1)
+          ids=$("${g[@]}" log -p --no-merges "$mb..$base" 2>/dev/null | "${g[@]}" patch-id --stable)
+          [ -n "$id" ] && grep -q "^$id " <<<"$ids" && squashed=1
+        fi
+        if [ -n "$cherry" ] && ! printf '%s\n' "$cherry" | grep -q '^+'; then
+          reason="patch-equivalent to $base"
+        elif [ -n "$squashed" ]; then
+          reason="squash-merged into $base"
+        else
+          unique=$("${g[@]}" rev-list --count "$base..$branch" 2>/dev/null || echo '?')
+          echo "$label: keep $branch -- $unique commit(s) not on any remote"
+          n_kept=$((n_kept + 1)); continue
+        fi
       fi
     fi
 
