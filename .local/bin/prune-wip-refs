@@ -1,0 +1,197 @@
+#!/bin/sh
+# prune-wip-refs [--delete] [--days N] [--no-fetch] [--repo DIR]... [--list FILE]
+#
+# Deletes (dry run unless --delete) the remote refs/heads/wip/<session-id>
+# refs the Stop-hook salvage pushes (dotfiles#285/#318), in every repo
+# prune-branches would scan, when the snapshot is safe to drop:
+#
+#   - the session's own checkpoint (state repo, log/auto/*.md) names the
+#     branch it snapshotted, and that branch's PR has merged, or the branch's
+#     current tip already carries every path the wip commit touched; or
+#   - the ref is older than --days (default 14, same floor prune-branches
+#     uses) and its commit is patch-equivalent to the default branch --
+#     `git cherry`, same check and meaning as dotfiles#185/#313.
+#
+# A ref with no matching checkpoint that also isn't old enough for the second
+# leg is kept and named, not guessed at. Prints an undo (a push that recreates
+# the ref at its old sha) per deletion.
+#
+# Remote refs only. The salvaging clone also keeps a local refs/heads/wip/*
+# copy; that one is prune-branches's, like any other local branch.
+#
+# A sibling of prune-branches rather than a mode of it: the remote refs have
+# no worktree and are checked against a private-repo checkpoint prune-branches
+# has no reason to know about. Bolting that on would grow the one script past
+# one concern for both.
+set -u
+
+days=14 delete=0 fetch=1 list="$HOME/.local/share/vended-repos.txt"
+repo_file=$(mktemp)
+ref_file=$(mktemp)
+diff_file=$(mktemp)
+trap 'rm -f "$repo_file" "$ref_file" "$diff_file"' EXIT
+n_repo_args=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --delete)   delete=1 ;;
+    --dry-run)  delete=0 ;;
+    --days)     days=$2; shift ;;
+    --days=*)   days=${1#--days=} ;;
+    --no-fetch) fetch=0 ;;
+    --repo)     echo "$2" >> "$repo_file"; n_repo_args=$((n_repo_args + 1)); shift ;;
+    --list)     list=$2; shift ;;
+    -h|--help)  sed -n '2,/^set -u/{/^set -u/!s/^# \{0,1\}//p}' "$0"; exit 0 ;;
+    *) echo "prune-wip-refs: unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+case "$days" in ''|*[!0-9]*) echo "prune-wip-refs: --days wants a number" >&2; exit 2 ;; esac
+
+if [ "$n_repo_args" -eq 0 ]; then
+  if [ -r "$list" ]; then
+    while IFS= read -r name; do
+      name=${name%%#*}
+      # POSIX has no ${var// /}; ` ` is the only whitespace vended-repos.txt
+      # lines carry, so strip it with tr instead.
+      name=$(printf '%s' "$name" | tr -d ' \t')
+      if [ -n "$name" ] && [ -d "$HOME/$name/.git" ]; then
+        echo "$HOME/$name" >> "$repo_file"
+      fi
+    done < "$list"
+  fi
+  if [ -d "$HOME/dotfiles/.git" ]; then
+    echo "$HOME/dotfiles" >> "$repo_file"
+  fi
+fi
+
+# Where the Stop hook's checkpoints live -- same lookup stop-continuity.sh
+# uses, sourced rather than re-guessed so the two never drift apart.
+lib_state="$(cd "$(dirname "$0")/../../.claude/hooks" 2>/dev/null && pwd)/lib-state.sh"
+ckpt_dir=""
+if [ -f "$lib_state" ]; then
+  # shellcheck source=/dev/null
+  . "$lib_state"
+  ckpt_dir="$(state_dir)/log/auto"
+  [ -d "$ckpt_dir" ] || ckpt_dir=""
+fi
+
+cutoff=$(( $(date +%s) - days * 86400 ))
+verb='would delete'
+if [ "$delete" = 1 ]; then verb='deleted'; fi
+status=0 n_cand=0 n_kept=0 n_repo=0
+
+# path_contained <repo> <sha> <branch> <path> -- true when <path> is
+# byte-identical (or absent from both) between <sha> and origin/<branch>.
+path_contained() {
+  git -C "$1" diff --quiet "$2" "origin/$3" -- "$4" 2>/dev/null
+}
+
+while IFS= read -r repo; do
+  [ -n "$repo" ] || continue
+  n_repo=$((n_repo + 1))
+  label=${repo#"$HOME/"}
+
+  if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "$label: not a git repository -- skipped" >&2
+    status=1
+    continue
+  fi
+  if [ "$fetch" = 1 ]; then
+    if ! git -C "$repo" fetch --prune --quiet 2>/dev/null; then
+      echo "$label: fetch failed -- skipped (--no-fetch to inspect anyway)" >&2
+      status=1
+      continue
+    fi
+  fi
+
+  base=$(git -C "$repo" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
+  [ -n "$base" ] || base=origin/main
+
+  git -C "$repo" for-each-ref 'refs/remotes/origin/wip/*' \
+      --format='%(refname:short)|%(objectname)|%(committerdate:unix)' \
+      > "$ref_file" 2>/dev/null
+
+  while IFS='|' read -r shortref sha cdate; do
+    [ -n "$shortref" ] || continue
+    sid=${shortref#origin/wip/}
+    age=$(( ( $(date +%s) - cdate ) / 86400 ))
+    reason='' extra='' landed=0
+
+    if [ -n "$ckpt_dir" ]; then
+      matches=$(grep -rl "session \`$sid\`" "$ckpt_dir"/*.md 2>/dev/null)
+      nmatch=0
+      if [ -n "$matches" ]; then nmatch=$(printf '%s\n' "$matches" | wc -l); fi
+
+      if [ "$nmatch" -eq 1 ]; then
+        ckpt=$matches
+        branch=$(sed -n '1s/.*@ `\(.*\)`.*/\1/p' "$ckpt")
+
+        # The PR whose head is the snapshotted branch, never the Resume
+        # block's link: that names what the session acts on next, and a
+        # review session's link is someone else's PR.
+        if [ -n "$branch" ] && command -v gh >/dev/null 2>&1; then
+          pr=$(cd "$repo" && gh pr view "$branch" --json state,url \
+                 -q 'select(.state == "MERGED") | .url' 2>/dev/null)
+          if [ -n "$pr" ]; then
+            reason="PR merged ($pr)"
+            landed=1
+          fi
+        fi
+
+        if [ "$landed" -eq 0 ] && [ -n "$branch" ] \
+           && git -C "$repo" rev-parse -q --verify "origin/$branch" >/dev/null 2>&1; then
+          parent=$(git -C "$repo" rev-parse -q --verify "$sha^" 2>/dev/null)
+          if [ -n "$parent" ]; then
+            git -C "$repo" diff --name-only "$parent" "$sha" > "$diff_file" 2>/dev/null
+            all_contained=1
+            while IFS= read -r p; do
+              [ -n "$p" ] || continue
+              if ! path_contained "$repo" "$sha" "$branch" "$p"; then
+                all_contained=0
+                break
+              fi
+            done < "$diff_file"
+            if [ "$all_contained" -eq 1 ]; then
+              reason="content already on origin/$branch"
+              landed=1
+            fi
+          fi
+        fi
+      elif [ "$nmatch" -gt 1 ]; then
+        extra=" (ambiguous: $nmatch checkpoints named this session)"
+      fi
+    fi
+
+    if [ "$landed" -eq 0 ] && [ "$cdate" -lt "$cutoff" ]; then
+      cherry=$(git -C "$repo" cherry "$base" "$sha" 2>/dev/null)
+      if [ -n "$cherry" ] && ! printf '%s\n' "$cherry" | grep -q '^+'; then
+        reason="patch-equivalent to $base, ${age}d old"
+        landed=1
+      fi
+    fi
+
+    if [ "$landed" -eq 0 ]; then
+      echo "$label: keep wip/$sid -- ${age}d old, not landed$extra"
+      n_kept=$((n_kept + 1))
+      continue
+    fi
+
+    if [ "$delete" = 1 ]; then
+      if ! git -C "$repo" push origin --delete "refs/heads/wip/$sid" >/dev/null 2>&1; then
+        echo "$label: keep wip/$sid -- delete push failed" >&2
+        n_kept=$((n_kept + 1))
+        status=1
+        continue
+      fi
+    fi
+    echo "$label: $verb wip/$sid ($reason)  undo: git -C $repo push origin $sha:refs/heads/wip/$sid"
+    n_cand=$((n_cand + 1))
+  done < "$ref_file"
+done < "$repo_file"
+
+echo "$verb $n_cand wip ref(s), kept $n_kept, across $n_repo repo(s)"
+if [ "$delete" -eq 0 ] && [ "$n_cand" -gt 0 ]; then
+  echo "rerun with --delete to act"
+fi
+exit $status
