@@ -163,7 +163,7 @@ resume_block=""
 # One pusher at a time. Parallel sessions are the norm, and two concurrent
 # rebase-and-push loops in the same worktree corrupt each other's index.
 LOCK="${TMPDIR:-/tmp}/claude-state-push.lock"
-exec 9>"$LOCK" 2>/dev/null || exit 0
+{ exec 9>"$LOCK"; } 2>/dev/null || exit 0
 flock -w 90 9 2>/dev/null || exit 0
 
 # ------------------------------------------------------------ work repo

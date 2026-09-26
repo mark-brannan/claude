@@ -344,5 +344,26 @@ has 'behind @{u}: refused' \
   'refused: .claude/salvage. is 1 commit\(s\) behind .origin/claude/salvage.' "$CKPT"
 untouched 'behind @{u}' ' M f'
 
+# --- the lock line's own pattern does not swallow the rest of the shell's stderr --
+# `exec 9>"$LOCK" 2>/dev/null` has no command of its own, so once the redirect
+# succeeds bash applies its 2>/dev/null permanently to the shell, not just to
+# that line -- every stderr write for the rest of the run goes to /dev/null
+# instead of the transcript. Scoping the redirect to a `{ ; }` group keeps it
+# from outliving the lock attempt. Exercised directly rather than through the
+# whole hook, whose sourcing and env assume it runs from its own directory.
+assert 'the hook no longer has the unscoped form' \
+  bash -c '! grep -q "^exec 9>\"\\\$LOCK\" 2>/dev/null" '"'$HOOK'"
+has 'the hook has the scoped form' '^\{ exec 9>"\$LOCK"; \} 2>/dev/null \|\| exit 0$' "$HOOK"
+
+LOCKFILE="$S/pattern.lock"
+bash -c '{ exec 9>"$1"; } 2>/dev/null || exit 0; echo scoped-stderr-survives >&2' _ "$LOCKFILE" \
+  2>"$S/scoped.stderr"
+has 'the scoped form leaves later stderr alone' 'scoped-stderr-survives' "$S/scoped.stderr"
+
+bash -c 'exec 9>"$1" 2>/dev/null || exit 0; echo unscoped-stderr-swallowed >&2' _ "$LOCKFILE" \
+  2>"$S/unscoped.stderr"
+assert 'the old unscoped form really did swallow it (proves the test is real)' \
+  test ! -s "$S/unscoped.stderr"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
