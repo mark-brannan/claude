@@ -504,6 +504,17 @@ build_prompt() {
   printf 'mergeable PR: commit, push the branch, and open the PR yourself with gh.\n'
   printf 'Do not merge it. The worktree is deleted when you exit, so anything you\n'
   printf 'have not committed and pushed is lost.\n\n'
+  printf 'Every write under .claude/ is refused, whatever your permission mode --\n'
+  printf 'that is a harness protection, not something this settings.json can widen.\n'
+  printf 'If the item needs a change under .claude/, write it instead to\n'
+  printf '.claude-staging/<path-under-.claude> at the repo root (e.g. a file meant\n'
+  printf 'for .claude/hooks/foo.sh goes to .claude-staging/hooks/foo.sh). .gitignore\n'
+  printf 'ignores that whole path, so grind picks the staged files up from your\n'
+  printf 'worktree directly -- whether or not your own commit includes them; do not\n'
+  printf 'force-add it past the ignore. Grind moves it into .claude/ and commits that\n'
+  printf 'move itself before opening or checking your PR, since it is not sandboxed\n'
+  printf 'the way you are. Do not try Write, a heredoc, mv, or any other route into\n'
+  printf '.claude/ directly -- it is refused every time.\n\n'
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
   printf '  GRIND_STATUS: done     the PR is open. grind checks that a PR exists\n'
   printf '                         with head branch %s and records the item\n' "$p_branch"
@@ -517,6 +528,46 @@ build_prompt() {
   printf '                         dependency, an unmet precondition, work that\n'
   printf '                         belongs to another item. Comment on the issue\n'
   printf '                         saying why, so the reason outlives this session.\n'
+}
+
+# --- staging route into .claude/ (dotfiles#172) --------------------------------
+# The harness refuses every write under .claude/ from the sandboxed worker,
+# whatever its permission mode, so a worker that needs one writes to
+# .claude-staging/<path-under-.claude> instead (see build_prompt above).
+# This grind process is not sandboxed, so it is the one that can actually
+# move that content into .claude/ and commit it -- the worker never could.
+# Runs right after the worker exits, before anything checks whether a PR
+# exists, so the push this makes is what a same-run verify_pr sees.
+#
+# stage_claude_files <worktree path> <ref> <branch>. Every step is guarded so
+# a failure returns 1 rather than tripping `set -e` for the whole run.
+# Returns 0 nothing staged, 1 failed, 2 moved, committed and pushed.
+stage_claude_files() {
+  wt=$1; sref=$2; sbranch=$3
+  sdir="$wt/.claude-staging"
+  [ -d "$sdir" ] || return 0
+  found=$(find "$sdir" -type f 2>/dev/null | head -1) || return 0
+  [ -n "$found" ] || return 0
+  ( cd "$sdir" && find . -type f ) | while IFS= read -r rel; do
+    dest="$wt/.claude/${rel#./}"
+    mkdir -p "$(dirname "$dest")" || exit 1
+    mv "$sdir/${rel#./}" "$dest" || exit 1
+  done || return 1
+  find "$sdir" -depth -type d -empty -delete 2>/dev/null || true
+  # A tracked .claude-staging/<x> path needs its removal staged too: `add
+  # .claude` alone never stages a deletion outside its own pathspec, and the
+  # mv above only touched the worktree. --ignore-unmatch: usually nothing was
+  # ever tracked there, and that's not a failure.
+  git -C "$wt" rm -r -q --ignore-unmatch --cached -- .claude-staging || return 1
+  git -C "$wt" add -A -- .claude || return 1
+  # Nothing to commit is not a failure -- the staging dir could have held
+  # only empty directories, or content identical to what's already tracked.
+  git -C "$wt" diff --cached --quiet -- .claude .claude-staging && return 0
+  git -C "$wt" commit -q -m "grind: move staged .claude/ files into place for $sref" || return 1
+  # By name, not bare `push`: a grind-<n> branch has no upstream unless the
+  # worker happened to push with -u.
+  git -C "$wt" push -q origin "HEAD:refs/heads/$sbranch" || return 1
+  return 2
 }
 
 # --- verifying the worker's claim ---------------------------------------------
@@ -837,6 +888,13 @@ while [ "$i" -lt "$count" ]; do
   info "worker exited $claude_rc after $(( $(date +%s) - started ))s"
   write_lock
 
+  stage_rc=0
+  stage_claude_files "$wt_path" "$ref" "$branch" || stage_rc=$?
+  case "$stage_rc" in
+    1) warn "could not move staged .claude/ files into place and push them for $ref" ;;
+    2) info "moved staged .claude/ files into place and pushed for $ref" ;;
+  esac
+
   # Unparseable/empty JSON means the worker never produced a result, so its
   # spend is unknown: don't record it, and let --resume retry it.
   if ! printf '%s' "$result_json" | jq -e . >/dev/null 2>&1; then
@@ -897,11 +955,17 @@ while [ "$i" -lt "$count" ]; do
       fi
       ;;
   esac
+  # The worker's PR can exist without the .claude/ change it needed.
+  if [ "$status" = "done" ] && [ "$stage_rc" -eq 1 ]; then
+    unverified_why="its staged .claude/ files were never pushed"
+    status=unverified
+  fi
   rm -f "$marker"
 
   # An unverified item keeps its worktree: it is the only remaining record of
   # what the worker did, and the next attempt at this item clears it anyway.
-  if [ "$status" = unverified ]; then
+  # So does any item whose staged .claude/ files were never pushed.
+  if [ "$status" = unverified ] || [ "$stage_rc" -eq 1 ]; then
     warn "keeping worktree $wt_path on branch $branch for inspection"
   else
     git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
