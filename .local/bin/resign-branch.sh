@@ -32,6 +32,10 @@
 #      button; a conflict aborts the rebase and exits 1, branch untouched.
 #      Refuses if linearizing would drop content from a hand-resolved merge
 #   5. verifies every rewritten commit locally, then force-pushes with lease
+#   6. if an open PR has this branch as its head, writes or updates a
+#      `Head: <sha>` line in its body naming the new push (dotfiles#286),
+#      so the rewrite is visible before anyone merges. Best effort: never
+#      fails the run, and does nothing when gh is unusable or no PR is open
 #
 # Rewrites history. Single-author PR branches only; it refuses to run
 # against the default branch.
@@ -254,6 +258,30 @@ foreign=$(count_foreign "$target..HEAD")
 
 new=$(g rev-parse HEAD)
 g push --force-with-lease="refs/heads/$branch:$old" "$remote" "$new:refs/heads/$branch"
+
+# This push moves the head an open PR merges from underneath whoever last
+# looked at it -- the exact case dotfiles#286 exists to surface. Best
+# effort: RESIGN_BASE runs assume gh may be unusable, and a PR the branch
+# doesn't have (yet, or ever) isn't a failure here.
+if command -v gh >/dev/null 2>&1; then
+  pr_number=$(gh pr list -R "$url" --head "$branch" --state open --json number --jq '.[0].number // empty' 2>/dev/null) || pr_number=""
+  if [ -n "$pr_number" ]; then
+    old_body=$(gh pr view "$pr_number" -R "$url" --json body --jq '.body' 2>/dev/null) || old_body=""
+    if printf '%s\n' "$old_body" | grep -q '^Head: '; then
+      new_body=$(printf '%s\n' "$old_body" | sed "s/^Head: .*/Head: $new/")
+    elif [ -n "$old_body" ]; then
+      new_body=$(printf '%s\n\nHead: %s\n' "$old_body" "$new")
+    else
+      new_body="Head: $new"
+    fi
+    if gh pr edit "$pr_number" -R "$url" --body "$new_body" >/dev/null 2>&1; then
+      echo "resign-branch: updated Head: $new on PR #$pr_number"
+    else
+      echo "resign-branch: pushed, but could not update the Head: line on PR #$pr_number's body" >&2
+    fi
+  fi
+fi
+
 while IFS= read -r d; do
   git --git-dir="$d" rev-parse --verify -q "refs/heads/$branch" >/dev/null || continue
   git --git-dir="$d" cat-file -e "$new^{commit}" 2>/dev/null || git --git-dir="$d" fetch -q "$remote" || true

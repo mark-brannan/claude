@@ -118,7 +118,13 @@ in nobody's queue but this session's.
     mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
     conflicts with main, so green checks are not a mergeable PR;
   - where CI can be read before merge, read it — `gh pr checks --watch`
-    before hand-over, not as a way to pass the time after the first push.
+    before hand-over, not as a way to pass the time after the first push;
+  - **the body carries a `Head: <sha>` line naming this push** — the last
+    edit before hand-over, so a head that moves afterward (one more commit,
+    a rebase, a resign) is visible on the PR page before anyone merges it,
+    not discovered after (dotfiles#286). Add the line if it's missing,
+    replace it if it's there: `gh pr edit <n> --body "$new_body"` with the
+    line set to `git rev-parse HEAD`.
 - **A PR handed to the user needs a judgment pass, not a "did this even build"
   pass.** His read is for the call I can't make — is this the right change,
   does it fit the design. Anything a machine could have caught should

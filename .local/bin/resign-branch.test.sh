@@ -28,18 +28,35 @@ cat > "$GIT_CONFIG_GLOBAL" <<G
 [init]
 	defaultBranch = main
 G
-# gh: --head queries answer from gh.out, --base from gh.children; gh.rc forces a failure.
+# gh: --head/--json baseRefName queries answer from gh.out, --base from
+# gh.children, --json number (the Head:-line PR lookup) from gh.pr-number,
+# --json body from gh.pr-body, and `pr edit ... --body <text>` captures
+# <text> into gh.edit-body so a test can inspect what would have been
+# written; gh.rc forces a failure of every gh call.
 cat > "$T/bin/gh" <<'G'
 #!/bin/sh
 rc=$(cat "$T/gh.rc" 2>/dev/null || echo 0); [ "$rc" -eq 0 ] || { echo "gh: boom" >&2; exit "$rc"; }
-case "$*" in *--head*) cat "$T/gh.out" 2>/dev/null ;; *--base*) cat "$T/gh.children" 2>/dev/null ;; esac
+case "$*" in
+  *"pr edit"*)
+    want_body=0
+    for a in "$@"; do
+      if [ "$want_body" = 1 ]; then printf '%s' "$a" > "$T/gh.edit-body"; want_body=0; fi
+      [ "$a" = "--body" ] && want_body=1
+    done
+    ;;
+  *"--head"*"--json number"*) cat "$T/gh.pr-number" 2>/dev/null ;;
+  *"--base"*"--json number"*) cat "$T/gh.children" 2>/dev/null ;;
+  *"--json body"*) cat "$T/gh.pr-body" 2>/dev/null ;;
+  *--head*) cat "$T/gh.out" 2>/dev/null ;;
+  *--base*) cat "$T/gh.children" 2>/dev/null ;;
+esac
 G
 cat > "$T/bin/yadm" <<'G'
 #!/bin/sh
 [ "$1 $2" = "introspect repo" ] && { printf '%s\n' "$T/yadm-repo.git"; exit 0; }; exit 1
 G
 chmod +x "$T/bin/gh" "$T/bin/yadm"
-: > "$T/gh.out"; : > "$T/gh.children"
+: > "$T/gh.out"; : > "$T/gh.children"; : > "$T/gh.pr-number"; : > "$T/gh.pr-body"; : > "$T/gh.edit-body"
 
 # --- fixture: origin, a work clone, and two more clones standing in for
 # ~/dotfiles/.git and the yadm repo -------------------------------------------
@@ -143,6 +160,46 @@ b=$(norm_url "https://github.com/mark-brannan/dotfiles.git")
 c=$(norm_url "ssh://git@github.com/mark-brannan/dotfiles")
 ok 'norm_url: scp-style and https:// match' [ "$a" = "$b" ]
 ok 'norm_url: scp-style and ssh:// match' [ "$a" = "$c" ]
+
+# --- 9. after a real push, the open PR's body gets a Head: <sha> line --
+# added when missing, replaced when already there; nothing touched when no
+# PR is open (dotfiles#286) ---------------------------------------------
+mk_unsigned_branch() {  # mk_unsigned_branch <name>
+  git -C "$W" checkout -q main
+  git -C "$W" checkout -q -b "$1"
+  echo x > "$W/$1.txt" && git -C "$W" add "$1.txt" && git -C "$W" commit -q -m "$1 1"
+  git -C "$W" -c commit.gpgsign=false commit -q --amend --allow-empty --no-edit
+  git -C "$W" push -q origin "$1"
+}
+: > "$T/gh.out"; : > "$T/gh.children"
+
+mk_unsigned_branch feat-headmissing
+echo 7 > "$T/gh.pr-number"
+printf 'what and why\n' > "$T/gh.pr-body"
+: > "$T/gh.edit-body"
+run feat-headmissing
+git -C "$W" fetch -q origin
+newsha=$(git -C "$W" rev-parse origin/feat-headmissing)
+ok 'head-sha: exits 0' [ $rc -eq 0 ]
+ok 'head-sha: appends Head: line when missing' \
+  [ "$(cat "$T/gh.edit-body" 2>/dev/null)" = "$(printf 'what and why\n\nHead: %s\n' "$newsha")" ]
+
+mk_unsigned_branch feat-headreplace
+echo 8 > "$T/gh.pr-number"
+printf 'what and why\n\nHead: deadbeef\n' > "$T/gh.pr-body"
+: > "$T/gh.edit-body"
+run feat-headreplace
+git -C "$W" fetch -q origin
+newsha=$(git -C "$W" rev-parse origin/feat-headreplace)
+ok 'head-sha: replaces an existing Head: line' \
+  [ "$(cat "$T/gh.edit-body" 2>/dev/null)" = "$(printf 'what and why\n\nHead: %s\n' "$newsha")" ]
+
+mk_unsigned_branch feat-nopr
+: > "$T/gh.pr-number"
+: > "$T/gh.edit-body"
+run feat-nopr
+ok 'head-sha: no open PR, nothing edited' [ ! -s "$T/gh.edit-body" ]
+: > "$T/gh.pr-number"; : > "$T/gh.pr-body"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
