@@ -241,6 +241,35 @@ state_unlock() {
   STATE_LOCK_DIR=""
 }
 
+# day_decisions <sid> <total> <junk> <now> <gap-seconds> -- fold this session's
+# decision counts into the machine-wide store beside sitting.json and print the
+# day's totals as "<total>\t<junk>". Decision load is spent across a day, not
+# per chat (#99); a prompt gap past <gap-seconds> anywhere on the machine starts
+# a fresh day. Keyed by session id, holding each session's own running counts
+# rather than a delta, so a replayed hook cannot double-count. junk rides beside
+# the total, never subtracted -- exclude it by subtracting field two. No trap
+# here: it would clobber the caller's (#361).
+day_decisions() {
+  local f next
+  f="$(state_dir)/metrics/day-decisions.json"
+  mkdir -p "${f%/*}" 2>/dev/null || { printf '0\t0\n'; return 0; }
+  if state_lock "$f.lock"; then
+    # Read, modify and write all inside the lock -- a read before it is the race
+    # the lock closes: a second session's write in between would be overwritten.
+    [ -f "$f" ] || printf '{}\n' > "$f" 2>/dev/null
+    next=$(jq --arg sid "$1" --argjson t "$2" --argjson j "$3" \
+      --argjson now "$4" --argjson gap "$5" \
+      'if (.last_prompt // 0) > 0 and ($now - .last_prompt) > $gap
+       then {day_start: $now, sessions: {}} else . end
+       | .last_prompt = $now | .day_start //= $now
+       | .sessions[$sid] = {total: $t, junk: $j}' "$f" 2>/dev/null)
+    if [ -n "$next" ] && printf '%s\n' "$next" > "$f.$$" 2>/dev/null \
+       && mv -f "$f.$$" "$f" 2>/dev/null; then :; else rm -f "$f.$$" 2>/dev/null; fi
+    state_unlock
+  fi
+  jq -r '[([.sessions[]?.total] | add // 0), ([.sessions[]?.junk] | add // 0)] | @tsv' "$f" 2>/dev/null || printf '0\t0\n'
+}
+
 # pr_base_refs <repo-path> <branch> [<remote>] -- base branch names of the
 # open PRs whose head is <branch>, one per line.
 #
