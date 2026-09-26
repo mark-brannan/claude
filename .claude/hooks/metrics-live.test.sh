@@ -630,6 +630,26 @@ hasnt 'and says nothing about git state' '⎇' "$(msg "$o9")"
 o9b=$(payload "$TP9" show9b "$REPO9" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 has 'a dirty tree appends git state to the same line' '⇢ [0-9]+ ⚙ [0-9]+ ⎇ 1~' "$(msg "$o9b")"
 
+# --- 9b. the turns line is byte-identical to the jq it replaced -------------
+# metrics-format.sh's fmt_turns/fmt_work now build this line in plain shell
+# (#149 step 7, the wiring PR). Prove the replacement changed nothing on
+# screen: feed the cache object each run above wrote to the old jq expression
+# and diff its bytes against the line the hook actually rendered.
+old_second() {  # old_second <merged.json>
+  jq -r -L "$(dirname "$HOOK")" \
+    'include "lib-metrics-fmt";
+     turns + ((work // "") as $w | if $w == "" then "" else " " + $w end)' \
+    "$1" 2>/dev/null
+}
+rendered_second() { grep -oE '⇢.*' <<<"$1" | head -1; }
+
+t 'clean tree: turns line matches the jq it replaced' \
+  "$(old_second "$STATE/metrics/live/show9.json")" \
+  "$(rendered_second "$(msg "$o9")")"
+t 'dirty tree: turns line matches the jq it replaced' \
+  "$(old_second "$STATE/metrics/live/show9b.json")" \
+  "$(rendered_second "$(msg "$o9b")")"
+
 # --- 10. the block survives $OUT being deleted mid-run -----------------------
 # dotfiles#152: stop-continuity.sh's Stop hook deletes $OUT concurrently, and
 # metrics-live.sh spends real time in archivable()'s `gh pr list` between

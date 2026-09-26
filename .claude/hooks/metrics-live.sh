@@ -53,6 +53,8 @@ set -uo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib-state.sh
 . "$HOOK_DIR/lib-state.sh"
+# shellcheck source=metrics-format.sh
+. "$HOOK_DIR/metrics-format.sh"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
@@ -901,10 +903,11 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
     bl_main="$bl_main — ${bl_reason:+$bl_reason }propose stopping."
   fi
 
-  bl_second=$(printf '%s\n' "$merged" | jq -r -L "$HOOK_DIR" \
-    'include "lib-metrics-fmt";
-     turns + ((work // "") as $w | if $w == "" then "" else " " + $w end)' \
-    2>/dev/null)
+  IFS=$'\t' read -r bl_turns bl_toolcalls <<<"$(printf '%s\n' "$metrics" | jq -r \
+    '"\(.session.user_turns // 0)\t\(.session.tool_calls // 0)"')"
+  bl_second=$(fmt_turns "$bl_turns" "$bl_toolcalls")
+  bl_work=$(fmt_work "${ncommits:-0}" "${dirty:-0}" "${unpushed:-0}")
+  [ -n "$bl_work" ] && bl_second="$bl_second $bl_work"
   bl_block="$bl_main"
   [ -n "$bl_second" ] && bl_block="$bl_block
 $bl_second"
