@@ -26,12 +26,15 @@
 # state could not be verified. A gate that goes quiet when it can't look is
 # indistinguishable from one that looked and found nothing.
 #
-# EXCEPTION, dotfiles#263: a GraphQL error of type NOT_FOUND on the
-# `repository` field is a fact about the record, not the network -- the repo
-# named in that record does not exist (a typo'd --repo, most often), so the
-# entry was never a PR this session worked. That one entry is dropped and
-# named in a non-blocking note instead of joining the block; timeouts, auth
-# failures and every other fetch failure still fail closed as before.
+# EXCEPTION, dotfiles#263/#309: NOT_FOUND on `repository` over GraphQL is
+# ambiguous by GitHub's own anti-enumeration design -- identical whether the
+# repo is gone or the token merely lacks access to it right now (private,
+# transferred, unattached in a cloud session). So an entry drops only once a
+# second, independent `gh repo view` confirms a 404; every other outcome,
+# repo-view failures included, falls through to the failed-closed case. That
+# confirming call runs inside the backgrounded fetch job that saw the
+# NOT_FOUND, so N missing repos still cost one timeout window between them,
+# not one each.
 #
 # EXCEPTION, dotfiles#224: a "repo" record line carries a third field, read
 # or work, written by pr-ownership-context.sh (kind is empty on an older or
@@ -96,7 +99,14 @@ while IFS="$(printf '\t')" read -r repo num; do
         state mergeable mergeStateStatus
         reviewThreads(first:100){ nodes{ id isResolved path
           comments(first:1){ nodes{ author{login} body } } } } } } }' > "$WORK/$n.out" 2>&1
-    echo $? > "$WORK/$n.rc" ) &
+    echo $? > "$WORK/$n.rc"
+    # The confirming look runs here, not in the results loop, so N missing
+    # repos cost one repo-view timeout window between them, not N serially.
+    nf=$(jq -r '[.errors[]? | select(.type=="NOT_FOUND" and ((.path // [])[0]=="repository"))] | length' < "$WORK/$n.out" 2>/dev/null)
+    if [ "${nf:-0}" -gt 0 ] 2>/dev/null; then
+      $TO gh repo view "$repo" > "$WORK/$n.view.out" 2>&1
+      echo $? > "$WORK/$n.view.rc"
+    fi ) &
 done <<EOF
 $prs
 EOF
@@ -117,15 +127,23 @@ while [ "$i" -lt "$n" ]; do
   # `gh api graphql` exits non-zero whenever the response carries an `errors`
   # array, even though the body is still valid JSON up to that array -- jq
   # parses the leading value fine and only complains (to its own stderr,
-  # never $out) about the trailing text gh appends. NOT_FOUND on `repository`
-  # specifically means the repo doesn't exist; any other error (auth, rate
-  # limit, a real outage) falls through to the generic failed-closed case
-  # right below.
-  nf=$(printf '%s' "$out" | jq -r '[.errors[]? | select(.type=="NOT_FOUND" and ((.path // [])[0]=="repository"))] | length' 2>/dev/null)
-  nf=${nf:-0}
-  if [ "$nf" -gt 0 ] 2>/dev/null; then
-    dropped="$dropped
-- $repo#$num: repository not found over GraphQL (NOT_FOUND) -- dropped; this record was never a PR this session worked"
+  # never $out) about the trailing text gh appends. A view.rc means the fetch
+  # job saw NOT_FOUND on `repository` and went looking (EXCEPTION above); any
+  # other error falls through to the generic failed-closed case right below.
+  if [ -f "$WORK/$i.view.rc" ]; then
+    view_out=$(cat "$WORK/$i.view.out" 2>/dev/null)
+    if [ "$(cat "$WORK/$i.view.rc")" = 0 ]; then
+      failed="$failed
+- $repo#$num: GraphQL reported repository NOT_FOUND but \`gh repo view\` can see it -- an access problem, not a missing repo; not dropped"
+    elif printf '%s' "$view_out" | grep -qiE 'HTTP 404|Could not resolve to a Repository'; then
+      dropped="$dropped
+- $repo#$num: repository not found over GraphQL (NOT_FOUND), confirmed 404 by \`gh repo view\` -- dropped; this record was never a PR this session worked"
+    else
+      # Unconfirmed failure (timeout, rate limit, the same block that made
+      # NOT_FOUND ambiguous) proves nothing -- failed-closed, not dropped.
+      failed="$failed
+- $repo#$num: repository NOT_FOUND over GraphQL, and \`gh repo view\` failed without confirming it is gone ($(printf '%s' "$view_out" | head -1 | tr -d '\n')) -- unverified, not dropped"
+    fi
     continue
   fi
   [ "$rc" = 0 ] || { failed="$failed

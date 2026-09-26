@@ -20,15 +20,30 @@ cat > "$SCRATCH/bin/gh" <<'GH'
 echo "$*" >> "$GH_LOG"
 case "$1 $2" in
   "pr view") printf 'https://github.com/o/r/pull/7\n'; exit 0 ;;
+  "repo view")
+    case "$3" in
+      o/notfound) echo "gh: HTTP 404: Not Found" >&2; exit 1 ;;
+      o/hidden) printf '{}'; exit 0 ;;
+      # dotfiles#342: repo-view itself fails, but not with a confirmed 404 --
+      # a timeout, rate limit, or the same proxy/token block that produced
+      # the ambiguous NOT_FOUND in the first place. Proves nothing either
+      # way, so it must not read as "confirmed gone".
+      o/flaky) echo "gh: HTTP 403: rate limit exceeded" >&2; exit 1 ;;
+      o/slow) sleep 5 ;;
+    esac
+    ;;
 esac
 # dotfiles#263: a repo named "notfound" in the graphql call simulates GitHub's
 # NOT_FOUND-on-`repository` response -- JSON body on stdout, gh's own error
 # text appended after it with no separator (that's really how gh behaves; see
 # the issue), non-zero exit.
+# Every one of these gets the identical NOT_FOUND reply; what separates them
+# is only what `gh repo view` above says when the gate goes to confirm it.
 case "$*" in
-  *"name=notfound"*)
-    printf '{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","path":["repository"],"message":"Could not resolve to a Repository with the name '"'"'o/notfound'"'"'."}]}'
-    echo "gh: Could not resolve to a Repository with the name 'o/notfound'." >&2
+  *"name=notfound"*|*"name=hidden"*|*"name=flaky"*|*"name=slow"*)
+    r=${*#*name=}; r=o/${r%% *}
+    printf '{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","path":["repository"],"message":"Could not resolve to a Repository with the name '"'"'%s'"'"'."}]}' "$r"
+    echo "gh: Could not resolve to a Repository with the name '$r'." >&2
     exit 1
     ;;
 esac
@@ -162,6 +177,18 @@ reason 'still names the open thread PR' 'o/r#25 has 1 unresolved'
 reason 'and still names the dropped one' 'o/notfound#1'
 reason 'and still says never worked'    'never a PR this session worked'
 
+# --- NOT_FOUND but `gh repo view` still sees it -> access problem, not dropped (dotfiles#309) ---
+record dn3 "$(printf 'repo\to/hidden\t1')"
+check block 'NOT_FOUND repo that gh repo view can still see -> blocks, not dropped' fail "$(stop_input dn3)"
+reason 'says access problem, not missing repo' 'access problem, not a missing repo'
+no_reason 'does not claim it was dropped' 'never a PR this session worked'
+
+# --- NOT_FOUND and `gh repo view` fails too, but not with a confirmed 404 -> unverified, not dropped (dotfiles#342) ---
+record dn4 "$(printf 'repo\to/flaky\t1')"
+check block 'NOT_FOUND repo where gh repo view fails without confirming 404 -> blocks, not dropped' fail "$(stop_input dn4)"
+reason 'says unverified, not dropped'   'unverified, not dropped'
+no_reason 'does not claim it was dropped' 'never a PR this session worked'
+
 # --- a fan-out over many PRs checks every one; none is skipped by count ---------
 for i in 1 2 3 4 5 6 7 8; do record s9 "$(printf 'repo\to/r\t%s' "$i")"; done
 : > "$GH_LOG"
@@ -170,6 +197,19 @@ t 'all eight queried' 8 "$(grep -c 'api graphql' "$GH_LOG")"
 check block 'eight PRs, one open thread each -> block' open "$(stop_input s9)"
 reason 'names the eighth PR'            'o/r#8 has 1 unresolved'
 no_reason 'no count cap'                'not checked'
+
+# --- several NOT_FOUND repos confirm concurrently, not one timeout each ---------
+# dotfiles#345: the confirming `gh repo view` runs inside the backgrounded
+# fetch job. Serially, four hung confirmations would cost four timeout windows.
+if command -v timeout >/dev/null 2>&1; then
+  for i in 1 2 3 4; do record s11 "$(printf 'repo\to/slow\t%s' "$i")"; done
+  start=$(date +%s)
+  out=$(stop_input s11 | PR_THREADS_GATE_TIMEOUT=1 sh "$HOOK" 2>&1); LAST=$out
+  elapsed=$(( $(date +%s) - start ))
+  if [ "$elapsed" -lt 4 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL: four confirmations took ${elapsed}s, so they ran serially"; fi
+  reason 'all four reported unverified' 'o/slow#4: repository NOT_FOUND over GraphQL'
+  no_reason 'and none of them dropped'  'never a PR this session worked'
+fi
 
 # --- dotfiles#224: a read never gates the Stop, whatever threads it has --------
 record rd1 "$(printf 'repo\to/r\t25\tread')"
