@@ -365,5 +365,22 @@ bash -c 'exec 9>"$1" 2>/dev/null || exit 0; echo unscoped-stderr-swallowed >&2' 
 assert 'the old unscoped form really did swallow it (proves the test is real)' \
   test ! -s "$S/unscoped.stderr"
 
+# --- a live metrics-live.sh holding the per-session lock never blocks Stop (#161) --
+# Pre-create $LIVE/<sid>.lock with meta naming this test process's own pid, so
+# state_lock sees a live holder on this host and refuses to reclaim it -- the
+# same shape a concurrent metrics-live.sh nag read-modify-write would leave.
+LIVE="$HOME/.claude/state/global/metrics/live"
+mkdir -p "$LIVE/$SID.lock"
+printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$LIVE/$SID.lock/meta"
+
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]'
+printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$SID" "$WORK" \
+  | GH_PRS="$GH_PRS" timeout 10 bash "$HOOK" >/dev/null 2>&1
+rc=$?
+CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
+assert 'a held live lock never blocks Stop' test "$rc" -ne 124
+assert 'the checkpoint is still written when the lock is held' test -n "$CKPT"
+rm -rf "$LIVE/$SID.lock"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

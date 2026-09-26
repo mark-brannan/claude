@@ -56,8 +56,15 @@ metrics=$(jq -s \
 [ -n "$metrics" ] || exit 0
 
 SD=$(state_dir)
+LIVE="$SD/metrics/live"
 mkdir -p "$SD/metrics/sessions" "$SD/metrics/decisions" "$SD/metrics/friction" "$SD/metrics/blocked" \
-         "$SD/log/auto" 2>/dev/null || exit 0
+         "$SD/log/auto" "$LIVE" 2>/dev/null || exit 0
+
+# The per-session lock metrics-live.sh's nag read-modify-write also takes
+# (dotfiles#161). state_lock installs no trap of its own (lib-state.sh), so
+# this is where it is armed; a failed acquisition degrades to running
+# unlocked rather than skipping the write -- a metrics hook never blocks Stop.
+trap 'state_unlock' EXIT TERM INT
 
 # Commit count comes from git, never from grepping the transcript for
 # "git commit": a heredoc that writes a script containing that string is
@@ -76,7 +83,12 @@ printf '%s\n' "$metrics" | jq -c '.blocked[]' > "$SD/metrics/blocked/$sid.jsonl"
 
 # The live snapshot has served its purpose; the finished session file
 # supersedes it, so drop it rather than leaving two records of one session.
+# Locked against a concurrent metrics-live.sh writing the same path (#161
+# finding 4); a lock that could not be taken still gets the delete, just
+# unprotected -- deleting nothing is not a safer failure than a stale file.
+state_lock "$LIVE/$sid.lock"
 rm -f "$SD/metrics/live/$sid.json" 2>/dev/null
+state_unlock
 bash "$HOOK_DIR/metrics-rollup.sh" 2>/dev/null || true
 
 # ---------------------------------------------------------------- checkpoint
@@ -87,7 +99,10 @@ ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
 # be lifted out of the old copy and put back, or the next Stop silently eats
 # the hand-off the model was told to write. Everything from the `## Resume`
 # heading to the next `## ` heading is carried verbatim, including the
-# `- consumed:` marker a resuming session appends.
+# `- consumed:` marker a resuming session appends. Locked (#161 finding 2):
+# metrics-live.sh's resume_ckpt() greps this same file, and the truncate
+# below must not land mid-read.
+state_lock "$LIVE/$sid.lock"
 resume_block=""
 [ -f "$ckpt" ] && resume_block=$(awk '
   /^## Resume[[:space:]]*$/ { f = 1; print; next }
@@ -159,6 +174,7 @@ resume_block=""
     printf '%s\n' "$dq"
   fi
 } > "$ckpt" 2>/dev/null
+state_unlock
 
 # One pusher at a time. Parallel sessions are the norm, and two concurrent
 # rebase-and-push loops in the same worktree corrupt each other's index.
