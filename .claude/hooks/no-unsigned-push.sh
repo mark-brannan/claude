@@ -14,8 +14,9 @@
 #   - unsigned + this machine has a signing key -> DENY, with the exact
 #     rebase command that re-signs them
 #   - unsigned + no key here (cloud)          -> ALLOW, and tell the session
-#     the PR will be blocked until resign-branch.sh is run from a machine
-#     with the key, so it can say so in the handoff
+#     the PR will be blocked until resign-branch.sh is run (any machine --
+#     it falls back to a GitHub-API-signed commit with no local key), so it
+#     can say so in the handoff
 #
 # Only the current branch of the payload's cwd is inspected. A push that
 # names another ref, or runs after a `cd`, is not caught; that is accepted
@@ -76,4 +77,4 @@ allow_with_note "no-unsigned-push: $n unsigned commit(s) on $branch are being pu
 
 $unsigned
 
-A repo that requires signed commits will block the PR until someone runs \`resign-branch.sh $branch\` from a machine that has the key. Say so in the PR body and the handoff; do not try to sign here."
+A repo that requires signed commits will block the PR until someone runs \`resign-branch.sh $branch\`. It falls back to a GitHub-API-signed commit when this machine has no local signing key, so it does not need to run from a machine that has one -- but it also does not preserve author identity in that fallback (see resign-branch.sh's own notes). Say so in the PR body and the handoff; do not try to sign here."
