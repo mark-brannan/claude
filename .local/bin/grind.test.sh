@@ -966,6 +966,15 @@ run --prs
 has 'nothing to fix up says so' 'no unfinished PRs on'
 eq 'and exits 0' 0 "$RC"
 
+# --- main itself is red: the whole --prs pass pauses, not just the queued PRs --------
+jq -nc '{repos_base_red:["alpha"]}' > "$S/audit.json"
+: > "$CLAUDE_LOG"
+run --prs
+eq 'exit 0 -- a red base is not a failure' 0 "$RC"
+eq 'no worker spent' 0 "$(calls_claude)"
+has 'the pass says why it paused' 'base branch is red.*skipping the --prs pass'
+jq -nc '{repos_missing_fixup_hard:[]}' > "$S/audit.json"
+
 # --- --resume of a --prs session stays on the PR queue --------------------------------
 # The UNVERIFIED line promises a retry on `grind --resume <id>`, with no
 # --prs on it; the session file has to carry the mode or that retry would

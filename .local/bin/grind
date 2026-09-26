@@ -354,6 +354,14 @@ if [ "$prs" -eq 1 ]; then
   # repos_missing_fixup_hard object carries no .repo and drops out here.
   audit_json=$("$audit_bin" --json 2>&1) \
     || { printf 'grind: pr-label-audit failed: %s\n' "$audit_json" >&2; exit 1; }
+  # main itself is red on this repo (pr-label-audit's repos_base_red) -- no
+  # PR here is a fixup's fault, so the whole --prs pass pauses, not just the
+  # items that happen to be queued (dotfiles#359).
+  if printf '%s' "$audit_json" | jq -e -s --arg name "${repo##*/}" \
+       'any(.[]; (.repos_base_red // []) | index($name))' >/dev/null; then
+    echo "grind: $repo's base branch is red; skipping the --prs pass until it's green"
+    exit 0
+  fi
   items=$(printf '%s' "$audit_json" | jq -s -c --arg name "${repo##*/}" '
     [ .[] | select(.repo? == $name)
           | select(.section == "unfinished" or .section == "stale-label") ]
