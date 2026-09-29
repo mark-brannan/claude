@@ -49,7 +49,10 @@
 #   5. Pause -- print a tally and the exact resume command, then exit 0 --
 #      when: the session budget is reached, one item costs more than twice
 #      the running median, or every N items. Nothing here waits on a
-#      terminal.
+#      terminal. A run also refuses to start at all -- before touching any
+#      item -- when ten or more PRs on the repo are awaiting a look (the
+#      5-10 review band, memory: review-band-five-to-ten); it stays paused
+#      across later invocations until that count drops below five.
 #
 # Defaults, overridable by flag: Sonnet, medium effort, $5/item, $20/session,
 # pause every 3. `--dry-run` prints the plan -- one line per Ready item, the
@@ -409,6 +412,30 @@ record=$("$worklist_bin" --here --json --fresh 2>&1) \
   || { printf 'grind: worklist --json failed: %s\n' "$(printf '%s' "$record" | jq -r '.error // .' 2>/dev/null | head -1)" >&2; exit 1; }
 printf '%s' "$record" | jq -e '.buckets' >/dev/null 2>&1 \
   || { echo "grind: worklist --json carries no buckets; is worklist older than grind?" >&2; exit 1; }
+
+# --- review band: pause dispatch while PRs awaiting a look pile up -----------
+# memory: review-band-five-to-ten (Solace, 2026-09-22). The count is
+# worklist's own buckets.awaiting_human -- the PRs its render calls "Solace's
+# turn" -- so grind and worklist cannot disagree about whether the band is
+# full. The hysteresis (paused at ten, resumes below five) lives in a marker
+# file beside the per-repo lock: a `grind --prs` timer firing is a fresh process.
+if [ "$dry_run" -eq 0 ]; then
+  awaiting_human_count=$(printf '%s' "$record" | jq '.buckets.awaiting_human | length')
+  band_marker="$state_root/band-paused-$(printf '%s' "$repo" | tr '/' '_')"
+  if [ -f "$band_marker" ]; then
+    if [ "$awaiting_human_count" -ge 5 ]; then
+      printf 'grind: paused -- %d PR(s) awaiting your look on %s (resumes below 5)\n' \
+        "$awaiting_human_count" "$repo"
+      exit 0
+    fi
+    rm -f "$band_marker"
+  elif [ "$awaiting_human_count" -ge 10 ]; then
+    : > "$band_marker"
+    printf 'grind: pausing -- %d PR(s) awaiting your look on %s (band 5-10; resumes below 5)\n' \
+      "$awaiting_human_count" "$repo"
+    exit 0
+  fi
+fi
 
 # The audit supplies what a fixup needs and the record does not carry:
 # verdict, cancelled-only checks with their run urls, the head's commit date.

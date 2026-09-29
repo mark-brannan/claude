@@ -85,8 +85,9 @@ ready=\$(jq -c '[.[] | select(.labels|map(.name)|index("blocked")|not) | {kind:"
 blocked=\$(jq -c '[.[] | select(.labels|map(.name)|index("blocked")) | {kind:"issue", repo:"o/alpha", number, title, url, body, labels:(.labels|map(.name))}]' "$S/ready.json")
 prs='[]'; [ -f "$S/audit.json" ] && prs=\$(jq -s -c '[.[] | select(.section == "unfinished" or .section == "stale-label") | {kind:"pr", repo:"o/alpha", number, title, url, isDraft:false, labels, author}]' "$S/audit.json")
 cards='[]'; [ -f "$S/cards.json" ] && cards=\$(cat "$S/cards.json")
-jq -nc --argjson r "\$ready" --argjson b "\$blocked" --argjson p "\$prs" --argjson c "\$cards" \
-  '{owner:"o", repos:["o/alpha"], buckets:{awaiting_human:[], queued:[], not_ready:\$p, ready:\$r, blocked:\$b, untriaged:[], stranded:[], rulings:[], solaces:[], claudes:\$c}}'
+awaiting='[]'; [ -f "$S/awaiting-human.json" ] && awaiting=\$(cat "$S/awaiting-human.json")
+jq -nc --argjson r "\$ready" --argjson b "\$blocked" --argjson p "\$prs" --argjson c "\$cards" --argjson ah "\$awaiting" \
+  '{owner:"o", repos:["o/alpha"], buckets:{awaiting_human:\$ah, queued:[], not_ready:\$p, ready:\$r, blocked:\$b, untriaged:[], stranded:[], rulings:[], solaces:[], claudes:\$c}}'
 WL
 chmod +x "$S/bin/worklist"
 
@@ -1259,6 +1260,76 @@ case "\$1 \$2" in
 esac
 GH
 chmod +x "$S/bin/gh"
+
+# --- review band: pause dispatch while PRs awaiting a look pile up -----------------
+# memory: review-band-five-to-ten (Solace, 2026-09-22); design rung 1b. Cap is
+# read from worklist's own buckets.awaiting_human, the record grind already
+# fetches -- no extra gh call needed to know the band is full. Base sandbox
+# ($S/repo, no signing key), so the pr kind drops itself silently and only
+# the one Ready issue queues -- exactly what makes "one claude call" legible.
+cat > "$S/ready.json" <<'JSON'
+[
+  {"number": 5, "title": "First item", "body": "do the first thing", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]}
+]
+JSON
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
+cat > "$S/prompt.txt"
+echo "\$*" >> "$CLAUDE_LOG"
+echo '{"type":"assistant","message":{"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+echo '{"type":"result","total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: done"}'
+GH
+chmod +x "$S/bin/claude"
+rm -f "$S/state/grind"/*.json "$S/state/grind"/band-paused-* "$S/claude-replies"/*.json
+: > "$CLAUDE_LOG"
+
+jq -nc '[range(0;10)|{number:(100+.)}]' > "$S/awaiting-human.json"
+run --session-budget 100 --pause-every 10
+eq 'exit 0' 0 "$RC"
+eq 'no claude call: the band is already at ten' 0 "$(calls_claude)"
+has 'says it is pausing, names the count and the repo' \
+  '^grind: pausing -- 10 PR\(s\) awaiting your look on o/alpha \(band 5-10; resumes below 5\)$'
+assert 'a band marker was written for this repo' test -f "$S/state/grind/band-paused-o_alpha"
+
+# Still ten, or a lighter eight: the marker holds the pause either way --
+# resuming needs the count below five, not merely below ten.
+run --session-budget 100 --pause-every 10
+eq 'still paused at ten' 0 "$(calls_claude)"
+jq -nc '[range(0;8)|{number:(100+.)}]' > "$S/awaiting-human.json"
+run --session-budget 100 --pause-every 10
+eq 'still paused at eight -- hysteresis holds the ten-triggered pause' 0 "$(calls_claude)"
+has 'the repeat-hit line, not the first-hit one' \
+  '^grind: paused -- 8 PR\(s\) awaiting your look on o/alpha \(resumes below 5\)$'
+
+# Below five (strictly -- "resumes below 5" means four, not five): the
+# marker clears and dispatch resumes.
+jq -nc '[range(0;4)|{number:(200+.)}]' > "$S/awaiting-human.json"
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 10
+eq 'exit 0' 0 "$RC"
+eq 'one claude call once the band drops below five' 1 "$(calls_claude)"
+assert 'the band marker was cleared' test ! -f "$S/state/grind/band-paused-o_alpha"
+
+# A mid-band count that never crossed ten sets no marker, and five-to-ten
+# alone is not a floor on ordinary dispatch (it only holds a pause that
+# already fired).
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+jq -nc '[range(0;7)|{number:(300+.)}]' > "$S/awaiting-human.json"
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 10
+eq 'a mid-band count dispatches -- no marker was ever set' 1 "$(calls_claude)"
+
+# --dry-run never consults the band. Clear state first: a same-second
+# session id would otherwise reuse the just-written state file and read the
+# item dispatched above as already done.
+rm -f "$S/state/grind"/*.json
+jq -nc '[range(0;10)|{number:(100+.)}]' > "$S/awaiting-human.json"
+run --dry-run
+eq 'exit 0' 0 "$RC"
+has 'dry-run still shows the plan' '\[1/1\] o/alpha#5'
+
+rm -f "$S/awaiting-human.json" "$S/state/grind"/band-paused-* "$S/state/grind"/*.json "$S/claude-replies"/*.json
 
 # --- a logged-out claude is refused before any worktree or state file -------
 # The observed failure (2026-09-16): every item came back $0, 0 tokens,
