@@ -12,7 +12,8 @@
 # about what is ready. Three kinds of item, each one bucket of that record:
 #   pr     buckets.not_ready -- a PR a session left unfinished   (finishes work)
 #   issue  buckets.ready     -- a Ready, unblocked issue          (starts work)
-#   card   buckets.claudes   -- a ## Claude's card whose link names this repo
+#   card   buckets.claudes   -- a ## Claude's card whose repo: field, else
+#                               its link, names this repo
 # --kind <k> (repeatable) narrows the run to those kinds; --prs is --kind pr.
 # --policy orders the kinds: finish-first (the default) works PRs before
 # anything that starts new work; start-first is the reverse. Within a kind,
@@ -95,8 +96,8 @@
 # run that asked for it (--prs, --kind pr) refuses without them, one that got
 # it by default drops the kind and says so.
 #
-# A card item is a ## Claude's card from the global board whose trailing link
-# names this repo. The worker gets the card verbatim and the issue contract;
+# A card item is a ## Claude's card from the global board whose `repo:` field
+# -- or, without one, its trailing link -- names this repo. The worker gets the card verbatim and the issue contract;
 # `done` is checked the same way (a PR on the item's branch), and grind then
 # removes the card line from the board and commits that, since the PR is the
 # work's one home from there on.

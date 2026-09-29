@@ -38,7 +38,8 @@ cd "$S/repo" || exit 1
   printf -- '### colregs\n'
   printf -- '- [ ] **Give-way rule** — decide whether rule 15 wins ([o/r#94](https://github.com/o/r/pull/94))\n'
   printf '\n## Solace'"'"'s\n- [ ] **Not an agent card** — [x](https://example.invalid)\n\n## Claude'"'"'s\n'
-  for i in 1 2 3 4 5 6 7 8 9 10; do
+  printf -- '- [ ] **Card 0** — linked to its evidence, worked elsewhere ([o/beta#5](https://github.com/o/beta/pull/5)) repo: o/alpha\n'
+  for i in 1 2 3 4 5 6 7 8 9; do
     printf -- '- [ ] **Card %s** — a card body long enough to be cut at eighty characters when brief is asked for ([link](https://example.invalid/%s))\n' "$i" "$i"
   done
   printf -- '- [x] **Ticked card** — done ([link](https://example.invalid/t))\n'
@@ -266,6 +267,9 @@ has 'brief keeps the failing check names' 'failing: ci-gate / gate, coverage'
 run --json
 eq 'json exit 0' 0 "$RC"
 eq 'json carries both repos' 2 "$(printf '%s' "$OUT" | jq '.records | length')"
+eq "a card's repo: field routes it, not its link" 'o/alpha' "$(printf '%s' "$OUT" | jq -r '.buckets.claudes[] | select(.name == "Card 0") | .repo')"
+eq 'a card without repo: routes on its github link' 'o/r' "$(printf '%s' "$OUT" | jq -r '.buckets.rulings[] | select(.name == "Give-way rule") | .repo')"
+eq 'a card with neither repo: nor a github link has no repo' 'null' "$(printf '%s' "$OUT" | jq -r '.buckets.claudes[] | select(.name == "Card 1") | .repo')"
 eq 'json carries the raw PRs' 5 "$(printf '%s' "$OUT" | jq '.records[0].data.pullRequests.nodes | length')"
 
 # --- --milestone: buckets scoped, milestone not deferred, json same shape ------

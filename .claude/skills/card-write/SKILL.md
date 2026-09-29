@@ -97,8 +97,11 @@ Every card: one line, a link, the action in the imperative, a short name
 distinctive enough for a later session to find. **The link is never
 optional** — a card nobody but its author can resolve is not a card; neither
 is an action that cannot be stated without private paths, hosts or ports.
-Add `blocked: <dependency>` only when it is actually blocked. Sections and
-checkboxes, not a table. **Order is priority:** the top card in a section is
+Add `blocked: <dependency>` only when it is actually blocked. A
+`## Claude's` card whose link is evidence in another repo — the PR where the
+bug surfaced, not the repo that fixes it — ends with `repo: <owner/name>`:
+grind works a card in the repo it names, and falls back to the link's repo
+without it. Sections and checkboxes, not a table. **Order is priority:** the top card in a section is
 the next to pull; place a new card where it belongs.
 
 ```markdown

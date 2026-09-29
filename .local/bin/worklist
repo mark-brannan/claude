@@ -457,7 +457,10 @@ section_of() {
 # array of {kind:"card", section, group, text, name, link, repo}: section is
 # rulings | solaces | claudes, group the "### <name>" heading above the card
 # ("global" when none), name the leading **bold**, link the last (url) on the
-# line and repo the owner/name that url names, or null. The section views
+# line, and repo the repo that does the work: the card's own `repo: owner/name`
+# field when it has one -- a card's link is often the evidence, not the fix,
+# and grind routes on repo -- else the owner/name its link names, or null.
+# The section views
 # below still render from the board text; the record is what a reader other
 # than a human -- grind's card kind -- consumes.
 board_cards() {
@@ -475,7 +478,8 @@ board_cards() {
       | {kind: "card", section: .[0], group: .[1], text: (.[2:] | join("\t"))}
       | .name = ((.text | capture("^\\*\\*(?<n>[^*]+)\\*\\*") | .n) // null)
       | .link = (([.text | match("\\((https?://[^)[:space:]]+)\\)"; "g") | .captures[0].string] | last) // null)
-      | .repo = (((.link // "") | capture("^https://github\\.com/(?<r>[^/]+/[^/#?]+)") | .r) // null) ]'
+      | .repo = ((.text | capture("(^|\\s)repo:\\s*(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)") | .r)
+                 // ((.link // "") | capture("^https://github\\.com/(?<r>[^/]+/[^/#?]+)") | .r) // null) ]'
 }
 
 # build_record <cache file> -- the bucket record: the cache plus buckets,
