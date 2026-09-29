@@ -7,7 +7,7 @@
 # other way, which on an ephemeral cloud container is most of them. So this
 # runs unconditionally on Stop and needs nothing from the conversation.
 #
-# It writes four things, all derived from the transcript and from git:
+# It writes six things, all derived from the transcript and from git:
 #   metrics/sessions/<id>.json    cost and shape of the session
 #   metrics/decisions/<id>.jsonl  each decision pushed to the user, typed by cost
 #   metrics/friction/<id>.jsonl   each friction event, typed by cost -- see
@@ -15,6 +15,9 @@
 #                                  2026-08-21-friction-metric-spec.md
 #   metrics/blocked/<id>.jsonl    each tool call the permission layer refused
 #   log/auto/<date>-<repo>-<id>.md  a resumable checkpoint the next session reads
+#   pickup/<start>-<id>.md        this session's pickup item, which /pickup reads
+#   curia/<id>/thread.md          a floor stamped on any curia thread the
+#                                  session touched, plus the user's last words
 #
 # One file per session, not one shared append-only log: parallel sessions are
 # normal here, and per-session paths mean two of them never touch the same
@@ -64,7 +67,12 @@ mkdir -p "$SD/metrics/sessions" "$SD/metrics/decisions" "$SD/metrics/friction" "
 # (dotfiles#161). state_lock installs no trap of its own (lib-state.sh), so
 # this is where it is armed; a failed acquisition degrades to running
 # unlocked rather than skipping the write -- a metrics hook never blocks Stop.
-trap 'state_unlock' EXIT TERM INT
+# archivable_reasons() runs inside $(...) below, so the home line it fetches
+# comes back through this file (lib-state.sh), not a variable; the pickup
+# item reads it rather than paying the gh round trip again. Fresh per Stop.
+ARCHIVABLE_HOME_FILE="${TMPDIR:-/tmp}/claude-stop-home.$$"
+rm -f "$ARCHIVABLE_HOME_FILE" 2>/dev/null
+trap 'state_unlock; rm -f "$ARCHIVABLE_HOME_FILE" 2>/dev/null' EXIT TERM INT
 
 # Commit count comes from git, never from grepping the transcript for
 # "git commit": a heredoc that writes a script containing that string is
@@ -468,6 +476,199 @@ if [ -n "$work_root" ] && [ -x "$HOOK_DIR/claim-stamp.sh" ]; then
     sh "$HOOK_DIR/claim-stamp.sh" refresh -C "$work_root" "$sid" >/dev/null 2>&1 || true
   fi
 fi
+
+# ------------------------------------------------------- the pickup item
+# One item per session in pickup/, which /pickup reads in place of the old
+# checkpoint resume block (dotfiles#110). The resume block depended on a
+# model remembering to write it, and a session that ends any other way --
+# context ceiling, a closed laptop, a reaped container -- hands off to
+# nobody. This needs nothing from the model: status, branch state, PR,
+# model and the first line of the last user prompt are all machine facts,
+# and `pickup-list` shows them newest first. The body is the hand-off a
+# model may write over the hook's default (the prompt line); on later
+# Stops the hook only replaces a body that still reads exactly as it last
+# set it, so an edited body survives every rewrite and the model never has
+# to flag that it edited.
+#
+# The id is the session's start minute plus its short id, so every Stop of
+# a session finds the same file and two sessions never share one. `pr:` is
+# looked up only while empty and only once the branch is on origin (a PR
+# cannot exist before that), and a miss is cached ten minutes so a pushed
+# branch with no PR does not pay a gh call every turn.
+pi_branch_line=none; pi_pr=none
+pickup_item() {
+  local dir id f start prompt body status \
+        old_prompt old_body old_status old_pr ust ust_desc dirty \
+        home miss tmp
+  dir="$SD/pickup"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  start=$(printf '%s' "$metrics" | jq -r '.session.started_at // empty')
+  [ -n "$start" ] || start=$now
+  id="$(printf '%s' "$start" | sed -E 's/^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}):([0-9]{2}).*/\1T\2-\3/')-${sid:0:8}"
+  f="$dir/$id.md"
+  prompt=$(printf '%s' "$metrics" | jq -r '.session.last_prompt // empty')
+
+  old_prompt=""; old_body=""; old_status=""; old_pr=""
+  if [ -f "$f" ]; then
+    old_prompt=$(sed -n 's/^prompt: //p' "$f" | head -1)
+    old_status=$(sed -n 's/^status: //p' "$f" | head -1)
+    old_pr=$(sed -n 's/^pr: //p' "$f" | head -1)
+    old_body=$(awk 'f { print } /^---$/ { f = 1 }' "$f")
+  fi
+
+  body=$old_body
+  if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ] || [ "$body" = "$old_prompt" ]; then
+    body=$prompt
+  fi
+  status=$old_status
+  # A new prompt reopens a session's item: the last thing talked about is
+  # what the next session picks up, whatever the item said before.
+  { [ -z "$status" ] || [ "$prompt" != "$old_prompt" ]; } && status=open
+
+  pi_pr=${old_pr:-none}
+  if [ -n "$work_root" ]; then
+    ust=$(unpushed_state "$work_root" "$work_branch")
+    case "$ust" in
+      'ahead '*)     ust_desc="${ust#ahead } ahead" ;;
+      never-pushed)  ust_desc="never pushed" ;;
+      safe)          ust_desc="nothing ahead" ;;
+      *)             ust_desc="ahead unknown" ;;
+    esac
+    dirty=clean
+    [ -z "$(git -C "$work_root" status --porcelain 2>/dev/null)" ] || dirty=dirty
+    pi_branch_line="$work_repo $work_branch ($ust_desc, $dirty)"
+    miss="${TMPDIR:-/tmp}/claude-pickup-pr-miss.$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_-' '_')"
+    if [ "$pi_pr" = none ] && [ "$ust" = 'ahead 0' ] && [ -x "$HOOK_DIR/branch-home-gate.sh" ] \
+       && [ -z "$(find "$miss" -mmin -10 2>/dev/null)" ]; then
+      # The verdict's own home check (archivable_reasons, lib-state.sh)
+      # left its line in ARCHIVABLE_HOME_FILE; reuse it rather than paying
+      # the gh round trip twice in one Stop.
+      home=$(cat "$ARCHIVABLE_HOME_FILE" 2>/dev/null)
+      [ -n "$home" ] || home=$(sh "$HOOK_DIR/branch-home-gate.sh" --check "$work_root" 2>/dev/null)
+      case "$home" in
+        'home: https://'*) pi_pr=$(printf '%s' "$home" | sed 's/^home: //' | grep -oE '^https://[^ ]+') ;;
+        *) : > "$miss" 2>/dev/null ;;
+      esac
+      [ -n "$pi_pr" ] || pi_pr=none
+    fi
+  fi
+
+  tmp="$f.$$"
+  {
+    printf 'status: %s\nupdated: %s\nsession: %s\nmodel: %s\n' \
+      "$status" "$now" "$sid" \
+      "$(printf '%s' "$metrics" | jq -r '.session.model // "?"')"
+    printf 'branch: %s\npr: %s\nwhere: %s\nprompt: %s\n---\n%s\n' \
+      "$pi_branch_line" "$pi_pr" "log/auto/$(basename "$ckpt")" "$prompt" "$body"
+  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+}
+pickup_item
+
+# ------------------------------------------------------- curia threads
+# A session that touched a curia -- a state/global/curia/<id> path, a
+# `/curia <id>` or `confer <id>` in the transcript -- leaves the machine
+# floor on that thread, so a sitting that dies any way at all still hands
+# off. Two writes per Stop, both under the pickup item's body-ownership
+# protocol: a floor block at the end of "Where this stands" (last touched,
+# branch, PR), hook-owned by its markers, model text above it untouched;
+# and, on the first thread the transcript touched, the user's last words
+# verbatim under "Solace's words", one dated sub-heading per session,
+# overwritten only while it still reads exactly as the hook wrote it.
+curia_floor() {  # curia_floor <thread.md>
+  local t tmp
+  t=$1; tmp="$t.$$"
+  awk -v now="$now" -v sid8="${sid:0:8}" -v model="$cu_model" \
+      -v branch="$pi_branch_line" -v pr="$pi_pr" '
+    function floor() {
+      print "<!-- floor: stop-continuity.sh; text above survives, this block does not -->"
+      print "- last touched: " now " \302\267 session " sid8 " \302\267 " model
+      print "- branch: " branch " \302\267 pr: " pr
+      print "<!-- /floor -->"
+    }
+    /^<!-- floor/ { drop = 1; next }
+    /^<!-- \/floor -->$/ { drop = 0; next }
+    drop { next }
+    { lines[++n] = $0 }
+    END {
+      ws = 0; ins = 0
+      for (i = 1; i <= n; i++) {
+        if (!ws) { if (lines[i] ~ /^## Where this stands/) ws = i }
+        else if (lines[i] ~ /^## /) { ins = i; break }
+      }
+      for (i = 1; i <= n; i++) {
+        if (ins && i == ins) { floor(); print "" }
+        print lines[i]
+      }
+      if (!ins) floor()
+    }
+  ' "$t" > "$tmp" 2>/dev/null && mv -f "$tmp" "$t" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+}
+curia_said() {  # curia_said <thread.md>; $cu_words carries the text
+  local t tmp
+  t=$1; tmp="$t.$$"
+  CS_WORDS="$cu_words" awk -v sid8="${sid:0:8}" -v date="${now%%T*}" '
+    function entry(   j) {
+      print ""
+      for (j = 1; j <= nq; j++) print "> " q[j]
+    }
+    { lines[++n] = $0 }
+    END {
+      nq = split(ENVIRON["CS_WORDS"], q, "\n")
+      sw = 0; swend = n + 1; own = 0; ownend = 0
+      for (i = 1; i <= n; i++) {
+        if (!sw) { if (lines[i] ~ /^## Solace.s words/) sw = i }
+        else if (lines[i] ~ /^## /) { swend = i; break }
+      }
+      if (!sw) { for (i = 1; i <= n; i++) print lines[i]; exit }
+      for (i = sw + 1; i < swend; i++)
+        if (lines[i] ~ /^### / && index(lines[i], "session " sid8 " (hook)")) {
+          own = i; ownend = swend
+          for (j = i + 1; j < swend; j++)
+            if (lines[j] ~ /^#/) { ownend = j; break }
+          break
+        }
+      if (own) {
+        # Overwrite only a body that still reads as the hook wrote it: a
+        # pure blockquote. Model-edited text stays, whatever it says.
+        hookish = 1; same = 1; k = 0
+        for (j = own + 1; j < ownend; j++) {
+          if (lines[j] ~ /^[[:space:]]*$/) continue
+          if (substr(lines[j], 1, 2) != "> ") hookish = 0
+          got[++k] = substr(lines[j], 3)
+        }
+        if (k != nq) same = 0
+        else for (j = 1; j <= nq; j++) if (got[j] != q[j]) same = 0
+        if (!hookish || same) { for (i = 1; i <= n; i++) print lines[i]; exit }
+        for (i = 1; i <= n; i++) {
+          print lines[i]
+          if (i == own) { entry(); print ""; i = ownend - 1 }
+        }
+        exit
+      }
+      for (i = 1; i <= n; i++) {
+        if (i == swend) {
+          print "### " date " \302\267 session " sid8 " (hook)"
+          entry(); print ""
+        }
+        print lines[i]
+      }
+      if (swend == n + 1) {
+        print "### " date " \302\267 session " sid8 " (hook)"
+        entry()
+      }
+    }
+  ' "$t" > "$tmp" 2>/dev/null && mv -f "$tmp" "$t" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+}
+cu_words=$(printf '%s' "$metrics" | jq -r '.session.last_words // empty')
+cu_model=$(printf '%s' "$metrics" | jq -r '.session.model // "?"')
+cu_first=1
+for cu_ref in $(printf '%s' "$metrics" | jq -r '.session.curia_refs[]? // empty'); do
+  cu_thread="$SD/curia/$cu_ref/thread.md"
+  [ -f "$cu_thread" ] || continue
+  curia_floor "$cu_thread"
+  [ "$cu_first" = 1 ] && [ -n "$cu_words" ] && curia_said "$cu_thread"
+  cu_first=0
+done
 
 # ------------------------------------------------------------ state repo
 state_is_repo || exit 0

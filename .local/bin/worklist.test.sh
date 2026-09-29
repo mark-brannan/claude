@@ -343,18 +343,17 @@ cd "$S/repo" || exit 1
 # --- board edge: no kanban ------------------------------------------------------------------
 mv "$S/state/state/global/kanban.md" "$S/kb.bak"; run; has 'missing board named' '^Board: no kanban.md at'; mv "$S/kb.bak" "$S/state/state/global/kanban.md"
 
-# --- the resume bucket is first (dotfiles#110) ------------------------------------
+# --- the pickup bucket is first (dotfiles#110) ------------------------------------
 run
-has 'resume bucket present' '^Resume: none$'
-eq 'resume is the first bucket' 'Resume: none' \
-  "$(printf '%s\n' "$OUT" | grep -nE '^(Resume|Needs ruling|Solace|Queued|Ready|Blocked|Untriaged|Stranded)' | head -1 | cut -d: -f2-)"
-mkdir -p "$S/state/state/global/log/auto"
-{ printf '# Auto-checkpoint — alpha @ `claude/x`\n\n**Verdict:** archivable\n\n- worktree `%s`\n\n' "$S/repo"
-  printf '## Resume\n\n- next: Finish the thing\n- link: o/alpha#10\n- model: opus\n- effort: high\n'
-} > "$S/state/state/global/log/auto/2026-09-09-alpha-abcd1234.md"
+has 'pickup bucket present' '^Pickup: none$'
+eq 'pickup is the first bucket' 'Pickup: none' \
+  "$(printf '%s\n' "$OUT" | grep -nE '^(Pickup|Needs ruling|Solace|Queued|Ready|Blocked|Untriaged|Stranded)' | head -1 | cut -d: -f2-)"
+mkdir -p "$S/state/state/global/pickup"
+printf 'status: open\nupdated: 2026-09-09T10:00:00Z\nsession: abcd1234\nmodel: claude-opus-5-5\nbranch: alpha claude/x (1 ahead, clean)\npr: none\nwhere: w\nprompt: p\n---\nFinish the thing\nlink: o/alpha#10\nmodel: opus\neffort: high\n' \
+  > "$S/state/state/global/pickup/2026-09-09T10-00-abcd1234.md"
 run
-has 'a real block shows in worklist' '\| `claude/x` \| Finish the thing \|'
-rm -rf "$S/state/state/global/log"
+has 'a real item shows in worklist' 'Finish the thing'
+rm -rf "$S/state/state/global/pickup"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

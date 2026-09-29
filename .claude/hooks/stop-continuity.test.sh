@@ -42,6 +42,12 @@ BIN="$S/bin"; mkdir -p "$BIN"
 cat > "$BIN/gh" <<'EOF'
 #!/bin/sh
 [ "${GH_FAIL:-0}" = 1 ] && { echo "gh: not logged in" >&2; exit 1; }
+# GH_LOG, when set, records each call with its grandparent's argv -- the
+# script that wanted the answer (branch-home-gate.sh --check vs --card).
+if [ -n "${GH_LOG:-}" ]; then
+  gp=$(ps -o ppid= -p $PPID 2>/dev/null | tr -d ' ')
+  echo "$* <- $(ps -o args= -p "$gp" 2>/dev/null)" >> "$GH_LOG"
+fi
 case "$1 ${2:-}" in
   "pr list")    printf '%s\n' "${GH_PRS:-[]}" ;;
   "issue list") printf '%s\n' "${GH_ISSUES:-[]}" ;;
@@ -83,6 +89,22 @@ eq 'clean, pushed, PR: archivable' 'archivable' "$(verdict)"
 eq 'the metrics record says the same' 'archivable' \
   "$(jq -r .verdict "$HOME/.claude/state/global/metrics/sessions/$SID.json")"
 has 'the worktree is recorded for resume-list' "^- worktree .$WORK.$" "$CKPT"
+
+# --- one gh round trip per Stop ---------------------------------------------------
+# The verdict's home check and the pickup item's `pr:` lookup ask the same
+# question. The answer travels through ARCHIVABLE_HOME_FILE (lib-state.sh);
+# a variable set inside `$(archivable_reasons ...)` dies with the subshell,
+# which is how the reuse silently never fired once (PR #388, design pass).
+GH_LOG="$S/gh.log"; : > "$GH_LOG"
+SID=ghlog000-1111-2222-3333 GH_LOG="$GH_LOG" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+# claim-stamp.sh's own `--card` lookup is a separate, deliberate call and is
+# not counted here; the verdict's `--check` is what must run once.
+eq 'the verdict asks gh for the head once per Stop' 1 \
+  "$(grep -c -- '^pr list --head.*branch-home-gate.sh --check' "$GH_LOG")"
+eq 'and the pickup item still learns the PR' 'pr: https://github.com/o/r/pull/7' \
+  "$(grep '^pr: ' "$HOME"/.claude/state/global/pickup/*-ghlog000.md 2>/dev/null | head -1)"
+assert 'the home file does not outlive the Stop' \
+  bash -c "! ls '$TMPDIR'/claude-stop-home.* >/dev/null 2>&1"
 
 # --- no PR and no pointer --------------------------------------------------------
 stop
@@ -148,6 +170,127 @@ assert 'the block did not swallow the rest of the file' grep -q '^## Commits thi
 sed -i 's/^- effort: high$/&\n- consumed: session abcd1234 at 2026-09-09T13:00:00Z/' "$CKPT"
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
 has 'consumed marker survives' '^- consumed: session abcd1234' "$CKPT"
+
+# --- the pickup item: one per session, machine-written, body model-editable ---
+# Written on every Stop from the transcript and git, so a session that ends
+# any way at all leaves an item for /pickup. The body is the hand-off a model
+# may write, and it survives the rewrite only because the hook overwrites
+# nothing but the text it last wrote itself.
+PICKD="$HOME/.claude/state/global/pickup"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+ITEM=$(ls "$PICKD"/*-"${SID:0:8}".md 2>/dev/null | head -1)
+assert 'a pickup item was written' test -n "$ITEM"
+sfield() { sed -n "s/^$1: //p" "$ITEM" | head -1; }
+sbody() { awk 'f{print} /^---$/{f=1}' "$ITEM"; }
+assert 'the id is the session start minute plus the short session id' \
+  bash -c "basename '$ITEM' .md | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-${SID:0:8}\$'"
+eq 'status opens' open "$(sfield status)"
+eq 'the body defaults to the last prompt line' "$(sfield prompt)" "$(sbody)"
+assert 'the prompt line is the transcript'"'"'s last human line' test -n "$(sfield prompt)"
+eq 'the pushed branch with a PR records it' https://github.com/o/r/pull/7 "$(sfield pr)"
+has 'branch state names ahead and clean' '^branch: work claude/work \(0 ahead, clean\)$' "$ITEM"
+
+# A model edits the body: the next Stop keeps it.
+printf 'status: open\nupdated: x\nsession: %s\nmodel: m\nbranch: b\npr: %s\nwhere: w\nprompt: %s\n---\nfinish the fixtures, then open the PR\n' \
+  "$SID" "$(sfield pr)" "$(sfield prompt)" > "$ITEM"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'an edited body survives the rewrite' 'finish the fixtures, then open the PR' "$(sbody)"
+eq 'a found PR is kept without a second lookup' https://github.com/o/r/pull/7 "$(sfield pr)"
+
+# A done status is kept while the prompt is unchanged.
+sed -i 's/^status: open$/status: done/' "$ITEM"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'status is kept while the prompt is unchanged' 'done' "$(sfield status)"
+
+# A body that still reads as the hook left it follows the prompt; a new
+# prompt reopens the item.
+TP2="$S/pickup-transcript.jsonl"
+{
+  jq -c '.' "$TP" | head -3
+  printf '{"type":"queue-operation","operation":"enqueue","content":"pick up the fixture work and finish it","timestamp":"2026-09-26T12:00:00.000Z"}\n'
+} > "$TP2"
+printf 'status: done\nupdated: x\nsession: %s\nmodel: m\nbranch: b\npr: none\nwhere: w\nprompt: old prompt\n---\nold prompt\n' "$SID" > "$ITEM"
+TP="$TP2" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+ITEM=$(ls "$PICKD"/*-"${SID:0:8}".md 2>/dev/null | head -1)
+eq 'an untouched body follows the new prompt' 'pick up the fixture work and finish it' "$(sbody)"
+eq 'a new prompt reopens the item' open "$(sfield status)"
+
+# --- curia threads: a touched thread gets the floor and the last words --------
+# The transcript names a curia (`confer <id>` here); the Stop hook stamps a
+# floor block at the end of "Where this stands" -- model text above survives
+# -- and appends the user's last words verbatim under "Solace's words". Both
+# idempotent across Stops; a model edit to the words entry is never clobbered.
+CURD="$HOME/.claude/state/global/curia/test-question"
+mkdir -p "$CURD"
+cat > "$CURD/thread.md" <<'EOF'
+# Curia: test question
+
+- id: `test-question`
+- status: open
+
+## Where this stands
+
+Model text that must survive.
+
+## Solace's words
+
+<!-- Append-only; a new dated sub-heading per sitting. -->
+EOF
+TP3="$S/curia-transcript.jsonl"
+{
+  jq -c '.' "$TP" | head -3
+  printf '{"type":"queue-operation","operation":"enqueue","content":"confer test-question please","timestamp":"2026-09-26T12:00:00.000Z"}\n'
+} > "$TP3"
+TP="$TP3" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+TH="$CURD/thread.md"
+has 'the floor block is written' '^<!-- floor' "$TH"
+has 'the floor carries last-touched and the session' "^- last touched: .* session ${SID:0:8} " "$TH"
+has 'the floor carries the branch state' '^- branch: work claude/work \(0 ahead, clean\)' "$TH"
+has 'model text above the floor survives' '^Model text that must survive\.$' "$TH"
+has 'the last words land under Solace'"'"'s words' "^### .* session ${SID:0:8} \(hook\)$" "$TH"
+has 'verbatim, as a blockquote' '^> confer test-question please$' "$TH"
+assert 'the floor sits inside Where this stands' \
+  bash -c "awk '/^## Where this stands/{f=1} /^## Solace/{exit} f&&/^<!-- floor/{ok=1} END{exit !ok}' '$TH'"
+
+# A second Stop rewrites, never duplicates.
+TP="$TP3" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'one floor block after two Stops' 1 "$(grep -c '^<!-- floor' "$TH")"
+eq 'one words entry after two Stops' 1 "$(grep -c "session ${SID:0:8} (hook)" "$TH")"
+
+# New last words replace the hook's own entry; a model-edited entry stays.
+TP4="$S/curia-transcript-2.jsonl"
+{
+  jq -c '.' "$TP" | head -3
+  printf '{"type":"queue-operation","operation":"enqueue","content":"confer test-question: make it so","timestamp":"2026-09-26T13:00:00.000Z"}\n'
+} > "$TP4"
+TP="$TP4" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+has 'new last words replace the hook entry' '^> confer test-question: make it so$' "$TH"
+assert 'the old hook entry is gone' bash -c "! grep -q '^> confer test-question please$' '$TH'"
+sed -i 's/^> confer test-question: make it so$/The model folded these words into the record./' "$TH"
+TP="$TP3" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+has 'a model-edited entry is never clobbered' '^The model folded these words into the record\.$' "$TH"
+eq 'and no second entry appears' 1 "$(grep -c "session ${SID:0:8} (hook)" "$TH")"
+
+# Reading a thread is not sitting on it: a session whose tool calls cat or ls
+# the thread file, with no prompt naming the curia, leaves it untouched. Once
+# bare `/curia` lists every thread (#403), every sitting would otherwise stamp
+# every thread with its own unrelated last words.
+TP5="$S/curia-transcript-cat.jsonl"
+{
+  jq -c '.' "$TP" | head -3
+  printf '{"type":"queue-operation","operation":"enqueue","content":"what is open on the board?","timestamp":"2026-09-26T14:00:00.000Z"}\n'
+  printf '{"type":"assistant","uuid":"a-cat","timestamp":"2026-09-26T14:00:01.000Z","message":{"role":"assistant","model":"m","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat %s; ls %s"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"%s"}}]}}\n' \
+    "$TH" "$CURD" "$TH"
+} > "$TP5"
+SID2=catsess0-1111-2222-3333
+before=$(cat "$TH")
+TP="$TP5" SID="$SID2" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'a cat/ls of the thread does not stamp it' "$before" "$(cat "$TH")"
+assert 'no words entry for the reading session' bash -c "! grep -q 'session ${SID2:0:8}' '$TH'"
+
+# A named curia whose thread does not exist is skipped without a write.
+assert 'no thread is invented for an unknown id' \
+  bash -c "! ls '$HOME/.claude/state/global/curia' | grep -qv '^test-question\$'"
 
 # =============================================================================
 # sc_salvage: the auto-commit at Stop (dotfiles#196)

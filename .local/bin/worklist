@@ -347,10 +347,10 @@ board_path() {
 
 count_lines() { [ -n "$1" ] || { echo 0; return; }; printf '%s\n' "$1" | grep -c '^'; }
 
-# resume_section -- the unconsumed resume blocks, printed first because a
-# session that has one starts from it and never reads the rest of this view
-# (dotfiles#110). The table is pickup-list's, not rebuilt here: one home for
-# the parsing and the drop rules.
+# resume_section -- the open pickup items, printed first because a session
+# resuming work starts from one and never reads the rest of this view
+# (dotfiles#110). The listing is pickup-list's, not rebuilt here: one home
+# for the parsing and the view rules.
 resume_section() {
   rl=""
   for c in "$self_dir/pickup-list" "$HOME/.local/bin/pickup-list"; do

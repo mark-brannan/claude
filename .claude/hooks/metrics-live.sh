@@ -793,13 +793,21 @@ archivable() {
   [ -z "$archival_reasons" ]
 }
 
-# The resume block is a `## Resume` heading in this session's checkpoint
-# (stop-continuity.sh names it <date>-<repo>-<sid8>.md; dotfiles#110 defines
-# the block). The hook never assumes the block was written because it asked
-# for it: it looks, and says what it found either way.
+# The hand-off is the pickup item's body (stop-continuity.sh writes one
+# item per session under state/global/pickup/; a model writes the hand-off
+# over the hook's default, which is the last prompt line, and the hook
+# keeps the edit). Never assume it was written because it was asked for:
+# look, and an unedited body -- still exactly the prompt line -- is none.
 resume_ckpt() {
-  grep -lE '^## Resume[[:space:]]*$' \
-    "$(state_dir)/log/auto/"*"-${sid:0:8}.md" 2>/dev/null | head -1
+  for _f in "$(state_dir)/pickup/"*"-${sid:0:8}.md"; do
+    [ -f "$_f" ] || continue
+    _p=$(sed -n 's/^prompt: //p' "$_f" | head -1)
+    _b=$(awk 'f { print } /^---$/ { f = 1 }' "$_f")
+    if [ -n "$(printf '%s' "$_b" | tr -d '[:space:]')" ] && [ "$_b" != "$_p" ]; then
+      printf '%s\n' "$_f"; return 0
+    fi
+  done
+  return 1
 }
 
 if [ "$hook_name" = Stop ]; then
@@ -819,17 +827,17 @@ if [ "$hook_name" = Stop ]; then
   fi
 
   if [ "$nag_pending" -eq 1 ]; then
-    # The block above has been answered. Whether the resume block exists is a
+    # The block above has been answered. Whether the hand-off exists is a
     # fact on disk, not an inference from having asked. Either way the nag is
-    # spent: a missing block is reported once, never re-blocked on, or this
+    # spent: a missing hand-off is reported once, never re-blocked on, or this
     # would be the level-triggered nag again.
     nag_pending=0; since_nag=0
     found=$(resume_ckpt)
     if [ -n "$found" ]; then
       resume_ts=$now_ts
-      add_arch "Archivable. Resume block written $(hhmm "$resume_ts") in $(basename "$found"). Next time: \`/pickup\`."
+      add_arch "Archivable. Hand-off written $(hhmm "$resume_ts") in $(basename "$found"). Next time: \`/pickup\`."
     else
-      add_arch "Archivable, but no \`## Resume\` block in $(state_dir)/log/auto/*-${sid:0:8}.md. Not asking again this session."
+      add_arch "Archivable, but no hand-off in the pickup item's body ($(state_dir)/pickup/*-${sid:0:8}.md). Not asking again this session."
     fi
     save_nag
   elif archivable; then
@@ -847,19 +855,19 @@ if [ "$hook_name" = Stop ]; then
       armed=1; found=$(resume_ckpt)
     fi
     if [ "$armed" -eq 1 ] && [ -n "$found" ]; then
-      # The block is already on disk: the turn that just ended wrapped up by
+      # The hand-off is already on disk: the turn that just ended wrapped up by
       # itself. Blocking now would force the extra turn that made the model,
       # not the user, speak last (dotfiles#391). Spend the arm; say what is there.
       since_nag=0
       [ "$resume_ts" -gt 0 ] || resume_ts=$now_ts
-      add_arch "Resume block already in $(basename "$found"). Next time: \`/pickup\`."
+      add_arch "Hand-off already in $(basename "$found"). Next time: \`/pickup\`."
     elif [ "$armed" -eq 1 ]; then
       nag_pending=1; save_nag
       # The crossing lines that armed this Stop have already been persisted
       # as consumed, so this reason is their only chance to be seen. They go
       # in front of the instruction rather than being dropped -- nags, then
       # the archival verdict, same order as the screen.
-      reason="Write the resume block: append a \`## Resume\` block (next, link, model, effort) to this session's checkpoint in $(state_dir)/log/auto/. Then answer in one line naming where it landed -- no summary, no question, nothing new."
+      reason="Write the hand-off: replace the body (below \`---\`) of this session's pickup item in $(state_dir)/pickup/ with the next step, then link, model and effort lines. Then answer in one line naming where it landed -- no summary, no question, nothing new."
       pre="$sys_lines"
       [ -z "$arch_lines" ] || pre="${pre:+$pre
 }$arch_lines"
@@ -869,7 +877,7 @@ $reason"
       exit 0
     elif [ "$resume_ts" -gt 0 ]; then
       # Nothing new to say. Later Stops carry the block's age and nothing else.
-      add_arch "Resume block $(hm $(( (now_ts - resume_ts) / 60 ))) old."
+      add_arch "Hand-off $(hm $(( (now_ts - resume_ts) / 60 ))) old."
     fi
   fi
 fi

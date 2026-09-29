@@ -264,49 +264,54 @@ S() { payload "$TP3" stop1 "$REPO" Stop \
 
 o1=$(S)
 t   'the first Stop blocks'  block "$(printf '%s' "$o1" | jq -r '.decision // ""')"
-has 'with the resume instruction' '^Write the resume block: append a `## Resume` block' \
+has 'with the hand-off instruction' '^Write the hand-off: replace the body' \
     "$(printf '%s' "$o1" | jq -r '.reason // ""')"
 hasnt 'and nothing about the session ending' 'last of the session' \
     "$(printf '%s' "$o1" | jq -r '.reason // ""')"
 
-# A wrap-up that already wrote its block is never blocked: the forced turn
+# A wrap-up that already wrote its hand-off is never blocked: the forced turn
 # after the closing message is what made the model, not the user, speak last
-# (dotfiles#391). The arm is spent and the block on disk is reported.
+# (dotfiles#391). The arm is spent and the hand-off on disk is reported.
 CK="$STATE/log/auto"; mkdir -p "$CK"
-printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repo-stop0.md"
+PK="$STATE/pickup"; mkdir -p "$PK"
+handoff() {  # handoff <sid> -- a pickup item whose body was edited past the default
+  printf 'status: open\nupdated: x\nsession: %s\nmodel: m\nbranch: b\npr: none\nwhere: w\nprompt: p\n---\nnext: x\n' \
+    "$1" > "$PK/2026-09-09T10-00-$1.md"
+}
+handoff stop0
 S0() { payload "$TP3" stop0 "$REPO" Stop \
        | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
 o=$(S0)
 t     'an armed Stop with the block on disk does not block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
-has   'and reports the block it found' 'Resume block already in 2026-09-09-repo-stop0\.md\. Next time: `/pickup`\.' "$(msg "$o")"
+has   'and reports the hand-off it found' 'Hand-off already in 2026-09-09T10-00-stop0\.md\. Next time: `/pickup`\.' "$(msg "$o")"
 o=$(S0)
 t     'the next Stop does not block either' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
-has   'and carries only the age' 'Resume block 0m old' "$(msg "$o")"
+has   'and carries only the age' 'Hand-off 0m old' "$(msg "$o")"
 hasnt 'not the found line again' 'already in' "$(msg "$o")"
 
-# The model answers the block by writing the checkpoint's resume block. The
-# hook must find it on disk, not assume it from having asked.
-printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repo-stop1.md"
+# The model answers the block by editing its pickup item's body. The hook
+# must find it on disk, not assume it from having asked.
+handoff stop1
 o2=$(S)
 t   'the second Stop does not block' '' "$(printf '%s' "$o2" | jq -r '.decision // ""')"
-has 'and reports the resume block it found' \
-    '^Archivable\. Resume block written [0-9]{2}:[0-9]{2} in 2026-09-09-repo-stop1\.md\. Next time: `/pickup`\.$' \
+has 'and reports the hand-off it found' \
+    '^Archivable\. Hand-off written [0-9]{2}:[0-9]{2} in 2026-09-09T10-00-stop1\.md\. Next time: `/pickup`\.$' \
     "$(msg "$o2")"
 
 o3=$(S)
 t     'a later Stop does not block'  '' "$(printf '%s' "$o3" | jq -r '.decision // ""')"
-has   'and carries only the age'     'Resume block 0m old' "$(msg "$o3")"
+has   'and carries only the age'     'Hand-off 0m old' "$(msg "$o3")"
 hasnt 'not the message again'        'Next time' "$(msg "$o3")"
 
-# The block was ignored: no `## Resume` anywhere. Say so, do not claim one,
+# The block was ignored: no edited body anywhere. Say so, do not claim one,
 # and do not block again -- the late-hour arm is spent for the session.
 S3() { payload "$TP3" stop3 "$REPO" Stop \
        | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
 o=$(S3); t 'blocks once' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 o=$(S3)
 t     'an unanswered block does not re-block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
-has   'and reports the block as missing' 'no `## Resume` block' "$(msg "$o")"
-hasnt 'never claims it was written'      'Resume block written' "$(msg "$o")"
+has   'and reports the hand-off as missing' 'no hand-off in the pickup item' "$(msg "$o")"
+hasnt 'never claims it was written'      'Hand-off written' "$(msg "$o")"
 o=$(S3); t 'and stays quiet after' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
 
 # A context crossing still arms the Stop. It no longer speaks on the way: the
@@ -340,9 +345,9 @@ TPO="$SCRATCH/order.jsonl"; turn "$TPO" 103000
 oO1=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t 'order setup: the first Stop blocks' block "$(printf '%s' "$oO1" | jq -r '.decision // ""')"
 
-printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repoo-orderx.md"
+handoff orderx
 
-# Second Stop: also crosses 150k while confirming the resume block, so a
+# Second Stop: also crosses 150k while confirming the hand-off, so a
 # nag, the block, and the archival tail all fire together -- no re-block.
 turn "$TPO" 152000
 oO2=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
@@ -356,7 +361,7 @@ t 'both sections are present' yes \
 t 'the block opens the message, no line in front of it' 1 "${status_at:-0}"
 t 'the archival verdict renders after the block' yes \
   "$( [ "${block_at:-0}" -lt "${arch_at:-0}" ] 2>/dev/null && echo yes || echo no )"
-has 'and reports the resume block it found' 'Resume block written' "$msgO2"
+has 'and reports the hand-off it found' 'Hand-off written' "$msgO2"
 
 # --- 4. the friction counter is the one line addressed to the model ----------
 # The standing orders' capacity clause no longer carries its own trigger, so
