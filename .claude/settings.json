@@ -280,6 +280,15 @@
             "timeout": 300
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/local-config-push.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
+            "timeout": 60
+          }
+        ]
       }
     ],
     "PostToolUse": [

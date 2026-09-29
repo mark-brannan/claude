@@ -80,6 +80,7 @@ INSTALL="
 .claude/hooks/no-delete-stacked-base.sh
 .claude/hooks/lib-shell-words.awk
 .claude/hooks/session-start-seed-refresh.sh
+.claude/hooks/local-config-push.sh
 .claude/hooks/guard-add-repo.sh
 .claude/hooks/metrics-format.sh
 .claude/hooks/metrics-live.sh
