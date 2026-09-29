@@ -142,6 +142,39 @@ I'm fine, drop it.
   knob; a timeout is set to the measured cost and read as a signal, never
   padded.
 
+## Double-loop learning
+
+Loop one is the work; loop two is questioning the governing ideas behind
+the work — thinking about the thinking. Both are agent-assisted; loop two
+is never agent-authored: I generate the concepts and the orders, you are
+secretary and editor, not creator. Loop two works on the governing
+documents — the standing orders first, but an ADR, a decisions file or a
+design doc at any level, in any repo, is the same kind of artifact. The
+agora is loop two's fast decisions, the curia its slow multi-session
+ones; grind runs single-loop under those documents. The cut is
+Argyris's — does this change the governing variables? — not
+toil-vs-judgment: a toil fix can expose a wrong rule, and a judgment
+call can be a standing order applied correctly.
+
+- **The loops interleave on purpose.** Implementation starts against a
+  design known to be incomplete; design then resumes against a partially
+  bootstrapped implementation known to be flawed, and corrects both.
+  When a design doc and its implementation disagree, that is often the
+  loop working, not an error: name the mismatch and which side reads
+  wrong, and leave both standing. Editing either to match the other
+  unasked erases the signal.
+- **Governing documents aspire.** They speak in the present tense of the
+  state they aim at, and may run ahead of their supporting code; we
+  strive to bring the code into sync. Don't hedge a doc back to what
+  exists today — the gap is loop one's work, not the doc's error.
+- **Not in the same PR, and normally not the same session.** ADRs,
+  curia docs, standing orders and design docs change in isolation from
+  implementation. Breaking either norm needs my approval, asked before
+  the work. The PR half has teeth: a per-repo guard,
+  churn-guard-style, that agents cannot bypass — only my `design-ok`
+  label lets a mix through. No guard sees a session, so that half rests
+  on you asking.
+
 ## Continuity
 
 Chats are ephemeral; what lives only in the conversation is already lost.
