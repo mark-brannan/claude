@@ -84,8 +84,13 @@
 # so a session and a headless worker cannot be working to different rules.
 # `done` is checked against Mergify's label, not a PR existing; a PR whose
 # checks are all `cancelled` gets `gh run rerun --failed` instead of a worker.
-# A pr item is capped at $1 unless --item-budget says otherwise, whatever the
-# other kinds get; a run that is only prs defaults to a $5 session. The pr
+# A pr item is capped at $1.25 unless --item-budget says otherwise, whatever
+# the other kinds get; a run that is only prs defaults to a $5 session. The
+# contract's stop rule is ~$1 and the extra quarter is headroom to carry it
+# out: a worker cannot see its exact spend, and a cap equal to the stop kills
+# it on the turn it is labelling and pushing (grind-20260929T022433Z). A pr
+# worker the cap kills anyway still gets its stop rule -- grind applies the
+# fixup-hard label and the one comment for it -- and its claim stamp released. The pr
 # kind needs a signing key, pr-label-audit, lib-state.sh and the contract: a
 # run that asked for it (--prs, --kind pr) refuses without them, one that got
 # it by default drops the kind and says so.
@@ -207,12 +212,20 @@ find_beside() {  # find_beside <path relative to the dotfiles tree>
 audit_bin=$(find_beside .local/bin/pr-label-audit) || audit_bin=""
 lib_state=$(find_beside .claude/hooks/lib-state.sh) || lib_state=""
 contract_file=$(find_beside .claude/skills/pickup/SKILL.md) || contract_file=""
+claim_stamp=$(find_beside .claude/hooks/claim-stamp.sh) || claim_stamp=""
 worklist_bin=${GRIND_WORKLIST:-$(command -v worklist 2>/dev/null || find_beside .local/bin/worklist || true)}
 [ -n "$worklist_bin" ] || { echo "grind: needs worklist (the queue reader); not on PATH or beside grind" >&2; exit 1; }
 
 # The contract is the pickup skill's section 6, read rather than copied
 # (dotfiles#267). Extracting it is what keeps the two runners on one text; a
 # copy in this file would drift the first time either side is edited.
+# The contract's stop rule says ~$1; the hard cap sits a quarter above it so
+# a worker that stops on its own estimate still has the turns to label,
+# comment and push. A cap equal to the stop killed both fixups of
+# grind-20260929T022433Z mid-wrap-up. Proposed, not ruled.
+pr_stop_usd=1
+pr_item_cap=$(awk -v s="$pr_stop_usd" 'BEGIN { printf "%g", s * 1.25 }')
+
 fixup_contract() {
   [ -n "$contract_file" ] || return 1
   awk '/^## 6\. The fixup contract/ { f = 1 } f && /^## Writing a block/ { exit } f' "$contract_file"
@@ -221,8 +234,8 @@ fixup_contract() {
 if [ "$prs" -eq 1 ]; then
   # Proposed, not ruled (dotfiles#269): a fixup is meant to be cheap and to
   # give up loudly, so the per-item cap is the ~$1 the contract's own stop
-  # rule names, and five of those is a session.
-  [ "$item_budget_set" -eq 0 ] && item_budget=1
+  # rule names plus headroom ($pr_item_cap), and five dollars is a session.
+  [ "$item_budget_set" -eq 0 ] && item_budget=$pr_item_cap
   [ "$session_budget_set" -eq 0 ] && session_budget=5
 fi
 
@@ -588,6 +601,8 @@ build_pr_prompt() {
   printf '\nYou are alone in a fresh worktree at %s, on %s -- the PR\047s own head\n' "$3" "$2"
   printf 'branch. Make no other branch. The worktree is deleted when you exit, so\n'
   printf 'anything not committed and pushed is lost.\n\n'
+  printf 'The stop rule\047s $%s is yours to act on; the process is killed at $%s.\n' "$pr_stop_usd" "$item_cap"
+  printf 'The difference is for labelling, commenting and pushing -- not more work.\n\n'
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
   printf '  GRIND_STATUS: done     you finished. grind checks the PR for the\n'
   printf '                         awaiting-human label Mergify computes, or for a\n'
@@ -754,6 +769,34 @@ verify_pr_fixup() {
   ! printf '%s\n' "$sigs" | grep -qvx '[GU]'
 }
 
+# stop_rule_for_worker <pr number> <cost> <worker's last message>
+# The contract's stop rule, carried out on a cap-killed worker's behalf: the
+# fixup-hard label, and one comment saying what it cost and what it last
+# said -- the nearest thing to "what was tried" it left.
+stop_rule_for_worker() {
+  said=$(printf '%s' "$3" | cut -c1-1500)
+  body=$(printf 'grind: the fixup worker stopped at %s, against a $%s hard cap, before it could carry out the stop rule itself -- so grind labelled this PR `fixup-hard`.
+
+' \
+           "$(fmt_usd "$2")" "$item_cap"
+         if [ -n "$said" ]; then printf 'Its last message:
+
+'; printf '%s
+' "$said" | sed 's/^/> /'
+         else printf 'It left no message saying what it tried.
+'; fi)
+  gh pr edit "$1" --repo "$repo" --add-label fixup-hard >/dev/null 2>&1 || return 1
+  gh pr comment "$1" --repo "$repo" --body "$body" >/dev/null 2>&1
+}
+
+# release_worker_claim: the worker is gone whatever it reported, and its
+# session claimed the branch at start. A stamp it never released says a dead
+# session holds the PR for two hours. Uses the loop's worker_sid and wt_path.
+release_worker_claim() {
+  [ -n "$worker_sid" ] && [ -n "$claim_stamp" ] || return 0
+  sh "$claim_stamp" release -C "$wt_path" --scan "$worker_sid" >/dev/null 2>&1 || true
+}
+
 # verify_carded <issue number> <marker file> <worker start, ISO 8601>
 # Either the board file was written after the marker, or the issue gained a
 # comment at/after the worker started.
@@ -832,10 +875,10 @@ while [ "$i" -lt "$count" ]; do
   slug=$(printf '%s' "$item" | jq -r '.slug // ""')
   if [ "$kind" = card ]; then ref="card:$slug"; else ref="$repo#$number"; fi
   # A fixup is meant to be cheap and to give up loudly (dotfiles#269): the
-  # contract's own stop rule names ~$1, so that is the pr kind's cap unless
-  # --item-budget said otherwise.
+  # contract's own stop rule names ~$1, so that plus headroom is the pr
+  # kind's cap unless --item-budget said otherwise.
   item_cap=$item_budget
-  [ "$kind" = pr ] && [ "$item_budget_set" -eq 0 ] && item_cap=1
+  [ "$kind" = pr ] && [ "$item_budget_set" -eq 0 ] && item_cap=$pr_item_cap
 
   is_done_ref "$ref" && continue
 
@@ -947,9 +990,13 @@ while [ "$i" -lt "$count" ]; do
   live_file="$state_root/${session_id}.live"
   result_file="$state_root/${session_id}.result"
   rc_file="$state_root/${session_id}.rc"
+  last_text_file="$state_root/${session_id}.lasttext"
+  sid_file="$state_root/${session_id}.sid"
   printf '0 0 0 0 - 0 0 0 0\n' > "$live_file"
   : > "$result_file"
   : > "$rc_file"
+  : > "$last_text_file"
+  : > "$sid_file"
 
   hb_pid=""
   if [ "$heartbeat" -gt 0 ]; then
@@ -1008,8 +1055,18 @@ while [ "$i" -lt "$count" ]; do
     echo "$crc" > "$rc_file"
   ) | while IFS= read -r line; do
       etype=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || continue
+      # Every stream event names the worker's session. Taken here rather than
+      # from the result so a worker that dies without one -- the #388 shape --
+      # still has its claim stamp released.
+      sid=$(printf '%s' "$line" | jq -r '.session_id // empty' 2>/dev/null) || sid=""
+      [ -n "$sid" ] && printf '%s\n' "$sid" > "$sid_file"
       case "$etype" in
         assistant)
+          # The last thing the worker said. A worker the cap kills gets an
+          # error string for its result text, so this is where its
+          # GRIND_STATUS line -- or, failing that, what it tried -- survives.
+          ltext=$(printf '%s' "$line" | jq -r '[.message.content[]? | select(.type == "text") | .text] | join("\n")' 2>/dev/null) || ltext=""
+          [ -n "$ltext" ] && printf '%s\n' "$ltext" > "$last_text_file"
           usage=$(printf '%s' "$line" | jq -c '.message.usage // empty' 2>/dev/null)
           [ -n "$usage" ] && [ "$usage" != "null" ] || continue
           # claude -p emits one assistant event per content block, each
@@ -1045,7 +1102,9 @@ while [ "$i" -lt "$count" ]; do
   claude_rc=$(cat "$rc_file" 2>/dev/null || echo 1)
   case "$claude_rc" in "" | *[!0-9]*) claude_rc=1 ;; esac
   result_json=$(cat "$result_file" 2>/dev/null || echo "")
-  rm -f "$live_file" "$result_file" "$rc_file"
+  last_text=$(cat "$last_text_file" 2>/dev/null || echo "")
+  worker_sid=$(cat "$sid_file" 2>/dev/null || echo "")
+  rm -f "$live_file" "$result_file" "$rc_file" "$last_text_file" "$sid_file"
 
   # `kill` here is bare under `set -e`: if the heartbeat already exited on
   # its own -- it does, whenever its `wait` was interrupted -- the failed
@@ -1066,9 +1125,13 @@ while [ "$i" -lt "$count" ]; do
 
   # Unparseable/empty JSON means the worker never produced a result, so its
   # spend is unknown: don't record it, and let --resume retry it.
+  # Its worktree is kept: it may hold commits the worker never pushed.
+  # Its claim stamp is released either way; no fixup-hard, since --resume
+  # retries this and the label would turn the retry into a skip.
   if ! printf '%s' "$result_json" | jq -e . >/dev/null 2>&1; then
-    git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
     rm -f "$marker"
+    [ "$kind" = pr ] && release_worker_claim
+    warn "keeping worktree $wt_path on branch $branch for inspection"
     printf 'FAILED: %s -- %s -- claude invocation did not complete; not recorded, will retry on --resume\n' \
       "$ref" "$title" >&2
     continue
@@ -1081,19 +1144,29 @@ while [ "$i" -lt "$count" ]; do
   tokens=${tokens:-0}
   text=$(printf '%s' "$result_json" | jq -r '.result // ""' 2>/dev/null)
   is_error=$(printf '%s' "$result_json" | jq -r '.is_error // false' 2>/dev/null)
+  errored=0
+  if [ "$claude_rc" -ne 0 ] || [ "$is_error" = true ]; then errored=1; fi
 
-  # A non-zero exit or an is_error result (e.g. the item cap was hit) still
-  # spent money: record the cost so the session budget stays honest, but mark
-  # it failed so --resume retries it instead of skipping it forever.
+  # The claim, from the result text or else the worker's last message. A
+  # worker that errored is only as good as a claim GitHub bears out: the cap
+  # can land between its push and its exit, and what it pushed is real
+  # (grind-20260929T022433Z recorded two fixups failed regardless). With no
+  # claim at all an errored worker is failed outright -- cost kept, so the
+  # session budget stays honest, and retried on --resume.
+  claim_text=$text
+  case "$claim_text" in *"GRIND_STATUS: "*) ;; *) claim_text=$last_text ;; esac
   status=done
-  case "$text" in
+  case "$claim_text" in
     *"GRIND_STATUS: carded"*)  status=carded ;;
     *"GRIND_STATUS: blocked"*) status=blocked ;;
+    *"GRIND_STATUS: done"*) ;;
+    *) [ "$errored" -eq 1 ] && status=failed ;;
   esac
-  if [ "$claude_rc" -ne 0 ] || [ "$is_error" = true ]; then status=failed; fi
 
   # Check the claim. `blocked` asserts nothing about the world, so there is
-  # nothing to check; `failed` is already a failure.
+  # nothing to check; `failed` is already a failure. An errored worker whose
+  # claim does not check out is failed, not unverified: the error is the
+  # better diagnosis of the two.
   unverified_why=""
   case "$status" in
     done)
@@ -1124,6 +1197,7 @@ while [ "$i" -lt "$count" ]; do
       fi
       ;;
   esac
+  [ "$errored" -eq 1 ] && [ "$status" = unverified ] && status=failed
   # The worker's PR can exist without the .claude/ change it needed.
   if [ "$status" = "done" ] && [ "$stage_rc" -eq 1 ]; then
     unverified_why="its staged .claude/ files were never pushed"
@@ -1142,10 +1216,26 @@ while [ "$i" -lt "$count" ]; do
   fi
   rm -f "$marker"
 
-  # An unverified item keeps its worktree: it is the only remaining record of
-  # what the worker did, and the next attempt at this item clears it anyway.
+  if [ "$kind" = pr ]; then
+    # A failed fixup is one the cap or an error cut off before it could
+    # carry out the contract's stop rule, so grind carries it out: the
+    # fixup-hard label and one comment, the whole handover. Not when
+    # Mergify has already called the PR finished.
+    if [ "$status" = failed ] && ! pr_labels "$number" | grep -qx awaiting-human; then
+      if stop_rule_for_worker "$number" "$cost" "$last_text"; then
+        info "labelled $ref fixup-hard and left the stop-rule comment for its worker"
+      else
+        warn "could not label $ref fixup-hard or comment on it; do it by hand"
+      fi
+    fi
+    release_worker_claim
+  fi
+
+  # An unverified or failed item keeps its worktree: it is the only record
+  # of what the worker did -- a failed one may hold a commit the cap cut off
+  # before the push -- and the next attempt at this item clears it anyway.
   # So does any item whose staged .claude/ files were never pushed.
-  if [ "$status" = unverified ] || [ "$stage_rc" -eq 1 ]; then
+  if [ "$status" = unverified ] || [ "$status" = failed ] || [ "$stage_rc" -eq 1 ]; then
     warn "keeping worktree $wt_path on branch $branch for inspection"
   else
     git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
