@@ -355,3 +355,46 @@ Dates are as found on 2026-09-29.
   [github.com](https://github.com/Fission-AI/OpenSpec/)
   - Maps to: the tentative-ADR card, a proposed change relative to the settled
     record.
+- **BMAD Method.** BMad Code, repository since April 2025. Named agent roles
+  carry an idea through brief, PRD, architecture and stories. v6 installs into
+  `_bmad/` and keeps plans in `_bmad-output/planning-artifacts/`.
+  [github.com](https://github.com/bmad-code-org/BMAD-METHOD)
+  - Maps to: the skills as named roles. There the planning documents are the
+    agents' output; here the governing documents are the human's.
+- **Cursor rules.** Project rules are `.mdc` files in `.cursor/rules/`, with
+  frontmatter `description`, `globs` and `alwaysApply`; a plain `.md` there is
+  ignored. Cursor also reads `AGENTS.md`, nested.
+  [cursor.com](https://cursor.com/docs/context/rules)
+  - Maps to: `.claude/rules/`, loaded by the files being worked on.
+- **Aider conventions.** A small markdown file, by convention `CONVENTIONS.md`,
+  loaded read-only with `--read` or a `read:` line in `.aider.conf.yml`.
+  [aider.chat](https://aider.chat/docs/usage/conventions.html)
+  - Maps to: `.claude/rules/code.md` and `writing.md`.
+- **GitHub Copilot custom instructions.** `.github/copilot-instructions.md`
+  for the repository, `.github/instructions/*.instructions.md` by path glob,
+  and for agents `AGENTS.md` anywhere in the tree, nearest wins, or one
+  `CLAUDE.md` or `GEMINI.md` at the root.
+  [docs.github.com](https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions)
+  - Maps to: the same split as `CLAUDE.md` and `.claude/rules/`.
+- **adr-tools.** Pryce, N., 2016. Shell scripts that number and link
+  Nygard-style records in `doc/adr/`; `adr init <dir>` records another
+  location in `.adr-dir`.
+  [github.com](https://github.com/npryce/adr-tools)
+  - Maps to: `docs/decisions.md`, one file rather than one per record.
+- **MADR.** Markdown Architectural Decision Records; 4.0.0 on 17 September
+  2024. Records named `NNNN-title-with-dashes.md` in `docs/decisions/`, with
+  the options considered and their pros and cons.
+  [adr.github.io](https://adr.github.io/madr/)
+  - Maps to: a ruling card's default, undo and risk, kept as a record.
+- **LLM Council.** Karpathy, A., 22 November 2025, "a fun Saturday hack".
+  Several models answer, rank each other's answers anonymously, and a
+  chairman model writes the final one. Models are set in `backend/config.py`.
+  [github.com](https://github.com/karpathy/llm-council)
+  - Maps to: a second agent as a way to verify. Here the chairman is the
+    human, and the council only advises.
+- **Perplexity Model Council.** Perplexity, 5 February 2026 (press coverage;
+  the post's own date unverified). Three models answer one question and a
+  synthesiser shows where they agree and where they differ.
+  [perplexity.ai](https://www.perplexity.ai/hub/blog/introducing-model-council)
+  - Maps to: the confer. Disagreement is surfaced for the human, not voted
+    away.
