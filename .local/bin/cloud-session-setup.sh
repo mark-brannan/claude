@@ -60,6 +60,9 @@ INSTALL="
 .claude/skills/sweep/SKILL.md
 .claude/skills/pickup/SKILL.md
 .claude/skills/orchestrate/SKILL.md
+.claude/skills/agora/SKILL.md
+.claude/skills/curia/SKILL.md
+.claude/skills/curia/template.md
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq

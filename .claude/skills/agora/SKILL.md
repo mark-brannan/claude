@@ -64,8 +64,11 @@ Every item this skill touches gets, and keeps:
 
 ## Confer: handing a hard item to a curia
 
-On the word *confer*: mint an identifier for the item, record it on the
-card (<!-- format open --> `confer: <id>`), and move on. At the end of the
+On the word *confer*: mint the curia per the curia skill's **Minting an
+id** procedure — slug the question's own words, copy its template to
+`state/global/curia/<id>/thread.md`, fill the header (question, origin,
+date), commit — then record it on the card
+(<!-- format open --> `confer: <id>`) and move on. At the end of the
 sitting, print one `/curia <id>` prompt per deferred item, each naming
 model and effort. The sitting never opens the hard discussion itself; that
 would bloat its context.
