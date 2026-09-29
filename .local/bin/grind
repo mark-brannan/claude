@@ -1,5 +1,5 @@
 #!/bin/sh
-# grind -- a zero-token orchestrator that works the Ready queue one
+# grind -- a zero-token orchestrator that works the agent's queue one
 # `claude -p` session at a time.
 #
 # Why: no skill executes work. `ruling` routes decisions, `worklist`
@@ -7,8 +7,21 @@
 # does the work, and because it is a script rather than a model, measuring
 # and capping spend is free. Ruled 2026-09-09 (Solace).
 #
-# Per Ready item, top (lowest issue number) first:
-#   1. A fresh worktree on a new branch, named after the item.
+# The queue is worklist's bucket record (`worklist --here --json --fresh`):
+# one reader for the user's view and the executor, so the two cannot disagree
+# about what is ready. Three kinds of item, each one bucket of that record:
+#   pr     buckets.not_ready -- a PR a session left unfinished   (finishes work)
+#   issue  buckets.ready     -- a Ready, unblocked issue          (starts work)
+#   card   buckets.claudes   -- a ## Claude's card whose link names this repo
+# --kind <k> (repeatable) narrows the run to those kinds; --prs is --kind pr.
+# --policy orders the kinds: finish-first (the default) works PRs before
+# anything that starts new work; start-first is the reverse. Within a kind,
+# lowest number first; cards keep their board order. The default policy is
+# the agent's pick under the 2026-09-28 delegation, not a ruling.
+#
+# Per item:
+#   1. A fresh worktree on a new branch, named after the item (a card's is
+#      grind-card-<slug of its bold name>).
 #   2. One `claude -p --output-format stream-json --verbose --max-budget-usd
 #      <item cap> --model <m> --effort <e>` with the issue body (plus a short
 #      contract appended below) as the prompt, read line by line. Each
@@ -52,14 +65,15 @@
 # any exit. A second invocation fails fast rather than fighting the first
 # over shared worktree paths and branch names.
 #
-#   grind [--dry-run] [--prs] [--repo owner/name] [--model <m>] [--effort <e>]
+#   grind [--dry-run] [--prs] [--kind pr|issue|card]... [--policy finish-first|start-first]
+#         [--repo owner/name] [--model <m>] [--effort <e>]
 #         [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]
 #         [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]
 #
-# --prs works open pull requests instead of the Ready queue: the ones
-# pr-label-audit puts in "Gated, unlabelled" or "Labelled but no longer green",
-# which is to say the ones a session left unfinished. Everything below still
-# holds -- the caps, the lock, the claim-checking -- with three differences.
+# A pr item is a fixup: pr-label-audit supplies its verdict and skip facts
+# (labels, author, head age, cancelled-only checks) once the record has named
+# the queue. Everything below still holds -- the caps, the lock, the
+# claim-checking -- with three differences.
 # The orchestrator does the checkout, onto the PR's own head branch rather
 # than a fresh one, because a fixup that makes a new branch has not fixed the
 # PR. The prompt is the two briefs (`pr-label-audit --pr` and `branch_brief`)
@@ -67,6 +81,17 @@
 # so a session and a headless worker cannot be working to different rules.
 # `done` is checked against Mergify's label, not a PR existing; a PR whose
 # checks are all `cancelled` gets `gh run rerun --failed` instead of a worker.
+# A pr item is capped at $1 unless --item-budget says otherwise, whatever the
+# other kinds get; a run that is only prs defaults to a $5 session. The pr
+# kind needs a signing key, pr-label-audit, lib-state.sh and the contract: a
+# run that asked for it (--prs, --kind pr) refuses without them, one that got
+# it by default drops the kind and says so.
+#
+# A card item is a ## Claude's card from the global board whose trailing link
+# names this repo. The worker gets the card verbatim and the issue contract;
+# `done` is checked the same way (a PR on the item's branch), and grind then
+# removes the card line from the board and commits that, since the PR is the
+# work's one home from there on.
 #
 # Output: one INFO line per unit of work started and finished, a heartbeat
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
@@ -87,7 +112,8 @@
 set -eu
 
 usage() {
-  printf 'usage: grind [--dry-run] [--prs] [--repo owner/name] [--model <m>] [--effort <e>]\n'
+  printf 'usage: grind [--dry-run] [--prs] [--kind pr|issue|card]... [--policy finish-first|start-first]\n'
+  printf '             [--repo owner/name] [--model <m>] [--effort <e>]\n'
   printf '             [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]\n'
   printf '             [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]\n'
 }
@@ -110,6 +136,9 @@ session_budget=20
 pause_every=3
 dry_run=0
 prs=0
+kinds=""          # empty until settled: every kind, in policy order
+kinds_set=0       # 1 when --prs or --kind asked for the kinds explicitly
+policy=finish-first
 item_budget_set=0
 session_budget_set=0
 repo=""
@@ -123,7 +152,9 @@ board_file=${GRIND_BOARD:-$HOME/claude_prompts_scratch/state/global/kanban.md}
 while [ $# -gt 0 ]; do
   case $1 in
     --dry-run) dry_run=1 ;;
-    --prs) prs=1 ;;
+    --prs) kinds="$kinds pr"; kinds_set=1 ;;
+    --kind) shift; kinds="$kinds ${1:-}"; kinds_set=1 ;;
+    --policy) shift; policy=${1:-} ;;
     --repo) shift; repo=${1:-} ;;
     --model) shift; model=${1:-} ;;
     --effort) shift; effort=${1:-} ;;
@@ -143,6 +174,21 @@ done
 command -v jq >/dev/null 2>&1 || { echo "grind: needs jq" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }
 
+# --- kinds and policy ----------------------------------------------------------
+has_kind() { case " $kinds " in *" $1 "*) return 0 ;; esac; return 1; }
+# shellcheck disable=SC2086  # $kinds is a word list; splitting it is the point
+drop_kind() { kinds=$(printf '%s\n' $kinds | grep -vx "$1" | tr '\n' ' '); kinds=${kinds% }; }
+# shellcheck disable=SC2086
+kinds=$(printf '%s\n' $kinds | awk '!seen[$0]++' | tr '\n' ' '); kinds=${kinds% }
+[ -n "$kinds" ] || kinds="pr issue card"
+for k in $kinds; do
+  case $k in pr|issue|card) ;; *) printf 'grind: unknown kind %s (pr, issue or card)\n' "$k" >&2; exit 2 ;; esac
+done
+case $policy in finish-first|start-first) ;; *) printf 'grind: unknown policy %s (finish-first or start-first)\n' "$policy" >&2; exit 2 ;; esac
+# `prs` is "this run is fixups and nothing else": the budgets, the session
+# file's mode and the resume check key off it.
+prs=0; [ "$kinds" = pr ] && prs=1
+
 # --- --prs: budgets, the signing key, and the one contract text ---------------
 # The audit, the brief and the contract all live at fixed paths in the dotfiles
 # tree, which is $HOME on a real machine and two levels up from this script in
@@ -158,6 +204,8 @@ find_beside() {  # find_beside <path relative to the dotfiles tree>
 audit_bin=$(find_beside .local/bin/pr-label-audit) || audit_bin=""
 lib_state=$(find_beside .claude/hooks/lib-state.sh) || lib_state=""
 contract_file=$(find_beside .claude/skills/pickup/SKILL.md) || contract_file=""
+worklist_bin=${GRIND_WORKLIST:-$(command -v worklist 2>/dev/null || find_beside .local/bin/worklist || true)}
+[ -n "$worklist_bin" ] || { echo "grind: needs worklist (the queue reader); not on PATH or beside grind" >&2; exit 1; }
 
 # The contract is the pickup skill's section 6, read rather than copied
 # (dotfiles#267). Extracting it is what keeps the two runners on one text; a
@@ -218,14 +266,16 @@ if [ -n "$resume_id" ]; then
   item_budget=$(jq -r '.item_budget' "$state_file")
   session_budget=$(jq -r '.session_budget' "$state_file")
   pause_every=$(jq -r '.pause_every' "$state_file")
-  # The mode is the session's, not the flag's: a --prs session's UNVERIFIED
+  # The kinds and policy are the session's, not the flag's: an UNVERIFIED
   # line promises a retry on --resume, and that retry has to read the same
-  # queue. A missing field is an older session file, which was always issues.
-  state_prs=$(jq -r '.prs // 0' "$state_file")
-  if [ "$prs" -eq 1 ] && [ "$state_prs" -ne 1 ]; then
-    printf 'grind: session %s worked the Ready queue, not PRs; drop --prs to resume it\n' "$resume_id" >&2; exit 1
+  # queue. A file without kinds is an older session: prs, or issues.
+  state_kinds=$(jq -r '.kinds // (if .prs == 1 then "pr" else "issue" end)' "$state_file")
+  if [ "$kinds_set" -eq 1 ] && [ "$kinds" != "$state_kinds" ]; then
+    printf 'grind: session %s worked kinds [%s]; drop --prs/--kind to resume it\n' "$resume_id" "$state_kinds" >&2; exit 1
   fi
-  prs=$state_prs
+  kinds=$state_kinds
+  policy=$(jq -r '.policy // "finish-first"' "$state_file")
+  prs=0; [ "$kinds" = pr ] && prs=1
 else
   session_id=grind-$(new_session_id)
   state_file="$state_root/$session_id.json"
@@ -233,39 +283,35 @@ else
   if [ "$dry_run" -eq 0 ]; then
     jq -n --arg repo "$repo" --arg model "$model" --arg effort "$effort" \
           --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson pe "$pause_every" --argjson prs "$prs" \
-      '{repo:$repo, model:$model, effort:$effort, item_budget:$ib, session_budget:$sb, pause_every:$pe, prs:$prs, items:[]}' \
+          --arg kinds "$kinds" --arg policy "$policy" \
+      '{repo:$repo, model:$model, effort:$effort, item_budget:$ib, session_budget:$sb, pause_every:$pe, prs:$prs,
+        kinds:$kinds, policy:$policy, items:[]}' \
       > "$state_file"
   fi
 fi
 
 resume_cmd="grind --resume $session_id"
 
-# --prs preconditions, checked once the mode is settled -- a --resume takes it
-# from the session file, so this cannot run before that is read.
-if [ "$prs" -eq 1 ]; then
-  # Every commit a fixup makes has to sign, and the contract forbids the
-  # worker from working around that. A machine without a key cannot finish a
-  # single item, so refuse the run rather than spend the budget rediscovering
-  # it once per PR.
+# pr-kind preconditions, checked once the kinds are settled -- a --resume
+# takes them from the session file, so this cannot run before that is read.
+# Every commit a fixup makes has to sign, and the contract forbids the worker
+# from working around that; without the audit, the brief or the contract the
+# worker would be handed a PR and no rules. A run that asked for the kind
+# refuses rather than spend the budget rediscovering it once per PR; a run
+# that got it by default drops the kind, on one line, and works the rest.
+pr_unmet=""
+if has_kind pr; then
   if [ -z "$(git config --get user.signingkey 2>/dev/null)" ]; then
-    echo "grind: --prs needs a signing key on this machine (git config user.signingkey is empty)" >&2
-    exit 1
+    pr_unmet="a signing key on this machine (git config user.signingkey is empty)"
+  elif [ -z "$audit_bin" ]; then pr_unmet="pr-label-audit; not found beside grind or under \$HOME"
+  elif [ -z "$lib_state" ]; then pr_unmet=".claude/hooks/lib-state.sh for branch_brief"
+  elif [ -z "$(fixup_contract || true)" ]; then pr_unmet="the fixup contract in .claude/skills/pickup/SKILL.md"
   fi
-  [ -n "$audit_bin" ] || { echo "grind: --prs needs pr-label-audit; not found beside grind or under \$HOME" >&2; exit 1; }
-  [ -n "$lib_state" ] || { echo "grind: --prs needs .claude/hooks/lib-state.sh for branch_brief" >&2; exit 1; }
-  # No contract means the worker would be handed a PR and no rules at all.
-  if [ -z "$(fixup_contract || true)" ]; then
-    echo "grind: --prs needs the fixup contract in .claude/skills/pickup/SKILL.md" >&2; exit 1
+  if [ -n "$pr_unmet" ]; then
+    if [ "$kinds_set" -eq 1 ]; then echo "grind: the pr kind needs $pr_unmet" >&2; exit 1; fi
+    echo "grind: pr kind skipped -- needs $pr_unmet"
+    drop_kind pr
   fi
-fi
-
-# Worktrees are cut from the current directory's repository, so it must be
-# a checkout of $repo -- otherwise the worker is handed the wrong codebase.
-if [ "$dry_run" -eq 0 ]; then
-  here=$(cwd_repo) || here=""
-  [ "$here" = "$repo" ] \
-    || { printf 'grind: current directory is not a checkout of %s (found: %s); cd there first\n' \
-           "$repo" "${here:-no GitHub remote}" >&2; exit 1; }
 fi
 
 # --- single-flight lock, one grind per repo -----------------------------------
@@ -346,45 +392,76 @@ is_done_ref() {
   return 1
 }
 
-# --- the queue, top (lowest number) first -------------------------------------
-if [ "$prs" -eq 1 ]; then
-  # pr-label-audit audits the whole account; grind is repo-scoped by its lock,
-  # its worktree source and its --repo check, so the audit is filtered to this
-  # repo rather than grind being widened to the fleet. The trailing
-  # repos_missing_fixup_hard object carries no .repo and drops out here.
-  audit_json=$("$audit_bin" --json 2>&1) \
-    || { printf 'grind: pr-label-audit failed: %s\n' "$audit_json" >&2; exit 1; }
-  # main itself is red on this repo (pr-label-audit's repos_base_red) -- no
-  # PR here is a fixup's fault, so the whole --prs pass pauses, not just the
-  # items that happen to be queued (dotfiles#359).
-  if printf '%s' "$audit_json" | jq -e -s --arg name "${repo##*/}" \
-       'any(.[]; (.repos_base_red // []) | index($name))' >/dev/null; then
-    echo "grind: $repo's base branch is red; skipping the --prs pass until it's green"
-    exit 0
-  fi
-  items=$(printf '%s' "$audit_json" | jq -s -c --arg name "${repo##*/}" '
-    [ .[] | select(.repo? == $name)
-          | select(.section == "unfinished" or .section == "stale-label") ]
-    | sort_by(.number)') \
-    || { echo "grind: could not read pr-label-audit --json" >&2; exit 1; }
-else
-  ready_json=$(gh issue list --repo "$repo" --label ready --state open --limit 100 \
-    --json number,title,body,url,labels 2>&1) \
-    || { printf 'grind: could not list issues on %s: %s\n' "$repo" "$ready_json" >&2; exit 1; }
-
-  items=$(printf '%s' "$ready_json" | jq -c '
-    map(select((.labels | map(.name) | index("blocked")) == null))
-    | sort_by(.number)')
+# Worktrees are cut from the current directory's repository, so it must be
+# a checkout of $repo -- otherwise the worker is handed the wrong codebase.
+if [ "$dry_run" -eq 0 ]; then
+  here=$(cwd_repo) || here=""
+  [ "$here" = "$repo" ] \
+    || { printf 'grind: current directory is not a checkout of %s (found: %s); cd there first\n' \
+           "$repo" "${here:-no GitHub remote}" >&2; exit 1; }
 fi
 
+# --- the queue: worklist's bucket record, one scheduler across kinds ----------
+# The record is fetched fresh (the cache is stale-while-revalidate, and a
+# queue read off a stale one would work an item somebody just finished) and
+# scoped to this repo: --here for the fetch, .repo == $repo for every item.
+record=$("$worklist_bin" --here --json --fresh 2>&1) \
+  || { printf 'grind: worklist --json failed: %s\n' "$(printf '%s' "$record" | jq -r '.error // .' 2>/dev/null | head -1)" >&2; exit 1; }
+printf '%s' "$record" | jq -e '.buckets' >/dev/null 2>&1 \
+  || { echo "grind: worklist --json carries no buckets; is worklist older than grind?" >&2; exit 1; }
+
+# The audit supplies what a fixup needs and the record does not carry:
+# verdict, cancelled-only checks with their run urls, the head's commit date.
+# It audits the whole account, so it is filtered to this repo by name.
+audit_json="[]"
+if has_kind pr; then
+  audit_raw=$("$audit_bin" --json 2>&1) \
+    || { printf 'grind: pr-label-audit failed: %s\n' "$audit_raw" >&2; exit 1; }
+  # main itself is red on this repo (pr-label-audit's repos_base_red) -- no
+  # PR here is a fixup's fault, so the whole pr kind pauses, not just the
+  # items that happen to be queued (dotfiles#359).
+  if printf '%s' "$audit_raw" | jq -e -s --arg name "${repo##*/}" \
+       'any(.[]; (.repos_base_red // []) | index($name))' >/dev/null; then
+    echo "grind: $repo's base branch is red; skipping the pr kind until it's green"
+    drop_kind pr
+  else
+    audit_json=$(printf '%s' "$audit_raw" | jq -s -c --arg name "${repo##*/}" '[ .[] | select(.repo? == $name) ]') \
+      || { echo "grind: could not read pr-label-audit --json" >&2; exit 1; }
+  fi
+fi
+
+# shellcheck disable=SC2016  # jq program, not shell
+items=$(printf '%s' "$record" | jq -c --arg repo "$repo" --arg kinds " $kinds " --arg policy "$policy" --argjson audit "$audit_json" '
+  # --here already scopes the fetch to this repo; the check here is for the
+  # cards, which come from the global board and link anywhere. An origin that
+  # is a local path (tests) has no owner, so it matches on the repo name.
+  def mine: .repo == $repo or (($repo|startswith("/")) and ((.repo // "" | split("/") | last) == ($repo | split("/") | last)));
+  ($audit | map({key: (.number|tostring), value: .}) | from_entries) as $a
+  | ([ .buckets.not_ready[] | select(mine and (.isDraft|not))
+       | . + ($a[.number|tostring] // {})
+       | select((.section // "unfinished") | IN("unfinished", "stale-label"))
+       | {kind: "pr", number, title, url, labels, author, verdict: (.verdict // "unfinished"),
+          cancelled_only: (.cancelled_only // false), failing_checks: (.failing_checks // []),
+          head_committed_at: (.head_committed_at // null)} ] | sort_by(.number)) as $prs
+  | ([ .buckets.ready[] | select(mine and ((.labels|index("blocked"))|not))
+       | {kind: "issue", number, title, url, body: (.body // ""), labels} ] | sort_by(.number)) as $issues
+  | [ .buckets.claudes[] | select(mine)
+      | (.name // .text[:60]) as $n
+      | {kind: "card", title: $n, text, link,
+         slug: ($n | ascii_downcase | gsub("[^a-z0-9]+"; "-") | ltrimstr("-") | rtrimstr("-") | .[:40] | rtrimstr("-"))} ] as $cards
+  | (if $policy == "start-first" then $issues + $cards + $prs else $prs + $issues + $cards end)
+  | map(.kind as $k | select($kinds | contains(" " + $k + " ")))') \
+  || { echo "grind: could not build the queue from worklist --json" >&2; exit 1; }
+
 count=$(printf '%s' "$items" | jq 'length')
+kind_counts=$(printf '%s' "$items" | jq -r 'group_by(.kind) | map("\(length) \(.[0].kind)") | join(", ")')
 if [ "$count" -eq 0 ]; then
-  if [ "$prs" -eq 1 ]; then echo "grind: no unfinished PRs on $repo"; else echo "grind: no Ready items on $repo"; fi
+  echo "grind: nothing to work on $repo (kinds: $kinds)"
   exit 0
 fi
 
 if [ "$dry_run" -eq 0 ]; then
-  info "session $session_id on $repo: $count $( [ "$prs" -eq 1 ] && printf 'unfinished PR' || printf 'Ready item')(s), $model/$effort, cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
+  info "session $session_id on $repo: $count item(s) ($kind_counts; $policy), $model/$effort, cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
   info "state: $state_file"
 fi
 skipped=0
@@ -495,10 +572,17 @@ build_pr_prompt() {
   printf '                         what it cost. grind checks the label is there.\n'
 }
 
-# build_prompt <issue body> <ref> <branch>
+# build_prompt <issue body or card text> <ref> <branch> <kind>
 build_prompt() {
-  body=$1; p_ref=$2; p_branch=$3
-  printf '%s\n\n---\n' "$body"
+  body=$1; p_ref=$2; p_branch=$3; p_kind=${4:-issue}
+  if [ "$p_kind" = card ]; then
+    printf 'This item is a card from the agent'"'"'s queue (## Claude'"'"'s on the global\n'
+    printf 'board), not an issue. The card, verbatim:\n\n%s\n\n' "$body"
+    printf 'Work it in this repository. Quote the card in the PR body. Do not remove\n'
+    printf 'this card from the board: grind does that once your PR is verified.\n\n---\n'
+  else
+    printf '%s\n\n---\n' "$body"
+  fi
   printf 'Grind orchestration contract for %s.\n\n' "$p_ref"
   printf 'You are alone in a fresh worktree on branch %s. Work the item to a\n' "$p_branch"
   printf 'mergeable PR: commit, push the branch, and open the PR yourself with gh.\n'
@@ -522,12 +606,41 @@ build_prompt() {
   printf '  GRIND_STATUS: carded   finishing needs a ruling only the repo owner can\n'
   printf '                         make. File the card first, per this repo'"'"'s\n'
   printf '                         card-write convention. grind checks that the\n'
-  printf '                         board changed or the issue gained a comment, and\n'
-  printf '                         records the item unverified if neither did.\n'
-  printf '  GRIND_STATUS: blocked  the item cannot be worked at all -- a missing\n'
-  printf '                         dependency, an unmet precondition, work that\n'
-  printf '                         belongs to another item. Comment on the issue\n'
-  printf '                         saying why, so the reason outlives this session.\n'
+  if [ "$p_kind" = card ]; then
+    printf '                         board changed, and records the item unverified\n'
+    printf '                         if it did not.\n'
+    printf '  GRIND_STATUS: blocked  the item cannot be worked at all -- a missing\n'
+    printf '                         dependency, an unmet precondition, work that\n'
+    printf '                         belongs to another item. Say why in your final\n'
+    printf '                         message, so the reason outlives this session.\n'
+  else
+    printf '                         board changed or the issue gained a comment, and\n'
+    printf '                         records the item unverified if neither did.\n'
+    printf '  GRIND_STATUS: blocked  the item cannot be worked at all -- a missing\n'
+    printf '                         dependency, an unmet precondition, work that\n'
+    printf '                         belongs to another item. Comment on the issue\n'
+    printf '                         saying why, so the reason outlives this session.\n'
+  fi
+}
+
+# retire_card <card text> <note> -- a worked card leaves the agent's queue:
+# its PR is the work's one home from here on. The board is the private state
+# repo's, so the removal is committed there and pushed best-effort; a failed
+# push is a WARN, the line is gone either way. Returns 1 when the line could
+# not be removed.
+retire_card() {
+  [ -f "$board_file" ] || return 1
+  if ! CARD_TEXT=$1 awk '/^- \[ \]/ && substr($0, 7) == ENVIRON["CARD_TEXT"] { next } { print }' "$board_file" > "$board_file.tmp"; then
+    rm -f "$board_file.tmp"; return 1
+  fi
+  mv "$board_file.tmp" "$board_file" || return 1
+  bdir=$(dirname "$board_file")
+  if git -C "$bdir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! { git -C "$bdir" add -- "$board_file" && git -C "$bdir" commit -q -m "grind: worked card -- $2"; } >/dev/null 2>&1; then
+      warn "card line removed from $board_file but not committed; commit it by hand"; return 0
+    fi
+    git -C "$bdir" push -q origin HEAD >/dev/null 2>&1 || warn "board commit made in $bdir but not pushed; push it by hand"
+  fi
 }
 
 # --- staging route into .claude/ (dotfiles#172) --------------------------------
@@ -620,6 +733,7 @@ verify_pr_fixup() {
 verify_carded() {
   # find -newer, not test -nt: -nt is not in POSIX sh (shellcheck SC3013).
   if [ -f "$board_file" ] && [ -n "$(find "$board_file" -newer "$2" 2>/dev/null)" ]; then return 0; fi
+  [ -n "$1" ] || return 1   # a card has no issue to gain a comment
   c=$(gh issue view "$1" --repo "$repo" --json comments \
         --jq "[.comments[] | select(.createdAt >= \"$3\")] | length" 2>/dev/null) || return 1
   case "$c" in ''|*[!0-9]*) return 1 ;; esac
@@ -685,9 +799,16 @@ i=0
 while [ "$i" -lt "$count" ]; do
   item=$(printf '%s' "$items" | jq -c ".[$i]")
   i=$((i + 1))
-  number=$(printf '%s' "$item" | jq -r '.number')
+  kind=$(printf '%s' "$item" | jq -r '.kind')
+  number=$(printf '%s' "$item" | jq -r '.number // ""')
   title=$(printf '%s' "$item" | jq -r '.title')
-  ref="$repo#$number"
+  slug=$(printf '%s' "$item" | jq -r '.slug // ""')
+  if [ "$kind" = card ]; then ref="card:$slug"; else ref="$repo#$number"; fi
+  # A fixup is meant to be cheap and to give up loudly (dotfiles#269): the
+  # contract's own stop rule names ~$1, so that is the pr kind's cap unless
+  # --item-budget said otherwise.
+  item_cap=$item_budget
+  [ "$kind" = pr ] && [ "$item_budget_set" -eq 0 ] && item_cap=1
 
   is_done_ref "$ref" && continue
 
@@ -701,7 +822,7 @@ while [ "$i" -lt "$count" ]; do
     fi
   fi
 
-  if [ "$prs" -eq 1 ]; then
+  if [ "$kind" = pr ]; then
     branch=$(gh pr view "$number" --repo "$repo" --json headRefName --jq .headRefName 2>/dev/null) || branch=""
     wt_path="$worktree_root/pr-$number"
     verdict=$(printf '%s' "$item" | jq -r '.verdict')
@@ -724,18 +845,25 @@ while [ "$i" -lt "$count" ]; do
       fi
       continue
     fi
+  elif [ "$kind" = card ]; then
+    branch="grind-card-$slug"
+    wt_path="$worktree_root/card-$slug"
+    verdict=""
   else
     branch="grind-$number"
     wt_path="$worktree_root/$number"
     verdict=""
   fi
 
-  cmd_display="claude -p <issue $ref body> --output-format stream-json --verbose --max-budget-usd $item_budget --model $model --effort $effort"
-  [ "$prs" -eq 1 ] && cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $item_budget --model $model --effort $effort"
+  case $kind in
+    pr)   cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $item_cap --model $model --effort $effort" ;;
+    card) cmd_display="claude -p <card $ref text> --output-format stream-json --verbose --max-budget-usd $item_cap --model $model --effort $effort" ;;
+    *)    cmd_display="claude -p <issue $ref body> --output-format stream-json --verbose --max-budget-usd $item_cap --model $model --effort $effort" ;;
+  esac
 
   if [ "$dry_run" -eq 1 ]; then
     printf '[%d/%d] %s -- %s%s\n' "$((i))" "$count" "$ref" "${verdict:+[$verdict] }" "$title"
-    if [ "$prs" -eq 1 ]; then
+    if [ "$kind" = pr ]; then
       printf '  worktree: git worktree add -B %s %s origin/%s\n' "$branch" "$wt_path" "$branch"
     else
       printf '  worktree: git worktree add -b %s %s\n' "$branch" "$wt_path"
@@ -755,8 +883,8 @@ while [ "$i" -lt "$count" ]; do
   # deleting it is safe. In `--prs` mode it is the PR's real head branch name,
   # which a human may also hold locally with unpushed commits -- and `-B`
   # below resets it from the remote anyway, so the delete would be pure risk.
-  [ "$prs" -eq 1 ] || git branch -D "$branch" >/dev/null 2>&1 || true
-  if [ "$prs" -eq 1 ]; then
+  [ "$kind" = pr ] || git branch -D "$branch" >/dev/null 2>&1 || true
+  if [ "$kind" = pr ]; then
     # The PR's own head branch, reset to the remote: the worker fixes this
     # pull request or it has not fixed anything. `-B` resets any local copy,
     # and a branch a worktree still holds was skipped.
@@ -770,11 +898,11 @@ while [ "$i" -lt "$count" ]; do
   fi
   info "worktree $wt_path on branch $branch"
 
-  if [ "$prs" -eq 1 ]; then
-    prompt=$(build_pr_prompt "$ref" "$branch" "$wt_path")
-  else
-    prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')" "$ref" "$branch")
-  fi
+  case $kind in
+    pr)   prompt=$(build_pr_prompt "$ref" "$branch" "$wt_path") ;;
+    card) prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.text')" "$ref" "$branch" card) ;;
+    *)    prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')" "$ref" "$branch" issue) ;;
+  esac
   started=$(date +%s)
   # Reference points for the carded check: a marker the board file must be
   # newer than, and the wall-clock instant a new issue comment must follow.
@@ -782,7 +910,7 @@ while [ "$i" -lt "$count" ]; do
   marker="$state_root/${session_id}.marker"
   : > "$marker"
   write_lock "$ref" "$started"
-  info "worker running: claude -p --model $model --effort $effort --max-budget-usd $item_budget --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
+  info "worker running: claude -p --model $model --effort $effort --max-budget-usd $item_cap --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
 
   # live_file holds "input output cache_read cache_creation" running totals,
   # rewritten by the reader loop below on every assistant event; the
@@ -835,7 +963,7 @@ while [ "$i" -lt "$count" ]; do
   # sat like this for 490+ elapsed minutes on one item.
   ( cd "$wt_path" || exit 1
     printf '%s' "$prompt" | claude -p --output-format stream-json --verbose \
-         --max-budget-usd "$item_budget" --model "$model" --effort "$effort" \
+         --max-budget-usd "$item_cap" --model "$model" --effort "$effort" \
          --permission-mode "$permission_mode" &
     cpid=$!
     # `wait` and the `command -v` test both report non-zero in the ordinary
@@ -928,7 +1056,7 @@ while [ "$i" -lt "$count" ]; do
   unverified_why=""
   case "$status" in
     done)
-      if [ "$prs" -eq 1 ]; then
+      if [ "$kind" = pr ]; then
         if ! verify_pr_fixup "$number" "$branch" "$wt_path" "$started_iso"; then
           unverified_why="no awaiting-human label, and no signed commit pushed to $branch"
           status=unverified
@@ -943,7 +1071,7 @@ while [ "$i" -lt "$count" ]; do
       # does: the contract's stop rule says what giving up leaves behind, and
       # a PR given up on silently is indistinguishable from one nobody
       # touched -- which is exactly the state this mode exists to clear.
-      if [ "$prs" -eq 1 ] && ! pr_labels "$number" | grep -qx fixup-hard; then
+      if [ "$kind" = pr ] && ! pr_labels "$number" | grep -qx fixup-hard; then
         unverified_why="gave up without labelling the PR fixup-hard"
         status=unverified
       fi
@@ -959,6 +1087,17 @@ while [ "$i" -lt "$count" ]; do
   if [ "$status" = "done" ] && [ "$stage_rc" -eq 1 ]; then
     unverified_why="its staged .claude/ files were never pushed"
     status=unverified
+  fi
+  # A verified card leaves the board only now, after every check that can
+  # still make the item unverified: --resume reads the current board, so a
+  # card removed and then marked UNVERIFIED would never be queued again.
+  if [ "$status" = "done" ] && [ "$kind" = card ]; then
+    pr_url=$(gh pr list --repo "$repo" --head "$branch" --state open --json url --jq '.[0].url // ""' 2>/dev/null) || pr_url=""
+    if retire_card "$(printf '%s' "$item" | jq -r '.text')" "$title${pr_url:+ -> $pr_url}"; then
+      info "removed card '$title' from $board_file"
+    else
+      warn "could not remove card '$title' from $board_file; remove it by hand"
+    fi
   fi
   rm -f "$marker"
 
@@ -1040,5 +1179,5 @@ if [ "$dry_run" -eq 1 ]; then
   exit 0
 fi
 
-printf 'done: %s exhausted. Running total %s / %s. %d skipped.\n' "$( [ "$prs" -eq 1 ] && printf 'PR queue' || printf 'Ready queue')" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$skipped"
+printf 'done: queue exhausted (%s). Running total %s / %s. %d skipped.\n' "$kind_counts" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$skipped"
 finish

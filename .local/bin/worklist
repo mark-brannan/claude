@@ -216,26 +216,15 @@ find_cache() {
   [ -f "$cache_root/${cwd%%/*}-${cwd#*/}.json" ] && printf '%s' "$cache_root/${cwd%%/*}-${cwd#*/}.json"
 }
 
-# --- render --------------------------------------------------------------------
+# --- the bucket record ---------------------------------------------------------
+# One reader, two renderings (design note 2026-09-27): the buckets are computed
+# here, once, into a record that --json emits verbatim and render draws from.
+# grind reads the same record for its queue, so a bucket rule changed here
+# changes both what the user sees and what the executor works. The record is
+# the cache plus three additive keys -- buckets, bucket_counts, summary -- so a
+# caller's own `.records[]` query keeps working.
 # shellcheck disable=SC2016  # jq program, not shell
-RENDER='
-def brief: $brief == "1";
-def cut: if brief and length > 80 then .[:77] + "..." else . end;
-def esc: gsub("\\|"; "\\|");
-def limit: if brief then 5 else 8 end;
-# table_bucket -- $title heading, $col3 header (e.g. "Notes" or "Updated"),
-# $rows of {ref, item, notes}. Empty notes render as a blank cell, not
-# "null" (jq // "" upstream handles that).
-def table_bucket($title; $col3; $rows):
-  if ($rows|length) == 0 then "\($title): none"
-  else
-    ($rows[:limit]) as $r
-    | ([$title, "", "| Ref | Item | \($col3) |", "|---|---|---|"]
-       + ($r | map("| " + (.ref|esc) + " | " + (.item|esc) + " | " + (.notes|esc) + " |"))
-       + (if ($rows|length) > limit then ["| +\(($rows|length) - limit) more | | run `worklist` |"] else [] end)
-      ) | join("\n")
-  end;
-def ref_link: if brief then "\(.repo)#\(.number)" else "[\(.repo)#\(.number)](\(.url))" end;
+BUCKETS='
 def failing_names: [ (.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[]
   | select( ((.conclusion // "") | IN("FAILURE","TIMED_OUT","CANCELLED","ACTION_REQUIRED","STARTUP_FAILURE"))
          or ((.state // "") | IN("FAILURE","ERROR")) )
@@ -256,23 +245,23 @@ def awaiting_human: (.isDraft|not) and .mergeable == "MERGEABLE" and (failing_na
 def labels: [(.labels.nodes // [])[].name];
 
 . as $c | $c.owner as $owner
-| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.pullRequests.nodes // [])[]
-    | . + {repo: $s, ref: ({repo:$s,number,url}|ref_link), item: (.title|cut), notes: pr_notes($owner)} ] as $prs
-| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.issues.nodes // [])[]
-    | . + {repo: $s, lbl: labels,
-           ref: ({repo:$s,number,url}|ref_link), item: (.title|cut),
-           notes: (.updatedAt[:10] // "")} ] as $is
+| [ $c.records[] | select(.data) | .repo as $r | (.data.pullRequests.nodes // [])[]
+    | {kind: "pr", repo: $r, number, title, url, isDraft, mergeable, author: (.author.login // "ghost"),
+       labels: labels, failing: failing_names, unresolved: unresolved, rollup: rollup,
+       autoMerge: (.autoMergeRequest != null), awaiting_human: awaiting_human, notes: pr_notes($owner)} ] as $prs
+| [ $c.records[] | select(.data) | .repo as $r | (.data.issues.nodes // [])[]
+    | {kind: "issue", repo: $r, number, title, url, updatedAt, body, labels: labels,
+       milestone: (.milestone.title // null), notes: (.updatedAt[:10] // "")} ] as $is
 # A milestone view is a filter over the same cache: the fetch and the cache
 # stay unscoped, so one cache serves both views.
-| ($is | if $milestone == "" then . else map(select(.milestone.title == $milestone)) end) as $is
-| ($is | map(select(.lbl|index("blocked")))) as $bl
-| ($is | map(select((.lbl|index("blocked")|not) and (.lbl|index("ready"))))) as $rd
-| ($is | map(select((.lbl|index("blocked")|not) and (.lbl|index("ready")|not)))) as $rest
+| ($is | if $milestone == "" then . else map(select(.milestone == $milestone)) end) as $is
+| ($is | map(select(.labels|index("blocked")))) as $bl
+| ($is | map(select((.labels|index("blocked")|not) and (.labels|index("ready"))))) as $rd
+| ($is | map(select((.labels|index("blocked")|not) and (.labels|index("ready")|not)))) as $rest
 # In a milestone view the milestone is the scope, so nothing in it is
 # "deferred to a milestone": its unlabelled issues are the Untriaged table.
 | (if $milestone == "" then ($rest | map(select(.milestone)) | length) else 0 end) as $deferred
 | (if $milestone == "" then ($rest | map(select(.milestone|not))) else $rest end) as $untri
-| ($untri | length) as $untriaged
 | [ ($c.records | map(select(.error))) as $e
     | if ($e|length) > 0 and ($e|length) == ($c.records|length) and ([$e[].error]|unique|length) == 1
          and ($e[0].error|IN("gh unauthenticated","network")) then $e[0].error
@@ -283,24 +272,59 @@ def labels: [(.labels.nodes // [])[].name];
 | ($c.counts | if (.prs|type) == "string" and (.issues|type) == "string" and .prs == .issues and (.prs|test("^[0-9]")|not)
       then "unavailable (\(.prs))"
       else "\(.prs) open PRs, \(.issues) open issues across \($owner)" end) as $acct
-# The number a reader skims sits above project-scoped tables, so the scoped
-# count comes first; the account-wide one follows, labelled.
 | ([$c.records[] | select(.data)]
    | if length == 0 then null else
      { prs: (map(.data.pullRequests.nodes | length) | add), prs_more: (map(.data.pullRequests.pageInfo.hasNextPage) | any),
        issues: (map(.data.issues.nodes | length) | add), issues_more: (map(.data.issues.pageInfo.hasNextPage) | any) } end) as $scope
-| (if $scope == null then "counts: \($acct)"
-   else "counts: \($scope.prs)\(if $scope.prs_more then "+" else "" end) open PRs, \($scope.issues)\(if $scope.issues_more then "+" else "" end) open issues in scope; \($acct)" end) as $counts
+| ({ awaiting_human: ($prs | map(select(.awaiting_human))),
+     queued: ($prs | map(select(.autoMerge))),
+     not_ready: ($prs | map(select((.autoMerge|not) and (.awaiting_human|not)))),
+     ready: $rd, blocked: $bl, untriaged: $untri, stranded: $stranded,
+     rulings: ($cards | map(select(.section == "rulings"))),
+     solaces: ($cards | map(select(.section == "solaces"))),
+     claudes: ($cards | map(select(.section == "claudes"))) }) as $buckets
+| $c + { buckets: $buckets, bucket_counts: ($buckets | map_values(length)),
+         summary: {deferred: $deferred, fails: $fails, trunc: $trunc, acct: $acct, scope: $scope} }
+'
+
+# --- render --------------------------------------------------------------------
+# Draws from the bucket record, never from the cache.
+# shellcheck disable=SC2016  # jq program, not shell
+RENDER='
+def brief: $brief == "1";
+def cut: if brief and length > 80 then .[:77] + "..." else . end;
+def esc: gsub("\\|"; "\\|");
+def limit: if brief then 5 else 8 end;
+# table_bucket -- $title heading, $col3 header (e.g. "Notes" or "Updated"),
+# $rows of {ref, item, notes}. Empty notes render as a blank cell, not
+# "null" (jq // "" upstream handles that).
+def table_bucket($title; $col3; $rows):
+  if ($rows|length) == 0 then "\($title): none"
+  else
+    ($rows[:limit]) as $r
+    | ([$title, "", "| Ref | Item | \($col3) |", "|---|---|---|"]
+       + ($r | map("| " + (.ref|esc) + " | " + (.item|esc) + " | " + (.notes|esc) + " |"))
+       + (if ($rows|length) > limit then ["| +\(($rows|length) - limit) more | | run `worklist` |"] else [] end)
+      ) | join("\n")
+  end;
+def ref_link: (.repo|split("/")[1]) as $s | if brief then "\($s)#\(.number)" else "[\($s)#\(.number)](\(.url))" end;
+def row: {ref: ref_link, item: (.title|cut), notes};
+
+. as $c | $c.buckets as $b | $c.summary as $s
+# The number a reader skims sits above project-scoped tables, so the scoped
+# count comes first; the account-wide one follows, labelled.
+| (if $s.scope == null then "counts: \($s.acct)"
+   else "counts: \($s.scope.prs)\(if $s.scope.prs_more then "+" else "" end) open PRs, \($s.scope.issues)\(if $s.scope.issues_more then "+" else "" end) open issues in scope; \($s.acct)" end) as $counts
 | [ $c.label + " " + ($c.repos | map(split("/")[1]) | join(", ")) ]
-  + $fails + $trunc + [ $counts, "", "@@RULINGS@@",
-  table_bucket("Solace'"'"'s turn"; "Notes"; $prs | map(select(awaiting_human))),
-  table_bucket("Queued (auto-merge)"; "Notes"; $prs | map(select(.autoMergeRequest != null))),
-  table_bucket("Stranded branches (no PR)"; "Notes"; $stranded | map(.item |= cut)),
-  table_bucket("Ready"; "Updated"; $rd),
-  table_bucket("Blocked"; "Updated"; $bl),
-  table_bucket("Not ready (agent'"'"'s turn)"; "Notes"; $prs | map(select(.autoMergeRequest == null and (awaiting_human|not)))),
-  (if $untriaged == 0 then "Untriaged: 0"
-   else table_bucket("Untriaged: \($untriaged)" + (if $deferred > 0 then " (deferred to a milestone: \($deferred))" else "" end); "Updated"; $untri) end) ]
+  + $s.fails + $s.trunc + [ $counts, "", "@@RULINGS@@",
+  table_bucket("Solace'"'"'s turn"; "Notes"; $b.awaiting_human | map(row)),
+  table_bucket("Queued (auto-merge)"; "Notes"; $b.queued | map(row)),
+  table_bucket("Stranded branches (no PR)"; "Notes"; $b.stranded | map(.item |= cut)),
+  table_bucket("Ready"; "Updated"; $b.ready | map(row)),
+  table_bucket("Blocked"; "Updated"; $b.blocked | map(row)),
+  table_bucket("Not ready (agent'"'"'s turn)"; "Notes"; $b.not_ready | map(row)),
+  (if ($b.untriaged|length) == 0 then "Untriaged: 0"
+   else table_bucket("Untriaged: \($b.untriaged|length)" + (if $s.deferred > 0 then " (deferred to a milestone: \($s.deferred))" else "" end); "Updated"; $b.untriaged | map(row)) end) ]
 | join("\n")
 '
 
@@ -429,6 +453,46 @@ section_of() {
   printf '%s\n' "$cards" | head -8 | jq -Rr --arg brief "$brief" '.[6:] | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
 }
 
+# board_cards <board> -- every card on the three board sections as a JSON
+# array of {kind:"card", section, group, text, name, link, repo}: section is
+# rulings | solaces | claudes, group the "### <name>" heading above the card
+# ("global" when none), name the leading **bold**, link the last (url) on the
+# line and repo the owner/name that url names, or null. The section views
+# below still render from the board text; the record is what a reader other
+# than a human -- grind's card kind -- consumes.
+board_cards() {
+  awk '
+    /^## / { s = ""; g = "global"
+      if ($0 ~ /^## Needs ruling[[:space:]]*$/) s = "rulings"
+      else if ($0 ~ /^## Solace/) s = "solaces"
+      else if ($0 ~ /^## Claude/) s = "claudes"
+      next }
+    s == "" { next }
+    /^### / { g = $0; sub(/^###[ \t]+/, "", g); sub(/[ \t]+$/, "", g); next }
+    /^- \[ \]/ { print s "\t" g "\t" substr($0, 7) }
+  ' "$1" | jq -R -s -c '
+    [ split("\n")[] | select(length > 0) | split("\t") | select(length >= 3)
+      | {kind: "card", section: .[0], group: .[1], text: (.[2:] | join("\t"))}
+      | .name = ((.text | capture("^\\*\\*(?<n>[^*]+)\\*\\*") | .n) // null)
+      | .link = (([.text | match("\\((https?://[^)[:space:]]+)\\)"; "g") | .captures[0].string] | last) // null)
+      | .repo = (((.link // "") | capture("^https://github\\.com/(?<r>[^/]+/[^/#?]+)") | .r) // null) ]'
+}
+
+# build_record <cache file> -- the bucket record: the cache plus buckets,
+# bucket_counts and summary. --milestone scopes every record's issue nodes
+# first, so a caller's own `.records[].data.issues.nodes[]` query sees the
+# same scope the buckets do.
+# shellcheck disable=SC2016  # jq program, not shell
+build_record() {
+  board_path || :
+  cards="[]"; [ -n "$kb" ] && cards=$(board_cards "$kb")
+  stranded_json=$(stranded_rows "$1")
+  jq --arg milestone "$milestone" --argjson stranded "${stranded_json:-[]}" --argjson cards "${cards:-[]}" \
+    'if $milestone == "" then .
+     else .records |= map(if .data then .data.issues.nodes |= map(select(.milestone.title == $milestone)) else . end) end
+     | '"$BUCKETS" "$1"
+}
+
 # render <cache file or ""> <cached 0|1> <extra line or "">
 render() {
   stamp="as of $(date -u +%H:%MZ)"
@@ -462,8 +526,7 @@ render() {
       # The buckets come out of jq in one piece with a @@RULINGS@@ marker in
       # them; the rulings are spliced in here rather than by awk, because a
       # multi-line -v assignment is a syntax error in one-true-awk.
-      stranded_json=$(stranded_rows "$1")
-      body=$(jq -r --arg brief "$brief" --arg milestone "$milestone" --argjson stranded "${stranded_json:-[]}" "$RENDER" "$1")
+      body=$(build_record "$1" | jq -r --arg brief "$brief" "$RENDER")
       printf '%s' "${body%%@@RULINGS@@*}"
       [ -n "$rulings" ] && printf '%s\n' "$rulings"
       printf '%s\n' "${body#*@@RULINGS@@}"
@@ -480,14 +543,8 @@ render() {
   else cat; fi
 }
 
-# emit_json <cache file> -- the cache verbatim, except that --milestone scopes
-# every record's issue nodes. Same keys, same shape, so a caller's own
-# `jq '.records[].data.issues.nodes[]'` query works with or without the flag.
-# shellcheck disable=SC2016  # jq program, not shell
-emit_json() {
-  jq --arg m "$milestone" 'if $m == "" then .
-     else .records |= map(if .data then .data.issues.nodes |= map(select(.milestone.title == $m)) else . end) end' "$1"
-}
+# emit_json <cache file> -- the bucket record (build_record above).
+emit_json() { build_record "$1"; }
 
 # --- main ------------------------------------------------------------------
 if [ "$have_gh" = 0 ]; then
