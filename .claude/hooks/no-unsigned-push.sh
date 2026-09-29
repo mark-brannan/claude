@@ -45,10 +45,15 @@ git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 git symbolic-ref -q HEAD >/dev/null 2>&1 || exit 0   # detached: nothing sensible to check
 
 # Commits the push would send: upstream..HEAD, else origin/HEAD..HEAD.
-base=$(git rev-parse -q --verify '@{u}' 2>/dev/null) \
-  || base=$(git rev-parse -q --verify 'origin/HEAD' 2>/dev/null) \
-  || exit 0
-unsigned=$(git rev-list "$base..HEAD" 2>/dev/null | while read -r sha; do
+# Anything already on origin/HEAD is excluded either way. A branch that merged
+# main after its first push carries main's history past its own upstream; if
+# main holds unsigned commits (a web edit, a key-less VM), counting them here
+# denies every such branch or goads it into re-signing main into duplicates.
+# The PR doesn't list them and they are not this branch's to fix.
+main=$(git rev-parse -q --verify 'origin/HEAD' 2>/dev/null) || main=""
+base=$(git rev-parse -q --verify '@{u}' 2>/dev/null) || base=$main
+[ -n "$base" ] || exit 0
+unsigned=$(git rev-list HEAD --not "$base" ${main:+"$main"} 2>/dev/null | while read -r sha; do
   git cat-file -p "$sha" | grep -q '^gpgsig' || git log -1 --pretty='%h %s' "$sha"
 done)
 [ -n "$unsigned" ] || exit 0
@@ -62,15 +67,25 @@ done)
 n=$(printf '%s\n' "$unsigned" | wc -l | tr -d ' ')
 branch=$(git symbolic-ref --short HEAD)
 mb=$(git merge-base "$base" HEAD 2>/dev/null || echo "$base")
+# Same trap in the remedy: past a merged main, a rebase from the upstream
+# replays main's commits as new ones (--rebase-merges too), so rebase from
+# the merged main tip; that rewrites pushed commits, hence the lease.
+how="Re-sign everything since the base and push again:
+  git rebase -S --force-rebase $mb
+If the branch is already on the remote, use \`resign-branch.sh $branch\` instead — it resets to the remote, re-signs, rebases onto main and force-pushes with lease."
+if [ -n "$main" ] && mbm=$(git merge-base "$main" HEAD 2>/dev/null) && ! git merge-base --is-ancestor "$mbm" "$mb" 2>/dev/null; then
+  mb=$mbm
+  how="This branch merged main after it was pushed, so re-sign from the merged main tip (a rebase from the upstream would replay main's commits as new ones), then push with --force-with-lease — the rebase rewrites the pushed commits too, and resign-branch.sh refuses a branch with local commits the remote lacks:
+  git rebase -S --force-rebase $mb"
+fi
 
 if git config user.signingkey >/dev/null 2>&1; then
   deny "no-unsigned-push: $n unsigned commit(s) on $branch would be pushed, and this machine has a signing key, so sign them first:
 
 $unsigned
 
-Re-sign everything since the base and push again:
-  git rebase -S --force-rebase $mb
-If the branch is already on the remote, use \`resign-branch.sh $branch\` instead — it resets to the remote, re-signs, rebases onto main and force-pushes with lease. Never make commits with plumbing (\`git commit-tree\`) or \`-c commit.gpgsign=false\` in a repo that requires signatures."
+$how
+Never make commits with plumbing (\`git commit-tree\`) or \`-c commit.gpgsign=false\` in a repo that requires signatures."
 fi
 
 allow_with_note "no-unsigned-push: $n unsigned commit(s) on $branch are being pushed from a machine with no signing key:
