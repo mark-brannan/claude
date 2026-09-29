@@ -264,12 +264,28 @@ S() { payload "$TP3" stop1 "$REPO" Stop \
 
 o1=$(S)
 t   'the first Stop blocks'  block "$(printf '%s' "$o1" | jq -r '.decision // ""')"
-has 'with one instruction'   '^Write the resume block: append a `## Resume` block' \
+has 'with the resume instruction' '^Write the resume block: append a `## Resume` block' \
     "$(printf '%s' "$o1" | jq -r '.reason // ""')"
+hasnt 'and nothing about the session ending' 'last of the session' \
+    "$(printf '%s' "$o1" | jq -r '.reason // ""')"
+
+# A wrap-up that already wrote its block is never blocked: the forced turn
+# after the closing message is what made the model, not the user, speak last
+# (dotfiles#391). The arm is spent and the block on disk is reported.
+CK="$STATE/log/auto"; mkdir -p "$CK"
+printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repo-stop0.md"
+S0() { payload "$TP3" stop0 "$REPO" Stop \
+       | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
+o=$(S0)
+t     'an armed Stop with the block on disk does not block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
+has   'and reports the block it found' 'Resume block already in 2026-09-09-repo-stop0\.md\. Next time: `/pickup`\.' "$(msg "$o")"
+o=$(S0)
+t     'the next Stop does not block either' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
+has   'and carries only the age' 'Resume block 0m old' "$(msg "$o")"
+hasnt 'not the found line again' 'already in' "$(msg "$o")"
 
 # The model answers the block by writing the checkpoint's resume block. The
 # hook must find it on disk, not assume it from having asked.
-CK="$STATE/log/auto"; mkdir -p "$CK"
 printf '# ckpt\n\n## Resume\n\n- next: x\n' > "$CK/2026-09-09-repo-stop1.md"
 o2=$(S)
 t   'the second Stop does not block' '' "$(printf '%s' "$o2" | jq -r '.decision // ""')"

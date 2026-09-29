@@ -840,15 +840,26 @@ if [ "$hook_name" = Stop ]; then
     # counter tripping, and disarmed by the nag. The hour arms it once per
     # session -- otherwise every Stop after 22:00 would block again, which is
     # the level-triggered nag this replaced.
+    armed=0; found=""
     if [ "$since_nag" -eq 1 ] \
        || { [ "$late" -eq 1 ] && [ "$late_nagged" -eq 0 ]; }; then
       [ "$late" -eq 1 ] && late_nagged=1
+      armed=1; found=$(resume_ckpt)
+    fi
+    if [ "$armed" -eq 1 ] && [ -n "$found" ]; then
+      # The block is already on disk: the turn that just ended wrapped up by
+      # itself. Blocking now would force the extra turn that made the model,
+      # not the user, speak last (dotfiles#391). Spend the arm; say what is there.
+      since_nag=0
+      [ "$resume_ts" -gt 0 ] || resume_ts=$now_ts
+      add_arch "Resume block already in $(basename "$found"). Next time: \`/pickup\`."
+    elif [ "$armed" -eq 1 ]; then
       nag_pending=1; save_nag
       # The crossing lines that armed this Stop have already been persisted
       # as consumed, so this reason is their only chance to be seen. They go
       # in front of the instruction rather than being dropped -- nags, then
       # the archival verdict, same order as the screen.
-      reason="Write the resume block: append a \`## Resume\` block (next, link, model, effort) to this session's checkpoint in $(state_dir)/log/auto/."
+      reason="Write the resume block: append a \`## Resume\` block (next, link, model, effort) to this session's checkpoint in $(state_dir)/log/auto/. Then answer in one line naming where it landed -- no summary, no question, nothing new."
       pre="$sys_lines"
       [ -z "$arch_lines" ] || pre="${pre:+$pre
 }$arch_lines"
@@ -856,9 +867,8 @@ if [ "$hook_name" = Stop ]; then
 $reason"
       printf '{"decision":"block","reason":%s}\n' "$(json_str "$reason")"
       exit 0
-    fi
-    # Nothing new to say. Later Stops carry the block's age and nothing else.
-    if [ "$resume_ts" -gt 0 ]; then
+    elif [ "$resume_ts" -gt 0 ]; then
+      # Nothing new to say. Later Stops carry the block's age and nothing else.
       add_arch "Resume block $(hm $(( (now_ts - resume_ts) / 60 ))) old."
     fi
   fi

@@ -204,6 +204,11 @@ Hooks handle the mechanics unprompted.
 - **End with a prompt, not a status bullet or observation.** Work remaining
   → hand-off prompt; a ruling or click-work card → its link. Nothing else
   in a closing message; `/wrapup` has the spec.
+- **The last word is mine** (Solace, 2026-09-27). A closing message opens
+  nothing: no new question, doubt, hint or "one more thing" — the log's
+  `## For next time` list before the close, or nowhere, never my head. When I
+  reply after it, record my words verbatim in the narrative log and answer in
+  one line at most. Then stop.
 - **Every hand-off prompt names a recommended model and difficulty (effort)
   setting.** Not optional, not only under `/wrapup` — any prompt meant to be
   pasted into a new session. A hand-off without both is unfinished.
