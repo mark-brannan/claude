@@ -1243,12 +1243,18 @@ lacks 'so it is not failed' '^FAILED'
 assert 'and grind labels nothing' test "$(grep -c '^pr edit 11' "$GH_LOG")" = 0
 assert 'the stamp is released on every exit, not only a failed one' grep -q 'release' "$S/stamp.log"
 
-# --- a failed fixup Mergify already finished is not labelled fixup-hard -----------------
-rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json; : > "$GH_LOG"
+# --- the cap lands with no claim, but Mergify already finished the fixup: done ---------
+# dotfiles#249's shape: the signed commit was on the PR and awaiting-human on
+# it before the cap killed the worker mid-turn. The label is the same word a
+# `done` claim is checked against, so the missing claim costs nothing.
+rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json; : > "$GH_LOG"; : > "$S/stamp.log"
 capkill 1 'Pushing.'
 run --prs
-has 'it is still failed' '^FAILED: .*#11'
-assert 'awaiting-human keeps grind off the label' test "$(grep -c '^pr edit 11' "$GH_LOG")" = 0
+has 'awaiting-human outranks a missing claim' '^.*#11: PR 11 -- sonnet, \$1\.26'
+lacks 'so it is not failed' '^FAILED'
+sess=$(latest_session)
+eq 'recorded done in state' 'done' "$(jq -r '.items[0].status' "$sess")"
+assert 'and grind labels nothing' test "$(grep -c '^pr edit 11' "$GH_LOG")" = 0
 assert 'the stamp is released all the same' grep -q 'release' "$S/stamp.log"
 prview 11 '[]' '[]'
 

@@ -1160,7 +1160,15 @@ while [ "$i" -lt "$count" ]; do
     *"GRIND_STATUS: carded"*)  status=carded ;;
     *"GRIND_STATUS: blocked"*) status=blocked ;;
     *"GRIND_STATUS: done"*) ;;
-    *) [ "$errored" -eq 1 ] && status=failed ;;
+    *)
+      # No claim at all: failed -- unless Mergify has already called the
+      # fixup finished. awaiting-human is the same word a `done` claim is
+      # checked against, and a cap that lands between the push and the
+      # claim (dotfiles#249) has not lost the fixup. A moved head alone is
+      # not that word: the cap can land between two commits of one fixup.
+      if [ "$errored" -eq 1 ]; then
+        if [ "$kind" = pr ] && pr_labels "$number" | grep -qx awaiting-human; then :; else status=failed; fi
+      fi ;;
   esac
 
   # Check the claim. `blocked` asserts nothing about the world, so there is
