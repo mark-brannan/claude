@@ -243,6 +243,35 @@ has 'heartbeat line carries elapsed time, a token count, and a ~$ estimate -- bo
   'still working on o/alpha#5 \([0-9]+m elapsed, ~48k tokens, ~\$[0-9]+\.[0-9]{2} so far\)'
 has 'the final line still uses the exact total_cost_usd, not the estimate' '^o/alpha#5: First item -- sonnet, \$0\.90,'
 
+# --- heartbeat: claude -p emits one assistant event per content block, and
+# every block of one message repeats that message's identical usage -- three
+# blocks of the same message must count once, not three times ------------------
+cat > "$S/ready.json" <<'JSON'
+[
+  {"number": 5, "title": "First item", "body": "do the first thing", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]}
+]
+JSON
+rm -f "$S/state/grind"/*.json
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
+cat > "$S/prompt.txt"
+echo "\$*" >> "$CLAUDE_LOG"
+echo '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":20000,"cache_creation_input_tokens":3000}}}'
+sleep 0.3
+echo '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":20000,"cache_creation_input_tokens":3000}}}'
+sleep 0.3
+echo '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":20000,"cache_creation_input_tokens":3000}}}'
+sleep 2
+echo '{"type":"result","total_cost_usd":0.30,"usage":{"input_tokens":10000,"output_tokens":5000,"cache_read_input_tokens":20000,"cache_creation_input_tokens":3000},"result":"GRIND_STATUS: done"}'
+GH
+chmod +x "$S/bin/claude"
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 10 --heartbeat 1
+eq 'exit 0' 0 "$RC"
+has 'heartbeat dedupes repeated blocks of the same message.id -- three identical 38000-token blocks count once, not 114000' \
+  'still working on o/alpha#5 \([0-9]+m elapsed, ~38k tokens, ~\$[0-9]+\.[0-9]{2} so far\)'
+
 # restore the multi-item ready queue and the reply-driven claude shim
 cat > "$S/ready.json" <<'JSON'
 [
