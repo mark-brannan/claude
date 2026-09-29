@@ -557,6 +557,33 @@ def price:
       idle_seconds:    ($elapsed_s - $active_s),
       model:      ([ $E[].value | select(.type=="assistant")
                      | .message.model | select(. != null) ] | last),
+      # The pickup item's floor (stop-continuity.sh): the first line of the
+      # last thing the user said, cleaned and redacted like every other
+      # excerpt here; the same words in full for the curia floor; and every
+      # curia id the user named in a prompt, in first-named order -- a
+      # `state/global/curia/<id>` path, `/curia <id>` or `confer <id>`.
+      # Prompts only, never tool commands or file paths: a session that
+      # cats or lists a thread has not sat on it, and stamping its
+      # unrelated last words there would be a lie in the record.
+      # Candidates only: the hook keeps the ones whose thread exists.
+      last_prompt: ([ $E[].value
+                      | select(.type == "queue-operation" and .operation == "enqueue"
+                               and (.content // "") != "")
+                      | .content ] | last // ""
+                    | clean_human | split("\n") | map(select(test("\\S"))) | first // ""
+                    | redact | .[0:200]),
+      last_words:  ([ $E[].value
+                      | select(.type == "queue-operation" and .operation == "enqueue"
+                               and (.content // "") != "")
+                      | .content ] | last // ""
+                    | clean_human | redact | .[0:2000]),
+      curia_refs:  ([ $E[].value
+                      | select(.type == "queue-operation" and .operation == "enqueue")
+                      | .content // "" ]
+                    | map([ match("(?:state/global/curia/|[Cc]uria[/ ]+|[Cc]onfer +)([a-z0-9][a-z0-9-]*)"; "g")
+                            | .captures[0].string ])
+                    | add // []
+                    | reduce .[] as $r ([]; if index($r) then . else . + [$r] end)),
       user_turns: ($humans | length),
       assistant_turns: ($amsgs | length),
       tool_calls: ($tools | length),

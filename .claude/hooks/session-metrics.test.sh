@@ -140,5 +140,36 @@ jq -nc '{type:"queue-operation", operation:"enqueue",
          timestamp:"2026-09-09T10:00:00.000Z", sessionId:"t", content:"go on"}' > "$tp"
 eq "no assistant usage reads 0" 0 "$(peak "$tp")"
 
+# --- curia_refs: prompts name a curia; tool calls only read one -------------
+# The Stop hook stamps every thread this list names with the session's last
+# words. A `cat`/`ls`/Read of a thread file is not a sitting on it, so tool
+# commands and file paths never count (PR #388, design pass).
+refs() {  # refs <transcript>
+  jq -s --arg sid t --arg repo r --arg branch b --arg cwd . \
+    --arg now "2026-09-09T11:00:00Z" --arg slug s \
+    -f "$JQPROG" "$1" | jq -c '.session.curia_refs'
+}
+prompt() {  # prompt <transcript> <text>
+  jq -nc --arg c "$2" '{type:"queue-operation", operation:"enqueue",
+    timestamp:"2026-09-09T10:00:00.000Z", sessionId:"t", content:$c}' >> "$1"
+}
+tool() {  # tool <transcript> <name> <input-json>
+  jq -nc --arg n "$2" --argjson i "$3" '{type:"assistant", uuid:("u" + $n),
+    timestamp:"2026-09-09T10:00:01.000Z",
+    message:{model:"claude-opus-5", role:"assistant",
+             content:[{type:"tool_use", id:"t", name:$n, input:$i}]}}' >> "$1"
+}
+tp="$SCRATCH/curia-named.jsonl"; : > "$tp"
+prompt "$tp" "confer one-question, then /curia two-question"
+prompt "$tp" "see state/global/curia/one-question/thread.md again"
+eq "a prompt names a curia, once each, in first-named order" \
+  '["one-question","two-question"]' "$(refs "$tp")"
+
+tp="$SCRATCH/curia-read.jsonl"; : > "$tp"
+prompt "$tp" "what is open on the board?"
+tool "$tp" Bash '{"command":"cat state/global/curia/one-question/thread.md; ls state/global/curia/"}'
+tool "$tp" Read '{"file_path":"/x/state/global/curia/two-question/thread.md"}'
+eq "a cat, ls or Read of a thread names nothing" '[]' "$(refs "$tp")"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

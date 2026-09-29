@@ -296,5 +296,18 @@ dcheck "no metrics dir -> 0 0" 0 0 "$(CLAUDE_STATE_REPO="$BADREPO" day sess-s 3 
 
 unset CLAUDE_STATE_REPO
 
+# --- the home line comes back through a file, from inside $(...) ----------------
+# Every caller captures archivable_reasons with $(...), so a variable it sets
+# is lost; ARCHIVABLE_HOME_FILE is how stop-continuity.sh's pickup item reuses
+# the gh answer instead of asking again (PR #388, design pass).
+rm -f "$FAKE/claim-stamp.sh"
+HF="$SCRATCH/home-line"
+got=$(HOOK_DIR="$FAKE" ARCHIVABLE_HOME_FILE="$HF" bash -c '
+  . "'"$HOOKS"'/lib-state.sh"
+  r=$(archivable_reasons "'"$WT"'" feature abcd1234)
+  printf "%s|%s" "$r" "$(cat "$ARCHIVABLE_HOME_FILE" 2>/dev/null)"')
+if [ "$got" = "|home: pr https://github.com/o/r/pull/1" ]; then pass=$((pass+1))
+else fail=$((fail+1)); echo "FAIL home line through file: got [$got]"; fi
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
