@@ -179,7 +179,7 @@ call can be a standing order applied correctly.
   curia docs, standing orders and design docs change in isolation from
   implementation. Breaking either norm needs my approval, asked before
   the work. The PR half has teeth: a per-repo guard,
-  churn-guard-style, that agents cannot bypass — only my `design-ok`
+  churn-guard-style, that agents cannot bypass — only my `mixed-loops-ok`
   label lets a mix through. No guard sees a session, so that half rests
   on you asking.
 
