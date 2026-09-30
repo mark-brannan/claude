@@ -211,7 +211,7 @@ OUT=$OUT_ALL
 has 'board heading with counts' "^Board \(## Claude's, showing 8 of 10\)$"
 eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -c '^- \*\*Card ')"
 lacks 'ticked card dropped' 'Ticked card'
-has 'Human's section shown with its count' "^Board \(## Human's, showing 1 of 1\)$"
+has "Human's section shown with its count" "^Board \(## Human's, showing 1 of 1\)$"
 OUT=$(section "Board (## Human's")
 has 'click-work card shown' 'Not an agent card'
 OUT=$OUT_ALL
