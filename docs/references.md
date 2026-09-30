@@ -346,6 +346,13 @@ Dates are as found on 2026-09-29.
   [ghuntley.com](https://ghuntley.com/ralph/)
   - Maps to: grind is a Ralph loop with a budget, a per-repo lock, and a pause
     at the review band.
+- **autoresearch.** Karpathy, A., 6 March 2026. An agent edits one training
+  file, trains for a fixed five minutes, keeps the change if validation loss
+  improved and discards it if not, and repeats overnight. The human edits only
+  `program.md`, the instructions to the agents: "the research org code".
+  [github.com](https://github.com/karpathy/autoresearch)
+  - Maps to: the standing orders as the program and grind as the loop. grind
+    has the fixed budget; it lacks the fixed metric that decides keep or discard.
 - **AGENTS.md.** August 2025; donated to the Linux Foundation December 2025.
   One root file of agent-facing project instructions.
   [agents.md](https://agents.md/)
