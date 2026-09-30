@@ -14,7 +14,7 @@ their screen outranks anything you believe about it.
 Run `/sweep` first, so a card already closed elsewhere is never walked.
 Find it the way `/card-write` routes; its rules are the contract, don't
 paraphrase them here. An issue is walked exactly like a card. The default
-is the card or issue Solace names, else the top card under `## Solace's`:
+is the card or issue the user names, else the top card under `## Solace's`:
 that's the work only the user can close, which is what this skill is for.
 A card there carries `why you:` and `why this:`; read both before the
 first step, and if `why this:` no longer holds — the cause was something

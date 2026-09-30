@@ -1,6 +1,6 @@
 ---
 name: pickup
-description: Pick up a session where an earlier one left it, from the pickup item the Stop hook wrote for that session. Use when Solace says "resume", "pick up", "/pickup", "/pickup <branch>", "/pickup owner/repo#n" or a PR URL, "fix up this PR", "pick up where we left off", or opens a session meaning to continue work rather than choose new work. Not `/resume` — that name is claimed by Claude Code's own terminal-session resume.
+description: Pick up a session where an earlier one left it, from the pickup item the Stop hook wrote for that session. Use when the user says "resume", "pick up", "/pickup", "/pickup <branch>", "/pickup owner/repo#n" or a PR URL, "fix up this PR", "pick up where we left off", or opens a session meaning to continue work rather than choose new work. Not `/resume` — that name is claimed by Claude Code's own terminal-session resume.
 ---
 
 # Pickup
@@ -30,12 +30,12 @@ Run `~/.local/bin/pickup-list`.
 - **A `Hard --` block above the list** — those are PRs a fixer already gave
   up on, and each carries the line saying why. With no argument, offer the top
   one before the newest item: a human is otherwise its next reader, which
-  outranks an item a session can pick up any time. Solace picks; if she takes
+  outranks an item a session can pick up any time. The user picks; if they take
   it, it is a PR fixup — §0.
 - **No items** — say so in one line and stop. There is nothing to resume;
-  `worklist` is the tool for choosing new work, and Solace will ask for it.
+  `worklist` is the tool for choosing new work, and the user will ask for it.
 - **One item** — take it.
-- **Several** — if Solace named a branch or an id, take that item; read the
+- **Several** — if the user named a branch or an id, take that item; read the
   candidates with `pickup-list show <id>` (the `branch:` field carries the
   branch). Otherwise print the list and ask for a one-line pick. That is the
   one question this skill is allowed to ask.
@@ -100,7 +100,7 @@ cannot see — knows too:
 ```
 
 It prints nothing when the branch is free. When it prints a warning, another
-session holds the branch right now: relay it to Solace in one line, naming the
+session holds the branch right now: relay it to the user in one line, naming the
 session and how old the claim is, and don't push to the branch until you know
 that session has let go. The SessionStart hook claims automatically for a
 session that *opens* on the branch; a pickup checks the branch out afterwards,
@@ -214,7 +214,7 @@ The other half, for a session that is *leaving* work: the Stop hook already
 wrote **your own** pickup item — `state/global/pickup/<start>-<sid8>.md`,
 body defaulted to the last prompt line — and it keeps any edit you make to
 the body, forever. Edit it at `/wrapup` step 2b (every wrap-up that hands
-anything off), when the Stop nag blocks once, or when Solace says "update
+anything off), when the Stop nag blocks once, or when the user says "update
 the hand-off". The nag is a backstop, not the trigger: it arms on a
 context, clock or friction crossing, and a session that ends cleanly never
 sees it. Replace everything below the `---` with four lines, house hand-off

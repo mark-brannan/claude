@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Work a repo's open issues as the PM — triage and cluster them, dispatch one worker agent per issue in its own worktree, watch each worker's context and stop it before it runs dry, and keep five to ten PRs awaiting Solace's look, refilling as they drain. Use on "/orchestrate", "prioritise the issues and sequence the work", "be the orchestrator / PM / taskmaster", "work the backlog with sub-agents". Not for one PR (/critical-review, /pickup) and not headless (grind). Fable or Opus; workers Sonnet, Opus for an issue rated hard.
+description: Work a repo's open issues as the PM — triage and cluster them, dispatch one worker agent per issue in its own worktree, watch each worker's context and stop it before it runs dry, and keep five to ten PRs awaiting the user's look, refilling as they drain. Use on "/orchestrate", "prioritise the issues and sequence the work", "be the orchestrator / PM / taskmaster", "work the backlog with sub-agents". Not for one PR (/critical-review, /pickup) and not headless (grind). Fable or Opus; workers Sonnet, Opus for an issue rated hard.
 ---
 
 # Orchestrate
@@ -32,16 +32,15 @@ Then rule on each row yourself:
   sub-items dispatch, the epic does not).
 - **`blocked` is checked, not trusted.** Most mean "after issue N" — an
   order inside a cluster, not a skip. Nothing from this pass goes to
-  `## Needs ruling` (Solace, 2026-09-22: "nothing should need my ruling
-  right now"); a genuine one becomes a card after wave 1 is out.
+  `## Needs ruling`; a genuine one becomes a card after wave 1 is out.
 - **A red or conflicting open PR gets a fixer** unless a live claim stamp
   (`claim-stamp.sh read`, stale after 2h) or a human's review thread shows
   a session already on it. Labels are not the signal: `awaiting-human` is
   computed by Mergify and says "done", `fixup-hard` is session-applied and
   says nothing about who is there. A fixer finding no thread and a current
   base stops at no cost, so a second fixer on the same PR is harmless; two
-  at once is what the stamp and `--force-with-lease` catch. Solace ruled
-  so, 2026-09-22. Green PRs are the review sessions'.
+  at once is what the stamp and `--force-with-lease` catch. Green PRs are
+  the review sessions'.
 - **Rate each issue for an agent** — low / medium / high, the triage
   convention. Low and medium go to Sonnet, high to Opus.
 
@@ -55,9 +54,9 @@ Then rule on each row yourself:
   the first's PR when it depends on it.
 - **Stack only on a real dependency**, per `CLAUDE.md`: the worker branches
   from the base PR's head and writes `Depends-On: #<n>` in its body.
-- **Order by value** — what it unblocks, what is broken now, what Solace
+- **Order by value** — what it unblocks, what is broken now, what the user
   has asked for — and let the file constraint only reorder within that.
-  The tail of the queue never runs: Solace stopped new dispatch after an
+  The tail of the queue never runs: the user stopped new dispatch after an
   hour and every deferred item was a hard one.
 
 Show the plan as one table (cluster, issues in order, model) with the skip
@@ -146,14 +145,14 @@ A nudge is one `SendMessage`, imperative, naming the number and the issue.
 
 ## 5. The loop
 
-What is capped is not workers but **PRs awaiting Solace's look**: every PR
+What is capped is not workers but **PRs awaiting the user's look**: every PR
 this session opened or fixed that is still open and unclaimed — no thread
-from Solace, no other session's claim stamp on its branch. Merged, closed
-or claimed drops it off the list. (Solace, 2026-09-22.)
+from the user, no other session's claim stamp on its branch. Merged, closed
+or claimed drops it off the list.
 
 - **Band: five to ten.** Below five, dispatch to refill, five to ten
   workers in flight across clusters. At ten, stop dispatching; running
-  workers finish and report. Solace reviews in batches of that size.
+  workers finish and report. The user reviews in batches of that size.
 - **The list is complete, never a delta.** Post it when the count first
   reaches five and again each time it changes while in band: PR, issue,
   one line of what, and a `look` column — `quick`, or `critical` with the
@@ -166,8 +165,8 @@ or claimed drops it off the list. (Solace, 2026-09-22.)
   and the queue still has an item whose files no open PR of this session
   touches.
 - **The session cap** is a row in the plan table before wave 1: default
-  20 workers, about $60 at the measured $0.80–$4.90 each; Solace changes
-  it with a word. "No new work" from Solace means drain: running workers
+  20 workers, about $60 at the measured $0.80–$4.90 each; the user changes
+  it with a word. "No new work" from the user means drain: running workers
   finish and report, nothing new launches.
 - **A checkpoint is not a finish.** A worker that stopped with no PR (its
   own budget, the 110k cap, or a `TaskStop`) leaves its issue in the queue
@@ -193,5 +192,5 @@ hand-off, then offer the break, once.
 orchestration session; list, stacks and deferrals are in
 claude_prompts_scratch state/global/log/<date>-<repo>-orchestration.md.
 Work them oldest-first: threads, rebase, checks, hand over. Skip any PR
-Solace has a thread on. Model: sonnet. Effort: medium.
+the user has a thread on. Model: sonnet. Effort: medium.
 ```

@@ -1,11 +1,11 @@
 ---
 name: sweep
-description: Garbage-collect the global board's `## Needs ruling` and `## Solace's` sections — find cards already ruled elsewhere or gone stale, show them with proof, delete or move only what Solace ticks, and rerank the rest by what they block. Use on "/sweep", "sweep the board", "what's stale", "prune the rulings", and before `worklist` or `/card-helper` shows the board. `--dry-run` reports and changes nothing.
+description: Garbage-collect the global board's `## Needs ruling` and `## Solace's` sections — find cards already ruled elsewhere or gone stale, show them with proof, delete or move only what the user ticks, and rerank the rest by what they block. Use on "/sweep", "sweep the board", "what's stale", "prune the rulings", and before `worklist` or `/card-helper` shows the board. `--dry-run` reports and changes nothing.
 ---
 
 # Sweeping the board
 
-Garbage collection for the two sections Solace reads. It runs before the
+Garbage collection for the two sections the user reads. It runs before the
 board is shown, and on its own. `## Claude's` is not swept here; that queue
 is yours to work, not to tidy.
 
@@ -29,7 +29,7 @@ is yours to work, not to tidy.
    leaving it, then its `until:`. A card with no `until:` at all — a
    `## Solace's` click-work card; `/card-write` and `kanban-lint.sh` allow
    one without it — ranks above every card that has one: it never expires on
-   a date, so treat it as always blocking until Solace clears it by hand. A
+   a date, so treat it as always blocking until the user clears it by hand. A
    card that blocks nothing and has no consequence is not shown; take its
    default, record it where the work lands, and propose the card for
    deletion with that as the proof.
@@ -47,14 +47,14 @@ proposed item; its "keep" lines are not shown. On a tick, `prune-branches --dele
 Show the list: proposed deletions, each with its proof, the branch prune's
 summary line, then the reranked survivors. Then one multi-select (AskUserQuestion): tick the cards to act on.
 Every ticked card gets exactly one explicit action, chosen at tick time —
-Solace has caught wrong deletions before; nothing leaves the board, or
+The user has caught wrong deletions before; nothing leaves the board, or
 changes, on a bare tick with no action attached:
 
 - **Deleted** — the card is gone. A proposed deletion (rank step 3) defaults
   to this.
 - **Answered** — the question is settled now; goes to `docs/decisions.md`
   (see After the tick).
-- **Deferred** — not now. Push `until:` out to a date or event Solace names.
+- **Deferred** — not now. Push `until:` out to a date or event the user names.
   A card with no `until:` gets one for the first time here, rather than an
   existing value being rewritten.
 - **Dig** — opens the conversation for that card only, right now, instead of
@@ -64,7 +64,7 @@ changes, on a bare tick with no action attached:
 Never a free-text question outside Dig.
 
 A `learn` card under `## Solace's` is never proposed. It drops only when
-Solace says she has it.
+the user says they have it.
 
 ## After the tick
 

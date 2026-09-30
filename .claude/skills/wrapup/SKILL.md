@@ -84,7 +84,7 @@ When you do write one, it must:
   green)". State is read live at the other end; written down it is stale by
   the time it's read;
 - **never ask the user to review or merge.** The PR is where that lives, and
-  `worklist` shows him when it is his turn;
+  `worklist` shows them when it is their turn;
 - rate every item it puts in front of the user **twice** — difficulty for
   the user, and difficulty for an agent with full permissions and high stakes —
   and answer `could an agent do it: yes/no`. Low for an agent means do it, not

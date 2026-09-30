@@ -1,6 +1,6 @@
 ---
 name: critical-review
-description: Fire the critical-review prompt at one pull request — review, fix, hand over ready. Use on "/critical-review <PR>" or "critical review of #N". Not for merging; that is Solace's.
+description: Fire the critical-review prompt at one pull request — review, fix, hand over ready. Use on "/critical-review <PR>" or "critical review of #N". Not for merging; that is the user's.
 ---
 
 Do a critical review of $ARGUMENTS.

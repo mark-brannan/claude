@@ -1,11 +1,11 @@
 ---
 name: worklist
-description: Report a project's status and the next unblocked work, by running the worklist script and reading its output. Use when Solace asks "what's next", "what can we work on", "project status", "what's on the roadmap", "what's outstanding", "what's stale", "what's my turn", asks for a sweep or a reconcile, or says "/worklist".
+description: Report a project's status and the next unblocked work, by running the worklist script and reading its output. Use when the user asks "what's next", "what can we work on", "project status", "what's on the roadmap", "what's outstanding", "what's stale", "what's my turn", asks for a sweep or a reconcile, or says "/worklist".
 ---
 
 # Worklist
 
-Read-only. Run `~/.local/bin/worklist [project]` — add `--fresh` when Solace
+Read-only. Run `~/.local/bin/worklist [project]` — add `--fresh` when the user
 asks for current state rather than what the cache holds — read its output,
 add judgment only where a bucket needs it (a dependency the script can't
 see, which ready item you'd start first if asked), and stop. Never file,
@@ -39,7 +39,7 @@ plain bullets — they're prose cards, not tabular data:
 Pickup                    open pickup items, newest first, from
                           `pickup-list` — a session resuming work starts
                           there and reads no further
-Solace's turn             PRs ready for her: not draft, mergeable, checks
+Solace's turn             PRs ready for the user: not draft, mergeable, checks
                           green, no unresolved threads, no auto-merge
                           (failing check names printed in Notes, never a
                           boolean)
@@ -65,7 +65,7 @@ missing for one of those reasons is not an empty bucket; say so.
 ## After reporting
 
 Stop. Don't recommend a single item unless asked — the point is to hand
-over the list so Solace can pick what fits the moment (one session, a
+over the list so the user can pick what fits the moment (one session, a
 subagent, or a stream of several). If asked which one you'd start, give one
 sentence naming it before any explanation, per standing orders, and
 estimate the model and difficulty to accomplish it if it is a one-shot task.

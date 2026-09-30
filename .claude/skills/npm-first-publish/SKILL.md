@@ -16,7 +16,7 @@ one, by design.
 
 ## Preconditions before asking
 
-All of these must already be green. Fix whichever is red; don't ask Solace
+All of these must already be green. Fix whichever is red; don't ask the user
 until they are:
 
 - the release tag's CI is green;
@@ -27,7 +27,7 @@ until they are:
 
 ## Ask inline, not a card
 
-Ask Solace in chat, with exactly these four commands, named in full:
+Ask the user in chat, with exactly these four commands, named in full:
 
     cd ~/<repo>
     git pull --rebase
@@ -35,8 +35,8 @@ Ask Solace in chat, with exactly these four commands, named in full:
     npm publish            # scoped name: add --access public
 
 `npm login` is named explicitly rather than left implicit — a past ask that
-omitted it left her unsure what it would do.  It opens (or prints) a
-browser auth URL; she approves with her passkey. Never pass `--otp`.
+omitted it left them unsure what it would do.  It opens (or prints) a
+browser auth URL; they approve with their passkey. Never pass `--otp`.
 A scoped package (`@scope/name`) publishes as private unless
 `--access public` or `publishConfig.access: public` says otherwise, and a
 free account fails on private. Provenance stays opt-in; leave it to CI.
@@ -45,7 +45,7 @@ free account fails on private. Provenance stays opt-in; leave it to CI.
 
 Register the trusted publisher for the package on npmjs.com (GitHub
 Actions publisher: repo plus workflow filename). Every later release is
-then CI's job, not hers.
+then CI's job, not theirs.
 
 ## Assumption
 
