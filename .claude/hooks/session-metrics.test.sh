@@ -161,15 +161,15 @@ tool() {  # tool <transcript> <name> <input-json>
 }
 tp="$SCRATCH/curia-named.jsonl"; : > "$tp"
 prompt "$tp" "confer one-question, then /curia two-question"
-prompt "$tp" "see state/global/curia/one-question/thread.md again"
+prompt "$tp" "see state/global/curia/one-question/roll.md again"
 eq "a prompt names a curia, once each, in first-named order" \
   '["one-question","two-question"]' "$(refs "$tp")"
 
 tp="$SCRATCH/curia-read.jsonl"; : > "$tp"
 prompt "$tp" "what is open on the board?"
-tool "$tp" Bash '{"command":"cat state/global/curia/one-question/thread.md; ls state/global/curia/"}'
-tool "$tp" Read '{"file_path":"/x/state/global/curia/two-question/thread.md"}'
-eq "a cat, ls or Read of a thread names nothing" '[]' "$(refs "$tp")"
+tool "$tp" Bash '{"command":"cat state/global/curia/one-question/roll.md; ls state/global/curia/"}'
+tool "$tp" Read '{"file_path":"/x/state/global/curia/two-question/roll.md"}'
+eq "a cat, ls or Read of a roll names nothing" '[]' "$(refs "$tp")"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

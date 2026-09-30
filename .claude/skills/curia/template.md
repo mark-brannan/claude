@@ -39,4 +39,4 @@ Not yet sat. The first sitting reads the origin and opens the dialogue at
 
 ## Notes and inputs
 
-<!-- A link the moment a side product lands: notes.md, inputs/. -->
+<!-- A link the moment a side product lands: agent-notes.md, inputs/. -->

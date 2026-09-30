@@ -51,18 +51,18 @@ One folder per curia in the state repo. Deliberation is private and stays
 there; only what a curia **produces** — an ADR, an issue, a card — goes to
 a public repo, and the Decided line that produced it links it. When the
 curia is promoted — its ruling written up as an ADR — the ADR's link also
-goes in the `adr:` field of `thread.md`'s header.
+goes in the `adr:` field of `roll.md`'s header.
 
 ```
 state/global/curia/<id>/
-  thread.md   the document: where it stands, the derived record, the user's words
-  notes.md    the agent's own notes, any format it likes (optional)
+  roll.md   the document: where it stands, the derived record, the user's words
+  agent-notes.md    the agent's own notes, any format it likes (optional)
   inputs/     read-only side products: spikes, side-chat pastes, subagent reports
   folded/<id>/  a whole curia opened past the gates, moved under this one (see below);
               a folded question is a line under Open questions, never a folder
 ```
 
-Two grains in `thread.md`: **the user's words are append-only** — a new
+Two grains in `roll.md`: **the user's words are append-only** — a new
 dated sub-heading per sitting, old ones never edited. The **derived
 sections** (where it stands, decided, open questions) are rewritten in
 place. The one exception to the append-only grain is a **pin**: a passage
@@ -73,7 +73,7 @@ edited. Importance, not settledness.
      private-deliberation/public-produce are assumed, not ruled (design doc,
      open question on /curia <id> mechanics). No separate file lists
      what a curia produced: each Decided line links its own, and the ADR
-     link goes in thread.md's `adr:` header field at promotion. -->
+     link goes in roll.md's `adr:` header field at promotion. -->
 
 ## Opening a new curia: the gates
 
@@ -121,10 +121,10 @@ waive.
 6. **The user confirms the id.** The id is a kebab-case slug of the
    question's own words — `widget-retirement`, not a coined name — so
    confirming one names nothing. The user renames at will; a rename moves
-   the folder and leaves a one-line redirect `thread.md` at the old id.
+   the folder and leaves a one-line redirect `roll.md` at the old id.
 
 Only then: create the folder, copy [template.md](template.md) to
-`thread.md`, fill in the question, the origin link, the date, who ordered
+`roll.md`, fill in the question, the origin link, the date, who ordered
 it and a link to the words, and `related:` — the ids of open curiae from
 gate 4 that touch it, ids only — and commit. That placeholder is the
 whole opening; the first sitting does the rest. Say the id in the opening
@@ -143,7 +143,7 @@ call. The three early placeholders (`andon-rubric`,
 0. **List the open curiae** first, whatever the argument, exactly as bare
    `/curia` does — a deterministic pre-step, one line each, count in view:
    each open curia's id, timestamp and working title.
-1. **Resolve the id.** Read `state/global/curia/<id>/thread.md`. A
+1. **Resolve the id.** Read `state/global/curia/<id>/roll.md`. A
    one-line redirect points at a document elsewhere (a grandfathered
    curia); follow it — that document's own loop section then governs read
    order and replaces step 4's reading, while the LIVE check, the lint

@@ -222,7 +222,7 @@ eq 'a new prompt reopens the item' open "$(sfield status)"
 # idempotent across Stops; a model edit to the words entry is never clobbered.
 CURD="$HOME/.claude/state/global/curia/test-question"
 mkdir -p "$CURD"
-cat > "$CURD/thread.md" <<'EOF'
+cat > "$CURD/roll.md" <<'EOF'
 # Curia: test question
 
 - id: `test-question`
@@ -242,7 +242,7 @@ TP3="$S/curia-transcript.jsonl"
   printf '{"type":"queue-operation","operation":"enqueue","content":"confer test-question please","timestamp":"2026-09-26T12:00:00.000Z"}\n'
 } > "$TP3"
 TP="$TP3" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
-TH="$CURD/thread.md"
+TH="$CURD/roll.md"
 has 'the floor block is written' '^<!-- floor' "$TH"
 has 'the floor carries last-touched and the session' "^- last touched: .* session ${SID:0:8} " "$TH"
 has 'the floor carries the branch state' '^- branch: work claude/work \(0 ahead, clean\)' "$TH"
@@ -288,9 +288,22 @@ TP="$TP5" SID="$SID2" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
 eq 'a cat/ls of the thread does not stamp it' "$before" "$(cat "$TH")"
 assert 'no words entry for the reading session' bash -c "! grep -q 'session ${SID2:0:8}' '$TH'"
 
-# A named curia whose thread does not exist is skipped without a write.
-assert 'no thread is invented for an unknown id' \
-  bash -c "! ls '$HOME/.claude/state/global/curia' | grep -qv '^test-question\$'"
+# A curia not yet moved to roll.md still gets its floor on thread.md.
+OLDD="$HOME/.claude/state/global/curia/old-question"
+mkdir -p "$OLDD"
+printf '# Curia: old question\n\n## Where this stands\n\nOld text.\n' > "$OLDD/thread.md"
+TP6="$S/curia-transcript-old.jsonl"
+{
+  jq -c '.' "$TP" | head -3
+  printf '{"type":"queue-operation","operation":"enqueue","content":"confer old-question","timestamp":"2026-09-26T15:00:00.000Z"}\n'
+} > "$TP6"
+TP="$TP6" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+has 'a thread.md-only curia still gets the floor' '^<!-- floor' "$OLDD/thread.md"
+assert 'and no roll.md is invented beside it' bash -c "[ ! -e '$OLDD/roll.md' ]"
+
+# A named curia whose roll does not exist is skipped without a write.
+assert 'no roll is invented for an unknown id' \
+  bash -c "! ls '$HOME/.claude/state/global/curia' | grep -qv '^\(test\|old\)-question\$'"
 
 # =============================================================================
 # sc_salvage: the auto-commit at Stop (dotfiles#196)
