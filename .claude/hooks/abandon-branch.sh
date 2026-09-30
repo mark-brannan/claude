@@ -46,10 +46,9 @@ fi
 
 # Same lock stop-continuity.sh takes before it commits and pushes, so the
 # two never interleave and a salvage push cannot resurrect the branch we are
-# deleting. Best effort: a machine without flock proceeds unlocked.
-if command -v flock >/dev/null 2>&1; then
-  { exec 9>"${TMPDIR:-/tmp}/claude-state-push.lock"; } 2>/dev/null && flock -w 90 9 2>/dev/null
-fi
+# deleting. Best effort: a lock not taken in 90s proceeds unlocked.
+trap state_unlock EXIT
+state_lock_wait "$STATE_PUSH_LOCK" 90 || :
 
 sha=$(git -C "$work_root" rev-parse --short "$branch" 2>/dev/null || echo '?')
 

@@ -487,26 +487,70 @@ has 'behind @{u}: refused' \
   'refused: .claude/salvage. is 1 commit\(s\) behind .origin/claude/salvage.' "$CKPT"
 untouched 'behind @{u}' ' M f'
 
-# --- the lock line's own pattern does not swallow the rest of the shell's stderr --
-# `exec 9>"$LOCK" 2>/dev/null` has no command of its own, so once the redirect
-# succeeds bash applies its 2>/dev/null permanently to the shell, not just to
-# that line -- every stderr write for the rest of the run goes to /dev/null
-# instead of the transcript. Scoping the redirect to a `{ ; }` group keeps it
-# from outliving the lock attempt. Exercised directly rather than through the
-# whole hook, whose sourcing and env assume it runs from its own directory.
-assert 'the hook no longer has the unscoped form' \
-  bash -c '! grep -q "^exec 9>\"\\\$LOCK\" 2>/dev/null" '"'$HOOK'"
-has 'the hook has the scoped form' '^\{ exec 9>"\$LOCK"; \} 2>/dev/null \|\| exit 0$' "$HOOK"
+# --- no flock: a Stop still commits and pushes the state repo ----------------
+# macOS ships no flock, and a bare `flock -w 90 9 || exit 0` silently skipped
+# everything below the checkpoint write on every Mac Stop. The push lock is
+# state_lock_wait's mkdir now. A flock that fails -- as a missing one does --
+# shadows the real one on Linux, so this proves the macOS path everywhere.
+assert 'the hook never calls flock' bash -c '! grep -qE "^[^#]*\bflock\b" "$1"' _ "$HOOK"
 
-LOCKFILE="$S/pattern.lock"
-bash -c '{ exec 9>"$1"; } 2>/dev/null || exit 0; echo scoped-stderr-survives >&2' _ "$LOCKFILE" \
-  2>"$S/scoped.stderr"
-has 'the scoped form leaves later stderr alone' 'scoped-stderr-survives' "$S/scoped.stderr"
+cat > "$BIN/flock" <<'EOF'
+#!/bin/sh
+touch "${FLOCK_CALLED:-/dev/null}"; exit 127
+EOF
+chmod +x "$BIN/flock"
+export FLOCK_CALLED="$S/flock-called"
 
-bash -c 'exec 9>"$1" 2>/dev/null || exit 0; echo unscoped-stderr-swallowed >&2' _ "$LOCKFILE" \
-  2>"$S/unscoped.stderr"
-assert 'the old unscoped form really did swallow it (proves the test is real)' \
-  test ! -s "$S/unscoped.stderr"
+SRORIGIN="$S/state-origin.git"; SREPO="$S/state-repo"
+git init -q --bare "$SRORIGIN"
+git init -q -b main "$SREPO"
+gitq "$SREPO" remote add origin "$SRORIGIN"
+mkdir -p "$SREPO/state/global"; echo seed > "$SREPO/state/global/.seed"
+gitq "$SREPO" add state; gitq "$SREPO" commit -m seed
+gitq "$SREPO" push -u origin main
+
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" stop
+eq 'no flock: the state repo got the session commit' \
+  "State: work session ${SID:0:8}" "$(git -C "$SRORIGIN" log -1 --format=%s main 2>/dev/null | sed 's/ (.*//')"
+assert 'no flock: the fake flock was never called' test ! -e "$FLOCK_CALLED"
+assert 'no flock: the push lock is released after the Stop' test ! -e "$TMPDIR/claude-state-push.lock.d"
+rm -f "$BIN/flock"; unset FLOCK_CALLED
+
+# --- a conflicting state-repo pull is backed out, never left mid-rebase ---------
+# Upstream and this clone both add one path with different bytes: the Stop's
+# own commit conflicts on `pull --rebase`, and a rebase left in place would
+# wedge the clone for every later Stop.
+SRCLONE="$S/state-clone"
+git clone -q -b main "$SRORIGIN" "$SRCLONE" >/dev/null 2>&1
+rel=state/global/both.txt
+echo upstream > "$SRCLONE/$rel"
+gitq "$SRCLONE" add "$rel"; gitq "$SRCLONE" commit -m upstream-conflict; gitq "$SRCLONE" push origin main
+echo local > "$SREPO/$rel"
+rm -f "$SREPO/state/global/.last-state-push"   # past the push debounce
+
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" stop
+assert 'conflicting pull: no rebase left in progress' \
+  test ! -d "$(git -C "$SREPO" rev-parse --absolute-git-dir)/rebase-merge"
+assert 'conflicting pull: no apply-backend rebase left either' \
+  test ! -d "$(git -C "$SREPO" rev-parse --absolute-git-dir)/rebase-apply"
+assert 'conflicting pull: still on main' git -C "$SREPO" symbolic-ref -q HEAD
+assert 'conflicting pull: the verdict says the push failed' \
+  grep -qE 'state-repo push failed' "$SREPO/state/global/log/auto/"*"-work-${SID:0:8}.md"
+
+# --- a board that fails kanban-lint stays out; a hand-staged blob comes back --
+# on_exit restores it: the one EXIT trap, which also releases the push lock.
+kb=state/global/kanban.md
+printf '# Open loops\n\n## Claude'"'"'s\n' > "$SREPO/$kb"
+gitq "$SREPO" add "$kb"; gitq "$SREPO" commit -m board
+printf -- '- staged by hand\n' >> "$SREPO/$kb"; gitq "$SREPO" add "$kb"
+staged=$(git -C "$SREPO" rev-parse ":$kb")
+printf '## Yours\n' >> "$SREPO/$kb"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" stop
+eq 'lint-failed board: the hand-staged blob is back in the index' \
+  "$staged" "$(git -C "$SREPO" rev-parse ":$kb")"
+assert 'lint-failed board: its edit is not committed' \
+  bash -c '! git -C "$1" show HEAD:"$2" | grep -q Yours' _ "$SREPO" "$kb"
+assert 'lint-failed board: the push lock is released' test ! -e "$TMPDIR/claude-state-push.lock.d"
 
 # --- a live metrics-live.sh holding the per-session lock never blocks Stop (#161) --
 # Pre-create $LIVE/<sid>.lock with meta naming this test process's own pid, so

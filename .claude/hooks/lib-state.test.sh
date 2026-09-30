@@ -146,6 +146,23 @@ if [ -f "$MARKER" ]; then pass=$((pass+1)); else
 fi
 rm -rf "$LOCKDIR" "$MARKER"
 
+# state_lock_wait is the portable `flock -w`: it gives up on a live holder
+# after its budget, and takes a lock freed while it waits.
+mkdir -p "$LOCKDIR"
+printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$LOCKDIR/meta"
+cat > "$CASE" <<EOF
+. "$HOOKS/lib-state.sh"
+state_lock_wait "$LOCKDIR" 1
+EOF
+lock_check "state_lock_wait: live holder past the budget fails" 1
+( sleep 1; rm -rf "$LOCKDIR" ) &
+cat > "$CASE" <<EOF
+. "$HOOKS/lib-state.sh"
+state_lock_wait "$LOCKDIR" 5 && grep -q "^pid=\$\$" "$LOCKDIR/meta"
+EOF
+lock_check "state_lock_wait: a lock freed mid-wait is taken" 0
+wait; rm -rf "$LOCKDIR"
+
 mkdir -p "$LOCKDIR"
 printf 'pid=999999999\nhostname=%s\n' "$(uname -n)" > "$LOCKDIR/meta"
 cat > "$CASE" <<EOF

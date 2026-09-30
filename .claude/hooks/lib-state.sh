@@ -261,6 +261,19 @@ state_unlock() {
   STATE_LOCK_DIR=""
 }
 
+# state_lock_wait <dir> <secs> -- state_lock, retried once a second for up to
+# <secs>: the portable `flock -w`. A bare `flock` here silently exited every
+# Stop hook on macOS before the state-repo push.
+# shellcheck disable=SC2034 # read by stop-continuity.sh and abandon-branch.sh
+STATE_PUSH_LOCK="${TMPDIR:-/tmp}/claude-state-push.lock.d"
+state_lock_wait() {
+  local dir="$1" n="${2:-90}"
+  until state_lock "$dir"; do
+    [ "$n" -gt 0 ] || return 1
+    n=$((n - 1)); sleep 1
+  done
+}
+
 # day_decisions <sid> <total> <junk> <now> <gap-seconds> -- fold this session's
 # decision counts into the machine-wide store beside sitting.json and print the
 # day's totals as "<total>\t<junk>". Decision load is spent across a day, not
