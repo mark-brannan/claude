@@ -79,15 +79,21 @@ chmod +x "$S/bin/gh"
 # issue buckets (blocked label -> buckets.blocked), audit.json (when the --prs
 # section has written it) the not_ready PRs, cards.json the ## Claude's cards.
 cat > "$S/bin/worklist" <<WL
-#!/bin/sh
+#!/bin/bash
 echo "\$*" >> "$S/worklist.log"
 ready=\$(jq -c '[.[] | select(.labels|map(.name)|index("blocked")|not) | {kind:"issue", repo:"o/alpha", number, title, url, body, labels:(.labels|map(.name))}]' "$S/ready.json")
 blocked=\$(jq -c '[.[] | select(.labels|map(.name)|index("blocked")) | {kind:"issue", repo:"o/alpha", number, title, url, body, labels:(.labels|map(.name))}]' "$S/ready.json")
 prs='[]'; [ -f "$S/audit.json" ] && prs=\$(jq -s -c '[.[] | select(.section == "unfinished" or .section == "stale-label") | {kind:"pr", repo:"o/alpha", number, title, url, isDraft:false, labels, author}]' "$S/audit.json")
 cards='[]'; [ -f "$S/cards.json" ] && cards=\$(cat "$S/cards.json")
 awaiting='[]'; [ -f "$S/awaiting-human.json" ] && awaiting=\$(cat "$S/awaiting-human.json")
-jq -nc --argjson r "\$ready" --argjson b "\$blocked" --argjson p "\$prs" --argjson c "\$cards" --argjson ah "\$awaiting" \
-  '{owner:"o", repos:["o/alpha"], buckets:{awaiting_human:\$ah, queued:[], not_ready:\$p, ready:\$r, blocked:\$b, untriaged:[], stranded:[], rulings:[], solaces:[], claudes:\$c}}'
+repos='["o/alpha"]'
+case "\$1" in
+  -*) [ "\$PWD" = "$S/home/beta" ] && { repos='["o/beta"]'  # --here answers for the cwd
+        ready=\$(jq -c '[.[] | select(.repo == null) | {kind:"issue", repo:"o/beta", number, title, url, body, labels:(.labels|map(.name))}]' "$S/ready-beta.json"); } ;;
+  *) repos='["o/alpha","o/beta","o/gamma"]'
+  ready=\$(jq -c -s '.[0] + [.[1][] | .repo = (.repo // "o/beta")]' <(printf '%s' "\$ready") <(jq -c '[.[] | {kind:"issue", repo, number, title, url, body, labels:(.labels|map(.name))}]' "$S/ready-beta.json")) ;; esac
+jq -nc --argjson r "\$ready" --argjson b "\$blocked" --argjson p "\$prs" --argjson c "\$cards" --argjson ah "\$awaiting" --argjson repos "\$repos" \
+  '{owner:"o", repos:\$repos, buckets:{awaiting_human:\$ah, queued:[], not_ready:\$p, ready:\$r, blocked:\$b, untriaged:[], stranded:[], rulings:[], solaces:[], claudes:\$c}}'
 WL
 chmod +x "$S/bin/worklist"
 
@@ -165,7 +171,7 @@ eq 'no claude call in dry-run' 0 "$(calls_claude)"
 has 'first item is the lower-numbered one' '^\[1/2\] o/alpha#5 -- First item$'
 has 'second item follows' '^\[2/2\] o/alpha#20 -- Second item$'
 lacks 'blocked item excluded' 'alpha#9'
-has 'a worktree command is shown' 'git worktree add -b grind-5'
+has 'a worktree command is shown' 'git -C .* worktree add -b grind-5'
 has 'the claude command is shown, with defaults' 'claude -p <issue o/alpha#5 body> --output-format stream-json --verbose --max-budget-usd 5 --model sonnet --effort medium'
 assert 'dry-run wrote no state file' bash -c '! ls '"$S"'/state/grind/*.json >/dev/null 2>&1'
 
@@ -809,10 +815,59 @@ fi
 GH
 chmod +x "$S/bin/claude"
 
-# --- --repo naming a repo the cwd is not a checkout of ---------------------------
+# --- --repo naming a repo with no local checkout ---------------------------------
 run --repo o/other
-eq 'exit 1 when cwd is not a checkout of --repo' 1 "$RC"
-has 'says which repo it found' 'not a checkout of o/other \(found: o/alpha\)'
+eq 'exit 1 when neither the cwd nor $HOME/other is a checkout of --repo' 1 "$RC"
+has 'says where it looked' "no local checkout of o/other \(not the cwd, not $HOME/other\)"
+has 'and that nothing is left in scope' 'no repo in scope has a local checkout'
+run --repo o/alpha fam
+eq 'exit 2 when --repo and a project are both given' 2 "$RC"
+has 'and says they are two scopes' 'two scopes; pass one'
+
+# --- a project: one queue over every repo carrying the topic ---------------------
+# The fake worklist answers a project name with two repos; beta's checkout is
+# $HOME/beta (the cwd is alpha's), gamma has none and is dropped on one line.
+git -C "$S/home" init -q beta && git -C "$S/home/beta" remote add origin https://github.com/o/beta.git \
+  && git -C "$S/home/beta" -c user.email=t@example.invalid -c user.name=t commit -q --allow-empty -m init
+cat > "$S/ready.json" <<'JSON'
+[{"number": 5, "title": "Alpha item", "body": "alpha", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]}]
+JSON
+cat > "$S/ready-beta.json" <<'JSON'
+[{"number": 5, "title": "Beta item", "body": "beta", "url": "https://github.com/o/beta/issues/5", "labels": [{"name": "ready"}]},
+ {"number": 7, "title": "Gamma item", "body": "gamma", "url": "https://github.com/o/gamma/issues/7", "labels": [{"name": "ready"}], "repo": "o/gamma"}]
+JSON
+rm -f "$S/state/grind"/*.json
+run --dry-run fam
+eq 'a project dry-run exits 0' 0 "$RC"
+grep -q '^fam --json --fresh$' "$S/worklist.log" && ok || bad 'worklist was called with the project name'
+has 'the repo without a checkout is dropped, on one line' "^grind: no local checkout of o/gamma \(not the cwd, not $HOME/gamma\); it is out of this run$"
+has 'alpha item cut from the cwd' "o/alpha#5 -- Alpha item"
+has 'alpha worktree under its repo name' "git -C $S/repo worktree add -b grind-5 $TMPDIR/grind-worktrees/alpha/5"
+has 'beta item cut from $HOME/beta' "git -C $S/home/beta worktree add -b grind-5 $TMPDIR/grind-worktrees/beta/5"
+lacks 'gamma item never queued' 'o/gamma#7'
+: > "$S/worklist.log"
+cd "$S/nogit" && run --dry-run --repo o/beta; cd "$S/repo" || exit 1
+eq '--repo from outside any checkout exits 0' 0 "$RC"
+grep -q '^--here --json --fresh$' "$S/worklist.log" && ok || bad 'the record was fetched with --here'
+has 'from the named repo checkout: its item is queued' '^\[1/1\] o/beta#5 -- Beta item$'
+lacks 'and nothing from the cwd-less alpha' 'o/alpha#5'
+run fam
+eq 'a project run exits 0' 0 "$RC"
+has 'the session line names the project' 'INFO  session grind-.* on project fam: 2 item\(s\)'
+eq 'the state file records the project' fam "$(jq -r .project "$(latest_session)")"
+eq 'both items recorded done' 'o/alpha#5=done o/beta#5=done' "$(jq -r '[.items[] | "\(.ref)=\(.status)"] | join(" ")' "$(latest_session)")"
+assert 'beta worktree removed from beta checkout' bash -c '! git -C '"$S"'/home/beta worktree list | grep -q grind-worktrees'
+: > "$CLAUDE_LOG"
+run --resume "$(basename "$(latest_session)" .json)"
+eq 'a resume takes the project from the session file' 0 "$RC"
+has 'and finds both items already accounted for' '^done: queue exhausted'
+eq 'so no worker ran' 0 "$(calls_claude)"
+mkdir -p "$S/state/grind/locks/project_fam.lock"; jq -n '{pid: 999999, hostname: "elsewhere"}' > "$S/state/grind/locks/project_fam.lock/meta.json"
+run fam
+eq 'a project lock is keyed by the project, not a repo' 1 "$RC"
+has 'and names the project' 'another grind is already running against project fam'
+rm -rf "$S/state/grind/locks/project_fam.lock" "$S/ready-beta.json"
+rm -f "$S/state/grind"/*.json
 
 # --- empty queue -----------------------------------------------------------------
 cat > "$S/ready.json" <<'JSON'
@@ -903,7 +958,7 @@ eq 'dry-run exit 0' 0 "$RC"
 has 'a keyless machine drops the pr kind by default, on one line' '^grind: pr kind skipped -- needs a signing key'
 has 'issues first' '\[1/3\] o/alpha#5 -- First item'
 has 'the card after them, by ref' '\[3/3\] card:alpha-tidy-the-widget -- alpha: tidy the widget'
-has 'on a branch named from its bold name' 'worktree: git worktree add -b grind-card-alpha-tidy-the-widget'
+has 'on a branch named from its bold name' 'worktree: git -C .* worktree add -b grind-card-alpha-tidy-the-widget'
 lacks 'a card linking another repo is not queued' 'beta-elsewhere'
 run --dry-run --kind card
 has '--kind card queues only the card' '\[1/1\] card:alpha-tidy-the-widget'
@@ -1075,7 +1130,7 @@ eq 'dry-run spends nothing' 0 "$(calls_claude)"
 has 'stale-label PR is an item, lowest number first' '^\[1/9\] .*#11 -- \[not-green\] PR 11$'
 has 'unfinished PR is an item, with its verdict' '^\[[0-9]+/9\] .*#30 -- \[conflicted\] PR 30$'
 lacks 'a green, labelled PR is not an item' '#50'
-has 'the checkout is onto the PR head branch, not a new one' 'git worktree add -B fix-11 .* origin/fix-11'
+has 'the checkout is onto the PR head branch, not a new one' 'git -C .* worktree add -B fix-11 .* origin/fix-11'
 has 'the command names the briefs and the contract' 'claude -p <.*#11 briefs \+ fixup contract>.*--max-budget-usd 1.25 --model sonnet'
 
 # --- every skip rule fires, with its reason ------------------------------------------

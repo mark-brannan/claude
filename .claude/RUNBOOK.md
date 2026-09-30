@@ -36,6 +36,7 @@ Procedures only. The hook designs and the scars behind them are in
 - [Find out which session holds a branch](#find-out-which-session-holds-a-branch)
 - [Waive the churn gate on a PR](#waive-the-churn-gate-on-a-pr)
 - [Waive the mixed-loops gate on a PR](#waive-the-mixed-loops-gate-on-a-pr)
+- [Grind a project](#grind-a-project)
 - [Run the PR fixer on a timer](#run-the-pr-fixer-on-a-timer)
 
 **Troubleshooting**
@@ -621,6 +622,24 @@ If it fails with `'mixed-loops-ok' not found`, create the label once:
 ```bash
 gh label create mixed-loops-ok --repo mark-brannan/dotfiles --color BFD4F2 --description "Human waiver: design and implementation may land in this one PR"
 ```
+
+## Grind a project
+
+`grind <project>` works one queue over every repo carrying the GitHub topic
+`project-<project>` — the set `worklist <project>` shows — from any directory.
+Each item's worktree is cut from that repo's checkout at `$HOME/<name>` (or
+`$GRIND_CHECKOUTS/<name>`); a repo with no checkout is dropped on one line,
+never worked blind.
+
+```bash
+grind --dry-run --kind issue --kind card colregs
+```
+
+**Verify:** the plan lists items from more than one repo, every `worktree:`
+line names `git -C $HOME/<that repo>`, and no `no local checkout of` line names
+a repo you meant to include. Then drop `--dry-run`. One lock covers the family:
+a second `grind colregs` refuses with `another grind is already running against
+project colregs`.
 
 ## Run the PR fixer on a timer
 

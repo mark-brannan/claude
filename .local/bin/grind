@@ -73,6 +73,20 @@
 #         [--repo owner/name] [--model <m>] [--effort <e>]
 #         [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]
 #         [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]
+#         [project]
+#
+# Scope: one repo (the cwd's, or --repo) or a project -- every repo carrying
+# the GitHub topic `project-<name>`, the set worklist already resolves. A
+# project grind is one queue, one budget, one lock across the family: the
+# record is worklist's for the project, each item carries its `.repo`, and
+# the worker's worktree is cut from that repo's local checkout -- the cwd
+# when it is one, else $GRIND_CHECKOUTS/<name> (default $HOME/<name>). A repo
+# with no checkout is dropped from the queue on one WARN line, never worked
+# blind. A card routes by its `.repo` (its `repo:` field, else its link's
+# repo), so a project grind takes every ## Claude's card that names any
+# family repo; a card that needs PRs in two repos is not yet expressible --
+# see the PR that added this for the design (Solace, 2026-09-29: settled as
+# a given, on trial against /orchestrate, which is single-repo by design).
 #
 # A pr item is a fixup: pr-label-audit supplies its verdict and skip facts
 # (labels, author, head age, cancelled-only checks) once the record has named
@@ -125,6 +139,7 @@ usage() {
   printf '             [--repo owner/name] [--model <m>] [--effort <e>]\n'
   printf '             [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]\n'
   printf '             [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]\n'
+  printf '             [project]\n'
 }
 
 # Logging. INFO goes to stdout at a low rate: one line per unit of work
@@ -151,6 +166,7 @@ policy=finish-first
 item_budget_set=0
 session_budget_set=0
 repo=""
+project=""
 resume_id=""
 heartbeat=60
 permission_mode=bypassPermissions
@@ -175,10 +191,11 @@ while [ $# -gt 0 ]; do
     --permission-mode) shift; permission_mode=${1:-} ;;
     -h|--help) usage; exit 0 ;;
     -*) printf 'grind: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
-    *) printf 'grind: unexpected argument %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) [ -z "$project" ] || { printf 'grind: unexpected argument %s\n' "$1" >&2; usage >&2; exit 2; }; project=$1 ;;
   esac
   shift
 done
+[ -z "$repo" ] || [ -z "$project" ] || { printf 'grind: --repo and a project name are two scopes; pass one\n' >&2; exit 2; }
 
 command -v jq >/dev/null 2>&1 || { echo "grind: needs jq" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }
@@ -260,12 +277,25 @@ state_root=${XDG_STATE_HOME:-$HOME/.local/state}/grind
 mkdir -p "$state_root" 2>/dev/null || true
 
 # --- repo scope --------------------------------------------------------------
-cwd_repo() {
-  u=$(git remote get-url origin 2>/dev/null) || return 1
+repo_at() {  # repo_at <dir> -> owner/name of its origin, or 1
+  u=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
   r=$(printf '%s' "$u" | sed -e 's#^https://github\.com/##' -e 's#^ssh://git@github\.com/##' \
         -e 's#^git@github\.com:##' -e 's#/$##' -e 's#\.git$##')
   [ "$r" = "$u" ] && return 1
   printf '%s' "$r"
+}
+cwd_repo() { repo_at .; }
+# checkout_for <owner/name> -> the local checkout worktrees are cut from: the
+# cwd when it is one (an origin that is a local path, as in tests, matches on
+# its tail), else $GRIND_CHECKOUTS/<name>. Fails when neither is.
+checkout_for() {
+  case "$(cwd_repo || true)" in "$1"|*"/$1") pwd; return 0 ;; esac
+  c="${GRIND_CHECKOUTS:-$HOME}/${1##*/}"
+  [ "$(repo_at "$c" || true)" = "$1" ] && printf '%s' "$c"
+}
+no_checkout() {  # the one drop line, for a repo neither the cwd nor $GRIND_CHECKOUTS holds
+  printf 'grind: no local checkout of %s (not the cwd, not %s/%s); it is out of this run\n' \
+    "$1" "${GRIND_CHECKOUTS:-$HOME}" "${1##*/}" >&2
 }
 
 # --- state file ---------------------------------------------------------------
@@ -278,6 +308,7 @@ if [ -n "$resume_id" ]; then
   [ -f "$state_file" ] || { printf 'grind: no session %s at %s\n' "$resume_id" "$state_file" >&2; exit 1; }
   session_id=$resume_id
   repo=$(jq -r '.repo' "$state_file")
+  project=$(jq -r '.project // ""' "$state_file")
   model=$(jq -r '.model' "$state_file")
   effort=$(jq -r '.effort' "$state_file")
   item_budget=$(jq -r '.item_budget' "$state_file")
@@ -296,18 +327,22 @@ if [ -n "$resume_id" ]; then
 else
   session_id=grind-$(new_session_id)
   state_file="$state_root/$session_id.json"
-  [ -n "$repo" ] || repo=$(cwd_repo) || { printf 'grind: not in a GitHub repo; pass --repo owner/name\n' >&2; exit 1; }
+  [ -n "$repo$project" ] || repo=$(cwd_repo) || { printf 'grind: not in a GitHub repo; pass --repo owner/name or a project\n' >&2; exit 1; }
   if [ "$dry_run" -eq 0 ]; then
-    jq -n --arg repo "$repo" --arg model "$model" --arg effort "$effort" \
+    jq -n --arg repo "$repo" --arg project "$project" --arg model "$model" --arg effort "$effort" \
           --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson pe "$pause_every" --argjson prs "$prs" \
           --arg kinds "$kinds" --arg policy "$policy" \
-      '{repo:$repo, model:$model, effort:$effort, item_budget:$ib, session_budget:$sb, pause_every:$pe, prs:$prs,
+      '{repo:$repo, project:$project, model:$model, effort:$effort, item_budget:$ib, session_budget:$sb, pause_every:$pe, prs:$prs,
         kinds:$kinds, policy:$policy, items:[]}' \
       > "$state_file"
   fi
 fi
 
 resume_cmd="grind --resume $session_id"
+# The scope names the run everywhere a repo used to: the lock, the band
+# marker, the INFO lines. A project grind holds one lock for the family.
+scope=${project:+project $project}; scope=${scope:-$repo}
+scope_key=$(printf '%s' "$scope" | tr '/ ' '__')
 
 # pr-kind preconditions, checked once the kinds are settled -- a --resume
 # takes them from the session file, so this cannot run before that is read.
@@ -346,7 +381,7 @@ grind_rev=$(git -C "$(dirname "$0")" rev-parse --short HEAD 2>/dev/null || echo 
 claude_session=${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-none}}
 lock_root="$state_root/locks"
 mkdir -p "$lock_root" 2>/dev/null || true
-lock_dir="$lock_root/$(printf '%s' "$repo" | tr '/' '_').lock"
+lock_dir="$lock_root/$scope_key.lock"
 lock_meta="$lock_dir/meta.json"
 
 write_lock() {
@@ -372,12 +407,12 @@ if [ "$dry_run" -eq 0 ]; then
     set -- $(jq -r '(.pid // 0), (.hostname // "")' "$lock_meta" 2>/dev/null)
     other_pid=${1:-0}; other_host=${2:-}
     if [ "$other_host" = "$hostname_now" ] && ! kill -0 "$other_pid" 2>/dev/null; then
-      warn "reclaiming stale lock on $repo at $lock_dir (pid $other_pid not running)"
+      warn "reclaiming stale lock on $scope at $lock_dir (pid $other_pid not running)"
       stale_dir="$lock_dir.stale.$$"  # rename first: atomic, a racer's mkdir below loses cleanly
       mv "$lock_dir" "$stale_dir" 2>/dev/null && rm -rf "$stale_dir" && mkdir "$lock_dir" \
         || { err "lock changed while reclaiming it"; exit 1; }
     else
-      printf 'grind: another grind is already running against %s\n' "$repo" >&2
+      printf 'grind: another grind is already running against %s\n' "$scope" >&2
       cat "$lock_meta" >&2; exit 1
     fi
   fi
@@ -409,23 +444,30 @@ is_done_ref() {
   return 1
 }
 
-# Worktrees are cut from the current directory's repository, so it must be
-# a checkout of $repo -- otherwise the worker is handed the wrong codebase.
-if [ "$dry_run" -eq 0 ]; then
-  here=$(cwd_repo) || here=""
-  [ "$here" = "$repo" ] \
-    || { printf 'grind: current directory is not a checkout of %s (found: %s); cd there first\n' \
-           "$repo" "${here:-no GitHub remote}" >&2; exit 1; }
-fi
-
 # --- the queue: worklist's bucket record, one scheduler across kinds ----------
 # The record is fetched fresh (the cache is stale-while-revalidate, and a
 # queue read off a stale one would work an item somebody just finished) and
-# scoped to this repo: --here for the fetch, .repo == $repo for every item.
-record=$("$worklist_bin" --here --json --fresh 2>&1) \
+# scoped to this repo or the project, and every item carries .repo. --here
+# scopes worklist by its cwd, so a --repo fetch runs from that repo's
+# checkout: from anywhere else it would answer for the wrong repo, or none.
+fetch_dir=.
+[ -z "$repo" ] || fetch_dir=$(checkout_for "$repo") \
+  || { no_checkout "$repo"; printf 'grind: no repo in scope has a local checkout\n' >&2; exit 1; }
+record=$(cd "$fetch_dir" && "$worklist_bin" "${project:---here}" --json --fresh 2>&1) \
   || { printf 'grind: worklist --json failed: %s\n' "$(printf '%s' "$record" | jq -r '.error // .' 2>/dev/null | head -1)" >&2; exit 1; }
 printf '%s' "$record" | jq -e '.buckets' >/dev/null 2>&1 \
   || { echo "grind: worklist --json carries no buckets; is worklist older than grind?" >&2; exit 1; }
+
+# Worktrees are cut from a local checkout of the item's repo -- otherwise the
+# worker is handed the wrong codebase. Resolved once, up front: a repo with
+# none is dropped here, on one line, rather than skipped item by item. A
+# --repo run only ever has the one, checked above.
+repos_json="[]"
+for r in $(printf '%s' "$record" | jq -r --arg repo "$repo" 'if $repo == "" then .repos[] else $repo end'); do
+  if checkout_for "$r" >/dev/null; then repos_json=$(printf '%s' "$repos_json" | jq -c --arg r "$r" '. + [$r]')
+  else no_checkout "$r"; fi
+done
+[ "$(printf '%s' "$repos_json" | jq 'length')" -gt 0 ] || { printf 'grind: no repo in scope has a local checkout\n' >&2; exit 1; }
 
 # --- review band: pause dispatch while PRs awaiting a look pile up -----------
 # memory: review-band-five-to-ten (Solace, 2026-09-22). The count is
@@ -435,60 +477,59 @@ printf '%s' "$record" | jq -e '.buckets' >/dev/null 2>&1 \
 # file beside the per-repo lock: a `grind --prs` timer firing is a fresh process.
 if [ "$dry_run" -eq 0 ]; then
   awaiting_human_count=$(printf '%s' "$record" | jq '.buckets.awaiting_human | length')
-  band_marker="$state_root/band-paused-$(printf '%s' "$repo" | tr '/' '_')"
+  band_marker="$state_root/band-paused-$scope_key"
   if [ -f "$band_marker" ]; then
     if [ "$awaiting_human_count" -ge 5 ]; then
       printf 'grind: paused -- %d PR(s) awaiting your look on %s (resumes below 5)\n' \
-        "$awaiting_human_count" "$repo"
+        "$awaiting_human_count" "$scope"
       exit 0
     fi
     rm -f "$band_marker"
   elif [ "$awaiting_human_count" -ge 10 ]; then
     : > "$band_marker"
     printf 'grind: pausing -- %d PR(s) awaiting your look on %s (band 5-10; resumes below 5)\n' \
-      "$awaiting_human_count" "$repo"
+      "$awaiting_human_count" "$scope"
     exit 0
   fi
 fi
 
 # The audit supplies what a fixup needs and the record does not carry:
 # verdict, cancelled-only checks with their run urls, the head's commit date.
-# It audits the whole account, so it is filtered to this repo by name.
-audit_json="[]"
+# It audits the whole account; items join it by repo name and number.
+audit_json="[]"; red_json="[]"
 if has_kind pr; then
   audit_raw=$("$audit_bin" --json 2>&1) \
     || { printf 'grind: pr-label-audit failed: %s\n' "$audit_raw" >&2; exit 1; }
-  # main itself is red on this repo (pr-label-audit's repos_base_red) -- no
-  # PR here is a fixup's fault, so the whole pr kind pauses, not just the
+  # main itself is red on a repo (pr-label-audit's repos_base_red) -- no PR
+  # there is a fixup's fault, so its whole pr kind pauses, not just the
   # items that happen to be queued (dotfiles#359).
-  if printf '%s' "$audit_raw" | jq -e -s --arg name "${repo##*/}" \
-       'any(.[]; (.repos_base_red // []) | index($name))' >/dev/null; then
-    echo "grind: $repo's base branch is red; skipping the pr kind until it's green"
-    drop_kind pr
-  else
-    audit_json=$(printf '%s' "$audit_raw" | jq -s -c --arg name "${repo##*/}" '[ .[] | select(.repo? == $name) ]') \
-      || { echo "grind: could not read pr-label-audit --json" >&2; exit 1; }
-  fi
+  red_json=$(printf '%s' "$audit_raw" | jq -s -c '[ .[] | .repos_base_red[]? ] | unique') \
+    || { echo "grind: could not read pr-label-audit --json" >&2; exit 1; }
+  audit_json=$(printf '%s' "$audit_raw" | jq -s -c '[ .[] | select(.repo?) ]')
+  for r in $(printf '%s' "$repos_json" | jq -r --argjson red "$red_json" '.[] | (split("/")|last) as $s | select($red | index($s))'); do
+    echo "grind: $r's base branch is red; skipping the pr kind there until it's green"
+  done
 fi
 
 # shellcheck disable=SC2016  # jq program, not shell
-items=$(printf '%s' "$record" | jq -c --arg repo "$repo" --arg kinds " $kinds " --arg policy "$policy" --argjson audit "$audit_json" '
-  # --here already scopes the fetch to this repo; the check here is for the
-  # cards, which come from the global board and link anywhere. An origin that
-  # is a local path (tests) has no owner, so it matches on the repo name.
-  def mine: .repo == $repo or (($repo|startswith("/")) and ((.repo // "" | split("/") | last) == ($repo | split("/") | last)));
-  ($audit | map({key: (.number|tostring), value: .}) | from_entries) as $a
-  | ([ .buckets.not_ready[] | select(mine and (.isDraft|not))
-       | . + ($a[.number|tostring] // {})
+items=$(printf '%s' "$record" | jq -c --argjson repos "$repos_json" --argjson red "$red_json" --arg kinds " $kinds " --arg policy "$policy" --argjson audit "$audit_json" '
+  # The fetch is already scoped; the check here is for the cards, which come
+  # from the global board and link anywhere, and for a repo dropped above. An
+  # origin that is a local path (tests) has no owner, so it matches on name.
+  def short: split("/") | last;
+  def mine: (.repo // "") as $r | any($repos[]; . == $r or (startswith("/") and (short == ($r | short))));
+  ($audit | map({key: "\(.repo)#\(.number)", value: .}) | from_entries) as $a
+  | ([ .buckets.not_ready[] | (.repo | short) as $s | select(mine and (.isDraft|not) and (($red | index($s)) == null))
+       | . + ($a["\($s)#\(.number)"] // {} | del(.repo))
        | select((.section // "unfinished") | IN("unfinished", "stale-label"))
-       | {kind: "pr", number, title, url, labels, author, verdict: (.verdict // "unfinished"),
+       | {kind: "pr", repo, number, title, url, labels, author, verdict: (.verdict // "unfinished"),
           cancelled_only: (.cancelled_only // false), failing_checks: (.failing_checks // []),
           head_committed_at: (.head_committed_at // null)} ] | sort_by(.number)) as $prs
   | ([ .buckets.ready[] | select(mine and ((.labels|index("blocked"))|not))
-       | {kind: "issue", number, title, url, body: (.body // ""), labels} ] | sort_by(.number)) as $issues
+       | {kind: "issue", repo, number, title, url, body: (.body // ""), labels} ] | sort_by(.number)) as $issues
   | [ .buckets.claudes[] | select(mine)
       | (.name // .text[:60]) as $n
-      | {kind: "card", title: $n, text, link,
+      | {kind: "card", repo, title: $n, text, link,
          slug: ($n | ascii_downcase | gsub("[^a-z0-9]+"; "-") | ltrimstr("-") | rtrimstr("-") | .[:40] | rtrimstr("-"))} ] as $cards
   | (if $policy == "start-first" then $issues + $cards + $prs else $prs + $issues + $cards end)
   | map(.kind as $k | select($kinds | contains(" " + $k + " ")))') \
@@ -497,12 +538,12 @@ items=$(printf '%s' "$record" | jq -c --arg repo "$repo" --arg kinds " $kinds " 
 count=$(printf '%s' "$items" | jq 'length')
 kind_counts=$(printf '%s' "$items" | jq -r 'group_by(.kind) | map("\(length) \(.[0].kind)") | join(", ")')
 if [ "$count" -eq 0 ]; then
-  echo "grind: nothing to work on $repo (kinds: $kinds)"
+  echo "grind: nothing to work on $scope (kinds: $kinds)"
   exit 0
 fi
 
 if [ "$dry_run" -eq 0 ]; then
-  info "session $session_id on $repo: $count item(s) ($kind_counts; $policy), $model/$effort, cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
+  info "session $session_id on $scope: $count item(s) ($kind_counts; $policy), $model/$effort, cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
   info "state: $state_file"
 fi
 skipped=0
@@ -542,7 +583,7 @@ pr_skip() {
   # counting that as someone else's claim would lock the PR out of the
   # --resume retry the UNVERIFIED line promises. The loop clears its own
   # path before every attempt anyway.
-  if [ -n "$2" ] && git worktree list --porcelain 2>/dev/null | awk -v root="$worktree_root/" \
+  if [ -n "$2" ] && git -C "$checkout" worktree list --porcelain 2>/dev/null | awk -v root="$worktree_root/" \
        -v b="branch refs/heads/$2" '
          /^worktree / { p = substr($0, 10) }
          $0 == b && index(p, root) != 1 { found = 1 }
@@ -871,6 +912,11 @@ while [ "$i" -lt "$count" ]; do
   item=$(printf '%s' "$items" | jq -c ".[$i]")
   i=$((i + 1))
   kind=$(printf '%s' "$item" | jq -r '.kind')
+  # The item's repo is the run's from here to the next item: every gh call
+  # below reads $repo, every git call cuts from its checkout. Paths carry the
+  # repo name only in a project grind, where #5 in two repos would collide.
+  repo=$(printf '%s' "$item" | jq -r '.repo'); checkout=$(checkout_for "$repo")
+  wt_base=$worktree_root; [ -n "$project" ] && wt_base="$worktree_root/${repo##*/}"
   number=$(printf '%s' "$item" | jq -r '.number // ""')
   title=$(printf '%s' "$item" | jq -r '.title')
   slug=$(printf '%s' "$item" | jq -r '.slug // ""')
@@ -895,7 +941,7 @@ while [ "$i" -lt "$count" ]; do
 
   if [ "$kind" = pr ]; then
     branch=$(gh pr view "$number" --repo "$repo" --json headRefName --jq .headRefName 2>/dev/null) || branch=""
-    wt_path="$worktree_root/pr-$number"
+    wt_path="$wt_base/pr-$number"
     verdict=$(printf '%s' "$item" | jq -r '.verdict')
     reason=$(pr_skip "$item" "$branch")
     [ -n "$branch" ] || reason="could not read its head branch"
@@ -918,11 +964,11 @@ while [ "$i" -lt "$count" ]; do
     fi
   elif [ "$kind" = card ]; then
     branch="grind-card-$slug"
-    wt_path="$worktree_root/card-$slug"
+    wt_path="$wt_base/card-$slug"
     verdict=""
   else
     branch="grind-$number"
-    wt_path="$worktree_root/$number"
+    wt_path="$wt_base/$number"
     verdict=""
   fi
 
@@ -935,34 +981,34 @@ while [ "$i" -lt "$count" ]; do
   if [ "$dry_run" -eq 1 ]; then
     printf '[%d/%d] %s -- %s%s\n' "$((i))" "$count" "$ref" "${verdict:+[$verdict] }" "$title"
     if [ "$kind" = pr ]; then
-      printf '  worktree: git worktree add -B %s %s origin/%s\n' "$branch" "$wt_path" "$branch"
+      printf '  worktree: git -C %s worktree add -B %s %s origin/%s\n' "$checkout" "$branch" "$wt_path" "$branch"
     else
-      printf '  worktree: git worktree add -b %s %s\n' "$branch" "$wt_path"
+      printf '  worktree: git -C %s worktree add -b %s %s\n' "$checkout" "$branch" "$wt_path"
     fi
     printf '  command:  %s\n' "$cmd_display"
     continue
   fi
 
   info "[$i/$count] starting $ref -- $title"
-  mkdir -p "$worktree_root"
+  mkdir -p "$wt_base"
   # Remove the directory first, then prune: a worktree kept from a previous
   # unverified attempt is still registered, and git refuses to delete a
   # branch a registered worktree holds.
   rm -rf "$wt_path"
-  git worktree prune >/dev/null 2>&1 || true
+  git -C "$checkout" worktree prune >/dev/null 2>&1 || true
   # Only in issue mode: `$branch` is the synthetic `grind-<number>` there, so
   # deleting it is safe. In `--prs` mode it is the PR's real head branch name,
   # which a human may also hold locally with unpushed commits -- and `-B`
   # below resets it from the remote anyway, so the delete would be pure risk.
-  [ "$kind" = pr ] || git branch -D "$branch" >/dev/null 2>&1 || true
+  [ "$kind" = pr ] || git -C "$checkout" branch -D "$branch" >/dev/null 2>&1 || true
   if [ "$kind" = pr ]; then
     # The PR's own head branch, reset to the remote: the worker fixes this
     # pull request or it has not fixed anything. `-B` resets any local copy,
     # and a branch a worktree still holds was skipped.
-    wt_err=$(git fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>&1) \
-      && wt_err=$(git worktree add -q -B "$branch" "$wt_path" "origin/$branch" 2>&1 >/dev/null) \
+    wt_err=$(git -C "$checkout" fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>&1) \
+      && wt_err=$(git -C "$checkout" worktree add -q -B "$branch" "$wt_path" "origin/$branch" 2>&1 >/dev/null) \
       || { warn "skipping $ref -- could not check out $branch: $wt_err"; skipped=$((skipped + 1)); continue; }
-  elif ! wt_err=$(git worktree add -q -b "$branch" "$wt_path" 2>&1 >/dev/null); then
+  elif ! wt_err=$(git -C "$checkout" worktree add -q -b "$branch" "$wt_path" 2>&1 >/dev/null); then
     warn "skipping $ref -- could not create worktree $wt_path on branch $branch: $wt_err"
     skipped=$((skipped + 1))
     continue
@@ -1247,7 +1293,7 @@ while [ "$i" -lt "$count" ]; do
   if [ "$status" = unverified ] || [ "$status" = failed ] || [ "$stage_rc" -eq 1 ]; then
     warn "keeping worktree $wt_path on branch $branch for inspection"
   else
-    git worktree remove -f "$wt_path" >/dev/null 2>&1 || true
+    git -C "$checkout" worktree remove -f "$wt_path" >/dev/null 2>&1 || true
   fi
 
   running_total=$(awk -v a="$running_total" -v b="$cost" 'BEGIN { printf "%.4f", a + b }')
