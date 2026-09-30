@@ -13,7 +13,7 @@ session that may end in a curia or in a few rounds of question and answer.
 A **confer** is that one-off session — no folder, no document, its record is the card and
 whatever it rules. A **curia** is what a confer becomes only when the user
 says so, at the gates below. Where exactly the line sits is still
-The user's to form; this skill takes the strict reading until it is.
+the user's to form; this skill takes the strict reading until it is.
 
 Ancestor concepts: the one-way-door test (why it is here at all), the
 coaching kata (the same prompt, every sitting), context engineering (the

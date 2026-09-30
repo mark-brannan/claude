@@ -145,7 +145,7 @@ A click-work card carries two proofs:
 `why this:` is what stops "update the secret in GitHub" when the workflow
 was failing for a different reason, and "update the key on the boat" when
 sops already held it. A `learn` card has no `why this:`; it drops only when
-The user says they have it.
+the user says they have it.
 
 ## The lint
 

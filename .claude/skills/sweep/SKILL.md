@@ -47,7 +47,7 @@ proposed item; its "keep" lines are not shown. On a tick, `prune-branches --dele
 Show the list: proposed deletions, each with its proof, the branch prune's
 summary line, then the reranked survivors. Then one multi-select (AskUserQuestion): tick the cards to act on.
 Every ticked card gets exactly one explicit action, chosen at tick time —
-The user has caught wrong deletions before; nothing leaves the board, or
+the user has caught wrong deletions before; nothing leaves the board, or
 changes, on a bare tick with no action attached:
 
 - **Deleted** — the card is gone. A proposed deletion (rank step 3) defaults

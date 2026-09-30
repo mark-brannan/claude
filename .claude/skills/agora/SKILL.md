@@ -79,7 +79,7 @@ On the word *confer*: record it on the card (<!-- format open -->
 nothing under `state/global/curia/`.** A curia question
 petitions the agora first; no lower-level session creates a curia. The
 agora is one gate of several; a curia opens only when
-The user says so inside the confer session, at the curia skill's gates.
+the user says so inside the confer session, at the curia skill's gates.
 
 At the end of the sitting, print one confer prompt per deferred item,
 ready to paste, each naming model and effort:
