@@ -11,7 +11,7 @@ exact wording still exist.
 
 **The default owner is you.** An item exists because an agent found work: do
 the work, or prove there is none and close it with the proof. Handing an item
-to Solace needs a written reason, on the card.
+to the user needs a written reason, on the card.
 
 **A migration is a triage, never a copy.** A bulk move between trackers applies
 the destination's bar to every item and records the counts kept and dropped;
@@ -40,8 +40,14 @@ GitHub home. Take the first line that fits:
   flashed, adopted by a user, or inherited by later decisions. Only then →
   a card under `## Needs ruling`. There is no `needs-ruling` label and no
   ruling issue.
+- **A question that wants a curia** — deep, multi-turn, a governing idea in
+  doubt — is still only a `## Needs ruling` card: the petition. Never a
+  folder under `state/global/curia/`; only the user opens one, through the
+  gates in the curia skill, after the agora and a confer. The card names
+  the open curia the question folds into, or why none (`folds: <id>` or
+  `folds: none — <why>`).
 - **A check** — "verify X", "confirm Y still works" — is not a loop and never
-  reaches Solace. Run it now. A check that needs a future event and has a
+  reaches the user. Run it now. A check that needs a future event and has a
   stated expected output goes on `## Claude's` as your own queue, unmentioned;
   one costly enough to plan is a research issue under the issue bar; one with
   no expected output is dropped.
@@ -68,7 +74,7 @@ GitHub home. Take the first line that fits:
   epic file's session list; a `ready` issue when no epic owns it.
 - **Half-done agent work** → the log and the hand-off prompt, as bare links
   with no state adjectives. A pushed branch has a PR or is a finding.
-- **Click work only Solace can do** → a card under `## Solace's`, and only
+- **Click work only the user can do** → a card under `## Solace's`, and only
   when both proofs below are on the line. "Needs a credential" is not a
   reason unless the credential cannot be given to an agent.
 - **An agent rabbit-trail** not worth an issue, or too private for one →
@@ -86,10 +92,10 @@ Three sections, in this order:
 - `## Needs ruling` — decisions that failed the one-way-door test. Cards
   are grouped under `### <project>` subheadings, `### global` when no
   project owns it; `###` headings appear nowhere else on the board.
-- `## Solace's` — click work an agent cannot do, or that Solace has chosen
+- `## Solace's` — click work an agent cannot do, or that the user has chosen
   to do by hand to learn it.
 - `## Claude's` — agent rabbit-trails and future checks. One flat list,
-  never surfaced to Solace.
+  never surfaced to the user.
 
 ## The line
 
@@ -139,7 +145,7 @@ A click-work card carries two proofs:
 `why this:` is what stops "update the secret in GitHub" when the workflow
 was failing for a different reason, and "update the key on the boat" when
 sops already held it. A `learn` card has no `why this:`; it drops only when
-Solace says she has it.
+The user says they have it.
 
 ## The lint
 
