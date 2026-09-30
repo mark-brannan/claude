@@ -11,7 +11,8 @@
 # one reader for the user's view and the executor, so the two cannot disagree
 # about what is ready. Three kinds of item, each one bucket of that record:
 #   pr     buckets.not_ready -- a PR a session left unfinished   (finishes work)
-#   issue  buckets.ready     -- a Ready, unblocked issue          (starts work)
+#   issue  buckets.ready     -- a Ready, unblocked issue, or each open Ready
+#                               sub-issue of one, in its own repo (starts work)
 #   card   buckets.claudes   -- a ## Claude's card whose repo: field, else
 #                               its link, names this repo
 # --kind <k> (repeatable) narrows the run to those kinds; --prs is --kind pr.
@@ -535,6 +536,23 @@ items=$(printf '%s' "$record" | jq -c --argjson repos "$repos_json" --argjson re
   | map(.kind as $k | select($kinds | contains(" " + $k + " ")))') \
   || { echo "grind: could not build the queue from worklist --json" >&2; exit 1; }
 
+# A parent with open sub-issues is worked through them, never itself: each
+# open Ready one is an item in its own repo, which may not be the parent's.
+# A parent whose sub-issues cannot be read is skipped, not worked whole.
+subs="{}"
+for p in $(printf '%s' "$items" | jq -r '.[] | select(.kind == "issue") | "\(.repo)#\(.number)"'); do
+  s=$(gh api "repos/${p%#*}/issues/${p##*#}/sub_issues?per_page=100" 2>/dev/null) || { warn "skipping $p -- could not read its sub-issues"; s=null; }
+  subs=$(printf '%s' "$subs" | jq -c --arg p "$p" --argjson s "$s" '.[$p] = $s')
+done
+# shellcheck disable=SC2016  # jq program, not shell
+items=$(printf '%s' "$items" | jq -c --argjson subs "$subs" 'def ref: "\(.repo)#\(.number)";
+  [ .[] | select(.kind == "issue") | ref as $p | $subs[$p] // [] | .[] | select(.state == "open")
+    | {kind: "issue", repo: (.repository_url | sub(".*/repos/"; "")), number, title, url: .html_url,
+       body: (.body // ""), labels: (.labels | map(.name)), parent: $p} ] as $kids
+  | [ .[] | ref as $r | if .kind != "issue" then . elif $subs[$r] == null or any($kids[]; ref == $r) then empty
+      elif any($kids[]; .parent == $r) then $kids[] | select(.parent == $r and (.labels | index("ready")) and (.labels | index("blocked") | not))
+      else . end ]')
+
 count=$(printf '%s' "$items" | jq 'length')
 kind_counts=$(printf '%s' "$items" | jq -r 'group_by(.kind) | map("\(length) \(.[0].kind)") | join(", ")')
 if [ "$count" -eq 0 ]; then
@@ -672,6 +690,7 @@ build_prompt() {
   printf 'mergeable PR: commit, push the branch, and open the PR yourself with gh.\n'
   printf 'Do not merge it. The worktree is deleted when you exit, so anything you\n'
   printf 'have not committed and pushed is lost.\n\n'
+  [ -z "${5:-}" ] || printf 'This is a sub-issue of %s. The PR body says `Fixes %s` and `Part of %s`.\n\n' "$5" "$p_ref" "$5"
   printf 'Every write under .claude/ is refused, whatever your permission mode --\n'
   printf 'that is a harness protection, not something this settings.json can widen.\n'
   printf 'If the item needs a change under .claude/, write it instead to\n'
@@ -915,8 +934,9 @@ while [ "$i" -lt "$count" ]; do
   # The item's repo is the run's from here to the next item: every gh call
   # below reads $repo, every git call cuts from its checkout. Paths carry the
   # repo name only in a project grind, where #5 in two repos would collide.
-  repo=$(printf '%s' "$item" | jq -r '.repo'); checkout=$(checkout_for "$repo")
-  wt_base=$worktree_root; [ -n "$project" ] && wt_base="$worktree_root/${repo##*/}"
+  repo=$(printf '%s' "$item" | jq -r '.repo'); checkout=$(checkout_for "$repo") || { no_checkout "$repo"; continue; }
+  parent=$(printf '%s' "$item" | jq -r '.parent // ""')
+  wt_base=$worktree_root; [ -n "$project$parent" ] && wt_base="$worktree_root/${repo##*/}"
   number=$(printf '%s' "$item" | jq -r '.number // ""')
   title=$(printf '%s' "$item" | jq -r '.title')
   slug=$(printf '%s' "$item" | jq -r '.slug // ""')
@@ -979,7 +999,7 @@ while [ "$i" -lt "$count" ]; do
   esac
 
   if [ "$dry_run" -eq 1 ]; then
-    printf '[%d/%d] %s -- %s%s\n' "$((i))" "$count" "$ref" "${verdict:+[$verdict] }" "$title"
+    printf '[%d/%d] %s -- %s%s%s\n' "$((i))" "$count" "$ref" "${verdict:+[$verdict] }" "$title" "${parent:+ (part of $parent)}"
     if [ "$kind" = pr ]; then
       printf '  worktree: git -C %s worktree add -B %s %s origin/%s\n' "$checkout" "$branch" "$wt_path" "$branch"
     else
@@ -1018,7 +1038,7 @@ while [ "$i" -lt "$count" ]; do
   case $kind in
     pr)   prompt=$(build_pr_prompt "$ref" "$branch" "$wt_path") ;;
     card) prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.text')" "$ref" "$branch" card) ;;
-    *)    prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')" "$ref" "$branch" issue) ;;
+    *)    prompt=$(build_prompt "$(printf '%s' "$item" | jq -r '.body')" "$ref" "$branch" issue "$parent") ;;
   esac
   started=$(date +%s)
   # Reference points for the carded check: a marker the board file must be

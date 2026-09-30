@@ -69,6 +69,7 @@ case "\$1 \$2" in
   "issue list") cat "$S/ready.json" ;;
   "pr list")    jq -r "\$filter" "$S/pr-list.json" ;;
   "issue view") jq -r "\$filter" "$S/issue-comments.json" ;;
+  "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
   *) echo "gh shim: unexpected \$*" >&2; exit 1 ;;
 esac
 GH
@@ -869,6 +870,51 @@ has 'and names the project' 'another grind is already running against project fa
 rm -rf "$S/state/grind/locks/project_fam.lock" "$S/ready-beta.json"
 rm -f "$S/state/grind"/*.json
 
+# --- sub-issues: a parent is worked through its open Ready sub-issues ----------
+# Each one is cut from its own repo's checkout: beta's is $HOME/beta (above),
+# gamma has none. #13 is Ready on its own too and must be worked once, as
+# #5's; #14 is not Ready and #15 is closed, so neither is worked; #6 has no
+# sub-issues and is one unit, as ever.
+sub() { jq -nc --arg r "$1" --argjson n "$2" --arg s "$3" --arg l "$4" \
+  '{repository_url: "https://api.github.com/repos/\($r)", number: $n, title: "Sub \($n)", body: "sub \($n)",
+    html_url: "https://github.com/\($r)/issues/\($n)", state: $s, labels: [{name: $l}]}'; }
+mkdir -p "$S/subs"
+{ sub o/beta 12 open ready; sub o/alpha 13 open ready; sub o/beta 14 open triage; sub o/alpha 15 closed ready; } \
+  | jq -s . > "$S/subs/repos_o_alpha_issues_5_sub_issues.json"
+sub o/gamma 3 open ready | jq -s . > "$S/subs/repos_o_alpha_issues_8_sub_issues.json"
+echo FAIL > "$S/subs/repos_o_alpha_issues_9_sub_issues.json"  # gh api fails for #9
+cat > "$S/ready.json" <<'JSON'
+[{"number": 5, "title": "Two-repo parent", "body": "parent", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]},
+ {"number": 6, "title": "No sub-issues", "body": "whole", "url": "https://github.com/o/alpha/issues/6", "labels": [{"name": "ready"}]},
+ {"number": 8, "title": "Gamma parent", "body": "parent", "url": "https://github.com/o/alpha/issues/8", "labels": [{"name": "ready"}]},
+ {"number": 9, "title": "Unreadable parent", "body": "parent", "url": "https://github.com/o/alpha/issues/9", "labels": [{"name": "ready"}]},
+ {"number": 13, "title": "Sub 13", "body": "sub 13", "url": "https://github.com/o/alpha/issues/13", "labels": [{"name": "ready"}]}]
+JSON
+run --dry-run
+eq 'a sub-issue dry-run exits 0' 0 "$RC"
+has 'the beta sub-issue is an item, named for its parent' '\] o/beta#12 -- Sub 12 \(part of o/alpha#5\)$'
+has 'cut from the beta checkout, under its repo name' "git -C $S/home/beta worktree add -b grind-12 $TMPDIR/grind-worktrees/beta/12$"
+has 'the same-repo sub-issue is an item' '\] o/alpha#13 -- Sub 13 \(part of o/alpha#5\)$'
+eq 'and is queued once, not again on its own' 1 "$(grep -c 'o/alpha#13 --' <<<"$OUT")"
+lacks 'a parent with open sub-issues is not itself worked' 'o/alpha#(5|8) --'
+lacks 'a sub-issue that is not Ready is not worked' 'o/beta#14'
+lacks 'nor a closed one' 'o/alpha#15'
+has 'an issue with no sub-issues is one unit, unchanged' "git -C $S/repo worktree add -b grind-6 $TMPDIR/grind-worktrees/6$"
+has 'a sub-issue whose repo has no checkout is dropped, on the usual line' "no local checkout of o/gamma \(not the cwd, not $HOME/gamma\)"
+lacks 'and never queued' 'o/gamma#3 --'
+has 'an issue whose sub-issues cannot be read is skipped, loudly' 'WARN  skipping o/alpha#9 -- could not read its sub-issues$'
+lacks 'and not worked whole' '\] o/alpha#9 --'
+jq '[.[0]]' "$S/ready.json" > "$S/ready.json.tmp" && mv "$S/ready.json.tmp" "$S/ready.json"
+jq '[.[0]]' "$S/subs/repos_o_alpha_issues_5_sub_issues.json" > "$S/subs/x" && mv "$S/subs/x" "$S/subs/repos_o_alpha_issues_5_sub_issues.json"
+: > "$GH_LOG"
+run
+eq 'a sub-issue run exits 0' 0 "$RC"
+eq 'the sub-issue is recorded done under its own ref' 'o/beta#12=done' "$(jq -r '[.items[] | "\(.ref)=\(.status)"] | join(" ")' "$(latest_session)")"
+grep -q -- '^pr list --repo o/beta --head grind-12 ' "$GH_LOG" && ok || bad 'the done check reads the sub-issue repo' "$(cat "$GH_LOG")"
+grep -qF 'The PR body says `Fixes o/beta#12` and `Part of o/alpha#5`.' "$S/prompt.txt" && ok || bad 'the prompt names the sub-issue and its parent' "$(cat "$S/prompt.txt")"
+rm -rf "$S/subs"
+rm -f "$S/state/grind"/*.json
+
 # --- empty queue -----------------------------------------------------------------
 cat > "$S/ready.json" <<'JSON'
 []
@@ -1103,6 +1149,7 @@ case "\$1 \$2" in
   "issue list") cat "$S/ready.json" ;;
   "pr list")    jq -r "\$filter" "$S/pr-list.json" ;;
   "issue view") jq -r "\$filter" "$S/issue-comments.json" ;;
+  "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
   "pr view")    jq -r "\$filter" "$S/pr-\$3.json" ;;
   "run rerun")  [ "\${GH_RERUN_FAIL:-0}" = 1 ] && exit 1; exit 0 ;;
   "pr edit"|"pr comment") exit 0 ;;
@@ -1385,6 +1432,7 @@ case "\$1 \$2" in
   "issue list") cat "$S/ready.json" ;;
   "pr list")    jq -r "\$filter" "$S/pr-list.json" ;;
   "issue view") jq -r "\$filter" "$S/issue-comments.json" ;;
+  "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
   *) echo "gh shim: unexpected \$*" >&2; exit 1 ;;
 esac
 GH
