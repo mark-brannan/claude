@@ -92,9 +92,8 @@ in nobody's queue but this session's.
   local suite or a running GitHub check is background, so start it and go work
   the threads while it runs. A session idling on `gh pr checks --watch` or a
   test run while an unanswered comment sits on the PR is wasting the one
-  resource that matters. `--watch` is for the last look before hand-over,
-  after the threads are answered — not for the middle of the work.
-- **Green before hand-over.** In order:
+  resource that matters.
+- **Ready before hand-over.** In order:
   - every fast check the repo defines passes locally — formatter, lint,
     typecheck, build, tests; whatever that repo actually has;
   - the branch is current with its base and has no conflict — `git fetch
@@ -117,8 +116,10 @@ in nobody's queue but this session's.
   - the merge state says so, not just the checks — `gh pr view --json
     mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
     conflicts with main, so green checks are not a mergeable PR;
-  - where CI can be read before merge, read it — `gh pr checks --watch`
-    before hand-over, not as a way to pass the time after the first push;
+  - read CI once after the push; if it is still running, hand over with the
+    link and say so — `awaiting-human` says when it is green. Never re-run
+    locally a suite a CI job runs on that platform; run locally only what CI
+    can't (macOS);
   - **the body carries a `Head: <sha>` line naming this push** — the last
     edit before hand-over, so a head that moves afterward (one more commit,
     a rebase, a resign) is visible on the PR page before anyone merges it,
