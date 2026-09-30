@@ -6,8 +6,7 @@
 #
 #   git clone -q https://github.com/mark-brannan/dotfiles \
 #     "$HOME/.local/share/dotfiles-seed" 2>/dev/null
-#   CLOUD_SESSION=1 sh "$HOME/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh"
-#   exit 0
+#   CLOUD_SESSION=1 sh "$HOME/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh" || true
 #
 # Deliberately NOT yadm. This repo uses no yadm encryption (secrets are
 # sops+age, and the age key never reaches a VM) and its only alternate is

@@ -55,46 +55,23 @@ A Claude Code cloud environment configures exactly four things: **name, network
 access, environment variables, and a setup script.** Repositories are *not*
 part of the environment — they attach per session, as sources.
 
-**1 — Setup script.** The field only takes pasted text, so every environment's
-script is version-controlled here as the source of truth and pasted in by
-hand — the field itself is never the record.
+**1 — Setup script.** Paste the variant for the environment, verbatim, into
+**every** environment — one with no seed looks fine until something is missing.
 
-`Trusted` and `Full network access` take
-[`cloud-session-setup.sh`](../.local/bin/cloud-session-setup.sh)'s caller
-verbatim. It only clones and delegates, so the logic stays in the repo rather
-than going stale in a web form:
+`Trusted` and `Full network access`:
 
 ```sh
 git clone -q https://github.com/mark-brannan/dotfiles \
   "$HOME/.local/share/dotfiles-seed" 2>/dev/null
-CLOUD_SESSION=1 sh "$HOME/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh"
-exit 0
+CLOUD_SESSION=1 sh "$HOME/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh" || true
 ```
 
-`Default (with tailscale)` needs tailscale installed before the seed exists to
-delegate to, so it can't be a bare clone-and-delegate — paste
-[`cloud-session-setup-tailscale.sh`](../.local/bin/cloud-session-setup-tailscale.sh)
-verbatim instead; it ends with the same clone-and-delegate. Neither variant is
-executed by the platform — both files exist only so the pasted text has an
-authoritative copy in git. Keep them in sync by hand if either changes.
+`Default (with tailscale)`: the contents of
+[`cloud-session-setup-tailscale.sh`](../.local/bin/cloud-session-setup-tailscale.sh).
 
-Paste the matching variant into **every** environment, not just the one in
-front of you — an environment with no seed is indistinguishable from one that
-has it until something is missing.
-
-**The setup script runs once, when the container is created**, and the
-container is then checkpointed and reused. So the blob's `git clone` is the
-seed's only chance to be fresh, and it is a no-op forever after. Two things
-close that gap and both are in this repo, not in the web form:
-`cloud-session-setup.sh` pulls the seed before installing from it, and
-`session-start-seed-refresh.sh` re-runs the whole installer on every
-SessionStart. A rule edited here therefore reaches the next session with no
-re-provision — deliberately live rather than pinned, because these are
-interactive sessions and a stale standing order is worse than a changed one.
-
-Only `CLAUDE.md` cannot be refreshed in place: it is loaded before any hook
-runs. When the refresh rewrites it, the hook emits the new copy as
-`additionalContext` so the current session gets it too.
+Re-paste only when that block or that file changes. A rule edited in this repo
+reaches the next session on its own; `session-start-seed-refresh.sh` re-runs the
+seed at every SessionStart.
 
 **2 — Sources.** Add **both**:
 
