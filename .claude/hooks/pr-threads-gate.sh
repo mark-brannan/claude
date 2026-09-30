@@ -64,12 +64,14 @@ command -v gh >/dev/null 2>&1 || block "pr-threads-gate: gh is not installed her
 # resolves through gh to whatever PR its current branch has; no PR there is
 # fine (a `gh pr list` from a repo with no branch PR, say).
 prs=$(sort -u "$record" | while IFS="$(printf '\t')" read -r kind a b c; do
+  # The leading ( on each pattern is load-bearing: macOS /bin/sh is bash 3.2,
+  # which cannot parse a bare `pattern)` inside $(...) and kills the gate.
   case "$kind" in
-    repo)
+    (repo)
       # dotfiles#224: a read never gates the Stop, whatever threads it has.
       [ "$c" = read ] && continue
       printf '%s\t%s\n' "$a" "$b" ;;
-    cwd)
+    (cwd)
       [ -d "$a" ] || continue
       # The PR url names the base repo, which is where the threads live; the
       # head repo would be wrong for a PR from a fork.
