@@ -74,7 +74,7 @@ GitHub home. Take the first line that fits:
   epic file's session list; a `ready` issue when no epic owns it.
 - **Half-done agent work** → the log and the hand-off prompt, as bare links
   with no state adjectives. A pushed branch has a PR or is a finding.
-- **Click work only the user can do** → a card under `## Solace's`, and only
+- **Click work only the user can do** → a card under `## Human's`, and only
   when both proofs below are on the line. "Needs a credential" is not a
   reason unless the credential cannot be given to an agent.
 - **An agent rabbit-trail** not worth an issue, or too private for one →
@@ -92,7 +92,7 @@ Three sections, in this order:
 - `## Needs ruling` — decisions that failed the one-way-door test. Cards
   are grouped under `### <project>` subheadings, `### global` when no
   project owns it; `###` headings appear nowhere else on the board.
-- `## Solace's` — click work an agent cannot do, or that the user has chosen
+- `## Human's` — click work an agent cannot do, or that the user has chosen
   to do by hand to learn it.
 - `## Claude's` — agent rabbit-trails and future checks. One flat list,
   never surfaced to the user.
@@ -166,7 +166,7 @@ repo's uncommitted board diff again at Stop. It rejects:
 8. a ruling card missing any of `default:`, `undo:`, `until:`, `risk:`,
    `judgment:`, or whose `judgment:` is not one of the five kinds
    (skipped for a `kind: tentative ADR` card, which rule 10 checks instead);
-9. a `## Solace's` card missing `why you:`, or missing `why this:` when
+9. a `## Human's` card missing `why you:`, or missing `why this:` when
    `why you:` is not `learn`;
 10. a `kind: tentative ADR` card missing any of `gates:`, `settle:`, `repos:`,
     `judgment:`, or whose `judgment:` is not one of the five kinds.

@@ -37,7 +37,7 @@ cd "$S/repo" || exit 1
   printf -- '- [ ] **Engine pin** — decide whether to pin the engine by tag ([o/r#93](https://github.com/o/r/pull/93))\n'
   printf -- '### colregs\n'
   printf -- '- [ ] **Give-way rule** — decide whether rule 15 wins ([o/r#94](https://github.com/o/r/pull/94))\n'
-  printf '\n## Solace'"'"'s\n- [ ] **Not an agent card** — [x](https://example.invalid)\n\n## Claude'"'"'s\n'
+  printf '\n## Human'"'"'s\n- [ ] **Not an agent card** — [x](https://example.invalid)\n\n## Claude'"'"'s\n'
   printf -- '- [ ] **Card 0** — linked to its evidence, worked elsewhere ([o/beta#5](https://github.com/o/beta/pull/5)) repo: o/alpha\n'
   for i in 1 2 3 4 5 6 7 8 9; do
     printf -- '- [ ] **Card %s** — a card body long enough to be cut at eighty characters when brief is asked for ([link](https://example.invalid/%s))\n' "$i" "$i"
@@ -150,19 +150,19 @@ eq 'topic looked up once' 1 "$(calls 'repo view o/alpha --json repositoryTopics'
 eq 'repo set from the topic' 1 "$(calls 'repo list o --topic project-demo')"
 eq 'two account-wide searches' 2 "$(calls 'search ')"
 OUT_ALL=$OUT
-OUT=$(section "Solace's turn")
-has 'ready PR is Solace'"'"'s turn' '^\| \[alpha#10\]\(https://github.com/o/alpha/pull/10\) \| Ready PR \|  \|$'
-has 'release PR (no checks, bot author) is Solace'"'"'s turn, author named' '^\| \[alpha#14\].* \| Release PR \| by release-please\[bot\]'
-lacks 'no issue reaches Solace'"'"'s turn' 'alpha#2[0-9]'
+OUT=$(section "Human's turn")
+has 'ready PR is Human'"'"'s turn' '^\| \[alpha#10\]\(https://github.com/o/alpha/pull/10\) \| Ready PR \|  \|$'
+has 'release PR (no checks, bot author) is Human'"'"'s turn, author named' '^\| \[alpha#14\].* \| Release PR \| by release-please\[bot\]'
+lacks 'no issue reaches Human'"'"'s turn' 'alpha#2[0-9]'
 lacks 'the (assigned) suffix is gone' '\(assigned\)'
-lacks 'queued PR not Solace'"'"'s turn' 'alpha#11'
-lacks 'threaded PR not Solace'"'"'s turn' 'alpha#12'
-lacks 'red PR not Solace'"'"'s turn' 'alpha#13'
-lacks 'draft PR not Solace'"'"'s turn' 'beta#5'
+lacks 'queued PR not Human'"'"'s turn' 'alpha#11'
+lacks 'threaded PR not Human'"'"'s turn' 'alpha#12'
+lacks 'red PR not Human'"'"'s turn' 'alpha#13'
+lacks 'draft PR not Human'"'"'s turn' 'beta#5'
 OUT=$(section "Queued (auto-merge)"); has 'queued PR listed separately' '^\| \[alpha#11\].* \| Queued PR \|'
 OUT=$OUT_ALL
 has 'Needs ruling reads the board section' "^Needs ruling, showing 2 of 2$"
-first_section=$(printf '%s\n' "$OUT_ALL" | grep -E "^(Needs ruling|Solace's turn|Queued|Ready:|Board \()" | head -1)
+first_section=$(printf '%s\n' "$OUT_ALL" | grep -E "^(Needs ruling|Human's turn|Queued|Ready:|Board \()" | head -1)
 assert 'Needs ruling prints before every GitHub bucket' [ "$first_section" = "Needs ruling, showing 2 of 2" ]
 assert 'and after the counts header' \
   [ "$(printf '%s\n' "$OUT_ALL" | grep -nE '^(counts:|Needs ruling)' | head -1 | cut -d: -f1)" -lt \
@@ -211,8 +211,8 @@ OUT=$OUT_ALL
 has 'board heading with counts' "^Board \(## Claude's, showing 8 of 10\)$"
 eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -c '^- \*\*Card ')"
 lacks 'ticked card dropped' 'Ticked card'
-has 'Solace section shown with its count' "^Board \(## Solace's, showing 1 of 1\)$"
-OUT=$(section "Board (## Solace's")
+has 'Human's section shown with its count' "^Board \(## Human's, showing 1 of 1\)$"
+OUT=$(section "Board (## Human's")
 has 'click-work card shown' 'Not an agent card'
 OUT=$OUT_ALL
 has 'full mode keeps the whole card' 'eighty characters when brief is asked for \(\[link\]'
@@ -351,7 +351,7 @@ mv "$S/state/state/global/kanban.md" "$S/kb.bak"; run; has 'missing board named'
 run
 has 'pickup bucket present' '^Pickup: none$'
 eq 'pickup is the first bucket' 'Pickup: none' \
-  "$(printf '%s\n' "$OUT" | grep -nE '^(Pickup|Needs ruling|Solace|Queued|Ready|Blocked|Untriaged|Stranded)' | head -1 | cut -d: -f2-)"
+  "$(printf '%s\n' "$OUT" | grep -nE '^(Pickup|Needs ruling|Human|Queued|Ready|Blocked|Untriaged|Stranded)' | head -1 | cut -d: -f2-)"
 mkdir -p "$S/state/state/global/pickup"
 printf 'status: open\nupdated: 2026-09-09T10:00:00Z\nsession: abcd1234\nmodel: claude-opus-5-5\nbranch: alpha claude/x (1 ahead, clean)\npr: none\nwhere: w\nprompt: p\n---\nFinish the thing\nlink: o/alpha#10\nmodel: opus\neffort: high\n' \
   > "$S/state/state/global/pickup/2026-09-09T10-00-abcd1234.md"

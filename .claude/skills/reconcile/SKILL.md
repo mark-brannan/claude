@@ -8,7 +8,7 @@ description: Check the board and its memos against GitHub reality — a card on 
 Record vs. reality. Every board card, decision memo and "Pending:" tail is a
 claim about GitHub or repo state; this skill checks the claim, not the
 decision behind it. Sonnet-shaped: many cheap `gh` calls, no open questions.
-`/sweep` prunes and reranks `## Needs ruling` / `## Solace's`; reconcile
+`/sweep` prunes and reranks `## Needs ruling` / `## Human's`; reconcile
 corrects stale *facts* anywhere in the board or the memos, including
 `## Claude's`. Run one after the other, not instead of.
 

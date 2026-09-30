@@ -577,7 +577,7 @@ pickup_item
 # protocol: a floor block at the end of "Where this stands" (last touched,
 # branch, PR), hook-owned by its markers, model text above it untouched;
 # and, on the first thread the transcript touched, the user's last words
-# verbatim under "Solace's words", one dated sub-heading per session,
+# verbatim under "Human's words", one dated sub-heading per session,
 # overwritten only while it still reads exactly as the hook wrote it.
 curia_floor() {  # curia_floor <roll.md>
   local t tmp
@@ -621,7 +621,7 @@ curia_said() {  # curia_said <roll.md>; $cu_words carries the text
       nq = split(ENVIRON["CS_WORDS"], q, "\n")
       sw = 0; swend = n + 1; own = 0; ownend = 0
       for (i = 1; i <= n; i++) {
-        if (!sw) { if (lines[i] ~ /^## Solace.s words/) sw = i }
+        if (!sw) { if (lines[i] ~ /^## Human.s words/) sw = i }
         else if (lines[i] ~ /^## /) { swend = i; break }
       }
       if (!sw) { for (i = 1; i <= n; i++) print lines[i]; exit }

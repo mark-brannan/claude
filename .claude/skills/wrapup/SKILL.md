@@ -160,7 +160,7 @@ session that archived in step 0 has nothing to do here.
 
 Not before step 2b has passed its check. The closing message holds exactly
 two things: the hand-off prompt, and links to the `## Needs ruling` and
-`## Solace's` cards this session wrote. Nothing else. If nothing hit a
+`## Human's` cards this session wrote. Nothing else. If nothing hit a
 one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.
 

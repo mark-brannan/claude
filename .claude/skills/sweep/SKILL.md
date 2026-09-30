@@ -1,6 +1,6 @@
 ---
 name: sweep
-description: Garbage-collect the global board's `## Needs ruling` and `## Solace's` sections — find cards already ruled elsewhere or gone stale, show them with proof, delete or move only what the user ticks, and rerank the rest by what they block. Use on "/sweep", "sweep the board", "what's stale", "prune the rulings", and before `worklist` or `/card-helper` shows the board. `--dry-run` reports and changes nothing.
+description: Garbage-collect the global board's `## Needs ruling` and `## Human's` sections — find cards already ruled elsewhere or gone stale, show them with proof, delete or move only what the user ticks, and rerank the rest by what they block. Use on "/sweep", "sweep the board", "what's stale", "prune the rulings", and before `worklist` or `/card-helper` shows the board. `--dry-run` reports and changes nothing.
 ---
 
 # Sweeping the board
@@ -27,7 +27,7 @@ is yours to work, not to tidy.
    on it. State the reason in one clause.
 3. **Rank** the survivors: what the card blocks now, then the consequence of
    leaving it, then its `until:`. A card with no `until:` at all — a
-   `## Solace's` click-work card; `/card-write` and `kanban-lint.sh` allow
+   `## Human's` click-work card; `/card-write` and `kanban-lint.sh` allow
    one without it — ranks above every card that has one: it never expires on
    a date, so treat it as always blocking until the user clears it by hand. A
    card that blocks nothing and has no consequence is not shown; take its
@@ -63,7 +63,7 @@ changes, on a bare tick with no action attached:
 
 Never a free-text question outside Dig.
 
-A `learn` card under `## Solace's` is never proposed. It drops only when
+A `learn` card under `## Human's` is never proposed. It drops only when
 the user says they have it.
 
 ## After the tick

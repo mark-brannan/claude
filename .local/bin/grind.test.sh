@@ -93,7 +93,7 @@ case "\$1" in
   *) repos='["o/alpha","o/beta","o/gamma"]'
   ready=\$(jq -c -s '.[0] + [.[1][] | .repo = (.repo // "o/beta")]' <(printf '%s' "\$ready") <(jq -c '[.[] | {kind:"issue", repo, number, title, url, body, labels:(.labels|map(.name))}]' "$S/ready-beta.json")) ;; esac
 jq -nc --argjson r "\$ready" --argjson b "\$blocked" --argjson p "\$prs" --argjson c "\$cards" --argjson ah "\$awaiting" --argjson repos "\$repos" \
-  '{owner:"o", repos:\$repos, buckets:{awaiting_human:\$ah, queued:[], not_ready:\$p, ready:\$r, blocked:\$b, untriaged:[], stranded:[], rulings:[], solaces:[], claudes:\$c}}'
+  '{owner:"o", repos:\$repos, buckets:{awaiting_human:\$ah, queued:[], not_ready:\$p, ready:\$r, blocked:\$b, untriaged:[], stranded:[], rulings:[], humans:[], claudes:\$c}}'
 WL
 chmod +x "$S/bin/worklist"
 

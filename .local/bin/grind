@@ -471,7 +471,7 @@ done
 
 # --- review band: pause dispatch while PRs awaiting a look pile up -----------
 # memory: review-band-five-to-ten (Solace, 2026-09-22). The count is
-# worklist's own buckets.awaiting_human -- the PRs its render calls "Solace's
+# worklist's own buckets.awaiting_human -- the PRs its render calls "Human's
 # turn" -- so grind and worklist cannot disagree about whether the band is
 # full. The hysteresis (paused at ten, resumes below five) lives in a marker
 # file beside the per-repo lock: a `grind --prs` timer firing is a fresh process.

@@ -39,7 +39,7 @@ plain bullets — they're prose cards, not tabular data:
 Pickup                    open pickup items, newest first, from
                           `pickup-list` — a session resuming work starts
                           there and reads no further
-Solace's turn             PRs ready for the user: not draft, mergeable, checks
+Human's turn             PRs ready for the user: not draft, mergeable, checks
                           green, no unresolved threads, no auto-merge
                           (failing check names printed in Notes, never a
                           boolean)

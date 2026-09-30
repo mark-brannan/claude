@@ -6,7 +6,7 @@
 # PR, card, epic Status line, log) and every copy drifted. Sessions then spent
 # their opening turns "sweeping" the board -- editing prose to match GitHub
 # -- and the user still could not tell what was theirs to do. Every fact now has one
-# home (the PR or issue) and this is the one view over them: Solace's turn,
+# home (the PR or issue) and this is the one view over them: Human's turn,
 # queued, ready, blocked, untriaged, stranded branches, and the three board
 # sections -- questions that need a ruling, click work only the user can do,
 # and the agent's rabbit-trails.
@@ -281,7 +281,7 @@ def labels: [(.labels.nodes // [])[].name];
      not_ready: ($prs | map(select((.autoMerge|not) and (.awaiting_human|not)))),
      ready: $rd, blocked: $bl, untriaged: $untri, stranded: $stranded,
      rulings: ($cards | map(select(.section == "rulings"))),
-     solaces: ($cards | map(select(.section == "solaces"))),
+     humans: ($cards | map(select(.section == "humans"))),
      claudes: ($cards | map(select(.section == "claudes"))) }) as $buckets
 | $c + { buckets: $buckets, bucket_counts: ($buckets | map_values(length)),
          summary: {deferred: $deferred, fails: $fails, trunc: $trunc, acct: $acct, scope: $scope} }
@@ -317,7 +317,7 @@ def row: {ref: ref_link, item: (.title|cut), notes};
    else "counts: \($s.scope.prs)\(if $s.scope.prs_more then "+" else "" end) open PRs, \($s.scope.issues)\(if $s.scope.issues_more then "+" else "" end) open issues in scope; \($s.acct)" end) as $counts
 | [ $c.label + " " + ($c.repos | map(split("/")[1]) | join(", ")) ]
   + $s.fails + $s.trunc + [ $counts, "", "@@RULINGS@@",
-  table_bucket("Solace'"'"'s turn"; "Notes"; $b.awaiting_human | map(row)),
+  table_bucket("Human'"'"'s turn"; "Notes"; $b.awaiting_human | map(row)),
   table_bucket("Queued (auto-merge)"; "Notes"; $b.queued | map(row)),
   table_bucket("Stranded branches (no PR)"; "Notes"; $b.stranded | map(.item |= cut)),
   table_bucket("Ready"; "Updated"; $b.ready | map(row)),
@@ -455,7 +455,7 @@ section_of() {
 
 # board_cards <board> -- every card on the three board sections as a JSON
 # array of {kind:"card", section, group, text, name, link, repo}: section is
-# rulings | solaces | claudes, group the "### <name>" heading above the card
+# rulings | humans | claudes, group the "### <name>" heading above the card
 # ("global" when none), name the leading **bold**, link the last (url) on the
 # line, and repo the repo that does the work: the card's own `repo: owner/name`
 # field when it has one -- a card's link is often the evidence, not the fix,
@@ -467,7 +467,7 @@ board_cards() {
   awk '
     /^## / { s = ""; g = "global"
       if ($0 ~ /^## Needs ruling[[:space:]]*$/) s = "rulings"
-      else if ($0 ~ /^## Solace/) s = "solaces"
+      else if ($0 ~ /^## Human/) s = "humans"
       else if ($0 ~ /^## Claude/) s = "claudes"
       next }
     s == "" { next }
@@ -539,7 +539,7 @@ render() {
     fi
     echo
     if [ -n "$kb" ]; then
-      section_of "$kb" '^## Solace' "Board (## Solace's" ")"
+      section_of "$kb" '^## Human' "Board (## Human's" ")"
       section_of "$kb" '^## Claude' "Board (## Claude's" ")"
     else echo "$board_err"; fi
   } | if [ "$brief" = 1 ]; then

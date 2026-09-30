@@ -55,7 +55,7 @@ cat > "$SR/state/global/kanban.md" <<'EOF'
 - [x] a ruled one
 - [ ] another question
 
-## Solace's
+## Human's
 
 - [ ] click work does not count
 EOF

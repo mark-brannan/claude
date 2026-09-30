@@ -31,7 +31,7 @@ Not yet sat. The first sitting reads the origin and opens the dialogue at
 <!-- Derived; rewritten in place. Numbered across sessions — numbering
      continues, never restarts. Each by concept and domain word. -->
 
-## Solace's words
+## Human's words
 
 <!-- Append-only: a new dated sub-heading per sitting; never edit an old
      one. The one exception is a pin: a passage moved to the top of this

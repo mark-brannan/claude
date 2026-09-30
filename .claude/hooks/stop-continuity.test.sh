@@ -218,7 +218,7 @@ eq 'a new prompt reopens the item' open "$(sfield status)"
 # --- curia threads: a touched thread gets the floor and the last words --------
 # The transcript names a curia (`confer <id>` here); the Stop hook stamps a
 # floor block at the end of "Where this stands" -- model text above survives
-# -- and appends the user's last words verbatim under "Solace's words". Both
+# -- and appends the user's last words verbatim under "Human's words". Both
 # idempotent across Stops; a model edit to the words entry is never clobbered.
 CURD="$HOME/.claude/state/global/curia/test-question"
 mkdir -p "$CURD"
@@ -232,7 +232,7 @@ cat > "$CURD/roll.md" <<'EOF'
 
 Model text that must survive.
 
-## Solace's words
+## Human's words
 
 <!-- Append-only; a new dated sub-heading per sitting. -->
 EOF
@@ -247,10 +247,10 @@ has 'the floor block is written' '^<!-- floor' "$TH"
 has 'the floor carries last-touched and the session' "^- last touched: .* session ${SID:0:8} " "$TH"
 has 'the floor carries the branch state' '^- branch: work claude/work \(0 ahead, clean\)' "$TH"
 has 'model text above the floor survives' '^Model text that must survive\.$' "$TH"
-has 'the last words land under Solace'"'"'s words' "^### .* session ${SID:0:8} \(hook\)$" "$TH"
+has 'the last words land under Human'"'"'s words' "^### .* session ${SID:0:8} \(hook\)$" "$TH"
 has 'verbatim, as a blockquote' '^> confer test-question please$' "$TH"
 assert 'the floor sits inside Where this stands' \
-  bash -c "awk '/^## Where this stands/{f=1} /^## Solace/{exit} f&&/^<!-- floor/{ok=1} END{exit !ok}' '$TH'"
+  bash -c "awk '/^## Where this stands/{f=1} /^## Human/{exit} f&&/^<!-- floor/{ok=1} END{exit !ok}' '$TH'"
 
 # A second Stop rewrites, never duplicates.
 TP="$TP3" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
