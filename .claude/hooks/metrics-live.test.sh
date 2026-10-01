@@ -1068,5 +1068,35 @@ payload "$TP15" aft3 "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "/stay 30
   | bash "$HOOK" prompt 0 >/dev/null 2>&1
 t '`stay <minutes>` is a stay' '[60,1,true,false]' "$(after)"
 
+# --- 16. how a sitting rung's sitting ended -----------------------------------
+# A `stay <n>` keeps its minutes; each crossing gets minutes to the sitting's
+# final prompt, on Stop and at the next sitting start, and whether a `stay <n>`
+# deadline was overrun. A Stop that changes nothing appends nothing.
+shift_ts() {  # shift_ts <file> <kind> <minutes> -- move that kind's ts back
+  jq -c --arg k "$2" --argjson m "$3" 'if .kind == $k
+    then .ts = ((.ts | fromdateiso8601) - $m * 60 | todateiso8601) else . end' "$1" > "$1.t" && mv "$1.t" "$1"
+}
+said() { payload "$TP15" "$1" "$SCRATCH" UserPromptSubmit | jq -c --arg p "$2" '. + {prompt: $p}' \
+  | bash "$HOOK" prompt 0 >/dev/null 2>&1; }
+stop() { payload "$TP15" "$1" "$SCRATCH" Stop | bash "$HOOK" stop 0 >/dev/null 2>&1; }
+last() { jq -c 'select(.kind == "time_last") | [.min_to_last, .overrun]' "$STATE/metrics/crossings/$1.jsonl"; }
+
+sitting end1 61 5; said end1 go; shift_ts "$STATE/metrics/crossings/end1.jsonl" time 10
+said end1 'stay 30'
+t '`stay <n>` keeps its minutes' 30 \
+  "$(jq 'select(.kind == "time_after") | .stay_min' "$STATE/metrics/crossings/end1.jsonl")"
+stop end1
+t 'Stop stamps minutes to the last prompt, deadline not overrun' '[10,false]' "$(last end1)"
+stop end1
+t 'and an unchanged reading is not stamped again' 1 "$(last end1 | wc -l | tr -d ' ')"
+
+sitting end2 61 5; said end2 go; X16="$STATE/metrics/crossings/end2.jsonl"
+shift_ts "$X16" time 15; said end2 'stay 2'; shift_ts "$X16" time_after 5; stop end2
+t 'a prompt past the `stay <n>` deadline is an overrun' '[15,true]' "$(last end2)"
+
+sitting end3 61 5; said end3 go; shift_ts "$STATE/metrics/crossings/end3.jsonl" time 50
+sitting end4 80 40; said end4 back
+t 'the next sitting start stamps every chat, from the old last prompt' '[10,null]' "$(last end3)"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

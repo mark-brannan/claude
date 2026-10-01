@@ -607,20 +607,41 @@ is_stay() {
 # gap. Runs before the engine can record a crossing, so the crossing's own
 # prompt never stamps it. Measured only; nothing here speaks.
 stamp_time_after() {
-  local f="$CROSSD/$sid.jsonl" stay=false out
+  local f="$CROSSD/$sid.jsonl" stay=false sm out
   [ -f "$f" ] || return 0
-  is_stay "${prompt_text:-}" && stay=true
+  is_stay "${prompt_text:-}" && { stay=true; sm=$(printf '%s' "$prompt_text" | tr -cd 0-9); }
   out=$(jq -sc --argjson now "$now_ts" --arg ts "$now" --argjson stay "$stay" \
+               --argjson sm "${sm:-null}" \
                --argjson gap "$((NAG_SIT_GAP_MIN * 60))" \
     '[.[] | select(.kind == "time_after") | .crossing_ts] as $done
      | .[] | select(.kind == "time") | .ts as $c
      | select(any($done[]; . == $c) | not)
      | ($now - ($c | fromdateiso8601)) as $s
      | {session_id, ts: $ts, kind: "time_after", at, crossing_ts: $c,
-        min: ($s / 60 | floor), stay: $stay, quiet: ($s > $gap)}' \
+        min: ($s / 60 | floor), stay: $stay, stay_min: $sm, quiet: ($s > $gap)}' \
     "$f" 2>/dev/null) || return 0
   [ -n "$out" ] && printf '%s\n' "$out" >> "$f" 2>/dev/null
   return 0
+}
+
+# <files> | stamp_time_last <final prompt> <sitting start>: minutes from each of
+# the sitting's crossings to its final prompt, and whether a `stay <n>` was overrun.
+# Stamped on Stop and at the next sitting start when changed; the latest one counts.
+stamp_time_last() {
+  local fin=$1 ss=$2 f out
+  while IFS= read -r f; do
+    out=$(jq -sc --argjson fin "$fin" --argjson ss "$ss" --arg ts "$now" \
+      '(map(select(.kind == "time_last")) | INDEX(.crossing_ts)) as $last
+       | (map(select(.kind == "time_after")) | INDEX(.crossing_ts)) as $aft
+       | .[] | select(.kind == "time") | .ts as $c | ($c | fromdateiso8601) as $cs
+       | select($cs >= $ss and $cs <= $fin) | $aft[$c] as $a
+       | {session_id, ts: $ts, kind: "time_last", at, crossing_ts: $c,
+          min_to_last: (($fin - $cs) / 60 | floor), overrun: (if $a.stay_min == null
+            then null else $fin > ($a.ts | fromdateiso8601) + $a.stay_min * 60 end)}
+       | select([$last[$c] | .min_to_last, .overrun] != [.min_to_last, .overrun])' \
+      "$f" 2>/dev/null) || continue
+    [ -n "$out" ] && printf '%s\n' "$out" >> "$f" 2>/dev/null
+  done
 }
 
 # Human nags (sitting, friction) gate on this; machine nags (context,
@@ -660,6 +681,8 @@ if [ "$run_engine" -eq 1 ]; then
     stamp_time_after
     if [ "$last_prompt" -gt 0 ] \
        && [ $((now_ts - last_prompt)) -gt $((NAG_SIT_GAP_MIN * 60)) ]; then
+      find "$CROSSD" -type f -mmin -$(( (now_ts - sit_start) / 60 + 1 )) 2>/dev/null \
+        | stamp_time_last "$last_prompt" "$sit_start"
       sit_start=$now_ts
       time_line=0
     fi
@@ -694,6 +717,7 @@ if [ "$run_engine" -eq 1 ]; then
       add_line "$t"; record_crossing bed_ask 0 "$t"
     fi
     save_sitting
+  elif [ "$EVENT" = stop ]; then echo "$CROSSD/$sid.jsonl" | stamp_time_last "$last_prompt" "$sit_start"
   fi
   sit_quiet=0; [ "$quiet_until" -gt "$now_ts" ] && sit_quiet=1
 
