@@ -1,0 +1,151 @@
+#!/bin/sh
+# The scoping lock: one writer per scoping target, at a time.
+#
+# Ruled by Solace, 2026-10-01 (one-entry-point curia, §1t and §1u, pen): the
+# scoping touch point runs one session per target at a time; a held scoping
+# refuses rather than warns; the lock is a second, hard file beside the
+# curia's LIVE, which stays the soft sitting marker it is. The file and its
+# format are the agent's, Solace shown the format:
+#
+#   <session-id> <ISO-8601 UTC> <read>
+#
+# the same one-line shape as LIVE, plus <read>: the commit of the record the
+# run read, so a later run can tell whether the record moved since. Given the
+# record's path, `take` takes its commit after syncing, never before; given
+# anything else (an issue's updatedAt), it records that as is.
+#
+# A GATE, NOT A CONVENIENCE: anything that stops the lock being read from
+# origin, taken and pushed -- no state repo, no origin, a pull that will not
+# rebase, a rejected push -- exits 2 and the run stops. The lock is pushed at once, not left for the Stop hook's debounced
+# push, because a lock another machine cannot see is no lock.
+#
+# Stale after SCOPING_LOCK_STALE_SECS (default 2h, the claim stamp's floor;
+# pencil). A stale lock is taken over, and the takeover says whose it was.
+#
+# Usage:
+#   scoping-lock take    <dir> <session-id> <record-file|read>
+#                                                   0 taken or refreshed,
+#                                                   1 held (names the holder),
+#                                                   2 could not take
+#   scoping-lock read    <dir>      `free`, or `live|stale <sid> <at> <read> <age>m`
+#   scoping-lock release <dir> <session-id>         removes this session's lock only
+#   scoping-lock read-of <file>     <sha>, or <sha>+dirty when the file has edits
+#
+# <dir> is the target's folder, relative to the state repo or absolute:
+# state/global/curia/<id> for a curia, state/global/scoping/<key> otherwise.
+set -u
+
+SR=${CLAUDE_STATE_REPO:-$HOME/claude_prompts_scratch}
+STALE=${SCOPING_LOCK_STALE_SECS:-7200}
+SELF=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")  # $0 may be relative; we cd below
+
+die() { printf 'scoping-lock: %s\n' "$*" >&2; exit 2; }
+
+rel() {  # rel <dir> -> path of LOCK relative to the state repo
+  case "$1" in
+    "$SR"/*) printf '%s/LOCK' "${1#"$SR"/}" ;;
+    /*) die "$1 is outside the state repo $SR" ;;
+    *) printf '%s/LOCK' "${1%/}" ;;
+  esac
+}
+
+epoch_of() {  # ISO-8601 UTC -> epoch seconds, GNU or BSD date
+  date -u -d "$1" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || echo 0
+}
+
+describe() {  # describe <line> -> live|stale <sid> <at> <read> <age>m
+  set -- $1
+  [ $# -ge 2 ] || { echo "stale ? ? ? ?m"; return; }
+  age=$(( $(date -u +%s) - $(epoch_of "$2") ))
+  state=live; [ "$age" -ge "$STALE" ] && state=stale
+  printf '%s %s %s %s %sm\n' "$state" "$1" "$2" "${3:-?}" $((age / 60))
+}
+
+sync() {  # bring origin's copy of every lock in before reading this one
+  timeout 120 git pull --rebase --autostash -q >/dev/null 2>&1 && return 0
+  git rebase --abort >/dev/null 2>&1; return 1
+}
+
+push() {  # mirrors stop-continuity.sh: two tries, never leave a rebase wedged
+  for attempt in 1 2; do
+    timeout 120 git pull --rebase --autostash -q >/dev/null 2>&1 \
+      || git rebase --abort >/dev/null 2>&1
+    timeout 120 git push -q origin HEAD >/dev/null 2>&1 && return 0
+    sleep "$attempt"
+  done
+  return 1
+}
+
+commit_lock() {  # commit_lock <lock> <message>; only that one path
+  # A re-take within the same second writes the same line: nothing to commit.
+  git diff --quiet HEAD -- "$1" 2>/dev/null && git ls-files --error-unmatch -- "$1" >/dev/null 2>&1 && return 0
+  git -c user.name="${GIT_AUTHOR_NAME:-Claude}" -c user.email="${GIT_AUTHOR_EMAIL:-noreply@anthropic.com}" \
+    -c commit.gpgsign=false commit -q --only -m "$2" -- "$1" >/dev/null 2>&1
+}
+
+[ $# -ge 2 ] || { sed -n '/^# Usage:/,/^# <dir>/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+cmd=$1; shift
+
+if [ "$cmd" = read-of ]; then
+  f=$1; d=$(dirname "$f")
+  sha=$(git -C "$d" log -1 --format=%h -- "$(basename "$f")" 2>/dev/null)
+  [ -n "$sha" ] || die "$f has no commit"
+  git -C "$d" diff --quiet HEAD -- "$(basename "$f")" 2>/dev/null || sha="$sha+dirty"
+  echo "$sha"; exit 0
+fi
+
+[ -d "$SR/.git" ] || die "no state repo at $SR"
+cd "$SR" || die "cannot enter $SR"
+lock=$(rel "$1") || exit 2
+
+case "$cmd" in
+  read)
+    [ -f "$lock" ] && describe "$(cat "$lock")" || echo free ;;
+
+  take)
+    [ $# -eq 3 ] || die "take needs <dir> <session-id> <record-file|read>"
+    sid=$2; read_at=$3
+    sync || die "cannot sync with origin; a lock another machine cannot see is no lock"
+    case "$read_at" in /*) rf=$read_at ;; *) rf=$SR/$read_at ;; esac
+    if [ -f "$rf" ]; then read_at=$(sh "$SELF" read-of "$rf") || exit 2; fi
+    if [ -f "$lock" ]; then
+      d=$(describe "$(cat "$lock")"); set -- $d
+      if [ "$2" != "$sid" ]; then
+        if [ "$1" = live ]; then
+          printf 'held: %s since %s, read %s, %s ago (%s)\n' "$2" "$3" "$4" "$5" "$lock"
+          exit 1
+        fi
+        printf 'stale: %s since %s, %s ago; taking it over\n' "$2" "$3" "$5"
+      fi
+    fi
+    mkdir -p "$(dirname "$lock")" || die "cannot create $(dirname "$lock")"
+    printf '%s %s %s\n' "$sid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$read_at" > "$lock" || die "cannot write $lock"
+    before=$(git rev-parse HEAD)
+    git add -- "$lock" && commit_lock "$lock" "scoping lock: take $lock (${sid%"${sid#????????}"})" \
+      || die "cannot commit $lock"
+    ours=$(git rev-parse HEAD)
+    if ! push; then
+      # A lost race or a dead origin. An unpushed lock commit left here would
+      # conflict with the winner's on every later pull, so drop it.
+      [ "$ours" != "$before" ] && [ "$(git rev-parse HEAD)" = "$ours" ] && git reset -q --keep "$before"
+      die "lock not pushed, so not taken; another machine may hold it. Run read after the next sync"
+    fi
+    # Two sessions on this machine can both pass the check above; the file says who won.
+    # shellcheck disable=SC2046  # splitting wanted: the line's three fields
+    set -- $(cat "$lock"); [ "$1" = "$sid" ] || { printf 'held: %s (%s)\n' "$1" "$lock"; exit 1; }
+    echo "taken: $lock" ;;
+
+  release)
+    sid=${2:-}; [ -n "$sid" ] || die "release needs <dir> <session-id>"
+    sync || die "cannot sync with origin"
+    [ -f "$lock" ] || { echo free; exit 0; }
+    # shellcheck disable=SC2046  # splitting wanted: the line's three fields
+    set -- $(cat "$lock")
+    [ "${1:-}" = "$sid" ] || { printf 'not ours: %s holds %s; left in place\n' "${1:-?}" "$lock"; exit 1; }
+    git rm -q -- "$lock" >/dev/null 2>&1 || rm -f "$lock"
+    commit_lock "$lock" "scoping lock: release $lock (${sid%"${sid#????????}"})" || die "cannot commit the release"
+    push || die "release committed but not pushed; the next Stop pushes it"
+    echo "released: $lock" ;;
+
+  *) die "unknown command $cmd" ;;
+esac
