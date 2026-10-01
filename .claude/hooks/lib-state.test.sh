@@ -326,5 +326,24 @@ got=$(HOOK_DIR="$FAKE" ARCHIVABLE_HOME_FILE="$HF" bash -c '
 if [ "$got" = "|home: pr https://github.com/o/r/pull/1" ]; then pass=$((pass+1))
 else fail=$((fail+1)); echo "FAIL home line through file: got [$got]"; fi
 
+# --- unpushed_state: a commit on a differently-named remote branch ------------
+# `mergify stack push` leaves @{u} at origin/main and pushes to stack/<name>;
+# counting @{u}..HEAD called that pushed commit unpushed.
+STK="$SCRATCH/stack"; git clone -q "$ORIGIN" "$STK" >/dev/null 2>&1
+gitq "$STK" checkout -q -b main origin/feature
+gitq "$STK" push -q -u origin main
+gitq "$STK" checkout -q -b local-stack
+gitq "$STK" branch -q -u origin/main
+printf 'y\n' > "$STK/g"; gitq "$STK" add g; gitq "$STK" commit -q -m stacked
+ust() { bash -c '. "'"$HOOKS"'/lib-state.sh"; unpushed_state "$1" "$2"' _ "$@"; }
+eq_ust() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $1: expected [$2], got [$3]"; fi; }
+eq_ust "commit on no remote branch, @{u}=main: ahead 1" 'ahead 1' "$(ust "$STK" local-stack)"
+gitq "$STK" push -q origin local-stack:refs/heads/wip/sid
+eq_ust "same commit only on a wip/ salvage ref: still ahead 1" 'ahead 1' "$(ust "$STK" local-stack)"
+gitq "$STK" push -q origin local-stack:refs/heads/stack/x
+eq_ust "same commit on stack/x, @{u} still main: ahead 0" 'ahead 0' "$(ust "$STK" local-stack)"
+gitq "$STK" branch -q --unset-upstream
+eq_ust "no upstream, commit on a remote branch: safe" 'safe' "$(ust "$STK" local-stack)"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

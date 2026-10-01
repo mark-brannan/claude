@@ -151,6 +151,17 @@ eq 'detached off any remote branch: not archivable' \
   'not archivable: detached HEAD, no upstream to compare against' "$(verdict)"
 gitq "$WORK" checkout claude/work
 
+# --- @{u} is main, the commit lives on a stack/ branch (mergify stack push) --------
+gitq "$WORK" checkout -b claude/stacked main
+gitq "$WORK" branch -u origin/main
+echo seven >> "$WORK/f"; gitq "$WORK" add f; gitq "$WORK" commit -m stacked
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'on no remote branch: not archivable' 'not archivable: 1 commit(s) unpushed' "$(verdict)"
+gitq "$WORK" push origin claude/stacked:refs/heads/stack/claude-stacked
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
+eq 'pushed to stack/, @{u}=main: archivable' 'archivable' "$(verdict)"
+gitq "$WORK" checkout claude/work
+
 # --- "cannot verify" is never a pass ------------------------------------------------
 GH_FAIL=1 stop
 has 'unverified is not archivable' '^\*\*Verdict:\*\* not archivable: branch home unverified' "$CKPT"

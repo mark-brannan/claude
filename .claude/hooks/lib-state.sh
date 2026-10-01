@@ -104,38 +104,33 @@ git_event_re() {
 # metrics-live.sh that stop-continuity.sh had grown in #126 and #128/#143.
 #
 # Prints one word, plus a count for the first:
-#   ahead <n>     an upstream exists; n commits are not on it (n may be 0)
-#   unknown       an upstream exists, but the count could not be taken
-#   never-pushed  no upstream, and there is work on the branch to lose
-#   safe          no upstream, but nothing on the branch to lose
+#   ahead <n>     an upstream exists; n commits are on no origin branch (n may be 0)
+#   unknown       the count could not be taken
+#   never-pushed  no upstream, and there are commits on no origin branch
+#   safe          no upstream, but every commit already lives on an origin branch
 #
-# The last two are the carve-outs. A detached HEAD whose commit already lives
-# on some remote branch is not a hazard (#128/#143), and a named branch with
-# no upstream is not one either until it is actually ahead of the default
-# branch (#126) -- the same test branch-home-gate.sh applies before it looks
-# for a home. `rev-list @{u}..HEAD` fails outright when there is no upstream,
-# and the `|| echo 0` that used to swallow that read a never-pushed branch as
-# fully pushed: the "lost work" failure one step earlier than #108/#110.
+# The count is `HEAD --not --remotes=origin`, never `@{u}..HEAD`: `mergify
+# stack push` leaves @{u} at origin/main while the commits go to a differently
+# named stack/ branch, so the upstream diff called pushed work unpushed. A
+# detached HEAD or a fresh branch with no upstream falls out of the same test.
+# `origin/wip/*` is excluded: those are the Stop hook's salvage refs, pushed
+# before this verdict is taken, and salvage is not publication -- counting
+# them read every salvaged branch as pushed. No origin refs at all reads safe.
 unpushed_state() {
-  local root="$1" branch="$2" n base ahead
+  local root="$1" n
 
+  # No origin refs at all (no remote, never fetched): nothing to be ahead of.
+  [ -n "$(git -C "$root" for-each-ref --count=1 refs/remotes/origin 2>/dev/null)" ] \
+    || { printf 'safe'; return 0; }
+  n=$(git -C "$root" rev-list --count HEAD --not --exclude='origin/wip/*' --remotes=origin 2>/dev/null || printf '')
+  [ -n "$n" ] || { printf 'unknown'; return 0; }
   if git -C "$root" rev-parse --verify -q --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-    n=$(git -C "$root" rev-list --count '@{u}..HEAD' 2>/dev/null || printf '')
-    [ -n "$n" ] && printf 'ahead %s' "$n" || printf 'unknown'
-    return 0
+    printf 'ahead %s' "$n"
+  elif [ "$n" -gt 0 ]; then
+    printf 'never-pushed'
+  else
+    printf 'safe'
   fi
-
-  if [ "$branch" = HEAD ] || [ -z "$branch" ]; then
-    [ -n "$(git -C "$root" branch -r --contains HEAD 2>/dev/null)" ] \
-      && printf 'safe' || printf 'never-pushed'
-    return 0
-  fi
-
-  base=$(git -C "$root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
-  base="${base:-origin/main}"
-  git -C "$root" rev-parse --verify -q "$base" >/dev/null 2>&1 || base=origin/master
-  ahead=$(git -C "$root" rev-list --count "$base..HEAD" 2>/dev/null || printf 0)
-  [ "${ahead:-0}" -gt 0 ] && printf 'never-pushed' || printf 'safe'
 }
 
 # archivable_reasons <work_root> <work_branch> [<session-id>] -- the reasons
