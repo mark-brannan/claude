@@ -100,7 +100,12 @@ Three sections, in this order:
 ## The line
 
 Every card: one line, a link, the action in the imperative, a short name
-distinctive enough for a later session to find. **The link is never
+distinctive enough for a later session to find, and last, its id. **Mint the
+id with `~/.local/bin/card-id mint`** just before writing the line, and paste
+it as the card's final field, `id: <id>`: epoch seconds then this session's
+eight hex, no separator (Solace, 2026-10-01). Fire and forget: the script
+consults nothing, the odds carry uniqueness. Never type, edit or reuse one; a card that moves sections keeps its id. Name a card by it in a
+hand-off — "card 1790836842077c62eb" is enough for the next session. **The link is never
 optional** — a card nobody but its author can resolve is not a card; neither
 is an action that cannot be stated without private paths, hosts or ports.
 Add `blocked: <dependency>` only when it is actually blocked. A
@@ -111,13 +116,13 @@ without it. Sections and checkboxes, not a table. **Order is priority:** the top
 the next to pull; place a new card where it belongs.
 
 ```markdown
-- [ ] **Short name** — action in the imperative ([link](https://...))
+- [ ] **Short name** — action in the imperative ([link](https://...)) id: 1790836842077c62eb
 ```
 
 A ruling card carries your evaluation, so that the ruling is one word:
 
 ```markdown
-- [ ] **Short name** — the question ([link](https://...)) default: <what you would do> undo: <the reversal and its cost> until: <event or date it can wait for> risk: <consequence if the default is wrong> judgment: <values | risk | direction | legal | people>
+- [ ] **Short name** — the question ([link](https://...)) default: <what you would do> undo: <the reversal and its cost> until: <event or date it can wait for> risk: <consequence if the default is wrong> judgment: <values | risk | direction | legal | people> id: <id>
 ```
 
 Any card may also carry `model:` and `effort:` (sonnet/opus/fable, and
@@ -126,7 +131,7 @@ event or a PR/issue link; the card is ready, or waiting until that. All three
 are optional on a `## Claude's` card and the lint never checks them:
 
 ```markdown
-- [ ] **Short name** — action in the imperative ([link](https://...)) model: sonnet effort: medium until: https://github.com/o/r/pull/5
+- [ ] **Short name** — action in the imperative ([link](https://...)) model: sonnet effort: medium until: https://github.com/o/r/pull/5 id: <id>
 ```
 
 `judgment:` is the gate. A call you cannot file under one of those five
@@ -142,13 +147,13 @@ carries `kind: tentative ADR` and `gates:`/`settle:`/`repos:` in place of
 sentence, and `judgment:` gates it as it gates any ruling card:
 
 ```markdown
-- [ ] **Short name** — the decision, one sentence ([link](https://...)) kind: tentative ADR gates: <what it gates> settle: <what would settle it> repos: <repo(s) it touches> judgment: <values | risk | direction | legal | people>
+- [ ] **Short name** — the decision, one sentence ([link](https://...)) kind: tentative ADR gates: <what it gates> settle: <what would settle it> repos: <repo(s) it touches> judgment: <values | risk | direction | legal | people> id: <id>
 ```
 
 A click-work card carries two proofs:
 
 ```markdown
-- [ ] **Short name** — action in the imperative ([link](https://...)) why you: <the mechanism an agent lacks, named — no API, a consent screen, a USB bus — or `learn`> why this: <evidence this is the confirmed fix, with the alternatives tried and ruled out>
+- [ ] **Short name** — action in the imperative ([link](https://...)) why you: <the mechanism an agent lacks, named — no API, a consent screen, a USB bus — or `learn`> why this: <evidence this is the confirmed fix, with the alternatives tried and ruled out> id: <id>
 ```
 
 `why this:` is what stops "update the secret in GitHub" when the workflow
@@ -178,7 +183,8 @@ repo's uncommitted board diff again at Stop. It rejects:
 9. a `## Human's` card missing `why you:`, or missing `why this:` when
    `why you:` is not `learn`;
 10. a `kind: tentative ADR` card missing any of `gates:`, `settle:`, `repos:`,
-    `judgment:`, or whose `judgment:` is not one of the five kinds.
+    `judgment:`, or whose `judgment:` is not one of the five kinds;
+11. a card with no `id:` field.
 
 ## Lifecycle
 

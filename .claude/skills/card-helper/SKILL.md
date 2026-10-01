@@ -13,7 +13,9 @@ their screen outranks anything you believe about it.
 
 Run `/sweep` first, so a card already closed elsewhere is never walked.
 Find it the way `/card-write` routes; its rules are the contract, don't
-paraphrase them here. An issue is walked exactly like a card. The default
+paraphrase them here. An issue is walked exactly like a card. A card can be
+named by its id (`card 1790836842077c62eb`): `~/.local/bin/worklist card <id>`
+prints it with its section, and every message about it carries the id. The default
 is the card or issue the user names, else the top card under `## Human's`:
 that's the work only the user can close, which is what this skill is for.
 A card there carries `why you:` and `why this:`; read both before the

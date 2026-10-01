@@ -41,7 +41,9 @@ Run `~/.local/bin/pickup-list`.
   one question this skill is allowed to ask.
 
 A `◆` line is a card from the board's `## Claude's`, not a session's item: its
-id is its link, it has no branch, and the card text is the whole hand-off.
+id is its `id:` field (its link, on a card from before ids), it has no branch,
+and the card text is the whole hand-off. A hand-off that says `card <id>` names
+one: `pickup-list show <id>` prints it, `pickup-list take <id>` claims it.
 Skip §3's checkout; the link is where the work starts.
 
 ## 2. Restate it, in three lines

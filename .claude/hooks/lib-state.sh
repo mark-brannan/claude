@@ -471,8 +471,8 @@ branch_brief() {
 # hand-off body, so the model is the previous session's recommendation; the
 # header's model (the session that wrote it) stands in only when the body
 # names none. A card's come from its own `model:`, `effort:`, `until:` fields
-# and its first link, which is also its id: a card has no other name, and a
-# claim on it is keyed by that link. A card's <updated> is the caller's to
+# and its first link; its id is its `id:` field (the link on a card minted
+# before ids), and a claim on it is keyed by that link. A card's <updated> is the caller's to
 # pass (claude_cards takes it from git blame); its status is `taken` while a
 # live claim stands, and claim is the holder's short session id.
 work_record() {
@@ -527,7 +527,7 @@ work_records() {
       else if (match(b, /https?:\/\/[^ )>]+/)) link = substr(b, RSTART, RLENGTH)
       claim = (link in held) ? held[link] : ""
       emit("card", trim(title), claim != "" ? "taken" : "open", cfield(b, "until"), claim,
-           cfield(b, "model"), cfield(b, "effort"), link, link, up)
+           cfield(b, "model"), cfield(b, "effort"), link, (cfield(b, "id") != "" ? cfield(b, "id") : link), up)
     }
     function bget(k) { return (k in bf) ? bf[k] : "" }
     function flushp(   id, model, link) {
@@ -563,6 +563,31 @@ work_claims_load() {
   WORK_CLAIMS=""
   [ -f "$cs" ] && WORK_CLAIMS=$(sh "$cs" card-claims 2>/dev/null)
   return 0
+}
+
+# is_card_id <word> -- true for a work item's identifier: epoch seconds, then
+# the minting session's eight hex, no separator (Solace, 2026-10-01).
+is_card_id() {
+  case "${1:-}" in *[!0-9a-f]*|'') return 1 ;; esac
+  [ ${#1} -eq 18 ] && case "$1" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*) return 0 ;; esac
+  return 1
+}
+
+# board_card <kanban.md> <id> -- the card whose `id:` is <id>, from any
+# section, as `<section>\t<group>\t<folded card>`; fails when none is. The
+# one lookup from an id back to the card's title, date and link. Matches the
+# field the way kanban-lint's L11 does, so a card the lint passes is found.
+board_card() {
+  [ -f "$1" ] || return 1
+  awk -v want="$2" '
+    function flush() { if (txt != "" && txt ~ ("(^|[ (])id:[ \t]*" want "([^0-9a-z]|$)")) { print sec "\t" grp "\t" txt; hit = 1 } txt = "" }
+    /^## /  { flush(); sec = substr($0, 4); grp = ""; next }
+    /^### / { flush(); grp = substr($0, 5); next }
+    /^#/ || /^[ \t]*$/ { flush(); next }
+    /^(- |[0-9]+\. )/ { flush(); txt = $0; sub(/[ \t]+$/, "", txt); next }
+    txt != "" { t = $0; sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t); txt = txt " " t }
+    END { flush(); exit !hit }
+  ' "$1"
 }
 
 # claude_cards <kanban.md> -- the pickup candidates on a board: every card

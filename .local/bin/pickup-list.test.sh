@@ -96,5 +96,17 @@ assert 'done refuses a card' bash -c "! sh '$PL' done '$CARD' 2>/dev/null"
 sh "$PL" open "$CARD" >/dev/null
 assert 'open releases it' bash -c "sh '$PL' --all | grep -qxF '    $CARD'"
 
+# --- a card's id is its handle ------------------------------------------------
+ID=1790836842077c62eb
+printf -- '- [ ] **Card two** -- a card with an id ([x](https://example.invalid/card-2)) id: %s\n' "$ID" >> "$SR/state/global/kanban.md"
+assert 'a card with an id is listed by its id' bash -c "sh '$PL' --all 2>/dev/null | grep -qxF '    $ID'"
+eq 'take by id claims it' "taken $ID" "$(sh "$PL" take "$ID" 1111111122223333)"
+assert 'the claim is keyed by link, so a take by link is refused' bash -c "! sh '$PL' take https://example.invalid/card-2 4444444455556666 2>/dev/null"
+sh "$PL" open "$ID" >/dev/null
+assert 'show by id prints the card' bash -c "sh '$PL' show '$ID' | grep -q 'Card two'"
+printf '\n## Human'"'"'s\n- [ ] **Click it** -- in the UI ([x](https://example.invalid/h)) why you: learn id: 1790836842d654192b\n' >> "$SR/state/global/kanban.md"
+assert 'show by id reaches any section' bash -c "sh '$PL' show 1790836842d654192b | grep -q 'Click it'"
+assert 'but a click-work card cannot be taken' bash -c "! sh '$PL' take 1790836842d654192b 1111111122223333 2>/dev/null"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

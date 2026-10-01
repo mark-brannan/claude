@@ -105,6 +105,7 @@ INSTALL="
 .local/bin/prose-budget
 .local/bin/worklist
 .local/bin/pickup-list
+.local/bin/card-id
 .local/bin/scoping-lock
 .local/bin/gh-resolve-thread
 .local/bin/pr-label-audit

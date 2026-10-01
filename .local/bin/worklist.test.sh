@@ -36,11 +36,11 @@ cd "$S/repo" || exit 1
   printf -- '- [ ] **Later** — decide after the migration ([o/r#95](https://github.com/o/r/pull/95))\n'
   printf -- '      default: keep undo: revert until: the next migration risk: low judgment: direction\n'
   printf -- '### global\n'
-  printf -- '- [ ] **Engine pin** — decide whether to pin the engine by tag ([o/r#93](https://github.com/o/r/pull/93))\n'
+  printf -- '- [ ] **Engine pin** — decide whether to pin the engine by tag ([o/r#93](https://github.com/o/r/pull/93)) id: 1790836842077c62eb\n'
   printf -- '### colregs\n'
   printf -- '- [ ] **Give-way rule** — decide whether rule 15 wins ([o/r#94](https://github.com/o/r/pull/94))\n'
   printf '\n## Human'"'"'s\n- [ ] **Not an agent card** — [x](https://example.invalid)\n\n## Claude'"'"'s\n'
-  printf -- '- [ ] **Card 0** — linked to its evidence, worked elsewhere ([o/beta#5](https://github.com/o/beta/pull/5)) repo: o/alpha\n'
+  printf -- '- [ ] **Card 0** — linked to its evidence, worked elsewhere ([o/beta#5](https://github.com/o/beta/pull/5)) repo: o/alpha id: 1790836843077c62eb\n'
   for i in 1 2 3 4 5 6 7 8 9; do
     printf -- '- [ ] **Card %s** — a card body long enough to be cut at eighty characters when brief is asked for ([link](https://example.invalid/%s))\n' "$i" "$i"
   done
@@ -178,7 +178,7 @@ assert 'and after the counts header' \
     "$(printf '%s\n' "$OUT_ALL" | grep -n '^Needs ruling' | cut -d: -f1)" ]
 OUT=$(section "Needs ruling")
 has 'a ruling card renders, unprefixed in its own project' '^- \*\*Board sections\*\* — decide whether a question is a card or an issue'
-has '### global is in scope everywhere' '^- \*\*Engine pin\*\*'
+has '### global is in scope everywhere' '^- 1790836842077c62eb \*\*Engine pin\*\*'
 lacks 'another project'"'"'s group is out of scope' 'Give-way rule'
 lacks 'a waiting card is hidden by default' 'Later'
 has 'the hidden groups are counted' '^- \+1 in other projects \(worklist --all-rulings\)$'
@@ -204,7 +204,7 @@ run --all
 has 'all lists every in-scope ruling card' '^Needs ruling \(all\), showing 3 of 3$'
 OUT=$(section "Needs ruling")
 has 'all marks the waiting card' '^- \[waiting\] \*\*Later\*\*'
-has 'all leaves a ready card unmarked' '^- \*\*Engine pin\*\*'
+has 'all leaves a ready card unmarked' '^- 1790836842077c62eb \*\*Engine pin\*\*'
 OUT=$OUT_ALL
 has 'all lifts the 8-card cap on a board section' "^Board \(## Claude's, showing 10 of 10\)$"
 run
@@ -234,7 +234,7 @@ lacks 'branch pointed at by a board card is not stranded' 'pointed-by-board'
 lacks 'branch pointed at by an open issue is not stranded' 'pointed-by-issue'
 OUT=$OUT_ALL
 has 'board heading with counts' "^Board \(## Claude's, showing 8 of 10\)$"
-eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -c '^- \*\*Card ')"
+eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -Ec '^- ([0-9a-f]{18} )?\*\*Card ')"
 lacks 'ticked card dropped' 'Ticked card'
 has "Human's section shown with its count" "^Board \(## Human's, showing 1 of 1\)$"
 OUT=$(section "Board (## Human's")
@@ -439,6 +439,17 @@ eq 'refresh caches the state of an until: link' issue-open "$(cut -d' ' -f2 "$XD
 run --brief
 has 'brief reads the warmed cache: the linked card waits' '^Board: Needs ruling 4 \(2 ready, 2 waiting'
 cp "$S/kanban.bak" "$kb"
+
+# --- a card id is a handle ----------------------------------------------------
+run card 1790836842077c62eb
+has 'card <id> names the section and group' '^## Needs ruling / global$'
+has 'card <id> prints the card' 'Engine pin'
+run card 1790836842077c62ec; eq 'an unknown id exits 1' 1 "$RC"
+run card 179083684; eq 'a malformed id exits 2' 2 "$RC"
+run --all-rulings
+has 'a ruling card leads with its id' '^- global: 1790836842077c62eb \*\*Engine pin'
+has 'a Claude card leads with its id' '^- 1790836843077c62eb \*\*Card 0'
+lacks 'the trailing id field is not repeated' 'alpha id:'
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -15,6 +15,8 @@
 #
 #   worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings]
 #            [--waiting|--all] [--milestone <title>]
+#   worklist card <id>     the card with that id, any section: the one lookup
+#                          from a hand-off's "card <id>" back to its line
 #
 # Repo set: the cwd repo's GitHub topic `project-<name>`, else the cwd repo
 # alone; a project name argument skips the topic lookup; --here forces the
@@ -32,9 +34,9 @@
 # CONVENIENCE: exit 0 always, except --json with nothing fetched.
 set -u
 
-usage() { printf 'usage: worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings] [--waiting|--all] [--milestone <title>]\n'; }
+usage() { printf 'usage: worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings] [--waiting|--all] [--milestone <title>]\n       worklist card <id>\n'; }
 
-brief=0; fresh=0; json=0; here=0; project=""; refresh=0; marker=""; all_rulings=0; milestone=""; view=ready
+brief=0; fresh=0; json=0; here=0; project=""; refresh=0; marker=""; all_rulings=0; milestone=""; view=ready; card_id=""
 while [ $# -gt 0 ]; do
   case $1 in
     --brief) brief=1 ;;
@@ -50,6 +52,7 @@ while [ $# -gt 0 ]; do
     --_marker) shift; marker=${1:-} ;;
     -h|--help) usage; exit 0 ;;
     -*) printf 'worklist: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    card) card_id=${2:-}; [ -n "$card_id" ] || { printf 'worklist card: no id\n' >&2; usage >&2; exit 2; }; shift ;;
     *) project=$1 ;;
   esac
   shift
@@ -209,6 +212,19 @@ do_fetch() {
   printf '%s\n' "$key"
 }
 
+# `worklist card <id>`: one board read, no fetch. Printed as the section (and
+# group) the card sits under, then the card on one line.
+if [ -n "$card_id" ]; then
+  for c in "$self_dir/../../.claude/hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
+    # shellcheck disable=SC1090
+    [ -f "$c" ] && { . "$c"; break; }
+  done
+  command -v board_card >/dev/null 2>&1 || { printf 'worklist card: lib-state.sh not found\n' >&2; exit 2; }
+  is_card_id "$card_id" || { printf 'worklist card: not a card id: %s (epoch seconds then eight hex)\n' "$card_id" >&2; exit 2; }
+  hit=$(board_card "$(state_dir)/kanban.md" "$card_id") || { printf 'worklist card: no card %s on %s\n' "$card_id" "$(state_dir)/kanban.md" >&2; exit 1; }
+  printf '%s\n' "$hit" | awk -F '\t' '{ printf "## %s%s\n", $1, ($2 != "" ? " / " $2 : ""); print substr($0, length($1) + length($2) + 3) }'
+  exit 0
+fi
 # Detached so the caller's exit (a SessionStart hook ending) does not kill it.
 spawn_refresh() {
   set -- --_refresh
@@ -457,6 +473,11 @@ stranded_rows() {
   '
 }
 
+# A card line as shown: its id first, so a cut line still carries the handle
+# a hand-off names, and the trailing `id:` field dropped. A card with no id
+# is shown as it is.
+JQ_IDFIRST='def idfirst: (capture("^(?<t>.*?)[[:space:]]+id:[[:space:]]*(?<id>[0-9]{10}[0-9a-f]{8})[[:space:]]*$") | .id + " " + .t) // .; '
+
 # ruling_section <board> <project>
 # The board's counts line, then the ## Needs ruling cards, grouped by the
 # "### <name>" heading above them -- one group per project, "### global" for
@@ -509,9 +530,9 @@ ruling_section() {
   else
     printf 'Needs ruling (%s), showing %s of %s\n' "$view" "$( [ "$n" -gt "$cap" ] && echo "$cap" || echo "$n" )" "$n"
     # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
-    printf '%s\n' "$shown" | head -n "$cap" | jq -Rr --arg brief "$brief" --arg all "$showall" --arg view "$view" '
+    printf '%s\n' "$shown" | head -n "$cap" | jq -Rr --arg brief "$brief" --arg all "$showall" --arg view "$view" "$JQ_IDFIRST"'
       split("\t") | (if $view == "all" and .[0] == "waiting" then "[waiting] " else "" end)
-        + (if $all == "1" then .[1] + ": " else "" end) + (.[2:] | join("\t"))
+        + (if $all == "1" then .[1] + ": " else "" end) + (.[2:] | join("\t") | idfirst)
       | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
   fi
   [ "$other" -gt 0 ] && printf -- '- +%s in other projects (worklist --all-rulings)\n' "$other"
@@ -528,11 +549,11 @@ section_of() {
   cap=8; [ "$view" = all ] && cap=$total
   printf '%s, showing %s of %s%s\n' "$3" "$( [ "$total" -gt "$cap" ] && echo "$cap" || echo "$total" )" "$total" "$4"
   # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
-  printf '%s\n' "$cards" | head -n "$cap" | jq -Rr --arg brief "$brief" '.[6:] | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
+  printf '%s\n' "$cards" | head -n "$cap" | jq -Rr --arg brief "$brief" "$JQ_IDFIRST"'.[6:] | idfirst | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
 }
 
 # board_cards <board> -- every card on the three board sections as a JSON
-# array of {kind:"card", section, group, text, name, link, repo}: section is
+# array of {kind:"card", section, group, text, id, name, link, repo}: section is
 # rulings | humans | claudes, group the "### <name>" heading above the card
 # ("global" when none), name the leading **bold**, link the last (url) on the
 # line, and repo the repo that does the work: the card's own `repo: owner/name`
@@ -554,6 +575,7 @@ board_cards() {
   ' "$1" | jq -R -s -c '
     [ split("\n")[] | select(length > 0) | split("\t") | select(length >= 3)
       | {kind: "card", section: .[0], group: .[1], text: (.[2:] | join("\t"))}
+      | .id = ((.text | capture("(^|\\s)id:\\s*(?<i>[0-9]{10}[0-9a-f]{8})") | .i) // null)
       | .name = ((.text | capture("^\\*\\*(?<n>[^*]+)\\*\\*") | .n) // null)
       | .link = (([.text | match("\\((https?://[^)[:space:]]+)\\)"; "g") | .captures[0].string] | last) // null)
       | .repo = ((.text | capture("(^|\\s)repo:\\s*(?<r>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)") | .r)
