@@ -33,6 +33,8 @@ cd "$S/repo" || exit 1
   printf '# Board\n\nA card names the pushed branch pointed-by-board somewhere in its body.\n\n## Needs ruling\n'
   printf -- '### demo\n'
   printf -- '- [ ] **Board sections** — decide whether a question is a card or an issue ([o/r#90](https://github.com/o/r/pull/90))\n'
+  printf -- '- [ ] **Later** — decide after the migration ([o/r#95](https://github.com/o/r/pull/95))\n'
+  printf -- '      default: keep undo: revert until: the next migration risk: low judgment: direction\n'
   printf -- '### global\n'
   printf -- '- [ ] **Engine pin** — decide whether to pin the engine by tag ([o/r#93](https://github.com/o/r/pull/93))\n'
   printf -- '### colregs\n'
@@ -107,6 +109,7 @@ case "$1 $2" in
     k=$(printf '%s' "$2" | sed -e 's#^repos/##' -e 's#/issues/#-#' -e 's#/sub_issues.*##' -e 's#/#-#g')
     if [ -f "$FIXTURES/subs-$k.json" ]; then cat "$FIXTURES/subs-$k.json"; else echo '[]'; fi ;;
   "api graphql")
+    case " $* " in *issueOrPullRequest*) echo issue-open; exit 0 ;; esac
     name=""; for a in "$@"; do case $a in name=*) name=${a#name=} ;; esac; done
     # pickup-list's fixup-hard search: no name=, a q= instead.
     case " $* " in *" q=is:pr "*) printf '{"data":{"search":{"nodes":[]}}}\n'; exit 0 ;; esac
@@ -165,9 +168,11 @@ lacks 'red PR not Human'"'"'s turn' 'alpha#13'
 lacks 'draft PR not Human'"'"'s turn' 'beta#5'
 OUT=$(section "Queued (auto-merge)"); has 'queued PR listed separately' '^\| \[alpha#11\].* \| Queued PR \|'
 OUT=$OUT_ALL
-has 'Needs ruling reads the board section' "^Needs ruling, showing 2 of 2$"
-first_section=$(printf '%s\n' "$OUT_ALL" | grep -E "^(Needs ruling|Human's turn|Queued|Ready:|Board \()" | head -1)
-assert 'Needs ruling prints before every GitHub bucket' [ "$first_section" = "Needs ruling, showing 2 of 2" ]
+has 'Needs ruling lists the ready cards by default' "^Needs ruling \(ready\), showing 2 of 2$"
+has 'the counts line: in scope, ready, waiting, other projects, each section' \
+  "^Board: Needs ruling 3 \(2 ready, 1 waiting: --waiting, all: --all\), \+1 in other projects \(--all-rulings\); Human's 1; Claude's 10$"
+first_section=$(printf '%s\n' "$OUT_ALL" | grep -E "^(Board:|Needs ruling|Human's turn|Queued|Ready:|Board \()" | head -1)
+assert 'the board counts print before every GitHub bucket' [ "${first_section%% *}" = "Board:" ]
 assert 'and after the counts header' \
   [ "$(printf '%s\n' "$OUT_ALL" | grep -nE '^(counts:|Needs ruling)' | head -1 | cut -d: -f1)" -lt \
     "$(printf '%s\n' "$OUT_ALL" | grep -n '^Needs ruling' | cut -d: -f1)" ]
@@ -175,17 +180,33 @@ OUT=$(section "Needs ruling")
 has 'a ruling card renders, unprefixed in its own project' '^- \*\*Board sections\*\* — decide whether a question is a card or an issue'
 has '### global is in scope everywhere' '^- \*\*Engine pin\*\*'
 lacks 'another project'"'"'s group is out of scope' 'Give-way rule'
+lacks 'a waiting card is hidden by default' 'Later'
 has 'the hidden groups are counted' '^- \+1 in other projects \(worklist --all-rulings\)$'
 lacks 'no issue reaches Needs ruling' 'alpha#'
 OUT=$OUT_ALL
 
 # --all-rulings: every group, each card named by its group.
 run --all-rulings
-has 'all rulings shows every group' '^Needs ruling, showing 3 of 3$'
+has 'all rulings shows every group' '^Needs ruling \(ready\), showing 3 of 3$'
 OUT=$(section "Needs ruling")
 has 'a card carries its group'      '^- demo: \*\*Board sections\*\*'
 has 'the other project is listed'   '^- colregs: \*\*Give-way rule\*\*'
 lacks 'nothing is hidden'           'in other projects'
+
+# --waiting and --all: the drill paths behind the counts line.
+run --waiting
+OUT=$(section "Needs ruling")
+has 'waiting lists the card whose until: is words' '^- \*\*Later\*\* — decide after the migration'
+lacks 'waiting hides the ready cards' 'Board sections|Engine pin'
+run --brief
+has 'brief carries the counts line too' '^Board: Needs ruling 3 \(2 ready, 1 waiting'
+run --all
+has 'all lists every in-scope ruling card' '^Needs ruling \(all\), showing 3 of 3$'
+OUT=$(section "Needs ruling")
+has 'all marks the waiting card' '^- \[waiting\] \*\*Later\*\*'
+has 'all leaves a ready card unmarked' '^- \*\*Engine pin\*\*'
+OUT=$OUT_ALL
+has 'all lifts the 8-card cap on a board section' "^Board \(## Claude's, showing 10 of 10\)$"
 run
 OUT=$OUT_ALL
 lacks 'the Ruled, unlanded bucket is gone' 'Ruled, unlanded'
@@ -409,6 +430,15 @@ shape() { printf '%s\n' "$OUT" | grep -E "$1" | head -1 | sed -E 's/^  (.) .{56}
 eq 'a pickup item renders in the shared shape' ok "$(shape 'Finish the thing')"
 eq 'a card renders in the same shape' ok "$(shape '^  ◆ ')"
 rm -rf "$S/state/state/global/pickup"
+
+# --- the background refresh warms the ruling-link cache --brief reads ------------
+kb="$S/state/state/global/kanban.md"; cp "$kb" "$S/kanban.bak"
+awk '{ print } /^### global$/ { print "- [ ] **Linked** — wait on it ([o/r#7](https://github.com/o/r/issues/7)) default: a undo: revert until: o/r#7 risk: low judgment: direction" }' "$S/kanban.bak" > "$kb"
+sh "$WL" --_refresh
+eq 'refresh caches the state of an until: link' issue-open "$(cut -d' ' -f2 "$XDG_CACHE_HOME/ruling-refs/o_r_7" 2>/dev/null)"
+run --brief
+has 'brief reads the warmed cache: the linked card waits' '^Board: Needs ruling 4 \(2 ready, 2 waiting'
+cp "$S/kanban.bak" "$kb"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

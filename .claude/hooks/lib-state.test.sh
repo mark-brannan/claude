@@ -390,5 +390,48 @@ GIT_COMMITTER_DATE='2026-09-01T12:00:00Z' GIT_AUTHOR_DATE='2026-09-01T12:00:00Z'
 eq_ust "claude_cards: a committed card carries its blame time" '2026-09-01T12:00:00Z' \
   "$( ( . "$HOOKS/lib-state.sh"; claude_cards "$KB/kanban.md" ) | head -1 | cut -f1)"
 
+# --- ruling_readiness ----------------------------------------------------------
+# Under sh as well as bash: worklist sources this file from /bin/sh. gh is
+# faked: the reply for ref n is read from $RR/state.<n>, and every call logged.
+RR="$SCRATCH/rr"; export RR; mkdir -p "$RR/bin"
+cat > "$RR/bin/gh" <<'EOF'
+#!/bin/sh
+n=""; for a in "$@"; do case $a in n=*) n=${a#n=} ;; esac; done
+echo "$n" >> "$RR/gh.log"
+[ -f "$RR/state.$n" ] && cat "$RR/state.$n" || exit 1
+EOF
+chmod +x "$RR/bin/gh"
+for sh_ in bash sh; do
+  rr() { PATH="$RR/bin:$PATH" XDG_CACHE_HOME="$RR/cache.$sh_" RULING_TODAY=2026-10-01 \
+           "$sh_" -c '. "'"$HOOKS"'/lib-state.sh"; ruling_readiness "$1"' _ "$1"; }
+  : > "$RR/gh.log"
+  eq_ust "$sh_: a date passed is ready"         ready   "$(rr 'x until: 2026-09-12 (2.2, before 1.8 risk: y')"
+  eq_ust "$sh_: a date today is ready"          ready   "$(rr 'x until: 2026-10-01. risk: y')"
+  eq_ust "$sh_: a date ahead is waiting"        waiting "$(rr 'x until: 2026-10-05 risk: y')"
+  eq_ust "$sh_: a date inside words counts"     ready   "$(rr 'x until: M6 card, 2026-09-30 judgment: risk')"
+  eq_ust "$sh_: an event in words is waiting"   waiting "$(rr 'x until: the next session rooted in dotfiles risk: z')"
+  eq_ust "$sh_: a bare #n names no repo, words" waiting "$(rr 'x until: before #15 or #16 is picked up risk: z')"
+  eq_ust "$sh_: no until: at all is ready"      ready   "$(rr 'x kind: tentative ADR gates: y')"
+  eq_ust "$sh_: a field after until: is not read as its value" waiting "$(rr 'x until: next week risk: 2026-01-01 outage')"
+  printf 'pr-open' > "$RR/state.1"; printf 'issue-open' > "$RR/state.2"
+  printf 'issue-inflight' > "$RR/state.3"; printf 'issue-closed' > "$RR/state.4"
+  eq_ust "$sh_: an open PR is ready"            ready   "$(rr 'x until: https://github.com/o/r/pull/1 risk: y')"
+  eq_ust "$sh_: an open issue no PR closes is waiting" waiting "$(rr 'x until: [o/r#2](https://github.com/o/r/issues/2) risk: y')"
+  eq_ust "$sh_: an issue an open PR closes is ready" ready "$(rr 'x until: o/r#3 risk: y')"
+  eq_ust "$sh_: a closed issue is ready"        ready   "$(rr 'x until: o/r#4 risk: y')"
+  eq_ust "$sh_: a link gh cannot answer is ready" ready "$(rr 'x until: o/r#5 risk: y')"
+  printf 'pr-merged' > "$RR/state.2"
+  eq_ust "$sh_: a cached state is reused within the TTL" waiting "$(rr 'x until: o/r#2 risk: y')"
+  rr 'x until: o/r#5 risk: y' >/dev/null
+  eq_ust "$sh_: gh asked once per ref, failures not cached" '1 2 3 4 5 5' "$(tr '\n' ' ' < "$RR/gh.log" | sed 's/ $//')"
+  : > "$RR/gh.log"
+  eq_ust "$sh_: cache-only takes a stale entry" waiting \
+    "$(RULING_REF_TTL=0 RULING_REF_CACHE_ONLY=1 rr 'x until: o/r#2 risk: y')"
+  eq_ust "$sh_: cache-only, no entry, ready"    ready   "$(RULING_REF_CACHE_ONLY=1 rr 'x until: o/r#6 risk: y')"
+  eq_ust "$sh_: cache-only never calls gh"      ''      "$(cat "$RR/gh.log")"
+  eq_ust "$sh_: past the TTL gh is asked again" ready   "$(RULING_REF_TTL=0 rr 'x until: o/r#2 risk: y')"
+  rm -f "$RR"/state.*
+done
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

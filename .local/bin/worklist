@@ -14,7 +14,7 @@
 # reports; nothing edits.
 #
 #   worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings]
-#            [--milestone <title>]
+#            [--waiting|--all] [--milestone <title>]
 #
 # Repo set: the cwd repo's GitHub topic `project-<name>`, else the cwd repo
 # alone; a project name argument skips the topic lookup; --here forces the
@@ -32,9 +32,9 @@
 # CONVENIENCE: exit 0 always, except --json with nothing fetched.
 set -u
 
-usage() { printf 'usage: worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings] [--milestone <title>]\n'; }
+usage() { printf 'usage: worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings] [--waiting|--all] [--milestone <title>]\n'; }
 
-brief=0; fresh=0; json=0; here=0; project=""; refresh=0; marker=""; all_rulings=0; milestone=""
+brief=0; fresh=0; json=0; here=0; project=""; refresh=0; marker=""; all_rulings=0; milestone=""; view=ready
 while [ $# -gt 0 ]; do
   case $1 in
     --brief) brief=1 ;;
@@ -42,6 +42,8 @@ while [ $# -gt 0 ]; do
     --json) json=1 ;;
     --here) here=1 ;;
     --all-rulings) all_rulings=1 ;;
+    --waiting) view=waiting ;;
+    --all) view=all ;;
     --milestone) shift; milestone=${1:-}
       [ -n "$milestone" ] || { printf 'worklist: --milestone needs a title\n' >&2; usage >&2; exit 2; } ;;
     --_refresh) refresh=1 ;;
@@ -206,8 +208,6 @@ do_fetch() {
   [ -n "$marker" ] && printf 'key\t%s\n' "$key" > "$marker"
   printf '%s\n' "$key"
 }
-
-if [ "$refresh" = 1 ]; then do_fetch >/dev/null 2>&1; exit 0; fi
 
 # Detached so the caller's exit (a SessionStart hook ending) does not kill it.
 spawn_refresh() {
@@ -458,34 +458,60 @@ stranded_rows() {
 }
 
 # ruling_section <board> <project>
-# The ## Needs ruling cards, grouped by the "### <name>" heading above them --
-# one group per project, "### global" for what no project owns. Inside a
-# project's repo only that project's group and global are shown, with a count
-# of what was hidden; --all-rulings, or no project at all, shows every group
-# and prefixes each card with its group. Printed first because it is the one
-# thing here that is waiting on the user.
+# The board's counts line, then the ## Needs ruling cards, grouped by the
+# "### <name>" heading above them -- one group per project, "### global" for
+# what no project owns. Inside a project's repo only that project's group and
+# global are shown, with a count of what was hidden; --all-rulings, or no
+# project at all, shows every group and prefixes each card with its group.
+# Each card is ready or waiting (ruling_readiness in lib-state.sh); only the
+# ready ones are listed unless --waiting or --all asks (Solace, 2026-10-01).
+# The counts line is printed on every run, and each count names its drill
+# path. Printed first because it is the one thing here waiting on the user.
 ruling_section() {
+  command -v ruling_readiness >/dev/null 2>&1 || ruling_readiness() { echo ready; }
+  [ "$brief" = 1 ] && RULING_REF_CACHE_ONLY=1 && export RULING_REF_CACHE_ONLY
+  # A card spans its indented continuation lines; until: may sit on one.
   rows=$(awk '
-    /^## / { f = ($0 ~ /^## Needs ruling[[:space:]]*$/); g = "global"; next }
+    function out() { if (t != "") print g "\t" t; t = "" }
+    /^## / { out(); f = ($0 ~ /^## Needs ruling[[:space:]]*$/); g = "global"; next }
     !f { next }
-    /^### / { g = $0; sub(/^###[ \t]+/, "", g); sub(/[ \t]+$/, "", g); next }
-    /^- \[ \]/ { t = substr($0, 7); print g "\t" t }
-  ' "$1")
+    /^### / { out(); g = $0; sub(/^###[ \t]+/, "", g); sub(/[ \t]+$/, "", g); next }
+    /^- \[ \]/ { out(); t = substr($0, 7); next }
+    /^[ \t]+[^ \t]/ { if (t != "") { l = $0; sub(/^[ \t]+/, "", l); t = t " " l }; next }
+    { out() }
+    END { out() }
+  ' "$1" | while IFS= read -r r; do
+    [ -n "$r" ] && printf '%s\t%s\n' "$(ruling_readiness "${r#*	}")" "$r"
+  done)
   showall=$all_rulings
   [ -n "$2" ] || showall=1
   if [ "$showall" = 1 ]; then
     inscope=$rows; other=0
   else
-    inscope=$(printf '%s\n' "$rows" | awk -F'\t' -v p="$2" 'NF > 1 && ($1 == p || $1 == "global")')
-    other=$(count_lines "$(printf '%s\n' "$rows" | awk -F'\t' -v p="$2" 'NF > 1 && $1 != p && $1 != "global"')")
+    inscope=$(printf '%s\n' "$rows" | awk -F'\t' -v p="$2" 'NF > 2 && ($2 == p || $2 == "global")')
+    other=$(count_lines "$(printf '%s\n' "$rows" | awk -F'\t' -v p="$2" 'NF > 2 && $2 != p && $2 != "global"')")
   fi
   total=$(count_lines "$inscope")
-  if [ "$total" -eq 0 ]; then printf 'Needs ruling: none\n'
+  nready=$(count_lines "$(printf '%s\n' "$inscope" | grep '^ready	')")
+  nwait=$((total - nready))
+  nhum=$(awk '/^## /{f=($0 ~ /^## Human/)} f && /^- \[ \]/' "$1" | grep -c '^')
+  ncla=$(awk '/^## /{f=($0 ~ /^## Claude/)} f && /^- \[ \]/' "$1" | grep -c '^')
+  printf 'Board: Needs ruling %s (%s ready, %s waiting: --waiting, all: --all)' "$total" "$nready" "$nwait"
+  [ "$other" -gt 0 ] && printf ', +%s in other projects (--all-rulings)' "$other"
+  printf "; Human's %s; Claude's %s\n" "$nhum" "$ncla"
+  case $view in
+    ready) shown=$(printf '%s\n' "$inscope" | grep '^ready	'); cap=8 ;;
+    waiting) shown=$(printf '%s\n' "$inscope" | grep '^waiting	'); cap=$total ;;
+    *) shown=$inscope; cap=$total ;;
+  esac
+  n=$(count_lines "$shown")
+  if [ "$n" -eq 0 ]; then printf 'Needs ruling (%s): none\n' "$view"
   else
-    printf 'Needs ruling, showing %s of %s\n' "$( [ "$total" -gt 8 ] && echo 8 || echo "$total" )" "$total"
+    printf 'Needs ruling (%s), showing %s of %s\n' "$view" "$( [ "$n" -gt "$cap" ] && echo "$cap" || echo "$n" )" "$n"
     # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
-    printf '%s\n' "$inscope" | head -8 | jq -Rr --arg brief "$brief" --arg all "$showall" '
-      split("\t") | (if $all == "1" then .[0] + ": " else "" end) + .[1]
+    printf '%s\n' "$shown" | head -n "$cap" | jq -Rr --arg brief "$brief" --arg all "$showall" --arg view "$view" '
+      split("\t") | (if $view == "all" and .[0] == "waiting" then "[waiting] " else "" end)
+        + (if $all == "1" then .[1] + ": " else "" end) + (.[2:] | join("\t"))
       | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
   fi
   [ "$other" -gt 0 ] && printf -- '- +%s in other projects (worklist --all-rulings)\n' "$other"
@@ -494,14 +520,15 @@ ruling_section() {
 
 # section_of <board> <heading regex> <label> <suffix>  -- the flat ## Claude's
 # Prints "<label>: none", or "<label>, showing N of T<suffix>" and up to 8
-# cards. Same cut rules as the ruling groups.
+# cards, every card under --all. Same cut rules as the ruling groups.
 section_of() {
   cards=$(awk -v pat="$2" '/^## /{f=($0 ~ pat)} f && /^- \[ \]/' "$1")
   total=$(count_lines "$cards")
   if [ "$total" -eq 0 ]; then printf '%s: none\n' "$3$4"; return 0; fi
-  printf '%s, showing %s of %s%s\n' "$3" "$( [ "$total" -gt 8 ] && echo 8 || echo "$total" )" "$total" "$4"
+  cap=8; [ "$view" = all ] && cap=$total
+  printf '%s, showing %s of %s%s\n' "$3" "$( [ "$total" -gt "$cap" ] && echo "$cap" || echo "$total" )" "$total" "$4"
   # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
-  printf '%s\n' "$cards" | head -8 | jq -Rr --arg brief "$brief" '.[6:] | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
+  printf '%s\n' "$cards" | head -n "$cap" | jq -Rr --arg brief "$brief" '.[6:] | if $brief == "1" and length > 80 then .[:77] + "..." else . end | "- " + .'
 }
 
 # board_cards <board> -- every card on the three board sections as a JSON
@@ -602,6 +629,15 @@ render() {
 emit_json() { build_record "$1"; }
 
 # --- main ------------------------------------------------------------------
+# The background refresh also re-asks gh for every ruling card's until: links,
+# so the cache-only read --brief makes at SessionStart is never older than
+# the last refresh.
+if [ "$refresh" = 1 ]; then
+  do_fetch >/dev/null 2>&1
+  board_path && ruling_section "$kb" "" >/dev/null 2>&1
+  exit 0
+fi
+
 if [ "$have_gh" = 0 ]; then
   cache=$(find_cache)
   [ "$json" = 1 ] && { [ -n "$cache" ] && emit_json "$cache" && exit 0; echo '{"error":"no gh"}'; exit 1; }

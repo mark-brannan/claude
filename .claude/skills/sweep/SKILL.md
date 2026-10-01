@@ -9,6 +9,8 @@ Garbage collection for the two sections the user reads. It runs before the
 board is shown, and on its own. `## Claude's` is not swept here; that queue
 is yours to work, not to tidy.
 
+`worklist` now carries the ruling counts: total, ready and waiting by `until:`, with `--waiting` and `--all` to drill.
+
 ## Modes
 
 - **Interactive** — the default, before `worklist`, before `/card-helper`,

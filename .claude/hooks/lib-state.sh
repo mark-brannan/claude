@@ -601,3 +601,96 @@ claude_cards() {
     END { flush() }
   ' - "$f"
 }
+
+# --- Ruling-card readiness -------------------------------------------------------
+# ruling_readiness <card text> -- prints `ready` or `waiting` for one
+# ## Needs ruling card, its continuation lines already folded onto one line.
+#
+# Ruled by Solace, 2026-10-01 (one-entry-point curia, decided so far): a
+# ruling card is ready when its `until:` date has arrived or the PR or issue
+# it links is in flight, otherwise waiting -- kept, counted, hidden by
+# default. `until:` holds a date, a PR/issue link, or an event in words; an
+# event in words is waiting until a human says otherwise. Every date and
+# every link in the value is read, and any one of them makes the card ready:
+# a value like "2026-09-12, before 1.8" is a date that has a note on it.
+#
+# The rest is the agent's, pencil:
+#   - in flight: a PR in any state (it exists, so the work started; merged or
+#     closed is past due, and past due is shown), an issue that is closed, or
+#     an open issue that an open PR closes. An open issue with no such PR is
+#     waiting.
+#   - no `until:` at all (a kind: tentative ADR card, a legacy card) is ready:
+#     nothing names a condition to wait on. A link gh cannot answer for is
+#     ready too. Showing a waiting card costs a line; hiding a ready one costs
+#     the ruling.
+#   - link state is cached under $XDG_CACHE_HOME/ruling-refs for
+#     RULING_REF_TTL seconds (900). RULING_REF_CACHE_ONLY=1 never calls gh and
+#     takes a stale entry over none -- worklist --brief sets it, because
+#     SessionStart gives it seconds. RULING_TODAY overrides today's date.
+ruling_until() {
+  printf '%s\n' "$1" | awk '
+    { l = tolower($0); p = index(l, "until:"); if (!p) exit 1
+      v = substr($0, p + 6)
+      if (match(tolower(v), /[ (;,.*](default|undo|risk|judgment|gates|settle|repos|repo|kind|why you|why this|id):/)) v = substr(v, 1, RSTART - 1)
+      sub(/^[ \t*]+/, "", v); sub(/[ \t*.;,]+$/, "", v); print v; found = 1; exit }
+    END { if (!found) exit 1 }'
+}
+
+# ruling_ref_state <owner> <repo> <number> -- pr-open | pr-merged | pr-closed |
+# issue-open | issue-inflight | issue-closed, or unknown when neither the
+# cache nor gh can say.
+ruling_ref_state() {
+  local dir f now line at st q
+  dir="${XDG_CACHE_HOME:-$HOME/.cache}/ruling-refs"
+  f="$dir/$1_$2_$3"
+  now=$(date +%s)
+  line=$(cat "$f" 2>/dev/null)
+  at=${line%% *}; st=${line#* }
+  if [ -n "$line" ] && { [ "${RULING_REF_CACHE_ONLY:-0}" = 1 ] \
+       || [ $((now - at)) -lt "${RULING_REF_TTL:-900}" ]; }; then
+    printf '%s' "$st"; return 0
+  fi
+  if [ "${RULING_REF_CACHE_ONLY:-0}" = 1 ] || ! command -v gh >/dev/null 2>&1; then
+    printf 'unknown'; return 0
+  fi
+  # shellcheck disable=SC2016  # GraphQL variables, not shell
+  q='query($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){issueOrPullRequest(number:$n){
+       __typename ... on PullRequest{state}
+       ... on Issue{state closedByPullRequestsReferences(first:10,includeClosedPrs:false){nodes{state}}}}}}'
+  set -- "$1" "$2" "$3" gh api graphql -F owner="$1" -F name="$2" -F n="$3" -f query="$q" --jq '
+    .data.repository.issueOrPullRequest
+    | if . == null then "unknown"
+      elif .__typename == "PullRequest" then "pr-" + (.state | ascii_downcase)
+      elif .state == "CLOSED" then "issue-closed"
+      elif ([.closedByPullRequestsReferences.nodes[] | select(.state == "OPEN")] | length) > 0 then "issue-inflight"
+      else "issue-open" end'
+  shift 3
+  command -v timeout >/dev/null 2>&1 && set -- timeout 10 "$@"
+  st=$("$@" 2>/dev/null) || st=unknown
+  case $st in
+    pr-open|pr-merged|pr-closed|issue-open|issue-inflight|issue-closed)
+      mkdir -p "$dir" 2>/dev/null && printf '%s %s\n' "$now" "$st" > "$f" 2>/dev/null ;;
+    *) st=unknown ;;
+  esac
+  printf '%s' "$st"
+}
+
+ruling_readiness() {
+  local v today d st
+  v=$(ruling_until "$1") || { printf 'ready\n'; return 0; }
+  today=${RULING_TODAY:-$(date +%Y-%m-%d)}
+  for d in $(printf '%s\n' "$v" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}'); do
+    # ISO dates sort as strings.
+    if [ ! "$d" \> "$today" ]; then printf 'ready\n'; return 0; fi
+  done
+  # Links: a github.com PR/issue URL, or owner/repo#n. A bare #n names no repo
+  # and reads as words.
+  printf '%s\n' "$v" \
+    | grep -oE 'github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(pull|issues)/[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+' \
+    | sed -E 's|^github\.com/||; s#/(pull|issues)/# #; s|#| |; s|/| |' \
+    | { while read -r o r n; do
+          st=$(ruling_ref_state "$o" "$r" "$n")
+          [ "$st" = issue-open ] || { printf 'ready\n'; exit 0; }
+        done; exit 1; } && return 0
+  printf 'waiting\n'
+}
