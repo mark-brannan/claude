@@ -200,6 +200,19 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
            | "\(.[0].at)m: median \(($m[($n - 1) / 2 | floor] + $m[$n / 2 | floor]) / 2 | floor)m to next prompt, \(map(select(.stay)) | length)/\($n) stay")
        | join(" · ")' 2>/dev/null)
     [ -n "$rungs" ] && { echo; echo "Sitting rungs, last 28 days: $rungs"; }
+    # How each rung's sitting ended (stamp_time_last; the latest reading per
+    # crossing counts). A rung "ended it" when the final prompt came within 10m.
+    ends=$(cat "$SD/metrics/crossings"/*.jsonl 2>/dev/null | jq -rs --arg since "$since28" \
+      'def med: sort | (.[(length - 1) / 2 | floor] + .[length / 2 | floor]) / 2 | floor;
+       def key: .session_id + .crossing_ts;
+       (map(select(.kind == "time_after" and .stay_min != null)) | INDEX(key)) as $st
+       | map(select(.kind == "time_last" and .ts >= $since)) | INDEX(key) | [.[]]
+       | group_by(.at) | map(
+           [.[] | $st[key].stay_min // empty] as $s | [.[] | .overrun | values] as $o
+           | "\(.[0].at)m: median \(map(.min_to_last) | med)m to sitting end, \(map(select(.min_to_last <= 10)) | length)/\(length) ended it"
+             + (if $s == [] then "" else ", stay median \($s | med)m, \($o | map(select(.)) | length)/\($o | length) overrun" end))
+       | join(" · ")' 2>/dev/null)
+    [ -n "$ends" ] && echo "Sitting ends, last 28 days: $ends"
   fi
 } | emit
 
