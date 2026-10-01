@@ -507,7 +507,7 @@ fi
 pi_branch_line=none; pi_pr=none
 pickup_item() {
   local dir id f start prompt body status \
-        old_prompt old_body old_status old_pr ust ust_desc dirty \
+        old_prompt old_body old_status old_pr old_until ust ust_desc dirty \
         home miss tmp
   dir="$SD/pickup"
   mkdir -p "$dir" 2>/dev/null || return 0
@@ -517,11 +517,13 @@ pickup_item() {
   f="$dir/$id.md"
   prompt=$(printf '%s' "$metrics" | jq -r '.session.last_prompt // empty')
 
-  old_prompt=""; old_body=""; old_status=""; old_pr=""
+  old_prompt=""; old_body=""; old_status=""; old_pr=""; old_until=""
   if [ -f "$f" ]; then
     old_prompt=$(sed -n 's/^prompt: //p' "$f" | head -1)
     old_status=$(sed -n 's/^status: //p' "$f" | head -1)
     old_pr=$(sed -n 's/^pr: //p' "$f" | head -1)
+    # Header only: a hand-off body may well hold a line starting "until: ".
+    old_until=$(awk '/^---$/ { exit } sub(/^until: /, "") { print; exit }' "$f")
     old_body=$(awk 'f { print } /^---$/ { f = 1 }' "$f")
   fi
 
@@ -567,8 +569,13 @@ pickup_item() {
     printf 'status: %s\nupdated: %s\nsession: %s\nmodel: %s\n' \
       "$status" "$now" "$sid" \
       "$(printf '%s' "$metrics" | jq -r '.session.model // "?"')"
-    printf 'branch: %s\npr: %s\nwhere: %s\nprompt: %s\n---\n%s\n' \
-      "$pi_branch_line" "$pi_pr" "log/auto/$(basename "$ckpt")" "$prompt" "$body"
+    printf 'branch: %s\npr: %s\nwhere: %s\n' \
+      "$pi_branch_line" "$pi_pr" "log/auto/$(basename "$ckpt")"
+    # until: is written by a model or the user (a date, an event or a PR/issue
+    # link); the hook only carries it across rewrites, and writes no empty
+    # line for an item that has none.
+    [ -z "$old_until" ] || printf 'until: %s\n' "$old_until"
+    printf 'prompt: %s\n---\n%s\n' "$prompt" "$body"
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 }
 pickup_item

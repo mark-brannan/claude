@@ -43,6 +43,9 @@ eq 'default shows five' 5 "$(ids | wc -l | tr -d ' ')"
 assert 'and says how many more' bash -c "sh '$PL' | grep -q ' more '"
 eq '--all shows every open item' 9 "$(ids --all | wc -l | tr -d ' ')"
 assert 'show prints the file' bash -c "sh '$PL' show 2026-09-03T10-00-deadbeef | grep -q '^prompt: newest work'"
+printf 'status: open\nupdated: 2026-09-20T10:00:00Z\nsession: x\nmodel: m\nbranch: b\npr: none\nwhere: w\nuntil: 2026-10-15\nprompt: waits\n---\nwaits\n' > "$PICKUP/2026-09-20T10-00-0a0a0a0a.md"
+assert 'show prints until:' bash -c "sh '$PL' show 2026-09-20T10-00-0a0a0a0a | grep -qx 'until: 2026-10-15'"
+rm -f "$PICKUP/2026-09-20T10-00-0a0a0a0a.md"
 assert 'show of a missing id fails' bash -c "! sh '$PL' show nope 2>/dev/null"
 
 # The docket count is the board's `## Needs ruling` open boxes, nothing else.

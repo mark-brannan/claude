@@ -120,6 +120,15 @@ A ruling card carries your evaluation, so that the ruling is one word:
 - [ ] **Short name** — the question ([link](https://...)) default: <what you would do> undo: <the reversal and its cost> until: <event or date it can wait for> risk: <consequence if the default is wrong> judgment: <values | risk | direction | legal | people>
 ```
 
+Any card may also carry `model:` and `effort:` (sonnet/opus/fable, and
+low/medium/high, as a hand-off names them) and an `until:` that is a date, an
+event or a PR/issue link; the card is ready, or waiting until that. All three
+are optional on a `## Claude's` card and the lint never checks them:
+
+```markdown
+- [ ] **Short name** — action in the imperative ([link](https://...)) model: sonnet effort: medium until: https://github.com/o/r/pull/5
+```
+
 `judgment:` is the gate. A call you cannot file under one of those five
 kinds is toil however unsure you feel: take the default, record it where
 the work lands, and write no card.
