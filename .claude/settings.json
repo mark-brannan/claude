@@ -289,6 +289,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/no-prose-gate.sh\"; [ -f \"$h\" ] && sh \"$h\" 2>/dev/null || true",
+            "timeout": 30,
+            "statusMessage": "Checking the turn does not end asking permission"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "h=\"$HOME/.claude/hooks/stop-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
             "timeout": 300
           }
