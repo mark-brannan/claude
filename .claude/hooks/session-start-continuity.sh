@@ -187,6 +187,20 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
       echo "context). Prefer front-loading questions; board the rest."
     fi
   fi
+
+  # What followed each sitting rung (metrics-live.sh stamp_time_after), so the
+  # rungs can be set from the user's own behaviour. Measured, never nudged.
+  if [ -d "$SD/metrics/crossings" ]; then
+    since28=$(date -u -d '28 days ago' +%Y-%m-%d 2>/dev/null \
+              || date -u -v-28d +%Y-%m-%d 2>/dev/null || echo "")
+    rungs=$(cat "$SD/metrics/crossings"/*.jsonl 2>/dev/null | jq -rs --arg since "$since28" \
+      '[.[] | select(.kind == "time_after" and .ts >= $since)]
+       | group_by(.at) | map(
+           (map(.min) | sort) as $m | ($m | length) as $n
+           | "\(.[0].at)m: median \(($m[($n - 1) / 2 | floor] + $m[$n / 2 | floor]) / 2 | floor)m to next prompt, \(map(select(.stay)) | length)/\($n) stay")
+       | join(" · ")' 2>/dev/null)
+    [ -n "$rungs" ] && { echo; echo "Sitting rungs, last 28 days: $rungs"; }
+  fi
 } | emit
 
 exit 0
