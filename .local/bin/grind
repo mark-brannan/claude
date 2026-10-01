@@ -1,4 +1,5 @@
 #!/bin/sh
+echo "grind: halted. Do not run grind; see https://github.com/mark-brannan/dotfiles/issues/439" >&2; exit 1
 # grind -- a zero-token orchestrator that works the agent's queue one
 # `claude -p` session at a time.
 #

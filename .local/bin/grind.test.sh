@@ -14,6 +14,11 @@
 set -uo pipefail
 
 GRIND="$(cd "$(dirname "$0")" && pwd)/grind"
+# grind is halted (dotfiles#439): it must refuse to run. The suite below is
+# kept for when it is revived; delete this block and the exit then.
+out=$("$GRIND" --dry-run 2>&1); rc=$?
+case $out in *"halted"*"issues/439"*) [ "$rc" -eq 1 ] && { echo "1 passed, 0 failed"; exit 0; } ;; esac
+echo "FAIL: grind did not halt (rc=$rc): $out"; exit 1
 pass=0; fail=0
 S=$(mktemp -d); export S
 cleanup() { rm -rf "$S"; }
