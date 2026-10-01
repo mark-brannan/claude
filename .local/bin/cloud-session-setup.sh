@@ -62,6 +62,7 @@ INSTALL="
 .claude/skills/agora/SKILL.md
 .claude/skills/curia/SKILL.md
 .claude/skills/curia/template.md
+.claude/skills/scoping/SKILL.md
 .claude/hooks/lib-state.sh
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq
@@ -103,6 +104,7 @@ INSTALL="
 .local/bin/prose-budget
 .local/bin/worklist
 .local/bin/pickup-list
+.local/bin/scoping-lock
 .local/bin/gh-resolve-thread
 .local/bin/pr-label-audit
 "
