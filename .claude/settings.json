@@ -232,6 +232,16 @@
             "statusMessage": "Checking issue/PR text against the private-terms list"
           }
         ]
+      },
+      {
+        "matcher": "Bash|mcp__.*__(create_issue|issue_write|transfer_issue|delete_issue)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=$(cat); h=\"$HOME/.claude/hooks/issue-door.sh\"; [ -f \"$h\" ] && printf '%s' \"$p\" | sh \"$h\" && exit 0; case \"$p\" in *'gh issue'*|*'/issues'*|*'Issue('*|*create_issue*|*issue_write*|*transfer_issue*|*delete_issue*) printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"issue-door.sh is missing from $HOME/.claude/hooks or crashed, so this issue create, transfer or delete could not be checked. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry.\"}}' ;; esac",
+            "statusMessage": "Checking for an issue create, transfer or delete"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -376,6 +386,10 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" prompt 0 show 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/issue-door.sh\"; [ -f \"$h\" ] && sh \"$h\" prompt; true"
           }
         ]
       }

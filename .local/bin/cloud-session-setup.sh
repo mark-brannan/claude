@@ -98,6 +98,7 @@ INSTALL="
 .claude/hooks/branch-home-gate.sh
 .claude/hooks/claim-stamp.sh
 .claude/hooks/public-issue-guard.sh
+.claude/hooks/issue-door.sh
 .claude/hooks/fixtures
 .local/bin/metrics-preview.sh
 .local/bin/metrics-breakdown.sh
