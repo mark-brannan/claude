@@ -20,6 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$S/bin" "$S/home" "$S/cache" "$S/tmp" "$S/fx" "$S/repo" "$S/nogit" "$S/state/.git" "$S/state/state/global"
+unset CLAUDE_CODE_SESSION_ATTENDED
 export HOME="$S/home" XDG_CACHE_HOME="$S/cache" TMPDIR="$S/tmp" CLAUDE_STATE_REPO="$S/state" FIXTURES="$S/fx"
 export GH_LOG="$S/gh.log"; : > "$GH_LOG"
 CACHE="$S/cache/worklist"
@@ -41,9 +42,14 @@ cd "$S/repo" || exit 1
   printf -- '- [ ] **Give-way rule** — decide whether rule 15 wins ([o/r#94](https://github.com/o/r/pull/94))\n'
   printf '\n## Human'"'"'s\n- [ ] **Not an agent card** — [x](https://example.invalid)\n\n## Claude'"'"'s\n'
   printf -- '- [ ] **Card 0** — linked to its evidence, worked elsewhere ([o/beta#5](https://github.com/o/beta/pull/5)) repo: o/alpha id: 1790836843077c62eb\n'
-  for i in 1 2 3 4 5 6 7 8 9; do
+  for i in 1 2 3 4 5 6 7; do
     printf -- '- [ ] **Card %s** — a card body long enough to be cut at eighty characters when brief is asked for ([link](https://example.invalid/%s))\n' "$i" "$i"
   done
+  # Two more id'd cards so the side task's ordering is exercised: Card 8 is
+  # newer and in the cwd repo (never beats Card 0); Card 9 is the oldest of
+  # all but has no repo (wins only outside a repo).
+  printf -- '- [ ] **Card 8** — newer, same repo ([link](https://example.invalid/8)) repo: o/alpha id: 1790836844077c62eb\n'
+  printf -- '- [ ] **Card 9** — oldest, no repo ([link](https://example.invalid/9)) id: 1790836840077c62eb\n'
   printf -- '- [x] **Ticked card** — done ([link](https://example.invalid/t))\n'
 } > "$S/state/state/global/kanban.md"
 
@@ -450,6 +456,20 @@ run --all-rulings
 has 'a ruling card leads with its id' '^- global: 1790836842077c62eb \*\*Engine pin'
 has 'a Claude card leads with its id' '^- 1790836843077c62eb \*\*Card 0'
 lacks 'the trailing id field is not repeated' 'alpha id:'
+
+# --- side task: one Claude card for an attended session -------------------------
+CLAUDE_CODE_SESSION_ATTENDED=1 run --brief
+has 'attended brief offers a side task' "^Side task \(Claude's queue, oldest in this repo\):$"
+has 'side task names the cwd-repo card by id' '^  1790836843077c62eb Card 0$'
+lacks 'a newer card in the same repo does not beat the oldest' 'Card 8'
+lacks 'an older card outside the repo does not beat the cwd-repo card' 'Card 9'
+has 'side task says land it or re-card it' '^  -> do it after the main work, or leave a one-line reason on the card$'
+run --brief
+lacks 'headless brief has no side task' 'Side task'
+(cd "$S" && CLAUDE_CODE_SESSION_ATTENDED=1 sh "$WL" --brief) > "$S/side.out" 2>&1
+OUT=$(cat "$S/side.out")
+has 'outside a repo the side task falls back to oldest overall' "^Side task \(Claude's queue, oldest overall\):$"
+has 'oldest overall is the oldest id, not the first line or the cwd-repo card' '^  1790836840077c62eb Card 9$'
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

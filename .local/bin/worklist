@@ -582,6 +582,27 @@ board_cards() {
                  // ((.link // "") | capture("^https://github\\.com/(?<r>[^/]+/[^/#?]+)") | .r) // null) ]'
 }
 
+# side_task <board> -- one card from ## Claude's for an attended session to
+# land alongside its main work, so the queue drains without grind. Only
+# cards with an id (a handle to re-card by); the oldest whose repo is the
+# cwd repo, else the oldest overall. An id's leading ten digits are epoch
+# seconds, so a string sort is a sort by age. Headless runs (`claude -p`)
+# never set CLAUDE_CODE_SESSION_ATTENDED and see nothing.
+# shellcheck disable=SC2016  # jq program, not shell
+side_task() {
+  [ "${CLAUDE_CODE_SESSION_ATTENDED:-}" = 1 ] || return 0
+  here_repo=$(cwd_repo) || here_repo=""
+  board_cards "$1" | jq -r --arg r "$here_repo" --arg q "Claude's queue" '
+    [ .[] | select(.section == "claudes" and .id != null) ] | sort_by(.id) as $c
+    | ([ $c[] | select($r != "" and .repo == $r) ] | first) as $h
+    | if $h then [$h, "oldest in this repo"]
+      elif ($c | length) > 0 then [$c[0], "oldest overall"] else empty end
+    | .[0] as $k
+    | "Side task (\($q), \(.[1])):",
+      "  \($k.id) \(($k.name // $k.text) | if length > 70 then .[:67] + "..." else . end)",
+      "  -> do it after the main work, or leave a one-line reason on the card"'
+}
+
 # build_record <cache file> -- the bucket record: the cache plus buckets,
 # bucket_counts and summary. --milestone scopes every record's issue nodes
 # first, so a caller's own `.records[].data.issues.nodes[]` query sees the
@@ -624,6 +645,7 @@ render() {
     echo "$stamp"
     [ -n "$3" ] && echo "$3"
     echo
+    if [ -n "$kb" ]; then st=$(side_task "$kb"); [ -n "$st" ] && printf '%s\n\n' "$st"; fi
     resume_section
     echo
     if [ -n "$1" ]; then
