@@ -102,6 +102,10 @@ case "$1 $2" in
   "repo list") printf '[{"name":"alpha"},{"name":"beta"}]\n' ;;
   "search prs") printf '[{"number":1},{"number":2},{"number":3}]\n' ;;
   "search issues") printf '[{"number":1},{"number":2}]\n' ;;
+  "api repos/"*)
+    # sub_issues: a fixture named for the parent, else none
+    k=$(printf '%s' "$2" | sed -e 's#^repos/##' -e 's#/issues/#-#' -e 's#/sub_issues.*##' -e 's#/#-#g')
+    if [ -f "$FIXTURES/subs-$k.json" ]; then cat "$FIXTURES/subs-$k.json"; else echo '[]'; fi ;;
   "api graphql")
     name=""; for a in "$@"; do case $a in name=*) name=${a#name=} ;; esac; done
     # pickup-list's fixup-hard search: no name=, a q= instead.
@@ -289,6 +293,49 @@ eq 'json keeps the record shape' 2 "$(printf '%s' "$OUT" | jq '.records | length
 eq 'json issues scoped to the milestone' '["1.0"]' "$(printf '%s' "$OUT" | jq -c '[.records[].data.issues.nodes[].milestone.title] | unique')"
 eq 'json PRs untouched' 5 "$(printf '%s' "$OUT" | jq '.records[0].data.pullRequests.nodes | length')"
 run --milestone; eq 'bare --milestone is a usage error' 2 "$RC"
+
+# --- Ready: parents, sub-issues, two repos ------------------------------------------
+# alpha#50 Ready parent, children in alpha and beta; alpha#51 Ready parent, all
+# children closed-or-unready; alpha#52 not Ready, with Ready child alpha#53.
+sub() { # repo number title labels-json state
+  jq -nc --arg r "$1" --argjson n "$2" --arg t "$3" --argjson l "$4" --arg s "$5" \
+    '{number:$n, title:$t, state:$s, html_url:"https://github.com/o/\($r)/issues/\($n)", repository_url:"https://api.github.com/repos/o/\($r)",
+      labels:($l|map({name:.})), body:"", updated_at:"2026-09-20T00:00:00Z"}'
+}
+{ sub alpha 60 "Child in alpha" '["ready"]' open; sub beta 61 "Child in beta" '["ready"]' open
+  sub alpha 62 "Child blocked" '["ready","blocked"]' open; sub alpha 63 "Child closed" '["ready"]' closed; } | jq -sc . > "$FIXTURES/subs-o-alpha-50.json"
+{ sub alpha 64 "Child not ready" '[]' open; } | jq -sc . > "$FIXTURES/subs-o-alpha-51.json"
+jq -c '.data.repository.issues.nodes += [
+    {number:50,title:"Parent two repos",url:"https://github.com/o/alpha/issues/50",labels:{nodes:[{name:"ready"}]},milestone:null,body:""},
+    {number:51,title:"Parent nothing ready",url:"https://github.com/o/alpha/issues/51",labels:{nodes:[{name:"ready"}]},milestone:null,body:""},
+    {number:53,title:"Orphan-ish child",url:"https://github.com/o/alpha/issues/53",labels:{nodes:[{name:"ready"}]},milestone:null,body:"",
+      parent:{number:52,title:"Unlabelled parent",url:"https://github.com/o/alpha/issues/52",repository:{nameWithOwner:"o/alpha"}}},
+    {number:60,title:"Child in alpha",url:"https://github.com/o/alpha/issues/60",labels:{nodes:[{name:"ready"}]},milestone:null,body:"",
+      parent:{number:50,title:"Parent two repos",url:"https://github.com/o/alpha/issues/50",repository:{nameWithOwner:"o/alpha"}}}]' \
+  "$FIXTURES/alpha.json" > "$FIXTURES/alpha-subs.json"
+cp "$FIXTURES/alpha.json" "$FIXTURES/alpha-plain.json"; cp "$FIXTURES/alpha-subs.json" "$FIXTURES/alpha.json"
+: > "$GH_LOG"; run --fresh
+OUT_ALL=$OUT; OUT=$(section "Ready")
+has 'a parent is a parent line, with its Ready count' '^\| \[alpha#50\].* \| Parent two repos \| parent, 2 Ready \|$'
+has 'its same-repo Ready child is indented under it' '^\| \[alpha#60\].* \|   ↳ Child in alpha \|'
+has 'its other-repo Ready child carries its own repo' '^\| \[beta#61\]\(https://github.com/o/beta/issues/61\) \|   ↳ Child in beta \|'
+lacks 'a blocked child is not Ready' 'alpha#62'
+lacks 'a closed child is not Ready' 'alpha#63'
+has 'a parent with no Ready children is still a parent line' '^\| \[alpha#51\].* \| Parent nothing ready \| parent, none Ready \|$'
+lacks 'its unready child is not listed' 'alpha#64'
+has 'a Ready child of a non-Ready parent shows under the parent' '^\| \[alpha#52\].* \| Unlabelled parent \| parent \(not Ready\), 1 Ready \|$'
+has 'and is indented under it' '^\| \[alpha#53\].* \|   ↳ Orphan-ish child \|'
+assert 'no child is also a top-level Ready row' \
+  [ "$(printf '%s\n' "$OUT" | grep -c 'alpha#60')" = 1 ]
+has 'a childless Ready issue is still a plain row' '^\| \[alpha#23\].* \| Ready issue \|'
+assert 'the child follows its parent' \
+  [ "$(printf '%s\n' "$OUT" | grep -n 'alpha#50\|alpha#60\|beta#61' | cut -d: -f1 | tr '\n' ' ')" = "$(printf '%s\n' "$OUT" | grep -n 'alpha#50' | cut -d: -f1) $(( $(printf '%s\n' "$OUT" | grep -n 'alpha#50' | cut -d: -f1) + 1 )) $(( $(printf '%s\n' "$OUT" | grep -n 'alpha#50' | cut -d: -f1) + 2 )) " ]
+eq 'one sub_issues call per Ready, unblocked issue' 7 "$(calls 'sub_issues')"
+OUT=$OUT_ALL
+run --json
+eq 'json ready holds leaves, never a parent' '[]' "$(printf '%s' "$OUT" | jq -c '[.buckets.ready[] | select(.number == 50 or .number == 51 or .number == 52)]')"
+eq 'json child names its parent' 'o/alpha#50' "$(printf '%s' "$OUT" | jq -r '.buckets.ready[] | select(.repo == "o/beta") | .parent')"
+cp "$FIXTURES/alpha-plain.json" "$FIXTURES/alpha.json"
 
 # --- one repo 403 ---------------------------------------------------------------------------
 GH_MODE=403 run --fresh

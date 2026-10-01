@@ -92,7 +92,7 @@ QUERY='query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){
     commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{
       ... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}
   issues(states:OPEN,first:100){pageInfo{hasNextPage} nodes{number title url updatedAt labels(first:20){nodes{name}}
-    milestone{title} body}}
+    milestone{title} body parent{number title url repository{nameWithOwner}}}}
   refs(refPrefix:"refs/heads/",first:100){nodes{name associatedPullRequests(first:1){totalCount}}}
 }}'
 
@@ -169,6 +169,28 @@ do_fetch() {
       jq -nc --arg repo "$r" --arg c "${cause:-unknown error}" '{repo:$repo, error:$c}' >> "$tmp/recs"
     fi
   done
+  # One sub-issues call per Ready, unblocked issue, the same read grind makes.
+  # A parent is worked through its children, so the view must know them.
+  jq -r '.repo as $r | (.data.issues.nodes // [])[] | select(([.labels.nodes[].name] | index("ready")) and ([.labels.nodes[].name] | index("blocked") | not))
+    | "\($r)\t\(.number)"' "$tmp/recs" > "$tmp/ready.tsv" 2>/dev/null
+  si=0
+  while IFS='	' read -r sr sn; do
+    [ -n "$sn" ] || continue
+    si=$((si + 1))
+    ( run_t gh api "repos/$sr/issues/$sn/sub_issues?per_page=100" >"$tmp/sub.$si.out" 2>/dev/null; echo $? >"$tmp/sub.$si.rc" ) &
+  done < "$tmp/ready.tsv"
+  wait
+  si=0; : > "$tmp/subs.ndjson"
+  while IFS='	' read -r sr sn; do
+    [ -n "$sn" ] || continue
+    si=$((si + 1))
+    if [ "$(cat "$tmp/sub.$si.rc")" = 0 ] && jq -e 'type == "array"' "$tmp/sub.$si.out" >/dev/null 2>&1; then
+      jq -c --arg p "$sr#$sn" '{($p): .}' "$tmp/sub.$si.out" >> "$tmp/subs.ndjson"
+    else
+      jq -nc --arg p "$sr#$sn" '{($p): null}' >> "$tmp/subs.ndjson"
+    fi
+  done < "$tmp/ready.tsv"
+  jq -s 'add // {}' "$tmp/subs.ndjson" > "$tmp/subs.json"
   count_of() { # $1 = _prs|_iss ; prints a JSON number or a quoted cause
     if [ "$(cat "$tmp/$1.rc")" = 0 ] && c=$(jq 'length' "$tmp/$1.out" 2>/dev/null); then
       if [ "$c" -ge 300 ]; then printf '"300+"'; else printf '%s' "$c"; fi
@@ -176,9 +198,9 @@ do_fetch() {
   }
   jq -n --arg key "$key" --arg owner "$owner" --arg project "$project" --arg label "$label" \
      --argjson now "$(date +%s)" --arg hm "$(date -u +%H:%MZ)" \
-     --slurpfile recs "$tmp/recs" --argjson prs "$(count_of _prs)" --argjson issues "$(count_of _iss)" \
+     --slurpfile recs "$tmp/recs" --slurpfile subs "$tmp/subs.json" --argjson prs "$(count_of _prs)" --argjson issues "$(count_of _iss)" \
      '{key:$key, owner:$owner, project:$project, label:$label, written_at:$now, written_hm:$hm,
-       repos:[$recs[].repo], records:$recs, counts:{prs:$prs, issues:$issues}}' > "$tmp/cache.json" \
+       repos:[$recs[].repo], records:$recs, subs:$subs[0], counts:{prs:$prs, issues:$issues}}' > "$tmp/cache.json" \
     && mv -f "$tmp/cache.json" "$cache_root/$key.json"
   rm -rf "$tmp" "$lock"
   [ -n "$marker" ] && printf 'key\t%s\n' "$key" > "$marker"
@@ -243,6 +265,8 @@ def pr_notes($owner): [
 def awaiting_human: (.isDraft|not) and .mergeable == "MERGEABLE" and (failing_names|length) == 0
   and (rollup|IN("SUCCESS","NONE")) and unresolved == 0 and .autoMergeRequest == null;
 def labels: [(.labels.nodes // [])[].name];
+def iref: "\(.repo)#\(.number)";
+def workable: (.labels | index("ready")) and (.labels | index("blocked") | not);
 
 . as $c | $c.owner as $owner
 | [ $c.records[] | select(.data) | .repo as $r | (.data.pullRequests.nodes // [])[]
@@ -251,12 +275,34 @@ def labels: [(.labels.nodes // [])[].name];
        autoMerge: (.autoMergeRequest != null), awaiting_human: awaiting_human, notes: pr_notes($owner)} ] as $prs
 | [ $c.records[] | select(.data) | .repo as $r | (.data.issues.nodes // [])[]
     | {kind: "issue", repo: $r, number, title, url, updatedAt, body, labels: labels,
-       milestone: (.milestone.title // null), notes: (.updatedAt[:10] // "")} ] as $is
+       milestone: (.milestone.title // null), notes: (.updatedAt[:10] // ""),
+       parent_issue: (.parent | if . then {repo: .repository.nameWithOwner, number, title, url} else null end)} ] as $is
 # A milestone view is a filter over the same cache: the fetch and the cache
 # stay unscoped, so one cache serves both views.
 | ($is | if $milestone == "" then . else map(select(.milestone == $milestone)) end) as $is
 | ($is | map(select(.labels|index("blocked")))) as $bl
 | ($is | map(select((.labels|index("blocked")|not) and (.labels|index("ready"))))) as $rd
+# A Ready issue with open sub-issues (or ones that could not be read) is a
+# parent line, never itself Ready: its Ready, unblocked open sub-issues are
+# the work, each in its own repo. A Ready child whose parent is not Ready
+# comes in through its own parent link. Same rule as grind.
+| ($c.subs // {}) as $subs
+| ($rd | map(select(iref as $r | ($subs | has($r)) and ($subs[$r] == null or ($subs[$r] | map(select(.state == "open")) | length) > 0)))) as $rp
+| ([ $rp[] | iref as $p | ($subs[$p] // [])[] | select(.state == "open")
+     | {kind: "issue", repo: (.repository_url | sub(".*/repos/"; "")), number, title, url: .html_url, updatedAt: .updated_at,
+        body: (.body // ""), labels: (.labels | map(.name)), milestone: (.milestone.title // null),
+        notes: (.updated_at[:10] // ""), parent: $p}
+     | select(workable and ($milestone == "" or .milestone == $milestone)) ]
+   + [ $is[] | select(workable and .parent_issue != null) | . + {parent: "\(.parent_issue.repo)#\(.parent_issue.number)"} ]
+   | unique_by(iref)) as $kids
+| ($kids | map(iref)) as $kid_refs
+| ($rp | map(iref)) as $rp_refs
+| ($rp | map(. + {is_ready: true, unreadable: ($subs[iref] == null)})
+   + ([ $kids[] | select(.parent as $p | $rp_refs | index($p) | not) | .parent as $p | .parent_issue
+        | select(. != null) | . + {is_ready: false, unreadable: false, labels: [], updatedAt: ""} ] | unique_by(iref))
+   | map(iref as $r | . + {notes: (if .unreadable then "parent, sub-issues unreadable"
+        else "parent\(if .is_ready then "" else " (not Ready)" end), \([$kids[] | select(.parent == $r)] | length | if . == 0 then "none" else "\(.)" end) Ready" end)})) as $parents
+| ($rd | map(select(iref as $r | ($rp_refs | index($r) | not) and ($kid_refs | index($r) | not))) + $kids) as $rd
 | ($is | map(select((.labels|index("blocked")|not) and (.labels|index("ready")|not)))) as $rest
 # In a milestone view the milestone is the scope, so nothing in it is
 # "deferred to a milestone": its unlabelled issues are the Untriaged table.
@@ -279,7 +325,7 @@ def labels: [(.labels.nodes // [])[].name];
 | ({ awaiting_human: ($prs | map(select(.awaiting_human))),
      queued: ($prs | map(select(.autoMerge))),
      not_ready: ($prs | map(select((.autoMerge|not) and (.awaiting_human|not)))),
-     ready: $rd, blocked: $bl, untriaged: $untri, stranded: $stranded,
+     ready: $rd, ready_parents: $parents, blocked: $bl, untriaged: $untri, stranded: $stranded,
      rulings: ($cards | map(select(.section == "rulings"))),
      humans: ($cards | map(select(.section == "humans"))),
      claudes: ($cards | map(select(.section == "claudes"))) }) as $buckets
@@ -309,6 +355,11 @@ def table_bucket($title; $col3; $rows):
   end;
 def ref_link: (.repo|split("/")[1]) as $s | if brief then "\($s)#\(.number)" else "[\($s)#\(.number)](\(.url))" end;
 def row: {ref: ref_link, item: (.title|cut), notes};
+# Ready: each parent line with its Ready sub-issues indented beneath it, then
+# the issues with no sub-issues.
+def ready_rows: . as $b
+  | ($b.ready_parents | map(. as $p | [ $p | row ] + [ $b.ready[] | select(.parent == "\($p.repo)#\($p.number)") | row | .item = "  ↳ " + .item ]) | add // [])
+    + ($b.ready | map(select(.parent == null) | row));
 
 . as $c | $c.buckets as $b | $c.summary as $s
 # The number a reader skims sits above project-scoped tables, so the scoped
@@ -320,7 +371,7 @@ def row: {ref: ref_link, item: (.title|cut), notes};
   table_bucket("Human'"'"'s turn"; "Notes"; $b.awaiting_human | map(row)),
   table_bucket("Queued (auto-merge)"; "Notes"; $b.queued | map(row)),
   table_bucket("Stranded branches (no PR)"; "Notes"; $b.stranded | map(.item |= cut)),
-  table_bucket("Ready"; "Updated"; $b.ready | map(row)),
+  table_bucket("Ready"; "Updated"; $b | ready_rows),
   table_bucket("Blocked"; "Updated"; $b.blocked | map(row)),
   table_bucket("Not ready (agent'"'"'s turn)"; "Notes"; $b.not_ready | map(row)),
   (if ($b.untriaged|length) == 0 then "Untriaged: 0"
