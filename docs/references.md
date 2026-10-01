@@ -71,6 +71,24 @@ Solace's, verbatim.
   - Idea: observe, orient, decide, act, with orientation shaping every stage.
   - Maps to: worklist observes, the continuity brief and checkpoint orient, a
     ruling decides, grind acts.
+- **Collins, J. (2001).** *Good to Great: Why Some Companies Make the Leap...
+  and Others Don't.* HarperBusiness. The flywheel is chapter 8 (chapter title
+  unverified).
+  [wikipedia](https://en.wikipedia.org/wiki/Good_to_Great)
+  - Idea: no single push. Consistent pushes in one direction until momentum
+    compounds, against the doom loop of lurching between programmes.
+  - Maps to: the daily loop, worklist to grind to PR to log, run the same way
+    every session; the standing orders exist so the pushes point one way.
+- **Amazon's flywheel.** Bezos, J. P., sketched at an offsite with Collins in
+  2001 (2000 in some tellings) per Stone, B. (2013), *The Everything Store*,
+  Little, Brown; the napkin story is secondary and unverified against a primary
+  source. The "virtuous cycle" language is in the 2005 letter to shareholders
+  (unverified in full).
+  [sec.gov](https://www.sec.gov/Archives/edgar/data/1018724/000119312506084815/dex991.htm)
+  - Idea: lower prices bring customers, customers bring sellers, sellers bring
+    selection, selection brings customers; every turn feeds the next.
+  - Maps to: continuity. Each session's log feeds the next session's brief;
+    the board and the checkpoint are the rim the momentum lives in.
 - **Ohno, T. (1988).** *Toyota Production System: Beyond Large-Scale
   Production.* Productivity Press (Japanese original 1978). **Anderson, D. J.
   (2010).** *Kanban: Successful Evolutionary Change for Your Technology
@@ -332,7 +350,9 @@ Dates are as found on 2026-09-29.
     rather than file events.
 - **Beads.** Yegge, S., 13 October 2025. A git-backed, dependency-aware issue
   tracker that gives coding agents memory across sessions.
-  [github.com](https://github.com/gastownhall/beads)
+  [github.com](https://github.com/gastownhall/beads);
+  "Introducing Beads: A Coding Agent Memory System", Medium, 13 October 2025,
+  [medium.com](https://steve-yegge.medium.com/introducing-beads-a-coding-agent-memory-system-637d7d92514a)
   - Maps to: the board and the checkpoints in the private state repo. Both put
     agent memory in git; here it is kept out of the public tree.
 - **Gas Town.** Yegge, S., 1 January 2026. An orchestrator running many
@@ -340,6 +360,44 @@ Dates are as found on 2026-09-29.
   [github.com](https://github.com/gastownhall/gastown)
   - Maps to: orchestrate and grind, at smaller scale: one worker per issue, a
     review band, and the human as the only mayor.
+- **The Agentic Coding Flywheel.** Emanuel, J., agent-flywheel.com. The guide
+  gives no origin date; its setup repository is dated 20 December 2025 and the
+  page says "Last reviewed July 17, 2026". A ten-part method in execution
+  order, "85% of your time on planning" before any tool is named; each tool
+  gets a problem statement, a design stance and usage, with no install line
+  and no origin story. The loop, in its words: "every completed cycle upgrades
+  the artifacts feeding into the next one."
+  [agent-flywheel.com](https://agent-flywheel.com/complete-guide)
+  - Idea: Collins's word and Boyd's tempo, one loop run fast and often. It
+    names neither, nor Argyris, and nowhere questions or revises its own
+    method (checked against the page, 2026-09-30).
+  - Maps to: the standing orders, the agora and the curia, grind and the board
+    are the same kind of thing, a method the tools serve, unnamed and
+    unpublished here. The difference in kind: his has no second loop; this
+    one is built around it.
+- **Agent Mail.** Emanuel, J., 23 October 2025. "A mail-like coordination
+  layer for coding agents, exposed as an HTTP-only FastMCP server", built to
+  sit on Beads.
+  [github.com](https://github.com/Dicklesworthstone/mcp_agent_mail)
+  - Maps to: the pickup items and cross-session messages in the state repo;
+    here a human is on every thread.
+- **Beads Best Practices.** Yegge, S., Medium, 24 November 2025 (date from a
+  search summary; the article itself could not be fetched). Names Agent Mail as
+  a compelling case for direct integration with an orchestrator (paraphrase,
+  unverified).
+  [medium.com](https://steve-yegge.medium.com/beads-best-practices-2db636b9760c)
+  - Maps to: how a tool borrows standing from a bigger one; see the dcg entry.
+- **destructive_command_guard (dcg).** Emanuel, J., created 7 January 2026;
+  6,071 stars across sixteen-plus agent hosts by 30 September 2026 (GitHub
+  API).
+  Regex-first with a tree-sitter pass for inline scripts; fails open by
+  default. Its origin was the author's own agent running destructive git
+  commands on 17 December 2025.
+  [github.com](https://github.com/Dicklesworthstone/destructive_command_guard)
+  - Maps to: the guards, now Languette. Same origin, a private incident; the
+    differences are fail-closed and a structural scanner. Its reach came from
+    an installer bundle and host breadth, riding a following that one essay
+    had built, not from rigour or a launch: the Show HN got 3 points.
 - **The Ralph Wiggum loop.** Huntley, G., 14 July 2025. Rerun the agent on the
   same prompt until the work is done; later an official Claude Code plugin
   (plugin date unverified).
