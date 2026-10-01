@@ -41,7 +41,7 @@ cd "$S/repo" || exit 1
 # --- canned Ready queue --------------------------------------------------------
 cat > "$S/ready.json" <<'JSON'
 [
-  {"number": 20, "title": "Second item", "body": "do the second thing", "url": "https://github.com/o/alpha/issues/20", "labels": [{"name": "ready"}]},
+  {"number": 20, "title": "Second item", "body": "do the second thing\n\nmodel: opus\neffort: high", "url": "https://github.com/o/alpha/issues/20", "labels": [{"name": "ready"}]},
   {"number": 5, "title": "First item", "body": "do the first thing", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]},
   {"number": 9, "title": "Blocked item", "body": "not yet", "url": "https://github.com/o/alpha/issues/9", "labels": [{"name": "ready"}, {"name": "blocked"}]}
 ]
@@ -181,9 +181,15 @@ has 'a worktree command is shown' 'git -C .* worktree add -b grind-5'
 has 'the claude command is shown, with defaults' 'claude -p <issue o/alpha#5 body> --output-format stream-json --verbose --max-budget-usd 5 --model sonnet --effort medium'
 assert 'dry-run wrote no state file' bash -c '! ls '"$S"'/state/grind/*.json >/dev/null 2>&1'
 
-# --- --dry-run respects override flags -----------------------------------------
-run --dry-run --model opus --effort high --item-budget 2
-has 'overrides reach the command line' -- '--max-budget-usd 2 --model opus --effort high'
+# --- --model and --effort are refused; the item carries them -------------------------
+run --dry-run --model opus
+eq 'a --model flag is refused' 2 "$RC"
+has 'the refusal names the item fields' '`model:` and `effort:`'
+run --dry-run --effort high
+eq 'an --effort flag is refused' 2 "$RC"
+run --dry-run --item-budget 2
+has 'an item with fields runs on its own pair' 'alpha#20 body>.*--model opus --effort high'
+has 'an item without fields gets the one default pair' 'alpha#5 body>.*--max-budget-usd 2 --model sonnet --effort medium'
 
 # --- a real run: cost/tokens parsed, running total and percent printed ----------
 rm -f "$S/claude-replies"/*.json
@@ -194,9 +200,10 @@ run --session-budget 20 --pause-every 5
 eq 'exit 0' 0 "$RC"
 eq 'two claude invocations' 2 "$(calls_claude)"
 has 'first item line: cost, tokens, running total, percent' '^o/alpha#5: First item -- sonnet, \$1\.00, 150 tokens -- running \$1\.00 / \$20\.00 -- 5%$'
-has 'second item line: running total accumulates' '^o/alpha#20: Second item -- sonnet, \$2\.00, 150 tokens -- running \$3\.00 / \$20\.00 -- 15%$'
+has 'second item line: running total accumulates' '^o/alpha#20: Second item -- opus, \$2\.00, 150 tokens -- running \$3\.00 / \$20\.00 -- 15%$'
 has 'queue exhausted, final tally' '^done: queue exhausted \(2 issue\)\. Running total \$3\.00 / \$20\.00\. 0 skipped\.$'
-has 'INFO: session line names repo, count, model, caps' 'INFO  session grind-.* on o/alpha: 2 item\(s\) \(2 issue; finish-first\), sonnet/medium, cap \$5\.00/item \$20\.00/session'
+has 'INFO: session line names repo, count, model, caps' 'INFO  session grind-.* on o/alpha: 2 item\(s\) \(2 issue; finish-first\), cap \$5\.00/item \$20\.00/session'
+eq 'the state file records each item'"'"'s own pair' 'sonnet/medium opus/high' "$(jq -r '[.items[] | "\(.model)/\(.effort)"] | join(" ")' "$(latest_session)")"
 has 'INFO: item start line' 'INFO  \[1/2\] starting o/alpha#5 -- First item'
 has 'INFO: worker line names the permission mode' 'INFO  worker running: .*--permission-mode bypassPermissions'
 has 'INFO: worker exit line' 'INFO  worker exited 0 after [0-9]+s'
