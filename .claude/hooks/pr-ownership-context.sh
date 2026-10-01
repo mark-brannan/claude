@@ -68,10 +68,21 @@ tool=$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null) || exit
 case "$tool" in
   Bash)
     cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
-    # The mergify half is restricted to a real command position (start of
-    # string, or after a separator: ; & | ( or a backtick) so "echo mergify
-    # merge" or "true # mergify merge" -- mergify named but not run -- don't
-    # falsely record a cwd and trip the Stop gate on an unrelated PR.
+    # Only what runs counts: lib-shell-words.awk keeps one line per segment
+    # whose command word is gh, gh-resolve-thread or mergify, from that word
+    # on. A heredoc, a quoted message or `echo gh pr` names the command
+    # without running it, and used to arm the Stop gate. No library or awk:
+    # fall back to the raw command (over-match, never silence).
+    cmd=$(printf '%s\n' "$cmd" | awk "$(cat "${0%/*}/lib-shell-words.awk")"'
+      { buf = buf $0 "\n" }
+      END { nt = texts_of(strip_heredocs(buf), texts, nested)
+        for (x = 1; x <= nt; x++) { n = scan(texts[x], w, k, q); a = 1
+          for (i = 1; i <= n + 1; i++) { if (i <= n && k[i] != ";") continue
+            g = cmd_index(w, k, a, i - 1, "(^|/)(gh|gh-resolve-thread|mergify)$", nested[x], "")
+            if (g) { s = w[g]; sub(/.*\//, "", s)
+              for (j = g + 1; j < i; j++) s = s " " (k[j] == "q" ? q[j] : w[j])
+              gsub(/\n/, " ", s); print s }
+            a = i + 1 } } }') || cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')
     printf '%s' "$cmd" | grep -Eq \
       '(^|[^A-Za-z0-9_./-])gh[[:space:]]+(pr([[:space:]]|$)|api[[:space:]].*(pulls|graphql|reviewThreads))|(^|[^A-Za-z0-9_./-])gh-resolve-thread([[:space:]]|$)|(^|[;&|(`])[[:space:]]*mergify[[:space:]]+(stack[[:space:]]+(push|checkout|sync)([[:space:]]|$)|(queue|merge)([[:space:]]|$))' \
       || exit 0

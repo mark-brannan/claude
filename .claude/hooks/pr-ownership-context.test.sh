@@ -5,6 +5,9 @@
 # session, emits valid JSON whatever the rules file contains, and says so out
 # loud when the rules file or the heading is missing instead of going quiet.
 set -uo pipefail
+# AWK_PATH: a directory whose `awk` is the one to test (ci.yml runs this under
+# mawk, gawk and original-awk, like the other lib-shell-words suites).
+[ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 
 HOOK="$(cd "$(dirname "$0")" && pwd)/pr-ownership-context.sh"
 pass=0
@@ -133,6 +136,15 @@ check inject 'two PRs, two repos, in one compound command' \
   "$(bash_input cx2 'gh pr view 73 -R mark-brannan/dotfiles --json state 2>&1; echo ---; gh pr view 80 -R markbrannan/dotfiles --json state 2>&1')"
 t 'records the first clause intact, not a cross-clause mix' \
   "$(printf 'repo\tmark-brannan/dotfiles\t73\tread')" "$(rec_last cx2)"
+
+# --- named is not run: prose, heredocs and messages never arm the Stop gate ---
+check silent 'gh pr in a heredoc body' "$(bash_input p1 "$(printf 'cat > card.md <<EOF\nrun gh pr view 5 -R o/r first\nEOF')")"
+check silent 'gh pr in a commit message' "$(bash_input p1b 'git commit -m "fix the gh pr view 5 -R o/r call"')"
+check silent 'gh pr echoed'              "$(bash_input p1c 'echo gh pr view 5')"
+t 'prose wrote no PR record' '' "$(rec_last p1; rec_last p1b; rec_last p1c)"
+check inject 'gh pr inside sh -c'        "$(bash_input p2 "sh -c 'gh pr view 5 -R o/r'")"
+check inject 'real call beside prose'    "$(bash_input p3 "$(printf 'cat <<EOF\ngh pr view 9 -R x/y\nEOF\ngh pr comment 7 -R o/r --body ok')")"
+t 'records the call, not the prose' "$(printf 'repo\to/r\t7\twork')" "$(rec_last p3)"
 
 # --- dotfiles#224: read vs work, on the record line -------------------------
 # A bare gh pr view/checks/diff/list (or a non-mutating gh api call) is a
