@@ -23,6 +23,9 @@
     ],
     "deny": [
       "Bash(git reset --hard:*)"
+    ],
+    "additionalDirectories": [
+      "~/claude_prompts_scratch"
     ]
   },
   "disableClaudeAiConnectors": true,
