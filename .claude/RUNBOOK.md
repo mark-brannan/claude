@@ -214,6 +214,14 @@ Edit that file, not the scripts.
 | `statusline-metrics.sh` | prints the one-line statusline row |
 | `lib-metrics-fmt.jq` | **every field and both layouts** |
 
+The decision count is measured, never alarmed: `metrics-live.sh` has no
+decision line on screen or to the model. The decisions-per-session-hour ratio
+(session clock, first prompt to last) appears in exactly two places, the
+session-start "Decision load, last 7 days" block and the Stop checkpoint's
+`- decision rate:` line. Do not add it to the statusline or the event block.
+Verify: `grep -c 'decision rate' ~/claude_prompts_scratch/state/global/log/auto/*.md | tail -3`
+after a session with two or more prompts.
+
 Fields are `env`, `cost`, `time`, `dec`, `turns`, `work` (plus `split`, unused).
 Layouts are `row` and `block`. Both draw from one `fields` list, so field order
 cannot drift between them.

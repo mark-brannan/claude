@@ -147,6 +147,10 @@ resume_block=""
     "- friction: \(.friction.total) total (\(.friction.correction) correction, \(.friction.override) override, \(.friction.rebuke) rebuke, \(.friction.pushback) pushback)",
     "- blocked: \(.blocked.total // 0) tool calls refused (\(.blocked.classifier // 0) classifier, \(.blocked.rule // 0) rule, \(.blocked.user // 0) user-declined)"'
 
+  rate=$(decision_rate "$(printf '%s' "$metrics" | jq -r '.session.decisions.total // 0')" \
+           "$(printf '%s' "$metrics" | jq -r '.session.prompt_span_seconds // 0')")
+  [ -n "$rate" ] && echo "- decision rate: $rate"
+
   if [ -n "$resume_block" ]; then
     echo
     printf '%s\n' "$resume_block"

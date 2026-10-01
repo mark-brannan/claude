@@ -345,5 +345,11 @@ eq_ust "same commit on stack/x, @{u} still main: ahead 0" 'ahead 0' "$(ust "$STK
 gitq "$STK" branch -q --unset-upstream
 eq_ust "no upstream, commit on a remote branch: safe" 'safe' "$(ust "$STK" local-stack)"
 
+# --- decision_rate -----------------------------------------------------------
+dr() { bash -c '. "'"$HOOKS"'/lib-state.sh"; decision_rate "$@"' _ "$@"; }
+eq_ust "decision_rate: 3 in 1h10"      '3 decisions in 1h10 (2.6/h)' "$(dr 3 4200)"
+eq_ust "decision_rate: singular"       '1 decision in 0h30 (2.0/h)'  "$(dr 1 1800)"
+eq_ust "decision_rate: no clock, no line" ''                          "$(dr 3 0)"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

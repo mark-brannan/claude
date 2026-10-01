@@ -94,7 +94,7 @@ printf '%s\n' "$(msg "$(block "$TP5" f)")" | sed 's/^/  /'
 
 rm -f "$SITFILE"
 
-show "model injection: decision load past 3, then past 5"
+show "model injection: decisions past 3, then past 5 -- nothing to the model"
 askturn() {  # like turn(), but the assistant text is an ask
   jq -nc --arg ts "2026-09-09T10:00:00.000Z" \
     '{type:"assistant", timestamp:$ts, requestId:("q-" + (now|tostring)),

@@ -90,7 +90,7 @@ clock_clear() { rm -f "$SITF"; }
 sitting() {  # sitting <session id> <minutes since sitting start> <minutes since last prompt>
   local n=$STATE/metrics/live/$1.nag.json
   mkdir -p "$(dirname "$n")"
-  jq -n '{context_line:200000, time_line:0, time_line_sitting:0, gate_line:0,
+  jq -n '{context_line:200000, time_line:0, time_line_sitting:0,
           friction_tripped:false, since_nag:false,
           resume_ts:0, nag_pending:false}' > "$n"
   clock "$2" "$3"
@@ -200,7 +200,7 @@ has 'with the stand-up verdict, not a wrap-up' 'stand up' "$(msg "$outF2")"
 clock 61 10
 old=$STATE/metrics/live/mOld.nag.json
 jq -n --argjson ss "$(( $(date +%s) - 900 ))" \
-  '{context_line:200000, time_line:60, gate_line:0, friction_tripped:false,
+  '{context_line:200000, time_line:60, friction_tripped:false,
     sitting_start:$ss, last_prompt:$ss, since_nag:false,
     resume_ts:0, nag_pending:false}' > "$old"
 has 'a pre-move nag file does not suppress the new hour' '⏱ sitting 1h00' \
@@ -578,23 +578,12 @@ ctx6j=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
         | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 t 'below the first decision rung, nothing reaches the model' '' "$ctx6j"
 
-for _ in 1 2 3; do askturn "$TP6c"; done
+# One-entry-point §5 (2026-09-30): the decision count never nudges the model.
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do askturn "$TP6c"; done
 ctx6k=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
         | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
-has 'the first decision crossing offers to front-load or card' \
-    '3 decisions pushed to Solace this session .* past 3\. Front-load or card the rest\.' "$ctx6k"
-
-for _ in 1 2; do askturn "$TP6c"; done
-ctx6l=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
-has 'a later decision crossing names the earlier rung raised' \
-    'past 5 \(last noted at 3\)\.' "$ctx6l"
-hasnt 'and does not repeat the front-load offer' 'Front-load or card the rest\.' "$ctx6l"
-
-# dotfiles#282: no new decision, no line.
-ctx6m=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
-t 'and a prompt adding no decision says nothing' '' "$ctx6m"
+hasnt 'past every old decision rung, nothing about decisions reaches the model' \
+      'decisions pushed to Solace' "$ctx6k"
 
 # --- 7. the sitting line carries git state once #129 makes it safe to ---------
 # dotfiles#132's third deferred item, reconciled now that #129 landed: a dirty
@@ -818,55 +807,23 @@ payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show >/dev/null 2>&1
 t   'a tool call leaves the sitting clock where it found it' "$before12" \
     "$(jq -r '.sitting_start // 0' "$SITF12" 2>/dev/null || echo 0)"
 
-# --- 13. day decisions: machine-wide across sessions, edge-triggered (#301) --
-# Two rungs, small, so the case is a handful of asks rather than twenty:
-# METRICS_DAY_DECISION_LINES overrides the shipped "20 40 60".
-DAYENV=(METRICS_DAY_DECISION_LINES="2 4" METRICS_DAY_DECISION_STEP=2)
+# --- 13. day decisions: counted machine-wide, never nagged (#301) -----------
+# The counter keeps counting across sessions; no line or injection reads it
+# (one-entry-point §5, 2026-09-30).
 DAYF="$STATE/metrics/day-decisions.json"
 rm -f "$DAYF"
 
 TP13a="$SCRATCH/day-a.jsonl"; SID13a=day-a
 turn "$TP13a" 40000
-o13a=$(payload "$TP13a" "$SID13a" "$SCRATCH" \
-       | env "${DAYENV[@]}" METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 show 2>&1)
-t    'below the first day rung, no day line on screen'  '' \
-     "$(msg "$o13a" | grep -o '☀.*' || true)"
-t    'and nothing reaches the model either'             '' "$(ctx "$o13a")"
-
-for _ in 1 2; do askturn "$TP13a"; done
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do askturn "$TP13a"; done
 o13b=$(payload "$TP13a" "$SID13a" "$SCRATCH" \
-       | env "${DAYENV[@]}" METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 show 2>&1)
-has  'two decisions in one session crosses the first day rung' \
-     '☀ 2 decisions today \(0 junk\), past 2' "$(msg "$o13b")"
-has  'and the model gets the same crossing, once, as an offer to stop' \
-     '2 decisions today across sessions \(0 junk\), past 2\. Offer to land and stop, once\.' \
-     "$(ctx "$o13b")"
-
-o13b2=$(payload "$TP13a" "$SID13a" "$SCRATCH" \
-        | env "${DAYENV[@]}" METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 show 2>&1)
-t    'the same rung on the next prompt says nothing on screen' '' \
-     "$(msg "$o13b2" | grep -o '☀.*' || true)"
-t    'nor to the model'                                        '' "$(ctx "$o13b2")"
-
-# A second session's own decisions add to the first's, proving the counter is
-# machine-wide rather than per session -- 2 (day-a) + 2 (day-b) crosses 4.
-TP13c="$SCRATCH/day-b.jsonl"; SID13c=day-b
-turn "$TP13c" 40000
-for _ in 1 2; do askturn "$TP13c"; done
-o13c=$(payload "$TP13c" "$SID13c" "$SCRATCH" \
-       | env "${DAYENV[@]}" METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 show 2>&1)
-has  'a second session crossing the day total names the day total, not its own' \
-     '☀ 4 decisions today \(0 junk\), past 4' "$(msg "$o13c")"
-# day-b's own nag file has not seen a day rung before, so this reads as a
-# fresh offer to it -- the "last offered" wording is per session, same as the
-# session-decision ladder, even though the counter itself is machine-wide.
-has  'and day-b'"'"'s own model line reads as its first offer' \
-     '4 decisions today across sessions \(0 junk\), past 4\. Offer to land and stop, once\.' \
-     "$(ctx "$o13c")"
-
-CROSS13="$STATE/metrics/crossings/$SID13a.jsonl"
-t 'the first session'"'"'s own crossing was recorded under its kind' \
-  '2' "$(jq -r 'select(.kind == "day_decision") | .at' "$CROSS13" 2>/dev/null)"
+       | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 show 2>&1)
+t    'no day line on screen at any count'      '' "$(msg "$o13b" | grep -o '☀.*' || true)"
+t    'no gate line on screen at any count'     '' "$(msg "$o13b" | grep -o '⚖ [0-9].*' || true)"
+t    'and nothing about decisions reaches the model' '' \
+     "$(ctx "$o13b" | grep -o '[0-9]* decisions.*' || true)"
+t    'but the day counter still counts'        '22' \
+     "$(jq -r '.sessions["day-a"].total // 0' "$DAYF" 2>/dev/null)"
 
 # A gap past METRICS_DECISION_GAP_MIN anywhere on the machine starts a fresh
 # day: back-date day-decisions.json's last_prompt and confirm the map clears.
@@ -874,12 +831,9 @@ jq --argjson past "$(( $(date +%s) - 200 * 60 ))" '.last_prompt = $past' "$DAYF"
    > "$DAYF.tmp" && mv "$DAYF.tmp" "$DAYF"
 TP13d="$SCRATCH/day-c.jsonl"; SID13d=day-c
 turn "$TP13d" 40000
-o13d=$(payload "$TP13d" "$SID13d" "$SCRATCH" \
-       | env "${DAYENV[@]}" METRICS_DECISION_GAP_MIN=180 METRICS_SIT_EVERY_MIN=0 \
-         bash "$HOOK" prompt 0 show 2>&1)
-t    'a gap past the limit clears the day, so a fresh session alone crosses nothing' \
-     '' "$(msg "$o13d" | grep -o '☀.*' || true)"
-t    'and the store holds only the session that wrote it' \
+payload "$TP13d" "$SID13d" "$SCRATCH" \
+  | METRICS_DECISION_GAP_MIN=180 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 show >/dev/null 2>&1
+t    'a gap past the limit clears the day, so the store holds only the new session' \
      "$SID13d" "$(jq -r '.sessions | keys[0] // ""' "$DAYF" 2>/dev/null)"
 
 # --- 14. the nag lock never blocks the hook (dotfiles#161) -------------------

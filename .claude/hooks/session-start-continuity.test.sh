@@ -137,6 +137,21 @@ has   'existing message unchanged'             '## Continuity: state repo NOT av
 has   'names the fix'                          'mcp__Claude_Code_Remote__add_repo'
 lacks 'worklist not run without a state repo'  'as of 12:00Z'
 
+# --- decisions per session-hour: measured, shown in the start block ----------
+reset_state
+mkdir -p "$SD/metrics/sessions"
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf '{"ts":"%s","decisions":{"total":3},"friction":{"total":2},"prompt_span_seconds":4200}\n' "$now" > "$SD/metrics/sessions/a.json"
+printf '{"ts":"2000-01-01T00:00:00Z","decisions":{"total":99},"friction":{"total":0},"prompt_span_seconds":3600}\n' > "$SD/metrics/sessions/old.json"
+worklist_shim 'echo "as of 12:00Z"'
+run
+has   'week ratio shown, old session excluded'  '1 gate, 1 scoping · 2.6 decisions per session-hour'
+has   'last session line'                       'last session: 3 decisions in 1h10 (2.6/h) · friction 2'
+rm -rf "$SD/metrics/sessions"
+run
+lacks 'no session files, no ratio, no crash'    'per session-hour'
+has   'block still prints'                      'Decision load, last 7 days'
+
 # --- no jq at all: silent, exit 0 -------------------------------------------
 reset_state
 mkdir -p "$SCRATCH/nojq"; for b in bash sh dirname cat mktemp head sed awk date; do ln -s "$(command -v $b)" "$SCRATCH/nojq/$b" 2>/dev/null; done

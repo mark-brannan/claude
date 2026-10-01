@@ -171,5 +171,25 @@ tool "$tp" Bash '{"command":"cat state/global/curia/one-question/roll.md; ls sta
 tool "$tp" Read '{"file_path":"/x/state/global/curia/two-question/roll.md"}'
 eq "a cat, ls or Read of a roll names nothing" '[]' "$(refs "$tp")"
 
+# prompt_span_seconds: first human prompt to last, the denominator of
+# decisions per session-hour. One prompt has no span; agent work after the
+# last prompt does not extend it.
+enq() {  # enq <transcript> <timestamp>
+  jq -nc --arg ts "$2" '{type:"queue-operation", operation:"enqueue",
+    timestamp:$ts, sessionId:"t", content:"go"}' >> "$1"
+}
+span() {
+  jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n \
+     -f "$JQF" "$1" | jq -c '.session.prompt_span_seconds'
+}
+tp="$SCRATCH/span.jsonl"; : > "$tp"
+enq "$tp" "2026-09-09T10:00:00.000Z"
+eq "one prompt has no span" '0' "$(span "$tp")"
+enq "$tp" "2026-09-09T11:10:00.000Z"
+jq -nc '{type:"assistant", timestamp:"2026-09-09T12:00:00.000Z", requestId:"late",
+  message:{model:"claude-opus-5", role:"assistant", content:[],
+           usage:{input_tokens:1, output_tokens:1}}}' >> "$tp"
+eq "first prompt to last, not to the agent's last event" '4200' "$(span "$tp")"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

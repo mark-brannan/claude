@@ -555,6 +555,14 @@ def price:
       human_seconds:   $human_s,
       agent_seconds:   ($active_s - $human_s),
       idle_seconds:    ($elapsed_s - $active_s),
+      # First human prompt to last, the session clock the decisions-per-hour
+      # ratio divides by (one-entry-point §5, 2026-09-30). 0 with under two
+      # prompts: a ratio over no span is not a number.
+      prompt_span_seconds: ([ $E[] | select(.value.type == "queue-operation"
+                                 and .value.operation == "enqueue"
+                                 and (.value.content // "") != "")
+                             | .value.timestamp | select(. != null) | epoch ]
+                           | if length > 1 then (max - min) else 0 end),
       model:      ([ $E[].value | select(.type=="assistant")
                      | .message.model | select(. != null) ] | last),
       # The pickup item's floor (stop-continuity.sh): the first line of the

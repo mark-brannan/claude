@@ -163,7 +163,26 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
       echo
       echo "### Decision load, last 7 days"
       echo
-      echo "$counts — \`scoping\` is cheap (asked before work exists),"
+      # Per session-hour, session clock first prompt to last. Measured only:
+      # shown here and in the Stop checkpoint, never nudged (§5, 2026-09-30).
+      week=$(cat "$SD/metrics/sessions"/*.json 2>/dev/null | jq -rs --arg since "$since" \
+        '[.[] | select(.ts >= $since and (.prompt_span_seconds // 0) >= 60)]
+         | [(map(.decisions.total) | add // 0), (map(.prompt_span_seconds) | add // 0)] | @tsv' 2>/dev/null)
+      wd=${week%%$'\t'*}; ws=${week##*$'\t'}
+      perh=""
+      [ "${ws:-0}" -gt 0 ] 2>/dev/null \
+        && perh=$(awk -v d="$wd" -v s="$ws" 'BEGIN { printf " · %.1f decisions per session-hour", d * 3600 / s }')
+      echo "$counts$perh"
+      last=$(cat "$SD/metrics/sessions"/*.json 2>/dev/null | jq -rs \
+        '[.[] | select((.prompt_span_seconds // 0) >= 60)] | sort_by(.ts) | last
+         | select(. != null) | [.decisions.total, .prompt_span_seconds, .friction.total] | @tsv' 2>/dev/null)
+      if [ -n "$last" ]; then
+        IFS=$'\t' read -r ld ls lf <<<"$last"
+        lr=$(decision_rate "$ld" "$ls")
+        [ -n "$lr" ] && echo "last session: $lr · friction $lf"
+      fi
+      echo
+      echo "\`scoping\` is cheap (asked before work exists),"
       echo "\`gate\` is expensive (open-ended, mid-flight, needs the user to reload"
       echo "context). Prefer front-loading questions; board the rest."
     fi

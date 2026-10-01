@@ -298,6 +298,18 @@ day_decisions() {
   jq -r '[([.sessions[]?.total] | add // 0), ([.sessions[]?.junk] | add // 0)] | @tsv' "$f" 2>/dev/null || printf '0\t0\n'
 }
 
+# decision_rate <decisions> <span-seconds> -- "<n> decisions in 1h10 (2.6/h)",
+# or nothing when the session clock (first prompt to last) is under a minute.
+# Measured, never alarmed (one-entry-point §5, 2026-09-30): the two places that
+# call it are the session-start brief and the Stop checkpoint, nothing else.
+decision_rate() {
+  awk -v d="${1:-0}" -v s="${2:-0}" 'BEGIN {
+    if (s < 60) exit
+    m = int(s / 60 + 0.5)
+    printf "%d decision%s in %dh%02d (%.1f/h)\n", d, (d == 1 ? "" : "s"), int(m / 60), m % 60, d * 3600 / s
+  }'
+}
+
 # pr_base_refs <repo-path> <branch> [<remote>] -- base branch names of the
 # open PRs whose head is <branch>, one per line.
 #
