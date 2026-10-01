@@ -478,6 +478,32 @@ for dir in $OWNED_DIRS; do
 done
 
 # =========================================================================
+# Plugins — settings.json enables them, but nothing installs them: user
+# settings do not auto-install in `claude -p` or a cloud session. The
+# languette plugin carries the rm, git-footgun and stacked-base guards; for
+# now it runs alongside the copies in .claude/hooks, which stay until it has
+# run on real machines. A plugin that never installed is a guard that
+# silently isn't there, so a failure here marks the install incomplete for
+# the SessionStart brief.
+# =========================================================================
+PLUGINS="languette@languette=mark-brannan/languette"
+for spec in $PLUGINS; do
+  plugin=${spec%%=*} repo=${spec#*=}
+  if [ "$DRY_RUN" = yes ]; then
+    say "would install plugin $plugin from $repo"
+  elif ! command -v claude >/dev/null 2>&1; then
+    # No claude, no session for the guards to protect (a CI consumer of the
+    # claude-config action): skipped, not failed.
+    warn "  skipped plugin $plugin — no claude on PATH"
+  elif claude plugin marketplace add "$repo" >/dev/null 2>&1 &&
+       claude plugin install "$plugin" >/dev/null 2>&1; then
+    say "plugin $plugin installed"
+  else
+    warn "  FAILED plugin $plugin from $repo"; failed=$((failed + 1))
+  fi
+done
+
+# =========================================================================
 # Status — written last, so its mere presence with complete:true means the
 # install actually finished (R6/T7: a missing or stale file is the signal a
 # degraded session uses to say so, in the SessionStart brief).

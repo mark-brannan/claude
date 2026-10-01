@@ -404,13 +404,20 @@
     "signalk-registry@sailingnaturali": false,
     "github@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
-    "mergify@claude-plugins-official": true
+    "mergify@claude-plugins-official": true,
+    "languette@languette": true
   },
   "extraKnownMarketplaces": {
     "sailingnaturali": {
       "source": {
         "source": "github",
         "repo": "sailingnaturali/claude-skills"
+      }
+    },
+    "languette": {
+      "source": {
+        "source": "github",
+        "repo": "mark-brannan/languette"
       }
     }
   },

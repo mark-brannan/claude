@@ -1,0 +1,101 @@
+#!/bin/sh
+# Is the languette plugin ready to replace the dotfiles guard copies?
+#
+# Step one runs the plugin alongside the copies of no-rm-tree, no-git-footguns
+# and no-delete-stacked-base. Step two deletes the copies, and opens only when
+# the record says the plugin has been gating on real machines. This reads that
+# record -- the metrics the Stop hook keeps -- and prints three numbers since a
+# date:
+#
+#   sessions   sessions that made at least one Bash call
+#   plugin     rule denials by one of the three guards with no copy tag
+#   copy-only  denials tagged "[dotfiles copy]" (or the copy's fail-closed
+#              wrapper) for a guard the plugin never denied in that session
+#   broken     denials by the plugin's own fail-closed wrapper ("missing from
+#              the plugin directory or crashed"): the plugin was installed and
+#              its hook did not run, so these never count as the plugin denying
+#
+# Then READY and exit 0 when sessions >= --min-sessions, plugin >= --min-plugin,
+# copy-only <= --max-copy-only and broken is 0; otherwise NOT READY and exit 1.
+# The defaults are placeholders; the thresholds are the user's to set, except
+# broken, which no threshold excuses.
+#
+# What it can and cannot see: when the plugin and a copy both deny one call,
+# the harness shows one reason and the metrics keep only that one. So a
+# copy-only denial means the plugin was absent, did not deny, or lost the race
+# to be shown: an upper bound on the plugin missing a call, never an
+# undercount. An untagged denial is read as the plugin's, so --since must be
+# after every machine's copies carry the tag (the tag lands with step one).
+#
+# Usage: languette-step-two-ready --since DATE [--min-sessions N]
+#          [--min-plugin N] [--max-copy-only N] [--metrics DIR]
+#   DATE is anything `date -d` reads (GNU), or an ISO-8601 UTC time ending in Z.
+#   Exit 0 ready, 1 not ready, 2 usage or unreadable metrics.
+set -u
+
+since="" min_sessions=5 min_plugin=1 max_copy_only=0
+metrics="${LANGUETTE_METRICS:-$HOME/claude_prompts_scratch/state/global/metrics}"
+
+usage() { sed -n '/^# Usage:/,/^#   Exit/s/^# \{0,1\}//p' "$0" >&2; exit 2; }
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --since) since=${2:-}; shift 2 || usage ;;
+    --min-sessions) min_sessions=${2:-}; shift 2 || usage ;;
+    --min-plugin) min_plugin=${2:-}; shift 2 || usage ;;
+    --max-copy-only) max_copy_only=${2:-}; shift 2 || usage ;;
+    --metrics) metrics=${2:-}; shift 2 || usage ;;
+    -h|--help) usage ;;
+    *) echo "unknown argument: $1" >&2; usage ;;
+  esac
+done
+[ -n "$since" ] || { echo "--since is required" >&2; usage; }
+for n in "$min_sessions" "$min_plugin" "$max_copy_only"; do
+  case "$n" in ''|*[!0-9]*) echo "not a count: '$n'" >&2; usage ;; esac
+done
+command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 2; }
+if ! [ -d "$metrics/sessions" ] || ! [ -d "$metrics/blocked" ]; then
+  echo "no metrics at $metrics (want sessions/ and blocked/)" >&2; exit 2
+fi
+
+# started_at is UTC with a Z, so a normalised UTC bound compares as a string.
+if utc=$(date -u -d "$since" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null); then since=$utc
+else
+  case "$since" in *Z) ;; *) echo "cannot read --since '$since' without GNU date; give it as ISO-8601 UTC ending in Z" >&2; exit 2 ;; esac
+fi
+
+sids=$(find "$metrics/sessions" -name '*.json' -exec jq -r --arg s "$since" \
+  'select((.started_at // "") >= $s and ((.tools.Bash // 0) > 0)) | .session_id' {} + 2>/dev/null)
+
+# Counted here, not in the loop: the loop runs in a pipeline subshell.
+nsessions=$(printf '%s\n' "$sids" | grep -c .)
+for sid in $sids; do
+  f="$metrics/blocked/$sid.jsonl"
+  [ -s "$f" ] && jq -c --arg sid "$sid" 'select(.kind == "rule") | {sid: $sid, reason: (.reason // "")}' "$f"
+done | jq -rs --argjson sessions "$nsessions" '
+  def guard:
+    if test("no-delete-stacked-base|stacked on") then "no-delete-stacked-base"
+    elif test("no-rm-tree|`rm -r") then "no-rm-tree"
+    elif test("no-git-footguns|`(git|yadm) [^`]*`[^`]* is blocked|bare `git |force-pushing or deleting main") then "no-git-footguns"
+    else null end;
+  def side:
+    if test("\\[dotfiles copy\\] |missing from \\$HOME/\\.claude/hooks") then "copy"
+    elif test("missing from the plugin directory") then "broken"
+    else "plugin" end;
+  [ .[] | (.reason | guard) as $g | select($g != null) | {sid, g: $g, side: (.reason | side)} ] as $d
+  | ([ $d[] | select(.side == "plugin") | "\(.sid) \(.g)" ] | unique) as $seen
+  | [ $sessions,
+      ([ $d[] | select(.side == "plugin") ] | length),
+      ([ $d[] | select(.side == "copy" and ("\(.sid) \(.g)" as $k | $seen | index($k) | not)) ] | length),
+      ([ $d[] | select(.side == "broken") ] | length)
+    ] | @tsv' | {
+  IFS='	' read -r s p c b || { echo "could not read the metrics" >&2; exit 2; }
+  printf 'since %s\n' "$since"
+  printf '  sessions with a Bash call   %s  (want >= %s)\n' "$s" "$min_sessions"
+  printf '  plugin denials              %s  (want >= %s)\n' "$p" "$min_plugin"
+  printf '  copy denials, plugin silent %s  (want <= %s)\n' "$c" "$max_copy_only"
+  printf '  plugin fail-closed denials  %s  (want 0)\n' "$b"
+  if [ "$s" -ge "$min_sessions" ] && [ "$p" -ge "$min_plugin" ] && [ "$c" -le "$max_copy_only" ] && [ "$b" -eq 0 ]; then
+    echo READY; exit 0
+  fi
+  echo "NOT READY"; exit 1
+}

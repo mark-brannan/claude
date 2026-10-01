@@ -20,6 +20,7 @@ Procedures only. The hook designs and the scars behind them are in
 
 **A real machine**
 - [Wire the hooks on a real machine](#wire-the-hooks-on-a-real-machine)
+- [Install the languette plugin](#install-the-languette-plugin)
 - [Change what the metrics readouts show](#change-what-the-metrics-readouts-show)
 - [Check a repo's prose budgets](#check-a-repos-prose-budgets)
 - [Prune stale Stop-hook salvage refs](#prune-stale-stop-hook-salvage-refs)
@@ -199,6 +200,37 @@ bash ~/.claude/hooks/statusline-metrics.sh   # prints the status line, or nothin
 
 Then start a session: `session-start-continuity.sh` injecting the worklist brief
 is the end-to-end proof.
+
+## Install the languette plugin
+
+The rm, footgun and stacked-base guards also come from the languette plugin,
+alongside their copies in `~/.claude/hooks/`. `settings.json` enables it but
+nothing installs it on a real machine; `cloud-session-setup.sh` does on a VM.
+
+```bash
+claude plugin marketplace add mark-brannan/languette
+claude plugin install languette@languette
+```
+
+Verify. Don't skip this: while the copies run, a missing plugin changes
+nothing you can see, because the copy denies in its place.
+
+```bash
+root=$(claude plugin list --json \
+  | jq -r '.[] | select(.id == "languette@languette" and .enabled) | .installPath')
+[ -n "$root" ] && echo "plugin loaded: $root" || echo "plugin ABSENT"
+jq -n '{tool_name:"Bash",tool_input:{command:"git add -A"},cwd:env.HOME}' \
+  | CLAUDE_PLUGIN_ROOT="$root" sh "$root/hooks/no-git-footguns.sh" \
+  | jq -r .hookSpecificOutput.permissionDecisionReason
+```
+
+Loaded prints the install path, then a reason starting `` `git add -A` is
+blocked``. A reason starting `[dotfiles copy]` came from a copy, not the
+plugin; `plugin ABSENT` or an error from `sh` means it is not installed.
+
+Whether the plugin is ready to replace the copies is a measurement, not a
+judgment: `languette-step-two-ready --since <date the plugin landed>` prints
+the counts and READY or NOT READY.
 
 ## Change what the metrics readouts show
 
