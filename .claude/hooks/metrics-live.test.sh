@@ -8,7 +8,7 @@
 #
 #   crossing    a transcript that grows past 100k then past 150k produces
 #               exactly two context lines, in that order, and the second one
-#               says to propose stopping
+#               trips the 💸 reason
 #   the gap     a gap over 30 minutes between prompts starts a new sitting, so
 #               the 60-minute line does not fire on a clock that began before
 #               the gap -- and a short gap leaves that clock running
@@ -30,6 +30,10 @@ export HOME="$SCRATCH/home"; mkdir -p "$HOME" "$SCRATCH/bin"
 export CLAUDE_STATE_REPO=""
 export METRICS_CONTEXT_LINES="100000 150000 200000"
 export METRICS_CONTEXT_STEP=50000
+# Daylight, whatever the wall clock says: the suite runs at night too, and the
+# bedtime question would otherwise land on the first prompt of every case.
+# The night-side cases set their own hours per invocation.
+export METRICS_STOP_HOUR=24 METRICS_NIGHT_END_HOUR=0
 STATE="$HOME/.claude/state/global"
 
 # shellcheck source=lib-metrics-test-harness.sh
@@ -65,7 +69,8 @@ t     'a crossing on a prompt says nothing at all' '' "$(msg "$out1")"
 has   'the block counts both rungs'          '^⛁⛁ ' "$(msg "$out2")"
 hasnt 'and never names the rung it crossed'  '/(100|150)k' "$(msg "$out2")"
 hasnt 'no threshold line rides in front of it' 'still room' "$(msg "$out2")"
-has   'the stop rung still reaches the verdict' '💸 propose stopping' "$(msg "$out2")"
+has   'the stop rung still reaches the verdict' '— 💸$' "$(msg "$out2")"
+hasnt 'and the tail carries no words'          'propose|stopping' "$(msg "$out2")"
 
 CROSS="$STATE/metrics/crossings/$SID.jsonl"
 t 'both crossings are recorded, in order' \
@@ -103,16 +108,16 @@ hasnt 'a 40 min gap resets the clock: no 60 min line' '⏱' "$(msg "$out")"
 
 sitting nogap 61 10
 out=$(payload "$TP2" nogap "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has 'a 10 min gap leaves the clock running' '⏱ sitting 1h00' "$(msg "$out")"
-has 'the clock line carries the context'    'context 1k'     "$(msg "$out")"
-has 'and one hour says stand up'            'stand up'       "$(msg "$out")"
+has 'a 10 min gap leaves the clock running' '⏱ 1h0[0-9]' "$(msg "$out")"
+hasnt 'the hour line gives no instruction'  'stand up|stop here|/wrapup|offer' "$(msg "$out")"
 
 out=$(payload "$TP2" nogap "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 t 'the 60 min line does not repeat' '' "$(msg "$out")"
 
 sitting twohours 121 10
 out=$(payload "$TP2" twohours "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has 'two hours names the exit' 'sitting 2h00 .* stop here, run /wrapup' "$(msg "$out")"
+has   'two hours names the elapsed time'  '⏱ 2h01' "$(msg "$out")"
+hasnt 'and gives no instruction either'   'stop here|/wrapup' "$(msg "$out")"
 
 # --- 2b. the clock belongs to the prompt -------------------------------------
 # $SCRATCH is not a git repo, so archivable() refuses and the Stop nag stays
@@ -144,7 +149,7 @@ out=$(payload "$TPS" quiet "$SCRATCH" Stop | bash "$HOOK" stop 0 show 2>&1)
 hasnt 'a Stop past the line says nothing about sitting' '⏱ sitting' "$(msg "$out")"
 t    'and leaves the clock exactly where it found it' "$before" "$(sit_start)"
 out=$(payload "$TPS" quiet "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has  'the next prompt is what reports it' '⏱ sitting 1h00' "$(msg "$out")"
+has  'the next prompt is what reports it' '⏱ 1h0[0-9]' "$(msg "$out")"
 
 # --- 2c. one clock for the machine, one report per session -------------------
 # Three chats open is still one person in one chair. sitting_start and
@@ -169,10 +174,10 @@ t 'and no session keeps a clock of its own' '' \
 # shared last_prompt, and both sessions read the same elapsed time back.
 clock 61 10
 outA=$(P mA)
-has 'a prompt in one session reports the shared hour' '⏱ sitting 1h00' "$(msg "$outA")"
+has 'a prompt in one session reports the shared hour' '⏱ 1h0[0-9]' "$(msg "$outA")"
 kept=$(sit_start)
 outB=$(P mB)
-has 'and the other session reports the same hour, not zero' '⏱ sitting 1h00' "$(msg "$outB")"
+has 'and the other session reports the same hour, not zero' '⏱ 1h0[0-9]' "$(msg "$outB")"
 t   'neither prompt restarted the sitting' "$kept" "$(sit_start)"
 t   'the second prompt advanced the shared last_prompt' yes \
   "$( [ "$(jq -r '.last_prompt' "$SITF")" -ge "$(( $(date +%s) - 5 ))" ] && echo yes || echo no )"
@@ -191,8 +196,7 @@ hasnt 'a session opened 50 minutes in says nothing at 50' '⏱' "$(msg "$outF1")
 t     'and does not restart the clock it walked in on' 0 "$(nag_field mF '.time_line')"
 clock 61 5
 outF2=$(P mF)
-has 'and reports 1h00 at its next prompt' '⏱ sitting 1h00' "$(msg "$outF2")"
-has 'with the stand-up verdict, not a wrap-up' 'stand up' "$(msg "$outF2")"
+has 'and reports 1h00 at its next prompt' '⏱ 1h0[0-9]' "$(msg "$outF2")"
 
 # A nag file written before the clock moved out of it carries a time_line
 # with no sitting to belong to. Spend it rather than trust it: the sitting it
@@ -203,7 +207,7 @@ jq -n --argjson ss "$(( $(date +%s) - 900 ))" \
   '{context_line:200000, time_line:60, friction_tripped:false,
     sitting_start:$ss, last_prompt:$ss, since_nag:false,
     resume_ts:0, nag_pending:false}' > "$old"
-has 'a pre-move nag file does not suppress the new hour' '⏱ sitting 1h00' \
+has 'a pre-move nag file does not suppress the new hour' '⏱ 1h0[0-9]' \
     "$(msg "$(P mOld)")"
 
 # When the shared clock restarts, every session is free to speak again, not
@@ -218,7 +222,7 @@ clock 62 10   # a different sitting, an hour into itself
 t 'which is a different sitting' no \
   "$( [ "$before_break" = "$(jq -r '.sitting_start' "$SITF")" ] && echo yes || echo no )"
 has 'a restarted clock frees the other session to speak again' \
-    '⏱ sitting 1h00' "$(msg "$(P mI)")"
+    '⏱ 1h0[0-9]' "$(msg "$(P mI)")"
 
 # --- 3. Stop, archivable, past the line --------------------------------------
 REPO="$SCRATCH/repo"; mkdir -p "$REPO"
@@ -253,7 +257,7 @@ arm() {  # arm <session id> <minutes on the shared clock>
   payload "$TP3" "$1" "$REPO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1
 }
 o=$(arm arm1 61)
-has 'the one-hour crossing is still reported' '⏱ sitting 1h00' \
+has 'the one-hour crossing is still reported' '⏱ 1h0[0-9]' \
     "$(msg "$(clock 61 10; payload "$TP3" armX "$REPO" | bash "$HOOK" prompt 0 2>&1)")"
 t 'but it does not arm the Stop block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
 o=$(arm arm2 121)
@@ -384,7 +388,7 @@ if [ -f "$FIX" ]; then
 
   scr=$(msg "$(payload "$FIX" fric2 "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)")
   has 'friction past its nag threshold trips the reason cluster' \
-    '⚡.*propose stopping' "$scr"
+    '— [^ ]*⚡' "$scr"
 
 else
   printf 'SKIP: %s is missing\n' "$FIX"
@@ -482,7 +486,7 @@ t 'and the next prompt over the same rung says nothing' '' "$ctx6c2"
 TP6b="$SCRATCH/inject2.jsonl"; SID6b=inject2
 turn "$TP6b" 300000
 ctx6d=$(payload "$TP6b" "$SID6b" "$SCRATCH" \
-        | bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 t 'one jump across three stop-eligible rungs still sends one line' \
   1 "$(printf '%s' "$ctx6d" | grep -c 'stopping point\|last offered')"
 
@@ -496,14 +500,17 @@ t 'below the first sitting rung, nothing reaches the model' '' "$(ctx "$out6e")"
 
 clock 61 10
 out6f=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has 'the first sitting crossing offers a break' \
-    'Sitting 1h01 at this machine, past 1h00. Say so and offer a break.' "$(ctx "$out6f")"
+has 'the first sitting crossing names the time and shapes a stop' \
+    'Sitting 1h01 at this machine, past 1h00. Name the time once, then shape a good stopping point' "$(ctx "$out6f")"
+has 'it asks for the single next step in the pickup item' \
+    'single next step.*pickup item' "$(ctx "$out6f")"
+hasnt 'and never offers a break or asks' 'offer a break|Offer one|\?' "$(ctx "$out6f")"
 
 clock 121 10
 out6g=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has 'a later sitting crossing names the earlier rung raised' \
-    'last offered at 1h00' "$(ctx "$out6g")"
-hasnt 'and does not repeat the break offer' 'offer a break' "$(ctx "$out6g")"
+has 'a later sitting crossing shapes the stop again at the new rung' \
+    'Sitting 2h01 at this machine, past 2h00. Name the time once' "$(ctx "$out6g")"
+hasnt 'with no "last offered" repeat line' 'last offered' "$(ctx "$out6g")"
 
 # dotfiles#282: still past 2h, no new rung -- silence, not a re-nag.
 clock 125 10
@@ -516,8 +523,8 @@ t 'a sitting-clock restart resets the model side too' '' "$(ctx "$out6h")"
 
 clock 61 10
 out6i=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has 'so the next real crossing offers again, not "already raised"' \
-    'past 1h00. Say so and offer a break.' "$(ctx "$out6i")"
+has 'so the next real crossing shapes a stop again' \
+    'past 1h00. Name the time once' "$(ctx "$out6i")"
 clock_clear
 
 # --- 6b2. sitting clock with work in flight ----------------------------------
@@ -532,16 +539,16 @@ git -C "$WT" checkout -q -b feature 2>/dev/null || true
 SID6j=sitflight
 sitting "$SID6j" 61 10
 out6j=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
-has 'with work in flight the sitting nag says land it, not stop' \
-    'with work in flight .*Do not offer a break or /wrapup yet' "$(ctx "$out6j")"
-hasnt 'and never offers the break' 'Say so and offer a break' "$(ctx "$out6j")"
+has 'with work in flight the sitting nag says land it first' \
+    'with work in flight .*land this first, without asking' "$(ctx "$out6j")"
+hasnt 'and does not shape a stop yet' 'Name the time once' "$(ctx "$out6j")"
 
 clock 121 10
 out6k=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
-hasnt 'the in-flight rung is not spent -- no "last offered"' \
-      'last offered' "$(ctx "$out6k")"
-hasnt 'and two hours in flight still does not offer to stop' \
-      'good place to stop' "$(ctx "$out6k")"
+has   'two hours in flight still says land it first' \
+      'land this first' "$(ctx "$out6k")"
+hasnt 'and still does not shape a stop' \
+      'Name the time once' "$(ctx "$out6k")"
 
 # dotfiles#282: unspent is not the same as unlimited -- the in-flight line
 # still fires once per rung, not on every prompt.
@@ -554,8 +561,170 @@ t 'the in-flight line does not repeat inside its rung' '' "$(ctx "$out6k2")"
 git -C "$WT" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 rm -f "$WT/dirty.txt"
 out6k3=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
-has 'and once the work lands the unspent offer fires, unsoftened' \
-    'Stop here and run /wrapup' "$(ctx "$out6k3")"
+has 'and once the work lands the unspent shaping fires' \
+    'past 2h00. Name the time once' "$(ctx "$out6k3")"
+clock_clear
+
+# --- 6b3. the sitting line's tail: clock first, list second ------------------
+# Every knob below forces one branch: a meal window spanning the whole day,
+# none at all, and the sunset hour gate at 0 (always) or 24 (never).
+LOC="$STATE/location.json"; OUTS="$STATE/outside.txt"
+TPt="$SCRATCH/tail.jsonl"; turn "$TPt" 1000
+tail_line() {  # tail_line <session id> [env...]
+  local id=$1; shift
+  sitting "$id" 61 10
+  msg "$(payload "$TPt" "$id" "$SCRATCH" | env "$@" bash "$HOOK" prompt 0 2>&1)"
+}
+# Longitude whose local mean solar time is $1 hours right now, on the equator,
+# where the day is ~12h07 long all year.
+solar_lon() {
+  awk -v want="$1" -v now="$(date +%s)" 'BEGIN {
+    utc = (now % 86400) / 3600; l = (want - utc) * 15
+    while (l >= 180) l -= 360; while (l < -180) l += 360; printf "%.3f", l }'
+}
+NOMEAL=(METRICS_MEAL_WINDOWS= METRICS_SUN_AFTER_HOUR=0)
+
+has 'a meal window asks what was eaten' '^⏱ 1h01 · context [0-9]+k · what did you eat today\?$' \
+    "$(tail_line tail1 METRICS_MEAL_WINDOWS=0-24)"
+
+printf '{"lat": 0, "lon": %s}\n' "$(solar_lon 10)" > "$LOC"
+has 'daylight left names the sunset in hours' '^⏱ 1h01 · context [0-9]+k · sun sets in [0-9]+h [0-9]{2}$' \
+    "$(tail_line tail2 "${NOMEAL[@]}")"
+printf '{"lat": 0, "lon": %s}\n' "$(solar_lon 17.4)" > "$LOC"
+has 'under an hour of daylight names it in minutes' '^⏱ 1h01 · context [0-9]+k · sun sets in [0-9]+ min$' \
+    "$(tail_line tail3 "${NOMEAL[@]}")"
+has 'the meal window outranks the sunset' 'what did you eat today' \
+    "$(tail_line tail4 METRICS_MEAL_WINDOWS=0-24 METRICS_SUN_AFTER_HOUR=0)"
+has 'before the sunset hour the sun is not mentioned' '^⏱ 1h01 · context [0-9]+k$' \
+    "$(tail_line tail5 METRICS_MEAL_WINDOWS= METRICS_SUN_AFTER_HOUR=24)"
+
+printf 'look at the plum tree\n\n' > "$OUTS"
+printf '{"lat": 0, "lon": %s}\n' "$(solar_lon 22)" > "$LOC"
+has 'after sunset the line comes from outside.txt' '^⏱ 1h01 · context [0-9]+k · look at the plum tree$' \
+    "$(tail_line tail6 "${NOMEAL[@]}")"
+printf '{"lat": null, "lon": null}\n' > "$LOC"
+has 'a placeholder location skips the sunset' '^⏱ 1h01 · context [0-9]+k · look at the plum tree$' \
+    "$(tail_line tail7 "${NOMEAL[@]}")"
+rm -f "$OUTS" "$LOC"
+has 'with no list and no clock tail the line is the time and context alone' '^⏱ 1h01 · context [0-9]+k$' \
+    "$(tail_line tail8 "${NOMEAL[@]}")"
+clock_clear
+
+# --- 6b4. the stay valve ------------------------------------------------------
+TPs="$SCRATCH/stay.jsonl"; turn "$TPs" 1000
+SPROMPT() { payload "$TPs" "$1" "$SCRATCH" UserPromptSubmit "$2" | bash "$HOOK" prompt 0 2>&1; }
+sitting stay1 89 2
+o=$(SPROMPT stay1 "stay 40")
+has 'stay <n> answers on screen with the quiet window' \
+    '^⏱ 1h29 · staying 40, quiet until 2h09$' "$(msg "$o")"
+t   'and asks the model for a one-line acknowledgement' \
+    'The user said stay: acknowledge in one line, nothing else.' "$(ctx "$o")"
+t   'quiet_until lands in the machine-wide clock file' yes \
+    "$( q=$(jq -r '.quiet_until' "$SITF"); d=$(( q - $(date +%s) - 2400 )); [ "${d#-}" -le 5 ] && echo yes || echo no )"
+t   'and the use is logged as a stay crossing' 40 \
+    "$(jq -r 'select(.kind == "stay") | .at' "$STATE/metrics/crossings/stay1.jsonl" 2>/dev/null)"
+
+# Two hours passes inside the quiet window: nothing on screen, nothing to the model.
+q=$(jq -r '.quiet_until' "$SITF")
+jq --argjson ss "$(( $(date +%s) - 121 * 60 ))" '.sitting_start = $ss' "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"
+o=$(SPROMPT stay1 "go on")
+hasnt 'a rung crossed while quiet prints no sitting line' '⏱' "$(msg "$o")"
+t     'and sends no sitting injection' '' "$(ctx "$o")"
+# ...and once the quiet ends, the unspent rung is said on the next prompt.
+jq '.quiet_until = 1' "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"
+o=$(SPROMPT stay1 "go on")
+has 'after the quiet the rung it covered is said' '^⏱ 2h01' "$(msg "$o")"
+has 'and the stop is shaped then' 'past 2h00. Name the time once' "$(ctx "$o")"
+
+sitting stay2 10 2
+o=$(SPROMPT stay2 "stay")
+has 'bare stay quiets for the default 30' 'staying 30, quiet until 40m$' "$(msg "$o")"
+sitting stay3 61 2
+o=$(SPROMPT stay3 "stay a while longer")
+hasnt 'anything but stay [minutes] is an ordinary prompt' 'staying' "$(msg "$o")"
+has   'and the rung fires as usual' '^⏱ 1h01' "$(msg "$o")"
+clock_clear
+
+# --- 6b5. bedtime --------------------------------------------------------------
+# One question per evening, machine-wide, on the first prompt after the night
+# hour; a bare clock time is the reply; a warning NAG_BED_WARN_MIN before it,
+# the hour itself once, then silence. Night is forced with METRICS_STOP_HOUR=0
+# and the clock read in UTC through location.json's tz.
+TPb="$SCRATCH/bed.jsonl"; turn "$TPb" 1000
+LOC="$STATE/location.json"; printf '{"tz": "UTC"}\n' > "$LOC"
+NIGHT=(METRICS_STOP_HOUR=0 METRICS_NIGHT_END_HOUR=0)
+BP() { payload "$TPb" "$1" "$SCRATCH" UserPromptSubmit "$2" | env "${NIGHT[@]}" bash "$HOOK" prompt 0 2>&1; }
+BT() { payload "$TPb" "$1" "$SCRATCH" PostToolUse | env "${NIGHT[@]}" bash "$HOOK" posttooluse 0 show 2>&1; }
+BD() { payload "$TPb" "$1" "$SCRATCH" UserPromptSubmit "$2" | bash "$HOOK" prompt 0 2>&1; }
+bedf() { jq -r "$1" "$SITF" 2>/dev/null; }
+set_bed() { jq --argjson b "$1" '.bed_at = $b' "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"; }
+kinds() { jq -r '.kind' "$STATE/metrics/crossings/$1.jsonl" 2>/dev/null | grep '^bed_' | tr '\n' ' '; }
+clock_clear
+o=$(BD bed1 "go on")
+t 'by day nothing is asked' '' "$(msg "$o")"
+o=$(BP bed1 "go on")
+t 'the first prompt after the night hour asks' 'what time would you like to go to bed?' "$(msg "$o")"
+t 'and nothing goes to the model for it' '' "$(ctx "$o")"
+t 'the ask is stamped on the evening, machine-wide' "$(TZ=UTC date +%Y-%m-%d)" "$(bedf .bed_asked_eve)"
+o=$(BP bed1 "go on")
+t 'the next prompt does not ask again' '' "$(msg "$o")"
+o=$(BP bed2 "go on")
+t 'nor does another session the same evening' '' "$(msg "$o")"
+o=$(BP bed1 "11 is bedtime")
+t 'a sentence with a number in it is an ordinary prompt' '' "$(msg "$o")"
+o=$(BP bed1 "25")
+t 'an hour past 23 is not a time' '' "$(msg "$o")"
+nowb=$(date +%s); want=$(TZ=UTC date -d "@$((nowb + 420))" +%H:%M)
+o=$(BP bed1 "$want")
+t 'a bare HH:MM is the reply' "bed at $want noted" "$(msg "$o")"
+t 'and the model is told to acknowledge in one line' \
+  "The user named a bedtime, $want: acknowledge in one line, nothing else." "$(ctx "$o")"
+d=$(( $(bedf .bed_at) - nowb - 420 ))
+t 'bed_at lands in the machine-wide clock file' yes "$([ "${d#-}" -le 60 ] && echo yes || echo no)"
+hb=$(( ($(TZ=UTC date +%H | sed 's/^0*//;s/^$/0/') + 1) % 24 ))
+o=$(BP bed1 "$hb")
+has 'a bare hour is the next time the clock reads it' '^bed at [0-9][0-9]:00 noted$' "$(msg "$o")"
+d=$(( $(bedf .bed_at) - $(date +%s) ))
+t 'and that is within the hour' yes "$([ "$d" -gt 0 ] && [ "$d" -le 3600 ] && echo yes || echo no)"
+
+set_bed $(( $(date +%s) + 240 ))
+o=$(BP bed1 "go on")
+has 'inside the warning window the minutes left are on screen' '^4 min to [0-9][0-9]:[0-9][0-9]$' "$(msg "$o")"
+has 'and the model gets the sitting rung'"'"'s shaping instruction' \
+    'Bedtime [0-9:]+ is 4 minutes away\. Now shape a good stopping point rather than ask for one' "$(ctx "$o")"
+hasnt 'which never asks' '\?' "$(ctx "$o")"
+o=$(BP bed1 "go on")
+t 'the warning is said once' '' "$(msg "$o")$(ctx "$o")"
+o=$(BT bed2)
+has 'another open session says it once too, on a tool call' '^4 min to ' "$(msg "$o")"
+
+set_bed $(( $(date +%s) - 60 ))
+o=$(BP bed1 "go on")
+has 'past the hour: the time now, and the time named' "^ok, it's [0-9:]+, you said [0-9:]+$" "$(msg "$o")"
+has 'the model says it once and shapes the stop' \
+    "^It's [0-9:]+; the user said bed at [0-9:]+\. Say that once, then shape a good stopping point" "$(ctx "$o")"
+o=$(BP bed1 "go on")
+t 'then silence' '' "$(msg "$o")$(ctx "$o")"
+o=$(BT bed1)
+t 'on tool calls too' '' "$(ctx "$o")"
+t 'every step is a crossing the measurement can read' 'bed_ask bed_set bed_set bed_warn bed_past ' "$(kinds bed1)"
+
+want2=$(TZ=UTC date -d "@$(( $(date +%s) + 600 ))" +%H:%M)
+o=$(BP bed1 "$want2")
+t 'a new time can be named after the hour' "bed at $want2 noted" "$(msg "$o")"
+set_bed $(( $(date +%s) + 170 ))
+o=$(BP bed1 "go on")
+has 'and it re-arms the warning' '^3 min to ' "$(msg "$o")"
+
+set_bed $(( $(date +%s) - 60 ))
+o=$(BD bed3 "go on")
+t 'a bedtime left from last night is not read out by day' '' "$(msg "$o")$(ctx "$o")"
+
+rm -f "$LOC"; clock_clear
+BP bed4 "go on" >/dev/null
+wantp=$(TZ=America/Los_Angeles date -d "@$(( $(date +%s) + 420 ))" +%H:%M)
+o=$(BP bed4 "$wantp")
+t 'without a tz in location.json the clock is Pacific' "bed at $wantp noted" "$(msg "$o")"
 clock_clear
 
 # --- 6c. model injection: decision load, mirrors section 6 --------------------
@@ -585,18 +754,20 @@ ctx6k=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
 hasnt 'past every old decision rung, nothing about decisions reaches the model' \
       'decisions pushed to Solace' "$ctx6k"
 
-# --- 7. the sitting line carries git state once #129 makes it safe to ---------
-# dotfiles#132's third deferred item, reconciled now that #129 landed: a dirty
-# or unpushed tree is exactly the fact the "stop here" verdict needs. A fresh
-# repo, not $REPO -- that one already carries a leftover "dirty" file from the
-# archivable tests above, and this is checking the exact count.
+# --- 7. the sitting line carries context and git state ----------------------
+# Ruled by Solace, 2026-10-01: the rung line keeps the context and the ⎇ git
+# state it carried before the tail rework. A fresh repo, not $REPO -- that one
+# already carries a leftover "dirty" file from the archivable tests above, and
+# this is checking the exact count.
 REPO7="$SCRATCH/repo7"; mkdir -p "$REPO7"
 git -C "$REPO7" init -q -b feat/nags
 git -C "$REPO7" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
-TP7="$SCRATCH/sit7.jsonl"; turn "$TP7" 1000
+TP7="$SCRATCH/sit7.jsonl"; turn "$TP7" 41000
 : > "$REPO7/scratch-file"
-o7=$(clock 61 10; payload "$TP7" sit7 "$REPO7" | bash "$HOOK" prompt 0 2>&1)
-has 'the sitting line shows the dirty tree' '⎇ 1~' "$(msg "$o7")"
+o7=$(clock 61 10; payload "$TP7" sit7 "$REPO7" | METRICS_MEAL_WINDOWS='' METRICS_SUN_AFTER_HOUR=24 bash "$HOOK" prompt 0 2>&1)
+has 'the sitting line carries the context' '^⏱ 1h0[0-9] · context 41k' "$(msg "$o7")"
+has 'and shows the dirty tree at its end'  '^⏱ 1h0[0-9] · context 41k ⎇ 1~$' "$(msg "$o7")"
+clock_clear
 
 # --- 8. no upstream is only a hazard with something on the branch to lose ----
 # The carve-out this PR's review asked for, mirroring stop-continuity.sh's
@@ -746,10 +917,10 @@ has 'and the rung is a knob like every other' '⏱2h30(⏱️|🌙){5}' "$o11c"
 
 # dotfiles#137: the reason cluster trips on the same hot rung as the glyph
 # itself, no second threshold to keep in sync.
-has 'the sitting reason glyph trips at the hot rung' '⏱️.*propose stopping' "$o11b"
+has 'the sitting reason glyph trips at the hot rung' '— [^ ]*⏱️' "$o11b"
 o11d=$(msg "$(payload "$TP11" calm4 "$SCRATCH" | env "${DAY[@]}" METRICS_SIT_HOT_RUNG=9 \
   bash "$HOOK" posttooluse 0 show 2>&1)")
-hasnt 'and stays quiet while the rung is raised past it' 'propose stopping' "$o11d"
+hasnt 'and stays quiet while the rung is raised past it' ' — ' "$o11d"
 
 # The night arm of the same window, forced open rather than waited for: a
 # sitting clock past one rung proposes stopping at night however calm the
@@ -758,7 +929,7 @@ hasnt 'and stays quiet while the rung is raised past it' 'propose stopping' "$o1
 o11n=$(msg "$(payload "$TP11" calm5 "$SCRATCH" | env METRICS_STOP_HOUR=0 \
   METRICS_NIGHT_END_HOUR=24 METRICS_SIT_HOT_RUNG=9 \
   bash "$HOOK" posttooluse 0 show 2>&1)")
-has 'at night a sitting clock alone proposes stopping' '🌙 propose stopping' "$o11n"
+has 'at night a sitting clock alone trips the night reason' '— 🌙$' "$o11n"
 rm -f "$SITF11"
 
 # --- 12. PostToolUse drives the engine and may carry an injection ------------
@@ -773,12 +944,12 @@ turn "$TP12" 152000
 o12=$(payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
 has 'a rung crossed by a tool call injects on that call'     'Context at 152k' "$(ctx "$o12")"
 t   'and the injection names PostToolUse, not the prompt event' PostToolUse     "$(printf '%s' "$o12" | jq -r '.hookSpecificOutput.hookEventName // ""')"
-has 'while the block still renders in the same object' 'propose stopping'     "$(msg "$o12")"
+has 'while the block still renders in the same object' '— 💸'     "$(msg "$o12")"
 
 turn "$TP12" 153000
 o12b=$(payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
 t   'the next tool call injects nothing -- no new rung' '' "$(ctx "$o12b")"
-has 'though the block is unaffected' 'propose stopping' "$(msg "$o12b")"
+has 'though the block is unaffected' '— 💸' "$(msg "$o12b")"
 
 # The repeat arm, at 3 rather than the shipped 20 so the case is three calls.
 for n in 2 3; do
@@ -786,7 +957,7 @@ for n in 2 3; do
   o12c=$(payload "$TP12" ptu "$SCRATCH" \
          | METRICS_MODEL_CONTEXT_REPEAT=3 bash "$HOOK" posttooluse 0 show 2>&1)
 done
-has 'a raised rung is said again after the repeat count'     'for 3 tool calls\. If' "$(ctx "$o12c")"
+has 'a raised rung is said again after the repeat count'     'for 3 tool calls: a stopping point is due' "$(ctx "$o12c")"
 turn "$TP12" 154000
 o12d=$(payload "$TP12" ptu "$SCRATCH" \
        | METRICS_MODEL_CONTEXT_REPEAT=3 bash "$HOOK" posttooluse 0 show 2>&1)

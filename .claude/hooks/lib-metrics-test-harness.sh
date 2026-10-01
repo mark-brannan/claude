@@ -22,10 +22,11 @@ turn() {  # turn <file> <context tokens>
                       cache_read_input_tokens:0, cache_creation_input_tokens:0}}}' >> "$1"
 }
 
-payload() {  # payload <transcript> <session id> <cwd> [hook_event_name]
-  jq -nc --arg tp "$1" --arg sid "$2" --arg cwd "$3" --arg h "${4:-}" \
+payload() {  # payload <transcript> <session id> <cwd> [hook_event_name] [prompt]
+  jq -nc --arg tp "$1" --arg sid "$2" --arg cwd "$3" --arg h "${4:-}" --arg p "${5:-}" \
     '{transcript_path:$tp, session_id:$sid, cwd:$cwd}
-     + (if $h == "" then {} else {hook_event_name:$h} end)'
+     + (if $h == "" then {} else {hook_event_name:$h} end)
+     + (if $p == "" then {} else {prompt:$p} end)'
 }
 
 msg() { printf '%s' "$1" | jq -r '.systemMessage // ""' 2>/dev/null; }
