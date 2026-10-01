@@ -500,16 +500,22 @@ t 'below the first sitting rung, nothing reaches the model' '' "$(ctx "$out6e")"
 
 clock 61 10
 out6f=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has 'the first sitting crossing names the time and shapes a stop' \
-    'Sitting 1h01 at this machine, past 1h00. Name the time once, then shape a good stopping point' "$(ctx "$out6f")"
-has 'it asks for the single next step in the pickup item' \
-    'single next step.*pickup item' "$(ctx "$out6f")"
+has 'the first sitting crossing is the time, the pickup and a pointer' \
+    '^Sitting 1h01 at this machine, past 1h00\. Write the single next step .*pickup item.*without showing it\. Standing orders: "At a sitting rung"\.$' "$(ctx "$out6f")"
+has 'and names the pickup item by this session'"'"'s short id' \
+    "pickup/\*-${SID6e:0:8}\.md" "$(ctx "$out6f")"
+# The pointer is only as good as its target: an edit to the orders that
+# drops the bold lead fails here, not silently in a session.
+anchor=$(ctx "$out6f" | sed -n 's/.*Standing orders: "\([^"]*\)".*/\1/p')
+ORDERS="$(dirname "$HOOK")/../CLAUDE.md"
+t 'and the standing orders still carry that bold lead' 1 \
+  "$(grep -cF "**$anchor" "$ORDERS")"
 hasnt 'and never offers a break or asks' 'offer a break|Offer one|\?' "$(ctx "$out6f")"
 
 clock 121 10
 out6g=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 has 'a later sitting crossing shapes the stop again at the new rung' \
-    'Sitting 2h01 at this machine, past 2h00. Name the time once' "$(ctx "$out6g")"
+    'Sitting 2h01 at this machine, past 2h00\. Write the single next step' "$(ctx "$out6g")"
 hasnt 'with no "last offered" repeat line' 'last offered' "$(ctx "$out6g")"
 
 # dotfiles#282: still past 2h, no new rung -- silence, not a re-nag.
@@ -524,7 +530,7 @@ t 'a sitting-clock restart resets the model side too' '' "$(ctx "$out6h")"
 clock 61 10
 out6i=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 has 'so the next real crossing shapes a stop again' \
-    'past 1h00. Name the time once' "$(ctx "$out6i")"
+    'past 1h00\. Write the single' "$(ctx "$out6i")"
 clock_clear
 
 # --- 6b2. sitting clock with work in flight ----------------------------------
@@ -539,16 +545,16 @@ git -C "$WT" checkout -q -b feature 2>/dev/null || true
 SID6j=sitflight
 sitting "$SID6j" 61 10
 out6j=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
-has 'with work in flight the sitting nag says land it first' \
-    'with work in flight .*land this first, without asking' "$(ctx "$out6j")"
-hasnt 'and does not shape a stop yet' 'Name the time once' "$(ctx "$out6j")"
+has 'with work in flight the rung is held until it lands' \
+    'with work in flight .*land this first, without asking.*comes back once it lands\. Standing orders' "$(ctx "$out6j")"
+hasnt 'and does not point at the stop yet' 'past 1h00\. Write the single' "$(ctx "$out6j")"
 
 clock 121 10
 out6k=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
-has   'two hours in flight still says land it first' \
-      'land this first' "$(ctx "$out6k")"
-hasnt 'and still does not shape a stop' \
-      'Name the time once' "$(ctx "$out6k")"
+has   'two hours in flight still holds the rung' \
+      'comes back once it lands' "$(ctx "$out6k")"
+hasnt 'and still does not point at the stop' \
+      'past 2h00\. Write the single' "$(ctx "$out6k")"
 
 # dotfiles#282: unspent is not the same as unlimited -- the in-flight line
 # still fires once per rung, not on every prompt.
@@ -562,7 +568,7 @@ git -C "$WT" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 rm -f "$WT/dirty.txt"
 out6k3=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
 has 'and once the work lands the unspent shaping fires' \
-    'past 2h00. Name the time once' "$(ctx "$out6k3")"
+    'past 2h00\. Write the single' "$(ctx "$out6k3")"
 clock_clear
 
 # --- 6b3. the sitting line's tail: clock first, list second ------------------
@@ -634,7 +640,7 @@ t     'and sends no sitting injection' '' "$(ctx "$o")"
 jq '.quiet_until = 1' "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"
 o=$(SPROMPT stay1 "go on")
 has 'after the quiet the rung it covered is said' '^⏱ 2h01' "$(msg "$o")"
-has 'and the stop is shaped then' 'past 2h00. Name the time once' "$(ctx "$o")"
+has 'and the stop is shaped then' 'past 2h00\. Write the single' "$(ctx "$o")"
 
 sitting stay2 10 2
 o=$(SPROMPT stay2 "stay")
@@ -691,7 +697,7 @@ set_bed $(( $(date +%s) + 240 ))
 o=$(BP bed1 "go on")
 has 'inside the warning window the minutes left are on screen' '^4 min to [0-9][0-9]:[0-9][0-9]$' "$(msg "$o")"
 has 'and the model gets the sitting rung'"'"'s shaping instruction' \
-    'Bedtime [0-9:]+ is 4 minutes away\. Now shape a good stopping point rather than ask for one' "$(ctx "$o")"
+    'Bedtime [0-9:]+ is 4 minutes away\. Write the single next step.*Standing orders' "$(ctx "$o")"
 hasnt 'which never asks' '\?' "$(ctx "$o")"
 o=$(BP bed1 "go on")
 t 'the warning is said once' '' "$(msg "$o")$(ctx "$o")"
@@ -702,7 +708,7 @@ set_bed $(( $(date +%s) - 60 ))
 o=$(BP bed1 "go on")
 has 'past the hour: the time now, and the time named' "^ok, it's [0-9:]+, you said [0-9:]+$" "$(msg "$o")"
 has 'the model says it once and shapes the stop' \
-    "^It's [0-9:]+; the user said bed at [0-9:]+\. Say that once, then shape a good stopping point" "$(ctx "$o")"
+    "^It's [0-9:]+; the user said bed at [0-9:]+\. Say that once\. Write the single next step.*Standing orders" "$(ctx "$o")"
 o=$(BP bed1 "go on")
 t 'then silence' '' "$(msg "$o")$(ctx "$o")"
 o=$(BT bed1)
