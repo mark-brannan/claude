@@ -351,5 +351,44 @@ eq_ust "decision_rate: 3 in 1h10"      '3 decisions in 1h10 (2.6/h)' "$(dr 3 420
 eq_ust "decision_rate: singular"       '1 decision in 0h30 (2.0/h)'  "$(dr 1 1800)"
 eq_ust "decision_rate: no clock, no line" ''                          "$(dr 3 0)"
 
+# --- work_record: a pickup item and a card read into one record shape -------
+# Fields: kind title status until claim model effort link id updated.
+wr() { ( . "$HOOKS/lib-state.sh"; export WORK_CLAIMS=${WC:-}; work_record "$@" ) | tr '\037' '|'; }
+WR="$SCRATCH/wr"; mkdir -p "$WR"
+printf 'status: open\nupdated: 2026-09-09T10:00:00Z\nmodel: claude-sonnet-5\npr: https://github.com/o/r/pull/7\n---\n\nFinish the thing\nlink: https://github.com/o/r/issues/3\nmodel: Opus\neffort: high\n' \
+  > "$WR/2026-09-09T10-00-abcd1234.md"
+eq_ust "work_record: a pickup item, body's hand-off lines win" \
+  'pickup|Finish the thing|open|||opus|high|https://github.com/o/r/issues/3|2026-09-09T10-00-abcd1234|2026-09-09T10:00:00Z' \
+  "$(wr "$WR/2026-09-09T10-00-abcd1234.md")"
+printf 'status: taken\nupdated: 2026-09-10T10:00:00Z\nmodel: claude-sonnet-5\npr: none\n---\n' > "$WR/2026-09-10T10-00-00000000.md"
+eq_ust "work_record: a bare item falls back to the header's model, no link" \
+  'pickup||taken|||sonnet|||2026-09-10T10-00-00000000|2026-09-10T10:00:00Z' \
+  "$(wr "$WR/2026-09-10T10-00-00000000.md")"
+eq_ust "work_record: a card with model, effort and until" \
+  'card|Fix the gate|open|o/r#9 merges||opus|high|https://github.com/o/r/issues/8|https://github.com/o/r/issues/8|2026-09-11T00:00:00Z' \
+  "$(wr '- [ ] **Fix the gate** -- see [o/r#8](https://github.com/o/r/issues/8) model: opus effort: high until: o/r#9 merges' 2026-09-11T00:00:00Z)"
+eq_ust "work_record: a card without them leaves them empty, title from its link text" \
+  'card|tidy the docs (log)|open|||||log/2026-09-01.md|log/2026-09-01.md|' \
+  "$(wr '- [ ] tidy the docs ([log](log/2026-09-01.md))')"
+eq_ust "work_record: a card with a live claim is taken, the holder named" \
+  'card|Held|taken||abcd1234|||https://example.invalid/h|https://example.invalid/h|' \
+  "$(WC=$(printf 'live\tabcd1234\thost-x\t3m\thttps://example.invalid/h\nlive\teeeeeeee\thost-y\t1m\thttps://example.invalid/other') wr '- [ ] **Held** ([x](https://example.invalid/h))')"
+eq_ust "work_record: a stale claim leaves it open" 'open' \
+  "$(WC=$(printf 'stale\tabcd1234\thost-x\t300m\thttps://example.invalid/h') wr '- [ ] **Held** ([x](https://example.invalid/h))' | cut -d'|' -f3)"
+eq_ust "work_record: same field count for both kinds" '10 10' \
+  "$(wr "$WR/2026-09-09T10-00-abcd1234.md" | awk -F'|' '{print NF}') $(wr '- [ ] **A** ([x](https://example.invalid/a))' | awk -F'|' '{print NF}')"
+
+# --- claude_cards: only the agent's section, folded, ticked lines skipped -----
+KB="$SCRATCH/kb"; mkdir -p "$KB"
+printf '# Board\n\n## Needs ruling\n\n### global\n- [ ] a ruling ([x](https://example.invalid/r))\n\n## Claude'"'"'s\n\n- [ ] **One** -- first\n  continued ([x](https://example.invalid/1))\n- [x] **Done** ([x](https://example.invalid/d))\n- [ ] **Two** ([x](https://example.invalid/2))\n\n## Human'"'"'s\n\n- [ ] click ([x](https://example.invalid/c))\n' > "$KB/kanban.md"
+cc() { ( . "$HOOKS/lib-state.sh"; claude_cards "$KB/kanban.md" ) | cut -f2- | tr '\n' '|'; }
+eq_ust "claude_cards: Claude's only, folded, unticked" \
+  '- [ ] **One** -- first continued ([x](https://example.invalid/1))|- [ ] **Two** ([x](https://example.invalid/2))|' "$(cc)"
+gitq "$KB" init -q -b main
+gitq "$KB" add kanban.md
+GIT_COMMITTER_DATE='2026-09-01T12:00:00Z' GIT_AUTHOR_DATE='2026-09-01T12:00:00Z' gitq "$KB" commit -q -m one
+eq_ust "claude_cards: a committed card carries its blame time" '2026-09-01T12:00:00Z' \
+  "$( ( . "$HOOKS/lib-state.sh"; claude_cards "$KB/kanban.md" ) | head -1 | cut -f1)"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

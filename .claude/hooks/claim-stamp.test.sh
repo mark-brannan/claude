@@ -295,5 +295,55 @@ has 'addressed to SessionStart'  "$(printf '%s' "$out" | jq -r '.hookSpecificOut
 has 'the context names the holder'        "$ctx" 'session `77777777`'
 has 'and points at the card'              "$ctx" 'github.com/o/r/pull/7'
 
+# --- card claims: keyed by the card's link, ledgered in the state dir --------
+reset_store
+LEDGER="$HOME/.claude/state/global/claims"
+CARD=https://github.com/o/r/issues/12
+out=$(sh "$CS" card-claim "$CARD" 1111111100002222 2>&1); rc=$?
+eq  'a card claim succeeds'                  "$rc" 0
+eq  'and leaves one ledger entry'            "$(ls "$LEDGER" | wc -l | tr -d ' ')" 1
+eq  'and one stamp on the issue'             "$(ncomments)" 1
+has 'card-claims reads it live'              "$(sh "$CS" card-claims)" "^live	11111111	host-[^	]+	0m	$CARD$"
+out=$(sh "$CS" card-claim "$CARD" 3333333300004444 2>&1); rc=$?
+eq  'a second session is refused'            "$rc" 1
+has 'and told who holds it'                  "$out" 'taken: session `11111111`'
+eq  'and stamps nothing'                     "$(ncomments)" 1
+eq  'the holder may claim again'             "$(sh "$CS" card-claim "$CARD" 1111111100002222 >/dev/null 2>&1; echo $?)" 0
+eq  'patching its stamp, not posting'        "$(ncomments)" 1
+sh "$CS" card-release "$CARD" 1111111100002222
+eq  'release empties the ledger'             "$(sh "$CS" card-claims "$CARD")" ''
+eq  'and deletes the stamp'                  "$(ncomments)" 0
+has 'and drops the label'                    "$(cat "$STORE/labels")" "removed claimed"
+
+reset_store
+LOGCARD=log/2026-09-01-note.md
+eq  'a link GitHub cannot stamp is still claimed' \
+    "$(PATH=/usr/bin:/bin sh "$CS" card-claim "$LOGCARD" 5555555500006666 >/dev/null 2>&1; echo $?)" 0
+eq  'ledger only, no network'                "$(ncalls)" 0
+has 'and reads live'                         "$(sh "$CS" card-claims "$LOGCARD")" '^live	55555555'
+f=$(ls "$LEDGER"/*-55555555.tsv)
+awk -F'\t' 'BEGIN{OFS="\t"} {$3 = 1; print}' "$f" > "$f.n" && mv "$f.n" "$f"
+has 'past CLAIM_STALE_SECS it reads stale'   "$(sh "$CS" card-claims "$LOGCARD")" '^stale	55555555'
+eq  'and a stale claim does not block'       "$(sh "$CS" card-claim "$LOGCARD" 7777777700008888 >/dev/null 2>&1; echo $?)" 0
+eq  'which collects it'                      "$(find "$LEDGER" -name '*-55555555.tsv' | wc -l | tr -d ' ')" 0
+sh "$CS" card-release "$LOGCARD"
+eq  'release with no sid frees every claim'  "$(sh "$CS" card-claims "$LOGCARD")" ''
+
+reset_store
+sh "$CS" card-claim "$CARD" 1111111100002222 >/dev/null 2>&1
+f=$(ls "$LEDGER"/*-11111111.tsv)
+awk -F'\t' 'BEGIN{OFS="\t"} {$3 = 1; print}' "$f" > "$f.n" && mv "$f.n" "$f"
+sh "$CS" card-claim "$CARD" 3333333300004444 >/dev/null 2>&1
+eq  'taking over a stale claim drops its stamp' "$(ncomments)" 1
+sh "$CS" release --scan 3333333300004444
+eq  '/wrapup'"'"'s release drops the card claim'  "$(sh "$CS" card-claims "$CARD")" ''
+eq  'and its stamp'                          "$(ncomments)" 0
+mkdir -p "$TMPDIR/claim-stamp-card-$(printf '%s' "$CARD" | cksum | awk '{print $1}').lock.d"
+printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$TMPDIR/claim-stamp-card-$(printf '%s' "$CARD" | cksum | awk '{print $1}').lock.d/meta"
+out=$(sh "$CS" card-claim "$CARD" 1111111100002222 2>&1); rc=$?
+eq  'a take mid-claim is refused'            "$rc" 1
+has 'and says to try again'                  "$out" 'being claimed right now'
+rm -rf "$TMPDIR"/claim-stamp-card-*.lock.d
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

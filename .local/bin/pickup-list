@@ -1,6 +1,6 @@
 #!/bin/sh
-# pickup-list -- the pickup items across every session, newest first, plus
-# the agora docket count.
+# pickup-list -- the pickup items across every session and the cards on the
+# board's `## Claude's`, newest first, plus the agora docket count.
 #
 # Why: a hand-off that lives in a chat, a prose prompt or a block a model
 # had to remember to write is lost the moment the session ends any other
@@ -20,6 +20,7 @@
 #   pickup-list show <id>       the item file
 #   pickup-list take <id>       mark an item taken (a session picked it up)
 #   pickup-list done|open <id>  set an item's status
+#   pickup-list take|open <link> [<sid>]  claim or release a card by its link
 #
 # One file per item, written by each session's own Stop hook, so parallel
 # sessions never conflict on push. Nothing here drops an item because it
@@ -31,7 +32,7 @@
 # work to two.
 set -u
 
-usage() { sed -n '15,22p' "$0" | sed 's/^#   \{0,1\}//'; }
+usage() { sed -n '15,23p' "$0" | sed 's/^#   \{0,1\}//'; }
 
 self=$0
 case $self in */*) ;; *) self=$(command -v "$self" 2>/dev/null || printf '%s' "$self") ;; esac
@@ -43,13 +44,13 @@ done
 [ -n "$lib" ] || { printf 'pickup-list: lib-state.sh not found\n' >&2; exit 1; }
 # shellcheck disable=SC1090
 . "$lib"
+HOOK_DIR=$(dirname "$lib")
 
 PICKUP="$(state_dir)/pickup"
+BOARD="$(state_dir)/kanban.md"
 now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 now_s=$(date -u +%s)
 
-field() { sed -n "s/^$2: //p" "$1" 2>/dev/null | head -1; }
-body()  { awk 'f { print } /^---$/ { f = 1 }' "$1" 2>/dev/null; }
 item_path() {  # item_path <id> -- the file, or fail; id chars only, no paths
   case "${1:-}" in
     ''|*[!A-Za-z0-9T-]*) printf 'pickup-list: no item %s\n' "${1:-<id>}" >&2; return 1 ;;
@@ -68,8 +69,37 @@ set_field() {
   ' "$1" > "$tmp" && mv -f "$tmp" "$1" || { rm -f "$tmp"; return 1; }
 }
 
+# card_text <link> -- the folded card on `## Claude's` whose link it is, or
+# fail: only the agent's section holds pickup candidates.
+card_text() {
+  claude_cards "$BOARD" | cut -f2- | while IFS= read -r c; do
+    [ "$(work_record "$c" | cut -d "$(printf '\037')" -f8)" = "$1" ] && { printf '%s\n' "$c"; break; }
+  done | grep .
+}
+
 # --- writes ------------------------------------------------------------------
+# A card's id is its link. Taking one is a claim on the card through
+# claim-stamp.sh, so a second session -- here or on another machine -- reads
+# it taken; `open` releases every claim on it. A card is never `done` here:
+# done work leaves the board when its line is deleted.
 cmd=${1:-}
+case "$cmd:${2:-}" in
+  take:http*|take:log/*|take:../*|open:http*|open:log/*|open:../*|done:http*|done:log/*|done:../*|show:http*|show:log/*|show:../*)
+    # shellcheck disable=SC2034 # read by work_record; a lookup by link needs no claims
+    WORK_CLAIMS=""
+    c=$(card_text "$2") || { printf 'pickup-list: no card on ## Claude'"'"'s links %s\n' "$2" >&2; exit 1; }
+    case "$cmd" in
+      take) sid=${3:-${CLAUDE_CODE_SESSION_ID:-}}
+            [ -n "$sid" ] || { printf 'pickup-list take: no session id (pass one, or run inside a session)\n' >&2; exit 1; }
+            sh "$HOOK_DIR/claim-stamp.sh" card-claim "$2" "$sid" || exit 1
+            printf 'taken %s\n' "$2" ;;
+      open) sh "$HOOK_DIR/claim-stamp.sh" card-release "$2" || exit 1
+            printf 'open %s\n' "$2" ;;
+      done) printf 'pickup-list done: a card is done when its line leaves the board\n' >&2; exit 1 ;;
+      show) printf '%s\n' "$c"; sh "$HOOK_DIR/claim-stamp.sh" card-claims "$2" ;;
+    esac
+    exit 0 ;;
+esac
 case "$cmd" in
   take|done|open)
     f=$(item_path "${2:-}") || exit 1
@@ -135,61 +165,57 @@ docket() {
   printf '\nDocket: %s awaiting an agora -- kanban.md `## Needs ruling`\n' "$n"
 }
 
-# Age as one short token: 4m, 3h, 6d.
-age_of() {
-  t=$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s 2>/dev/null) || { printf '?'; return; }
-  s=$((now_s - t)); [ "$s" -lt 0 ] && s=0
-  if [ "$s" -lt 3600 ]; then printf '%dm' $((s / 60))
-  elif [ "$s" -lt 172800 ]; then printf '%dh' $((s / 3600))
-  else printf '%dd' $((s / 86400)); fi
-}
-model_short() {
-  case "$1" in
-    *fable*) printf fable ;; *opus*) printf opus ;; *sonnet*) printf sonnet ;;
-    *haiku*) printf haiku ;; none|""|"?") printf '' ;; *) printf '%s' "$1" ;;
-  esac
-}
-
-[ -d "$PICKUP" ] || { printf 'Pickup: none\n'; docket; exit 0; }
-
-# One record per item, unit-separator delimited: id updated age status model
-# tag text. Tab would be collapsed by `read`.
+# One record per unit of work, from work_record (lib-state.sh): pickup items
+# and the cards on `## Claude's` alike, so both render in one line shape.
 sep=$(printf '\037')
-recs=""
-for f in "$PICKUP"/*.md; do
-  [ -f "$f" ] || continue
-  id=$(basename "$f" .md)
-  st=$(field "$f" status); [ -n "$st" ] || st=open
-  if [ "$closed" = 0 ] && [ "$st" != open ]; then continue; fi
-  if [ -n "$find_word" ] && ! grep -qiF -- "$find_word" "$f" 2>/dev/null; then continue; fi
-  up=$(field "$f" updated)
-  text=$(body "$f" | sed -n '/[^[:space:]]/{p;q;}' | sed 's/^[[:space:]]*//')
-  [ -n "$text" ] || text="(no text)"
-  pr=$(field "$f" pr); branch=$(field "$f" branch)
-  # The tag: what a reader needs to place the item, one phrase.
-  if [ -n "$pr" ] && [ "$pr" != none ]; then tag="PR ${pr##*/}"
-  elif [ -n "$branch" ] && [ "$branch" != none ]; then tag=$(printf '%s' "$branch" | sed -n 's/.*(\(.*\))$/\1/p')
-  else tag=""; fi
-  [ "$st" = open ] || tag="${tag:+$tag · }$st"
-  recs="$recs$id$sep$up$sep$(age_of "$up")$sep$st$sep$(model_short "$(field "$f" model)")$sep$tag$sep$(printf '%s' "$text" | tr "$sep" ' ')
-"
-done
-recs=$(printf '%s' "$recs" | grep -v '^$')
+work_claims_load
+set -- "$PICKUP"/*.md; [ -f "$1" ] || set --
+if [ -n "$find_word" ]; then
+  for f; do shift; grep -qiF -- "$find_word" "$f" 2>/dev/null && set -- "$@" "$f"; done
+fi
+recs=$(claude_cards "$BOARD" | { if [ -n "$find_word" ]; then grep -iF -- "$find_word"; else cat; fi; } \
+  | work_records --cards "$@" | awk -F "$sep" -v closed="$closed" 'closed || $3 == "open"')
 [ -n "$recs" ] || { printf 'Pickup: none\n'; docket; exit 0; }
 
 limit=5; [ "$all" = 1 ] && limit=100000
 total=$(printf '%s\n' "$recs" | grep -c '^')
 
 printf 'Pickup, newest first\n'
-printf '%s\n' "$recs" | sort -t "$sep" -k2,2"$( [ "$oldest" = 1 ] || printf r )" | awk -F "$sep" -v limit="$limit" -v total="$total" '
+printf '%s\n' "$recs" | sort -t "$sep" -k10,10"$( [ "$oldest" = 1 ] || printf r )" \
+  | awk -F "$sep" -v limit="$limit" -v total="$total" -v now="$now_s" '
   function padto(str, w) { while (length(str) < w) str = str " "; return str }
+  function cut(str, w) { return length(str) > w ? substr(str, 1, w - 1) "\342\200\246" : str }
+  function dash(str) { return str == "" ? "-" : str }
+  # Age as one short token (4m, 3h, 6d) from an ISO time; days_from_civil, no date(1) per row.
+  function age(t,   y, m, d, e, s) {
+    if (t !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) return "?"
+    y = substr(t, 1, 4) + 0; m = substr(t, 6, 2) + 0; d = substr(t, 9, 2) + 0
+    if (m <= 2) y--
+    e = int(y / 400); s = y - e * 400
+    s = s * 365 + int(s / 4) - int(s / 100) + int((153 * (m > 2 ? m - 3 : m + 9) + 2) / 5) + d - 1
+    s = (e * 146097 + s - 719468) * 86400 + substr(t, 12, 2) * 3600 + substr(t, 15, 2) * 60 + substr(t, 18, 2)
+    s = now - s; if (s < 0) s = 0
+    if (s < 3600) return int(s / 60) "m"
+    if (s < 172800) return int(s / 3600) "h"
+    return int(s / 86400) "d"
+  }
+  # A link as a reader places it: owner/repo#n for an issue or PR, else its last path part.
+  function short(u,   n, p) {
+    if (u == "") return "-"
+    if (match(u, /github\.com\/[^\/]+\/[^\/]+\/(pull|issues)\/[0-9]+/)) {
+      n = split(substr(u, RSTART, RLENGTH), p, "/"); return p[3] "#" p[5]
+    }
+    sub(/[?#].*$/, "", u); sub(/\/$/, "", u); n = split(u, p, "/"); return cut(p[n], 24)
+  }
   shown < limit {
     shown++
-    line = $7
-    if (length(line) > 66) line = substr(line, 1, 65) "\342\200\246"
-    right = $5; if ($6 != "") right = right (right != "" ? "  " : "") $6
-    printf "  \342\227\217 %s  %s  %s\n", padto(line, 66), padto($3, 4), right
-    printf "    %s\n", $1
+    title = $2; if (title == "") title = "(no text)"
+    tail = short($8)
+    if ($3 != "open") tail = tail " \302\267 " $3 ($5 != "" ? " by " $5 : "")
+    printf "  %s %s  %s  %s  %s  %s  %s\n", ($1 == "card" ? "\342\227\206" : "\342\227\217"),
+      padto(cut(title, 56), 56), padto($10 == "" ? "-" : age($10), 4), padto(dash($6), 6), padto(dash($7), 6),
+      padto(cut(dash($4), 12), 12), tail
+    printf "    %s\n", $9
   }
   END {
     if (total > shown) printf "  \342\200\246 %d more \302\267 pickup-list --all \302\267 pickup-list --oldest \302\267 pickup-list find <word>\n", total - shown

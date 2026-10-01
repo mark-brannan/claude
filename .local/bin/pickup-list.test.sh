@@ -66,5 +66,35 @@ assert 'the docket counts open Needs-ruling boxes' bash -c "sh '$PL' | grep -q '
 rm "$SR/state/global/kanban.md"
 assert 'no board, no docket line' bash -c "! sh '$PL' | grep -q '^Docket:'"
 
+# --- cards on the board's `## Claude's` are pickup items too -----------------
+# An example.invalid link is no GitHub card, so a take is the ledger alone -- the part a
+# second run reads.
+export TMPDIR="$S/tmp"; mkdir -p "$TMPDIR"
+unset CI GITHUB_ACTIONS
+CARD=https://example.invalid/card-1
+cat > "$SR/state/global/kanban.md" <<EOF
+# Board
+
+## Needs ruling
+
+### global
+- [ ] a ruling ([x](https://example.invalid/ruling)) default: a undo: b until: c risk: d judgment: values
+
+## Claude's
+
+- [ ] **Card one** -- a card a session can take ([x]($CARD)) model: opus effort: high
+EOF
+assert 'a card is listed with pickup items' bash -c "sh '$PL' --all | grep -qxF '    $CARD'"
+assert 'a ruling is not a pickup candidate' bash -c "! sh '$PL' --all | grep -q 'example.invalid/ruling'"
+assert 'nor can it be taken' bash -c "! sh '$PL' take https://example.invalid/ruling 1111111122223333 2>/dev/null"
+assert 'take of a card needs a session id' bash -c "! CLAUDE_CODE_SESSION_ID= sh '$PL' take '$CARD' 2>/dev/null"
+eq 'take on a card claims it' "taken $CARD" "$(sh "$PL" take "$CARD" 1111111122223333)"
+eq 'a second run sees it taken' '' "$(sh "$PL" --all | grep -F "$CARD" || true)"
+assert 'and shows the holder with --closed' bash -c "sh '$PL' --closed | grep -q 'taken by 11111111'"
+assert 'a second session cannot take it' bash -c "! sh '$PL' take '$CARD' 4444444455556666 2>/dev/null"
+assert 'done refuses a card' bash -c "! sh '$PL' done '$CARD' 2>/dev/null"
+sh "$PL" open "$CARD" >/dev/null
+assert 'open releases it' bash -c "sh '$PL' --all | grep -qxF '    $CARD'"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

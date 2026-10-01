@@ -396,14 +396,18 @@ mv "$S/state/state/global/kanban.md" "$S/kb.bak"; run; has 'missing board named'
 
 # --- the pickup bucket is first (dotfiles#110) ------------------------------------
 run
-has 'pickup bucket present' '^Pickup: none$'
-eq 'pickup is the first bucket' 'Pickup: none' \
+has 'the board'"'"'s Claude cards are pickup candidates' '^Pickup, newest first$'
+eq 'pickup is the first bucket' 'Pickup, newest first' \
   "$(printf '%s\n' "$OUT" | grep -nE '^(Pickup|Needs ruling|Human|Queued|Ready|Blocked|Untriaged|Stranded)' | head -1 | cut -d: -f2-)"
 mkdir -p "$S/state/state/global/pickup"
 printf 'status: open\nupdated: 2026-09-09T10:00:00Z\nsession: abcd1234\nmodel: claude-opus-5-5\nbranch: alpha claude/x (1 ahead, clean)\npr: none\nwhere: w\nprompt: p\n---\nFinish the thing\nlink: o/alpha#10\nmodel: opus\neffort: high\n' \
   > "$S/state/state/global/pickup/2026-09-09T10-00-abcd1234.md"
 run
 has 'a real item shows in worklist' 'Finish the thing'
+# One line shape for both kinds: marker, title, age, model, effort, until, link.
+shape() { printf '%s\n' "$OUT" | grep -E "$1" | head -1 | sed -E 's/^  (.) .{56}  (.{4})  (.{6})  (.{6})  (.{12})  [^ ]+.*$/ok/'; }
+eq 'a pickup item renders in the shared shape' ok "$(shape 'Finish the thing')"
+eq 'a card renders in the same shape' ok "$(shape '^  ◆ ')"
 rm -rf "$S/state/state/global/pickup"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"

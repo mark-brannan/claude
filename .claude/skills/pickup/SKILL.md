@@ -40,6 +40,10 @@ Run `~/.local/bin/pickup-list`.
   branch). Otherwise print the list and ask for a one-line pick. That is the
   one question this skill is allowed to ask.
 
+A `◆` line is a card from the board's `## Claude's`, not a session's item: its
+id is its link, it has no branch, and the card text is the whole hand-off.
+Skip §3's checkout; the link is where the work starts.
+
 ## 2. Restate it, in three lines
 
 Before touching anything, three lines and no more:
@@ -153,7 +157,9 @@ pickup-list take <id>
 ```
 
 `pickup-list` drops it from the default view from then on; the file keeps
-the record (`--closed` shows it).
+the record (`--closed` shows it). On a card, `take` is a claim through
+`claim-stamp.sh`, keyed by the link: a second session reads it taken, and a
+refusal names the session that holds it. Relay that and pick again.
 
 ## 5. Then work
 

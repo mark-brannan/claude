@@ -41,6 +41,10 @@
 #       live|stale <sid8> <machine> <age>m <url>, one tab-separated line each;
 #       `no card`; or `unverified: <why>` when the stamps could not be read
 #   claim-stamp.sh session-start                     SessionStart hook; JSON on stdin
+#   claim-stamp.sh card-claim <url> <session-id>     claim a board card by its link;
+#       refuses, exit 1, while another session's claim on it is live
+#   claim-stamp.sh card-release <url> [<session-id>] drop one session's claim, or all
+#   claim-stamp.sh card-claims [<url>]               every card claim, `read`'s shape
 #
 # `refresh` is the one called on every Stop, so it must be free when there is
 # nothing to refresh: it reads a per-session record under TMPDIR and returns
@@ -56,6 +60,8 @@
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck disable=SC1091 # state_dir, for the card-claim ledger
+[ -f "$HERE/lib-state.sh" ] && . "$HERE/lib-state.sh"
 
 MARKER='<!-- claim-stamp'
 STALE_SECS=${CLAIM_STALE_SECS:-7200}
@@ -143,7 +149,7 @@ stamp_body() {  # stamp_body <sid> <branch>
 $MARKER sid=$(sid8 "$1") epoch=$(now_epoch) machine=$(machine_id) -->
 **Claimed:** \`$(sid8 "$1")\` · \`$2\` · \`$(machine_id)\` · $(now_iso)
 
-A session holds this branch. The Stop hook refreshes the timestamp; \`/wrapup\`
+A session holds this work. The Stop hook refreshes the timestamp; \`/wrapup\`
 and the archive verdict delete this comment. Older than $((STALE_SECS / 3600))h and
 the claim is stale -- the session that wrote it died without releasing it.
 EOF
@@ -344,6 +350,118 @@ do_read() {  # do_read <dir>
   done
 }
 
+# -------------------------------------------------------------- card claims
+# A card on the board's `## Claude's` is a unit of work with no branch, so
+# the branch lookup above cannot find it: a card is claimed by its link
+# (one-entry-point curia, Solace, 2026-10-01). The truth is a ledger in the
+# state repo, one file per card and session, which the Stop hook pushes like
+# every other state file -- so a listing reads it with no network call, and
+# a card whose link is not a GitHub issue or PR can still be claimed. Where
+# the link is one, the stamp and label go on it too, as for a branch.
+#
+# Unlike a branch claim this is a deliberate act, not a hook: the ledger is
+# written whether or not gh is usable, and it is the one write here that
+# fails loudly, because a take that did not land hands the card to two.
+
+claims_dir() { printf '%s/claims' "$(state_dir 2>/dev/null || printf '%s/.claude/state/global' "$HOME")"; }
+claim_key()  { printf '%s' "$1" | cksum | awk '{ print $1 }'; }
+
+# card_ledger [<url>] -- live|stale <sid8> <machine> <age>m <url>, one line
+# per claim on record (on <url> only, when given).
+card_ledger() {
+  _d=$(claims_dir); _now=$(now_epoch)
+  for _f in "$_d"/*.tsv; do
+    [ -f "$_f" ] || continue
+    IFS="$(printf '\t')" read -r _u _s _e _m _c < "$_f" || continue
+    [ -z "${1:-}" ] || [ "$_u" = "$1" ] || continue
+    case "${_e:-}" in ''|*[!0-9]*) _e=0 ;; esac
+    _age=$((_now - _e))
+    if [ "$_age" -ge "$STALE_SECS" ]; then _st=stale; else _st=live; fi
+    printf '%s\t%s\t%s\t%dm\t%s\n' "$_st" "$_s" "$_m" "$((_age / 60))" "$_u"
+  done
+}
+
+do_card_claim() {  # do_card_claim <url> <sid>
+  [ -n "${1:-}" ] && [ -n "${2:-}" ] \
+    || { printf 'claim-stamp: card-claim needs <url> <session-id>\n' >&2; return 1; }
+  url=$1; s8=$(sid8 "$2"); d=$(claims_dir); key=$(claim_key "$url")
+  # The check and the write under one lock, or two sessions on this machine
+  # both read the card free and both take it. A take on another machine
+  # reaches this ledger only with its Stop push; that race stays open.
+  state_lock "${TMPDIR:-/tmp}/claim-stamp-card-$key.lock.d" \
+    || { printf 'claim-stamp: %s is being claimed right now; try again\n' "$url" >&2; return 1; }
+  trap state_unlock EXIT INT TERM
+  held=$(card_ledger "$url" | awk -F'\t' -v s="$s8" '$1 == "live" && $2 != s')
+  if [ -n "$held" ]; then
+    printf '%s\n' "$held" | awk -F'\t' '{ printf "taken: session `%s` on `%s` claimed %s %s ago\n", $2, $3, $5, $4 }' >&2
+    return 1
+  fi
+  mkdir -p "$d" 2>/dev/null || { printf 'claim-stamp: cannot write %s\n' "$d" >&2; return 1; }
+  # A stale claim on this card is a session that died holding it; its stamp
+  # goes with it, or the issue collects one per dead session.
+  for f in "$d/$key"-*.tsv; do
+    [ -f "$f" ] && [ "$f" != "$d/$key-$s8.tsv" ] || continue
+    IFS="$(printf '\t')" read -r _u _s _e _m _c < "$f"
+    if [ -n "${_c:-}" ] && usable && card_parts "$url"; then delete_stamp "$owner" "$repo" "$_c"; fi
+    rm -f "$f"
+  done
+  cid=""
+  if usable && card_parts "$url"; then
+    mine=$(read_stamps "$owner" "$repo" "$number" | awk -F'\t' -v s="$s8" '$2 == s { print $1; exit }')
+    if [ -n "$mine" ]; then patch_stamp "$owner" "$repo" "$mine" "$2" card && cid=$mine
+    else cid=$(post_stamp "$owner" "$repo" "$number" "$2" card); fi
+    [ -n "$cid" ] && add_label "$owner" "$repo" "$number"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$url" "$s8" "$(now_epoch)" "$(machine_id)" "$cid" \
+    > "$d/$key-$s8.tsv" 2>/dev/null \
+    || { printf 'claim-stamp: cannot write the claim on %s\n' "$url" >&2; return 1; }
+}
+
+do_card_release() {  # do_card_release <url> [<sid>]
+  [ -n "${1:-}" ] || { printf 'claim-stamp: card-release needs <url>\n' >&2; return 1; }
+  url=$1; d=$(claims_dir); key=$(claim_key "$url"); s8=""
+  [ -z "${2:-}" ] || s8=$(sid8 "$2")
+  for f in "$d/$key"-*.tsv; do
+    [ -f "$f" ] || continue
+    IFS="$(printf '\t')" read -r u s e m c < "$f" || continue
+    [ "$u" = "$url" ] || continue
+    [ -z "$s8" ] || [ "$s" = "$s8" ] || continue
+    rm -f "$f" || return 1
+    if [ -n "${c:-}" ] && usable && card_parts "$url"; then
+      delete_stamp "$owner" "$repo" "$c"
+      rest=$(read_stamps "$owner" "$repo" "$number") && [ -z "$rest" ] \
+        && remove_label "$owner" "$repo" "$number"
+    fi
+  done
+  return 0
+}
+
+# /wrapup's deliberate release (--scan) drops this session's card claims
+# too: one left to go stale keeps its stamp and label on the issue.
+release_cards() {  # release_cards <sid>
+  _urls=$(for _rf in "$(claims_dir)"/*-"$(sid8 "$1")".tsv; do [ -f "$_rf" ] && cut -f1 "$_rf"; done)
+  printf '%s\n' "$_urls" | while IFS= read -r _ru; do
+    [ -n "$_ru" ] && do_card_release "$_ru" "$1"
+  done
+  return 0
+}
+
+# Every card claim this session holds is refreshed with its branch claim, so
+# a card worked longer than CLAIM_STALE_SECS is not handed to a second
+# session. Local unless a stamp needs patching; free when there are none.
+refresh_cards() {  # refresh_cards <sid>
+  s8=$(sid8 "$1"); d=$(claims_dir)
+  for f in "$d"/*-"$s8".tsv; do
+    [ -f "$f" ] || continue
+    IFS="$(printf '\t')" read -r u s e m c < "$f" || continue
+    case "${e:-}" in ''|*[!0-9]*) e=0 ;; esac
+    [ $(( $(now_epoch) - e )) -ge "$REFRESH_SECS" ] || continue
+    if [ -n "${c:-}" ] && usable && card_parts "$u"; then patch_stamp "$owner" "$repo" "$c" "$1" card; fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$u" "$s" "$(now_epoch)" "$m" "${c:-}" > "$f" 2>/dev/null
+  done
+  return 0
+}
+
 # ------------------------------------------------------------------ dispatch
 cmd=${1:-}; [ $# -gt 0 ] && shift
 dir=$PWD
@@ -362,8 +480,12 @@ case "$cmd" in
   claim)   [ $# -ge 1 ] || exit 0; do_claim "$dir" "$1"
            [ -n "${CLAIM_HELD:-}" ] && printf '%s\n' "$CLAIM_HELD"
            exit 0 ;;
-  refresh) [ $# -ge 1 ] || exit 0; do_refresh "$1" "$dir"; exit 0 ;;
-  release) [ $# -ge 1 ] || exit 0; do_release "$dir" "$1"; exit 0 ;;
+  refresh) [ $# -ge 1 ] || exit 0; refresh_cards "$1"; do_refresh "$1" "$dir"; exit 0 ;;
+  card-claim)   do_card_claim "${1:-}" "${2:-}"; exit $? ;;
+  card-release) do_card_release "${1:-}" "${2:-}"; exit $? ;;
+  card-claims)  card_ledger "${1:-}"; exit 0 ;;
+  release) [ $# -ge 1 ] || exit 0; [ "$SCAN" = 1 ] && release_cards "$1"
+           do_release "$dir" "$1"; exit 0 ;;
   read)    do_read "$dir"; exit 0 ;;
   session-start)
     payload=$(cat 2>/dev/null) || exit 0
