@@ -860,5 +860,42 @@ t    'once the lock is free, the same session writes normally' yes \
 t    'and releases the lock dir behind it' no \
      "$([ -d "$LOCKDIR" ] && echo yes || echo no)"
 
+# --- 15. what followed a sitting rung ----------------------------------------
+# Each ⏱ crossing is stamped once, at the session's next prompt: minutes to
+# that prompt, whether it was a `stay`, and whether the gap ran past the
+# sitting gap. The crossing's own prompt never stamps it.
+TP15="$SCRATCH/after.jsonl"; turn "$TP15" 1000
+X15="$STATE/metrics/crossings/aft.jsonl"
+backdate() {  # backdate <minutes> -- move every time crossing's ts that far back
+  jq -c --arg ts "$(date -u -d "@$(( $(date +%s) - $1 * 60 ))" +%Y-%m-%dT%H:%M:%SZ)" \
+    'if .kind == "time" then .ts = $ts else . end' "$X15" > "$X15.t" && mv "$X15.t" "$X15"
+}
+after() { jq -c 'select(.kind == "time_after") | [.at, .min, .stay, .quiet]' "$X15" 2>/dev/null; }
+sitting aft 61 5
+payload "$TP15" aft "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+t 'the crossing prompt stamps nothing' '' "$(after)"
+backdate 3
+payload "$TP15" aft "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "  Stay."}' | bash "$HOOK" prompt 0 >/dev/null 2>&1
+t 'the next prompt stamps minutes, stay, not quiet' '[60,3,true,false]' "$(after)"
+payload "$TP15" aft "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+t 'and a crossing is stamped once' 1 "$(after | wc -l | tr -d ' ')"
+
+sitting aft2 61 5
+X15="$STATE/metrics/crossings/aft2.jsonl"
+payload "$TP15" aft2 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+backdate 40
+payload "$TP15" aft2 "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "stay here and fix it"}' \
+  | bash "$HOOK" prompt 0 >/dev/null 2>&1
+t 'a gap past the sitting gap is quiet; a sentence is not a stay' \
+  '[60,40,false,true]' "$(after)"
+
+sitting aft3 61 5
+X15="$STATE/metrics/crossings/aft3.jsonl"
+payload "$TP15" aft3 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+backdate 1
+payload "$TP15" aft3 "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "/stay 30"}' \
+  | bash "$HOOK" prompt 0 >/dev/null 2>&1
+t '`stay <minutes>` is a stay' '[60,1,true,false]' "$(after)"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

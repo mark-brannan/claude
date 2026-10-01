@@ -484,6 +484,34 @@ record_crossing() {
     >> "$CROSSD/$sid.jsonl" 2>/dev/null || true
 }
 
+# `stay` or `stay <minutes>` and nothing else (any case, optional leading
+# slash, trailing punctuation): the user's answer to a sitting rung.
+is_stay() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' \
+    | grep -Eq '^[[:space:]]*/?stay([[:space:]]+[0-9]+m?)?[[:punct:][:space:]]*$'
+}
+
+# What followed each ⏱ crossing, stamped once at the session's next prompt:
+# minutes to it, whether it was a `stay`, whether the gap ran past the sitting
+# gap. Runs before the engine can record a crossing, so the crossing's own
+# prompt never stamps it. Measured only; nothing here speaks.
+stamp_time_after() {
+  local f="$CROSSD/$sid.jsonl" stay=false out
+  [ -f "$f" ] || return 0
+  is_stay "${prompt_text:-}" && stay=true
+  out=$(jq -sc --argjson now "$now_ts" --arg ts "$now" --argjson stay "$stay" \
+               --argjson gap "$((NAG_SIT_GAP_MIN * 60))" \
+    '[.[] | select(.kind == "time_after") | .crossing_ts] as $done
+     | .[] | select(.kind == "time") | .ts as $c
+     | select(any($done[]; . == $c) | not)
+     | ($now - ($c | fromdateiso8601)) as $s
+     | {session_id, ts: $ts, kind: "time_after", at, crossing_ts: $c,
+        min: ($s / 60 | floor), stay: $stay, quiet: ($s > $gap)}' \
+    "$f" 2>/dev/null) || return 0
+  [ -n "$out" ] && printf '%s\n' "$out" >> "$f" 2>/dev/null
+  return 0
+}
+
 # Human nags (sitting, friction) gate on this; machine nags (context,
 # decisions) do not -- a context ceiling is a real limit, while a sitting
 # clock is answered by landing the work. Memoized; can shell out to `gh`.
@@ -505,6 +533,7 @@ if [ "$run_engine" -eq 1 ]; then
   # neighbour was worked in has not earned a fresh clock, because the person
   # never left the chair.
   if [ "$is_prompt" -eq 1 ]; then
+    stamp_time_after
     if [ "$last_prompt" -gt 0 ] \
        && [ $((now_ts - last_prompt)) -gt $((NAG_SIT_GAP_MIN * 60)) ]; then
       sit_start=$now_ts
