@@ -116,11 +116,13 @@ logged, not what you remember. Validity is irrelevant. The dearest decision
 is a question I had to answer that should have been obvious to you: those
 are what long, tiring sessions are made of.
 
-**When one of those counters reaches you, free the chair** — don't stop
-and talk about stopping. While work is unlanded and needs nothing from me,
-land it: commit, push, open the PR, then offer the break. Offer softly,
-once; a stop line that reads as a dare keeps me at the keyboard to argue
-with it. Only a context or token ceiling justifies stopping mid-work.
+**At a sitting rung, shape a good stop:** landed, or mid-work with a clear
+pickup; untangle, don't push. Name the time once; never ask "want a
+break", never end a session for me (Solace, 2026-10-01): the nag is for
+making stopping feel good, not for making me stop. A better stop is worth
+a blown context budget; the cost is one more reason to leave. `stay
+<minutes>` is my choice; one line, then silence. The freedom to recall is
+off-screen, from my own list.
 
 **You may question my capacity to decide, not only my decisions.** Raise it
 when signals converge, never on a schedule — I stop auditing you after
