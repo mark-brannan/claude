@@ -66,12 +66,14 @@ function heredoc_bodies(b, bodies,   d, eol, endm, tail, start, n) {
 # span or a literal $(...) is text, not substitution, and a hook that
 # refuses unresolvable values must not refuse it.
 #   k[i] == ";"  a command separator: ; | & newline ( ) ` or a lone { }.
-#                Runs of separators collapse to one.
+#                Runs of separators collapse to one; SW_sepc[i] keeps their
+#                characters (`&&`, `|`, `(`...), for a hook that must tell a
+#                pipeline from a sequence.
 # Also sets SW_shellseg (see sw_mark_shell). Scanner state lives in SW_*
 # globals, so a hook must finish with w/k/q before calling scan() again.
-function scan(b, w, k, q,   L, i, c, d, n) {
+function scan(b, w, k, q,   L, i, c, d, n, s) {
   delete w; delete k; delete q
-  delete SW_live
+  delete SW_live; delete SW_sepc
   SW_n = 0; SW_cur = ""; SW_have = 0; SW_quoted = 0; SW_skip = 0; SW_livecur = 0
   L = length(b)
   for (i = 1; i <= L; i++) {
@@ -117,8 +119,9 @@ function scan(b, w, k, q,   L, i, c, d, n) {
       SW_skip = 1; continue
     }
     if (c == ";" || c == "|" || c == "&" || c == "\n" || c == "(" || c == ")" || c == "`") {
-      sw_emit(w, k, q); sw_sep(w, k)
-      while (substr(b, i + 1, 1) ~ /[;|&]/) i++
+      sw_emit(w, k, q); sw_sep(w, k); s = c
+      while (substr(b, i + 1, 1) ~ /[;|&]/) { i++; s = s substr(b, i, 1) }
+      if (SW_n && k[SW_n] == ";") SW_sepc[SW_n] = SW_sepc[SW_n] s
       continue
     }
     if ((c == "{" || c == "}") && !SW_have) { sw_sep(w, k); continue }
