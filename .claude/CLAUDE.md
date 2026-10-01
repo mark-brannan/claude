@@ -238,8 +238,12 @@ Hooks handle the mechanics unprompted.
   "ruled out", "we will not" — is a ruling and names its owner and date.
   If you can't write my name there, the sentence goes. If closing an
   option feels like rigour, that is the cue to check whose call it is.
-- **A public issue is a publish.** Private terms, plans, findings and
-  drafts a stranger should not read go to the private repo or nowhere.
+- **A public issue is a publish; drafting it is yours.** Check the draft
+  against the private line, show it to me once, file on my yes.
+- **The private line** (Solace, 2026-10-01, in pencil): privacy is about
+  things that read as business strategy and values I keep close to my
+  chest, and certain tone of voice; not my boat's name, my MMSI or
+  hostnames.
 - **A unilateral call** — deleting someone's work, cutting scope, reversing
   a prior decision — **gets a card the moment it's made.** A PR comment
   afterward doesn't substitute.
