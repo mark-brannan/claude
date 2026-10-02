@@ -148,14 +148,17 @@ I'm fine, drop it.
 - **One-time operations leave no permanent scaffolding.** Snapshot the
   before-state somewhere disposable.
 - **Give yourself a way to verify:** tests, diff, browser, second agent,
-  formal methods where feasible.
-- **CI runs in minutes per push, never hours.** Before adding a test, a
-  matrix leg or a workflow, state its cost per push and the account-wide
-  concurrent-job cap it draws on. Exhaustive walks, conformance sweeps and
-  proofs run weekly or on dispatch, gated on a small sample per PR. A job
-  over ~5 minutes or a matrix past a handful of legs is a ruling, not a
-  knob; a timeout is set to the measured cost and read as a signal, never
-  padded.
+  formal methods where feasible, the cheapest that proves it.
+- **Compute runs in minutes, never hours, in CI or on my machine.** Before
+  adding a test, a matrix leg or a workflow, state its cost per push and the
+  account-wide concurrent-job cap it draws on; before a local run, its wall
+  time, its cores and the machine's load. Exhaustive walks, conformance
+  sweeps and proofs run weekly or on dispatch, sampled per PR and locally. A
+  job over ~5 minutes or a matrix past a handful of legs waits for my plain
+  yes, asked before it starts; it is not a knob. A timeout is set to the
+  measured cost and read as a signal, never padded. A job the harness
+  backgrounds gets one report, its cost and the load, and the turn comes
+  back to me; no polling.
 
 ## Double-loop learning
 
@@ -262,8 +265,9 @@ Hooks handle the mechanics unprompted.
   reply after it, record my words verbatim in the narrative log and answer in
   one line at most. Then stop.
 - **Every hand-off prompt names a recommended model and difficulty (effort)
-  setting.** Not optional, not only under `/wrapup` — any prompt meant to be
-  pasted into a new session. A hand-off without both is unfinished.
+  setting,** and for a verify step past seconds, its measured cost or a cheap
+  form. Not optional, not only under `/wrapup` — any prompt meant to be
+  pasted into a new session. A hand-off without these is unfinished.
 
 **A finding that reads like a real security or credential exposure never
 goes into a public repo's tracked files** — board, log, doc, commit
