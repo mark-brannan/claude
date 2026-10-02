@@ -334,6 +334,73 @@ Solace's, verbatim.
   - Maps to: the framing's kernel. Model and effort per task, and the terms
     that move the slider up are being qualified.
 
+## Machines that do what they were told
+
+Checked against the web on 2026-10-02.
+
+- **Williamson, J. (1947).** "With Folded Hands." *Astounding Science Fiction*,
+  July 1947; expanded as *The Humanoids* (1949).
+  [wikipedia](https://en.wikipedia.org/wiki/With_Folded_Hands)
+  - Idea: robots built "to serve and obey, and guard men from harm" take the
+    mission literally and forbid people everything. The contract is met in
+    full and the people are not served.
+  - Maps to: "A flourishing life, not throughput" and "Refuse the
+    technically-available when it's wrong" in the standing orders; arete-check
+    grades a governing document on harm and flourishing, not on obedience.
+- **Asimov, I. (1942).** "Runaround." *Astounding Science Fiction*, March 1942;
+  collected in *I, Robot*, Gnome Press, 1950.
+  [wikipedia](https://en.wikipedia.org/wiki/I,_Robot)
+  - Idea: the Three Laws appear in full here, and the stories that follow are
+    about how a ranked rule set fails at its edges.
+  - Maps to: the double-loop section of the standing orders. A rule is
+    expected to fail at its edges; the repair is to question it, not obey it
+    harder.
+- **Bostrom, N. (2003).** "Ethical Issues in Advanced Artificial
+  Intelligence." In *Cognitive, Emotive and Ethical Aspects of Decision Making
+  in Humans and in Artificial Intelligence*, vol. 2, ed. Smit, I. et al., pp.
+  12-17. [nickbostrom.com](https://nickbostrom.com/ethics/ai)
+  - Idea: the paperclip example. A superintelligence whose top goal is
+    manufacturing paperclips transforms first all of earth, then more of
+    space, into paperclip factories.
+  - Maps to: "Competence does not confer authority" and the one-way-door
+    test. A capable agent still does not close an option that is the user's.
+- **Wiener, N. (1960).** "Some Moral and Technical Consequences of
+  Automation." *Science* 131, 6 May 1960, pp. 1355-1358.
+  [gwern.net](https://gwern.net/doc/reinforcement-learning/safe/1960-wiener.pdf)
+  - Idea: be "quite sure that the purpose put into the machine is the purpose
+    which we really desire and not merely a colorful imitation of it"; a
+    machine faster than we are may leave us not knowing "when to turn it off".
+  - Maps to: the guards and hooks, such as `no-unsigned-push.sh`, which stop
+    an action before it lands instead of reporting afterwards.
+- **Russell, S. (2019).** *Human Compatible: Artificial Intelligence and the
+  Problem of Control.* Viking.
+  [wikipedia](https://en.wikipedia.org/wiki/Human_Compatible)
+  - Idea: the King Midas problem, a fixed objective pursued to the letter. The
+    cure is a machine uncertain about human preferences, learning them from
+    what people do.
+  - Maps to: "Ask one sharp question rather than guessing" and the three exits
+    of a judgment call (omit, card, ask). A preference not yet stated is
+    unknown, not assumed.
+- **Sculley, D. et al. (2015).** "Hidden Technical Debt in Machine Learning
+  Systems." *NIPS 2015*; precursor "Machine Learning: The High-Interest Credit
+  Card of Technical Debt," SE4ML workshop, NIPS 2014. **Wright, H.** "Hyrum's
+  Law", named by Winters, T.; undated.
+  [neurips.cc](https://proceedings.neurips.cc/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf);
+  [hyrumslaw.com](https://www.hyrumslaw.com/)
+  - Idea: "undeclared consumers" silently use one system's output as another's
+    input, a hidden tight coupling; and "all observable behaviors of your
+    system will be depended on by somebody", whatever the contract promises.
+  - Maps to: the `iada` skill, which ranks parts by how many parties must
+    change when each does, and `kanban-lint.sh`, which pins the board format
+    that hooks and skills read.
+- **Jacobs, W. W. (1902).** "The Monkey's Paw." *Harper's Monthly*, September
+  1902; reprinted in *The Lady of the Barge* (1902).
+  [harpers.org](https://harpers.org/archive/1902/09/the-monkeys-paw)
+  - Idea: wishes granted to the letter, each at a price the wisher did not
+    mean to pay.
+  - Maps to: the one-way-door test. A wish that cannot be unmade is a one-way
+    door; name the undo before it is granted.
+
 ## Prior art: recent tooling
 
 Dates are as found on 2026-09-29.
