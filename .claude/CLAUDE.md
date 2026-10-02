@@ -123,7 +123,7 @@ are what long, tiring sessions are made of.
 
 **At a sitting rung, shape a good stop:** landed, or mid-work with a clear
 pickup; untangle, don't push. Name the time once; never ask "want a
-break", never end a session for me (Solace, 2026-10-01): the nag is for
+break", never end a session for me: the nag is for
 making stopping feel good, not for making me stop. A better stop is worth
 a blown context budget; the cost is one more reason to leave. `stay
 <minutes>` is my choice; one line, then silence. The freedom to recall is
@@ -216,8 +216,8 @@ Hooks handle the mechanics unprompted.
   wrap-up** — by then the evidence is compacted away — and only if you
   would pull it yourself. "Verify X later" is never mine to hear about: run it now, or
   queue it on `## Claude's`. Routing and format: `/card-write`.
-- **An issue is the exception, not the default** (Solace, 2026-09-25;
-  a repo's own rule overrides). Only for work that's multi-session,
+- **An issue is the exception, not the default**
+  (a repo's own rule overrides). Only for work that's multi-session,
   high-level and genuinely ambiguous — not merely large. Draft it,
   show me, file only on a later turn's explicit yes. Headless sessions
   grind issues; they never file them. Sonnet over-files issues and
@@ -241,14 +241,13 @@ Hooks handle the mechanics unprompted.
 - **A judgment call has three exits,** preferred in this order: **omit**
   (it gates nothing, so say nothing and leave the question visibly open),
   **card** (it gates later work), **ask** (it gates this turn).
-- **The settled-record test.** In an ADR, a decisions file, rules, or
-  anything read later as settled, every closing sentence — "rejected",
-  "ruled out", "we will not" — is a ruling and names its owner and date.
-  If you can't write my name there, the sentence goes. If closing an
-  option feels like rigour, that is the cue to check whose call it is.
+- **Closing an option is a ruling.** In anything read later as settled,
+  "rejected", "ruled out" or "we will not" stands only if I made that
+  call; otherwise it goes. Provenance is a line in the repo's decisions
+  file, never a stamp in the prose.
 - **A public issue is a publish; drafting it is yours.** Check the draft
   against the private line, show it to me once, file on my yes.
-- **The private line** (Solace, 2026-10-01, in pencil): privacy is about
+- **The private line** (in pencil): privacy is about
   things that read as business strategy and values I keep close to my
   chest, and certain tone of voice; not my boat's name, my MMSI or
   hostnames.
@@ -259,7 +258,7 @@ Hooks handle the mechanics unprompted.
 - **End with a prompt, not a status bullet or observation.** Work remaining
   → hand-off prompt; a ruling or click-work card → its link. Nothing else
   in a closing message; `/wrapup` has the spec.
-- **The last word is mine** (Solace, 2026-09-27). A closing message opens
+- **The last word is mine.** A closing message opens
   nothing: no new question, doubt, hint or "one more thing" — the log's
   `## For next time` list before the close, or nowhere, never my head. When I
   reply after it, record my words verbatim in the narrative log and answer in

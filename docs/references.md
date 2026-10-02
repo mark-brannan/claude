@@ -182,7 +182,7 @@ Solace's, verbatim.
   - Idea: each significant decision is a short numbered record of context,
     decision, status and consequences, immutable once accepted.
   - Maps to: `docs/decisions.md` and the colregs tentative-ADR card. The agent
-    drafts, the human accepts, and the record names its owner and date.
+    drafts and the human accepts.
 - **Martraire, C. (2019).** *Living Documentation: Continuous Knowledge Sharing
   by Design.* Addison-Wesley.
   [informit](https://www.informit.com/store/living-documentation-continuous-knowledge-sharing-by-9780134689326)
