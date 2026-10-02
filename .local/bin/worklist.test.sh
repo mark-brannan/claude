@@ -471,5 +471,12 @@ OUT=$(cat "$S/side.out")
 has 'outside a repo the side task falls back to oldest overall' "^Side task \(Claude's queue, oldest overall\):$"
 has 'oldest overall is the oldest id, not the first line or the cwd-repo card' '^  1790836840077c62eb Card 9$'
 
+# --- a board past the argv limit (one arg is capped near 128KB) ------------------------
+cp "$kb" "$S/kanban.big"
+awk 'BEGIN{print "\n## Human'"'"'s"; for(i=0;i<1500;i++) printf "- [ ] **Bulk card %d** — padding padding padding padding padding padding padding padding padding padding ([o/r#%d](https://github.com/o/r/issues/%d)) id: 17908%013d\n", i, i, i, i}' >> "$kb"
+run --fresh --json; eq 'oversized board: json exit 0' 0 "$RC"
+lacks 'oversized board: no argv overflow' 'Argument list too long'
+cp "$S/kanban.big" "$kb"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

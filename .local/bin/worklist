@@ -612,10 +612,14 @@ build_record() {
   board_path || :
   cards="[]"; [ -n "$kb" ] && cards=$(board_cards "$kb")
   stranded_json=$(stranded_rows "$1")
-  jq --arg milestone "$milestone" --argjson stranded "${stranded_json:-[]}" --argjson cards "${cards:-[]}" \
-    'if $milestone == "" then .
+  # via files: a live board overflows the argv limit as --argjson
+  br_tmp=$(mktemp -d); printf '%s\n' "${stranded_json:-[]}" > "$br_tmp/s"; printf '%s\n' "${cards:-[]}" > "$br_tmp/c"
+  jq --arg milestone "$milestone" --slurpfile stranded_f "$br_tmp/s" --slurpfile cards_f "$br_tmp/c" \
+    '$stranded_f[0] as $stranded | $cards_f[0] as $cards
+     | if $milestone == "" then .
      else .records |= map(if .data then .data.issues.nodes |= map(select(.milestone.title == $milestone)) else . end) end
      | '"$BUCKETS" "$1"
+  br_rc=$?; rm -rf "$br_tmp"; return "$br_rc"
 }
 
 # render <cache file or ""> <cached 0|1> <extra line or "">
