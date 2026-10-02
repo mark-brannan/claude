@@ -65,6 +65,8 @@ INSTALL="
 .claude/skills/curia/template.md
 .claude/skills/scoping/SKILL.md
 .claude/hooks/lib-state.sh
+.claude/hooks/lib_state.py
+.claude/hooks/curia-roll.py
 .claude/hooks/session-metrics.jq
 .claude/hooks/lib-metrics-fmt.jq
 .claude/hooks/lib-metrics-test-harness.sh

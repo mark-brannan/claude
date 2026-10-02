@@ -25,6 +25,7 @@ Procedures only. The hook designs and the scars behind them are in
 - [Check a repo's prose budgets](#check-a-repos-prose-budgets)
 - [Prune stale Stop-hook salvage refs](#prune-stale-stop-hook-salvage-refs)
 - [Read the pickup items](#read-the-pickup-items)
+- [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
 
 **GitHub repository**
 - [Cut and promote a prose-budget engine version](#cut-and-promote-a-prose-budget-engine-version)
@@ -368,6 +369,29 @@ words on a curia land on that curia's thread, stamped by the same hook.
 Verify: `pickup-list` lists the session's own item within a minute of its
 last Stop, with `pickup-list show <id>` naming the branch and its
 ahead/dirty state.
+
+## Check a curia's roll is recording
+
+`curia-roll.py` runs on every prompt. When the session is named in a
+curia's `LIVE` file, it appends the prompt verbatim to that curia's
+`roll.md` under a stamp heading. It skips a curia folder
+with no `digest.md`. In those folders `roll.md` is still the curated
+document, and appending prompts would corrupt it. The hook prints nothing
+and always exits 0, so a roll that silently stopped looks the same as one
+that works. Check the roll itself:
+
+```bash
+d="$(. ~/.claude/hooks/lib-state.sh && state_dir)/curia/<id>"
+cat "$d/LIVE"; ls "$d/digest.md"
+tail -n 8 "$d/roll.md"
+```
+
+Verify: the last `### <stamp>` heading is the time of the prompt just sent
+(`20261002t054107z`: UTC date and time, no separators, lower-case `t` and
+`z`; GitHub anchors it as `#20261002t054107z`), and the fenced text beneath
+it is that prompt. No entry means one of three things: the session
+id in `LIVE` is not this one, `digest.md` is missing, or
+`~/.claude/hooks/curia-roll.py` is absent (`dotsync`).
 
 ## Cut and promote a prose-budget engine version
 
