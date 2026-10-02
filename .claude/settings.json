@@ -1,7 +1,8 @@
 {
   "env": {
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
-    "showThinkingSummaries": true
+    "showThinkingSummaries": true,
+    "FORCE_AUTOUPDATE_PLUGINS": "1"
   },
   "permissions": {
     "allow": [
@@ -436,7 +437,8 @@
       "source": {
         "source": "github",
         "repo": "mark-brannan/languette"
-      }
+      },
+      "autoUpdate": true
     }
   },
   "autoMode": {

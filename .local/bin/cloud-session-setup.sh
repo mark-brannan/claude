@@ -486,7 +486,8 @@ done
 # now it runs alongside the copies in .claude/hooks, which stay until it has
 # run on real machines. A plugin that never installed is a guard that
 # silently isn't there, so a failure here marks the install incomplete for
-# the SessionStart brief.
+# the SessionStart brief. Refreshed and updated, not just installed: a VM
+# restored with an old plugin cache would otherwise keep running that build.
 # =========================================================================
 PLUGINS="languette@languette=mark-brannan/languette"
 for spec in $PLUGINS; do
@@ -498,7 +499,9 @@ for spec in $PLUGINS; do
     # claude-config action): skipped, not failed.
     warn "  skipped plugin $plugin — no claude on PATH"
   elif claude plugin marketplace add "$repo" >/dev/null 2>&1 &&
-       claude plugin install "$plugin" >/dev/null 2>&1; then
+       claude plugin marketplace update "${plugin#*@}" >/dev/null 2>&1 &&
+       claude plugin install "$plugin" >/dev/null 2>&1 &&
+       claude plugin update "$plugin" -y >/dev/null 2>&1; then
     say "plugin $plugin installed"
   else
     warn "  FAILED plugin $plugin from $repo"; failed=$((failed + 1))
