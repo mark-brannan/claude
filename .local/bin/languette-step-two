@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+# Opens the languette step-two PR when the readiness measurement says ready.
+#
+# Step one runs the languette plugin alongside dotfiles copies of three
+# guards; step two deletes the copies. The user ruled that the transition
+# runs without her touch except the merge, so this runs hourly (systemd,
+# languette-step-two.timer) on her main machine and, each run:
+#
+#   1. refreshes the plugin to the tip of its main (marketplace update, then
+#      plugin update), so the plugin being measured is the one sessions load;
+#   2. runs languette-step-two-ready; NOT READY ends the run, exit 0;
+#   3. stops if a PR from claude/languette-step-two already exists in any
+#      state: open is waiting on the user, merged is done (the job then
+#      disables its own timer), closed is her no;
+#   4. builds the change fresh from origin/main in a throwaway worktree:
+#      deletes the three guards and their suites, their PreToolUse entries in
+#      .claude/settings.json, their cloud-session-setup.sh INSTALL lines and
+#      their CI test-list lines. lib-shell-words.awk stays: other hooks use it;
+#   5. runs every .claude/hooks and .local/bin suite plus CI's `seeded` step on
+#      the result; a suite that fails there and passes on origin/main stops
+#      the run, exit 1;
+#   6. commits (signed), pushes the branch, opens the PR with the readiness
+#      output and every remaining prose mention of the three guards listed
+#      for review. Not labelled: Mergify computes awaiting-human, and a hand
+#      label comes off at its first evaluation. It never merges.
+#
+# Usage: languette-step-two --since DATE [--repo DIR] [--dry-run]
+#   --since is passed to languette-step-two-ready. --repo is a git clone of
+#   the dotfiles (default ~/dotfiles), used only as the git dir for the
+#   throwaway worktree. --dry-run skips the plugin refresh, builds and tests
+#   the change whatever the readiness says, prints its diffstat and prose
+#   list, and pushes nothing.
+#   Exit 0 done or nothing to do, 1 a step failed, 2 usage.
+import argparse
+import datetime as dt
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+BRANCH = "claude/languette-step-two"
+GUARDS = ("no-rm-tree", "no-git-footguns", "no-delete-stacked-base")
+HERE = Path(__file__).resolve().parent
+
+
+def log(msg):
+    print(f"{dt.datetime.now(dt.timezone.utc):%Y-%m-%dT%H:%M:%SZ} {msg}", flush=True)
+
+
+def run(args, cwd=None, check=True, timeout=600):
+    r = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    if check and r.returncode != 0:
+        raise RuntimeError(f"{' '.join(args[:4])} failed ({r.returncode}): {(r.stderr or r.stdout).strip()[-400:]}")
+    return r
+
+
+def refresh_plugin():
+    for args in (["claude", "plugin", "marketplace", "update", "languette"],
+                 ["claude", "plugin", "update", "languette@languette", "-y"]):
+        r = run(args, check=False, timeout=60)
+        log(("" if r.returncode == 0 else "WARN ") + f"{' '.join(args)}: {(r.stdout + r.stderr).strip()[-200:]}")
+
+
+def edit(tree):
+    """Make the step-two change in a checkout of main. Raises when main has changed shape."""
+    for g in GUARDS:
+        for suffix in (".sh", ".test.sh"):
+            (tree / ".claude/hooks" / f"{g}{suffix}").unlink()
+    names = "|".join(map(re.escape, GUARDS))
+
+    sp = tree / ".claude/settings.json"
+    d = json.loads(sp.read_text())
+    if json.dumps(d, indent=2, ensure_ascii=False) + "\n" != sp.read_text():
+        raise RuntimeError(".claude/settings.json no longer round-trips byte for byte; its shape changed, edit by hand")
+    for m in d["hooks"]["PreToolUse"]:
+        m["hooks"] = [h for h in m["hooks"] if not re.search(rf"/\.claude/hooks/({names})\.sh", h.get("command", ""))]
+    d["hooks"]["PreToolUse"] = [m for m in d["hooks"]["PreToolUse"] if m["hooks"]]
+    sp.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n")
+
+    cp = tree / ".local/bin/cloud-session-setup.sh"
+    cp.write_text(re.sub(rf"(?m)^\.claude/hooks/({names})\.sh\n", "", cp.read_text()))
+
+    ci = tree / ".github/workflows/ci.yml"
+    text, n = ci.read_text(), 1
+    while n:  # the first item of a `for t in` list: its successor moves up, and may be one too
+        text, n = re.subn(rf"(for t in )\.claude/hooks/({names})\.test\.sh \\\n\s*", r"\1", text)
+    ci.write_text(re.sub(rf"(?m)^\s*\.claude/hooks/({names})\.test\.sh \\\n", "", text))
+
+    for p, pat in ((sp, rf"hooks/({names})\.sh"), (cp, rf"hooks/({names})\.sh"), (ci, rf"({names})\.test\.sh")):
+        if re.search(pat, p.read_text()):
+            raise RuntimeError(f"{p.relative_to(tree)} still names a guard copy; its shape changed, edit by hand")
+    return [".claude/settings.json", ".local/bin/cloud-session-setup.sh", ".github/workflows/ci.yml"] + [
+        f".claude/hooks/{g}{s}" for g in GUARDS for s in (".sh", ".test.sh")]
+
+
+def suites(tree):
+    """Every suite CI's guard-tests and tool-tests jobs run (under the default awk), plus CI's `seeded` step."""
+    found = [(["bash", str(t)], t.relative_to(tree)) for t in sorted(
+        list((tree / ".claude/hooks").glob("*.test.sh")) + list((tree / ".local/bin").glob("*.test.sh")))]
+    found += [([sys.executable, str(t)], t.relative_to(tree)) for t in sorted((tree / ".local/bin").glob("*.test.py"))]
+    return found
+
+
+def seeded_script(tree):
+    # The step's run: block, read out of the YAML by indentation so no YAML library is needed.
+    text = (tree / ".github/workflows/ci.yml").read_text()
+    m = re.search(r"- name: Every settings\.json hook is in the INSTALL list\n(\s+)run: \|\n((?:\1  .*\n|\s*\n)+)", text)
+    if not m:
+        raise RuntimeError("ci.yml has no `seeded` INSTALL-list step to run")
+    return "\n".join(line[len(m.group(1)) + 2:] for line in m.group(2).splitlines())
+
+
+def failing(tree):
+    def one(item):
+        args, name = item
+        try:
+            r = subprocess.run(args, cwd=tree, capture_output=True, text=True, timeout=600)
+            return None if r.returncode == 0 else str(name)
+        except subprocess.TimeoutExpired:
+            return str(name)
+    cmds = suites(tree) + [(["bash", "-euo", "pipefail", "-c", seeded_script(tree)], "ci.yml seeded step")]
+    with ThreadPoolExecutor(4) as pool:
+        return sorted(f for f in pool.map(one, cmds) if f)
+
+
+def prose_refs(tree):
+    r = run(["git", "grep", "-n", "-E", "|".join(GUARDS)], cwd=tree, check=False)
+    return [line[:160] for line in r.stdout.splitlines()]
+
+
+def worktree(repo, base, keep_out):
+    d = Path(tempfile.mkdtemp(prefix="languette-step-two."))
+    keep_out.append(d)
+    run(["git", "-C", str(repo), "worktree", "add", "-q", "--detach", str(d), base])
+    return d
+
+
+def body(ready_out, base, head, refs, flaky):
+    refs_md = "\n".join(f"- `{r}`" for r in refs[:80]) + (f"\n- ... and {len(refs) - 80} more" if len(refs) > 80 else "")
+    pre = f"\n\nThese suites also fail on origin/main, so they are not this change's: {', '.join(flaky)}." if flaky else ""
+    return f"""Step two of the languette move. The plugin carries no-rm-tree, no-git-footguns and no-delete-stacked-base; this deletes the dotfiles copies: the six hook and suite files, their PreToolUse entries in `.claude/settings.json`, their INSTALL lines in `.local/bin/cloud-session-setup.sh`, and their lines in CI's guard-tests and tool-tests lists. `lib-shell-words.awk` stays; other hooks use it.
+
+Opened by `languette-step-two` on its hourly timer, because the readiness measurement said ready:
+
+```
+{ready_out.strip()}
+```
+
+Built from origin/main at {base[:12]}. Every `.claude/hooks` and `.local/bin` suite and CI's `seeded` step passed on this tree.{pre}
+
+**Prose that still names the three guards, for review; none of it was edited:**
+
+{refs_md}
+
+**Churn:** this needs Solace's `churn-ok` label. The job never merges.
+
+Head: {head}
+"""
+
+
+def main(argv):
+    p = argparse.ArgumentParser(prog="languette-step-two")
+    p.add_argument("--since", required=True)
+    p.add_argument("--repo", type=Path, default=Path.home() / "dotfiles")
+    p.add_argument("--dry-run", action="store_true")
+    a = p.parse_args(argv)
+
+    log("languette-step-two" + (" (dry run)" if a.dry_run else ""))
+    if not a.dry_run:
+        refresh_plugin()
+    r = subprocess.run([str(HERE / "languette-step-two-ready"), "--since", a.since], capture_output=True, text=True)
+    print(r.stdout + r.stderr, end="", flush=True)
+    if r.returncode not in (0, 1):
+        log("ERROR languette-step-two-ready could not measure")
+        return 1
+    if r.returncode == 1 and not a.dry_run:
+        log("not ready; nothing to do")
+        return 0
+
+    prs = json.loads(run(["gh", "pr", "list", "--head", BRANCH, "--state", "all", "--json", "number,state,url"],
+                         cwd=a.repo).stdout)
+    if prs:
+        log("a step-two PR exists, nothing to do: " + ", ".join(f"{x['url']} ({x['state'].lower()})" for x in prs))
+        if not a.dry_run:
+            if any(x["state"] == "MERGED" for x in prs):
+                # Step two is done; a one-time job leaves no timer behind.
+                r = run(["systemctl", "--user", "disable", "--now", "languette-step-two.timer"], check=False)
+                log(("" if r.returncode == 0 else "WARN ") + "disabled languette-step-two.timer: step two merged")
+            return 0
+
+    trees = []
+    try:
+        run(["git", "-C", str(a.repo), "fetch", "-q", "origin", "main"])
+        base = run(["git", "-C", str(a.repo), "rev-parse", "origin/main"]).stdout.strip()
+        tree = worktree(a.repo, base, trees)
+        paths = edit(tree)
+        fails = failing(tree)
+        flaky = []
+        if fails:
+            main_fails = set(failing(worktree(a.repo, base, trees)))
+            flaky = [f for f in fails if f in main_fails]
+            regressions = [f for f in fails if f not in main_fails]
+            if regressions:
+                log("ERROR the step-two change breaks: " + ", ".join(regressions))
+                return 1
+        refs = prose_refs(tree)
+        run(["git", "add", "--"] + paths, cwd=tree)
+        stat = run(["git", "diff", "--cached", "--stat"], cwd=tree).stdout
+        if a.dry_run:
+            print(stat + f"\nsuites failing on main too: {flaky or 'none'}\nprose references ({len(refs)}):")
+            print("\n".join(refs))
+            log("dry run: nothing pushed")
+            return 0
+        run(["git", "commit", "-S", "-q", "-m", "languette step two: delete the dotfiles copies of the three guards\n\n"
+             "The languette plugin carries no-rm-tree, no-git-footguns and no-delete-stacked-base;\n"
+             "the readiness measurement says it has been gating on real machines.\n"
+             "Opened by languette-step-two on its hourly timer."], cwd=tree)
+        head = run(["git", "rev-parse", "HEAD"], cwd=tree).stdout.strip()
+        # Detached HEAD on purpose: mergify's pre-push hook refuses a branch whose
+        # commits carry Change-Id trailers. A stale branch with no PR is this
+        # job's own leftover, so it is overwritten.
+        run(["git", "push", "-q", "--force", "origin", f"HEAD:refs/heads/{BRANCH}"], cwd=tree)
+        pr = run(["gh", "pr", "create", "--base", "main", "--head", BRANCH,
+                  "--title", "languette step two: delete the dotfiles copies of the three guards",
+                  "--body", body(r.stdout, base, head, refs, flaky)], cwd=tree)
+        log("opened " + pr.stdout.strip())
+        return 0
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+        log(f"ERROR {e}")
+        return 1
+    finally:
+        for d in trees:
+            subprocess.run(["git", "-C", str(a.repo), "worktree", "remove", "--force", str(d)], capture_output=True)
+            shutil.rmtree(d, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

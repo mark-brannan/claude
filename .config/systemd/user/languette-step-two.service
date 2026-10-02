@@ -1,0 +1,31 @@
+# Opens the languette step-two PR once the readiness measurement says ready,
+# and refreshes the plugin to the tip of its main on every run. Pairs with
+# languette-step-two.timer. Never merges.
+#
+# Enable only on the user's main machine: it signs a commit, so the signing
+# key must be here, and one machine opening the PR is enough.
+
+[Unit]
+Description=languette step two -- open the PR deleting the guard copies when ready
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/dotfiles
+StateDirectory=languette
+
+# A user unit does not inherit a login shell's PATH; this needs git, gh, jq,
+# sh and claude. Override the whole line in ~/.config/languette-step-two.env
+# when claude lives somewhere else.
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-%h/.config/languette-step-two.env
+
+# --since is when step one landed: every denial after it carries the copy tag.
+ExecStart=%h/.local/bin/languette-step-two --since 2026-10-01T17:30:32Z
+
+StandardOutput=append:%S/languette/step-two.log
+StandardError=append:%S/languette/step-two.log
+
+# Measured 2026-10-02: plugin refresh 5s, every suite 68s on four workers.
+# A suite failing on the change reruns them all on main, so twice that, plus
+# the push: about 2.5 minutes at worst.
+TimeoutStartSec=5min

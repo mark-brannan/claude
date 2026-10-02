@@ -1,0 +1,14 @@
+# Pairs with languette-step-two.service. Enable on the main machine only:
+#   systemctl --user enable --now languette-step-two.timer
+
+[Unit]
+Description=Run languette step two hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+# A machine that was asleep on the hour runs once when it wakes.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
