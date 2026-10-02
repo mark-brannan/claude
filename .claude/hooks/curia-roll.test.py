@@ -5,6 +5,8 @@
 # so no new job and nothing drawn from the account's concurrent-job cap.
 # Each case runs the hook as Claude Code does, a subprocess fed event JSON on
 # stdin, against a throwaway state repo named by CLAUDE_STATE_REPO.
+import datetime
+import importlib.util
 import json
 import os
 import re
@@ -19,6 +21,20 @@ HOOK = Path(__file__).resolve().parent / "curia-roll.py"
 SID = "3554281d-fda5-4810-9e67-8117eb8e7006"
 OTHER = "29ff522d-c4ec-4b34-bf83-e7a010fb6c1e"
 ENTRY = re.compile(r"\n### (\d{8}t\d{6}z)\n(`{3,})\n(.*?)\n\2\n", re.S)
+T1 = datetime.datetime(2026, 10, 2, 7, 3, 33, 100000, tzinfo=datetime.timezone.utc)
+T1_LATER = T1 + datetime.timedelta(milliseconds=1)
+T2 = T1 + datetime.timedelta(seconds=1)
+
+
+def stamp(now):
+    return now.strftime("%Y%m%dt%H%M%Sz")
+
+
+def load_hook():
+    spec = importlib.util.spec_from_file_location("curia_roll", HOOK)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 class CuriaRollTest(unittest.TestCase):
@@ -78,7 +94,9 @@ class CuriaRollTest(unittest.TestCase):
         self.prompt("second")
         after = (d / "roll.md").read_text()
         self.assertTrue(after.startswith(before))
-        self.assertEqual([e[2] for e in self.entries("c")], ["old words", "first", "second"])
+        # Two prompts in one second fold into one entry: the words survive either way.
+        bodies = [e[2] for e in self.entries("c")]
+        self.assertEqual((bodies[0], "\n\n".join(bodies[1:])), ("old words", "first\n\nsecond"))
 
     def test_other_session_and_no_live_are_silent(self):
         self.sitting("c", f"{OTHER} t\n")
@@ -116,7 +134,7 @@ class CuriaRollTest(unittest.TestCase):
         self.sitting("c", f"{SID} t\n{OTHER} t\n")
         self.prompt("from one")
         self.prompt("from two", sid=OTHER)
-        self.assertEqual([e[2] for e in self.entries("c")], ["from one", "from two"])
+        self.assertEqual("\n\n".join(e[2] for e in self.entries("c")), "from one\n\nfrom two")
 
     def test_bad_input_and_unwritable_roll_exit_zero_silently(self):
         for payload in ("", "not json", "[]", {"session_id": SID}, {"prompt": "x"}):
@@ -194,10 +212,7 @@ class CuriaRollTest(unittest.TestCase):
         self.assertFalse(any(self.curia.glob("*/roll.md")))
 
     def test_dialog_words_matches_what_the_hook_writes(self):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("curia_roll", HOOK)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        mod = load_hook()
         qs = [{"question": "Q1", "options": [{"label": "A"}]}, {"question": "Q2", "options": []}]
         self.assertEqual(mod.dialog_words(qs, {"Q2": "two", "Q1": "one"}), "one\n\ntwo")
         self.assertEqual(mod.dialog_words(qs, {"Q1": "A", "Q2": "  "}), "")
@@ -207,6 +222,66 @@ class CuriaRollTest(unittest.TestCase):
         r = subprocess.run([sys.executable, str(HOOK)], input=json.dumps({"session_id": SID, "prompt": "x"}),
                            capture_output=True, text=True, env=env)
         self.assertEqual((r.returncode, r.stdout), (0, ""))
+
+
+class FoldTest(unittest.TestCase):
+    """Words sharing a per-second stamp are one entry, joined by a blank line,
+    as build-roll.py merges them. Fixed clocks, so no second boundary races."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.roll = Path(self.tmp.name) / "roll.md"
+        self.hook = load_hook()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_queued_pair_one_ms_apart_is_one_entry(self):
+        self.hook.append(str(self.roll), "first", T1)
+        self.hook.append(str(self.roll), "second", T1_LATER)
+        self.assertEqual(self.roll.read_text(), self.hook.entry("first\n\nsecond", T1))
+        # Same fence, so the rewrite opens with the earlier entry's bytes up to
+        # its words: a kill mid-write cannot lose them.
+        self.assertTrue(self.roll.read_text().startswith(self.hook.entry("first", T1)[: -len("\n```\n")]))
+
+    def test_three_in_one_second_fold_in_time_order_after_older_entries(self):
+        before = "# roll\n" + self.hook.entry("old", T1 - datetime.timedelta(seconds=5))
+        self.roll.write_text(before)
+        for w in ("a", "b", "c"):
+            self.hook.append(str(self.roll), w, T1)
+        self.assertEqual(self.roll.read_text(), before + self.hook.entry("a\n\nb\n\nc", T1))
+
+    def test_a_fold_rerenders_the_fence_for_the_joined_words(self):
+        self.hook.append(str(self.roll), "plain", T1)
+        self.hook.append(str(self.roll), "has ```` four", T1)
+        [(_, fence, body)] = ENTRY.findall(self.roll.read_text())
+        self.assertEqual((fence, body), ("`````", "plain\n\nhas ```` four"))
+
+    def test_a_new_second_appends_bytes_as_before(self):
+        self.hook.append(str(self.roll), "one", T1)
+        self.hook.append(str(self.roll), "two", T2)
+        self.assertEqual(self.roll.read_text(), self.hook.entry("one", T1) + self.hook.entry("two", T2))
+
+    def test_a_stamp_quoted_inside_the_last_entry_is_not_its_heading(self):
+        quoted = "see\n### " + stamp(T1) + "\n```\nx\n```\nabove"
+        self.hook.append(str(self.roll), quoted, T2)
+        self.hook.append(str(self.roll), "later", T1)  # the last entry is T2's: no fold
+        self.hook.append(str(self.roll), "more", T1)
+        self.hook.append(str(self.roll), "and", T2)
+        self.assertEqual([(s, b) for s, _, b in ENTRY.findall(self.roll.read_text())],
+                         [(stamp(T2), quoted), (stamp(T1), "later\n\nmore"),
+                          (stamp(T2), "and")])
+
+    def test_a_curated_tail_is_appended_to(self):
+        self.roll.write_text("# curated\n")
+        self.hook.append(str(self.roll), "a", T1)
+        self.assertEqual(self.roll.read_text(), "# curated\n" + self.hook.entry("a", T1))
+
+    def test_an_undecodable_last_entry_is_kept_and_appended_after(self):
+        bad = self.hook.entry("x", T1).encode().replace(b"x", b"\xff")
+        self.roll.write_bytes(bad)
+        self.hook.append(str(self.roll), "b", T1)
+        self.assertEqual(self.roll.read_bytes(), bad + self.hook.entry("b", T1).encode())
 
 
 if __name__ == "__main__":

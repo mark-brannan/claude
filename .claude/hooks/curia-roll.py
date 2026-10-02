@@ -26,8 +26,9 @@ writes LIVE, so it is matched by the id it names instead. Task notifications
 and agent messages also fire UserPromptSubmit and stay out. A dialog's
 free-text answers and notes are one entry; a picked label stays out.
 
-The roll is append-only (one-entry-point curia, 2026-10-02, the words log):
-nothing here reads, edits or reorders what is already in it. Until a curia's
+The roll is append-only (one-entry-point curia, 2026-10-02, the words log),
+save that words sharing a stamp are one entry, joined by a blank line, as
+build-roll.py merges them (Solace, 2026-10-02). Until a curia's
 folder is moved to the roll/digest layout, roll.md is still the curated
 document, so a folder without digest.md is skipped.
 
@@ -84,15 +85,28 @@ def sittings(state_dir, session_id, prompt):
             yield os.path.dirname(live)
 
 
-def append(roll, text):
+def append(roll, prompt, now):
     # The whole entry under an exclusive lock: two sessions sitting in the
-    # same curia on this machine interleave whole entries, never bytes.
-    fd = os.open(roll, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    # same curia on this machine interleave whole entries, never bytes. The
+    # last entry, if it has this stamp, is overwritten in place with both
+    # words: longer, and the same bytes up to them unless the fence widens,
+    # so a kill mid-write keeps them. A stamp quoted in words is no heading.
+    text = entry(prompt, now)
+    fd = os.open(roll, os.O_RDWR | os.O_CREAT, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
+        old = os.pread(fd, os.fstat(fd).st_size, 0)
+        at = len(old)
+        m = re.search(rb"\n### (\d{8}t\d{6}z)\n(`{3,})\n((?:(?!\n\2\n).)*)\n\2\n\Z", old, re.S)
+        if m and text.startswith(f"\n### {m.group(1).decode()}\n"):
+            try:  # an undecodable entry, never this hook's, is appended after
+                text, at = entry(m.group(3).decode("utf-8", "surrogatepass") + "\n\n" + prompt, now), m.start()
+            except UnicodeDecodeError:
+                pass
         data = text.encode("utf-8", "surrogatepass")
         while data:
-            data = data[os.write(fd, data):]
+            n = os.pwrite(fd, data, at)
+            data, at = data[n:], at + n
     finally:
         os.close(fd)
 
@@ -118,7 +132,7 @@ def main():
     opener = "" if ev.get("tool_name") else prompt
     for folder in set(sittings(state_dir, session_id, opener)):
         if os.path.isfile(os.path.join(folder, "digest.md")):
-            append(os.path.join(folder, "roll.md"), entry(prompt, now))
+            append(os.path.join(folder, "roll.md"), prompt, now)
 
 
 if __name__ == "__main__":
