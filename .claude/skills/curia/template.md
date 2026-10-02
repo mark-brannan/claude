@@ -1,14 +1,16 @@
 # Curia: <the question, one line>
 
-<!-- This is digest.md. The user's words are in roll.md beside it, written
-     by a hook. This file never quotes them: it refers to one entry as
+<!-- This is digest.md. The user's words are in roll.md beside it, raw,
+     written by a hook. This file refers to one entry as
      `<curia>/roll.md#<stamp>`, the stamp being the entry's heading and so
-     its GitHub anchor, e.g. `one-entry-point/roll.md#20261002t054107z`. -->
+     its GitHub anchor, e.g. `one-entry-point/roll.md#20261002t054107z`.
+     It may quote one too, cleaned and curated by lint, always with its
+     reference. -->
 
 - id: `<id>`
 - opened: <date>, on the user's order: <reference to the words that ordered it>
 - origin: <link to the card that petitioned the agora, or the doc section that raised it>
-- related: <ids of open curiae this one touches, comma-separated, or none>
+- related: <ids of open curiae this one touches, comma-separated, or none; derived by lint>
 - model: Fable · effort: high
 - adr: <link to the ADR, once the curia is promoted, or none>
 - status: open

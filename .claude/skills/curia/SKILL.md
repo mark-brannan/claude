@@ -68,14 +68,18 @@ Two files, two grains. **`roll.md` is append-only.** While a `LIVE` file
 naming the session is in the folder, a hook appends each of the user's
 prompts verbatim under a stamp heading, `### 20261002t054107z` (UTC date and
 time to the second, no separators, lower-case `t` and `z`, nothing else);
-nothing edits an entry after. No agent writes `roll.md`. **`digest.md` is
-derived**: rewritten in place, and it carries the user's words only as
-references, `<curia>/roll.md#<stamp>`, never re-typed quotes. The stamp is
-the heading, so the reference is the GitHub anchor and stays a link. Which
-references it carries is lint's call, made with an editor's discretion; a
-reference a later ruling contradicts is removed and shown, since a reversal
-is a finding, not an error. A reference into another curia's roll takes
-the same form.
+nothing edits an entry after. No agent writes `roll.md`; the roll stays
+raw. **`digest.md` is derived**: rewritten in place, and it carries the
+user's words as references, `<curia>/roll.md#<stamp>`, plus cleaned,
+curated quotes, each with its reference. A quote may be edited lightly for
+typos or readability, or cut where a long passage runs past its point;
+never reworded into something the user didn't say. The stamp is the
+heading, so the reference is the GitHub anchor and stays a link. Which
+quotes and references it carries is lint's call, made with an editor's
+discretion: it pulls a quote in where a ruling or open question rests on
+it and prunes one that has stopped earning its place. One a later ruling
+contradicts is removed and shown, since a reversal is a finding, not an
+error. A reference into another curia's roll takes the same form.
 
 <!-- pen (Solace, 2026-10-02): roll.md for the words, digest.md for the
      document, the reference form `<curia>/roll.md#<stamp>` (amended by
@@ -83,10 +87,12 @@ the same form.
      the heading: the anchor must be the bare stamp). pencil: the
      rest of the layout and private-deliberation/public-produce are
      assumed, not ruled (design doc, open question on /curia <id>
-     mechanics). The pin, a passage moved to the top of the words section
-     for importance, cannot survive an append-only roll written by a hook:
-     nothing in roll.md moves. Whether importance gets another form is an
-     open question, not ruled here. No separate file lists what a curia
+     mechanics). pen (Solace, 2026-10-02, session 4d6d005a): "References
+     plus cleaned, edited, curated quotes. The linting agent may make
+     minor edits for typos, readability, or to cut unnecessary sections
+     of a long quote." It replaces "agents never quote" (#489). There is
+     no pin: nothing in roll.md moves, and curation in the digest does
+     the pin's work (one-entry-point §8). No separate file lists what a curia
      produced: each Decided line links its own, and the ADR link goes in
      digest.md's `adr:` header field at promotion. -->
 
@@ -141,7 +147,8 @@ waive.
 Only then: create the folder, copy [template.md](template.md) to
 `digest.md`, fill in the question, the origin link, the date, who ordered
 it and a reference to the words, and `related:` — the ids of open curiae from
-gate 4 that touch it, ids only — and commit. That placeholder is the
+gate 4 that touch it, ids only; lint keeps it derived from then on — and
+commit. That placeholder is the
 whole opening; the first sitting does the rest. Say the id in the opening
 session's record.
 
@@ -179,8 +186,9 @@ call. The three early placeholders (`andon-rubric`,
 3. **Lint by sub-agent.** A read-only sub-agent (no worktree, no
    sub-agents of its own) checks the derived sections for contradictions,
    stale claims and orphan terms, and reports overlap with the other open
-   curiae from step 0 — a question this one shares with another, a
-   `related:` id that is missing or stale. Only its list enters this
+   curiae from step 0 — a question this one shares with another — from
+   which this session rewrites `related:`. It proposes quotes to pull and
+   prune under the rule above. Only its list enters this
    context. Lint is toil: apply the mechanical fixes and show the diff
    for the record; only a finding that touches a ruling or a name becomes
    a question in the dialogue. <!-- pencil: lint-is-toil is assumed
@@ -196,9 +204,9 @@ call. The three early placeholders (`andon-rubric`,
 
 ## During
 
-The hook records the user's words; the agent never writes `roll.md` and
-never re-types the words anywhere. Keep `digest.md` current as you go,
-citing words by reference, and commit as you land — a sitting's record
+The hook records the user's words; the agent never writes `roll.md`.
+Keep `digest.md` current as you go, citing words by reference or by a
+curated quote with its reference, and commit as you land — a sitting's record
 must survive the session dying mid-turn.
 
 A sitting that uncovers a second hard question does not open a second
@@ -225,9 +233,9 @@ curia for it. It becomes a line under `## Open questions` here, or a
 List the open curiae, newest-touched first (recency matters;
 first-in-last-out), each as its id, question and last-touched in one
 line, with the count in view against the WIP limit at gate 5. Open means
-`status: open` in the header; a redirect has no header, so one pointing
-at another curia folder collapses into its target, and one pointing
-elsewhere (grandfathered) counts as open until its document says settled.
+`status: open` in `digest.md`'s header. A folder holding only a one-line
+redirect (a renamed or folded curia) collapses into its target; a digest
+without the header (grandfathered) counts as open until it says settled.
 Recommend one and why, in one sentence. Open nothing until the user names
 an id, and never a new one from here. If the list is long, say so
 plainly — a perpetually full list is a decision-making process failure,
@@ -236,6 +244,6 @@ table.
 
 ## Grandfathered
 
-The one-entry-point curia predates this skill; its document stays at its
-dated path in the state repo's log, reached through the redirect at
-`state/global/curia/one-entry-point/`. Its own loop section governs it.
+The one-entry-point curia predates this skill; its document is
+`state/global/curia/one-entry-point/digest.md`, without the template's
+header. Its own loop section governs it.
