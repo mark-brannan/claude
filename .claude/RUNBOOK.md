@@ -364,7 +364,7 @@ pickup-list find <word>
 
 To continue an item, `/pickup` in a new session, or `pickup-list take <id>`
 by hand. A question for Solace is a board card (`/card-write`); Solace's
-words on a curia land on that curia's thread, stamped by the same hook.
+words in a curia sitting land in that curia's `roll.md`, by `curia-roll.py`.
 
 Verify: `pickup-list` lists the session's own item within a minute of its
 last Stop, with `pickup-list show <id>` naming the branch and its
@@ -372,9 +372,12 @@ ahead/dirty state.
 
 ## Check a curia's roll is recording
 
-`curia-roll.py` runs on every prompt. When the session is named in a
-curia's `LIVE` file, it appends the prompt verbatim to that curia's
-`roll.md` under a stamp heading. It skips a curia folder
+`curia-roll.py` runs on every prompt, queued ones included, and after
+every AskUserQuestion dialog. When the session is named in a curia's
+`LIVE` file, it appends the prompt verbatim to that curia's `roll.md`
+under a stamp heading. A dialog becomes one entry of its free-text
+answers and typed notes; a picked option label is the agent's and stays
+out, as do task notifications and other sessions' messages. It skips a curia folder
 with no `digest.md`. In those folders `roll.md` is still the curated
 document, and appending prompts would corrupt it. The hook prints nothing
 and always exits 0, so a roll that silently stopped looks the same as one
@@ -389,7 +392,11 @@ tail -n 8 "$d/roll.md"
 Verify: the last `### <stamp>` heading is the time of the prompt just sent
 (`20261002t054107z`: UTC date and time, no separators, lower-case `t` and
 `z`; GitHub anchors it as `#20261002t054107z`), and the fenced text beneath
-it is that prompt. No entry means one of three things: the session
+it is that prompt. After a dialog answered in your own words, the last
+entry is those words alone, one blank line between answers. No entry
+means one of four things: the hook is not wired for that event
+(`jq '.hooks.PostToolUse[] | select(.matcher=="AskUserQuestion")'
+~/.claude/settings.json` prints nothing), the session
 id in `LIVE` is not this one, `digest.md` is missing, or
 `~/.claude/hooks/curia-roll.py` is absent (`dotsync`).
 

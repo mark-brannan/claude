@@ -126,6 +126,82 @@ class CuriaRollTest(unittest.TestCase):
         (d / "roll.md").mkdir()
         self.prompt("x")
 
+    def test_agent_text_through_the_prompt_hook_stays_out(self):
+        self.sitting("c", f"{SID} t\n")
+        self.prompt("<task-notification>\n<task-id>a1</task-id>\n</task-notification>")
+        self.prompt("<agent-message from=\"a2\">\nreport\n</agent-message>")
+        self.prompt("Another Claude session sent a message:\n<agent-message from=\"a3\">x</agent-message>")
+        self.prompt("my words about a <task-notification>")
+        self.assertEqual([e[2] for e in self.entries("c")], ["my words about a <task-notification>"])
+
+    def dialog(self, answers, annotations=None, sid=SID, where="tool_response", tool="AskUserQuestion"):
+        questions = [
+            {"question": "Which colour?", "header": "Colour", "multiSelect": False,
+             "options": [{"label": "Red", "description": "r"}, {"label": "Blue", "description": "b"}]},
+            {"question": "Which sizes?", "header": "Sizes", "multiSelect": True,
+             "options": [{"label": "Small", "description": "s"}, {"label": "Large", "description": "l"}]},
+            {"question": "Anything else?", "header": "Else", "multiSelect": False,
+             "options": [{"label": "No", "description": "n"}, {"label": "Yes", "description": "y"}]},
+        ]
+        result = {"questions": questions, "answers": answers}
+        if annotations:
+            result["annotations"] = annotations
+        ev = {"session_id": sid, "hook_event_name": "PostToolUse", "tool_name": tool,
+              "tool_input": {"questions": questions}, where: result}
+        if where == "tool_input":
+            ev["tool_response"] = "Your questions have been answered."
+        r = self.run_hook(ev)
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+
+    def test_a_dialogs_free_text_answers_are_one_entry_in_question_order(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Anything else?": "words, typed\n```\nfree", "Which colour?": "Green, not either",
+                     "Which sizes?": "Small, Large"})
+        [(_, fence, body)] = self.entries("c")
+        self.assertEqual((fence, body), ("````", "Green, not either\n\nwords, typed\n```\nfree"))
+
+    def test_a_dialog_with_only_picked_labels_writes_nothing(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Which colour?": "Red", "Which sizes?": "Large", "Anything else?": "No"})
+        self.assertFalse((self.curia / "c" / "roll.md").exists())
+
+    def test_a_note_typed_beside_a_picked_option_is_kept(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Which colour?": "Red", "Which sizes?": "Small", "Anything else?": "No"},
+                    {"Which sizes?": {"notes": "small for now", "preview": "agent text"}})
+        self.assertEqual([e[2] for e in self.entries("c")], ["small for now"])
+
+    def test_a_multi_select_keeps_its_typed_part_and_drops_picked_labels(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Which colour?": "Red", "Which sizes?": "Small, huge, please", "Anything else?": "No"})
+        self.assertEqual([e[2] for e in self.entries("c")], ["huge, please"])
+
+    def test_a_malformed_annotation_keeps_the_other_answers(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Which colour?": "teal"}, {"Which colour?": "not a dict"})
+        self.assertEqual([e[2] for e in self.entries("c")], ["teal"])
+
+    def test_answers_carried_on_the_tool_input_are_read_too(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Which colour?": "teal"}, where="tool_input")
+        self.assertEqual([e[2] for e in self.entries("c")], ["teal"])
+
+    def test_dialogs_need_live_and_other_tools_are_ignored(self):
+        self.sitting("c", f"{OTHER} t\n")
+        self.dialog({"Which colour?": "teal"})
+        self.sitting("d", f"{SID} t\n")
+        self.dialog({"Which colour?": "teal"}, tool="Bash")
+        self.assertFalse(any(self.curia.glob("*/roll.md")))
+
+    def test_dialog_words_matches_what_the_hook_writes(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("curia_roll", HOOK)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        qs = [{"question": "Q1", "options": [{"label": "A"}]}, {"question": "Q2", "options": []}]
+        self.assertEqual(mod.dialog_words(qs, {"Q2": "two", "Q1": "one"}), "one\n\ntwo")
+        self.assertEqual(mod.dialog_words(qs, {"Q1": "A", "Q2": "  "}), "")
+
     def test_no_state_repo_is_silent(self):
         env = dict(os.environ, CLAUDE_STATE_REPO="", HOME=self.tmp.name)
         r = subprocess.run([sys.executable, str(HOOK)], input=json.dumps({"session_id": SID, "prompt": "x"}),
