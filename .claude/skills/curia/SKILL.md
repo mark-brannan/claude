@@ -57,7 +57,7 @@ goes in the `adr:` field of `digest.md`'s header.
 state/global/curia/<id>/
   roll.md     the user's words: append-only, one stamped entry per prompt, written by a hook
   digest.md   the document: where it stands, decided, open questions
-  LIVE        the sitting's session id and ISO timestamp, only while a sitting runs
+  LIVE        the last sitting's session id and ISO timestamp; closing leaves it
   agent-notes.md    the agent's own notes, any format it likes (optional)
   inputs/     read-only side products: spikes, side-chat pastes, subagent reports
   folded/<id>/  a whole curia opened past the gates, moved under this one (see below);
@@ -217,12 +217,8 @@ curia for it. It becomes a line under `## Open questions` here, or a
    from the document's header. Nothing else to paste, nothing to hold in
    memory. A hand-off prompt names `/curia <id>` only for a folder that
    exists; it never proposes a new one.
-4. Leave the `LIVE` file in place: the hook records only while it names
-   this session, and the final word is still to come.
-5. The user has the final word; the hook records it, and nothing else
-   does. Then point **Where this stands** at that entry, the last `###`
-   heading in `roll.md`, since the reference written at step 1 predates
-   it; remove the `LIVE` file; open nothing new.
+4. Leave the `LIVE` file in place.
+5. The user has the final word; the hook records it. Open nothing new.
 
 ## Bare `/curia`
 
