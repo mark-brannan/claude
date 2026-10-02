@@ -238,13 +238,15 @@ ITEM=$(ls "$PICKD"/*-"${SID:0:8}".md 2>/dev/null | head -1)
 eq 'an untouched body follows the new prompt' 'pick up the fixture work and finish it' "$(sbody)"
 eq 'a new prompt reopens the item' open "$(sfield status)"
 
-# --- curia threads: a touched thread gets the floor and the last words --------
+# --- curia digests: a touched digest gets the floor ----------------------------
 # The transcript names a curia (`confer <id>` here); the Stop hook stamps a
-# floor block at the end of "Where this stands" -- model text above survives
-# -- and appends the user's last words verbatim under "Human's words". Both
-# idempotent across Stops; a model edit to the words entry is never clobbered.
+# floor block at the end of "Where this stands" -- model text above survives --
+# and nothing else. Idempotent across Stops. The user's words are not its to
+# write: roll.md is the curia-roll hook's, and the digest refers to it by stamp.
 CURD="$HOME/.claude/state/global/curia/test-question"
 mkdir -p "$CURD"
+# The "Human's words" section is what the live digests still carry until the
+# curia lint curates it out: the place the hook used to append quotes.
 cat > "$CURD/digest.md" <<'EOF'
 # Curia: test question
 
@@ -255,11 +257,13 @@ cat > "$CURD/digest.md" <<'EOF'
 
 Model text that must survive.
 
+## Decided
+
 ## Human's words
 
-<!-- Append-only; a new dated sub-heading per sitting. -->
+Left from before the words log.
 EOF
-printf '### 2026-09-26T11:00:00Z deadbeef\nwords\n' > "$CURD/roll.md"
+printf '\n### 20260926t110000z\n```\nwords\n```\n' > "$CURD/roll.md"
 ROLL_BEFORE=$(cat "$CURD/roll.md")
 TP3="$S/curia-transcript.jsonl"
 {
@@ -272,34 +276,19 @@ has 'the floor block is written' '^<!-- floor' "$TH"
 has 'the floor carries last-touched and the session' "^- last touched: .* session ${SID:0:8} " "$TH"
 has 'the floor carries the branch state' '^- branch: work claude/work \(0 ahead, clean\)' "$TH"
 has 'model text above the floor survives' '^Model text that must survive\.$' "$TH"
-has 'the last words land under Human'"'"'s words' "^### .* session ${SID:0:8} \(hook\)$" "$TH"
-has 'verbatim, as a blockquote' '^> confer test-question please$' "$TH"
 assert 'the floor sits inside Where this stands' \
-  bash -c "awk '/^## Where this stands/{f=1} /^## Human/{exit} f&&/^<!-- floor/{ok=1} END{exit !ok}' '$TH'"
+  bash -c "awk '/^## Where this stands/{f=1} /^## Decided/{exit} f&&/^<!-- floor/{ok=1} END{exit !ok}' '$TH'"
+assert 'the user'"'"'s words are not copied into the digest' \
+  bash -c "! grep -q 'confer test-question please' '$TH' && ! grep -q '(hook)' '$TH'"
 
 # A second Stop rewrites, never duplicates.
 TP="$TP3" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
 eq 'one floor block after two Stops' 1 "$(grep -c '^<!-- floor' "$TH")"
-eq 'one words entry after two Stops' 1 "$(grep -c "session ${SID:0:8} (hook)" "$TH")"
 
-# New last words replace the hook's own entry; a model-edited entry stays.
-TP4="$S/curia-transcript-2.jsonl"
-{
-  jq -c '.' "$TP" | head -3
-  printf '{"type":"queue-operation","operation":"enqueue","content":"confer test-question: make it so","timestamp":"2026-09-26T13:00:00.000Z"}\n'
-} > "$TP4"
-TP="$TP4" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
-has 'new last words replace the hook entry' '^> confer test-question: make it so$' "$TH"
-assert 'the old hook entry is gone' bash -c "! grep -q '^> confer test-question please$' '$TH'"
-sed -i 's/^> confer test-question: make it so$/The model folded these words into the record./' "$TH"
-TP="$TP3" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
-has 'a model-edited entry is never clobbered' '^The model folded these words into the record\.$' "$TH"
-eq 'and no second entry appears' 1 "$(grep -c "session ${SID:0:8} (hook)" "$TH")"
-
-# Reading a thread is not sitting on it: a session whose tool calls cat or ls
-# the thread file, with no prompt naming the curia, leaves it untouched. Once
-# bare `/curia` lists every thread (#403), every sitting would otherwise stamp
-# every thread with its own unrelated last words.
+# Reading a digest is not sitting on it: a session whose tool calls cat or ls
+# the digest file, with no prompt naming the curia, leaves it untouched. Once
+# bare `/curia` lists every curia (#403), every sitting would otherwise stamp
+# every curia with its own floor.
 TP5="$S/curia-transcript-cat.jsonl"
 {
   jq -c '.' "$TP" | head -3
@@ -310,8 +299,8 @@ TP5="$S/curia-transcript-cat.jsonl"
 SID2=catsess0-1111-2222-3333
 before=$(cat "$TH")
 TP="$TP5" SID="$SID2" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
-eq 'a cat/ls of the thread does not stamp it' "$before" "$(cat "$TH")"
-assert 'no words entry for the reading session' bash -c "! grep -q 'session ${SID2:0:8}' '$TH'"
+eq 'a cat/ls of the digest does not stamp it' "$before" "$(cat "$TH")"
+assert 'no floor for the reading session' bash -c "! grep -q 'session ${SID2:0:8}' '$TH'"
 
 # A curia not yet moved to digest.md still gets its floor on thread.md.
 OLDD="$HOME/.claude/state/global/curia/old-question"

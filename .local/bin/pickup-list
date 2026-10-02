@@ -9,8 +9,8 @@
 # git alone; the body is the hand-off a model may write over the hook's
 # default, and an edited body survives every rewrite. This is the view
 # over those items. Questions for Solace live on the board's `## Needs
-# ruling` (the agora's docket) and are only counted here; Human's words
-# live on the curia threads and are not listed at all.
+# ruling` (the agora's docket) and are only counted here; the user's words
+# live in each curia's roll.md, written by a hook, and are not listed.
 #
 #   pickup-list                 open items, newest first, top five
 #   pickup-list --all           every open item

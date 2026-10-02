@@ -141,9 +141,9 @@ jq -nc '{type:"queue-operation", operation:"enqueue",
 eq "no assistant usage reads 0" 0 "$(peak "$tp")"
 
 # --- curia_refs: prompts name a curia; tool calls only read one -------------
-# The Stop hook stamps every thread this list names with the session's last
-# words. A `cat`/`ls`/Read of a thread file is not a sitting on it, so tool
-# commands and file paths never count (PR #388, design pass).
+# The Stop hook stamps the floor on every curia this list names. A
+# `cat`/`ls`/Read of a curia's file is not a sitting on it, so tool commands
+# and file paths never count (PR #388, design pass).
 refs() {  # refs <transcript>
   jq -s --arg sid t --arg repo r --arg branch b --arg cwd . \
     --arg now "2026-09-09T11:00:00Z" --arg slug s \

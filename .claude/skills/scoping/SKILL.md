@@ -24,7 +24,7 @@ target, and why, in the first line.
 
 | Target | Decided record and open questions | Lock folder |
 |---|---|---|
-| curia `<id>` | `roll.md`'s Decided and Open questions; a redirect's own loop section says where (one-entry-point: §5 and §6 of its design log) | `state/global/curia/<id>` |
+| curia `<id>` | `digest.md`'s Decided and Open questions; a redirect's own loop section says where (one-entry-point: §5 and §6 of its `digest.md`) | `state/global/curia/<id>` |
 | ADR | its Decision and its open or deferred items | `state/global/scoping/<repo>-<adr-slug>` |
 | issue | body and comments; sub-issues as in flight | `state/global/scoping/<owner>-<repo>-<n>` |
 
@@ -33,6 +33,10 @@ target, and why, in the first line.
 ```bash
 scoping-lock take <lock-folder> ${CLAUDE_SESSION_ID} <record-file>   # an issue: its updatedAt
 ```
+
+`<record-file>` is the file step 1's table names. For a curia that is
+`digest.md`, never `roll.md`: the hook appends to the roll on every
+prompt, so the record would always read as moved.
 
 Exit 1 is a held scoping: show its `held:` line and stop. Exit 2 is a lock
 that could not be taken: show the reason and stop. Never work around

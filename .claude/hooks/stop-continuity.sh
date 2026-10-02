@@ -17,7 +17,7 @@
 #   log/auto/<date>-<repo>-<id>.md  a resumable checkpoint the next session reads
 #   pickup/<start>-<id>.md        this session's pickup item, which /pickup reads
 #   curia/<id>/digest.md          a floor stamped on any curia digest the
-#                                  session touched, plus the user's last words
+#                                  session touched
 #
 # One file per session, not one shared append-only log: parallel sessions are
 # normal here, and per-session paths mean two of them never touch the same
@@ -580,16 +580,15 @@ pickup_item() {
 }
 pickup_item
 
-# ------------------------------------------------------- curia threads
+# ------------------------------------------------------- curia digests
 # A session that touched a curia -- a state/global/curia/<id> path, a
 # `/curia <id>` or `confer <id>` in the transcript -- leaves the machine
-# floor on that thread, so a sitting that dies any way at all still hands
-# off. Two writes per Stop, both under the pickup item's body-ownership
+# floor on that curia's digest.md, so a sitting that dies any way at all
+# still hands off. One write per Stop, under the pickup item's body-ownership
 # protocol: a floor block at the end of "Where this stands" (last touched,
-# branch, PR), hook-owned by its markers, model text above it untouched;
-# and, on the first thread the transcript touched, the user's last words
-# verbatim under "Human's words", one dated sub-heading per session,
-# overwritten only while it still reads exactly as the hook wrote it.
+# branch, PR), hook-owned by its markers, model text above it untouched.
+# The user's words are not written here: curia-roll.py appends them to the
+# curia's roll.md, and digest.md refers to them by stamp.
 curia_floor() {  # curia_floor <digest.md>
   local t tmp
   t=$1; tmp="$t.$$"
@@ -619,65 +618,7 @@ curia_floor() {  # curia_floor <digest.md>
     }
   ' "$t" > "$tmp" 2>/dev/null && mv -f "$tmp" "$t" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 }
-curia_said() {  # curia_said <digest.md>; $cu_words carries the text
-  local t tmp
-  t=$1; tmp="$t.$$"
-  CS_WORDS="$cu_words" awk -v sid8="${sid:0:8}" -v date="${now%%T*}" '
-    function entry(   j) {
-      print ""
-      for (j = 1; j <= nq; j++) print "> " q[j]
-    }
-    { lines[++n] = $0 }
-    END {
-      nq = split(ENVIRON["CS_WORDS"], q, "\n")
-      sw = 0; swend = n + 1; own = 0; ownend = 0
-      for (i = 1; i <= n; i++) {
-        if (!sw) { if (lines[i] ~ /^## Human.s words/) sw = i }
-        else if (lines[i] ~ /^## /) { swend = i; break }
-      }
-      if (!sw) { for (i = 1; i <= n; i++) print lines[i]; exit }
-      for (i = sw + 1; i < swend; i++)
-        if (lines[i] ~ /^### / && index(lines[i], "session " sid8 " (hook)")) {
-          own = i; ownend = swend
-          for (j = i + 1; j < swend; j++)
-            if (lines[j] ~ /^#/) { ownend = j; break }
-          break
-        }
-      if (own) {
-        # Overwrite only a body that still reads as the hook wrote it: a
-        # pure blockquote. Model-edited text stays, whatever it says.
-        hookish = 1; same = 1; k = 0
-        for (j = own + 1; j < ownend; j++) {
-          if (lines[j] ~ /^[[:space:]]*$/) continue
-          if (substr(lines[j], 1, 2) != "> ") hookish = 0
-          got[++k] = substr(lines[j], 3)
-        }
-        if (k != nq) same = 0
-        else for (j = 1; j <= nq; j++) if (got[j] != q[j]) same = 0
-        if (!hookish || same) { for (i = 1; i <= n; i++) print lines[i]; exit }
-        for (i = 1; i <= n; i++) {
-          print lines[i]
-          if (i == own) { entry(); print ""; i = ownend - 1 }
-        }
-        exit
-      }
-      for (i = 1; i <= n; i++) {
-        if (i == swend) {
-          print "### " date " \302\267 session " sid8 " (hook)"
-          entry(); print ""
-        }
-        print lines[i]
-      }
-      if (swend == n + 1) {
-        print "### " date " \302\267 session " sid8 " (hook)"
-        entry()
-      }
-    }
-  ' "$t" > "$tmp" 2>/dev/null && mv -f "$tmp" "$t" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-}
-cu_words=$(printf '%s' "$metrics" | jq -r '.session.last_words // empty')
 cu_model=$(printf '%s' "$metrics" | jq -r '.session.model // "?"')
-cu_first=1
 for cu_ref in $(printf '%s' "$metrics" | jq -r '.session.curia_refs[]? // empty'); do
   cu_thread="$SD/curia/$cu_ref/digest.md"
   # thread.md is the name before digest.md; read it until every curia is moved.
@@ -685,8 +626,6 @@ for cu_ref in $(printf '%s' "$metrics" | jq -r '.session.curia_refs[]? // empty'
   [ -f "$cu_thread" ] || cu_thread="$SD/curia/$cu_ref/thread.md"
   [ -f "$cu_thread" ] || continue
   curia_floor "$cu_thread"
-  [ "$cu_first" = 1 ] && [ -n "$cu_words" ] && curia_said "$cu_thread"
-  cu_first=0
 done
 
 # ------------------------------------------------------------ state repo

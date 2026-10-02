@@ -37,7 +37,7 @@ class ScopingLockTest(unittest.TestCase):
         git("init", "-q", "--bare", "-b", "main", "origin.git", cwd=S)
         git("clone", "-q", "origin.git", "a", cwd=S)
         (S / "a" / D).mkdir(parents=True)
-        (S / "a" / D / "roll.md").write_text("record\n")
+        (S / "a" / D / "digest.md").write_text("record\n")
         for args in (["add", "."], ["commit", "-qm", "init"], ["push", "-q", "origin", "HEAD:main"],
                      ["branch", "-q", "-u", "origin/main"]):
             git(*args, cwd=S / "a")
@@ -45,7 +45,7 @@ class ScopingLockTest(unittest.TestCase):
         # c clones a copy of origin frozen before any lock, so its sync sees none.
         git("clone", "-q", "--bare", "origin.git", "stale.git", cwd=S)
         git("clone", "-q", "stale.git", "c", cwd=S)
-        cls.roll = str(S / "a" / D / "roll.md")
+        cls.record = str(S / "a" / D / "digest.md")
 
     @classmethod
     def tearDownClass(cls):
@@ -63,17 +63,17 @@ class ScopingLockTest(unittest.TestCase):
         return (self.S / "a" / D / "LOCK").read_text()
 
     def test_01_read_of(self):
-        rc, out = self.run_sl("a", "read-of", self.roll)
+        rc, out = self.run_sl("a", "read-of", self.record)
         self.assertRegex(out.strip(), r"^[0-9a-f]{7,}$")
         type(self).read_at = out.strip()
-        with open(self.roll, "a") as f:
+        with open(self.record, "a") as f:
             f.write("edit\n")
-        self.assertIn("+dirty", self.run_sl("a", "read-of", self.roll)[1], "an edited record is marked")
-        git("checkout", "-q", "--", f"{D}/roll.md", cwd=self.S / "a")
+        self.assertIn("+dirty", self.run_sl("a", "read-of", self.record)[1], "an edited record is marked")
+        git("checkout", "-q", "--", f"{D}/digest.md", cwd=self.S / "a")
 
     def test_02_first_take(self):
         self.assertEqual("free", self.run_sl("a", "read", D)[1].strip())
-        self.assertIn("taken:", self.run_sl("a", "take", D, "sid-one", self.roll)[1])
+        self.assertIn("taken:", self.run_sl("a", "take", D, "sid-one", self.record)[1])
         line = self.lock()
         self.assertRegex(line, rf"^sid-one [0-9T:-]+Z {re.escape(self.read_at)}\n$",
                          "one line: session, time, the record commit taken after the sync")
@@ -129,7 +129,7 @@ class ScopingLockTest(unittest.TestCase):
         self.assertEqual("free", self.run_sl("a", "read", D)[1].strip(), "released everywhere")
 
     def test_09_relative_invocation(self):
-        rc, _ = self.run_sl("a", "take", "state/global/curia/r", "sid-rel", self.roll,
+        rc, _ = self.run_sl("a", "take", "state/global/curia/r", "sid-rel", self.record,
                             cwd=SL.parent, exe="./scoping-lock")
         self.assertEqual(0, rc)
 
