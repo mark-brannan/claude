@@ -60,6 +60,7 @@ INSTALL="
 .claude/skills/pickup/SKILL.md
 .claude/skills/orchestrate/SKILL.md
 .claude/skills/agora/SKILL.md
+.claude/skills/agora/brief.md
 .claude/skills/curia/SKILL.md
 .claude/skills/curia/template.md
 .claude/skills/scoping/SKILL.md
