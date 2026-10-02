@@ -1,151 +1,249 @@
-#!/bin/sh
-# The scoping lock: one writer per scoping target, at a time.
-#
-# Ruled by Solace, 2026-10-01 (one-entry-point curia, §1t and §1u, pen): the
-# scoping touch point runs one session per target at a time; a held scoping
-# refuses rather than warns; the lock is a second, hard file beside the
-# curia's LIVE, which stays the soft sitting marker it is. The file and its
-# format are the agent's, Solace shown the format:
-#
-#   <session-id> <ISO-8601 UTC> <read>
-#
-# the same one-line shape as LIVE, plus <read>: the commit of the record the
-# run read, so a later run can tell whether the record moved since. Given the
-# record's path, `take` takes its commit after syncing, never before; given
-# anything else (an issue's updatedAt), it records that as is.
-#
-# A GATE, NOT A CONVENIENCE: anything that stops the lock being read from
-# origin, taken and pushed -- no state repo, no origin, a pull that will not
-# rebase, a rejected push -- exits 2 and the run stops. The lock is pushed at once, not left for the Stop hook's debounced
-# push, because a lock another machine cannot see is no lock.
-#
-# Stale after SCOPING_LOCK_STALE_SECS (default 2h, the claim stamp's floor;
-# pencil). A stale lock is taken over, and the takeover says whose it was.
-#
-# Usage:
-#   scoping-lock take    <dir> <session-id> <record-file|read>
-#                                                   0 taken or refreshed,
-#                                                   1 held (names the holder),
-#                                                   2 could not take
-#   scoping-lock read    <dir>      `free`, or `live|stale <sid> <at> <read> <age>m`
-#   scoping-lock release <dir> <session-id>         removes this session's lock only
-#   scoping-lock read-of <file>     <sha>, or <sha>+dirty when the file has edits
-#
-# <dir> is the target's folder, relative to the state repo or absolute:
-# state/global/curia/<id> for a curia, state/global/scoping/<key> otherwise.
-set -u
+#!/usr/bin/env python3
+"""The scoping lock: one writer per scoping target, at a time.
 
-SR=${CLAUDE_STATE_REPO:-$HOME/claude_prompts_scratch}
-STALE=${SCOPING_LOCK_STALE_SECS:-7200}
-SELF=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")  # $0 may be relative; we cd below
+Ruled by Solace, 2026-10-01 (one-entry-point curia, §1t and §1u, pen): the
+scoping touch point runs one session per target at a time; a held scoping
+refuses rather than warns; the lock is a second, hard file beside the
+curia's LIVE, which stays the soft sitting marker it is. The file and its
+format are the agent's, Solace shown the format:
 
-die() { printf 'scoping-lock: %s\n' "$*" >&2; exit 2; }
+  <session-id> <ISO-8601 UTC> <read>
 
-rel() {  # rel <dir> -> path of LOCK relative to the state repo
-  case "$1" in
-    "$SR"/*) printf '%s/LOCK' "${1#"$SR"/}" ;;
-    /*) die "$1 is outside the state repo $SR" ;;
-    *) printf '%s/LOCK' "${1%/}" ;;
-  esac
-}
+the same one-line shape as LIVE, plus <read>: the commit of the record the
+run read, so a later run can tell whether the record moved since. Given the
+record's path, `take` takes its commit after syncing, never before; given
+anything else (an issue's updatedAt), it records that as is.
 
-epoch_of() {  # ISO-8601 UTC -> epoch seconds, GNU or BSD date
-  date -u -d "$1" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || echo 0
-}
+A GATE, NOT A CONVENIENCE: anything that stops the lock being read from
+origin, taken and pushed -- no state repo, no origin, a pull that will not
+rebase, a rejected push -- exits 2 and the run stops. The lock is pushed at
+once, not left for the Stop hook's debounced push, because a lock another
+machine cannot see is no lock.
 
-describe() {  # describe <line> -> live|stale <sid> <at> <read> <age>m
-  set -- $1
-  [ $# -ge 2 ] || { echo "stale ? ? ? ?m"; return; }
-  age=$(( $(date -u +%s) - $(epoch_of "$2") ))
-  state=live; [ "$age" -ge "$STALE" ] && state=stale
-  printf '%s %s %s %s %sm\n' "$state" "$1" "$2" "${3:-?}" $((age / 60))
-}
+A lease, not a hold (Solace, 2026-10-01): a scoping runs 10 to 25 minutes,
+and the lock lapses SCOPING_LOCK_STALE_SECS (default 25m) after it was
+taken. The lapse is the release; nothing has to run at minute 25. The
+holder's own re-take keeps the original time, so re-taking never extends a
+run; only a re-take after the lapse starts a new lease. A lapsed lock is
+taken over, and the takeover says whose it was.
 
-sync() {  # bring origin's copy of every lock in before reading this one
-  timeout 120 git pull --rebase --autostash -q >/dev/null 2>&1 && return 0
-  git rebase --abort >/dev/null 2>&1; return 1
-}
+Usage:
+  scoping-lock take    <dir> <session-id> <record-file|read>
+                                                  0 taken, kept or retaken,
+                                                  1 held (names the holder),
+                                                  2 could not take
+  scoping-lock check   <dir> <session-id>         the clock, local, no sync:
+                                                  0 `ours <age>m of <lease>m`,
+                                                  1 `held <sid> <age>m`,
+                                                  3 `lapsed <age>m` or `free`: take before writing
+  scoping-lock read    <dir>      `free`, or `live|stale <sid> <at> <read> <age>m`
+  scoping-lock release <dir> <session-id>         removes this session's lock only
+  scoping-lock read-of <file>     <sha>, or <sha>+dirty when the file has edits
 
-push() {  # mirrors stop-continuity.sh: two tries, never leave a rebase wedged
-  for attempt in 1 2; do
-    timeout 120 git pull --rebase --autostash -q >/dev/null 2>&1 \
-      || git rebase --abort >/dev/null 2>&1
-    timeout 120 git push -q origin HEAD >/dev/null 2>&1 && return 0
-    sleep "$attempt"
-  done
-  return 1
-}
+<dir> is the target's folder, relative to the state repo or absolute:
+state/global/curia/<id> for a curia, state/global/scoping/<key> otherwise.
+"""
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
 
-commit_lock() {  # commit_lock <lock> <message>; only that one path
-  # A re-take within the same second writes the same line: nothing to commit.
-  git diff --quiet HEAD -- "$1" 2>/dev/null && git ls-files --error-unmatch -- "$1" >/dev/null 2>&1 && return 0
-  git -c user.name="${GIT_AUTHOR_NAME:-Claude}" -c user.email="${GIT_AUTHOR_EMAIL:-noreply@anthropic.com}" \
-    -c commit.gpgsign=false commit -q --only -m "$2" -- "$1" >/dev/null 2>&1
-}
+SR = Path(os.environ.get("CLAUDE_STATE_REPO") or Path.home() / "claude_prompts_scratch")
+LEASE = int(os.environ.get("SCOPING_LOCK_STALE_SECS") or 1500)
+STAMP = "%Y-%m-%dT%H:%M:%SZ"
 
-[ $# -ge 2 ] || { sed -n '/^# Usage:/,/^# <dir>/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
-cmd=$1; shift
 
-if [ "$cmd" = read-of ]; then
-  f=$1; d=$(dirname "$f")
-  sha=$(git -C "$d" log -1 --format=%h -- "$(basename "$f")" 2>/dev/null)
-  [ -n "$sha" ] || die "$f has no commit"
-  git -C "$d" diff --quiet HEAD -- "$(basename "$f")" 2>/dev/null || sha="$sha+dirty"
-  echo "$sha"; exit 0
-fi
+def die(msg):
+    print(f"scoping-lock: {msg}", file=sys.stderr)
+    sys.exit(2)
 
-[ -d "$SR/.git" ] || die "no state repo at $SR"
-cd "$SR" || die "cannot enter $SR"
-lock=$(rel "$1") || exit 2
 
-case "$cmd" in
-  read)
-    [ -f "$lock" ] && describe "$(cat "$lock")" || echo free ;;
+def git(*args, cwd=SR, timeout=None):
+    """Run git quietly; True when it exits 0. A timeout counts as a failure."""
+    try:
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, timeout=timeout).returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
-  take)
-    [ $# -eq 3 ] || die "take needs <dir> <session-id> <record-file|read>"
-    sid=$2; read_at=$3
-    sync || die "cannot sync with origin; a lock another machine cannot see is no lock"
-    case "$read_at" in /*) rf=$read_at ;; *) rf=$SR/$read_at ;; esac
-    if [ -f "$rf" ]; then read_at=$(sh "$SELF" read-of "$rf") || exit 2; fi
-    if [ -f "$lock" ]; then
-      d=$(describe "$(cat "$lock")"); set -- $d
-      if [ "$2" != "$sid" ]; then
-        if [ "$1" = live ]; then
-          printf 'held: %s since %s, read %s, %s ago (%s)\n' "$2" "$3" "$4" "$5" "$lock"
-          exit 1
-        fi
-        printf 'stale: %s since %s, %s ago; taking it over\n' "$2" "$3" "$5"
-      fi
-    fi
-    mkdir -p "$(dirname "$lock")" || die "cannot create $(dirname "$lock")"
-    printf '%s %s %s\n' "$sid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$read_at" > "$lock" || die "cannot write $lock"
-    before=$(git rev-parse HEAD)
-    git add -- "$lock" && commit_lock "$lock" "scoping lock: take $lock (${sid%"${sid#????????}"})" \
-      || die "cannot commit $lock"
-    ours=$(git rev-parse HEAD)
-    if ! push; then
-      # A lost race or a dead origin. An unpushed lock commit left here would
-      # conflict with the winner's on every later pull, so drop it.
-      [ "$ours" != "$before" ] && [ "$(git rev-parse HEAD)" = "$ours" ] && git reset -q --keep "$before"
-      die "lock not pushed, so not taken; another machine may hold it. Run read after the next sync"
-    fi
+
+def git_out(*args, cwd=SR):
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True).stdout.strip()
+
+
+def lock_of(d):
+    """The LOCK path relative to the state repo, which is where git wants it."""
+    p = Path(d)
+    if p.is_absolute():
+        try:
+            p = p.relative_to(SR)
+        except ValueError:
+            die(f"{d} is outside the state repo {SR}")
+    return p / "LOCK"
+
+
+def describe(line):
+    """(live|stale, sid, at, read, age in minutes) for one lock line."""
+    f = line.split()
+    if len(f) < 2:
+        return "stale", "?", "?", "?", "?"
+    try:
+        at = datetime.strptime(f[1], STAMP).replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        at = 0
+    age = int(time.time() - at)
+    return ("stale" if age >= LEASE else "live"), f[0], f[1], (f[2] if len(f) > 2 else "?"), age // 60
+
+
+def sync():
+    """Bring origin's copy of every lock in before reading this one."""
+    if git("pull", "--rebase", "--autostash", "-q", timeout=120):
+        return True
+    git("rebase", "--abort")
+    return False
+
+
+def push():
+    """Mirrors stop-continuity.sh: two tries, never leave a rebase wedged."""
+    for attempt in (1, 2):
+        sync()
+        if git("push", "-q", "origin", "HEAD", timeout=120):
+            return True
+        time.sleep(attempt)
+    return False
+
+
+def commit_lock(lock, message):
+    """Commit only that one path. A re-take that wrote the same line has nothing to commit."""
+    if git("diff", "--quiet", "HEAD", "--", str(lock)) and git("ls-files", "--error-unmatch", "--", str(lock)):
+        return True
+    return git("-c", f"user.name={os.environ.get('GIT_AUTHOR_NAME', 'Claude')}",
+               "-c", f"user.email={os.environ.get('GIT_AUTHOR_EMAIL', 'noreply@anthropic.com')}",
+               "-c", "commit.gpgsign=false", "commit", "-q", "--only", "-m", message, "--", str(lock))
+
+
+def read_of(f):
+    f = Path(f)
+    sha = git_out("log", "-1", "--format=%h", "--", f.name, cwd=f.parent) if f.parent.is_dir() else ""
+    if not sha:
+        die(f"{f} has no commit")
+    return sha if git("diff", "--quiet", "HEAD", "--", f.name, cwd=f.parent) else sha + "+dirty"
+
+
+def take(lock, sid, read_at):
+    if not sync():
+        die("cannot sync with origin; a lock another machine cannot see is no lock")
+    rf = Path(read_at) if Path(read_at).is_absolute() else SR / read_at
+    if rf.is_file():
+        read_at = read_of(rf)
+    path = SR / lock
+    at, done = datetime.now(timezone.utc).strftime(STAMP), "taken"
+    if path.is_file():
+        state, holder, held_at, held_read, age = describe(path.read_text())
+        if holder != sid:
+            if state == "live":
+                print(f"held: {holder} since {held_at}, read {held_read}, {age}m ago ({lock})")
+                return 1
+            print(f"stale: {holder} since {held_at}, {age}m ago; taking it over")
+        elif state == "live":
+            at, done = held_at, f"kept, {age}m of {LEASE // 60}m"
+            if held_read != read_at:
+                print(f"read moved: {held_read} -> {read_at}")
+        else:
+            done = "retaken"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{sid} {at} {read_at}\n")
+    except OSError as e:
+        die(f"cannot write {lock}: {e}")
+    before = git_out("rev-parse", "HEAD")
+    if not (git("add", "--", str(lock)) and commit_lock(lock, f"scoping lock: take {lock} ({sid[:8]})")):
+        die(f"cannot commit {lock}")
+    ours = git_out("rev-parse", "HEAD")
+    if not push():
+        # A lost race or a dead origin. An unpushed lock commit left here would
+        # conflict with the winner's on every later pull, so drop it.
+        if ours != before and git_out("rev-parse", "HEAD") == ours:
+            git("reset", "-q", "--keep", before)
+        die("lock not pushed, so not taken; another machine may hold it. Run read after the next sync")
     # Two sessions on this machine can both pass the check above; the file says who won.
-    # shellcheck disable=SC2046  # splitting wanted: the line's three fields
-    set -- $(cat "$lock"); [ "$1" = "$sid" ] || { printf 'held: %s (%s)\n' "$1" "$lock"; exit 1; }
-    echo "taken: $lock" ;;
+    winner = path.read_text().split()[0]
+    if winner != sid:
+        print(f"held: {winner} ({lock})")
+        return 1
+    print(f"{done}: {lock}")
+    return 0
 
-  release)
-    sid=${2:-}; [ -n "$sid" ] || die "release needs <dir> <session-id>"
-    sync || die "cannot sync with origin"
-    [ -f "$lock" ] || { echo free; exit 0; }
-    # shellcheck disable=SC2046  # splitting wanted: the line's three fields
-    set -- $(cat "$lock")
-    [ "${1:-}" = "$sid" ] || { printf 'not ours: %s holds %s; left in place\n' "${1:-?}" "$lock"; exit 1; }
-    git rm -q -- "$lock" >/dev/null 2>&1 || rm -f "$lock"
-    commit_lock "$lock" "scoping lock: release $lock (${sid%"${sid#????????}"})" || die "cannot commit the release"
-    push || die "release committed but not pushed; the next Stop pushes it"
-    echo "released: $lock" ;;
 
-  *) die "unknown command $cmd" ;;
-esac
+def check(lock, sid):
+    path = SR / lock
+    if not path.is_file():
+        print("free")
+        return 3
+    state, holder, _, _, age = describe(path.read_text())
+    if holder == sid:
+        if state == "live":
+            print(f"ours {age}m of {LEASE // 60}m")
+            return 0
+        print(f"lapsed {age}m")
+        return 3
+    if state == "live":
+        print(f"held {holder} {age}m")
+        return 1
+    print("free")
+    return 3
+
+
+def release(lock, sid):
+    if not sync():
+        die("cannot sync with origin")
+    path = SR / lock
+    if not path.is_file():
+        print("free")
+        return 0
+    holder = (path.read_text().split() or ["?"])[0]
+    if holder != sid:
+        print(f"not ours: {holder} holds {lock}; left in place")
+        return 1
+    if not git("rm", "-q", "--", str(lock)):
+        path.unlink(missing_ok=True)
+    if not commit_lock(lock, f"scoping lock: release {lock} ({sid[:8]})"):
+        die("cannot commit the release")
+    if not push():
+        die("release committed but not pushed; the next Stop pushes it")
+    print(f"released: {lock}")
+    return 0
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__[__doc__.index("Usage:"):].rstrip(), file=sys.stderr)
+        return 2
+    cmd, args = argv[0], argv[1:]
+    if cmd == "read-of":
+        print(read_of(args[0]))
+        return 0
+    if not (SR / ".git").is_dir():
+        die(f"no state repo at {SR}")
+    lock = lock_of(args[0])
+    if cmd == "read":
+        path = SR / lock
+        if path.is_file():
+            print("{} {} {} {} {}m".format(*describe(path.read_text())))
+        else:
+            print("free")
+        return 0
+    if cmd == "take":
+        if len(args) != 3:
+            die("take needs <dir> <session-id> <record-file|read>")
+        return take(lock, args[1], args[2])
+    if cmd in ("check", "release"):
+        if len(args) < 2 or not args[1]:
+            die(f"{cmd} needs <dir> <session-id>")
+        return (check if cmd == "check" else release)(lock, args[1])
+    die(f"unknown command {cmd}")
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

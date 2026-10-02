@@ -28,7 +28,7 @@ target, and why, in the first line.
 | ADR | its Decision and its open or deferred items | `state/global/scoping/<repo>-<adr-slug>` |
 | issue | body and comments; sub-issues as in flight | `state/global/scoping/<owner>-<repo>-<n>` |
 
-## 2. The lock: one writer per target
+## 2. The lock: one writer per target, 25 minutes
 
 ```bash
 scoping-lock take <lock-folder> ${CLAUDE_SESSION_ID} <record-file>   # an issue: its updatedAt
@@ -38,6 +38,26 @@ Exit 1 is a held scoping: show its `held:` line and stop. Exit 2 is a lock
 that could not be taken: show the reason and stop. Never work around
 either. The lock is `LOCK`, beside a curia's `LIVE`; `LIVE` is the soft
 sitting marker and this run never touches it.
+
+**The clock is toil, and it is yours** (Solace, 2026-10-01). A scoping runs
+10 to 25 minutes. The lock lapses 25 minutes after it was taken; the lapse
+is the release, whether or not this session is still talking, because
+nothing of yours runs between turns. Re-taking your own live lock never
+extends it. At the top of every turn and before every write:
+
+```bash
+scoping-lock check <lock-folder> ${CLAUDE_SESSION_ID}   # 0 ours, 1 held, 3 lapsed or free
+```
+
+- **15m, not close to the yes:** say so in one line, with what is still open.
+- **22m:** write and commit the proposal as it stands, unasked.
+- **Exit 3:** re-run the `take` line silently and say only "lock retaken".
+  Write nothing before it succeeds. Then record any decision made, and
+  propose releasing at once; if Solace carries on, the retake is a fresh
+  25 minutes.
+- **Exit 1, or a retake refused:** another session holds the target. Write
+  nothing into it. Put any decision not yet recorded in this session's
+  pickup item, name the holder, and stop.
 
 ## 3. Read, never edit
 
@@ -102,7 +122,7 @@ work-items heading to the next heading, counted as
 ## 6. On the yes
 
 Re-run the `take` line first; a refusal now stops the filing, and a
-changed `read` in the lock means the record moved since the proposal. Then file
+`read moved:` line means the record moved since the proposal. Then file
 each yes'd item exactly as proposed:
 
 - a card under `## Claude's` through `/card-write`, linking the target;
@@ -118,4 +138,4 @@ scoping-lock release <lock-folder> ${CLAUDE_SESSION_ID}
 ```
 
 A run that ends without a yes releases the same way. A dead session's lock
-goes stale after two hours (pencil, the claim stamp's floor).
+lapses at 25 minutes like any other.
