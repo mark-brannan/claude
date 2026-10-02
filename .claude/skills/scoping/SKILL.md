@@ -24,7 +24,7 @@ target, and why, in the first line.
 
 | Target | Decided record and open questions | Lock folder |
 |---|---|---|
-| curia `<id>` | `digest.md`'s Decided and Open questions; a redirect's own loop section says where (one-entry-point: §5 and §6 of its `digest.md`) | `state/global/curia/<id>` |
+| curia `<id>` | `digest.md`'s Decided and Open questions; a grandfathered digest's own loop section says where (one-entry-point: §5 and §6) | `state/global/curia/<id>` |
 | ADR | its Decision and its open or deferred items | `state/global/scoping/<repo>-<adr-slug>` |
 | issue | body and comments; sub-issues as in flight | `state/global/scoping/<owner>-<repo>-<n>` |
 
