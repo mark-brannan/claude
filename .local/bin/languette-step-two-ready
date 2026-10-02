@@ -1,16 +1,18 @@
-#!/bin/sh
+#!/usr/bin/env python3
 # Is the languette plugin ready to replace the dotfiles guard copies?
 #
 # Step one runs the plugin alongside the copies of no-rm-tree, no-git-footguns
 # and no-delete-stacked-base. Step two deletes the copies, and opens only when
 # the record says the plugin has been gating on real machines. This reads that
-# record -- the metrics the Stop hook keeps -- and prints three numbers since a
+# record -- the metrics the Stop hook keeps -- and prints four numbers since a
 # date:
 #
 #   sessions   sessions that made at least one Bash call
-#   plugin     rule denials by one of the three guards with no copy tag
+#   plugin     rule denials by one of the three guards with no copy tag, plus
+#              copy denials the plugin denies on replay (below)
 #   copy-only  denials tagged "[dotfiles copy]" (or the copy's fail-closed
-#              wrapper) for a guard the plugin never denied in that session
+#              wrapper) for a guard the plugin neither denied in that session
+#              nor denies on replay
 #   broken     denials by the plugin's own fail-closed wrapper ("missing from
 #              the plugin directory or crashed"): the plugin was installed and
 #              its hook did not run, so these never count as the plugin denying
@@ -20,82 +22,283 @@
 # The defaults are placeholders; the thresholds are the user's to set, except
 # broken, which no threshold excuses.
 #
-# What it can and cannot see: when the plugin and a copy both deny one call,
-# the harness shows one reason and the metrics keep only that one. So a
-# copy-only denial means the plugin was absent, did not deny, or lost the race
-# to be shown: an upper bound on the plugin missing a call, never an
-# undercount. An untagged denial is read as the plugin's, so --since must be
-# after every machine's copies carry the tag (the tag lands with step one).
+# Replay. When the plugin and a copy both deny one call, the harness shows one
+# reason and the metrics keep only that one, and which one wins is not fixed.
+# So a copy-tagged denial alone cannot say whether the plugin also denied. For
+# each one, this finds the call in the session's transcript (the denial's
+# tool_use_id leads to the command; the entry carries the cwd) and runs it
+# through the installed plugin's own hooks.json entry for that guard. The
+# question is "would the plugin we keep have stopped what the copy stopped",
+# so today's installed plugin is the judge. A denial with no transcript (a
+# cloud session), no installed plugin, or a replay that crashed stays
+# copy-only and is counted on its own line, so a stuck NOT READY says why.
+# no-delete-stacked-base asks GitHub live, so its replay sees today's PRs.
+#
+# An untagged denial is read as the plugin's, so --since must be after every
+# machine's copies carry the tag (the tag lands with step one).
 #
 # Usage: languette-step-two-ready --since DATE [--min-sessions N]
 #          [--min-plugin N] [--max-copy-only N] [--metrics DIR]
-#   DATE is anything `date -d` reads (GNU), or an ISO-8601 UTC time ending in Z.
+#          [--transcripts DIR] [--plugin-root DIR] [--no-replay]
+#   DATE is ISO-8601 (a bare time is UTC), or anything GNU `date -d` reads.
+#   --plugin-root defaults to the user-scope install in
+#   ~/.claude/plugins/installed_plugins.json; --transcripts to ~/.claude/projects.
 #   Exit 0 ready, 1 not ready, 2 usage or unreadable metrics.
-set -u
+import argparse
+import datetime as dt
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
 
-since="" min_sessions=5 min_plugin=1 max_copy_only=0
-metrics="${LANGUETTE_METRICS:-$HOME/claude_prompts_scratch/state/global/metrics}"
+GUARDS = ("no-delete-stacked-base", "no-rm-tree", "no-git-footguns")
+HOME = Path.home()
 
-usage() { sed -n '/^# Usage:/,/^#   Exit/s/^# \{0,1\}//p' "$0" >&2; exit 2; }
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --since) since=${2:-}; shift 2 || usage ;;
-    --min-sessions) min_sessions=${2:-}; shift 2 || usage ;;
-    --min-plugin) min_plugin=${2:-}; shift 2 || usage ;;
-    --max-copy-only) max_copy_only=${2:-}; shift 2 || usage ;;
-    --metrics) metrics=${2:-}; shift 2 || usage ;;
-    -h|--help) usage ;;
-    *) echo "unknown argument: $1" >&2; usage ;;
-  esac
-done
-[ -n "$since" ] || { echo "--since is required" >&2; usage; }
-for n in "$min_sessions" "$min_plugin" "$max_copy_only"; do
-  case "$n" in ''|*[!0-9]*) echo "not a count: '$n'" >&2; usage ;; esac
-done
-command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 2; }
-if ! [ -d "$metrics/sessions" ] || ! [ -d "$metrics/blocked" ]; then
-  echo "no metrics at $metrics (want sessions/ and blocked/)" >&2; exit 2
-fi
 
-# started_at is UTC with a Z, so a normalised UTC bound compares as a string.
-if utc=$(date -u -d "$since" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null); then since=$utc
-else
-  case "$since" in *Z) ;; *) echo "cannot read --since '$since' without GNU date; give it as ISO-8601 UTC ending in Z" >&2; exit 2 ;; esac
-fi
+def guard_of(reason):
+    if re.search(r"no-delete-stacked-base|stacked on", reason):
+        return "no-delete-stacked-base"
+    if re.search(r"no-rm-tree|`rm -r", reason):
+        return "no-rm-tree"
+    if re.search(r"no-git-footguns|`(git|yadm) [^`]*`[^`]* is blocked|bare `git |force-pushing or deleting main", reason):
+        return "no-git-footguns"
+    return None
 
-sids=$(find "$metrics/sessions" -name '*.json' -exec jq -r --arg s "$since" \
-  'select((.started_at // "") >= $s and ((.tools.Bash // 0) > 0)) | .session_id' {} + 2>/dev/null)
 
-# Counted here, not in the loop: the loop runs in a pipeline subshell.
-nsessions=$(printf '%s\n' "$sids" | grep -c .)
-for sid in $sids; do
-  f="$metrics/blocked/$sid.jsonl"
-  [ -s "$f" ] && jq -c --arg sid "$sid" 'select(.kind == "rule") | {sid: $sid, reason: (.reason // "")}' "$f"
-done | jq -rs --argjson sessions "$nsessions" '
-  def guard:
-    if test("no-delete-stacked-base|stacked on") then "no-delete-stacked-base"
-    elif test("no-rm-tree|`rm -r") then "no-rm-tree"
-    elif test("no-git-footguns|`(git|yadm) [^`]*`[^`]* is blocked|bare `git |force-pushing or deleting main") then "no-git-footguns"
-    else null end;
-  def side:
-    if test("\\[dotfiles copy\\] |missing from \\$HOME/\\.claude/hooks") then "copy"
-    elif test("missing from the plugin directory") then "broken"
-    else "plugin" end;
-  [ .[] | (.reason | guard) as $g | select($g != null) | {sid, g: $g, side: (.reason | side)} ] as $d
-  | ([ $d[] | select(.side == "plugin") | "\(.sid) \(.g)" ] | unique) as $seen
-  | [ $sessions,
-      ([ $d[] | select(.side == "plugin") ] | length),
-      ([ $d[] | select(.side == "copy" and ("\(.sid) \(.g)" as $k | $seen | index($k) | not)) ] | length),
-      ([ $d[] | select(.side == "broken") ] | length)
-    ] | @tsv' | {
-  IFS='	' read -r s p c b || { echo "could not read the metrics" >&2; exit 2; }
-  printf 'since %s\n' "$since"
-  printf '  sessions with a Bash call   %s  (want >= %s)\n' "$s" "$min_sessions"
-  printf '  plugin denials              %s  (want >= %s)\n' "$p" "$min_plugin"
-  printf '  copy denials, plugin silent %s  (want <= %s)\n' "$c" "$max_copy_only"
-  printf '  plugin fail-closed denials  %s  (want 0)\n' "$b"
-  if [ "$s" -ge "$min_sessions" ] && [ "$p" -ge "$min_plugin" ] && [ "$c" -le "$max_copy_only" ] && [ "$b" -eq 0 ]; then
-    echo READY; exit 0
-  fi
-  echo "NOT READY"; exit 1
-}
+def side_of(reason):
+    if re.search(r"\[dotfiles copy\] |missing from \$HOME/\.claude/hooks", reason):
+        return "copy"
+    if "missing from the plugin directory" in reason:
+        return "broken"
+    return "plugin"
+
+
+def parse_since(text):
+    try:
+        t = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        r = subprocess.run(["date", "-u", "-d", text, "+%Y-%m-%dT%H:%M:%SZ"], capture_output=True, text=True)
+        if r.returncode != 0:
+            return None
+        return r.stdout.strip()
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    return t.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def read_jsonl(path):
+    out = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                out.append(None)
+    return out
+
+
+def sessions_since(metrics, since):
+    sids = []
+    for p in sorted((metrics / "sessions").glob("*.json")):
+        try:
+            s = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        # started_at is UTC with a Z, so a normalised UTC bound compares as a string.
+        if (s.get("started_at") or "") >= since and ((s.get("tools") or {}).get("Bash") or 0) > 0:
+            sids.append(s["session_id"])
+    return sids
+
+
+def denials(metrics, sids):
+    out = []
+    for sid in sids:
+        f = metrics / "blocked" / f"{sid}.jsonl"
+        if not f.is_file():
+            continue
+        for d in read_jsonl(f):
+            if not d or d.get("kind") != "rule":
+                continue
+            reason = d.get("reason") or ""
+            g = guard_of(reason)
+            if g:
+                out.append({"sid": sid, "i": d.get("i"), "guard": g, "side": side_of(reason), "reason": reason})
+    return out
+
+
+def default_plugin_root():
+    try:
+        data = json.loads((HOME / ".claude/plugins/installed_plugins.json").read_text())
+    except (OSError, ValueError):
+        return None
+    for e in data.get("plugins", {}).get("languette@languette", []):
+        if e.get("scope") == "user" and e.get("installPath"):
+            return e["installPath"]
+    return None
+
+
+def denial_text(entry):
+    """The tool_result of a denial record: (tool_use_id, its text)."""
+    for c in (entry.get("message") or {}).get("content") or []:
+        if isinstance(c, dict) and c.get("type") == "tool_result":
+            body = c.get("content")
+            if isinstance(body, list):
+                body = " ".join(x.get("text", "") for x in body if isinstance(x, dict))
+            return c.get("tool_use_id"), body if isinstance(body, str) else ""
+    return None, ""
+
+
+def recover_call(transcript, i, reason):
+    """The command and cwd behind one recorded denial, or None.
+
+    `i` is the denial's index in the transcript (session-metrics.jq slurps it,
+    one record per line); the reason is checked against it so a transcript
+    that has moved under us is never misread. Failing that, a denial whose
+    text starts with the recorded reason (it was truncated) is taken only when
+    it is the one such denial: guard reasons share prefixes, and replaying the
+    wrong command could count a denial for the plugin that it never made.
+    """
+    entries = read_jsonl(transcript)
+    # The recorded reason is redacted and truncated; its first 60 characters
+    # are a safe prefix of the text the transcript holds.
+    head = reason[:60]
+
+    def matches(e):
+        tid, text = denial_text(e) if e and e.get("toolDenialKind") else (None, "")
+        return tid if tid and text.startswith(head) else None
+
+    if isinstance(i, int) and 0 <= i < len(entries) and matches(entries[i]):
+        hits = [entries[i]]
+    else:
+        hits = [e for e in entries if matches(e)]
+    if len(hits) != 1:
+        return None
+    denial, tid = hits[0], matches(hits[0])
+    for a in entries:
+        if not a or a.get("type") != "assistant":
+            continue
+        for c in (a.get("message") or {}).get("content") or []:
+            if isinstance(c, dict) and c.get("type") == "tool_use" and c.get("id") == tid:
+                cmd = (c.get("input") or {}).get("command")
+                cwd = a.get("cwd") or denial.get("cwd")
+                return (cmd, cwd) if isinstance(cmd, str) and cwd else None
+    return None
+
+
+def replay(root, guard, command, cwd):
+    """The installed plugin's decision on one Bash call: deny, allow or broken."""
+    try:
+        hooks = json.loads((Path(root) / "hooks/hooks.json").read_text())
+        cmd = next(h["command"] for m in hooks["hooks"]["PreToolUse"] for h in m["hooks"]
+                   if f"{guard}.sh" in h.get("command", ""))
+    except (OSError, ValueError, KeyError, StopIteration):
+        return "broken"
+    # The hook reads the payload's cwd; the process needs a directory that
+    # still exists, and a removed worktree's nearest ancestor is the closest.
+    run_in = Path(cwd)
+    while not run_in.is_dir():
+        run_in = run_in.parent
+    payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                          "tool_input": {"command": command}, "cwd": cwd})
+    try:
+        r = subprocess.run(["sh", "-c", cmd], input=payload, capture_output=True, text=True, cwd=run_in,
+                           env={**os.environ, "CLAUDE_PLUGIN_ROOT": str(root)}, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return "broken"
+    if r.returncode == 2:
+        return "deny"
+    if r.returncode != 0:
+        return "broken"
+    if not r.stdout.strip():
+        return "allow"
+    try:
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+    except (ValueError, KeyError, TypeError):
+        return "broken"
+    if out.get("permissionDecision") != "deny":
+        return "allow"
+    return "broken" if "missing from the plugin directory" in out.get("permissionDecisionReason", "") else "deny"
+
+
+def find_transcript(projects, sid):
+    hits = glob.glob(str(projects / "*" / f"{glob.escape(sid)}.jsonl"))
+    return Path(hits[0]) if hits else None
+
+
+def count(level):
+    if not re.fullmatch(r"[0-9]+", level):
+        raise argparse.ArgumentTypeError(f"not a count: '{level}'")
+    return int(level)
+
+
+def main(argv):
+    p = argparse.ArgumentParser(prog="languette-step-two-ready",
+                                description="Is the languette plugin ready to replace the dotfiles guard copies?")
+    p.add_argument("--since", required=True)
+    p.add_argument("--min-sessions", type=count, default=5)
+    p.add_argument("--min-plugin", type=count, default=1)
+    p.add_argument("--max-copy-only", type=count, default=0)
+    p.add_argument("--metrics", type=Path, default=Path(os.environ.get(
+        "LANGUETTE_METRICS", HOME / "claude_prompts_scratch/state/global/metrics")))
+    p.add_argument("--transcripts", type=Path, default=HOME / ".claude/projects")
+    p.add_argument("--plugin-root")
+    p.add_argument("--no-replay", action="store_true", help="count every unmatched copy denial as copy-only")
+    a = p.parse_args(argv)
+
+    since = parse_since(a.since)
+    if since is None:
+        print(f"cannot read --since '{a.since}'; give it as ISO-8601", file=sys.stderr)
+        return 2
+    if not (a.metrics / "sessions").is_dir() or not (a.metrics / "blocked").is_dir():
+        print(f"no metrics at {a.metrics} (want sessions/ and blocked/)", file=sys.stderr)
+        return 2
+
+    sids = sessions_since(a.metrics, since)
+    ds = denials(a.metrics, sids)
+    seen = {(d["sid"], d["guard"]) for d in ds if d["side"] == "plugin"}
+    plugin = sum(d["side"] == "plugin" for d in ds)
+    broken = sum(d["side"] == "broken" for d in ds)
+    unmatched = [d for d in ds if d["side"] == "copy" and (d["sid"], d["guard"]) not in seen]
+
+    root = None if a.no_replay else (a.plugin_root or default_plugin_root())
+    on_replay = copy_only = unreplayed = 0
+    why = {}
+    for d in unmatched:
+        if root is None:
+            verdict, note = None, "no plugin installed" if not a.no_replay else "replay off"
+        else:
+            t = find_transcript(a.transcripts, d["sid"])
+            call = recover_call(t, d["i"], d["reason"]) if t else None
+            if call is None:
+                verdict, note = None, "no transcript" if t is None else "call not found in transcript"
+            else:
+                verdict = replay(root, d["guard"], *call)
+                note = "plugin replay crashed" if verdict == "broken" else None
+        if verdict == "deny":
+            on_replay += 1
+            continue
+        copy_only += 1
+        if verdict != "allow":
+            unreplayed += 1
+            why[note] = why.get(note, 0) + 1
+
+    plugin += on_replay
+    print(f"since {since}")
+    print(f"  sessions with a Bash call   {len(sids)}  (want >= {a.min_sessions})")
+    print(f"  plugin denials              {plugin}  (want >= {a.min_plugin}; {on_replay} of them on replay)")
+    print(f"  copy denials, plugin silent {copy_only}  (want <= {a.max_copy_only})")
+    if unreplayed:
+        print(f"    not replayed              {unreplayed}  ({', '.join(f'{n} {k}' for k, n in sorted(why.items()))})")
+    print(f"  plugin fail-closed denials  {broken}  (want 0)")
+    if len(sids) >= a.min_sessions and plugin >= a.min_plugin and copy_only <= a.max_copy_only and broken == 0:
+        print("READY")
+        return 0
+    print("NOT READY")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
