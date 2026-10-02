@@ -1,7 +1,12 @@
 # Curia: <the question, one line>
 
+<!-- This is digest.md. The user's words are in roll.md beside it, written
+     by a hook. This file never quotes them: it refers to one entry as
+     `<curia>/roll.md#<stamp>`, the stamp being the entry's heading and so
+     its GitHub anchor, e.g. `one-entry-point/roll.md#20261002t054107z`. -->
+
 - id: `<id>`
-- opened: <date>, on the user's order: <link to the words that ordered it>
+- opened: <date>, on the user's order: <reference to the words that ordered it>
 - origin: <link to the card that petitioned the agora, or the doc section that raised it>
 - related: <ids of open curiae this one touches, comma-separated, or none>
 - model: Fable · effort: high
@@ -16,7 +21,7 @@
 Not yet sat. The first sitting reads the origin and opens the dialogue at
 1 of Y.
 
-- **The user's last words:** (none yet)
+- **The user's last words:** (none yet; then a reference, `<id>/roll.md#<stamp>`)
 - **Unsettled:** the question as posed above
 - **Next:** first question
 
@@ -30,12 +35,6 @@ Not yet sat. The first sitting reads the origin and opens the dialogue at
 
 <!-- Derived; rewritten in place. Numbered across sessions — numbering
      continues, never restarts. Each by concept and domain word. -->
-
-## Human's words
-
-<!-- Append-only: a new dated sub-heading per sitting; never edit an old
-     one. The one exception is a pin: a passage moved to the top of this
-     section for importance, unedited. -->
 
 ## Notes and inputs
 

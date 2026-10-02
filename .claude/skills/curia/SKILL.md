@@ -25,8 +25,8 @@ durable document is the point).
   curia on the document for `<id>`; open and continue are the same
   prompt.
 - **A loop over sessions, not a session.** The user's last words carry over
-  verbatim; every unsettled question carries over. Fresh context each
-  time; what is settled lands at once.
+  by reference to the roll; every unsettled question carries over. Fresh
+  context each time; what is settled lands at once.
 - **A dialogue.** Many short exchanges: one short question at a time,
   then wait. Every question shows **X of Y** with the total, and the
   numbering continues across sessions — a curia parked at 4 of 9 reopens
@@ -51,29 +51,44 @@ One folder per curia in the state repo. Deliberation is private and stays
 there; only what a curia **produces** — an ADR, an issue, a card — goes to
 a public repo, and the Decided line that produced it links it. When the
 curia is promoted — its ruling written up as an ADR — the ADR's link also
-goes in the `adr:` field of `roll.md`'s header.
+goes in the `adr:` field of `digest.md`'s header.
 
 ```
 state/global/curia/<id>/
-  roll.md   the document: where it stands, the derived record, the user's words
+  roll.md     the user's words: append-only, one stamped entry per prompt, written by a hook
+  digest.md   the document: where it stands, decided, open questions
+  LIVE        the sitting's session id and ISO timestamp, only while a sitting runs
   agent-notes.md    the agent's own notes, any format it likes (optional)
   inputs/     read-only side products: spikes, side-chat pastes, subagent reports
   folded/<id>/  a whole curia opened past the gates, moved under this one (see below);
               a folded question is a line under Open questions, never a folder
 ```
 
-Two grains in `roll.md`: **the user's words are append-only** — a new
-dated sub-heading per sitting, old ones never edited. The **derived
-sections** (where it stands, decided, open questions) are rewritten in
-place. The one exception to the append-only grain is a **pin**: a passage
-moved to the top of the words section for importance — moved, never
-edited. Importance, not settledness.
+Two files, two grains. **`roll.md` is append-only.** While a `LIVE` file
+naming the session is in the folder, a hook appends each of the user's
+prompts verbatim under a stamp heading, `### 20261002t054107z` (UTC date and
+time to the second, no separators, lower-case `t` and `z`, nothing else);
+nothing edits an entry after. No agent writes `roll.md`. **`digest.md` is
+derived**: rewritten in place, and it carries the user's words only as
+references, `<curia>/roll.md#<stamp>`, never re-typed quotes. The stamp is
+the heading, so the reference is the GitHub anchor and stays a link. Which
+references it carries is lint's call, made with an editor's discretion; a
+reference a later ruling contradicts is removed and shown, since a reversal
+is a finding, not an error. A reference into another curia's roll takes
+the same form.
 
-<!-- pencil: layout, filenames, the two grains, the pin exception and
-     private-deliberation/public-produce are assumed, not ruled (design doc,
-     open question on /curia <id> mechanics). No separate file lists
-     what a curia produced: each Decided line links its own, and the ADR
-     link goes in roll.md's `adr:` header field at promotion. -->
+<!-- pen (Solace, 2026-10-02): roll.md for the words, digest.md for the
+     document, the reference form `<curia>/roll.md#<stamp>` (amended by
+     Solace the same day from `:<stamp>`, with the session id dropped from
+     the heading: the anchor must be the bare stamp). pencil: the
+     rest of the layout and private-deliberation/public-produce are
+     assumed, not ruled (design doc, open question on /curia <id>
+     mechanics). The pin, a passage moved to the top of the words section
+     for importance, cannot survive an append-only roll written by a hook:
+     nothing in roll.md moves. Whether importance gets another form is an
+     open question, not ruled here. No separate file lists what a curia
+     produced: each Decided line links its own, and the ADR link goes in
+     digest.md's `adr:` header field at promotion. -->
 
 ## Opening a new curia: the gates
 
@@ -121,11 +136,11 @@ waive.
 6. **The user confirms the id.** The id is a kebab-case slug of the
    question's own words — `widget-retirement`, not a coined name — so
    confirming one names nothing. The user renames at will; a rename moves
-   the folder and leaves a one-line redirect `roll.md` at the old id.
+   the folder and leaves a one-line redirect `digest.md` at the old id.
 
 Only then: create the folder, copy [template.md](template.md) to
-`roll.md`, fill in the question, the origin link, the date, who ordered
-it and a link to the words, and `related:` — the ids of open curiae from
+`digest.md`, fill in the question, the origin link, the date, who ordered
+it and a reference to the words, and `related:` — the ids of open curiae from
 gate 4 that touch it, ids only — and commit. That placeholder is the
 whole opening; the first sitting does the rest. Say the id in the opening
 session's record.
@@ -143,12 +158,13 @@ call. The three early placeholders (`andon-rubric`,
 0. **List the open curiae** first, whatever the argument, exactly as bare
    `/curia` does — a deterministic pre-step, one line each, count in view:
    each open curia's id, timestamp and working title.
-1. **Resolve the id.** Read `state/global/curia/<id>/roll.md`. A
-   one-line redirect points at a document elsewhere (a grandfathered
-   curia); follow it — that document's own loop section then governs read
-   order and replaces step 4's reading, while the LIVE check, the lint
-   and every dialogue rule still apply, with the LIVE file in the
-   redirect's folder. **No folder at all → say the id didn't resolve,
+1. **Resolve the id.** Read `state/global/curia/<id>/digest.md`; a
+   folder with `thread.md` and no `digest.md` is from before the split,
+   so read `thread.md` there instead. A one-line redirect points at a
+   document elsewhere (a grandfathered curia); follow it — that
+   document's own loop section then governs read order and replaces
+   step 4's reading, while the LIVE check, the lint and every dialogue
+   rule still apply, with the LIVE file in the redirect's folder. **No folder at all → say the id didn't resolve,
    then guess.** From the step 0 list, pick the curia the argument most
    likely meant — closest fuzzy match on id and question first, most
    recently touched to break a tie — and recommend it in one line, as
@@ -169,19 +185,21 @@ call. The three early placeholders (`andon-rubric`,
    for the record; only a finding that touches a ruling or a name becomes
    a question in the dialogue. <!-- pencil: lint-is-toil is assumed
    (design doc, the lint-diff-is-toil open question). -->
-4. Write the `LIVE` file. Read the header and **Where this stands**:
-   the user's last words verbatim, the unsettled questions, the X of Y
-   position. Read deeper history only as a question needs it — never the
-   whole document by default.
+4. Write the `LIVE` file, before the first question: the hook records
+   the user's words only while it names this session, so a sitting
+   without it records nothing. Read the header and **Where this stands**:
+   the reference to the user's last words, the unsettled questions, the X
+   of Y position. Read deeper history only as a question needs it — never
+   the whole document by default.
 5. State where the question stands in one line and ask the next
    question, X of Y.
 
 ## During
 
-Record the user's words verbatim under a new dated sub-heading in the words
-section; never edit an old one. Keep the derived sections current as you
-go, and commit as you land — a sitting's record must survive the session
-dying mid-turn.
+The hook records the user's words; the agent never writes `roll.md` and
+never re-types the words anywhere. Keep `digest.md` current as you go,
+citing words by reference, and commit as you land — a sitting's record
+must survive the session dying mid-turn.
 
 A sitting that uncovers a second hard question does not open a second
 curia for it. It becomes a line under `## Open questions` here, or a
@@ -189,18 +207,22 @@ curia for it. It becomes a line under `## Open questions` here, or a
 
 ## Closing (the user says when)
 
-1. Land every edit; rewrite **Where this stands** — last words verbatim,
-   what is unsettled, the X of Y position for next time. If the user has
-   ruled the question itself settled, set `status: settled` in the header
-   too — bare `/curia` lists open curiae, and nothing else retires one.
+1. Land every edit; rewrite **Where this stands** — the last words by
+   reference, `<id>/roll.md#<stamp>`, what is unsettled, the X of Y
+   position for next time. If the user has ruled the question itself
+   settled, set `status: settled` in the header too — bare `/curia` lists
+   open curiae, and nothing else retires one.
 2. Say what is still open on this question, by concept.
 3. Print the paste-again prompt: `/curia <id>`, with the model and effort
    from the document's header. Nothing else to paste, nothing to hold in
    memory. A hand-off prompt names `/curia <id>` only for a folder that
    exists; it never proposes a new one.
-4. Remove the `LIVE` file.
-5. The user has the final word; record it verbatim. Open nothing new after
-   it.
+4. Leave the `LIVE` file in place: the hook records only while it names
+   this session, and the final word is still to come.
+5. The user has the final word; the hook records it, and nothing else
+   does. Then point **Where this stands** at that entry, the last `###`
+   heading in `roll.md`, since the reference written at step 1 predates
+   it; remove the `LIVE` file; open nothing new.
 
 ## Bare `/curia`
 
