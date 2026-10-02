@@ -80,11 +80,8 @@ INSTALL="
 .claude/hooks/no-prose-gate.sh
 .claude/hooks/no-unsigned-push.sh
 .claude/hooks/no-update-branch.sh
-.claude/hooks/no-git-footguns.sh
 .claude/hooks/no-checkout-home.sh
-.claude/hooks/no-rm-tree.sh
 .claude/hooks/no-foreign-worktree.sh
-.claude/hooks/no-delete-stacked-base.sh
 .claude/hooks/lib-shell-words.awk
 .claude/hooks/session-start-seed-refresh.sh
 .claude/hooks/local-config-push.sh
