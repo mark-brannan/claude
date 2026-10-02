@@ -152,6 +152,40 @@ class CuriaRollTest(unittest.TestCase):
         self.prompt("my words about a <task-notification>")
         self.assertEqual([e[2] for e in self.entries("c")], ["my words about a <task-notification>"])
 
+    WORKTREE = ("<system-reminder>\nYou are operating in a git worktree.\nWorktree path: /w/x\n"
+                "Worktree name: x\n</system-reminder>\n\n\n")
+    FORK = "<system-reminder>\nThis conversation was forked from another.\n</system-reminder>\n"
+
+    def test_leading_harness_reminders_are_stripped_like_build_roll(self):
+        self.sitting("c", f"{SID} t\n")
+        self.prompt(self.WORKTREE + self.FORK + "my words\n\nsecond paragraph")
+        self.assertEqual([e[2] for e in self.entries("c")], ["my words\n\nsecond paragraph"])
+
+    def test_other_reminders_and_later_reminders_are_the_users_bytes(self):
+        self.sitting("c", f"{SID} t\n")
+        other = "<system-reminder>\nSomething else.\n</system-reminder>\nwords"
+        later = "words, then\n" + self.WORKTREE + "more"
+        self.prompt(other)
+        self.prompt(later)
+        self.assertEqual("\n\n".join(e[2] for e in self.entries("c")), other + "\n\n" + later)
+
+    def test_a_prompt_that_is_only_a_harness_reminder_writes_nothing(self):
+        self.sitting("c", f"{SID} t\n")
+        self.prompt(self.WORKTREE)
+        self.prompt("  \n")
+        self.assertFalse((self.curia / "c" / "roll.md").exists())
+
+    def test_the_opening_curia_prompt_and_agent_text_are_judged_after_the_strip(self):
+        self.sitting("c", "")
+        self.prompt(self.WORKTREE + "/curia c opening")
+        self.prompt(self.WORKTREE + "<task-notification>\n<task-id>a1</task-id>\n</task-notification>")
+        self.assertEqual([e[2] for e in self.entries("c")], ["/curia c opening"])
+
+    def test_a_dialogs_answers_are_not_stripped(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Which colour?": self.WORKTREE + "teal"})
+        self.assertEqual([e[2] for e in self.entries("c")], [self.WORKTREE + "teal"])
+
     def dialog(self, answers, annotations=None, sid=SID, where="tool_response", tool="AskUserQuestion"):
         questions = [
             {"question": "Which colour?", "header": "Colour", "multiSelect": False,

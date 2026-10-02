@@ -26,6 +26,12 @@ writes LIVE, so it is matched by the id it names instead. Task notifications
 and agent messages also fire UserPromptSubmit and stay out. A dialog's
 free-text answers and notes are one entry; a picked label stays out.
 
+The app attaches its own notices to a prompt as leading <system-reminder>
+blocks (the worktree notice, the fork notice). Those are not the user's words:
+they are stripped, with the newlines after them, by the same pattern as
+build-roll.py's HARNESS, so the live roll and a rebuilt one agree. A prompt
+that is blank once they are gone writes nothing.
+
 The roll is append-only (one-entry-point curia, 2026-10-02, the words log),
 save that words sharing a stamp are one entry, joined by a blank line, as
 build-roll.py merges them (Solace, 2026-10-02). Until a curia's
@@ -48,6 +54,19 @@ import lib_state  # noqa: E402
 
 
 AGENT_TEXT = ("<task-notification>", "<agent-message", "Another Claude session sent a message:")
+# Keep in step with HARNESS in state/global/curia/build-roll.py.
+HARNESS = re.compile(
+    r"<system-reminder>\n(?:You are operating in a git worktree\.|This conversation was forked from)"
+    r".*?</system-reminder>\n*",
+    re.S,
+)
+
+
+def strip_harness(text):
+    """The text without its leading harness reminders, as build-roll.py's words()."""
+    while (m := HARNESS.match(text)):
+        text = text[m.end():]
+    return text
 
 
 def entry(prompt, now):
@@ -120,8 +139,10 @@ def main():
     if ev.get("tool_name") == "AskUserQuestion":  # answers on input or result
         got = {k: v for p in (ev.get("tool_input"), ev.get("tool_response")) if isinstance(p, dict) for k, v in p.items() if v}
         prompt = dialog_words(got.get("questions"), got.get("answers"), got.get("annotations")) or None
-    elif isinstance(prompt, str) and prompt.lstrip().startswith(AGENT_TEXT):
-        return
+    elif isinstance(prompt, str):
+        prompt = strip_harness(prompt)
+        if prompt.lstrip().startswith(AGENT_TEXT) or not prompt.strip():
+            return
     if not isinstance(session_id, str) or not session_id or not isinstance(prompt, str):
         return
     state_dir = lib_state.state_dir()
