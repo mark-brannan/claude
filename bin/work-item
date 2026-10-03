@@ -12,6 +12,7 @@
 #   work-item show <id>                            print the file
 #   work-item fold <id>                            print its folded state
 #   work-item list [--all]                         every live item as a card row
+#   work-item dir                                  print the items directory
 #
 # The format, ruled in pen (one-entry-point curia, 2026-10-01/02):
 #
@@ -422,9 +423,12 @@ def main(argv):
         return create(args)
     if cmd == "list":
         return list_items(args)
+    if cmd == "dir":
+        print(items_dir())
+        return 0
     if cmd not in ("brief", "log", "claim", "release", "show", "fold"):
         sys.stderr.write("".join(l[4:] + "\n" for l in
-                                 Path(__file__).read_text().splitlines()[4:14]))
+                                 Path(__file__).read_text().splitlines()[4:15]))
         return 2
     it = Item(args[0] if args else "").need()
     args = args[1:]
