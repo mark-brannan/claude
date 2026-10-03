@@ -118,11 +118,18 @@ long_title="A title that runs well past the eighty character mark so that brief 
   echo '{"name":"main","associatedPullRequests":{"totalCount":0}},{"name":"release-please--branches--main","associatedPullRequests":{"totalCount":0}},{"name":"feature-x","associatedPullRequests":{"totalCount":0}},{"name":"pr-branch","associatedPullRequests":{"totalCount":1}},{"name":"pointed-by-board","associatedPullRequests":{"totalCount":0}},{"name":"pointed-by-issue","associatedPullRequests":{"totalCount":0}}'
   # five more unpointed branches, for the stranded bucket's own +N more line
   for i in 1 2 3 4 5; do printf ',{"name":"stray-%s","associatedPullRequests":{"totalCount":0}}' "$i"; done
+  # a salvage ref also shows up in the plain refs page, where it must not read as stranded
+  printf ',{"name":"wip/aaaa1111-0000-0000-0000-000000000001","associatedPullRequests":{"totalCount":0}}'
+  echo ']},"wip":{"nodes":['
+  # one ref three days old (fixed date well in the past is not stable, so compute it)
+  printf '{"name":"aaaa1111-0000-0000-0000-000000000001","target":{"committedDate":"%s"}},' "$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-3d +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"name":"bbbb2222-0000-0000-0000-000000000002","target":{"committedDate":"%s"}}' "$(date -u -d '5 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-5H +%Y-%m-%dT%H:%M:%SZ)"
   echo ']}}}}'
 } | jq -c . > "$FIXTURES/alpha.json"
 jq -nc '{data:{repository:{defaultBranchRef:{name:"main"},pullRequests:{nodes:[{number:5,title:"Draft PR",url:"https://github.com/o/beta/pull/5",isDraft:true,mergeable:"MERGEABLE",autoMergeRequest:null,author:{login:"o"},reviewThreads:{nodes:[]},commits:{nodes:[{commit:{statusCheckRollup:null}}]}}]},issues:{nodes:[]},refs:{nodes:[{name:"main",associatedPullRequests:{totalCount:0}}]}}}}' > "$FIXTURES/beta.json"
 # seven more ready issues, for the +N more line
-jq -c '.data.repository.issues.nodes += [range(30;37) | {number:., title:"Ready \(.)", url:"https://github.com/o/alpha/issues/\(.)", labels:{nodes:[{name:"ready"}]}, assignees:{nodes:[]}, milestone:null, comments:{nodes:[]}}]' "$FIXTURES/alpha.json" > "$FIXTURES/alpha-many.json"
+# (no salvage refs in this one: the brief view's 3 KB cut would otherwise land on the board tail the cut-card assertions read)
+jq -c '.data.repository.wip.nodes = [] | .data.repository.issues.nodes += [range(30;37) | {number:., title:"Ready \(.)", url:"https://github.com/o/alpha/issues/\(.)", labels:{nodes:[{name:"ready"}]}, assignees:{nodes:[]}, milestone:null, comments:{nodes:[]}}]' "$FIXTURES/alpha.json" > "$FIXTURES/alpha-many.json"
 
 cat > "$S/bin/gh" <<'GH'
 #!/bin/sh
@@ -266,6 +273,15 @@ lacks 'no overflow line under the cap' '\+.* more'
 lacks 'main is not stranded' 'main'; lacks 'release-please branch is not stranded' 'release-please'; lacks 'branch with a PR is not stranded' 'pr-branch'
 lacks 'branch pointed at by a board card is not stranded' 'pointed-by-board'
 lacks 'branch pointed at by an open issue is not stranded' 'pointed-by-issue'
+lacks 'a wip salvage ref is not a stranded branch' 'wip/'
+w_line=$(printf '%s\n' "$OUT_ALL" | grep -n '^Salvaged edits (wip refs)' | cut -d: -f1)
+assert 'Salvaged edits sits after Stranded branches' [ "$s_line" -lt "$w_line" ]
+assert 'Salvaged edits sits before Ready' [ "$w_line" -lt "$r_line" ]
+OUT=$(section "Salvaged edits (wip refs)")
+has 'salvage ref listed whole, in the form git fetch takes, with its age' '^\| alpha \| wip/aaaa1111-0000-0000-0000-000000000001 \| 3d old \|$'
+has 'a fresh salvage ref is aged in hours' '^\| alpha \| wip/bbbb2222-0000-0000-0000-000000000002 \| [0-9]+h old \|$'
+assert 'oldest salvage ref first' [ "$(printf '%s\n' "$OUT" | grep -n 'aaaa1111' | cut -d: -f1)" -lt "$(printf '%s\n' "$OUT" | grep -n 'bbbb2222' | cut -d: -f1)" ]
+eq 'beta has none, so only alpha rows' 2 "$(printf '%s\n' "$OUT" | grep -c '^| alpha |')"
 OUT=$OUT_ALL
 has 'board heading with counts' "^Board \(## Claude's, showing 8 of 10\)$"
 eq 'at most eight cards' 8 "$(printf '%s\n' "$OUT" | grep -Ec '^- ([0-9a-f]{18} )?\*\*Card ')"
@@ -391,6 +407,14 @@ run --json
 eq 'json ready holds leaves, never a parent' '[]' "$(printf '%s' "$OUT" | jq -c '[.buckets.ready[] | select(.number == 50 or .number == 51 or .number == 52)]')"
 eq 'json child names its parent' 'o/alpha#50' "$(printf '%s' "$OUT" | jq -r '.buckets.ready[] | select(.repo == "o/beta") | .parent')"
 cp "$FIXTURES/alpha-plain.json" "$FIXTURES/alpha.json"
+
+# --- more than 100 wip refs: the page is cut by name, so say so -------------------------------
+jq -c '.data.repository.wip.pageInfo = {hasNextPage: true}' "$FIXTURES/alpha-plain.json" > "$FIXTURES/alpha.json"
+run --fresh
+has 'a truncated wip page is named' '^alpha: more than 100 wip refs -- Salvaged edits truncated \(by name, not age\)$'
+cp "$FIXTURES/alpha-plain.json" "$FIXTURES/alpha.json"
+run --fresh
+lacks 'no wip truncation line under the cap' 'more than 100 wip refs'
 
 # --- one repo 403 ---------------------------------------------------------------------------
 GH_MODE=403 run --fresh
