@@ -17,7 +17,6 @@
       "Bash(git fetch *)",
       "Bash(git merge-base *)",
       "Bash(gh-resolve-thread:*)",
-      "Bash(languette-step-two-ready *)",
       "Bash(npm run generate:check)",
       "Bash(npm run typecheck)",
       "Bash(npm test)",
