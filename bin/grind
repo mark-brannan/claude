@@ -18,8 +18,13 @@
 # --kind <k> (repeatable) narrows the run to those kinds; --prs is --kind pr.
 # --policy orders the kinds: finish-first (the default) works PRs before
 # anything that starts new work; start-first is the reverse. Within a kind,
-# lowest number first; cards keep their board order. The default policy is
-# the agent's pick under the 2026-09-28 delegation, not a ruling.
+# lowest number first; cards keep their board order. cheapest-first ignores
+# kind and works the cheapest estimate first: the item's model's output
+# price times an effort weight (low 0.5, medium 1, high 2, xhigh 3, max 4;
+# pencil), ties kept in finish-first order. A pr's pair is read off its
+# description or last comment up front, one gh call each, only under this
+# policy. The default policy is the agent's pick under the 2026-09-28
+# delegation, not a ruling.
 #
 # Per item:
 #   0. The cap stops dispatch, never a worker: an item is not started when
@@ -101,9 +106,12 @@
 # One grind per repo at a time: an mkdir-based lock at
 # $XDG_STATE_HOME/grind/locks/<repo>.lock, held for the run and released on
 # any exit. A second invocation fails fast rather than fighting the first
-# over shared worktree paths and branch names.
+# over shared worktree paths and branch names. A project grind holds its own
+# project_<name>.lock and, once the record names its repos, each member
+# repo's lock too: a member another grind holds is dropped from the run on
+# one WARN line, so a project grind and a repo grind never work one repo.
 #
-#   grind [--dry-run] [--prs] [--kind pr|issue|card]... [--policy finish-first|start-first]
+#   grind [--dry-run] [--prs] [--kind pr|issue|card]... [--policy finish-first|start-first|cheapest-first]
 #         [--repo owner/name]
 #         [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]
 #         [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]
@@ -176,7 +184,7 @@
 set -eu
 
 usage() {
-  printf 'usage: grind [--dry-run] [--prs] [--kind pr|issue|card]... [--policy finish-first|start-first]\n'
+  printf 'usage: grind [--dry-run] [--prs] [--kind pr|issue|card]... [--policy finish-first|start-first|cheapest-first]\n'
   printf '             [--repo owner/name]\n'
   printf '             [--item-budget <usd>] [--session-budget <usd>] [--pause-every <n>]\n'
   printf '             [--resume <session-id>] [--heartbeat <seconds>] [--permission-mode <mode>]\n'
@@ -256,7 +264,7 @@ kinds=$(printf '%s\n' $kinds | awk '!seen[$0]++' | tr '\n' ' '); kinds=${kinds% 
 for k in $kinds; do
   case $k in pr|issue|card) ;; *) printf 'grind: unknown kind %s (pr, issue or card)\n' "$k" >&2; exit 2 ;; esac
 done
-case $policy in finish-first|start-first) ;; *) printf 'grind: unknown policy %s (finish-first or start-first)\n' "$policy" >&2; exit 2 ;; esac
+case $policy in finish-first|start-first|cheapest-first) ;; *) printf 'grind: unknown policy %s (finish-first, start-first or cheapest-first)\n' "$policy" >&2; exit 2 ;; esac
 # `prs` is "this run is fixups and nothing else": the budgets, the session
 # file's mode and the resume check key off it.
 prs=0; [ "$kinds" = pr ] && prs=1
@@ -472,6 +480,7 @@ write_lock() {
       last_heartbeat_at:$hb, current_item: (if $item == "" then null else $item end),
       current_item_started_at: (if $item_started == "" then null else ($item_started|tonumber) end)}' \
     > "$lock_meta" 2>/dev/null || true
+  for d in $member_locks; do cp "$lock_meta" "$d/meta.json" 2>/dev/null || true; done
   [ -f "$state_file" ] && jq --slurpfile lk "$lock_meta" '.lock = $lk[0]' "$state_file" \
     > "$state_file.tmp" 2>/dev/null && mv "$state_file.tmp" "$state_file" || true
 }
@@ -494,24 +503,34 @@ on_exit() {
        '.ended = {at:$at, reason:$r, exit:$x}' "$state_file" > "$state_file.tmp" 2>/dev/null \
       && mv "$state_file.tmp" "$state_file" || true
   fi
-  rm -rf "$lock_dir"
+  # shellcheck disable=SC2086  # a word list of lock dirs
+  rm -rf $member_locks "$lock_dir"
   exit "$rc"
 }
 
+# take_lock <dir> <label> -- 0 when this run now holds <dir>, 1 when a live
+# grind does (its meta.json is left for the caller to show), or won the race
+# to reclaim a stale one.
+take_lock() {
+  mkdir "$1" 2>/dev/null && return 0
+  set -- "$1" "$2" $(jq -r '(.pid // 0), (.hostname // "")' "$1/meta.json" 2>/dev/null)
+  other_pid=${3:-0}; other_host=${4:-}
+  if [ "$other_host" = "$hostname_now" ] && ! kill -0 "$other_pid" 2>/dev/null; then
+    warn "reclaiming stale lock on $2 at $1 (pid $other_pid not running)"
+    stale_dir="$1.stale.$$"  # rename first: atomic, a racer's mkdir below loses cleanly
+    mv "$1" "$stale_dir" 2>/dev/null && rm -rf "$stale_dir" && mkdir "$1" \
+      || { warn "lock on $2 changed while reclaiming it"; return 1; }
+    return 0
+  fi
+  return 1
+}
+member_locks=""  # a project grind's member repo lock dirs, once taken
+
 if [ "$dry_run" -eq 0 ]; then
   invoked_cwd=$(pwd)
-  if ! mkdir "$lock_dir" 2>/dev/null; then
-    set -- $(jq -r '(.pid // 0), (.hostname // "")' "$lock_meta" 2>/dev/null)
-    other_pid=${1:-0}; other_host=${2:-}
-    if [ "$other_host" = "$hostname_now" ] && ! kill -0 "$other_pid" 2>/dev/null; then
-      warn "reclaiming stale lock on $scope at $lock_dir (pid $other_pid not running)"
-      stale_dir="$lock_dir.stale.$$"  # rename first: atomic, a racer's mkdir below loses cleanly
-      mv "$lock_dir" "$stale_dir" 2>/dev/null && rm -rf "$stale_dir" && mkdir "$lock_dir" \
-        || { err "lock changed while reclaiming it"; exit 1; }
-    else
-      printf 'grind: another grind is already running against %s\n' "$scope" >&2
-      cat "$lock_meta" >&2; exit 1
-    fi
+  if ! take_lock "$lock_dir" "$scope"; then
+    printf 'grind: another grind is already running against %s\n' "$scope" >&2
+    cat "$lock_meta" >&2; exit 1
   fi
   # An EXIT trap alone is not enough: dash (this script's shell, /bin/sh on
   # Debian/Ubuntu) does not run it when the process dies to an unhandled
@@ -570,6 +589,27 @@ for r in $(printf '%s' "$record" | jq -r --arg repo "$repo" 'if $repo == "" then
   else no_checkout "$r"; fi
 done
 [ "$(printf '%s' "$repos_json" | jq 'length')" -gt 0 ] || { printf 'grind: no repo in scope has a local checkout\n' >&2; exit 1; }
+
+# A project grind takes each member repo's lock, the one a repo grind takes,
+# so the two never work one repo at once: until they did, a project grind
+# could re-pick the issue a repo grind was on and clear that worker's live
+# worktree as an earlier attempt's leftover. A member held elsewhere is
+# dropped, like a repo with no checkout; the rest of the family still runs.
+if [ "$dry_run" -eq 0 ] && [ -n "$project" ]; then
+  held_json="[]"
+  for r in $(printf '%s' "$repos_json" | jq -r '.[]'); do
+    d="$lock_root/$(printf '%s' "$r" | tr '/ ' '__').lock"
+    if take_lock "$d" "$r"; then
+      member_locks="$member_locks $d"; held_json=$(printf '%s' "$held_json" | jq -c --arg r "$r" '. + [$r]')
+    else
+      other_pid=$(jq -r '.pid // empty' "$d/meta.json" 2>/dev/null || true)
+      warn "$r: another grind holds it (pid ${other_pid:-?}); it is out of this run"
+    fi
+  done
+  repos_json=$held_json
+  write_lock "" ""
+  [ "$(printf '%s' "$repos_json" | jq 'length')" -gt 0 ] || { printf 'grind: every repo in %s is held by another grind\n' "$scope" >&2; exit 1; }
+fi
 
 # --- review band: pause dispatch while PRs awaiting a look pile up -----------
 # memory: review-band-five-to-ten (Solace, 2026-09-22). The count is
@@ -737,6 +777,62 @@ if [ -n "$seen_marks" ]; then
     | map(. + {seen: ($s[ref] // "never")} | select(.seen == "never" or .seen == "changed"))
     | (reduce .[].kind as $k ([]; if any(.[]; . == $k) then . else . + [$k] end)) as $ks
     | [ $ks[] as $k | (map(select(.kind == $k and .seen == "never")) + map(select(.kind == $k and .seen == "changed")))[] ]')
+fi
+
+# --- live cost estimate (heartbeat only; the final line uses the exact
+# total_cost_usd from the result event) --------------------------------------
+# List price in USD per 1M tokens, by model alias/name substring. Cache
+# write/read aren't looked up per model here -- they use Anthropic's
+# standard ratios off the base input price (1.25x for a cache write, 0.1x
+# for a cache read). Unrecognized names fall back to Sonnet pricing.
+model_price_in() {
+  case "$1" in
+    *opus*) printf '5.00' ;;
+    *fable*|*mythos*) printf '10.00' ;;
+    *haiku*) printf '1.00' ;;
+    *) printf '2.00' ;;
+  esac
+}
+model_price_out() {
+  case "$1" in
+    *opus*) printf '25.00' ;;
+    *fable*|*mythos*) printf '50.00' ;;
+    *haiku*) printf '5.00' ;;
+    *) printf '10.00' ;;
+  esac
+}
+# estimate_cost <model> <input> <output> <cache_read> <cache_creation>
+estimate_cost() {
+  ip=$(model_price_in "$1"); op=$(model_price_out "$1")
+  awk -v ip="$ip" -v op="$op" -v i="$2" -v o="$3" -v cr="$4" -v cc="$5" \
+    'BEGIN { printf "%.4f", (i*ip + o*op + cr*(ip*0.1) + cc*(ip*1.25)) / 1000000 }'
+}
+
+# cheapest-first: each item's pair, read once here and carried as .pair_text
+# so the dispatch below does not read it again, then a stable sort on the
+# estimate (model_price_out times the effort weight). The text reaches jq on
+# stdin, never as an argument: a PR body and its last comment can pass the
+# kernel's 128 KiB cap on one argument.
+effort_weight() { case $1 in low) echo 0.5 ;; high) echo 2 ;; xhigh) echo 3 ;; max) echo 4 ;; *) echo 1 ;; esac; }
+if [ "$policy" = cheapest-first ]; then
+  n_items=$(printf '%s' "$items" | jq 'length'); k=0
+  while [ "$k" -lt "$n_items" ]; do
+    it=$(printf '%s' "$items" | jq -c ".[$k]")
+    case $(printf '%s' "$it" | jq -r .kind) in
+      pr)   pt=$(gh pr view "$(printf '%s' "$it" | jq -r .number)" --repo "$(printf '%s' "$it" | jq -r .repo)" --json body,comments \
+              --jq '[.body // "", (.comments[-1].body // "")] | join("\n")' 2>/dev/null || true) ;;
+      card) pt=$(printf '%s' "$it" | jq -r .text) ;;
+      *)    pt=$(printf '%s' "$it" | jq -r .body) ;;
+    esac
+    m=$(item_field model "$pt"); [ -n "$m" ] || m=${default_pair% *}
+    e=$(item_field effort "$pt"); [ -n "$e" ] || e=${default_pair#* }
+    est=$(awk -v p="$(model_price_out "$m")" -v w="$(effort_weight "$e")" 'BEGIN { printf "%.2f", p * w }')
+    items=$({ printf '%s\n' "$items"; printf '%s' "$pt" | jq -Rs .; } \
+      | jq -sc --argjson k "$k" --argjson est "$est" '.[1] as $pt | .[0] | .[$k] += {pair_text: $pt, est: $est}')
+    k=$((k + 1))
+  done
+  # Within one estimate, an item grind has never touched still goes first.
+  items=$(printf '%s' "$items" | jq -c 'sort_by([.est, (.seen == "changed")])')
 fi
 
 count=$(printf '%s' "$items" | jq 'length')
@@ -1191,35 +1287,6 @@ verify_carded() {
   [ "$c" -gt 0 ]
 }
 
-# --- live cost estimate (heartbeat only; the final line uses the exact
-# total_cost_usd from the result event) --------------------------------------
-# List price in USD per 1M tokens, by model alias/name substring. Cache
-# write/read aren't looked up per model here -- they use Anthropic's
-# standard ratios off the base input price (1.25x for a cache write, 0.1x
-# for a cache read). Unrecognized names fall back to Sonnet pricing.
-model_price_in() {
-  case "$1" in
-    *opus*) printf '5.00' ;;
-    *fable*|*mythos*) printf '10.00' ;;
-    *haiku*) printf '1.00' ;;
-    *) printf '2.00' ;;
-  esac
-}
-model_price_out() {
-  case "$1" in
-    *opus*) printf '25.00' ;;
-    *fable*|*mythos*) printf '50.00' ;;
-    *haiku*) printf '5.00' ;;
-    *) printf '10.00' ;;
-  esac
-}
-# estimate_cost <model> <input> <output> <cache_read> <cache_creation>
-estimate_cost() {
-  ip=$(model_price_in "$1"); op=$(model_price_out "$1")
-  awk -v ip="$ip" -v op="$op" -v i="$2" -v o="$3" -v cr="$4" -v cc="$5" \
-    'BEGIN { printf "%.4f", (i*ip + o*op + cr*(ip*0.1) + cc*(ip*1.25)) / 1000000 }'
-}
-
 # median <space-separated numbers> -> prints 0 when the list is empty
 median() {
   if [ -z "$1" ]; then printf '0\n'; return; fi
@@ -1322,13 +1389,15 @@ while [ "$i" -lt "$count" ]; do
     verdict=""
   fi
 
-  # The item's own pair: its text, else the one default.
-  case $kind in
+  # The item's own pair: its text (already read under cheapest-first), else
+  # the one default.
+  if [ "$(printf '%s' "$item" | jq 'has("pair_text")')" = true ]; then pair_text=$(printf '%s' "$item" | jq -r '.pair_text')
+  else case $kind in
     pr)   pair_text=$(gh pr view "$number" --repo "$repo" --json body,comments \
             --jq '[.body // "", (.comments[-1].body // "")] | join("\n")' 2>/dev/null || true) ;;
     card) pair_text=$(printf '%s' "$item" | jq -r '.text') ;;
     *)    pair_text=$(printf '%s' "$item" | jq -r '.body') ;;
-  esac
+  esac; fi
   model=${default_pair% *}; effort=${default_pair#* }
   m=$(item_field model "$pair_text"); [ -z "$m" ] || model=$m
   e=$(item_field effort "$pair_text"); [ -z "$e" ] || effort=$e
