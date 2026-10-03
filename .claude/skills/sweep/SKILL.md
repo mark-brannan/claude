@@ -1,13 +1,20 @@
 ---
 name: sweep
-description: Garbage-collect the global board's `## Needs ruling` and `## Human's` sections — find cards already ruled elsewhere or gone stale, show them with proof, delete or move only what the user ticks, and rerank the rest by what they block. Use on "/sweep", "sweep the board", "what's stale", "prune the rulings", and before `worklist` or `/card-helper` shows the board. `--dry-run` reports and changes nothing.
+description: Garbage-collect the global board's ruling and click-work cards (items owned human-ruling and human-click) — find cards already ruled elsewhere or gone stale, show them with proof, retire or defer only what the user ticks, and rerank the rest by what they block. Use on "/sweep", "sweep the board", "what's stale", "prune the rulings", and before `worklist` or `/card-helper` shows the board. `--dry-run` reports and changes nothing.
 ---
 
 # Sweeping the board
 
-Garbage collection for the two sections the user reads. It runs before the
-board is shown, and on its own. `## Claude's` is not swept here; that queue
-is yours to work, not to tidy.
+Garbage collection for the two kinds of card the user reads: rulings (owner
+`human-ruling`, once `## Needs ruling`) and click work (owner `human-click`,
+once `## Human's`). It runs before the board is shown, and on its own. Cards
+owned `agent` are not swept here; that queue is yours to work, not to tidy.
+
+The board is one file per item under `state/global/items/`, written only
+through `~/.local/bin/work-item`. Read the cards to sweep with
+`work-item list | awk -F'\t' '$2 != "agent"'`: columns are id, owner, status,
+holder, updated, repo, then the card line. Read one item whole with
+`work-item show <id>`.
 
 `worklist` now carries the ruling counts: total, ready and waiting by `until:`, with `--waiting` and `--all` to drill.
 
@@ -29,7 +36,7 @@ is yours to work, not to tidy.
    on it. State the reason in one clause.
 3. **Rank** the survivors: what the card blocks now, then the consequence of
    leaving it, then its `until:`. A card with no `until:` at all — a
-   `## Human's` click-work card; `/card-write` and `kanban-lint.sh` allow
+   `## Human's` click-work card; `/card-write` allows
    one without it — ranks above every card that has one: it never expires on
    a date, so treat it as always blocking until the user clears it by hand. A
    card that blocks nothing and has no consequence is not shown; take its
@@ -52,8 +59,8 @@ Every ticked card gets exactly one explicit action, chosen at tick time —
 the user has caught wrong deletions before; nothing leaves the board, or
 changes, on a bare tick with no action attached:
 
-- **Deleted** — the card is gone. A proposed deletion (rank step 3) defaults
-  to this.
+- **Retired** — the card leaves the board: it ends at `done`, and stays on disk
+  (see After the tick). A proposed deletion (rank step 3) defaults to this.
 - **Answered** — the question is settled now; goes to `docs/decisions.md`
   (see After the tick).
 - **Deferred** — not now. Push `until:` out to a date or event the user names.
@@ -70,21 +77,65 @@ the user says they have it.
 
 ## After the tick
 
-- **Deleted:** remove the line; the proof goes in the commit message.
+- **Retired:** retire the item (below); the proof is its `evidence=`.
 - **Answered:** append `- YYYY-MM-DD — <short name>: <the answer> ([link])`
   to `docs/decisions.md` in the project's primary repo — the repo whose name
   the `project-<name>` topic shares, else the repo the card links — newest
-  first, then remove the card. When the answer already landed as an ADR or a
+  first, then retire the item. When the answer already landed as an ADR or a
   Q-nn, the line points there rather than repeating it. On a public repo the
   line must pass the private-terms check; failing that, it goes to the state
   repo's log with the same date.
-- **Deferred:** write or rewrite `until:` per the rule above; the card is not
-  shown again before then.
+- **Deferred:** write or rewrite `until:` per the rule above, in the brief
+  (readers take `until:` from the brief's text). `brief` does not check the
+  holder, so first read `work-item fold <id>`: a `holder=` that is set with
+  `holder_stale=no` means a live session has the card; say who holds it and
+  since when, leave the card, move on. Otherwise print it with `work-item
+  show <id>`, copy the text under `## Brief` (minus the `points:` line),
+  change or add the `until:` field, and send it back with `work-item brief
+  <id> -` on stdin. The card is not shown again before then.
 - **Dig:** hold the conversation for that one card, then apply whichever of
-  Deleted / Answered / Deferred it settles on.
-- Commit the board in the state repo, with the proof.
+  Retired / Answered / Deferred it settles on.
+
+**Retire** is how a card leaves the board, per
+[the lifecycle](../../../docs/work-item-lifecycle.md): it ends at `done`, with
+evidence, and stops there. No skill writes `closed`; that is the user's, on a
+later sweep of an accepted parent. Read the status with `work-item fold <id>`
+(the `status=` line) and start where the table says:
+
+| status now | do |
+|---|---|
+| `open` | `log <id> status=ready`, then the `ready` row |
+| `ready`, `blocked` | `claim <id>`, then `log <id> status=done 'evidence=<link>'` |
+| `claimed` (stale holder) | the same two; `claim` takes it over |
+| `done`, `closed` | nothing |
+
+`<link>` is the proof: where the ruling landed, or the PR that shows the card
+moot; for a stale card with no link, one clause with no `=` in it. A
+refused `claim` (exit 1: a live session holds the item) leaves the card where
+it is: say who holds it and since when, and move on, never around it. A `done`
+that fails after the claim takes `work-item release <id>`; either goes in the
+output.
+
+**Quoting.** A value that may hold `'` (a link, a clause, a card title) is never
+written inside single quotes. Put it in a quoted here-doc, read it into a
+variable, and pass the variable in double quotes; nothing in the text is then
+special to the shell:
+
+```sh
+ev=$(cat <<'EOF'
+<link>
+EOF
+)
+work-item log <id> status=done "evidence=$ev"
+```
+
+`'evidence=<link>'` above, and in the other skills, is shorthand for this.
+
+The board is not committed by hand: the item files are plain files in the state
+repo and the Stop hook commits and pushes them. Proofs live in the log's
+`evidence=`.
 
 ## Output
 
-Under 15 lines: what was deleted and why, what moved and where, the
+Under 15 lines: what was retired and why, what moved and where, the
 reranked list. A dry run prints the same with `would` in front.

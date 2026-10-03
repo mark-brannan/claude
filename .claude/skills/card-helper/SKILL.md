@@ -1,6 +1,6 @@
 ---
 name: card-helper
-description: Walk the user through one open-loop card, one step at a time, with exact links, click paths and copy-paste commands. Use when they say "walk me through card N", "/card-helper", "escort me through this", or ask to work a specific item off kanban.md or a similar open-loops list. Not for doing the work autonomously — this is for loops only the user can close, in UIs and accounts an agent cannot reach.
+description: Walk the user through one open-loop card, one step at a time, with exact links, click paths and copy-paste commands. Use when they say "walk me through card N", "/card-helper", "escort me through this", or ask to work a specific card off the board or a similar open-loops list. Not for doing the work autonomously — this is for loops only the user can close, in UIs and accounts an agent cannot reach.
 ---
 
 # Walking a card
@@ -13,10 +13,13 @@ their screen outranks anything you believe about it.
 
 Run `/sweep` first, so a card already closed elsewhere is never walked.
 Find it the way `/card-write` routes; its rules are the contract, don't
-paraphrase them here. An issue is walked exactly like a card. A card can be
+paraphrase them here. An issue is walked exactly like a card. A card is an
+item file under `state/global/items/`: `~/.local/bin/work-item show <id>`
+prints it whole, and `work-item list` lists the live ones (owner
+`human-click` is what used to sit under `## Human's`). A card can be
 named by its id (`card 1790836842077c62eb`): `~/.local/bin/worklist card <id>`
 prints it with its section, and every message about it carries the id. The default
-is the card or issue the user names, else the top card under `## Human's`:
+is the card or issue the user names, else the top card owned `human-click`:
 that's the work only the user can close, which is what this skill is for.
 A card there carries `why you:` and `why this:`; read both before the
 first step, and if `why this:` no longer holds — the cause was something
@@ -75,12 +78,23 @@ same step. Losing their position is the one thing worse than a wrong step.
 
 ## Closing the card
 
-When the card is done, delete it and commit with a message naming what
-was closed. A `## Needs ruling` card stays on the board until the ruling
-has landed somewhere durable — the PR, the ADR, the doc it settles — then
-the same commit deletes the card. Say in one line what changed and stop.
+When the card is done, retire it as `/sweep` does, its Retire steps and
+[the lifecycle](../../../docs/work-item-lifecycle.md): `work-item claim <id>`
+(an `open` card gets `log <id> status=ready` first), then `log <id> status=done
+'evidence=<link>'` (the link that shows it; with none, one clause of the
+user's words with no `=` in it; quoted as `/sweep` quotes it, here-doc and
+variable, so a `'` in the text is safe), and stop. No skill
+writes `closed`. The Stop hook commits the item files. A card owned
+`human-ruling` stays until the ruling has landed somewhere durable — the PR,
+the ADR, the doc it settles — then it is retired the same way. Say in one
+line what changed and stop.
 
 If the walk stalls, write what you learned **into the card or issue**
+(a card: first `work-item fold <id>`; a `holder=` that is set with
+`holder_stale=no` means another live session has it, so say who and leave it
+alone, since `brief` does not check. Otherwise `work-item show <id>`, copy the
+text under `## Brief` minus the `points:` line, add the lines, send it back
+with `work-item brief <id> -`)
 before ending — the step that failed, what the UI actually showed, what
 would unblock it. A loop that has been half-walked twice with nothing
 recorded is worse than one nobody touched.

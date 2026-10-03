@@ -128,13 +128,19 @@ Re-run the `take` line first; a refusal now stops the filing, and a
 `read moved:` line means the record moved since the proposal. Then file
 each yes'd item exactly as proposed:
 
-- a card under `## Claude's` through `/card-write`, linking the target;
+- a card owned `agent`, worded as `/card-write` words one (a link to the
+  target in it), written to the item store with
+  `work-item create --owner agent [--repo <r>] [--model <m>] [--effort <e>] --brief - "$title"`
+  (the card text on stdin; it prints the new id; `$title` is read from a
+  quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe), then
+  `work-item log <id> status=ready` so it is claimable;
 - at most one GitHub issue this session, never a batch (Solace,
   2026-10-01, pen); further issue-homed items stay in the proposal, marked
   unfiled, and the hand-off names them.
 
 An item that rests on pencil says which, in the record's words, on its
-card or issue. Record what was filed in the proposal file, then:
+card or issue. Record what was filed in the proposal file (each card by its
+printed id), then:
 
 ```bash
 scoping-lock release <lock-folder> ${CLAUDE_SESSION_ID}
