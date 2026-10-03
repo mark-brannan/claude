@@ -345,9 +345,19 @@ public" section.
 
 ## Publishing
 
-- **npm publish: no OTP.** My npm account uses browser 2FA with a passkey.
-  Run plain `npm publish` and let it open (or print) the auth URL; I approve
-  in my browser. Don't ask me for authenticator codes or pass `--otp`.
+- **Run `npm-publish-bg`, not `npm publish`.** Same arguments, same
+  directory. My npm account uses browser 2FA with a passkey, so a publish
+  waits on an approval URL, and that URL is redacted from your tool result
+  before you see it: a plain publish stalls on an approval nobody was told
+  about. `npm-publish-bg` runs the publish detached and sends the URL to me
+  directly (browser, notification, terminal); I approve in my browser. You
+  never see it, by design. Don't ask me for it or try to print it, and never
+  ask me for an authenticator code or pass `--otp`. It returns a pid, a
+  logfile and the channels that took the URL; tail the log, confirm with
+  `npm view <pkg> dist-tags`. If no channel took it, tell me to `cat` the
+  log in my own terminal. `npm publish --dry-run` needs no approval and runs
+  plain. `~/.claude/hooks/npm-publish-auth.sh` denies a bare `npm publish`
+  and says so. That's the guard working, not something to route around.
 - **A new package's first publish is mine, from the CLI.** Trusted-publisher
   CI can't create a name that doesn't exist yet, and npm reports that as
   E404 on the `PUT`, not 403. Don't edit the workflow; run `/npm-first-publish`
