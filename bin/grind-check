@@ -8,6 +8,8 @@
 # worktrees, and GitHub through gh; it writes nothing. A GitHub lookup that
 # fails is a FAIL, never a PASS -- the same fail-closed rule as grind's
 # verify_* functions. N/A is a field this session file predates, or no items.
+# GitHub and the disk are read as they are now, so run it right after the run:
+# a PR closed or a branch pruned since then changes the answer.
 # Exit 0 when nothing failed, 1 when a row failed, 2 on a usage error.
 #
 # The vocabulary is bin/grind's: refs owner/repo#N or card:<slug>; branches
@@ -47,6 +49,7 @@ sj() { printf '%s' "$S" | jq -r "$@"; }
 # turn can overshoot, and a quarter of a cap is grind's own headroom ratio.
 overshoot_share=0.25
 pr_cap=1.25          # grind's pr_item_cap: a pr item's cap unless --item-budget said otherwise
+overcap_factor=1     # row 3: an undelivered item over this many times its cap; #439 says "over the cap"
 cheap_fail=0.50      # row 11: a "broken dependency" failure costs less than this
 
 # A file without kinds is an older session: prs, or issues -- grind's own
@@ -59,10 +62,12 @@ nitems=$(sj '.items | length? // 0')
 new_schema=$(sj 'if has("ended") or any(.items[]?; has("claim_released") or has("worker_sid")) then 1 else 0 end')
 
 # The run's window: start from the session id (an older id carries no lock
-# time worth trusting), end from `ended`, else the last heartbeat.
+# time worth trusting), end from `ended`, else the last heartbeat, else the
+# file's last write -- grind writes it as each item ends.
 start=$(printf '%s' "$session" | sed -n 's/^grind-\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)T\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)Z$/\1-\2-\3T\4:\5:\6Z/p')
 [ -n "$start" ] || start=$(sj '.lock.lock_acquired_at // ""')
 end=$(sj '.ended.at // .lock.last_heartbeat_at // ""')
+[ -n "$end" ] || end=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || end=""
 epoch() { [ -n "$1" ] && jq -rn --arg t "$1" '$t | fromdateiso8601' 2>/dev/null; }
 start_e=$(epoch "$start"); end_e=$(epoch "$end")
 in_window() {  # in_window <iso> -- inside [start, end], open-ended when end is unknown
@@ -202,16 +207,16 @@ else
   if gt "$total" "$limit"; then row 2 spend FAIL "$ev"; else row 2 spend PASS "$ev"; fi
 fi
 
-# 3. no item spent over twice its cap and delivered nothing.
+# 3. no item spent over its cap and delivered nothing.
 : > "$off"
 while IFS=$US read -r _ ref kind _ _ status cost _; do
   cap=$item_budget; [ "$kind" = pr ] && ! gt "$pr_cap" "$item_budget" && cap=$pr_cap
-  [ "$status" != "done" ] && gt "$cost" "$(awk -v c="$cap" 'BEGIN { print 2 * c }')" \
+  [ "$status" != "done" ] && gt "$cost" "$(awk -v c="$cap" -v f="$overcap_factor" 'BEGIN { print f * c }')" \
     && echo "$ref $status at $(usd "$cost") (cap $(usd "$cap"))" >> "$off"
 done < <(each_item)
 if [ "$nitems" -eq 0 ]; then row 3 over-cap N/A "no items"
 elif [ -s "$off" ]; then row 3 over-cap FAIL "$(brief "$off")"
-else row 3 over-cap PASS "no undelivered item over 2x its cap ($nitems checked)$ib_note"
+else row 3 over-cap PASS "no undelivered item over ${overcap_factor}x its cap ($nitems checked)$ib_note"
 fi
 
 # 4. no ref attempted more than twice, nor after a done record for it. A pr ref
@@ -391,7 +396,7 @@ others=$(printf '%s\n' "$srepo" "$cwd_repo" "$(cut -d "$US" -f4 "$items_tsv")" |
 while IFS=$US read -r _ ref kind repo branch _; do
   [ "$kind" = pr ] && continue
   if [ "$kind" = card ]; then
-    named=$(card_named_repo "${ref#card:}" 2>/dev/null) || named=""
+    named=$(card_named_repo "${ref#card:}" 2>/dev/null) || { echo "$ref: no card file to read its repo from" >> "$off"; continue; }
     [ "$named" = - ] && { echo "$ref: a general card, names no repo, worked in $repo" >> "$off"; continue; }
   fi
   [ -n "$branch" ] || continue

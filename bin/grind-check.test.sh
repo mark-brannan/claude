@@ -169,6 +169,10 @@ case $(evidence 2) in *"pr cap stands in"*) ok ;; *) bad 'row 2 says the pr cap 
 # 3. over twice the cap with nothing delivered
 mk over-cap ".items += [$(item o/alpha#6 failed 10.5)]"
 expect over-cap 3 FAIL 'a failed item at $10.50 against a $5 cap'
+mk over-cap-just ".items += [$(item o/alpha#6 failed 5.06)]"
+expect over-cap-just 3 FAIL 'a failed item at $5.06 against a $5 cap, as #98 did'
+mk at-cap ".items += [$(item o/alpha#6 failed 5)]"
+expect at-cap 3 PASS 'a failed item at exactly its cap is not over it'
 mk over-cap-done '.items[0].cost = 10.5'
 expect over-cap-done 3 PASS 'a done item over the cap delivered something'
 
@@ -193,6 +197,11 @@ mk false-fail ".items += [$(item o/alpha#8 failed 1.0)]"
 expect false-fail 6 FAIL 'a failed issue whose branch got a PR in the run'
 mk false-fail-pr ".items += [$(item o/alpha#31 failed 1.0)]"
 expect false-fail-pr 6 FAIL 'a failed fixup whose head moved in the run'
+# No ended and no heartbeat: the file's last write ends the window, so a PR
+# a later run opened at 10:30 is not this run's.
+mk no-end ".items += [$(item o/alpha#8 failed 1.0)] | del(.ended, .lock.last_heartbeat_at)"
+TZ=UTC touch -t 202610031020.00 "$S/st/no-end/$SID.json"
+expect no-end 6 PASS 'a PR opened after the file'"'"'s last write is a later run'"'"'s'
 
 # 7. claims released
 mk unreleased '.items[0].claim_released = false'
@@ -228,6 +237,8 @@ mk wrong-repo ".items += [$(item o/beta#12 blocked 0.1)]"
 expect wrong-repo 9 FAIL 'alpha#5'"'"'s branch opened a PR in beta during the run'
 mk general-card ".items += [$(item card:tidy-everything blocked 0.1)]"
 expect general-card 9 FAIL 'a general card that names no repo'
+mk no-card-file ".items += [$(item card:no-such-card blocked 0.1)]"
+expect no-card-file 9 FAIL 'a card with no file cannot show its repo'
 # No invoked_cwd on record: the reviewer's own cwd must not stand in for it.
 git init -q "$HOME/beta" && git -C "$HOME/beta" remote add origin https://github.com/o/beta.git
 mk no-cwd 'del(.lock.invoked_cwd)'
