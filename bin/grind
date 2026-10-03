@@ -1139,11 +1139,11 @@ while [ "$i" -lt "$count" ]; do
   i=$((i + 1))
   kind=$(printf '%s' "$item" | jq -r '.kind')
   # The item's repo is the run's from here to the next item: every gh call
-  # below reads $repo, every git call cuts from its checkout. Paths carry the
-  # repo name only in a project grind, where #5 in two repos would collide.
+  # below reads $repo, every git call cuts from its checkout. Paths always carry
+  # the repo name: #5 in two repos would collide, and one pattern covers every run.
   repo=$(printf '%s' "$item" | jq -r '.repo'); checkout=$(checkout_for "$repo") || { no_checkout "$repo"; continue; }
   parent=$(printf '%s' "$item" | jq -r '.parent // ""')
-  wt_base=$worktree_root; [ -n "$project$parent" ] && wt_base="$worktree_root/${repo##*/}"
+  wt_base="$worktree_root/${repo##*/}"
   number=$(printf '%s' "$item" | jq -r '.number // ""')
   title=$(printf '%s' "$item" | jq -r '.title')
   slug=$(printf '%s' "$item" | jq -r '.slug // ""')
