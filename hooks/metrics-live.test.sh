@@ -763,6 +763,15 @@ o=$(BP bed4 "$wantp")
 t 'without a tz in location.json the clock is Pacific' "bed at $wantp noted" "$(msg "$o")"
 clock_clear
 
+# A METRICS_NOW that is not a plain integer is ignored: the hook stays on the
+# real clock and the value is never evaluated.
+rm -f "$SCRATCH/pwned"
+payload "$TPb" bedx "$SCRATCH" UserPromptSubmit "go on" \
+  | env METRICS_NOW="a[\$(touch $SCRATCH/pwned)]" METRICS_STOP_HOUR=24 bash "$HOOK" prompt 0 >/dev/null 2>&1
+t 'a non-integer METRICS_NOW runs nothing' no "$([ -e "$SCRATCH/pwned" ] && echo yes || echo no)"
+t 'and the hook still records its session on the real clock' yes \
+  "$([ "$(jq -r '.updated_at[0:4]' "$STATE/metrics/live/be/bedx.json" 2>/dev/null)" = "$(date -u +%Y)" ] && echo yes || echo no)"
+
 # --- 6c. model injection: decision load, mirrors section 6 --------------------
 # askturn() is turn() with an assistant "ask" message, the shape
 # session-metrics.jq counts as a decision pushed to the user.

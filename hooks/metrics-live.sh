@@ -193,8 +193,11 @@ fi
 # METRICS_NOW pins the wall clock to an epoch, for tests: the bedtime arms
 # compare minute-rounded times against it, so a test that reads the real clock
 # is red at some minutes of the hour and green at others.
-now_ts=${METRICS_NOW:-$(date +%s)}
-now=$(date -u -d "@$now_ts" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$now_ts" +%Y-%m-%dT%H:%M:%SZ)
+# Only a plain integer is taken: the value feeds shell arithmetic.
+now_ts=${METRICS_NOW:-}
+case "$now_ts" in ''|*[!0-9]*) now_ts=$(date +%s) ;; esac
+now=$(date -u -d "@$now_ts" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$now_ts" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u +%Y-%m-%dT%H:%M:%SZ)
 work_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || echo "")
 work_repo=$([ -n "$work_root" ] && basename "$work_root" || basename "$cwd")
 work_branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
