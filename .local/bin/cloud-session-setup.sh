@@ -63,6 +63,12 @@ INSTALL="
 .claude/skills/agora/brief.md
 .claude/skills/curia/SKILL.md
 .claude/skills/curia/template.md
+.claude/skills/curia/forms/agent-notes.md
+.claude/skills/curia/forms/working-backwards.md
+.claude/skills/curia/forms/problem-then-solution.md
+.claude/skills/curia/forms/bdd.md
+.claude/skills/curia/forms/mvp-and-narrative.md
+.claude/skills/curia/forms/success-metric.md
 .claude/skills/scoping/SKILL.md
 .claude/hooks/lib-state.sh
 .claude/hooks/lib_state.py
