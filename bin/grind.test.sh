@@ -312,6 +312,7 @@ cat > "$S/bin/claude" <<GH
 cat > "$S/prompt.txt"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
+f=\$(ls -t "$S/state/grind"/*.json 2>/dev/null | head -1); [ -z "\$f" ] || cp "\$f" "$S/session-mid.json"
 echo \$((n + 1)) > "$S/claude-next"
 stage="$S/claude-stage/\$n"
 [ -d "\$stage" ] && { mkdir -p .claude-staging && cp -r "\$stage"/. .claude-staging/; }
@@ -423,6 +424,35 @@ PROMPT=$(cat "$S/prompt.txt")
 prompt_has 'the worker is told where to stop' 'stop and report at ~$5'
 has 'the next item is not started with less than its cap left' '^pause: session budget left \(\$4\.00 of \$6\.00\) is below o/alpha#20.s cap \(\$5\.00\)'
 eq 'the session file says why it ended' 'pause-budget 0' "$(jq -r '"\(.ended.reason) \(.ended.exit)"' "$(latest_session)")"
+
+# A session budget under the default item cap still dispatches: a cap nobody
+# asked for is clamped to the session. One the user gave is kept, and the
+# dry run says nothing will start.
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+reply 1.00 "done" 1
+: > "$CLAUDE_LOG"
+run --session-budget 2 --pause-every 10
+assert 'a $2 session under the $5 default starts its first item' [ "$(calls_claude)" -ge 1 ]
+PROMPT=$(cat "$S/prompt.txt")
+prompt_has 'the clamped cap is the stop point' 'stop and report at ~$2'
+rm -f "$S/state/grind"/*.json
+run --dry-run --session-budget 2
+has 'dry run shows the clamped cap' 'budget:   stop at ~\$2\.00, backstop \$2\.00'
+lacks 'no warning when the cap fits' 'WARN:'
+run --dry-run --session-budget 2 --item-budget 5
+has 'an explicit cap over the session is kept' 'budget:   stop at ~\$5\.00, backstop \$2\.00'
+has 'and the dry run says nothing will start' 'WARN: +the session \(\$2\.00\) is below this item.s cap \(\$5\.00\); a real run pauses here and starts nothing'
+
+# --- --resume clears the last run's .ended once it holds the lock ---------------
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$S/session-mid.json"
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+sess=$(latest_session)
+eq 'first run paused on cadence' 'pause-cadence' "$(jq -r '.ended.reason' "$sess")"
+run --resume "$(basename "$sess" .json)"
+eq 'the resumed run started a worker' 2 "$(calls_claude)"
+eq 'mid-run, the session file has no stale .ended' 'null' "$(jq -c '.ended' "$S/session-mid.json")"
+assert 'and it ends with its own' test "$(jq -r '.ended.reason' "$sess")" != null
 
 # --- carded: logged, not a failure, item still counted toward pause-every -------
 # The card is verified: the issue gained a comment while the worker ran.

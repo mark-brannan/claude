@@ -294,6 +294,13 @@ if [ "$prs" -eq 1 ]; then
   [ "$item_budget_set" -eq 0 ] && item_budget=$pr_item_cap
   [ "$session_budget_set" -eq 0 ] && session_budget=5
 fi
+# A cap nobody asked for never exceeds the session: an item starts only with
+# its whole cap left, so a $2 session under the $5 default started nothing.
+# An --item-budget the user gave is kept, and the dry run says what it costs.
+clamp_cap() {  # clamp_cap <cap> -> the cap, at most the session budget
+  awk -v c="$1" -v s="$session_budget" 'BEGIN { printf "%g", (c > s) ? s : c }'
+}
+[ "$item_budget_set" -eq 1 ] || item_budget=$(clamp_cap "$item_budget")
 
 # A logged-out claude fails every item the same way -- a $0, 0-token result
 # whose only content is "OAuth session expired" -- and until 2026-09-16 that
@@ -498,6 +505,11 @@ if [ "$dry_run" -eq 0 ]; then
   trap 'end_reason=signal; exit 130' INT
   lock_acquired_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   write_lock
+  # A resumed session is running again: the last run's `.ended` goes now,
+  # not when this one exits, so a reader mid-run never sees it.
+  if [ -n "$resume_id" ] && jq 'del(.ended)' "$state_file" > "$state_file.tmp" 2>/dev/null; then
+    mv "$state_file.tmp" "$state_file"
+  fi
 fi
 
 # refs (owner/repo#N) already accounted for from a prior run of this session,
@@ -1059,6 +1071,7 @@ while [ "$i" -lt "$count" ]; do
   # kind's cap unless --item-budget said otherwise.
   item_cap=$item_budget
   [ "$kind" = pr ] && [ "$item_budget_set" -eq 0 ] && item_cap=$pr_item_cap
+  [ "$item_budget_set" -eq 1 ] || item_cap=$(clamp_cap "$item_cap")
 
   is_done_ref "$ref" && continue
 
@@ -1140,6 +1153,10 @@ while [ "$i" -lt "$count" ]; do
     fi
     printf '  command:  %s\n' "$cmd_display"
     printf '  budget:   stop at ~%s, backstop %s\n' "$(fmt_usd "$item_cap")" "$(fmt_usd "$left")"
+    if [ "$(awk -v l="$left" -v c="$item_cap" 'BEGIN { print (l < c) ? 1 : 0 }')" -eq 1 ]; then
+      printf '  WARN:     the session (%s) is below this item'"'"'s cap (%s); a real run pauses here and starts nothing\n' \
+        "$(fmt_usd "$left")" "$(fmt_usd "$item_cap")"
+    fi
     continue
   fi
 
