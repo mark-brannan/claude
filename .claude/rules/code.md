@@ -322,6 +322,13 @@ public" section.
   trip on non-obvious behavior later — a why, not a what. Default to a
   single line; two only when genuinely needed, and say the essential thing
   plainly rather than reasoning through it in prose.
+- **No decision history in code, skills or other md.** What was decided,
+  by whom, when, in which sitting: that belongs in the curia, ADR or
+  decision log. A comment may point to where the design lives, by a
+  relative path or item id, never naming a private repo. On a dangerous
+  or counterintuitive line, it may say why in one line, alone or with a
+  link to whatever explains it best. The design changes; the pointer
+  tells the reader where to look, not what was settled.
 - **Don't touch README/docs/design-docs on a small or mechanical change**
   unless skipping the edit would leave them factually wrong. A defensive
   guard, a rename, a bug fix: code and tests only. Scar: repeated doc/comment
