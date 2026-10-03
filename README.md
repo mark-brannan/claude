@@ -14,3 +14,7 @@ a copy stops matching dotfiles `main`.
 Pull requests here meet the same bar as dotfiles: one required check
 (`ci-gate / gate`), both secret scanners, a signed-commit, squash-only `main`,
 and an advisory Claude review.
+
+## Status
+
+Main is protected: changes land by pull request, never by direct push.
