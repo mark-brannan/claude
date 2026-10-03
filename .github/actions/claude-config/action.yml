@@ -20,7 +20,9 @@ inputs:
       signed `claude-config/vN` release tag, reviewed and hardware-key
       signed before promotion) has not been built yet; once it lands, this
       default moves to the newest such tag instead of `main`. A caller that
-      wants a pin today can already pass a full commit SHA here.
+      wants a pin today can already pass a full commit SHA here. The pin
+      covers this repo only: the four guard hooks still come from
+      mark-brannan/dotfiles `main`, floating, whatever `ref` says.
     required: false
     default: main
 
@@ -46,7 +48,7 @@ runs:
 
     # cloud-session-setup.sh is this repo's own installer, documented for
     # exactly this invocation shape (CLOUD_SESSION=1, a checkout at
-    # $CLAUDE_SEED). It always exits 0 -- a missing dotfile must never
+    # $CLAUDE_SEED). It always exits 0 -- a missing file must never
     # fail a cloud session or a CI job -- so the status file below, not this
     # step's exit code, is what says whether the install actually completed.
     - name: Run cloud-session-setup.sh

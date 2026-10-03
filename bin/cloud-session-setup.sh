@@ -389,7 +389,8 @@ for name in $GUARD_HOOKS; do
     installed=$((installed + 1)); continue
   fi
   dst="$STAGE_TMP/$path"
-  mkdir -p "$(dirname "$dst")" && cp -a "$src" "$dst" ||
+  # -L: a guard that is a symlink in dotfiles would dangle inside the release.
+  mkdir -p "$(dirname "$dst")" && cp -L "$src" "$dst" ||
     { warn "  FAILED to stage $path"; failed=$((failed + 1)); continue; }
   installed=$((installed + 1))
 done
