@@ -76,6 +76,7 @@ case "\$1 \$2" in
   "pr view")    f="$S/prview/\$(printf '%s' "\$3" | tr '/:' '__').json"; [ -f "\$f" ] && jq -r "\$filter" "\$f" ;;
   "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
   "api repos/"*"/issues/"*) if [ -f "$S/updated-at" ]; then cat "$S/updated-at"; else echo 2999-01-01T00:00:00Z; fi ;;
+  "api user")   echo grind-me ;;
   *) echo "gh shim: unexpected \$*" >&2; exit 1 ;;
 esac
 GH
@@ -1795,6 +1796,7 @@ case "\$1 \$2" in
   "pr view")    f="$S/prview/\$(printf '%s' "\$3" | tr '/:' '__').json"; [ -f "\$f" ] && jq -r "\$filter" "\$f" ;;
   "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
   "api repos/"*"/issues/"*) if [ -f "$S/updated-at" ]; then cat "$S/updated-at"; else echo 2999-01-01T00:00:00Z; fi ;;
+  "api user")   echo grind-me ;;
   *) echo "gh shim: unexpected \$*" >&2; exit 1 ;;
 esac
 GH
@@ -2015,8 +2017,12 @@ cat > "$S/ready.json" <<'JSON'
 [{"number": 17, "title": "Cross-repo item", "body": "fix it in .github", "url": "https://github.com/o/alpha/issues/17", "labels": [{"name": "ready"}]}]
 JSON
 mkdir -p "$S/prview"
-echo '{"createdAt": "2999-01-01T00:00:00Z"}' > "$S/prview/https___github.com_o_dotgithub_pull_47.json"
-echo '{"createdAt": "2001-01-01T00:00:00Z"}' > "$S/prview/https___github.com_o_alpha_pull_3.json"
+pv() { jq -nc --arg c "$2" --arg a "$3" --arg h "$4" --arg b "$5" '{createdAt:$c, author:{login:$a}, headRefName:$h, body:$b}' > "$S/prview/$1.json"; }
+pv https___github.com_o_dotgithub_pull_47 2999-01-01T00:00:00Z grind-me fix-it 'Fixes it. Grind item: o/alpha#17'
+pv https___github.com_o_alpha_pull_3 2001-01-01T00:00:00Z grind-me old 'Grind item: o/alpha#17'
+pv https___github.com_o_dotgithub_pull_48 2999-01-01T00:00:00Z someone-else fix-it 'Grind item: o/alpha#17'
+pv https___github.com_o_dotgithub_pull_49 2999-01-01T00:00:00Z grind-me unrelated 'Some other work entirely'
+pv https___github.com_o_dotgithub_pull_50 2999-01-01T00:00:00Z grind-me grind-17 'no marker, but on the item branch'
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$CLAUDE_LOG"
 said 1 0.80 'The fix belongs in o/dotgithub: opened https://github.com/o/dotgithub/pull/47 (see also https://github.com/o/alpha/pull/3).
 GRIND_STATUS: done'
@@ -2031,6 +2037,28 @@ said 1 0.80 'Already in flight as https://github.com/o/alpha/pull/3.
 GRIND_STATUS: done'
 run --session-budget 100 --pause-every 1
 has 'an old PR it names does not verify done' '^UNVERIFIED: o/alpha#17 -- Cross-repo item -- worker claimed success but no PR opened'
+# a PR another account opened, or one with no tie to the item, is not its work
+git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+said 1 0.80 'Opened https://github.com/o/dotgithub/pull/48 and https://github.com/o/dotgithub/pull/49.
+GRIND_STATUS: done'
+KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
+has 'a PR by another account, or untied to the item, does not verify done' '^UNVERIFIED: o/alpha#17'
+# a PR on the item's own branch needs no marker
+git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+said 1 0.80 'Opened https://github.com/o/dotgithub/pull/50.
+GRIND_STATUS: done'
+KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
+has 'a PR on the item branch verifies done' '^o/alpha#17: Cross-repo item -- sonnet'
+# a failed or unverified outcome is not a skip marker: the next fresh run retries the item
+git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+fid=$(basename "$(home_of 'o/alpha#17')" .md)
+CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log "$fid" grind outcome=unverified run=grind-x said: nothing >/dev/null
+CLAUDE_CODE_SESSION_ID=feed0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log "$fid" cost tokens=1 usd=0.1 by=grind >/dev/null
+rm -f "$S/state/grind"/*.json
+KEEP_RECORDS=1 run --dry-run
+lacks 'an unverified outcome does not park the item' 'o/alpha#17 -- SKIP'
 # a status mentioned mid-sentence is not a claim; a line that opens with one is
 git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json

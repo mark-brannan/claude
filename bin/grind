@@ -721,11 +721,15 @@ home_item() {
   return 0
 }
 # grind_seen <item id> -> "<at> <changed: yes|no> <outcome> <run>" for grind's
-# last outcome line on the item, or nothing. changed is yes when a line from
-# any other session follows it.
+# last done, blocked or carded outcome line on the item, or nothing. changed is
+# yes when a line from any other session follows it. A failed or unverified
+# outcome is not a marker -- grind learned nothing, and the item is retried --
+# and neither is any grind cost line.
 grind_seen() {
   [ -f "$items_dir/$1.md" ] || return 0
   awk '/^## Log/ { l = 1; next } /^## / { l = 0 } !l || NF < 3 { next }
+       $NF == "by=grind" { next }
+       NF >= 4 && $3 == "grind" && $4 ~ /^outcome=(failed|unverified)$/ { next }
        NF >= 4 && $3 == "grind" && $4 ~ /^outcome=/ {
          t = $1; s = $2; o = substr($4, 9); r = "-"; ch = "no"
          for (i = 5; i <= NF; i++) if ($i ~ /^run=/) r = substr($i, 5)
@@ -1000,6 +1004,9 @@ build_prompt() {
   printf 'move itself before opening or checking your PR, since it is not sandboxed\n'
   printf 'the way you are. Do not try Write, a heredoc, mv, or any other route into\n'
   printf '.claude/ directly -- it is refused every time.\n\n'
+  printf 'If the PR has to land in a different repository, put the line\n'
+  printf '`Grind item: %s` in its body: grind counts a PR in another repo only\n' "$p_ref"
+  printf 'when it carries that line, or sits on branch %s.\n\n' "$p_branch"
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
   printf '  GRIND_STATUS: done     the PR is open. grind checks that a PR exists\n'
   printf '                         with head branch %s and records the item\n' "$p_branch"
@@ -1110,15 +1117,24 @@ last_status() {
   printf '%s\n' "$1" | grep -oE "$status_line_re" | tail -n 1 | sed 's/.*: //'
 }
 
-# prs_opened_since <ISO 8601> <urls, one per line> -> the ones GitHub says
-# were opened at or after then. A lookup that fails drops that URL: a PR
-# grind cannot see is not one it can vouch for.
+# prs_opened_since <ISO 8601> <urls, one per line> <branch> <item ref> -> the
+# ones that are this item's work: opened at or after then, by the account grind
+# runs as, and either on the item's branch or carrying a `Grind item: <ref>`
+# line in the body (the worker is told to write one for a PR in another repo).
+# A PR another session opened during the run, or one the worker merely names,
+# fails the author or the relation test. A lookup that fails drops that URL: a
+# PR grind cannot see is not one it can vouch for.
 prs_opened_since() {
+  printf '%s' "$2" | awk 'NF' | grep -q . || return 0
+  me=$(gh api user --jq .login 2>/dev/null) || me=""
+  [ -n "$me" ] || return 0
   printf '%s\n' "$2" | while IFS= read -r u; do
     [ -n "$u" ] || continue
-    c=$(gh pr view "$u" --json createdAt --jq .createdAt 2>/dev/null) || continue
-    case "$c" in 2[0-9][0-9][0-9]-*) ;; *) continue ;; esac
-    if [ "$(printf '%s\n%s\n' "$1" "$c" | sort | tail -n 1)" = "$c" ]; then printf '%s\n' "$u"; fi
+    j=$(gh pr view "$u" --json createdAt,author,headRefName,body 2>/dev/null) || continue
+    printf '%s' "$j" | jq -e --arg s "$1" --arg me "$me" --arg b "$3" --arg r "$4" \
+      '(.createdAt // "") >= $s and .author.login == $me
+       and (.headRefName == $b or ((.body // "") | contains("Grind item: " + $r)))' >/dev/null 2>&1 || continue
+    printf '%s\n' "$u"
   done
 }
 
@@ -1671,7 +1687,7 @@ while [ "$i" -lt "$count" ]; do
   [ -n "$(last_status "$claim_text")" ] || claim_text=${status_text:-$last_text}
   # The PRs it opened, in any repo: every PR URL it named that GitHub says
   # was opened since it started.
-  opened_prs=$(prs_opened_since "$started_iso" "$pr_urls")
+  opened_prs=$(prs_opened_since "$started_iso" "$pr_urls" "$branch" "$ref")
   status="done"
   case "$(last_status "$claim_text")" in
     carded)  status=carded ;;
