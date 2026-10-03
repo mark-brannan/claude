@@ -1,0 +1,196 @@
+#!/bin/sh
+# Run `npm publish` in the background and hand the browser-2FA approval URL
+# to the human directly -- desktop notification, and the controlling terminal
+# -- instead of returning it on stdout.
+#
+# Why this exists: this npm account uses browser passkey 2FA (see
+# ~/.claude/rules/code.md, "Publishing"). `npm publish` prints the approval
+# URL mid-run, and that URL is one of the strings an agent harness redacts
+# from a tool result before the agent sees it -- so an agent running plain
+# `npm publish` can neither read the URL nor pass it on, and the publish
+# stalls waiting for an approval nobody was told about.
+#
+# So this wrapper never prints the URL at all. It goes out of band, on the
+# one channel that does not pass back through the agent. What comes back on
+# stdout is only the pid and the logfile.
+#
+# Returns as soon as npm has had a chance to print the URL; the upload and
+# the approval itself continue in the background. A zero exit means the
+# publish was *started*, not that it succeeded -- read the log for that.
+#
+# Usage: npm-publish-bg [args passed through to `npm publish`]
+set -u
+
+STATE_DIR="${NPM_PUBLISH_BG_STATE:-$HOME/.local/state/npm-publish-bg}"
+
+# How long to wait for npm to print an auth URL before returning. Only the
+# "does this need browser approval" part of the publish happens inside this
+# window; everything else proceeds after we return.
+WAIT="${NPM_PUBLISH_BG_WAIT:-12}"
+case "$WAIT" in ''|*[!0-9]*) WAIT=12 ;; esac
+[ "$WAIT" -gt 60 ] && WAIT=60
+
+die() { printf 'npm-publish-bg: %s\n' "$1" >&2; exit 1; }
+
+# The logfile holds the approval URL npm printed -- a live credential for as
+# long as it is unapproved. Owner-only, and the directory too in case it was
+# created by an earlier, laxer version of this script.
+umask 077
+
+command -v npm >/dev/null 2>&1 || die "npm is not on PATH"
+mkdir -p "$STATE_DIR" || die "cannot create $STATE_DIR"
+chmod 700 "$STATE_DIR" 2>/dev/null || true
+
+# One publish in flight per working directory. Keyed on the directory, not
+# on the argument list: two differently-worded publishes from the same
+# package still contend for the same account's single browser 2FA prompt,
+# and running both at once serves nobody.
+#
+# The lock is a `flock` on a file, held not by this script but by the
+# detached publish itself -- the fd is inherited across the fork and the
+# exec, and the kernel drops the lock when npm exits, however it exits.
+# (The fd reaches anything npm itself leaves running, so a lifecycle script
+# that daemonises would hold the lock past npm's own exit. That is the safe
+# direction to err in; the reported pid says who to look at.)
+# Nothing is ever left behind to reclaim, which is the point: a lock built on
+# "is this recorded pid still alive" has to decide when a holder is dead, and
+# every version of that decision races another caller making it at the same
+# instant. There is nothing here to race.
+#
+# It also rules out the age-based reclaim a pid lock tempts you into. npm can
+# sit waiting on a browser approval for well over an hour with nobody at the
+# keyboard, and a timeout that fired then would truncate the live copy's
+# logfile out from under it and start a second, concurrent publish.
+key=$(pwd | cksum | cut -d' ' -f1)
+lockfile="$STATE_DIR/$key.lock"
+pidfile="$STATE_DIR/$key.pid"
+logfile="$STATE_DIR/$key.log"
+
+busy() {
+  printf 'npm publish is already running here (pid %s, log %s).\n' \
+    "$(cat "$pidfile" 2>/dev/null || echo unknown)" "$logfile" >&2
+  printf 'Tail that log; do not start a second one.\n' >&2
+  exit 1
+}
+
+# Without flock(1) -- notably a stock macOS -- fall back to an atomic mkdir,
+# which the publish removes on its way out. A lock left behind by a hard kill
+# is then cleared by hand: rare, visible, and named in the message, which
+# beats guessing at liveness and getting it wrong under concurrency.
+# NPM_PUBLISH_BG_LOCK=mkdir forces the fallback. Its only caller is the test
+# suite: CI runs on Linux, where flock always exists, so without this the
+# path that macOS actually takes would never run under test.
+lockdir="$STATE_DIR/$key.lockdir"
+if [ "${NPM_PUBLISH_BG_LOCK:-}" != mkdir ] && command -v flock >/dev/null 2>&1; then
+  exec 9>"$lockfile" || die "cannot write $lockfile"
+  flock -n 9 || busy
+  HOLD=flock
+elif mkdir "$lockdir" 2>/dev/null; then
+  HOLD="mkdir"
+  # The child removes this on its way out, but only once there *is* a child.
+  # Between the claim and the handoff every failure path -- an unwritable
+  # logfile, a spawn that never lands a pid -- would otherwise strand a lock
+  # with no process to point at and no pid in the message. The trap covers
+  # exactly that window and is cleared the moment the child owns the lock.
+  trap 'rmdir "$lockdir" 2>/dev/null' EXIT HUP INT TERM
+else
+  printf 'npm publish is locked here (%s).\n' "$lockdir" >&2
+  printf 'If no publish is running, clear it: rmdir %s\n' "$lockdir" >&2
+  exit 1
+fi
+
+# Best effort on every channel available: a desktop notifier if one exists,
+# and -- because it is the one channel guaranteed not to be redacted or
+# routed back through an agent -- the controlling terminal directly. Silently
+# a no-op on a headless session with neither; that is fine, browser passkey
+# 2FA implies a human at a machine to begin with.
+notify() {
+  msg=$1
+  command -v notify-send >/dev/null 2>&1 && notify-send "npm publish" "$msg" 2>/dev/null
+  # Pass $msg as an argv element rather than building it into the AppleScript
+  # source: it carries text npm wrote to its own stdout, reachable in
+  # principle by a compromised transitive dependency's lifecycle script, and
+  # a stray quote must not break out of a string literal into script.
+  command -v osascript >/dev/null 2>&1 && osascript \
+    -e 'on run argv' \
+    -e 'display notification (item 1 of argv) with title "npm publish"' \
+    -e 'end run' "$msg" >/dev/null 2>&1
+  { printf '\n\a[npm publish] %s\n' "$msg" >/dev/tty; } 2>/dev/null
+  return 0
+}
+
+: >"$logfile" || die "cannot write $logfile"
+
+# Detach into its own session where setsid exists. A browser approval can
+# outlive the caller by a long way -- and if the caller is an agent's shell
+# tool, it will kill its whole process group when its own timeout expires,
+# taking a still-pending publish with it. nohup is the fallback: it survives
+# the hangup, though not a process-group kill.
+#
+# The child records its own pid before handing off to npm, rather than
+# relying on `$!`, which under setsid is setsid's. Under flock it then
+# `exec`s, so the recorded pid *is* npm's and the inherited fd 9 carries the
+# lock for npm's whole life; under the mkdir fallback it stays one frame
+# longer to remove the lock directory afterwards.
+if [ "$HOLD" = flock ]; then
+  # shellcheck disable=SC2016  # the child shell expands these, not this one
+  child='p=$1; shift; echo $$ >"$p"; exec npm publish "$@"'
+  set -- "$pidfile" "$@"
+else
+  # shellcheck disable=SC2016  # ditto
+  child='p=$1; d=$2; shift 2; echo $$ >"$p"; npm publish "$@"; rc=$?; rmdir "$d" 2>/dev/null; exit $rc'
+  set -- "$pidfile" "$lockdir" "$@"
+fi
+
+# Read before the spawn, not after: the child may already have written.
+was=$(cat "$pidfile" 2>/dev/null || true)
+
+if command -v setsid >/dev/null 2>&1; then
+  setsid sh -c "$child" sh "$@" >"$logfile" 2>&1 </dev/null &
+else
+  nohup sh -c "$child" sh "$@" >"$logfile" 2>&1 </dev/null &
+fi
+
+# Wait for the child's pid to land. The file may still hold an older run's,
+# so wait for it to differ from what was there before the spawn.
+pid=""
+n=0
+while [ "$n" -lt 40 ]; do
+  p=$(cat "$pidfile" 2>/dev/null || true)
+  if [ -n "$p" ] && [ "$p" != "$was" ]; then pid=$p; break; fi
+  n=$((n + 1))
+  sleep 0.1
+done
+[ -n "$pid" ] || die "publish did not start (see $logfile)"
+
+# The child owns the lock from here; this shell must not take it away when it
+# returns in a moment, with npm still running.
+[ "$HOLD" = "mkdir" ] && trap - EXIT HUP INT TERM
+
+# Prefer a URL on npm's own domain -- npm's notice banner also prints
+# registry and docs links, and the first https:// in the log is often one of
+# those. Fall back to any URL rather than miss an approval prompt whose
+# wording changed.
+auth_url() {
+  grep -Eom1 'https://[^[:space:]]*npmjs\.com/[^[:space:]]*' "$logfile" 2>/dev/null && return 0
+  grep -Eom1 'https://[^[:space:]]+' "$logfile" 2>/dev/null
+}
+
+url=""
+end=$(( $(date +%s) + WAIT ))
+while [ "$(date +%s)" -lt "$end" ]; do
+  url=$(auth_url)
+  [ -n "$url" ] && break
+  kill -0 "$pid" 2>/dev/null || { url=$(auth_url); break; }
+  sleep 0.5
+done
+
+if [ -n "$url" ]; then
+  notify "Approve at: $url"
+  printf 'npm publish running in the background (pid %s, log %s).\n' "$pid" "$logfile"
+  printf 'An approval URL was sent to the terminal/notifications -- approve it there.\n'
+else
+  notify "publish started, no auth URL seen in ${WAIT}s -- check $logfile"
+  printf 'npm publish running in the background (pid %s, log %s).\n' "$pid" "$logfile"
+  printf 'No approval URL appeared within %ss; it may not need one. Tail the log.\n' "$WAIT"
+fi
