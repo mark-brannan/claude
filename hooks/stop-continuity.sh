@@ -211,6 +211,17 @@ state_lock_wait "$STATE_PUSH_LOCK" 90 || exit 0
 # detail turns out to be useful.
 sc_note() { printf '\n## Stop-commit\n\n%s\n' "$1" >> "$ckpt"; }
 
+# Whether a commit made here should be signed: yes exactly when this machine
+# has a signing key, the same test no-unsigned-push.sh uses (`git config
+# user.signingkey`) so the two can never disagree. A commit made unsigned on a
+# machine with a key is what that guard then refuses to push, forcing every
+# other session here to re-sign it; a cloud VM has no key and stays unsigned.
+# Prints the value for `-c commit.gpgsign=`. (The work-repo salvage commit
+# above does not use this: it is fail-closed and forces `true`, keyless or not.)
+sign_if_key() {
+  if git -C "$1" config user.signingkey >/dev/null 2>&1; then echo true; else echo false; fi
+}
+
 # ------------------------------------------------------------ the verdict
 # set_verdict [extra reason] -- computes the archive verdict (dotfiles#110)
 # and writes it into the checkpoint's placeholder line and into the session's
@@ -670,7 +681,7 @@ git diff --cached --quiet 2>/dev/null && exit 0   # nothing changed
 
 git -c user.name="${GIT_AUTHOR_NAME:-Claude}" \
     -c user.email="${GIT_AUTHOR_EMAIL:-noreply@anthropic.com}" \
-    -c commit.gpgsign=false \
+    -c commit.gpgsign="$(sign_if_key .)" \
     commit -q -m "State: $work_repo session ${sid:0:8} ($today)" >/dev/null 2>&1 || { set_verdict "state-repo commit failed"; exit 0; }
 
 # Debounce the push, not the commit: every Stop still commits locally (cheap,
