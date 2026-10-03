@@ -1261,11 +1261,19 @@ mkitem 17909840241dc56754 'alpha: tidy the widget' ready
 reply 0.30 blocked 1
 run --kind card --pause-every 10
 eq 'a blocked card is blocked' blocked "$(itemstatus 17909840241dc56754)"
+eq 'and names what unblocks it: a human line, since the worker cited nothing' human "$("$GRIND_WORK_ITEM" fold 17909840241dc56754 | sed -n 's/^until=//p')"
 assert "with grind's outcome line on it" grep -q ' grind outcome=blocked run=grind-' "$WORK_ITEM_DIR/17909840241dc56754.md"
 assert 'and its cost line' grep -qE ' cost tokens=150 usd=0\.30? by=grind$' "$WORK_ITEM_DIR/17909840241dc56754.md"
 rm -f "$S/state/grind"/*.json
 run --dry-run --kind card
 has 'the next run skips it' '^card:alpha-tidy-the-widget -- SKIP: grind recorded blocked at .*, and nothing has changed since$'
+# a blocked worker that cites an issue or PR names it as what unblocks the card
+forget_card
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$WORK_ITEM_DIR/17909840241dc56754.md"
+mkitem 17909840241dc56754 'alpha: tidy the widget' ready
+jq -nc '{type:"result", total_cost_usd:0.30, usage:{input_tokens:100,output_tokens:50}, result:"Ruled already in o/alpha#94; nothing to build.\nGRIND_STATUS: blocked"}' > "$S/claude-replies/1.json"
+run --kind card --pause-every 10
+eq 'until= is the ref the worker cited' 'o/alpha#94' "$("$GRIND_WORK_ITEM" fold 17909840241dc56754 | sed -n 's/^until=//p')"
 # a claim another live session holds is never taken over, and is found before
 # any spend: no worker runs
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json

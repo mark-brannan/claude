@@ -1063,7 +1063,13 @@ card_let_go() {
     wi log "$1" status=done "evidence=$3" >/dev/null || return 1
     commit_item "$1" "grind: worked card -- $title${3:+ -> $3}"
   elif [ "$2" = "blocked" ]; then
-    wi log "$1" status=blocked >/dev/null || return 1
+    # until= names what unblocks it (six-status ruling). Pencil: the first
+    # owner/repo#N the worker's note names -- a blocked answer usually cites
+    # the ruling or the PR it waits on -- else `human`: a line on the item
+    # from anyone but grind, which is exactly what the selection above reads
+    # as a change. One word, so it folds; one sed away from a better word.
+    until=$(printf '%s' "$note" | grep -oE '[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+' | head -n 1)
+    wi log "$1" status=blocked "until=${until:-human}" >/dev/null || return 1
     commit_item "$1" "grind: blocked card -- $title"
   else
     wi release "$1" >/dev/null || return 1
