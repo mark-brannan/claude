@@ -140,6 +140,8 @@ mk old 'del(.ended) | .items |= map(del(.claim_released, .wip_branch, .cost_esti
 expect old 1 N/A 'an old file has no ended field'
 eq 'and nothing else fails on it' 0 "$RC"
 case $(evidence 7) in *"not recorded (N/A)"*) ok ;; *) bad 'row 7 says claim_released is not recorded' "$OUT" ;; esac
+mk old-prs 'del(.kinds) | .prs = 1 | .items = [.items[1]]'
+expect old-prs 5 PASS 'a --prs file from before kinds works PRs, not issue branches'
 
 # 1. ended
 mk no-ended 'del(.ended)'

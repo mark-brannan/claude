@@ -49,7 +49,10 @@ overshoot_share=0.25
 pr_cap=1.25          # grind's pr_item_cap: a pr item's cap unless --item-budget said otherwise
 cheap_fail=0.50      # row 11: a "broken dependency" failure costs less than this
 
-srepo=$(sj '.repo // ""'); project=$(sj '.project // ""'); kinds=$(sj '.kinds // ""')
+# A file without kinds is an older session: prs, or issues -- grind's own
+# reading of it on --resume.
+srepo=$(sj '.repo // ""'); project=$(sj '.project // ""')
+kinds=$(sj '.kinds // (if .prs == 1 then "pr" else "issue" end)')
 item_budget=$(sj 'if (.item_budget // 0) > 0 then .item_budget else empty end'); session_budget=$(sj '.session_budget // empty')
 ib_note=""; [ -n "$item_budget" ] || { item_budget=$pr_cap; ib_note=" (item_budget not recorded; the pr cap stands in)"; }
 nitems=$(sj '.items | length? // 0')
