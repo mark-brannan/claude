@@ -17,7 +17,8 @@ the user's to form; this skill takes the strict reading until it is.
 
 Ancestor concepts: the one-way-door test (why it is here at all), the
 coaching kata (the same prompt, every sitting), context engineering (the
-durable document is the point).
+durable document is the point), Architecture Decision Records (ADR),
+"Working Backwards" PR/FAQ.
 
 ## What a curia is
 
@@ -155,12 +156,9 @@ Also create `agent-notes.md` and use this for salient thinking or memory
 that you want to share across sessions with future agents.
 
 If a session finds itself past gate 1 with a folder it created, the fix
-is not to delete it — that erases the evidence — but to fold it: move it
-under the curia it belongs to as `folded/<id>/`, carry its Unsettled line
-into that curia's `## Open questions`, and card the fold as a unilateral
-call. The three early placeholders (`andon-rubric`,
-`human-verbatim-first`, `settled-slider`) were folded into
-`one-entry-point` this way.
+is not to delete it but to fold it: its files into that curia's inputs/, its
+question under that curia's `## Open questions`, and card the fold as a
+unilateral call.
 
 ## Opening (`/curia <id>`)
 
