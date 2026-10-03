@@ -75,6 +75,10 @@ Never a free-text question outside Dig.
 A `learn` card under `## Human's` is never proposed. It drops only when
 the user says they have it.
 
+A `churn-ok` card is never shown as a question: the label is the user's
+alone, given on the PR (agora, 2026-10-01). Propose any you find as a
+Retired deletion, the ruling the proof.
+
 ## After the tick
 
 - **Retired:** retire the item (below); the proof is its `evidence=`.
