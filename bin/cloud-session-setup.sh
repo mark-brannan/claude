@@ -111,6 +111,7 @@ hooks/no-persistent-polling.sh
 hooks/no-late-pr-subscribe.sh
 hooks/pr-ownership-context.sh
 hooks/pr-threads-gate.sh
+hooks/npm-publish-auth.sh
 hooks/no-prose-gate.sh
 hooks/no-unsigned-push.sh
 hooks/no-update-branch.sh
@@ -138,6 +139,7 @@ bin/work-item
 bin/scoping-lock
 bin/gh-resolve-thread
 bin/pr-label-audit
+bin/npm-publish-bg
 "
 
 # Hooks that still live in mark-brannan/dotfiles at .claude/hooks/<name>,
