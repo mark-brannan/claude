@@ -1,0 +1,459 @@
+#!/usr/bin/env bash
+# grind-check -- after-run invariants for one grind session: one PASS/FAIL/N/A
+# row per failure mode in dotfiles#439, so a run is judged without its logs.
+#
+#   grind-check <session-id | path to session json> [--json]
+#
+# Read-only: it reads the session file, the lock, local branches and
+# worktrees, and GitHub through gh; it writes nothing. A GitHub lookup that
+# fails is a FAIL, never a PASS -- the same fail-closed rule as grind's
+# verify_* functions. N/A is a field this session file predates, or no items.
+# Exit 0 when nothing failed, 1 when a row failed, 2 on a usage error.
+#
+# The vocabulary is bin/grind's: refs owner/repo#N or card:<slug>; branches
+# grind-<n>, grind-card-<slug>, or a pr item's own head; worktrees under
+# ${TMPDIR:-/tmp}/grind-worktrees; the lock at <state>/locks/<scope>.lock.
+set -uo pipefail
+
+usage() { printf 'usage: grind-check <session-id | path to session json> [--json]\n'; }
+
+json=0; arg=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --json) json=1 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) printf 'grind-check: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) [ -z "$arg" ] || { usage >&2; exit 2; }; arg=$1 ;;
+  esac
+  shift
+done
+[ -n "$arg" ] || { usage >&2; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "grind-check: needs jq" >&2; exit 2; }
+
+state_root=${XDG_STATE_HOME:-$HOME/.local/state}/grind
+if [ -f "$arg" ]; then file=$arg
+elif [ -f "$state_root/$arg.json" ]; then file=$state_root/$arg.json
+elif [ -f "$state_root/grind-$arg.json" ]; then file=$state_root/grind-$arg.json
+else printf 'grind-check: no session %s (looked in %s)\n' "$arg" "$state_root" >&2; exit 2
+fi
+jq -e 'type == "object"' "$file" >/dev/null 2>&1 || { printf 'grind-check: %s is not a session file\n' "$file" >&2; exit 2; }
+sdir=$(cd "$(dirname "$file")" && pwd)
+session=$(basename "$file" .json)
+S=$(jq -c . "$file")
+sj() { printf '%s' "$S" | jq -r "$@"; }
+
+# Over the session budget by more than this share of one item's cap fails row
+# 2: the worker's hard cap is the remaining session budget, so only its last
+# turn can overshoot, and a quarter of a cap is grind's own headroom ratio.
+overshoot_share=0.25
+pr_cap=1.25          # grind's pr_item_cap: a pr item's cap unless --item-budget said otherwise
+cheap_fail=0.50      # row 11: a "broken dependency" failure costs less than this
+
+srepo=$(sj '.repo // ""'); project=$(sj '.project // ""'); kinds=$(sj '.kinds // ""')
+item_budget=$(sj '.item_budget // 0'); session_budget=$(sj '.session_budget // empty')
+nitems=$(sj '.items | length? // 0')
+new_schema=$(sj 'if has("ended") or any(.items[]?; has("claim_released")) then 1 else 0 end')
+
+# The run's window: start from the session id (an older id carries no lock
+# time worth trusting), end from `ended`, else the last heartbeat.
+start=$(printf '%s' "$session" | sed -n 's/^grind-\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)T\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)Z$/\1-\2-\3T\4:\5:\6Z/p')
+[ -n "$start" ] || start=$(sj '.lock.lock_acquired_at // ""')
+end=$(sj '.ended.at // .lock.last_heartbeat_at // ""')
+epoch() { [ -n "$1" ] && jq -rn --arg t "$1" '$t | fromdateiso8601' 2>/dev/null; }
+start_e=$(epoch "$start"); end_e=$(epoch "$end")
+in_window() {  # in_window <iso> -- inside [start, end], open-ended when end is unknown
+  [ -n "$start" ] || return 1
+  [[ ! "$1" < "$start" ]] || return 1
+  [ -z "$end" ] || [[ ! "$1" > "$end" ]]
+}
+
+cache=$(mktemp -d); trap 'rm -rf "$cache"' EXIT
+# memo <key> <cmd...> -- one gh round trip per question per check run.
+memo() {
+  local k; k=$cache/$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'); shift
+  if [ -f "$k.ok" ]; then cat "$k"; return 0; fi
+  [ -f "$k.err" ] && return 1
+  if "$@" > "$k" 2>/dev/null; then : > "$k.ok"; cat "$k"; else : > "$k.err"; return 1; fi
+}
+
+# --- an item's facts, in grind's terms ------------------------------------------
+ref_repo() { case $1 in card:*) return 1 ;; *) printf '%s' "${1%#*}" ;; esac; }
+ref_num()  { printf '%s' "${1##*#}"; }
+
+slugify() { jq -Rr 'ascii_downcase | gsub("[^a-z0-9]+"; "-") | ltrimstr("-") | rtrimstr("-") | .[:40] | rtrimstr("-")'; }
+# card_file <slug> -- the work item whose title (or brief) slugs to this card's slug.
+card_file() {
+  local dir=${WORK_ITEM_DIR:-$HOME/claude_prompts_scratch/state/global/items}
+  [ -d "$dir" ] || return 1
+  awk 'FNR == 1 { t = $0; sub(/^# /, "", t); print FILENAME "\t" t }
+       FNR > 1 && prev == "## Brief" { print FILENAME "\t" substr($0, 1, 60) }
+       { prev = $0 }' "$dir"/*.md 2>/dev/null \
+    | while IFS=$'\t' read -r f t; do
+        [ "$(printf '%s' "$t" | slugify)" = "$1" ] && { printf '%s' "$f"; break; }
+      done | grep .
+}
+# card_named_repo <slug> -- the repo a card names: its repo= field, else its
+# link's repo; "-" for a general card that names none.
+card_named_repo() {
+  local f r; f=$(memo "cardfile-$1" card_file "$1") || return 1
+  r=$(grep -o ' repo=[^ ]*' "$f" | tail -1 | sed 's/ repo=//')
+  if [ -z "$r" ] || [ "$r" = - ]; then
+    r=$(grep -oE 'https://github\.com/[^/ ]+/[^/ )]+/(issues|pull)/' "$f" | head -1 | sed -E 's#https://github\.com/([^/]+/[^/]+)/.*#\1#')
+  fi
+  printf '%s' "${r:--}"
+}
+# item_repo <ref> -- where grind worked it: the ref's repo, a card's named repo,
+# else the session's.
+item_repo() {
+  local r
+  if r=$(ref_repo "$1"); then printf '%s' "$r"; return 0; fi
+  r=$(card_named_repo "${1#card:}" 2>/dev/null) || r=""
+  case $r in ''|-) r=$srepo ;; esac
+  [ -n "$r" ] && printf '%s' "$r"
+}
+gh_kind() { gh api "repos/$1/issues/$2" --jq 'if .pull_request then "pr" else "issue" end'; }
+# item_kind <ref> <item json> -- pr, issue or card. A ref alone cannot tell a
+# PR from an issue, so: the item's own kind, the session's kinds, else GitHub.
+item_kind() {
+  local k
+  case $1 in card:*) echo card; return ;; esac
+  k=$(printf '%s' "$2" | jq -r '.kind // empty'); [ -n "$k" ] && { echo "$k"; return; }
+  case " $kinds " in *" pr "*) ;; *) echo issue; return ;; esac
+  case " $kinds " in *" issue "*) ;; *) echo pr; return ;; esac
+  memo "kind-$1" gh_kind "$(ref_repo "$1")" "$(ref_num "$1")" || echo unknown
+}
+pr_head() { gh pr view "$2" --repo "$1" --json headRefName --jq .headRefName; }
+# item_branch <ref> <kind> -- grind-<n>, grind-card-<slug>, or a PR's own head.
+item_branch() {
+  case $2 in
+    card) printf 'grind-card-%s' "${1#card:}" ;;
+    pr) memo "head-$1" pr_head "$(ref_repo "$1")" "$(ref_num "$1")" ;;
+    *) printf 'grind-%s' "$(ref_num "$1")" ;;
+  esac
+}
+pr_list() { gh pr list --repo "$1" --head "$2" --state all --json number,state,createdAt,url,headRefOid,labels; }
+prs_on() { memo "prs-$1-$2" pr_list "$1" "$2"; }   # prs_on <repo> <branch> -> JSON array
+pr_view() { gh pr view "$2" --repo "$1" --json number,state,url,labels,commits \
+  --jq '{number, state, url, labels: [.labels[].name], dates: [.commits[].committedDate],
+         head: (.commits | last // {} | {oid, committedDate})}'; }
+commit_verified() { gh api "repos/$1/commits/$2" --jq '.commit.verification.verified'; }
+read_stamps() {  # read_stamps <repo> <number> -- id sid8 epoch, claim-stamp.sh's marker
+  gh api "repos/$1/issues/$2/comments" --paginate --jq '
+    .[] | select(.body | test("<!-- claim-stamp "))
+    | [ (.id|tostring), ((.body | capture("sid=(?<v>[A-Za-z0-9_-]+)").v) // "?"),
+        ((.body | capture("epoch=(?<v>[0-9]+)").v) // "0") ] | @tsv'
+}
+
+# One pass over the items: ref, kind, repo, branch, status, cost, the rest.
+# Fields split on the unit separator, not a tab: read collapses runs of a
+# whitespace IFS, so an empty field would shift every field after it.
+US=$'\x1f'
+items_tsv=$cache/items.rec; : > "$items_tsv"
+i=0
+while IFS= read -r it; do
+  i=$((i + 1))
+  ref=$(printf '%s' "$it" | jq -r '.ref')
+  kind=$(item_kind "$ref" "$it")
+  repo=$(item_repo "$ref") || repo=""
+  branch=""; [ "$kind" = unknown ] || branch=$(item_branch "$ref" "$kind" 2>/dev/null) || branch=""
+  printf '%s\n' "$it" | jq -r --arg us "$US" --arg i "$i" --arg k "$kind" --arg r "$repo" --arg b "$branch" \
+    '[$i, .ref, $k, $r, $b, (.status // "?"), (.cost // 0 | tostring),
+      (if has("claim_released") then (.claim_released | tostring) else "" end),
+      (.wip_branch // ""), (.worker_sid // "")] | join($us)' >> "$items_tsv"
+done < <(sj -c '.items[]?')
+each_item() { cat "$items_tsv"; }  # i ref kind repo branch status cost claim_released wip worker_sid
+
+# --- rows ---------------------------------------------------------------------
+rows=$cache/rows.jsonl; : > "$rows"
+row() { jq -nc --argjson n "$1" --arg name "$2" --arg v "$3" --arg e "$4" \
+  '{n:$n, name:$name, verdict:$v, evidence:$e}' >> "$rows"; }
+# brief <list file> -- the first three offenders, then a count.
+brief() {
+  local n; n=$(grep -c . "$1")
+  head -3 "$1" | paste -sd ';' - | sed 's/;/; /g'
+  [ "$n" -le 3 ] || printf ' (+%d more)' "$((n - 3))"
+}
+usd() { awk -v v="$1" 'BEGIN { printf "$%.2f", v }'; }
+gt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a > b) }'; }
+off=$cache/off
+
+# 1. ended present: the run ended cleanly and says how.
+if [ "$(sj 'has("ended")')" = true ]; then
+  reason=$(sj '.ended.reason // ""'); ex=$(sj '.ended.exit // "?"'); at=$(sj '.ended.at // "?"')
+  case $reason in
+    pause-budget|pause-outlier|pause-cadence|queue-exhausted) row 1 ended PASS "$reason, exit $ex, at $at" ;;
+    signal|error) row 1 ended FAIL "ended by $reason, exit $ex, at $at" ;;
+    *) row 1 ended FAIL "ended.reason '$reason' is not one grind writes" ;;
+  esac
+elif [ "$new_schema" = 1 ]; then row 1 ended FAIL "no ended record: the run stopped without saying how"
+else row 1 ended N/A "no ended field; the file predates it"
+fi
+
+# 2. total spend within the session budget plus one item's overshoot.
+total=$(sj '[.items[]?.cost // 0] | add // 0')
+if [ -z "$session_budget" ]; then row 2 spend N/A "no session_budget recorded"
+else
+  limit=$(awk -v s="$session_budget" -v i="$item_budget" -v f="$overshoot_share" 'BEGIN { printf "%.4f", s + i * f }')
+  ev="$(usd "$total") spent; limit $(usd "$limit") = budget $(usd "$session_budget") + $overshoot_share x $(usd "$item_budget") item cap"
+  if gt "$total" "$limit"; then row 2 spend FAIL "$ev"; else row 2 spend PASS "$ev"; fi
+fi
+
+# 3. no item spent over twice its cap and delivered nothing.
+: > "$off"
+while IFS=$US read -r _ ref kind _ _ status cost _; do
+  cap=$item_budget; [ "$kind" = pr ] && ! gt "$pr_cap" "$item_budget" && cap=$pr_cap
+  [ "$status" != "done" ] && gt "$cost" "$(awk -v c="$cap" 'BEGIN { print 2 * c }')" \
+    && echo "$ref $status at $(usd "$cost") (cap $(usd "$cap"))" >> "$off"
+done < <(each_item)
+if [ "$nitems" -eq 0 ]; then row 3 over-cap N/A "no items"
+elif [ -s "$off" ]; then row 3 over-cap FAIL "$(brief "$off")"
+else row 3 over-cap PASS "no undelivered item over 2x its cap ($nitems checked)"
+fi
+
+# 4. no ref attempted more than twice, nor after a done record for it. A pr ref
+# done in an earlier session may come back: a new review thread takes the
+# label off and puts the PR back in the queue.
+: > "$off"; prior=$cache/prior-done; : > "$prior"
+for f in "$sdir"/grind-*.json; do
+  [ -f "$f" ] || continue
+  b=$(basename "$f" .json); [[ "$b" < "$session" ]] || continue
+  jq -r --arg s "$b" '.items[]? | select(.status == "done") | "\(.ref)\t\($s)"' "$f" 2>/dev/null >> "$prior"
+done
+sj '[.items[]?.ref] | group_by(.) | .[] | select(length > 2) | "\(.[0]) attempted \(length) times"' >> "$off"
+seen_done=$cache/seen-done; : > "$seen_done"
+while IFS=$US read -r _ ref kind _ _ status _; do
+  if grep -qxF "$ref" "$seen_done"; then echo "$ref attempted after its done earlier in this session" >> "$off"
+  elif [ "$kind" != pr ] && p=$(awk -F'\t' -v r="$ref" '$1 == r { print $2; exit }' "$prior") && [ -n "$p" ]; then
+    echo "$ref attempted after its done in $p" >> "$off"
+  fi
+  [ "$status" = "done" ] && echo "$ref" >> "$seen_done"
+done < <(each_item)
+sort -u -o "$off" "$off"
+if [ "$nitems" -eq 0 ]; then row 4 re-attempts N/A "no items"
+elif [ -s "$off" ]; then row 4 re-attempts FAIL "$(brief "$off")"
+else row 4 re-attempts PASS "no ref over 2 attempts or redone ($(grep -c . "$prior") earlier done records scanned)"
+fi
+
+# 5. every done claim holds on GitHub now.
+: > "$off"; nd=0
+while IFS=$US read -r _ ref kind repo branch status _; do
+  [ "$status" = "done" ] || continue
+  nd=$((nd + 1))
+  if [ -z "$repo" ] || [ -z "$branch" ]; then echo "$ref: cannot tell its repo or branch" >> "$off"; continue; fi
+  if [ "$kind" = pr ]; then
+    v=$(memo "view-$ref" pr_view "$repo" "$(ref_num "$ref")") || { echo "$ref: gh could not read the PR" >> "$off"; continue; }
+    printf '%s' "$v" | jq -e '.state == "MERGED" or (.labels | index("awaiting-human"))' >/dev/null && continue
+    hd=$(printf '%s' "$v" | jq -r '.head.committedDate // ""'); oid=$(printf '%s' "$v" | jq -r '.head.oid // ""')
+    if [ -n "$hd" ] && in_window "$hd" && [ "$(memo "sig-$oid" commit_verified "$repo" "$oid")" = true ]; then continue; fi
+    echo "$ref: no awaiting-human, not merged, no signed head pushed in the run" >> "$off"
+  else
+    p=$(prs_on "$repo" "$branch") || { echo "$ref: gh could not list PRs on $branch" >> "$off"; continue; }
+    printf '%s' "$p" | jq -e 'any(.[]; .state == "OPEN" or .state == "MERGED")' >/dev/null \
+      || echo "$ref: no open or merged PR on $branch in $repo" >> "$off"
+  fi
+done < <(each_item)
+if [ "$nitems" -eq 0 ]; then row 5 done-holds N/A "no items"
+elif [ -s "$off" ]; then row 5 done-holds FAIL "$(brief "$off")"
+else row 5 done-holds PASS "$nd done claim(s) hold on GitHub"
+fi
+
+# 6. no failed/unverified item that in fact delivered: the fundamental bug.
+: > "$off"; nf=0
+while IFS=$US read -r _ ref kind repo branch status _; do
+  case $status in failed|unverified) ;; *) continue ;; esac
+  nf=$((nf + 1))
+  if [ -z "$repo" ] || [ -z "$branch" ]; then echo "$ref: cannot tell its repo or branch" >> "$off"; continue; fi
+  if [ "$kind" = pr ]; then
+    v=$(memo "view-$ref" pr_view "$repo" "$(ref_num "$ref")") || { echo "$ref: gh could not read the PR" >> "$off"; continue; }
+    # A fixup delivers on the PR's own head: a commit pushed in the run counts.
+    if printf '%s' "$v" | jq -e '.labels | index("awaiting-human")' >/dev/null; then
+      echo "$ref recorded $status, but the PR now carries awaiting-human" >> "$off"
+    else
+      for at in $(printf '%s' "$v" | jq -r '.dates[]'); do
+        in_window "$at" && { echo "$ref recorded $status, but a commit landed on its head at $at" >> "$off"; break; }
+      done
+    fi
+  else
+    p=$(prs_on "$repo" "$branch") || { echo "$ref: gh could not list PRs on $branch" >> "$off"; continue; }
+    while IFS=$'\t' read -r num at; do
+      [ -n "$num" ] && in_window "$at" && echo "$ref recorded $status, but #$num on $branch opened at $at" >> "$off"
+    done < <(printf '%s' "$p" | jq -r '.[] | "\(.number)\t\(.createdAt)"')
+  fi
+done < <(each_item)
+sort -u -o "$off" "$off"
+if [ "$nitems" -eq 0 ]; then row 6 false-failure N/A "no items"
+elif [ -s "$off" ]; then row 6 false-failure FAIL "$(brief "$off")"
+else row 6 false-failure PASS "no failed/unverified item delivered a PR ($nf checked)"
+fi
+
+# 7. every claim released: the recorded flag, and no stamp a worker left. A
+# worker's stamp is one carrying its sid when grind recorded it, else one
+# written inside the run's window.
+: > "$off"; nrec=0; ncards=0
+while IFS=$US read -r _ ref kind repo branch _ _ released _ wsid; do
+  if [ -n "$released" ]; then nrec=$((nrec + 1)); [ "$released" = true ] || echo "$ref: claim_released=$released" >> "$off"; fi
+  [ -n "$repo" ] && [ -n "$branch" ] || continue
+  cards=""
+  if [ "$kind" = pr ]; then cards=$(ref_num "$ref")
+  else
+    p=$(prs_on "$repo" "$branch") || { echo "$ref: gh could not list PRs on $branch" >> "$off"; continue; }
+    cards=$(printf '%s' "$p" | jq -r '.[].number')
+    [ "$kind" = issue ] && cards="$cards $(ref_num "$ref")"
+  fi
+  for c in $cards; do
+    ncards=$((ncards + 1))
+    st=$(memo "stamps-$repo-$c" read_stamps "$repo" "$c") || { echo "$repo#$c: gh could not read its comments" >> "$off"; continue; }
+    while IFS=$'\t' read -r _ s8 ep; do
+      [ -n "${s8:-}" ] || continue
+      if [ -n "$wsid" ]; then [ "$s8" = "${wsid:0:8}" ] || continue
+      else
+        [ -n "$start_e" ] && [ "$ep" -ge "$start_e" ] || continue
+        [ -z "$end_e" ] || [ "$ep" -le $((end_e + 600)) ] || continue
+      fi
+      echo "$repo#$c: stamp by session $s8 from the run still there ($ref)" >> "$off"
+    done <<< "$st"
+  done
+done < <(each_item)
+sort -u -o "$off" "$off"
+if [ "$nitems" -eq 0 ]; then row 7 claims N/A "no items"
+elif [ -s "$off" ]; then row 7 claims FAIL "$(brief "$off")"
+else
+  [ "$nrec" -gt 0 ] && rec="claim_released true on $nrec/$nitems" || rec="claim_released not recorded (N/A)"
+  row 7 claims PASS "$rec; no run stamp left on $ncards card(s)"
+fi
+
+# 8. no local branch or kept worktree holding work that is on no remote.
+repo_at() {
+  local u r; u=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
+  r=$(printf '%s' "$u" | sed -e 's#^https://github\.com/##' -e 's#^ssh://git@github\.com/##' \
+        -e 's#^git@github\.com:##' -e 's#/$##' -e 's#\.git$##')
+  [ "$r" = "$u" ] && case $u in /*|file://*) ;; *) return 1 ;; esac
+  printf '%s' "$r"
+}
+checkout_for() {  # grind's: the run's cwd when it is a checkout of <repo>, else $GRIND_CHECKOUTS/<name>
+  local c
+  for c in "$(sj '.lock.invoked_cwd // ""')" "${GRIND_CHECKOUTS:-$HOME}/${1##*/}"; do
+    [ -n "$c" ] && [ -d "$c" ] || continue
+    case "$(repo_at "$c" || true)" in "$1"|*"/$1") printf '%s' "$c"; return 0 ;; esac
+  done
+  return 1
+}
+# unpushed <git dir> <rev> <repo> <branch> -- commits on no remote, by
+# remote-tracking ref or by a PR head GitHub keeps after the branch is gone.
+unpushed() {
+  local n oid
+  n=$(git -C "$1" rev-list --count "$2" --not --remotes 2>/dev/null) || return 1
+  [ "${n:-0}" -gt 0 ] || return 1
+  if p=$(prs_on "$3" "$4" 2>/dev/null); then
+    for oid in $(printf '%s' "$p" | jq -r '.[].headRefOid // empty'); do
+      git -C "$1" merge-base --is-ancestor "$2" "$oid" 2>/dev/null && return 1
+    done
+  fi
+  printf '%s' "$n"
+}
+wt_root=${TMPDIR:-/tmp}/grind-worktrees
+: > "$off"; nlocal=0; nochk=""
+while IFS=$US read -r _ ref kind repo branch _ _ _ wip _; do
+  [ -n "$repo" ] && [ -n "$branch" ] || continue
+  co=$(checkout_for "$repo") || { nochk="$nochk ${repo##*/}"; continue; }
+  case $kind in pr) leaf=pr-$(ref_num "$ref") ;; card) leaf=card-${ref#card:} ;; *) leaf=$(ref_num "$ref") ;; esac
+  wip_ok=0
+  [ -n "$wip" ] && git -C "$co" ls-remote --exit-code origin "refs/heads/$wip" >/dev/null 2>&1 && wip_ok=1
+  if git -C "$co" rev-parse -q --verify "refs/heads/$branch" >/dev/null; then
+    nlocal=$((nlocal + 1))
+    n=$(unpushed "$co" "refs/heads/$branch" "$repo" "$branch") && [ "$wip_ok" = 0 ] \
+      && echo "$branch in $co: $n commit(s) on no remote${wip:+ (wip_branch $wip not on origin)}" >> "$off"
+  fi
+  for wt in "$wt_root/$leaf" "$wt_root/${repo##*/}/$leaf"; do
+    [ -d "$wt" ] && git -C "$wt" rev-parse --git-dir >/dev/null 2>&1 || continue
+    nlocal=$((nlocal + 1))
+    n=$(unpushed "$wt" HEAD "$repo" "$branch") && [ "$wip_ok" = 0 ] && echo "$wt: $n commit(s) on no remote" >> "$off"
+    [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && echo "$wt: uncommitted changes" >> "$off"
+  done
+done < <(each_item)
+sort -u -o "$off" "$off"
+ev_nochk=""; [ -z "$nochk" ] || ev_nochk="; no checkout to inspect for:$(printf '%s\n' $nochk | sort -u | paste -sd ' ' - | sed 's/^/ /')"
+if [ "$nitems" -eq 0 ]; then row 8 stranded-work N/A "no items"
+elif [ -s "$off" ]; then row 8 stranded-work FAIL "$(brief "$off")$ev_nochk"
+else row 8 stranded-work PASS "$nlocal local branch/worktree(s) checked, none holds unpushed work$ev_nochk"
+fi
+
+# 9. every item worked in the repo its ref names: no PR on its branch opened
+# in the run in another repo, and no card that names no repo at all.
+: > "$off"
+others=$(printf '%s\n' "$srepo" "$(repo_at "$(sj '.lock.invoked_cwd // "."')" 2>/dev/null)" \
+  "$(cut -d "$US" -f4 "$items_tsv")" | grep -E '^[^/ ]+/[^/ ]+$' | sort -u)
+while IFS=$US read -r _ ref kind repo branch _; do
+  [ "$kind" = pr ] && continue
+  if [ "$kind" = card ]; then
+    named=$(card_named_repo "${ref#card:}" 2>/dev/null) || named=""
+    [ "$named" = - ] && { echo "$ref: a general card, names no repo, worked in $repo" >> "$off"; continue; }
+  fi
+  [ -n "$branch" ] || continue
+  for o in $others; do
+    [ "$o" = "$repo" ] && continue
+    p=$(prs_on "$o" "$branch") || { echo "$ref: gh could not list PRs on $branch in $o" >> "$off"; continue; }
+    while IFS=$'\t' read -r num at; do
+      [ -n "$num" ] && in_window "$at" && echo "$ref: PR $o#$num on $branch opened in the run, not in $repo" >> "$off"
+    done < <(printf '%s' "$p" | jq -r '.[] | "\(.number)\t\(.createdAt)"')
+  done
+done < <(each_item)
+if [ "$nitems" -eq 0 ]; then row 9 right-repo N/A "no items"
+elif [ -s "$off" ]; then row 9 right-repo FAIL "$(brief "$off")"
+else row 9 right-repo PASS "no item's branch opened a PR outside its repo (searched: $(printf '%s' "$others" | paste -sd ' ' -))"
+fi
+
+# 10. the lock is released and its recorded meta is sane.
+scope=${project:+project $project}; scope=${scope:-$srepo}
+lock_dir="$sdir/locks/$(printf '%s' "$scope" | tr '/ ' '__').lock"
+: > "$off"
+if [ "$(sj 'has("lock")')" != true ]; then row 10 lock N/A "no lock record in the session file"
+else
+  pid=$(sj '.lock.pid // 0'); tty=$(sj '.lock.tty // ""'); rev=$(sj '.lock.grind_rev // ""')
+  if [ -d "$lock_dir" ]; then
+    held=$(jq -r '.pid // 0' "$lock_dir/meta.json" 2>/dev/null)
+    [ "$held" = "$pid" ] && echo "lock $lock_dir still held by this run's pid $pid" >> "$off"
+  fi
+  [[ "$tty" =~ ^(none|/dev/[^[:space:]]+)$ ]] || echo "tty '$tty' is neither none nor a /dev path" >> "$off"
+  [[ "$rev" =~ ^[0-9a-f]{7,40}$ ]] || echo "grind_rev '$rev' is not a commit" >> "$off"
+  if [ -s "$off" ]; then row 10 lock FAIL "$(brief "$off")"
+  else row 10 lock PASS "released; tty $tty, grind_rev $rev"
+  fi
+fi
+
+# 11. not three or more cheap failures in a row in one repo: one broken
+# dependency failing every worker.
+streaks=$(awk -F "$US" -v lim="$cheap_fail" '
+  { r = $4 }
+  ($6 == "failed" || $6 == "blocked") && $7 + 0 < lim { n[r]++; refs[r] = refs[r] (n[r] > 1 ? " " : "") $2
+    if (n[r] >= 3) hit[r] = n[r] " in a row under $" lim ": " refs[r]; next }
+  { n[r] = 0; refs[r] = "" }
+  END { for (r in hit) print r ": " hit[r] }' "$items_tsv")
+if [ "$nitems" -eq 0 ]; then row 11 dependency-wall N/A "no items"
+elif [ -n "$streaks" ]; then printf '%s\n' "$streaks" > "$off"; row 11 dependency-wall FAIL "$(brief "$off")"
+else row 11 dependency-wall PASS "no 3 consecutive failed/blocked items under \$$cheap_fail in one repo"
+fi
+
+# 12. the run file is not an empty shell written before the gates.
+if [ "$nitems" -gt 0 ] || [ "$(sj 'has("ended")')" = true ]; then
+  row 12 not-empty PASS "$nitems item(s)$( [ "$nitems" -gt 0 ] || printf ', ended %s' "$(sj '.ended.reason')")"
+else row 12 not-empty FAIL "no items and no ended record: a run file written before the gates"
+fi
+
+# 13. no per-item scratch files left: the run died mid-item.
+left=""
+for x in live result rc lasttext sid json.tmp; do [ -e "$sdir/$session.$x" ] && left="$left $session.$x"; done
+if [ -n "$left" ]; then row 13 mid-item FAIL "left in $sdir:$left"
+else row 13 mid-item PASS "no .live/.result/.rc/.lasttext/.sid left"
+fi
+
+# --- report -------------------------------------------------------------------
+failed=$(jq -s '[.[] | select(.verdict == "FAIL")] | length' "$rows")
+if [ "$json" = 1 ]; then
+  jq -s --arg s "$session" --arg f "$file" --arg scope "$scope" --argjson items "$nitems" --argjson spent "$total" \
+    '{session:$s, file:$f, scope:$scope, items:$items, spent:$spent, pass:(all(.[]; .verdict != "FAIL")), rows:.}' "$rows"
+else
+  printf 'grind-check %s (%s, %d item(s), %s)\n' "$session" "${scope:-?}" "$nitems" "$(usd "$total")"
+  jq -r '"\(.n | tostring | if length < 2 then " " + . else . end)  \(.verdict | . + (" " * (4 - length)))  \(.name | . + (" " * (15 - length))) \(.evidence)"' "$rows"
+fi
+[ "$failed" -eq 0 ]
