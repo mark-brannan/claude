@@ -1804,7 +1804,7 @@ case "\$1 \$2" in
   "pr view")    f="$S/prview/\$(printf '%s' "\$3" | tr '/:' '__').json"; [ -f "\$f" ] && jq -r "\$filter" "\$f" ;;
   "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
   "api repos/"*"/issues/"*) if [ -f "$S/updated-at" ]; then cat "$S/updated-at"; else echo 2999-01-01T00:00:00Z; fi ;;
-  "api user")   echo grind-me ;;
+  "api user")   [ -f "$S/user-fail" ] && exit 1; echo grind-me ;;
   *) echo "gh shim: unexpected \$*" >&2; exit 1 ;;
 esac
 GH
@@ -2059,6 +2059,15 @@ said 1 0.80 'Opened https://github.com/o/dotgithub/pull/50.
 GRIND_STATUS: done'
 KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
 has 'a PR on the item branch verifies done' '^o/alpha#17: Cross-repo item -- sonnet'
+# an account grind cannot read counts no named PR, and says so
+git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$S/user-fail"
+said 1 0.80 'Opened https://github.com/o/dotgithub/pull/47.
+GRIND_STATUS: done'
+KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
+rm -f "$S/user-fail"
+has 'an unreadable account is a WARN' 'WARN  could not read the account grind runs as'
+has 'and the item is unverified' '^UNVERIFIED: o/alpha#17'
 # a failed or unverified outcome is not a skip marker: the next fresh run retries the item
 git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
 fid=$(basename "$(home_of 'o/alpha#17')" .md)

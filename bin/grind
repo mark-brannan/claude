@@ -53,9 +53,10 @@
 #      Whatever ended the worker -- the backstop, an error, no result event
 #      at all -- the claim below is still checked against GitHub and the
 #      item recorded (cost from the heartbeat's estimate when there is no
-#      result, marked cost_estimated). The worker's claim stamp and a card's
-#      work-item claim are released on every path; the worktree is removed
-#      only after the record is written.
+#      result, marked cost_estimated). The worker's claim stamp is released
+#      on every path, and so is a card's work-item claim, except a card moved
+#      to `blocked`: the store keeps its holder until that holder goes stale.
+#      The worktree is removed only after the record is written.
 #   4. The worker ends its answer with one of three status lines (the last
 #      one anywhere in its output counts, so a line a Stop hook makes it add
 #      after its answer does not hide it):
@@ -1133,7 +1134,7 @@ last_status() {
 prs_opened_since() {
   printf '%s' "$2" | awk 'NF' | grep -q . || return 0
   me=$(gh api user --jq .login 2>/dev/null) || me=""
-  [ -n "$me" ] || return 0
+  [ -n "$me" ] || { warn "could not read the account grind runs as (gh api user); no PR the worker named is counted as its work"; return 0; }
   printf '%s\n' "$2" | while IFS= read -r u; do
     [ -n "$u" ] || continue
     j=$(gh pr view "$u" --json createdAt,author,headRefName,body 2>/dev/null) || continue
