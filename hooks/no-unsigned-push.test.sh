@@ -132,5 +132,15 @@ check "cd DIR && git push checks DIR, not cwd" "$verdict" deny
 run_hook_cmd "cd $clean && git push" "$dirty"
 check "cd DIR && git push does not fall back to cwd's commits" "$verdict" silent
 
+# A `cd` after the push, or an unrelated `-C` before it, must not be read as
+# the push's directory -- both would otherwise point the check at the wrong
+# repo (or a nonexistent one) and fail open.
+run_hook_cmd "git push && cd $dirty" "$clean"
+check "a trailing cd after push is not the push's directory" "$verdict" silent
+run_hook_cmd "git commit -C HEAD && git push" "$dirty"
+check "an unrelated -C before push is not the push's -C" "$verdict" deny
+run_hook_cmd "git -C $dirty push && git -C $clean status" "$clean"
+check "a second -C after the push is not the push's -C" "$verdict" deny
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -49,23 +49,45 @@ cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$cwd" ] && [ -d "$cwd" ] || exit 0
 
 target_cwd=$cwd
-leading_cd=$(printf '%s' "$cmd" | grep -oE '(^|&&|;)[[:space:]]*cd[[:space:]]+[^;&]*' | tail -1 | sed -E 's/^(&&|;)?[[:space:]]*cd[[:space:]]+//; s/[[:space:]]*(&&.*)?$//; s/^["'"'"']//; s/["'"'"']$//')
+
+# Only a `cd` at the very start of the command counts -- `git push && cd ..`
+# must not be read as the push's directory (tail -1 over an unanchored match
+# used to pick that up). `cd -` has no way to resolve OLDPWD from here, so it
+# is left unhandled rather than guessed.
+leading_cd=$(printf '%s' "$cmd" | grep -oE '^[[:space:]]*cd[[:space:]]+[^;&]*' | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]*(&&.*)?$//; s/^["'"'"']//; s/["'"'"']$//')
+case $leading_cd in
+  '-') leading_cd='' ;;
+  '~') leading_cd=$HOME ;;
+  '~/'*) leading_cd="$HOME/${leading_cd#\~/}" ;;
+  '$HOME') leading_cd=$HOME ;;
+  '$HOME/'*) leading_cd="$HOME/${leading_cd#'$HOME/'}" ;;
+esac
 if [ -n "$leading_cd" ]; then
   case $leading_cd in
     /*) target_cwd=$leading_cd ;;
     *) target_cwd=$cwd/$leading_cd ;;
   esac
 fi
-cflag=$(printf '%s' "$cmd" | grep -oE '\-C[[:space:]]+[^[:space:]]+' | tail -1 | sed -E 's/^-C[[:space:]]+//; s/^["'"'"']//; s/["'"'"']$//')
+
+# -C is only the push's own, from the matched `git ... push` invocation
+# itself -- not from an unrelated `git commit -C HEAD` earlier in the
+# command, nor from a second `git -C other ...` after it.
+pushseg=$(printf '%s' "$cmd" | grep -oE \
+  '(^|[^A-Za-z0-9_./-])git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--[^[:space:]]+))*[[:space:]]+push([[:space:]]|$)' \
+  | tail -1)
+cflag=$(printf '%s' "$pushseg" | grep -oE '\-C[[:space:]]+[^[:space:]]+' | tail -1 | sed -E 's/^-C[[:space:]]+//; s/^["'"'"']//; s/["'"'"']$//')
 if [ -n "$cflag" ]; then
   case $cflag in
     /*) target_cwd=$cflag ;;
     *) target_cwd=$target_cwd/$cflag ;;
   esac
 fi
-cwd=$target_cwd
 
-[ -d "$cwd" ] && cd "$cwd" || exit 0
+# A resolved target that doesn't exist (bad expansion, typo) falls back to
+# payload.cwd rather than exiting 0 -- a gate hook fails closed, not open.
+[ -d "$target_cwd" ] && cwd=$target_cwd
+
+cd "$cwd" || exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 git symbolic-ref -q HEAD >/dev/null 2>&1 || exit 0   # detached: nothing sensible to check
 
