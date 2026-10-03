@@ -127,6 +127,10 @@ opener() {
 # the caller is told which ones worked rather than assured that one did.
 # $1 is the message; $2, when set, is a URL to open in the browser, which
 # auth_url only ever hands over on npm's own domain.
+#
+# Each launch closes fd 9, the flock: a browser xdg-open starts, or a
+# notifier that lingers, would otherwise hold the lock after npm exits and
+# every later publish here would report "already running".
 sent=""
 notify() {
   msg=$1
@@ -136,13 +140,13 @@ notify() {
     if [ -n "$o" ] && [ "$o" != : ]; then
       # explorer.exe exits 1 even when it opened the page, so its status
       # says nothing; it counts as handed over.
-      if "$o" "$link" >/dev/null 2>&1 || [ "$o" = explorer.exe ]; then
+      if "$o" "$link" >/dev/null 2>&1 9>&- || [ "$o" = explorer.exe ]; then
         sent="$sent browser"
       fi
     fi
   fi
   if command -v notify-send >/dev/null 2>&1 &&
-     notify-send "npm publish" "$msg" >/dev/null 2>&1; then
+     notify-send "npm publish" "$msg" >/dev/null 2>&1 9>&-; then
     sent="$sent notification"
   fi
   # Pass $msg as an argv element rather than building it into the AppleScript
@@ -152,7 +156,7 @@ notify() {
   if command -v osascript >/dev/null 2>&1 && osascript \
        -e 'on run argv' \
        -e 'display notification (item 1 of argv) with title "npm publish"' \
-       -e 'end run' "$msg" >/dev/null 2>&1; then
+       -e 'end run' "$msg" >/dev/null 2>&1 9>&-; then
     sent="$sent notification"
   fi
   if { printf '\n\a[npm publish] %s\n' "$msg" >/dev/tty; } 2>/dev/null; then

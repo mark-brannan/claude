@@ -111,6 +111,25 @@ if command -v setsid >/dev/null 2>&1; then
   else ok; fi
 fi
 
+# --- a browser the opener leaves running does not hold the lock -----------
+# xdg-open with no browser up starts one that outlives the call. Under flock
+# it must not inherit fd 9, or the next publish here reports "already
+# running" long after npm has exited.
+LINGER_PID="$WORK/linger.pid"
+cat >"$STUB/open-linger" <<EOF
+#!/bin/sh
+sleep 30 >/dev/null 2>&1 </dev/null &
+echo \$! >"$LINGER_PID"
+EOF
+chmod +x "$STUB/open-linger"
+stub_npm "echo '$URL'"
+NPM_PUBLISH_BG_OPEN="$STUB/open-linger" run "$WORK/pkg-linger"
+sleep 0.5  # npm is gone; only the "browser" is left
+run "$WORK/pkg-linger"
+if [ "$RC" = 0 ]; then ok
+else bad "a lingering browser must not hold the publish lock" "rc=$RC out=$OUT"; fi
+kill "$(cat "$LINGER_PID" 2>/dev/null)" 2>/dev/null
+
 # --- npm's own domain wins over an unrelated URL printed first ------------
 stub_npm "echo 'npm notice registry https://registry.example.invalid/'; echo '$URL'; sleep 5"
 run "$WORK/pkg-b"
