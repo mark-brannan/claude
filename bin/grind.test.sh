@@ -1265,6 +1265,14 @@ assert 'and its cost line' grep -qE ' cost tokens=150 usd=0\.30? by=grind$' "$WO
 rm -f "$S/state/grind"/*.json
 run --dry-run --kind card
 has 'the next run skips it' '^card:alpha-tidy-the-widget -- SKIP: grind recorded blocked at .*, and nothing has changed since$'
+# grind's own record of an issue is never worked as a card, queued issue or not
+rm -f "$WORK_ITEM_DIR/17909840241dc56754.md"
+CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" create --id 17909840241dc56754 --repo o/alpha \
+  --brief "grind's record of its attempts on o/alpha#99 (https://github.com/o/alpha/issues/99)" 'alpha: tidy the widget' >/dev/null
+CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log 17909840241dc56754 status=ready home=o/alpha#99 >/dev/null
+rm -f "$S/state/grind"/*.json
+KEEP_RECORDS=1 run --dry-run --kind card
+has "grind's record is dropped, with its reason" "^card:alpha-tidy-the-widget -- SKIP: grind's own record of o/alpha#99; grind works o/alpha#99, never its record$"
 # a claim another live session holds is never taken over, and is found before
 # any spend: no worker runs
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json

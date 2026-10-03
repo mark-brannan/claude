@@ -745,6 +745,11 @@ if [ -n "$work_item_bin" ] && [ -n "$items_dir" ] && [ -d "$items_dir" ]; then
       [ -n "$hid" ] && [ -f "$items_dir/$hid.md" ] || continue
       h=$("$work_item_bin" fold "$hid" 2>/dev/null | sed -n 's/^home=//p')
       case "$queue_refs" in *"|$h|"*) [ -z "$h" ] || { printf '%s\tdrop\tits home %s is in this queue; grind works it there\n' "$r" "$h"; continue; } ;; esac
+      # grind's own record of an issue or PR is never work: the GitHub item
+      # is, and only when its own labels put it in a queue.
+      if grep -q "^grind's record of its attempts on " "$items_dir/$hid.md"; then
+        printf '%s\tdrop\tgrind'"'"'s own record of %s; grind works %s, never its record\n' "$r" "${h:-an issue}" "${h:-the issue}"; continue
+      fi
     else
       r=$(printf '%s' "$it" | jq -r '"\(.repo)#\(.number)"')
       hid=$(home_item "$r")
@@ -1069,7 +1074,7 @@ card_let_go() {
 # Two lines in the store's own form, then the commit:
 #   <iso> <sid8> cost tokens=812340 usd=1.42 by=grind
 #   <iso> <sid8> grind outcome=blocked run=grind-20261003T134428Z prs=- said: <what it did>
-# The `grind outcome=` line is the marker select_unseen reads back. A done
+# The `grind outcome=` line is the marker the selection above reads back. A done
 # or blocked outcome also moves the item's status; one another live session
 # holds keeps its status and still gets the two lines.
 
@@ -1575,12 +1580,6 @@ while [ "$i" -lt "$count" ]; do
       # still has its claim stamp released.
       sid=$(printf '%s' "$line" | jq -r '.session_id // empty' 2>/dev/null) || sid=""
       [ -n "$sid" ] && printf '%s\n' "$sid" > "$sid_file"
-      # Every PR URL the worker wrote or a tool printed back to it (`gh pr
-      # create` prints the new one): candidates for the PRs it opened, in any
-      # repo. Which of them it opened is settled against GitHub afterwards.
-      case "$etype" in assistant|user)
-        printf '%s' "$line" | grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+' >> "$pr_urls_file" 2>/dev/null || true ;;
-      esac
       case "$etype" in
         assistant)
           # The last thing the worker said. A worker the cap kills gets an
@@ -1588,6 +1587,11 @@ while [ "$i" -lt "$count" ]; do
           # GRIND_STATUS line -- or, failing that, what it tried -- survives.
           ltext=$(printf '%s' "$line" | jq -r '[.message.content[]? | select(.type == "text") | .text] | join("\n")' 2>/dev/null) || ltext=""
           [ -n "$ltext" ] && printf '%s\n' "$ltext" > "$last_text_file"
+          # Every PR URL the worker named in its own words: candidates for the
+          # PRs it opened, in any repo, settled against GitHub afterwards. Not
+          # what a tool printed back -- a `gh pr list` shows PRs another
+          # session opened during the run, and those are not this item's work.
+          printf '%s' "$ltext" | grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+' >> "$pr_urls_file" 2>/dev/null || true
           # The last message that carries a status line. An interactive Stop
           # hook can make the worker say one more thing after it -- "Landed in
           # the pickup item at ..." -- which cost grind the status of two
@@ -1688,8 +1692,8 @@ while [ "$i" -lt "$count" ]; do
   # budget stays honest, and retried on --resume.
   claim_text=$text
   case "$claim_text" in *"GRIND_STATUS: "*) ;; *) claim_text=${status_text:-$last_text} ;; esac
-  # The PRs it opened, in any repo: every PR URL it wrote or was shown that
-  # GitHub says was opened since it started.
+  # The PRs it opened, in any repo: every PR URL it named that GitHub says
+  # was opened since it started.
   opened_prs=$(prs_opened_since "$started_iso" "$pr_urls")
   status="done"
   case "$(last_status "$claim_text")" in
