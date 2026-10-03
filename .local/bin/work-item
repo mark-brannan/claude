@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env python3
 # work-item -- the work-item store: one file per item, a brief plus a log,
 # the id its filename (dotfiles#510).
 #
@@ -26,7 +26,7 @@
 #
 # The id is epoch seconds then the session's eight hex, opaque; the file is
 # the lookup. An item is created in `open`, always. Six statuses: open, ready,
-# claimed, blocked, done, closed; the transitions are `allowed` below. A claim
+# claimed, blocked, done, closed; the transitions are ALLOWED below. A claim
 # is valid when the folded status is ready or closed and no other session
 # holds it. A GitHub-homed item carries `home=`, with no link back.
 #
@@ -34,181 +34,380 @@
 # on the item for WORK_ITEM_STALE_SECS (2h) has let go; and this is a GATE --
 # a write that cannot land, or is refused, exits non-zero (1 refused, 2 usage).
 # Writes are plain files in the state repo; the Stop hook commits and pushes.
-set -u
+# Python 3 stdlib only.
+import fcntl
+import os
+import re
+import sys
+import time
+from pathlib import Path
 
-self=$0
-case $self in */*) ;; *) self=$(command -v "$self" 2>/dev/null || printf '%s' "$self") ;; esac
-self_dir=$(cd "$(dirname "$self")" 2>/dev/null && pwd)
-lib=""
-for c in "$self_dir/../../.claude/hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
-  [ -f "$c" ] && { lib=$c; break; }
-done
-[ -n "$lib" ] || { printf 'work-item: lib-state.sh not found\n' >&2; exit 2; }
-# shellcheck disable=SC1090
-. "$lib"
-
-ITEMS=${WORK_ITEM_DIR:-$(state_dir)/items}
-STALE=${WORK_ITEM_STALE_SECS:-7200}
-nl='
-'
-
-die()    { printf 'work-item: %s\n' "$*" >&2; exit 2; }
-refuse() { printf 'work-item: %s\n' "$*" >&2; exit 1; }
-
-now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
-iso_of()  { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
-
-me() {
-  hex=$(printf '%s' "${CLAUDE_CODE_SESSION_ID:-}" | tr -d '-' | cut -c1-8 | tr 'A-F' 'a-f')
-  case $hex in ????????) ;; *) die "no session id (run inside a session)" ;; esac
-  case $hex in *[!0-9a-f]*) die "session id ${CLAUDE_CODE_SESSION_ID} does not start with eight hex" ;; esac
-  printf '%s' "$hex"
+STATUSES = ("open", "ready", "claimed", "blocked", "done", "closed")
+OWNERS = ("agent", "human-ruling", "human-click")
+POINTS = ("1", "2", "3", "5", "8", "13")
+FACTS = ("owner", "repo", "parent", "model", "effort", "home", "until")
+# The pen transitions; every self-transition is allowed too.
+ALLOWED = {
+    ("open", "ready"), ("ready", "claimed"), ("claimed", "blocked"),
+    ("claimed", "ready"), ("claimed", "done"), ("blocked", "claimed"),
+    ("blocked", "ready"), ("done", "claimed"), ("done", "ready"),
+    ("done", "closed"), ("closed", "claimed"),
 }
 
-# A log value is one word: the line is split on spaces.
-word() {
-  case $2 in ''|*' '*|*'	'*) die "$1 must be one word, got [$2]" ;; esac
-  case $2 in *"$nl"*) die "$1 must be one line" ;; esac
-}
-points_ok() { case $1 in 1|2|3|5|8|13) ;; *) die "points is one of 1 2 3 5 8 13, got [$1]" ;; esac; }
-statuses=" open ready claimed blocked done closed "
-allowed() {  # <from> <to>: the pen transitions; every self-transition is allowed
-  [ "$1" = "$2" ] && return 0
-  case "$1>$2" in
-    'open>ready'|'ready>claimed'|'claimed>blocked'|'claimed>ready'|'claimed>done'|\
-    'blocked>claimed'|'blocked>ready'|'done>claimed'|'done>ready'|'done>closed'|\
-    'closed>claimed') return 0 ;;
-  esac
-  return 1
-}
 
-file_of() {
-  is_card_id "${1:-}" || die "not an item id: ${1:-<id>}"
-  f="$ITEMS/$1.md"
-}
-need() { file_of "$1"; [ -f "$f" ] || refuse "no item $1 in $ITEMS"; }
+class Exit(Exception):
+    def __init__(self, code, msg):
+        super().__init__(msg)
+        self.code = code
 
-lock() {
-  state_lock_wait "${TMPDIR:-/tmp}/work-item.$1.lock.d" 10 || refuse "item $1 is locked by another writer"
-  trap 'state_unlock' EXIT
-  trap 'state_unlock; exit 1' HUP INT TERM
-}
 
-fold_item() { work_item_fold "$f" "$(iso_of "$(( $(date -u +%s) - STALE ))")"; }
-fact() { printf '%s\n' "$folded" | sed -n "s/^$1=//p"; }
+def die(msg):
+    raise Exit(2, msg)
 
-append() {  # <words>: one line from this session, or fail loudly
-  printf '%s %s %s\n' "$(now_iso)" "$sid" "$1" >> "$f" || refuse "could not write $f"
-}
 
-# Check a status move against the transitions and the holder, under the lock.
-move() {
-  to=$1
-  case $statuses in *" $to "*) ;; *) die "unknown status $to (one of$statuses)" ;; esac
-  folded=$(fold_item) || refuse "could not read $f"
-  from=$(fact status); holder=$(fact holder)
-  live=""; [ -n "$holder" ] && [ "$(fact holder_stale)" = no ] && live=$holder
-  if [ -n "$live" ] && [ "$live" != "$sid" ]; then
-    refuse "$id is held by $live since $(fact held_since) (last wrote $(fact holder_last))"
-  fi
-  if [ "$to" = claimed ] && [ -n "$holder" ] && [ -z "$live" ]; then
-    return 0  # a stale holder has let go: the item reads as handed back
-  fi
-  allowed "$from" "$to" || refuse "$id: $from -> $to is not a transition"
-}
+def refuse(msg):
+    raise Exit(1, msg)
 
-write_brief() {  # rewrite the Brief section of $f from $brief and $points
-  tmp="$f.tmp.$$"
-  { awk '/^## Brief[ \t]*$/ { exit } { print }' "$f"
-    printf '## Brief\n'
-    [ -n "$points" ] && printf 'points: %s\n' "$points"
-    [ -n "$brief" ] && printf '%s\n' "$brief"
-    printf '\n'
-    awk 'p { print } /^## Log[ \t]*$/ { p = 1; print }' "$f"
-  } > "$tmp" && [ -s "$tmp" ] && mv "$tmp" "$f" || { rm -f "$tmp"; refuse "could not write $f"; }
-}
 
-read_brief() {  # sets $brief; a `## ` line would end the brief early on the next read
-  if [ "$1" = - ]; then brief=$(cat); else brief=$1; fi
-  if printf '%s\n' "$brief" | grep -q '^## '; then die "a brief line may not start with '## '"; fi
-}
+def state_dir():
+    """lib_state.py's state_dir, so the search path for the state repo has
+    one home: in this checkout beside the tool, else the seeded copy."""
+    here = Path(__file__).resolve().parent
+    for d in (here.parent.parent / ".claude" / "hooks", Path.home() / ".claude" / "hooks"):
+        if (d / "lib_state.py").is_file():
+            sys.path.insert(0, str(d))
+            break
+    else:
+        die("lib_state.py not found")
+    import lib_state
+    d = lib_state.state_dir()
+    if not d:
+        die("lib_state.py could not name the state dir")
+    return Path(d)
 
-cmd=${1:-}; [ $# -gt 0 ] && shift
-case $cmd in
-  create)
-    id="" owner=agent repo=- parent=- model=- effort=- points="" brief="" has_brief=""
-    while [ $# -gt 0 ]; do
-      case $1 in
-        --id) id=${2:-}; shift 2 ;;
-        --owner) owner=${2:-}; shift 2 ;;
-        --repo) repo=${2:-}; shift 2 ;;
-        --parent) parent=${2:-}; shift 2 ;;
-        --model) model=${2:-}; shift 2 ;;
-        --effort) effort=${2:-}; shift 2 ;;
-        --points) points=${2:-}; shift 2 ;;
-        --brief) read_brief "${2:-}"; has_brief=1; shift 2 ;;
-        --) shift; break ;;
-        -*) die "unknown option $1" ;;
-        *) break ;;
-      esac
-    done
-    [ $# -eq 1 ] || die "create takes one title (quote it)"
-    title=$1
-    case $title in ''|*"$nl"*) die "the title is one non-empty line" ;; esac
-    case $owner in agent|human-ruling|human-click) ;; *) die "owner is agent, human-ruling or human-click, got [$owner]" ;; esac
-    for v in "repo:$repo" "parent:$parent" "model:$model" "effort:$effort"; do word "${v%%:*}" "${v#*:}"; done
-    [ "$parent" = - ] || is_card_id "$parent" || die "parent is an item id, got [$parent]"
-    [ -z "$points" ] || points_ok "$points"
-    sid=$(me) || exit $?
-    [ -n "$id" ] || id=$(printf '%s%s' "$(date -u +%s)" "$sid")
-    file_of "$id"
-    mkdir -p "$ITEMS" || refuse "could not create $ITEMS"
-    lock "$id"
-    # set -C: a second create of one id is refused, never an overwrite.
-    if ! (set -C; printf '# %s\n\n## Brief\n\n## Log\n' "$title" > "$f") 2>/dev/null; then
-      refuse "item $id already exists: $f"
-    fi
-    append "status=open owner=$owner repo=$repo parent=$parent model=$model effort=$effort"
-    if [ -n "$has_brief$points" ]; then write_brief; append briefed; fi
-    printf '%s\n' "$id" ;;
-  brief)
-    need "${1:-}"; id=$1; shift; points=""
-    [ "${1:-}" = --points ] && { points=${2:-}; points_ok "$points"; shift 2; }
-    [ $# -eq 1 ] || die "brief takes the text, or - for stdin"
-    read_brief "$1"; sid=$(me) || exit $?
-    lock "$id"
-    [ -n "$points" ] || points=$(work_item_fold "$f" | sed -n 's/^points=//p')
-    write_brief; append briefed ;;
-  log)
-    need "${1:-}"; id=$1; shift
-    [ $# -gt 0 ] || die "log takes one or more words"
-    line="$*"
-    case $line in *"$nl"*) die "a log line is one line" ;; esac
-    sid=$(me) || exit $?; to=""
-    for w in "$@"; do
-      case $w in
-        status=*) to=${w#status=} ;;
-        owner=*) case ${w#owner=} in agent|human-ruling|human-click) ;; *) die "owner is agent, human-ruling or human-click" ;; esac ;;
-      esac
-    done
-    lock "$id"
-    [ -z "$to" ] || move "$to"
-    append "$line" ;;
-  claim)
-    need "${1:-}"; id=$1; sid=$(me) || exit $?
-    lock "$id"
-    move claimed
-    append status=claimed ;;
-  release)
-    need "${1:-}"; id=$1; sid=$(me) || exit $?
-    lock "$id"
-    folded=$(fold_item) || refuse "could not read $f"
-    [ "$(fact holder)" = "$sid" ] || refuse "$id is not held by this session ($sid)"
-    move ready
-    append status=ready ;;
-  show)
-    need "${1:-}"; cat "$f" ;;
-  fold)
-    need "${1:-}"; fold_item ;;
-  *) sed -n '5,13p' "$0" | sed 's/^#   //' >&2; exit 2 ;;
-esac
+
+def items_dir():
+    d = os.environ.get("WORK_ITEM_DIR")
+    return Path(d) if d else state_dir() / "items"
+
+
+def iso(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+
+
+def is_item_id(s):
+    return bool(re.fullmatch(r"[0-9]{10}[0-9a-f]{8}", s or ""))
+
+
+def me():
+    raw = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    hex8 = raw.replace("-", "")[:8].lower()
+    if len(hex8) != 8:
+        die("no session id (run inside a session)")
+    if not re.fullmatch(r"[0-9a-f]{8}", hex8):
+        die(f"session id {raw} does not start with eight hex")
+    return hex8
+
+
+def word(name, v):
+    """A log value is one word: the line is split on spaces."""
+    if "\n" in v:
+        die(f"{name} must be one line")
+    if not v or " " in v or "\t" in v:
+        die(f"{name} must be one word, got [{v}]")
+
+
+def points_ok(p):
+    if p not in POINTS:
+        die(f"points is one of 1 2 3 5 8 13, got [{p}]")
+
+
+def num(s):
+    """awk's string-to-number: the leading numeric prefix, else 0."""
+    m = re.match(r"\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?", s)
+    return float(m.group(0)) if m else 0.0
+
+
+def fmt(x):
+    """awk's number output: integral values whole, the rest %.6g."""
+    return str(int(x)) if x == int(x) and abs(x) < 1e16 else "%.6g" % x
+
+
+def fold(path, cutoff=""):
+    """An item's state, folded from its file: (key, value) pairs, the last
+    value of each log fact winning. The log is `<iso> <sid8> <words>`; a word
+    `k=v` sets fact k, a line that omits a fact changes nothing. The holder is
+    the session of the newest `status=claimed` line while the status is
+    claimed or blocked; it is stale when that session's newest line on the
+    item is older than <cutoff> (ISO UTC strings sort as times). `cost` lines
+    sum to cost_tokens and cost_usd; `briefed` lines count. points comes from
+    the brief, not the log."""
+    title = status = holder = since = points = created = updated = ""
+    fact = dict.fromkeys(FACTS, "")
+    seen = {}
+    sec = ""
+    briefed = costs = 0
+    ctok = cusd = 0.0
+    for line in path.read_text().splitlines():
+        if sec == "" and line.startswith("# ") and title == "":
+            title = line[2:]
+            continue
+        if re.fullmatch(r"## Brief[ \t]*", line):
+            sec = "brief"
+            continue
+        if re.fullmatch(r"## Log[ \t]*", line):
+            sec = "log"
+            continue
+        if line.startswith("## "):
+            sec = "other"
+            continue
+        if sec == "brief" and line.startswith("points:"):
+            points = line[len("points:"):].lstrip(" \t").rstrip(" \t\r")
+            continue
+        f = line.split()
+        if sec != "log" or len(f) < 3:
+            continue
+        t, s = f[0], f[1]
+        created = created or t
+        updated = seen[s] = t
+        if f[2] == "briefed":
+            briefed += 1
+        for w in f[2:]:
+            if "=" not in w:
+                continue
+            k, v = w.split("=", 1)
+            if f[2] == "cost":
+                if k == "tokens":
+                    ctok += num(v)
+                elif k == "usd":
+                    cusd += num(v)
+            elif k == "status":
+                status = v
+                if v == "claimed":
+                    holder, since = s, t
+                elif v != "blocked":
+                    holder = since = ""
+            elif k in fact:
+                fact[k] = v
+        if f[2] == "cost":
+            costs += 1
+    stale = "yes" if holder and cutoff and seen.get(holder, "") < cutoff else "no"
+    return [("id", path.name[:-3] if path.name.endswith(".md") else path.name),
+            ("title", title), ("status", status), ("holder", holder),
+            ("held_since", since), ("holder_last", seen.get(holder, "") if holder else ""),
+            ("holder_stale", stale), *fact.items(), ("points", points),
+            ("briefed", str(briefed)), ("costs", str(costs)),
+            ("cost_tokens", fmt(ctok)), ("cost_usd", fmt(cusd)),
+            ("created", created), ("updated", updated)]
+
+
+class Item:
+    def __init__(self, item_id):
+        if not is_item_id(item_id):
+            die(f"not an item id: {item_id or '<id>'}")
+        self.id = item_id
+        self.path = items_dir() / f"{item_id}.md"
+        self.lockf = None
+
+    def need(self):
+        if not self.path.is_file():
+            refuse(f"no item {self.id} in {items_dir()}")
+        return self
+
+    def lock(self):
+        """Hold the item's write lock for the rest of the process, waiting up to 10s."""
+        p = Path(os.environ.get("TMPDIR") or "/tmp") / f"work-item.{self.id}.lock"
+        try:
+            self.lockf = open(p, "a")
+        except OSError:
+            refuse(f"could not open the lock {p}")
+        for _ in range(11):
+            try:
+                fcntl.flock(self.lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError:
+                time.sleep(1)
+        refuse(f"item {self.id} is locked by another writer")
+
+    def facts(self):
+        stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 7200)
+        try:
+            return dict(fold(self.path, iso(time.time() - stale)))
+        except OSError:
+            refuse(f"could not read {self.path}")
+
+    def append(self, sid, words):
+        """One line from this session, or fail loudly."""
+        try:
+            with open(self.path, "a") as fh:
+                fh.write(f"{iso(time.time())} {sid} {words}\n")
+        except OSError:
+            refuse(f"could not write {self.path}")
+
+    def move(self, sid, to):
+        """Check a status move against the transitions and the holder, under the lock."""
+        if to not in STATUSES:
+            die(f"unknown status {to} (one of {' '.join(STATUSES)})")
+        f = self.facts()
+        holder = f["holder"]
+        live = holder if holder and f["holder_stale"] == "no" else ""
+        if live and live != sid:
+            refuse(f"{self.id} is held by {live} since {f['held_since']} "
+                   f"(last wrote {f['holder_last']})")
+        if to == "claimed" and holder and not live:
+            return  # a stale holder has let go: the item reads as handed back
+        if f["status"] != to and (f["status"], to) not in ALLOWED:
+            refuse(f"{self.id}: {f['status']} -> {to} is not a transition")
+
+    def write_brief(self, brief, points):
+        """Rewrite the Brief section from brief and points."""
+        try:
+            lines = self.path.read_text().splitlines(keepends=True)
+            head = next(i for i, l in enumerate(lines) if re.fullmatch(r"## Brief[ \t]*\n?", l))
+            log = next(i for i, l in enumerate(lines) if re.fullmatch(r"## Log[ \t]*\n?", l))
+            tmp = self.path.with_name(f"{self.path.name}.tmp.{os.getpid()}")
+            tmp.write_text("".join(lines[:head]) + brief_section(brief, points)
+                           + "".join(lines[log:]))
+            os.replace(tmp, self.path)
+        except (OSError, StopIteration):
+            refuse(f"could not write {self.path}")
+
+
+def brief_section(brief, points):
+    return ("## Brief\n" + (f"points: {points}\n" if points else "")
+            + (f"{brief}\n" if brief else "") + "\n")
+
+
+def read_brief(arg):
+    """The brief text, from the argument or stdin for `-`. A `## ` line would
+    end the brief early on the next read."""
+    brief = sys.stdin.read().rstrip("\n") if arg == "-" else arg
+    if any(l.startswith("## ") for l in brief.split("\n")):
+        die("a brief line may not start with '## '")
+    return brief
+
+
+def check_owner(o):
+    if o not in OWNERS:
+        die(f"owner is agent, human-ruling or human-click, got [{o}]")
+
+
+def create(args):
+    opt = {"id": "", "owner": "agent", "repo": "-", "parent": "-", "model": "-",
+           "effort": "-", "points": ""}
+    brief, has_brief = "", False
+    while args:
+        a = args[0]
+        if a == "--brief":
+            brief, has_brief = read_brief(args[1] if len(args) > 1 else ""), True
+        elif a.startswith("--") and a[2:] in opt:
+            opt[a[2:]] = args[1] if len(args) > 1 else ""
+        elif a == "--":
+            args = args[1:]
+            break
+        elif a.startswith("-"):
+            die(f"unknown option {a}")
+        else:
+            break
+        args = args[2:]
+    if len(args) != 1:
+        die("create takes one title (quote it)")
+    title = args[0]
+    if not title or "\n" in title:
+        die("the title is one non-empty line")
+    check_owner(opt["owner"])
+    for k in ("repo", "parent", "model", "effort"):
+        word(k, opt[k])
+    if opt["parent"] != "-" and not is_item_id(opt["parent"]):
+        die(f"parent is an item id, got [{opt['parent']}]")
+    if opt["points"]:
+        points_ok(opt["points"])
+    sid = me()
+    it = Item(opt["id"] or f"{int(time.time())}{sid}")
+    try:
+        items_dir().mkdir(parents=True, exist_ok=True)
+    except OSError:
+        refuse(f"could not create {items_dir()}")
+    it.lock()
+    now = iso(time.time())
+    body = (f"# {title}\n\n" + brief_section(brief, opt["points"]) + "## Log\n"
+            + f"{now} {sid} status=open owner={opt['owner']} repo={opt['repo']} "
+              f"parent={opt['parent']} model={opt['model']} effort={opt['effort']}\n")
+    if has_brief or opt["points"]:
+        body += f"{now} {sid} briefed\n"
+    # Exclusive create: a second create of one id is refused, never an overwrite.
+    try:
+        with open(it.path, "x") as fh:
+            fh.write(body)
+    except FileExistsError:
+        refuse(f"item {it.id} already exists: {it.path}")
+    except OSError:
+        refuse(f"could not write {it.path}")
+    print(it.id)
+
+
+def main(argv):
+    cmd, args = (argv[0], argv[1:]) if argv else ("", [])
+    if cmd == "create":
+        return create(args)
+    if cmd not in ("brief", "log", "claim", "release", "show", "fold"):
+        sys.stderr.write("".join(l[4:] + "\n" for l in
+                                 Path(__file__).read_text().splitlines()[4:13]))
+        return 2
+    it = Item(args[0] if args else "").need()
+    args = args[1:]
+    if cmd == "show":
+        sys.stdout.write(it.path.read_text())
+    elif cmd == "fold":
+        print("\n".join(f"{k}={v}" for k, v in it.facts().items()))
+    elif cmd == "brief":
+        points = ""
+        if args[:1] == ["--points"]:
+            points = args[1] if len(args) > 1 else ""
+            points_ok(points)
+            args = args[2:]
+        if len(args) != 1:
+            die("brief takes the text, or - for stdin")
+        brief = read_brief(args[0])
+        sid = me()
+        it.lock()
+        it.write_brief(brief, points or it.facts()["points"])
+        it.append(sid, "briefed")
+    elif cmd == "log":
+        if not args:
+            die("log takes one or more words")
+        line = " ".join(args)
+        if "\n" in line:
+            die("a log line is one line")
+        sid = me()
+        to = ""
+        for w in args:
+            if w.startswith("status="):
+                to = w[len("status="):]
+            elif w.startswith("owner="):
+                check_owner(w[len("owner="):])
+        it.lock()
+        if to:
+            it.move(sid, to)
+        it.append(sid, line)
+    elif cmd == "claim":
+        sid = me()
+        it.lock()
+        it.move(sid, "claimed")
+        it.append(sid, "status=claimed")
+    elif cmd == "release":
+        sid = me()
+        it.lock()
+        if it.facts()["holder"] != sid:
+            refuse(f"{it.id} is not held by this session ({sid})")
+        it.move(sid, "ready")
+        it.append(sid, "status=ready")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exit as e:
+        sys.stderr.write(f"work-item: {e}\n")
+        sys.exit(e.code)
