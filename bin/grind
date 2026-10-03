@@ -497,7 +497,8 @@ on_exit() {
 }
 
 # take_lock <dir> <label> -- 0 when this run now holds <dir>, 1 when a live
-# grind does (its meta.json is left for the caller to show).
+# grind does (its meta.json is left for the caller to show), or won the race
+# to reclaim a stale one.
 take_lock() {
   mkdir "$1" 2>/dev/null && return 0
   set -- "$1" "$2" $(jq -r '(.pid // 0), (.hostname // "")' "$1/meta.json" 2>/dev/null)
@@ -506,7 +507,7 @@ take_lock() {
     warn "reclaiming stale lock on $2 at $1 (pid $other_pid not running)"
     stale_dir="$1.stale.$$"  # rename first: atomic, a racer's mkdir below loses cleanly
     mv "$1" "$stale_dir" 2>/dev/null && rm -rf "$stale_dir" && mkdir "$1" \
-      || { err "lock changed while reclaiming it"; exit 1; }
+      || { warn "lock on $2 changed while reclaiming it"; return 1; }
     return 0
   fi
   return 1
@@ -589,7 +590,8 @@ if [ "$dry_run" -eq 0 ] && [ -n "$project" ]; then
     if take_lock "$d" "$r"; then
       member_locks="$member_locks $d"; held_json=$(printf '%s' "$held_json" | jq -c --arg r "$r" '. + [$r]')
     else
-      warn "$r: another grind holds it (pid $(jq -r '.pid // "?"' "$d/meta.json" 2>/dev/null)); it is out of this run"
+      other_pid=$(jq -r '.pid // empty' "$d/meta.json" 2>/dev/null || true)
+      warn "$r: another grind holds it (pid ${other_pid:-?}); it is out of this run"
     fi
   done
   repos_json=$held_json
@@ -711,13 +713,14 @@ estimate_cost() {
 
 # cheapest-first: each item's pair, read once here and carried as .pair_text
 # so the dispatch below does not read it again, then a stable sort on the
-# estimate (model_price_out, below, times the effort weight).
+# estimate (model_price_out times the effort weight). The text reaches jq on
+# stdin, never as an argument: a PR body and its last comment can pass the
+# kernel's 128 KiB cap on one argument.
 effort_weight() { case $1 in low) echo 0.5 ;; high) echo 2 ;; xhigh) echo 3 ;; max) echo 4 ;; *) echo 1 ;; esac; }
 if [ "$policy" = cheapest-first ]; then
-  ranked="[]"
   n_items=$(printf '%s' "$items" | jq 'length'); k=0
   while [ "$k" -lt "$n_items" ]; do
-    it=$(printf '%s' "$items" | jq -c ".[$k]"); k=$((k + 1))
+    it=$(printf '%s' "$items" | jq -c ".[$k]")
     case $(printf '%s' "$it" | jq -r .kind) in
       pr)   pt=$(gh pr view "$(printf '%s' "$it" | jq -r .number)" --repo "$(printf '%s' "$it" | jq -r .repo)" --json body,comments \
               --jq '[.body // "", (.comments[-1].body // "")] | join("\n")' 2>/dev/null || true) ;;
@@ -727,9 +730,11 @@ if [ "$policy" = cheapest-first ]; then
     m=$(item_field model "$pt"); [ -n "$m" ] || m=${default_pair% *}
     e=$(item_field effort "$pt"); [ -n "$e" ] || e=${default_pair#* }
     est=$(awk -v p="$(model_price_out "$m")" -v w="$(effort_weight "$e")" 'BEGIN { printf "%.2f", p * w }')
-    ranked=$(printf '%s' "$ranked" | jq -c --argjson it "$it" --arg pt "$pt" --argjson est "$est" '. + [$it + {pair_text: $pt, est: $est}]')
+    items=$({ printf '%s\n' "$items"; printf '%s' "$pt" | jq -Rs .; } \
+      | jq -sc --argjson k "$k" --argjson est "$est" '.[1] as $pt | .[0] | .[$k] += {pair_text: $pt, est: $est}')
+    k=$((k + 1))
   done
-  items=$(printf '%s' "$ranked" | jq -c 'sort_by(.est)')
+  items=$(printf '%s' "$items" | jq -c 'sort_by(.est)')
 fi
 
 count=$(printf '%s' "$items" | jq 'length')
