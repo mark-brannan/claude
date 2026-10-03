@@ -18,9 +18,15 @@
 #     it falls back to a GitHub-API-signed commit with no local key), so it
 #     can say so in the handoff
 #
-# Only the current branch of the payload's cwd is inspected. A push that
-# names another ref, or runs after a `cd`, is not caught; that is accepted
-# imprecision, not a bypass anyone would reach for.
+# The current branch of the *pushed* repo is inspected -- which is the
+# payload's cwd unless the command itself names a different one, via a
+# leading `cd DIR &&`/`cd DIR;` or a `git -C DIR push`. Without following
+# those, a push run against one repo from a session sitting in another gets
+# checked against the wrong repo: a false deny (the real target is clean but
+# the session's cwd has unsigned commits) or a false allow (the reverse).
+# A push that names another ref, or a `cd` reached through a pipe or a
+# multi-hop chain, is still not caught; that is accepted imprecision, not a
+# bypass anyone would reach for.
 #
 # GATE where a key exists: no jq or unreadable payload -> deny. Anything
 # else uncertain (not a repo, no upstream and no origin/HEAD) -> allow.
@@ -40,7 +46,67 @@ printf '%s' "$cmd" | grep -Eq \
   || exit 0
 
 cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)
-[ -n "$cwd" ] && [ -d "$cwd" ] && cd "$cwd" || exit 0
+[ -n "$cwd" ] && [ -d "$cwd" ] || exit 0
+
+target_cwd=$cwd
+
+# shellcheck disable=SC2088,SC2016  # matching the literal text "~" / "$HOME"
+# from the push command, not expanding this script's own tilde or variable.
+# A bare `cd` (empty argument) goes to $HOME, same as the shell. `cd -`
+# can't be resolved without OLDPWD, which this hook doesn't have, so it is
+# left unhandled rather than guessed.
+expand_leading() {
+  case $1 in
+    '-') printf '' ;;
+    '~') printf '%s' "$HOME" ;;
+    '~/'*) printf '%s/%s' "$HOME" "${1#\~/}" ;;
+    '$HOME') printf '%s' "$HOME" ;;
+    '$HOME/'*) printf '%s/%s' "$HOME" "${1#'$HOME/'}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+apply_target() {
+  [ -n "$1" ] || return 0
+  case $1 in
+    /*) target_cwd=$1 ;;
+    *) target_cwd=$target_cwd/$1 ;;
+  esac
+}
+
+# Only a leading `cd` (anchored to the start of the command) counts as the
+# push's directory; one reached after it, as in `git push && cd ..`, does
+# not. The stop class excludes `|` too, so `cd /a || git push` captures just
+# `/a`, not `/a || git push`. grep anchors `^` per line, so only the first
+# line is offered: a `cd` opening a later line runs after the push.
+leading_cd_raw=$(printf '%s\n' "$cmd" | head -n 1 | grep -oE '^[[:space:]]*cd([[:space:]]+[^;&|]*|[[:space:]]*($|[;&|]))')
+if [ -n "$leading_cd_raw" ]; then
+  leading_cd=$(printf '%s' "$leading_cd_raw" | sed -E 's/^[[:space:]]*cd[[:space:]]*//; s/[[:space:]]*$//; s/[;&|]$//; s/[[:space:]]*$//; s/^["'"'"']//; s/["'"'"']$//')
+  [ -n "$leading_cd" ] || leading_cd='~'
+  apply_target "$(expand_leading "$leading_cd")"
+fi
+
+# -C is only the push's own, from the matched `git ... push` invocation
+# itself -- not from an unrelated `git commit -C HEAD` earlier in the
+# command, nor from a second `git -C other ...` after it. Several -C flags
+# chain, as git does: `git -C a -C b push` runs in a/b.
+pushseg=$(printf '%s' "$cmd" | grep -oE \
+  '(^|[^A-Za-z0-9_./-])git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--[^[:space:]]+))*[[:space:]]+push([[:space:]]|$)' \
+  | tail -1)
+cflags=$(printf '%s' "$pushseg" | grep -oE '\-C[[:space:]]+[^[:space:]]+' | sed -E 's/^-C[[:space:]]+//; s/^["'"'"']//; s/["'"'"']$//')
+while IFS= read -r cflag; do
+  apply_target "$(expand_leading "$cflag")"
+done <<EOF_CFLAGS
+$cflags
+EOF_CFLAGS
+
+# A named target that doesn't resolve to a real directory (bad expansion, a
+# typo, a `cd` into a directory the command creates later) falls back to the
+# session cwd rather than exiting 0 -- the same uncertain-case-allows
+# default this hook uses everywhere else (see the top-of-file note), not a
+# guarantee the right repo got checked.
+[ -d "$target_cwd" ] && cwd=$target_cwd
+
+cd "$cwd" || exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 git symbolic-ref -q HEAD >/dev/null 2>&1 || exit 0   # detached: nothing sensible to check
 

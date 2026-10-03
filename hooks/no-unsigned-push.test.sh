@@ -54,6 +54,16 @@ run_hook() {
   esac
 }
 
+# Sets $verdict / $hook_out for an arbitrary command + cwd pair.
+run_hook_cmd() {
+  hook_out=$(jq -nc --arg c "$1" --arg d "$2" '{tool_input:{command:$c},cwd:$d}' | sh "$HOOK")
+  case $hook_out in
+    '') verdict=silent ;;
+    *'"deny"'*) verdict=deny ;;
+    *) verdict=allow ;;
+  esac
+}
+
 # The bug: a pushed branch that merges a main carrying unsigned commits was
 # denied for main's commits, which @{u}..HEAD counted as its own.
 w=$(setup)
@@ -98,6 +108,70 @@ git -C "$w" switch -q -c clean
 git -C "$w" commit -q --allow-empty -m signed
 run_hook "$w"
 check "signed branch passes" "$verdict" silent
+
+# The repo actually being pushed is the one to check, not wherever the
+# session's cwd happens to sit. cwd here is a clean repo; the command names
+# a different, unsigned one via `-C` -- that one must be denied.
+clean=$(setup)
+dirty=$(setup)
+git -C "$clean" switch -q -c feat
+git -C "$clean" commit -q --allow-empty -m 'signed on feat'
+git -C "$dirty" switch -q -c feat
+unsigned_commit "$dirty" 'unsigned on feat'
+run_hook_cmd "git -C $dirty push" "$clean"
+check "git -C DIR push checks DIR, not cwd" "$verdict" deny
+
+# Same, but cwd is the unsigned repo and the command's -C target is clean:
+# must not deny on the cwd's unsigned commits.
+run_hook_cmd "git -C $clean push" "$dirty"
+check "git -C DIR push does not fall back to cwd's commits" "$verdict" silent
+
+# A leading `cd DIR &&` before the push has the same effect.
+run_hook_cmd "cd $dirty && git push" "$clean"
+check "cd DIR && git push checks DIR, not cwd" "$verdict" deny
+run_hook_cmd "cd $clean && git push" "$dirty"
+check "cd DIR && git push does not fall back to cwd's commits" "$verdict" silent
+
+# A `cd` after the push, or an unrelated `-C` before it, must not be read as
+# the push's directory -- both would otherwise point the check at the wrong
+# repo (or a nonexistent one) and fail open.
+run_hook_cmd "git push && cd $dirty" "$clean"
+check "a trailing cd after push is not the push's directory" "$verdict" silent
+run_hook_cmd "git commit -C HEAD && git push" "$dirty"
+check "an unrelated -C before push is not the push's -C" "$verdict" deny
+run_hook_cmd "git -C $dirty push && git -C $clean status" "$clean"
+check "a second -C after the push is not the push's -C" "$verdict" deny
+
+# `cd /a || git push` must not swallow the `|| git push` into the directory
+# it captures -- the push itself still runs (regardless of whether `cd`
+# succeeded), so the stop class must treat `|` as a separator too.
+run_hook_cmd "cd $dirty || git push" "$clean"
+check "cd DIR || git push does not swallow the fallback into the path" "$verdict" deny
+
+# A bare `cd` (no argument) goes to $HOME, same as the shell.
+HOME_SAVE=$HOME
+export HOME=$dirty
+run_hook_cmd "cd && git push" "$clean"
+check "bare cd checks \$HOME, not cwd" "$verdict" deny
+export HOME=$HOME_SAVE
+
+# -C gets the same ~/\$HOME expansion as a leading cd.
+HOME_SAVE=$HOME
+dirty_parent=$(dirname "$dirty")
+export HOME=$dirty_parent
+run_hook_cmd "git -C ~/$(basename "$dirty") push" "$clean"
+check "git -C ~/DIR push expands the tilde" "$verdict" deny
+export HOME=$HOME_SAVE
+
+# grep's `^` anchors every line, so a `cd` opening a later line of a
+# multi-line command must not be read as the push's directory either.
+run_hook_cmd "git push
+cd $dirty" "$clean"
+check "a cd on a later line is not the push's directory" "$verdict" silent
+
+# Several -C flags chain, as git does: `-C parent -C w` is parent/w.
+run_hook_cmd "git -C $(dirname "$dirty") -C $(basename "$dirty") push" "$clean"
+check "chained -C flags resolve like git's" "$verdict" deny
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
