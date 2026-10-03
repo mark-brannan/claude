@@ -499,8 +499,8 @@ has 'a done claim with no PR is UNVERIFIED, and says why' \
 lacks 'no success line for an unverified item' '^o/alpha#5: First item --'
 assert 'gh was asked for a PR whose head is the item branch' \
   grep -q -- 'pr list --repo o/alpha --head grind-5 --state all' "$GH_LOG"
-has 'the worktree is kept for inspection' 'WARN  keeping worktree .*grind-worktrees/5 on branch grind-5 for inspection'
-assert 'and it really is still on disk' test -d "$TMPDIR/grind-worktrees/5"
+has 'the worktree is kept for inspection' 'WARN  keeping worktree .*grind-worktrees/alpha/5 on branch grind-5 for inspection'
+assert 'and it really is still on disk' test -d "$TMPDIR/grind-worktrees/alpha/5"
 sess=$(latest_session)
 eq 'recorded as unverified' unverified "$(jq -r '.items[0].status' "$sess")"
 eq 'its cost is still counted' 0.50 "$(jq -r '.items[0].cost' "$sess")"
@@ -605,7 +605,7 @@ git -C "$S/repo" reset -q --hard "$main_before"
 # An earlier attempt's unpushed commits are pushed as wip/ before a retry
 # clears them; these scenarios each start from a clean slate instead.
 forget_item5() {
-  git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/5" >/dev/null 2>&1
+  git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/alpha/5" >/dev/null 2>&1
   git -C "$S/repo" branch -D grind-5 >/dev/null 2>&1; true
 }
 # a push that fails leaves the item unverified and its worktree kept: the
@@ -619,7 +619,7 @@ reply 0.50 "done" 1
 GIT_PUSH_FAIL=1 run --session-budget 100 --pause-every 1
 has 'a failed staging push warns' 'could not move staged \.claude/ files into place and push them for o/alpha#5'
 has 'and the item is UNVERIFIED, saying why' '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but its staged \.claude/ files were never pushed'
-has 'and its worktree is kept' 'keeping worktree .*grind-worktrees/5 on branch grind-5 for inspection'
+has 'and its worktree is kept' 'keeping worktree .*grind-worktrees/alpha/5 on branch grind-5 for inspection'
 # blocked keeps its status -- retrying it would only block again -- but the
 # worktree holding the unpushed .claude/ change is still kept
 forget_item5
@@ -627,7 +627,7 @@ rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$GIT_PUSH_LOG"
 reply 0.50 "blocked" 1
 GIT_PUSH_FAIL=1 run --session-budget 100 --pause-every 1
 has 'a blocked item with a failed staging push stays blocked' '^blocked: o/alpha#5 -- First item'
-has 'and still keeps its worktree' 'keeping worktree .*grind-worktrees/5 on branch grind-5 for inspection'
+has 'and still keeps its worktree' 'keeping worktree .*grind-worktrees/alpha/5 on branch grind-5 for inspection'
 rm -rf "$S/claude-stage"
 
 # an item with nothing staged is unaffected -- no move, no extra push, no log line
@@ -1028,7 +1028,7 @@ eq 'and is queued once, not again on its own' 1 "$(grep -c 'o/alpha#13 --' <<<"$
 lacks 'a parent with open sub-issues is not itself worked' 'o/alpha#(5|8) --'
 lacks 'a sub-issue that is not Ready is not worked' 'o/beta#14'
 lacks 'nor a closed one' 'o/alpha#15'
-has 'an issue with no sub-issues is one unit, unchanged' "git -C $S/repo worktree add -b grind-6 $TMPDIR/grind-worktrees/6$"
+has 'an issue with no sub-issues is one unit, unchanged' "git -C $S/repo worktree add -b grind-6 $TMPDIR/grind-worktrees/alpha/6$"
 has 'a sub-issue whose repo has no checkout is dropped, on the usual line' "no local checkout of o/gamma \(not the cwd, not $HOME/gamma\)"
 lacks 'and never queued' 'o/gamma#3 --'
 has 'an issue whose sub-issues cannot be read is skipped, loudly' 'WARN  skipping o/alpha#9 -- could not read its sub-issues$'
@@ -1250,7 +1250,7 @@ has 'an unbacked card claim is UNVERIFIED' '^UNVERIFIED: card:alpha-tidy-the-wid
 eq 'the card was claimed before the worker ran, then released' 'status=claimed status=ready' \
   "$(awk '/^## Log/ {l=1; next} l && /status=/ {for (i = 3; i <= NF; i++) if ($i ~ /^status=/) print $i}' "$WORK_ITEM_DIR/17909840241dc56754.md" | tail -2 | paste -sd' ' -)"
 eq 'and the session file says the claim was let go' true "$(jq -r '.items[0].claim_released' "$(latest_session)")"
-forget_card() { git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/card-alpha-tidy-the-widget" >/dev/null 2>&1
+forget_card() { git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/alpha/card-alpha-tidy-the-widget" >/dev/null 2>&1
                 git -C "$S/repo" branch -D grind-card-alpha-tidy-the-widget >/dev/null 2>&1; true; }
 forget_card
 # a blocked card is logged blocked, not handed back as ready, with grind's
@@ -1676,7 +1676,7 @@ assert 'its claim stamp is released, for an issue as for a fixup' grep -Eq -- '^
 eq 'and the session file says so' 'true' "$(jq -r '.items[0].claim_released' "$sess")"
 eq 'naming the worker session whose stamp it was' 'sess-donecap' "$(jq -r '.items[0].worker_sid' "$sess")"
 eq 'its worktree was removed after the item was recorded, not before' '1' "$(tail -1 "$S/wt-remove.log" 2>/dev/null)"
-assert 'and is gone' test ! -d "$TMPDIR/grind-worktrees/77"
+assert 'and is gone' test ! -d "$TMPDIR/grind-worktrees/alpha/77"
 : > "$CLAUDE_LOG"
 run --resume "$(basename "$sess" .json)"
 eq 'no retry is queued for it' 0 "$(calls_claude)"
@@ -1695,7 +1695,7 @@ eq 'and recorded, cost marked estimated, claim released' 'failed true true' \
 assert 'the estimate is the heartbeat input-side one, not zero' \
   test "$(jq -r '.items[0].cost > 0' "$sess")" = true
 assert 'its stamp is released from the stream session id' grep -Eq -- '^release .*--scan sess-noresult$' "$S/stamp.log"
-assert 'its worktree is kept, holding the unpushed commit' test -d "$TMPDIR/grind-worktrees/78"
+assert 'its worktree is kept, holding the unpushed commit' test -d "$TMPDIR/grind-worktrees/alpha/78"
 
 # --- a retry keeps the work: unpushed commits go to wip/ before anything is cleared ----
 : > "$GIT_PUSH_LOG"; echo donecap > "$S/claude-mode"
@@ -1712,12 +1712,12 @@ JSON
 echo '[]' > "$S/pr-list.json"; echo noresult > "$S/claude-mode"
 rm -f "$S/state/grind"/*.json
 run --kind issue --session-budget 100 --pause-every 10
-kept=$(git -C "$TMPDIR/grind-worktrees/79" rev-parse HEAD)
+kept=$(git -C "$TMPDIR/grind-worktrees/alpha/79" rev-parse HEAD)
 : > "$CLAUDE_LOG"
 GIT_PUSH_FAIL=1 run --resume "$(basename "$(latest_session)" .json)"
 has 'a failed wip push skips the retry' 'WARN  skipping o/alpha#79 -- could not push the earlier attempt'
 eq 'without running a worker' 0 "$(calls_claude)"
-eq 'and the earlier attempt is untouched' "$kept" "$(git -C "$TMPDIR/grind-worktrees/79" rev-parse HEAD)"
+eq 'and the earlier attempt is untouched' "$kept" "$(git -C "$TMPDIR/grind-worktrees/alpha/79" rev-parse HEAD)"
 
 # --- a signal ends the run on the record, and lets the worker's claim go --------------
 cat > "$S/bin/claude" <<GH
