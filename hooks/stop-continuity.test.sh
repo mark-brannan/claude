@@ -562,6 +562,39 @@ assert 'no flock: the fake flock was never called' test ! -e "$FLOCK_CALLED"
 assert 'no flock: the push lock is released after the Stop' test ! -e "$TMPDIR/claude-state-push.lock.d"
 rm -f "$BIN/flock"; unset FLOCK_CALLED
 
+# --- the state-repo commit is signed iff this machine has a signing key ------
+# Same test as no-unsigned-push.sh (`git config user.signingkey`): a key means
+# the guard refuses unsigned commits here, so the hook must sign; no key (a
+# cloud VM) means unsigned, and the hook must still commit and not fail.
+echo "t namespaces=\"git\" $(cat "$S/sign.pub")" > "$S/allowed-signers"
+sgrepo() {  # sgrepo <name> -- a fresh state clone with a seed commit; prints its path
+  local o="$S/sg-$1-origin.git" r="$S/sg-$1"
+  git init -q --bare "$o"; git init -q -b main "$r"
+  gitq "$r" remote add origin "$o"
+  mkdir -p "$r/state/global"; echo seed > "$r/state/global/.seed"
+  gitq "$r" add state; gitq "$r" commit -m seed; gitq "$r" push -u origin main
+  git -C "$r" config gpg.format ssh
+  git -C "$r" config gpg.ssh.allowedSignersFile "$S/allowed-signers"
+  printf '%s' "$r"
+}
+SGK=$(sgrepo key)
+git -C "$SGK" config user.signingkey "$S/sign.pub"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SGK" stop
+eq 'state commit, key configured: the hook committed' \
+  "State: work session ${SID:0:8}" "$(git -C "$SGK" log -1 --format=%s | sed 's/ (.*//')"
+assert 'state commit, key configured: the commit is signed (%G? is not N)' \
+  test "$(git -C "$SGK" log -1 --format=%G?)" != N
+eq 'state commit, key configured: and it carries a signature header' gpgsig \
+  "$(git -C "$SGK" cat-file -p HEAD | awk '/^gpgsig/{print "gpgsig"; exit}')"
+
+SGN=$(sgrepo nokey)
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SGN" stop
+eq 'state commit, no key: the hook still committed' \
+  "State: work session ${SID:0:8}" "$(git -C "$SGN" log -1 --format=%s | sed 's/ (.*//')"
+eq 'state commit, no key: the commit is unsigned (%G? is N)' N "$(git -C "$SGN" log -1 --format=%G?)"
+assert 'state commit, no key: the verdict is not a commit failure' \
+  bash -c '! grep -q "state-repo commit failed" "$1"' _ "$CKPT"
+
 # --- a conflicting state-repo pull is backed out, never left mid-rebase ---------
 # Upstream and this clone both add one path with different bytes: the Stop's
 # own commit conflicts on `pull --rebase`, and a rebase left in place would
