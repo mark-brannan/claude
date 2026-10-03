@@ -688,7 +688,9 @@ t 'and the model is told to acknowledge in one line' \
 d=$(( $(bedf .bed_at) - nowb - 420 ))
 t 'bed_at lands in the machine-wide clock file' yes "$([ "${d#-}" -le 60 ] && echo yes || echo no)"
 hb=$(( ($(TZ=UTC date +%H | sed 's/^0*//;s/^$/0/') + 1) % 24 ))
-o=$(BP bed1 "$hb")
+# In an hour's last minutes the next hour is inside the warning window, and a
+# warning landing here would add a crossing the count below doesn't expect.
+o=$(METRICS_BED_WARN_MIN=0 BP bed1 "$hb")
 has 'a bare hour is the next time the clock reads it' '^bed at [0-9][0-9]:00 noted$' "$(msg "$o")"
 d=$(( $(bedf .bed_at) - $(date +%s) ))
 t 'and that is within the hour' yes "$([ "$d" -gt 0 ] && [ "$d" -le 3600 ] && echo yes || echo no)"
