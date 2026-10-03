@@ -139,8 +139,10 @@
 # to ready, committing and pushing the item file each time.
 #
 # The session file ends with `.ended = {at, reason, exit}` on every way out
-# once the lock is held; reason is pause-budget, pause-outlier,
-# pause-cadence, pause-band, queue-exhausted, signal or error.
+# once the lock is held and the file exists -- a new session's file is
+# written only once there is work, so its band pause, failed fetch or empty
+# queue leaves nothing; reason is pause-budget, pause-outlier,
+# pause-cadence, pause-band (a --resume), queue-exhausted, signal or error.
 #
 # Output: one INFO line per unit of work started and finished, a heartbeat
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
@@ -652,7 +654,7 @@ if [ "$dry_run" -eq 0 ]; then
   # Loud on failure: `set -e` ignores a failure left of && or ||,
   # and the run would then spend on items it can never record.
   if [ -z "$resume_id" ]; then
-    create_state_file || { printf 'grind: cannot write %s\n' "$state_file" >&2; exit 1; }
+    create_state_file || { rm -f "$state_file"; printf 'grind: cannot write %s\n' "$state_file" >&2; exit 1; }
     write_lock "" ""
   fi
   info "session $session_id on $scope: $count item(s) ($kind_counts; $policy), cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"

@@ -1558,6 +1558,9 @@ git -C "$prorigin" update-ref -d refs/heads/fix-45   # make grind's fetch fail
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json
 run --prs
 has 'an uncheckoutable PR is skipped, not fatal' 'could not check out fix-45'
+# A --prs session with work, kept for the --resume test below: an empty
+# queue writes no session file, so that test cannot make its own.
+prs_session_file=$(latest_session); cp "$prs_session_file" "$S/prs-session.saved"
 eq 'the local branch of the same name survives' "$mine" "$(git -C "$prrepo" rev-parse fix-45)"
 
 # --- dotfiles#439: the backstop lands after the work is done --------------------------
@@ -1705,7 +1708,8 @@ jq -nc '{repos_missing_fixup_hard:[]}' > "$S/audit.json"
 # The UNVERIFIED line promises a retry on `grind --resume <id>`, with no
 # --prs on it; the session file has to carry the mode or that retry would
 # quietly work the Ready queue on the PR session's budget.
-prs_session=$(basename "$(ls -t "$S/state/grind"/*.json | head -1)" .json)
+cp "$S/prs-session.saved" "$prs_session_file"
+prs_session=$(basename "$prs_session_file" .json)
 eq 'the session file records the mode' 1 "$(jq -r .prs "$S/state/grind/$prs_session.json")"
 run --resume "$prs_session"
 has 'resumed without --prs, it still reads the PR queue' 'nothing to work on .* \(kinds: pr\)'
