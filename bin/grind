@@ -53,23 +53,38 @@
 #      Whatever ended the worker -- the backstop, an error, no result event
 #      at all -- the claim below is still checked against GitHub and the
 #      item recorded (cost from the heartbeat's estimate when there is no
-#      result, marked cost_estimated). The worker's claim stamp and a card's
-#      work-item claim are released on every path; the worktree is removed
-#      only after the record is written.
-#   4. The worker ends its final message with one of three status lines:
+#      result, marked cost_estimated). The worker's claim stamp is released
+#      on every path, and so is a card's work-item claim, except a card moved
+#      to `blocked`: the store keeps its holder until that holder goes stale.
+#      The worktree is removed only after the record is written.
+#   4. The worker ends its answer with one of three status lines (the last
+#      one anywhere in its output counts, so a line a Stop hook makes it add
+#      after its answer does not hide it):
 #      "GRIND_STATUS: done" (the PR is open), "GRIND_STATUS: carded" (a
 #      ruling only the repo owner can make; the worker filed the card
 #      itself, per this repo's card-write convention), or
 #      "GRIND_STATUS: blocked" (the item cannot be worked at all). None of
 #      the first two is taken on trust: `done` is checked against a PR whose
-#      head is the item's branch, `carded` against an item created or logged
+#      head is the item's branch, or any PR in any repo the worker named that
+#      was opened while it ran, `carded` against an item created or logged
 #      in items/ (or a comment added to the issue) while the worker ran. A claim that does
 #      not check out becomes status "unverified" -- loud on stderr, cost
 #      kept, worktree kept for inspection, retried on --resume. Run
 #      grind-20260912T210131Z spent $4.39 on three items that all reported
 #      success and left no PR, no card and no commit behind; that is the
 #      failure these checks exist to catch.
-#   5. Pause -- print a tally and the exact resume command, then exit 0 --
+#   5. grind records the outcome on the item's work item in the private
+#      store -- a card's own item, or for an issue or PR the item whose
+#      `home=` names it, if one exists -- never on GitHub: a `cost
+#      tokens= usd= by=grind` line and a `grind outcome=<status> run=<id>
+#      prs=<urls> said: <the worker's own two lines>` line, committed in the
+#      state repo. grind never creates an item for an issue or PR: whatever
+#      owns the item's brief (work-item, the Stop hook) does. A later run
+#      skips an item whose last outcome line is newer than its last real
+#      change (a line on the item from any other session, or for an issue or
+#      PR its GitHub updated_at), and works untouched items before changed
+#      ones within a kind.
+#   6. Pause -- print a tally and the exact resume command, then exit 0 --
 #      when: the session budget is reached or what is left is below the next
 #      item's cap, one item costs more than twice
 #      the running median, or every N items. Nothing here waits on a
@@ -682,6 +697,95 @@ items=$(printf '%s' "$items" | jq -c --argjson subs "$subs" 'def ref: "\(.repo)#
       elif any($kids[]; .parent == $r) then $kids[] | select(.parent == $r and (.labels | index("ready")) and (.labels | index("blocked") | not))
       else . end ]')
 
+# --- what grind has already looked at --------------------------------------------
+# grind's last outcome on an item (record_outcome, below) is the marker. An
+# item whose outcome is newer than its last real change -- a line on its work
+# item from anyone but that grind run, or for an issue or PR the GitHub
+# item's updated_at -- is skipped: paying a worker to rediscover a ruled or
+# in-flight item is what run grind-20261003T134428Z did twice. An item that
+# changed since is workable again, after every item grind has not touched.
+# On --resume, what this session recorded failed or unverified is retried
+# as the UNVERIFIED line promised; blocked and carded are not.
+wi() { CLAUDE_CODE_SESSION_ID=$grind_sid "$work_item_bin" "$@"; }
+card_id_of() {  # card_id_of <card text> -> its item id, or nothing
+  printf '%s' "$1" | grep -oE '(^|[ (])id:[[:space:]]*[0-9]{10}[0-9a-f]{8}' | head -n 1 | grep -oE '[0-9]{10}[0-9a-f]{8}$' || true
+}
+# home_item <owner/repo#N> -> the id of the work item whose home= is it. The
+# grep only narrows; fold is the one parse that says what home= is.
+home_item() {
+  [ -n "$items_dir" ] && [ -d "$items_dir" ] || return 0
+  pat=$(printf '%s' "$1" | sed 's/[].[\\*^$+?(){}|]/\\&/g')
+  grep -lE "[[:space:]]home=$pat([[:space:]]|\$)" "$items_dir"/*.md 2>/dev/null | while IFS= read -r f; do
+    hid=$(basename "$f" .md)
+    if [ "$("$work_item_bin" fold "$hid" 2>/dev/null | sed -n 's/^home=//p')" = "$1" ]; then printf '%s' "$hid"; break; fi
+  done
+  return 0
+}
+# grind_seen <item id> -> "<at> <changed: yes|no> <outcome> <run>" for grind's
+# last done, blocked or carded outcome line on the item, or nothing. changed is
+# yes when a line from any other session follows it. A failed or unverified
+# outcome is not a marker -- grind learned nothing, and the item is retried --
+# and neither is any grind cost line.
+grind_seen() {
+  [ -f "$items_dir/$1.md" ] || return 0
+  awk '/^## Log/ { l = 1; next } /^## / { l = 0 } !l || NF < 3 { next }
+       $NF == "by=grind" { next }
+       NF >= 4 && $3 == "grind" && $4 ~ /^outcome=(failed|unverified)$/ { next }
+       NF >= 4 && $3 == "grind" && $4 ~ /^outcome=/ {
+         t = $1; s = $2; o = substr($4, 9); r = "-"; ch = "no"
+         for (i = 5; i <= NF; i++) if ($i ~ /^run=/) r = substr($i, 5)
+         next }
+       t != "" && $2 != s { ch = "yes" }
+       END { if (t != "") print t, ch, o, r }' "$items_dir/$1.md"
+}
+retry_refs="|"
+[ -f "$state_file" ] && retry_refs="|$(jq -r '.items[] | select(.status == "failed" or .status == "unverified") | .ref' "$state_file" | tr '\n' '|')"
+seen_marks=""
+if [ -n "$work_item_bin" ] && [ -n "$items_dir" ] && [ -d "$items_dir" ]; then
+  queue_refs="|$(printf '%s' "$items" | jq -r '.[] | select(.kind != "card") | "\(.repo)#\(.number)"' | tr '\n' '|')"
+  # one line per item grind has seen: <ref> TAB changed|skip|drop TAB why
+  seen_marks=$(printf '%s' "$items" | jq -c '.[]' | while IFS= read -r it; do
+    k=$(printf '%s' "$it" | jq -r '.kind')
+    if [ "$k" = card ]; then
+      r="card:$(printf '%s' "$it" | jq -r '.slug')"
+      hid=$(card_id_of "$(printf '%s' "$it" | jq -r '.text')")
+      [ -n "$hid" ] && [ -f "$items_dir/$hid.md" ] || continue
+      h=$("$work_item_bin" fold "$hid" 2>/dev/null | sed -n 's/^home=//p')
+      case "$queue_refs" in *"|$h|"*) [ -z "$h" ] || { printf '%s\tdrop\tits home %s is in this queue; grind works it there\n' "$r" "$h"; continue; } ;; esac
+    else
+      r=$(printf '%s' "$it" | jq -r '"\(.repo)#\(.number)"')
+      hid=$(home_item "$r")
+      [ -n "$hid" ] || continue
+    fi
+    case "$retry_refs" in *"|$r|"*) continue ;; esac
+    # shellcheck disable=SC2046  # four words, split on purpose
+    set -- $(grind_seen "$hid")
+    [ $# -ge 4 ] || continue
+    at=$1; ch=$2; was="grind recorded $3 at $1 (run $4)"
+    if [ "$ch" = no ] && [ "$k" != card ]; then
+      up=$(gh api "repos/${r%#*}/issues/${r##*#}" --jq .updated_at 2>/dev/null) || up=""
+      case "$up" in
+        2[0-9][0-9][0-9]-*) [ "$(printf '%s\n%s\n' "$at" "$up" | sort | tail -n 1)" = "$at" ] || ch=yes ;;
+        *) printf '%s\tskip\t%s; could not read when it last changed\n' "$r" "$was"; continue ;;
+      esac
+    fi
+    if [ "$ch" = yes ]; then printf '%s\tchanged\t%s, and it has changed since\n' "$r" "$was"
+    else printf '%s\tskip\t%s, and nothing has changed since\n' "$r" "$was"; fi
+  done)
+fi
+if [ -n "$seen_marks" ]; then
+  printf '%s\n' "$seen_marks" | awk -F '\t' '$2 != "changed"' | while IFS="$(printf '\t')" read -r r _ why; do
+    if [ "$dry_run" -eq 1 ]; then printf '%s -- SKIP: %s\n' "$r" "$why"; else info "skipping $r -- $why"; fi
+  done
+  # shellcheck disable=SC2016  # jq program, not shell
+  items=$(printf '%s' "$items" | jq -c --arg m "$seen_marks" '
+    def ref: if .kind == "card" then "card:\(.slug)" else "\(.repo)#\(.number)" end;
+    ($m | split("\n") | map(select(length > 0) | split("\t") | {key: .[0], value: .[1]}) | from_entries) as $s
+    | map(. + {seen: ($s[ref] // "never")} | select(.seen == "never" or .seen == "changed"))
+    | (reduce .[].kind as $k ([]; if any(.[]; . == $k) then . else . + [$k] end)) as $ks
+    | [ $ks[] as $k | (map(select(.kind == $k and .seen == "never")) + map(select(.kind == $k and .seen == "changed")))[] ]')
+fi
+
 # --- live cost estimate (heartbeat only; the final line uses the exact
 # total_cost_usd from the result event) --------------------------------------
 # List price in USD per 1M tokens, by model alias/name substring. Cache
@@ -734,7 +838,8 @@ if [ "$policy" = cheapest-first ]; then
       | jq -sc --argjson k "$k" --argjson est "$est" '.[1] as $pt | .[0] | .[$k] += {pair_text: $pt, est: $est}')
     k=$((k + 1))
   done
-  items=$(printf '%s' "$items" | jq -c 'sort_by(.est)')
+  # Within one estimate, an item grind has never touched still goes first.
+  items=$(printf '%s' "$items" | jq -c 'sort_by([.est, (.seen == "changed")])')
 fi
 
 count=$(printf '%s' "$items" | jq 'length')
@@ -900,6 +1005,9 @@ build_prompt() {
   printf 'move itself before opening or checking your PR, since it is not sandboxed\n'
   printf 'the way you are. Do not try Write, a heredoc, mv, or any other route into\n'
   printf '.claude/ directly -- it is refused every time.\n\n'
+  printf 'If the PR has to land in a different repository, put the line\n'
+  printf '`Grind item: %s` in its body: grind counts a PR in another repo only\n' "$p_ref"
+  printf 'when it carries that line, or sits on branch %s.\n\n' "$p_branch"
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
   printf '  GRIND_STATUS: done     the PR is open. grind checks that a PR exists\n'
   printf '                         with head branch %s and records the item\n' "$p_branch"
@@ -932,10 +1040,6 @@ build_prompt() {
 # claim and lets a stale one go; grind never writes closed, that is the
 # user's acceptance. The item file is in the private state repo, so every
 # change is committed there and pushed best-effort; a failed push is a WARN.
-wi() { CLAUDE_CODE_SESSION_ID=$grind_sid "$work_item_bin" "$@"; }
-card_id_of() {  # card_id_of <card text> -> its item id, or nothing
-  printf '%s' "$1" | grep -oE '(^|[ (])id:[[:space:]]*[0-9]{10}[0-9a-f]{8}' | head -n 1 | grep -oE '[0-9]{10}[0-9a-f]{8}$' || true
-}
 commit_item() {  # commit_item <id> <message>
   bdir=$(dirname "$items_dir")
   git -C "$bdir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
@@ -951,15 +1055,94 @@ card_claim() {
   wi claim "$1" >/dev/null 2>&1 || { printf 'work-item refused the claim on %s (status %s; another session may hold it)' "$1" "${card_status:-unknown}"; return; }
   commit_item "$1" "grind: claimed card -- $2"
 }
-# card_let_go <id> done|release <PR url> -- returns 1 when work-item refused.
+# card_let_go <id> done|blocked|release <PR url> -- returns 1 when work-item
+# refused. blocked is a worker's `blocked` or `carded`: the card waits on
+# something, and saying `ready` would invite the next run to pay to find that
+# out again.
 card_let_go() {
   if [ "$2" = "done" ]; then
     wi log "$1" status=done "evidence=$3" >/dev/null || return 1
     commit_item "$1" "grind: worked card -- $title${3:+ -> $3}"
+  elif [ "$2" = "blocked" ]; then
+    # until= names what unblocks it (six-status ruling). Pencil: the first
+    # owner/repo#N the worker's note names -- a blocked answer usually cites
+    # the ruling or the PR it waits on -- else `human`: a line on the item
+    # from anyone but grind, which is exactly what the selection above reads
+    # as a change. One word, so it folds; one sed away from a better word.
+    until=$(printf '%s' "$note" | grep -oE '[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+' | head -n 1)
+    wi log "$1" status=blocked "until=${until:-human}" >/dev/null || return 1
+    commit_item "$1" "grind: blocked card -- $title"
   else
     wi release "$1" >/dev/null || return 1
     commit_item "$1" "grind: released card -- $title"
   fi
+}
+
+# --- grind's own record of each item ---------------------------------------------
+# After every item, grind -- not the worker -- writes what happened on the
+# item's work item in the private store, never on GitHub: a card's own item,
+# or for an issue or PR the item whose `home=` is it, when there is one.
+# Two lines in the store's own form, then the commit:
+#   <iso> <sid8> cost tokens=812340 usd=1.42 by=grind
+#   <iso> <sid8> grind outcome=blocked run=grind-20261003T134428Z prs=- said: <what it did>
+# The `grind outcome=` line is the marker the selection above reads back. On a
+# card, a done or blocked outcome also moves its status (card_let_go); an
+# issue's or PR's item only gets the two lines.
+
+# outcome_note <text> -> what the worker said it did, on one line: its first
+# two lines that are neither headings nor the status line, at most 300
+# characters, every `=` made `:` so no word of it folds as a fact.
+outcome_note() {
+  printf '%s\n' "$1" | grep -v 'GRIND_STATUS:' | grep -v '^[[:space:]]*#' \
+    | sed 's/^[[:space:]>*-]*//' | awk 'NF' | head -n 2 \
+    | tr '\n\t=' '  :' | tr -s ' ' | cut -c1-300 | sed 's/[[:space:]]*$//'
+}
+
+# record_outcome <item id> -- the cost and outcome lines; the caller commits.
+record_outcome() {
+  wi log "$1" cost "tokens=$tokens" "usd=$cost" by=grind >/dev/null 2>&1 || return 1
+  wi log "$1" grind "outcome=$status" "run=$session_id" \
+    "prs=$(printf '%s\n' "$item_prs" | awk 'NF' | paste -sd, -)" \
+    ${cost_estimated_word:+"$cost_estimated_word"} ${note:+"said: $note"} >/dev/null 2>&1 || return 1
+}
+
+# home_record -- an issue's or PR's outcome, on the item whose home= it is.
+# There is no item to find, no record: grind does not make one.
+home_record() {
+  [ -n "$work_item_bin" ] && [ -n "$items_dir" ] || return 1
+  hid=$(home_item "$ref")
+  if [ -z "$hid" ]; then info "no work item has home=$ref; outcome not recorded"; return 0; fi
+  record_outcome "$hid" || return 1
+  commit_item "$hid" "grind: $status -- $ref"
+}
+
+# last_status <text> -> the word of the last GRIND_STATUS line in it: a line
+# that starts with one, markdown emphasis aside. A mention mid-sentence ("I'll
+# end with GRIND_STATUS: blocked") is not a claim.
+status_line_re='^[[:space:]*_`>]*GRIND_STATUS: (done|carded|blocked)'
+last_status() {
+  printf '%s\n' "$1" | grep -oE "$status_line_re" | tail -n 1 | sed 's/.*: //'
+}
+
+# prs_opened_since <ISO 8601> <urls, one per line> <branch> <item ref> -> the
+# ones that are this item's work: opened at or after then, by the account grind
+# runs as, and either on the item's branch or carrying a `Grind item: <ref>`
+# line in the body (the worker is told to write one for a PR in another repo).
+# A PR another session opened during the run, or one the worker merely names,
+# fails the author or the relation test. A lookup that fails drops that URL: a
+# PR grind cannot see is not one it can vouch for.
+prs_opened_since() {
+  printf '%s' "$2" | awk 'NF' | grep -q . || return 0
+  me=$(gh api user --jq .login 2>/dev/null) || me=""
+  [ -n "$me" ] || { warn "could not read the account grind runs as (gh api user); no PR the worker named is counted as its work"; return 0; }
+  printf '%s\n' "$2" | while IFS= read -r u; do
+    [ -n "$u" ] || continue
+    j=$(gh pr view "$u" --json createdAt,author,headRefName,body 2>/dev/null) || continue
+    printf '%s' "$j" | jq -e --arg s "$1" --arg me "$me" --arg b "$3" --arg r "$4" \
+      '(.createdAt // "") >= $s and .author.login == $me
+       and (.headRefName == $b or ((.body // "") | contains("Grind item: " + $r)))' >/dev/null 2>&1 || continue
+    printf '%s\n' "$u"
+  done
 }
 
 # --- staging route into .claude/ (dotfiles#172) --------------------------------
@@ -1096,8 +1279,10 @@ keep_unpushed() {
 # (a log line's own timestamp, not the file's mtime: a git pull of the state
 # repo touches mtimes too), or the issue gained a comment at/after it.
 verify_carded() {
-  if [ -d "$items_dir" ] && cat "$items_dir"/*.md 2>/dev/null | awk -v s="$2" \
-       '$1 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:]*Z$/ && $1 >= s { f = 1; exit } END { exit !f }'; then
+  # grind's own lines (its claims, its records of earlier items) are not
+  # the worker's card.
+  if [ -d "$items_dir" ] && cat "$items_dir"/*.md 2>/dev/null | awk -v s="$2" -v g="$grind_sid" \
+       '$1 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:]*Z$/ && $1 >= s && $2 != g { f = 1; exit } END { exit !f }'; then
     return 0
   fi
   [ -n "$1" ] || return 1   # a card has no issue to gain a comment
@@ -1318,11 +1503,15 @@ while [ "$i" -lt "$count" ]; do
   result_file="$state_root/${session_id}.result"
   rc_file="$state_root/${session_id}.rc"
   last_text_file="$state_root/${session_id}.lasttext"
+  status_text_file="$state_root/${session_id}.statustext"
+  pr_urls_file="$state_root/${session_id}.prurls"
   sid_file="$state_root/${session_id}.sid"
   printf '0 0 0 0 - 0 0 0 0\n' > "$live_file"
   : > "$result_file"
   : > "$rc_file"
   : > "$last_text_file"
+  : > "$status_text_file"
+  : > "$pr_urls_file"
   : > "$sid_file"
 
   hb_pid=""
@@ -1398,6 +1587,16 @@ while [ "$i" -lt "$count" ]; do
           # GRIND_STATUS line -- or, failing that, what it tried -- survives.
           ltext=$(printf '%s' "$line" | jq -r '[.message.content[]? | select(.type == "text") | .text] | join("\n")' 2>/dev/null) || ltext=""
           [ -n "$ltext" ] && printf '%s\n' "$ltext" > "$last_text_file"
+          # Every PR URL the worker named in its own words: candidates for the
+          # PRs it opened, in any repo, settled against GitHub afterwards. Not
+          # what a tool printed back -- a `gh pr list` shows PRs another
+          # session opened during the run, and those are not this item's work.
+          printf '%s' "$ltext" | grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+' >> "$pr_urls_file" 2>/dev/null || true
+          # The last message that carries a status line. An interactive Stop
+          # hook can make the worker say one more thing after it -- "Landed in
+          # the pickup item at ..." -- which cost grind the status of two
+          # blocked items on 2026-10-03 and paid for them twice.
+          if [ -n "$(last_status "$ltext")" ]; then printf '%s\n' "$ltext" > "$status_text_file"; fi
           usage=$(printf '%s' "$line" | jq -c '.message.usage // empty' 2>/dev/null)
           [ -n "$usage" ] && [ "$usage" != "null" ] || continue
           # claude -p emits one assistant event per content block, each
@@ -1434,9 +1633,11 @@ while [ "$i" -lt "$count" ]; do
   case "$claude_rc" in "" | *[!0-9]*) claude_rc=1 ;; esac
   result_json=$(cat "$result_file" 2>/dev/null || echo "")
   last_text=$(cat "$last_text_file" 2>/dev/null || echo "")
+  status_text=$(cat "$status_text_file" 2>/dev/null || echo "")
+  pr_urls=$(sort -u "$pr_urls_file" 2>/dev/null | head -n 20 || true)
   worker_sid=$(cat "$sid_file" 2>/dev/null || echo "")
   live_now=$(cat "$live_file" 2>/dev/null || echo "0 0 0 0")
-  rm -f "$live_file" "$result_file" "$rc_file" "$last_text_file" "$sid_file"
+  rm -f "$live_file" "$result_file" "$rc_file" "$last_text_file" "$status_text_file" "$pr_urls_file" "$sid_file"
 
   # `kill` here is bare under `set -e`: if the heartbeat already exited on
   # its own -- it does, whenever its `wait` was interrupted -- the failed
@@ -1479,7 +1680,9 @@ while [ "$i" -lt "$count" ]; do
   errored=0
   if [ "$claude_rc" -ne 0 ] || [ "$is_error" = true ]; then errored=1; fi
 
-  # The claim, from the result text or else the worker's last message. A
+  # The claim: the last GRIND_STATUS line anywhere in what the worker said --
+  # the result text when it carries one, else the last message that did,
+  # else its last message. A
   # worker that errored is only as good as a claim GitHub bears out: the
   # backstop can land between its push and its exit, and what it pushed is
   # real. With no claim at all, an errored worker is still done when GitHub
@@ -1488,16 +1691,19 @@ while [ "$i" -lt "$count" ]; do
   # two commits of one fixup). Otherwise failed -- cost kept, so the session
   # budget stays honest, and retried on --resume.
   claim_text=$text
-  case "$claim_text" in *"GRIND_STATUS: "*) ;; *) claim_text=$last_text ;; esac
-  status=done
-  case "$claim_text" in
-    *"GRIND_STATUS: carded"*)  status=carded ;;
-    *"GRIND_STATUS: blocked"*) status=blocked ;;
-    *"GRIND_STATUS: done"*) ;;
+  [ -n "$(last_status "$claim_text")" ] || claim_text=${status_text:-$last_text}
+  # The PRs it opened, in any repo: every PR URL it named that GitHub says
+  # was opened since it started.
+  opened_prs=$(prs_opened_since "$started_iso" "$pr_urls" "$branch" "$ref")
+  status="done"
+  case "$(last_status "$claim_text")" in
+    carded)  status=carded ;;
+    blocked) status=blocked ;;
+    "done") ;;
     *)
       if [ "$errored" -eq 1 ]; then
         if [ "$kind" = pr ]; then pr_labels "$number" | grep -qx awaiting-human || status=failed
-        else verify_pr "$branch" "$started_iso" || status=failed
+        else verify_pr "$branch" "$started_iso" || [ -n "$opened_prs" ] || status=failed
         fi
       fi ;;
   esac
@@ -1514,8 +1720,10 @@ while [ "$i" -lt "$count" ]; do
           unverified_why="no awaiting-human label, and no signed commit pushed to $branch"
           status=unverified
         fi
-      elif ! verify_pr "$branch" "$started_iso"; then
-        unverified_why="no PR opened or pushed to on head branch $branch"
+      elif ! verify_pr "$branch" "$started_iso" && [ -z "$opened_prs" ]; then
+        # A PR it opened in another repo is the work too: the fix for a
+        # dotfiles card can land in mark-brannan/.github.
+        unverified_why="no PR opened or pushed to on head branch $branch, nor any other PR opened during the run"
         status=unverified
       fi
       ;;
@@ -1562,18 +1770,35 @@ while [ "$i" -lt "$count" ]; do
   # UNVERIFIED would never be queued again.
   claim_released=true
   release_worker_claim || claim_released=false
+  # Every PR the item has to show for itself: the one on its branch, then
+  # any other it opened. The first is a done item's evidence.
+  item_prs=$opened_prs
+  if [ "$kind" = pr ]; then
+    item_prs=$(printf '%s\n%s\n' "$(printf '%s' "$item" | jq -r '.url // ""')" "$opened_prs" | awk 'NF && !seen[$0]++')
+  else
+    branch_pr=$(gh pr list --repo "$repo" --head "$branch" --state all --json url,createdAt,updatedAt,state \
+      --jq "[.[] | select(.createdAt >= \"$started_iso\" or (.state == \"OPEN\" and .updatedAt >= \"$started_iso\")) | .url // empty] | .[]" 2>/dev/null) || branch_pr=""
+    item_prs=$(printf '%s\n%s\n' "$branch_pr" "$opened_prs" | awk 'NF && !seen[$0]++')
+  fi
+  pr_url=$(printf '%s\n' "$item_prs" | sed -n '1p')
+  note=$(outcome_note "${claim_text:-$text}")
+  cost_estimated_word=""; [ "$cost_estimated" = false ] || cost_estimated_word=estimated=yes
   if [ -n "$held_card" ]; then
+    record_outcome "$held_card" || warn "could not record grind's outcome on card '$title' in $items_dir"
     if [ "$status" = "done" ]; then
-      pr_url=$(gh pr list --repo "$repo" --head "$branch" --state open --json url --jq '.[0].url // ""' 2>/dev/null) || pr_url=""
       if [ -n "$pr_url" ] && card_let_go "$held_card" "done" "$pr_url"; then
         info "marked card '$title' done in $items_dir"
       else
         warn "could not mark card '$title' done in $items_dir; log status=done on it by hand"
         card_let_go "$held_card" release "" || claim_released=false
       fi
+    elif [ "$status" = blocked ] || [ "$status" = carded ]; then
+      card_let_go "$held_card" blocked "" || claim_released=false
     else
       card_let_go "$held_card" release "" || claim_released=false
     fi
+  elif [ "$kind" != card ]; then
+    home_record || warn "could not record grind's outcome on $ref in the work-item store${items_dir:+ ($items_dir)}"
   fi
   in_flight=0; held_card=""
 
