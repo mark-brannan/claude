@@ -1265,14 +1265,6 @@ assert 'and its cost line' grep -qE ' cost tokens=150 usd=0\.30? by=grind$' "$WO
 rm -f "$S/state/grind"/*.json
 run --dry-run --kind card
 has 'the next run skips it' '^card:alpha-tidy-the-widget -- SKIP: grind recorded blocked at .*, and nothing has changed since$'
-# grind's own record of an issue is never worked as a card, queued issue or not
-rm -f "$WORK_ITEM_DIR/17909840241dc56754.md"
-CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" create --id 17909840241dc56754 --repo o/alpha \
-  --brief "grind's record of its attempts on o/alpha#99 (https://github.com/o/alpha/issues/99)" 'alpha: tidy the widget' >/dev/null
-CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log 17909840241dc56754 status=ready home=o/alpha#99 >/dev/null
-rm -f "$S/state/grind"/*.json
-KEEP_RECORDS=1 run --dry-run --kind card
-has "grind's record is dropped, with its reason" "^card:alpha-tidy-the-widget -- SKIP: grind's own record of o/alpha#99; grind works o/alpha#99, never its record$"
 # a claim another live session holds is never taken over, and is found before
 # any spend: no worker runs
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
@@ -1947,25 +1939,43 @@ mkdir -p "$WORK_ITEM_DIR"; "$REAL_GIT" -C "$rec" init -q; "$REAL_GIT" -C "$rec" 
 home_of() { grep -l " home=$1\$" "$WORK_ITEM_DIR"/*.md 2>/dev/null | head -n 1; }
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$S/updated-at"; forget_records; : > "$CLAUDE_LOG"
 
+# grind records on an item whose home= is the issue; it never makes one
+mkhome() {
+  CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" create --id "$2" --repo o/alpha \
+    --brief "work on $1" "$1" >/dev/null
+  CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log "$2" status=ready "home=$1" >/dev/null
+}
+# an issue with no work item whose home= it is gets none made
+said 1 0.10 'Nothing to do.
+GRIND_STATUS: blocked'
+run --session-budget 100 --pause-every 1
+has 'with no home item, grind says so' 'INFO  no work item has home=o/alpha#5; outcome not recorded'
+assert 'and makes no item' test -z "$(home_of 'o/alpha#5')"
+eq 'nor any item at all' 0 "$(ls "$WORK_ITEM_DIR" | grep -c . || true)"
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$CLAUDE_LOG"
+git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/5" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-5 >/dev/null 2>&1
+mkhome 'o/alpha#5' 1790985001aaaaaaa1
+mkhome 'o/alpha#20' 1790985002aaaaaaa2
+mkhome 'o/alpha#17' 1790985017aaaaaa17
 # outcome 3: the status line is found though a later message has none
 said 1 1.37 'Ruled already in dotfiles#94; nothing to build.
 Left a comment on the issue saying so.
 GRIND_STATUS: blocked' 'Landed in the pickup item at state/global/pickup/x.md'
-run --session-budget 100 --pause-every 1
+KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
 has 'a status line before the hand-off line is the claim' '^blocked: o/alpha#5 -- First item \(\$1\.37, 1234 tokens'
 lacks 'not a claimed success' 'UNVERIFIED: o/alpha#5'
 rec_sess=$(basename "$(latest_session)" .json)
 
 # outcome 1: the record, on the GitHub item's work item, in the store's form
 f=$(home_of 'o/alpha#5')
-assert 'the issue gained a work item whose home is it' test -n "$f"
+assert "the issue's existing item is found by its home" test -n "$f"
 LOG=$(cat "$f" 2>/dev/null)
 OUT=$LOG
 has 'the cost line, in the store form' ' cost tokens=1234 usd=1\.37 by=grind$'
 has 'the outcome line: status, run and no PR' " grind outcome=blocked run=$rec_sess prs= said: "
 has 'what the worker did, on one line, from the message with the status' 'said: Ruled already in dotfiles#94; nothing to build\. Left a comment on the issue saying so\.$'
 lacks 'not the hand-off line' 'pickup item'
-eq 'the item is blocked' blocked "$("$GRIND_WORK_ITEM" fold "$(basename "$f" .md)" | sed -n 's/^status=//p')"
+eq "its status is not moved: grind records outcomes, it does not run an issue item's state" ready "$("$GRIND_WORK_ITEM" fold "$(basename "$f" .md)" | sed -n 's/^status=//p')"
 eq 'its cost folds' '1234 1.37' "$("$GRIND_WORK_ITEM" fold "$(basename "$f" .md)" | sed -n 's/^cost_tokens=//p; s/^cost_usd=//p' | paste -sd' ' -)"
 eq 'and it is committed in the state repo' 'grind: blocked -- o/alpha#5' "$("$REAL_GIT" -C "$rec" log -1 --format=%s)"
 assert 'grind posted nothing on GitHub' bash -c '! grep -Eq "(issue|pr) comment" "$GH_LOG"'
@@ -2010,11 +2020,10 @@ echo '{"createdAt": "2001-01-01T00:00:00Z"}' > "$S/prview/https___github.com_o_a
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$CLAUDE_LOG"
 said 1 0.80 'The fix belongs in o/dotgithub: opened https://github.com/o/dotgithub/pull/47 (see also https://github.com/o/alpha/pull/3).
 GRIND_STATUS: done'
-run --session-budget 100 --pause-every 1
+KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
 has 'a PR opened in another repo during the run verifies done' '^o/alpha#17: Cross-repo item -- sonnet, \$0\.80'
 f=$(home_of 'o/alpha#17'); OUT=$(cat "$f" 2>/dev/null)
 has 'the record names it, and only the PR opened during the run' ' grind outcome=done run=[^ ]+ prs=https://github\.com/o/dotgithub/pull/47 said: '
-has 'and it is the done evidence' ' status=done evidence=https://github\.com/o/dotgithub/pull/47$'
 # a PR it merely mentions, opened before the run, is not its work
 git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json

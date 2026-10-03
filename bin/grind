@@ -74,13 +74,15 @@
 #      failure these checks exist to catch.
 #   5. grind records the outcome on the item's work item in the private
 #      store -- a card's own item, or for an issue or PR the item whose
-#      `home=` names it, made on first need -- never on GitHub: a `cost
+#      `home=` names it, if one exists -- never on GitHub: a `cost
 #      tokens= usd= by=grind` line and a `grind outcome=<status> run=<id>
 #      prs=<urls> said: <the worker's own two lines>` line, committed in the
-#      state repo. A later run skips an item whose last outcome line is newer
-#      than its last real change (a line on the item from any other session,
-#      or for an issue or PR its GitHub updated_at), and works untouched
-#      items before changed ones within a kind.
+#      state repo. grind never creates an item for an issue or PR: whatever
+#      owns the item's brief (work-item, the Stop hook) does. A later run
+#      skips an item whose last outcome line is newer than its last real
+#      change (a line on the item from any other session, or for an issue or
+#      PR its GitHub updated_at), and works untouched items before changed
+#      ones within a kind.
 #   6. Pause -- print a tally and the exact resume command, then exit 0 --
 #      when: the session budget is reached or what is left is below the next
 #      item's cap, one item costs more than twice
@@ -745,11 +747,6 @@ if [ -n "$work_item_bin" ] && [ -n "$items_dir" ] && [ -d "$items_dir" ]; then
       [ -n "$hid" ] && [ -f "$items_dir/$hid.md" ] || continue
       h=$("$work_item_bin" fold "$hid" 2>/dev/null | sed -n 's/^home=//p')
       case "$queue_refs" in *"|$h|"*) [ -z "$h" ] || { printf '%s\tdrop\tits home %s is in this queue; grind works it there\n' "$r" "$h"; continue; } ;; esac
-      # grind's own record of an issue or PR is never work: the GitHub item
-      # is, and only when its own labels put it in a queue.
-      if grep -q "^grind's record of its attempts on " "$items_dir/$hid.md"; then
-        printf '%s\tdrop\tgrind'"'"'s own record of %s; grind works %s, never its record\n' "$r" "${h:-an issue}" "${h:-the issue}"; continue
-      fi
     else
       r=$(printf '%s' "$it" | jq -r '"\(.repo)#\(.number)"')
       hid=$(home_item "$r")
@@ -1070,13 +1067,13 @@ card_let_go() {
 # --- grind's own record of each item ---------------------------------------------
 # After every item, grind -- not the worker -- writes what happened on the
 # item's work item in the private store, never on GitHub: a card's own item,
-# or for an issue or PR the item whose `home=` is it, made on first need.
+# or for an issue or PR the item whose `home=` is it, when there is one.
 # Two lines in the store's own form, then the commit:
 #   <iso> <sid8> cost tokens=812340 usd=1.42 by=grind
 #   <iso> <sid8> grind outcome=blocked run=grind-20261003T134428Z prs=- said: <what it did>
-# The `grind outcome=` line is the marker the selection above reads back. A done
-# or blocked outcome also moves the item's status; one another live session
-# holds keeps its status and still gets the two lines.
+# The `grind outcome=` line is the marker the selection above reads back. On a
+# card, a done or blocked outcome also moves its status (card_let_go); an
+# issue's or PR's item only gets the two lines.
 
 # outcome_note <text> -> what the worker said it did, on one line: its first
 # two lines that are neither headings nor the status line, at most 300
@@ -1095,35 +1092,12 @@ record_outcome() {
     ${cost_estimated_word:+"$cost_estimated_word"} ${note:+"said: $note"} >/dev/null 2>&1 || return 1
 }
 
-# home_record -- an issue's or PR's record: its home item, found or made, the
-# status move, the two lines, one commit.
+# home_record -- an issue's or PR's outcome, on the item whose home= it is.
+# There is no item to find, no record: grind does not make one.
 home_record() {
   [ -n "$work_item_bin" ] && [ -n "$items_dir" ] || return 1
   hid=$(home_item "$ref")
-  if [ -z "$hid" ]; then
-    # One id per second per session: a second create in the same second is
-    # refused, so wait it out rather than lose the record.
-    tries=0
-    until hid=$(wi create --repo "$repo" --brief "grind's record of its attempts on $ref ($(printf '%s' "$item" | jq -r '.url // ""'))" \
-                  "${title:-$ref}" 2>/dev/null); do
-      tries=$((tries + 1)); [ "$tries" -lt 3 ] || return 1; sleep 1
-    done
-    wi log "$hid" "home=$ref" >/dev/null 2>&1 || return 1
-  fi
-  to=""
-  case $status in
-    "done") [ -z "$pr_url" ] || to="done" ;;
-    blocked|carded) to=blocked ;;
-  esac
-  if [ -n "$to" ]; then
-    [ "$("$work_item_bin" fold "$hid" 2>/dev/null | sed -n 's/^status=//p')" != open ] \
-      || wi log "$hid" status=ready >/dev/null 2>&1 || true
-    if wi claim "$hid" >/dev/null 2>&1; then
-      if [ "$to" = blocked ]; then wi log "$hid" status=blocked >/dev/null 2>&1 || true
-      else wi log "$hid" status=done "evidence=$pr_url" >/dev/null 2>&1 || true
-      fi
-    fi
-  fi
+  if [ -z "$hid" ]; then info "no work item has home=$ref; outcome not recorded"; return 0; fi
   record_outcome "$hid" || return 1
   commit_item "$hid" "grind: $status -- $ref"
 }
