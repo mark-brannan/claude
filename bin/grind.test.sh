@@ -999,6 +999,7 @@ run --session-budget 100 --pause-every 10
 eq 'exit 1 when another grind holds the lock' 1 "$RC"
 has 'says another grind is running' 'another grind is already running against o/alpha'
 eq 'no claude invocation while locked out' 0 "$(calls_claude)"
+assert 'the lock-contention exit left no session file behind' bash -c '! ls "$1"/state/grind/*.json >/dev/null 2>&1' _ "$S"
 rm -rf "$lock_dir"
 
 # --- a stale lock (recorded pid is dead) is reclaimed, run proceeds ----------
@@ -1551,6 +1552,7 @@ eq 'no claude call: the band is already at ten' 0 "$(calls_claude)"
 has 'says it is pausing, names the count and the repo' \
   '^grind: pausing -- 10 PR\(s\) awaiting your look on o/alpha \(band 5-10; resumes below 5\)$'
 assert 'a band marker was written for this repo' test -f "$S/state/grind/band-paused-o_alpha"
+assert 'the band pause left no session file behind' bash -c '! ls "$1"/state/grind/*.json >/dev/null 2>&1' _ "$S"
 
 # Still ten, or a lighter eight: the marker holds the pause either way --
 # resuming needs the count below five, not merely below ten.
@@ -1561,6 +1563,7 @@ run --session-budget 100 --pause-every 10
 eq 'still paused at eight -- hysteresis holds the ten-triggered pause' 0 "$(calls_claude)"
 has 'the repeat-hit line, not the first-hit one' \
   '^grind: paused -- 8 PR\(s\) awaiting your look on o/alpha \(resumes below 5\)$'
+assert 'nor did the repeat pause' bash -c '! ls "$1"/state/grind/*.json >/dev/null 2>&1' _ "$S"
 
 # Below five (strictly -- "resumes below 5" means four, not five): the
 # marker clears and dispatch resumes.
