@@ -24,5 +24,11 @@ ok 'show finds a ruling with its group' "global" "$(sh "$CID" show 1790000000077
 sh "$CID" show 1790000000aaaaaaab >/dev/null 2>&1; ok 'an unknown id is not found' 1 $?
 sh "$CID" show 179000000 >/dev/null 2>&1; ok 'a malformed id is refused' 2 $?
 
+# An item in the store's items/ beside the board is shown the same way (stage one).
+mkdir -p "$T/items"
+printf '# Stored\n\n## Brief\nDo it.\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=human-click repo=- parent=- model=- effort=-\n2026-10-03T05:00:00Z 1d68120b status=ready\n' > "$T/items/1790000001aaaaaaaa.md"
+ok 'show finds an item, in its owner'"'"'s section' "Human's" "$(sh "$CID" show 1790000001aaaaaaaa | cut -f1)"
+ok 'show prints the item as a card' '- [ ] **Stored**: Do it. id: 1790000001aaaaaaaa' "$(sh "$CID" show 1790000001aaaaaaaa | cut -f3)"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

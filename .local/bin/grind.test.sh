@@ -1026,6 +1026,18 @@ eq '--prs on a keyless machine still refuses' 1 "$RC"
 has 'and says what the pr kind needs' '^grind: the pr kind needs a signing key'
 run --dry-run --kind widget
 eq 'an unknown kind is a usage error' 2 "$RC"
+# a card that is a work item in items/ beside the board is not queued: grind
+# retires only kanban.md lines, so it would stay ready and be worked again
+cp "$S/cards.json" "$S/cards.json.orig"
+jq -c '. + [{kind:"card", section:"claudes", group:"global", text:"**gamma: an item** — in the store ([o/alpha](https://github.com/o/alpha)) id: 17909840241dc56754", name:"gamma: an item", link:"https://github.com/o/alpha", repo:"o/alpha"}]' "$S/cards.json.orig" > "$S/cards.json"
+mkdir -p "$S/items"; : > "$S/items/17909840241dc56754.md"
+run --dry-run --kind card
+has 'beside an item, the plain card is still queued' 'card:alpha-tidy-the-widget'
+lacks 'a card that is a work item is not queued' 'gamma'
+rm -rf "$S/items"
+run --dry-run --kind card
+has 'with no such item file, the same card is queued' 'gamma: an item'
+mv "$S/cards.json.orig" "$S/cards.json"
 
 rm -f "$S/state/grind"/*.json; : > "$CLAUDE_LOG"
 run --kind card --pause-every 10

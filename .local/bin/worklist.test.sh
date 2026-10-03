@@ -419,7 +419,7 @@ has 'says so' '^not in a GitHub repo'
 cd "$S/repo" || exit 1
 
 # --- board edge: no kanban ------------------------------------------------------------------
-mv "$S/state/state/global/kanban.md" "$S/kb.bak"; run; has 'missing board named' '^Board: no kanban.md at'; mv "$S/kb.bak" "$S/state/state/global/kanban.md"
+mv "$S/state/state/global/kanban.md" "$S/kb.bak"; run; has 'missing board named' '^Board: no kanban.md or items/ at'; mv "$S/kb.bak" "$S/state/state/global/kanban.md"
 
 # --- the pickup bucket is first (dotfiles#110) ------------------------------------
 run
@@ -470,6 +470,32 @@ lacks 'headless brief has no side task' 'Side task'
 OUT=$(cat "$S/side.out")
 has 'outside a repo the side task falls back to oldest overall' "^Side task \(Claude's queue, oldest overall\):$"
 has 'oldest overall is the oldest id, not the first line or the cwd-repo card' '^  1790836840077c62eb Card 9$'
+
+# --- the store's items/ read as the board (kanban -> items, stage one) -------------
+# An item renders as a card under its owner's section; an item whose id is a
+# board card's replaces that card; a done item is not on the board.
+I="$S/state/state/global/items"; mkdir -p "$I"
+item() { # id title owner repo status brief
+  printf '# %s\n\n## Brief\n%s\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=%s repo=%s parent=- model=opus effort=high\n2026-10-03T05:00:00Z 1d68120b briefed\n2026-10-03T05:00:00Z 1d68120b status=%s\n' \
+    "$2" "$6" "$3" "$4" "$5" > "$I/$1.md"
+}
+item 1790836845aaaaaaaa 'Item task' agent o/alpha ready 'Do the stored thing.'
+item 1790836843077c62eb 'Card 0 moved' agent o/alpha ready '**Card 0 moved** — the card, now an item id: 1790836843077c62eb'
+item 1790836846aaaaaaaa 'Stored ruling' human-ruling o/colregs ready 'Decide the stored thing.'
+item 1790836847aaaaaaaa 'Finished item' agent o/alpha 'done' 'Already done.'
+run --all
+has 'an item is a Claude card, drawn with its title and id' '^- 1790836845aaaaaaaa \*\*Item task\*\*: Do the stored thing\. repo: o/alpha model: opus effort: high$'
+has 'an item replaces the board card with its id' '^- 1790836843077c62eb \*\*Card 0 moved\*\*'
+lacks 'the replaced board card is gone' 'linked to its evidence'
+lacks 'a done item is not on the board' 'Finished item'
+has 'the Claude count is board and items as one' "^Board \(## Claude's, showing 11 of 11\)$"
+run --all-rulings
+has 'a ruling item is grouped by its repo' '^- colregs: 1790836846aaaaaaaa \*\*Stored ruling\*\*'
+run card 1790836845aaaaaaaa
+has 'card <id> finds an item' "^## Claude's$"
+run --fresh --json
+eq 'json carries the item' 1 "$(printf '%s' "$OUT" | jq '[.. | strings | select(contains("1790836845aaaaaaaa"))] | length > 0 | if . then 1 else 0 end')"
+rm -rf "$I"
 
 # --- a board past the argv limit (one arg is capped near 128KB) ------------------------
 cp "$kb" "$S/kanban.big"

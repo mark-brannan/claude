@@ -11,6 +11,7 @@
 #   work-item release <id>                         hand it back: `status=ready`
 #   work-item show <id>                            print the file
 #   work-item fold <id>                            print its folded state
+#   work-item list [--all]                         every live item as a card row
 #
 # The format, ruled in pen (one-entry-point curia, 2026-10-01/02):
 #
@@ -273,6 +274,65 @@ class Item:
             refuse(f"could not write {self.path}")
 
 
+def brief_text(path):
+    """The brief folded onto one line: its lines bar `points:`, joined by a
+    space, tabs made spaces so the text fits one TSV column."""
+    out, sec = [], ""
+    for line in path.read_text().splitlines():
+        if line.startswith("## "):
+            sec = "brief" if re.fullmatch(r"## Brief[ \t]*", line) else "other"
+        elif sec == "brief" and line.strip() and not line.startswith("points:"):
+            out.append(line.strip().replace("\t", " "))
+    return " ".join(out)
+
+
+def card_line(f, brief):
+    """The item as a board card line, so a reader of the board reads it with
+    the same parse: a brief that already carries its own `id:` (a card moved
+    off kanban.md, brief verbatim) is the line; any other is drawn as
+    `**title**: brief`, then its home link and the facts the brief does not
+    already name, then `id:` last."""
+    i = f["id"]
+    if re.search(r"(^|[ (])id:[ \t]*" + i + r"([^0-9a-z]|$)", brief):
+        return brief
+    line = f"**{f['title']}**" + (f": {brief}" if brief else "")
+    m = re.fullmatch(r"([\w.-]+)/([\w.-]+)#(\d+)", f["home"])
+    if m and f["home"] not in brief:
+        line += f" ([{f['home']}](https://github.com/{m[1]}/{m[2]}/issues/{m[3]}))"
+    for k in ("repo", "model", "effort", "until"):
+        if f[k] not in ("", "-") and not re.search(rf"(^|[ (]){k}:", brief):
+            line += f" {k}: {f[k]}"
+    return f"{line} id: {i}"
+
+
+def list_items(args):
+    """One TSV row per item, oldest id first, done and closed left out unless
+    --all: id owner status holder updated repo line. holder is the live
+    holder only; an item claimed by a stale one reads `ready`, as a claim
+    on it would (Item.move)."""
+    if args not in ([], ["--all"]):
+        die("list takes only --all")
+    d = items_dir()
+    stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 7200)
+    cutoff = iso(time.time() - stale)
+    for p in sorted(d.glob("*.md")) if d.is_dir() else []:
+        if not is_item_id(p.name[:-3]):
+            continue
+        try:
+            f = dict(fold(p, cutoff))
+            brief = brief_text(p)
+        except OSError:
+            continue  # a reader lists what it can read
+        status, holder = f["status"], f["holder"]
+        if holder and f["holder_stale"] == "yes":
+            status, holder = ("ready" if status == "claimed" else status), ""
+        if not args and status in ("done", "closed"):
+            continue
+        row = (f["id"], f["owner"] or "agent", status, holder, f["updated"],
+               f["repo"], card_line(f, brief))
+        print("\t".join(re.sub(r"[\t\r\n]", " ", v) for v in row))
+
+
 def brief_section(brief, points):
     return ("## Brief\n" + (f"points: {points}\n" if points else "")
             + (f"{brief}\n" if brief else "") + "\n")
@@ -350,9 +410,11 @@ def main(argv):
     cmd, args = (argv[0], argv[1:]) if argv else ("", [])
     if cmd == "create":
         return create(args)
+    if cmd == "list":
+        return list_items(args)
     if cmd not in ("brief", "log", "claim", "release", "show", "fold"):
         sys.stderr.write("".join(l[4:] + "\n" for l in
-                                 Path(__file__).read_text().splitlines()[4:13]))
+                                 Path(__file__).read_text().splitlines()[4:14]))
         return 2
     it = Item(args[0] if args else "").need()
     args = args[1:]

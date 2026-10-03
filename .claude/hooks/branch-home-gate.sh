@@ -156,7 +156,7 @@ found=
 unverified=
 card=
 board="$(state_dir)/kanban.md"
-if [ "$CARD" != 1 ] && [ -f "$board" ] && names_branch "$branch" < "$board" 2>/dev/null; then
+if [ "$CARD" != 1 ] && board_union "$board" 2>/dev/null | names_branch "$branch"; then
   found="a card on $board names it"
 fi
 

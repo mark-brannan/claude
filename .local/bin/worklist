@@ -221,7 +221,7 @@ if [ -n "$card_id" ]; then
   done
   command -v board_card >/dev/null 2>&1 || { printf 'worklist card: lib-state.sh not found\n' >&2; exit 2; }
   is_card_id "$card_id" || { printf 'worklist card: not a card id: %s (epoch seconds then eight hex)\n' "$card_id" >&2; exit 2; }
-  hit=$(board_card "$(state_dir)/kanban.md" "$card_id") || { printf 'worklist card: no card %s on %s\n' "$card_id" "$(state_dir)/kanban.md" >&2; exit 1; }
+  hit=$(board_card "$(state_dir)/kanban.md" "$card_id") || { printf 'worklist card: no card %s on %s or in items/\n' "$card_id" "$(state_dir)/kanban.md" >&2; exit 1; }
   printf '%s\n' "$hit" | awk -F '\t' '{ printf "## %s%s\n", $1, ($2 != "" ? " / " $2 : ""); print substr($0, length($1) + length($2) + 3) }'
   exit 0
 fi
@@ -395,11 +395,14 @@ def ready_rows: . as $b
 | join("\n")
 '
 
-# board_path -- sets $kb to the kanban.md this view reads. Returns 1 with
-# $board_err set and $kb empty when there is none.
-board_err=""; kb=""
+# board_path -- sets $kb to the board this view reads: kanban.md and the
+# store's items/ as one text (board_union in lib-state.sh), written once to a
+# file every section view below parses. Returns 1 with $board_err set and $kb
+# empty when there is neither.
+board_err=""; kb=""; kb_tmp=""
 board_path() {
   board_err=""; kb=""
+  [ -n "$kb_tmp" ] && [ -f "$kb_tmp" ] && { kb=$kb_tmp; return 0; }
   lib=""
   for c in "$self_dir/../../.claude/hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
     [ -f "$c" ] && { lib=$c; break; }
@@ -407,8 +410,12 @@ board_path() {
   [ -n "$lib" ] || { board_err="Board: unavailable (lib-state.sh not found)"; return 1; }
   # shellcheck disable=SC1090
   . "$lib"
-  kb="$(state_dir)/kanban.md"
-  [ -f "$kb" ] || { board_err="Board: no kanban.md at $kb"; kb=""; return 1; }
+  src="$(state_dir)/kanban.md"
+  [ -f "$src" ] || [ -d "$(items_dir "$src")" ] || { board_err="Board: no kanban.md or items/ at $(dirname "$src")"; return 1; }
+  kb_tmp=$(mktemp "${TMPDIR:-/tmp}/worklist-board.XXXXXX") || { board_err="Board: no temp file"; return 1; }
+  trap 'rm -f "$kb_tmp"' EXIT
+  board_union "$src" > "$kb_tmp"
+  kb=$kb_tmp
   return 0
 }
 

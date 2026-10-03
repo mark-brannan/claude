@@ -523,8 +523,16 @@ if has_kind pr; then
   done
 fi
 
+# The board now draws the work-item store's items/ as cards too (lib-state.sh
+# board_union), but retire_card only deletes kanban.md lines: an item worked
+# here would stay ready and be worked again next run. Until grind writes
+# items (stage two of kanban -> items), a card that is an item is skipped.
+item_ids=$(ls "${WORK_ITEM_DIR:-$(dirname "$board_file")/items}" 2>/dev/null \
+  | sed -n 's/^\([0-9]\{10\}[0-9a-f]\{8\}\)\.md$/\1/p' | jq -R . | jq -s -c .) || item_ids="[]"
+[ -n "$item_ids" ] || item_ids="[]"
+
 # shellcheck disable=SC2016  # jq program, not shell
-items=$(printf '%s' "$record" | jq -c --argjson repos "$repos_json" --argjson red "$red_json" --arg kinds " $kinds " --arg policy "$policy" --argjson audit "$audit_json" '
+items=$(printf '%s' "$record" | jq -c --argjson repos "$repos_json" --argjson red "$red_json" --arg kinds " $kinds " --arg policy "$policy" --argjson audit "$audit_json" --argjson itemids "$item_ids" '
   # The fetch is already scoped; the check here is for the cards, which come
   # from the global board and link anywhere, and for a repo dropped above. An
   # origin that is a local path (tests) has no owner, so it matches on name.
@@ -540,6 +548,8 @@ items=$(printf '%s' "$record" | jq -c --argjson repos "$repos_json" --argjson re
   | ([ .buckets.ready[] | select(mine and ((.labels|index("blocked"))|not))
        | {kind: "issue", repo, number, title, url, body: (.body // ""), labels} ] | sort_by(.number)) as $issues
   | [ .buckets.claudes[] | select(mine)
+      | select(([.text // "" | capture("(^|[ (])id:[ \t]*(?<id>[0-9]{10}[0-9a-f]{8})") | .id][0] // "") as $i
+               | $itemids | index($i) | not)
       | (.name // .text[:60]) as $n
       | {kind: "card", repo, title: $n, text, link,
          slug: ($n | ascii_downcase | gsub("[^a-z0-9]+"; "-") | ltrimstr("-") | rtrimstr("-") | .[:40] | rtrimstr("-"))} ] as $cards

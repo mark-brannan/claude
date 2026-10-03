@@ -128,6 +128,13 @@ GH_FAIL=1 check silent 'a board card names the branch' h2
 gitq "$SR" checkout -- state/global/kanban.md 2>/dev/null || \
   printf '# Open loops\n\n## Claude'"'"'s\n- [ ] **Something else** ([log](log/x.md))\n' > "$BOARD"
 
+# An item in the store's items/ is read with the board (kanban -> items, stage one).
+mkdir -p "$SR/state/global/items"
+printf '# Design\n\n## Brief\nIt lives on `claude/homed`.\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=agent repo=- parent=- model=- effort=-\n2026-10-03T05:00:00Z 1d68120b status=ready\n' \
+  > "$SR/state/global/items/1790000002aaaaaaaa.md"
+WORK_ITEM_BIN="$HOOKS/../../.local/bin/work-item" GH_FAIL=1 check silent 'an item names the branch' h2b
+rm -rf "$SR/state/global/items"
+
 GH_ISSUES='[{"number":4,"title":"t","body":"the work is on claude/homed"}]' \
   check silent 'an open issue names the branch' h3
 

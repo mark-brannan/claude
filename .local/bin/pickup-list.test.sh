@@ -108,5 +108,29 @@ printf '\n## Human'"'"'s\n- [ ] **Click it** -- in the UI ([x](https://example.i
 assert 'show by id reaches any section' bash -c "sh '$PL' show 1790836842d654192b | grep -q 'Click it'"
 assert 'but a click-work card cannot be taken' bash -c "! sh '$PL' take 1790836842d654192b 1111111122223333 2>/dev/null"
 
+# --- the store's items/ read with the board (kanban -> items, stage one) --------
+# An agent item is a pickup candidate like a Claude card; take and open run
+# through work-item claim/release, so the claim lands in the item's own log.
+I="$SR/state/global/items"; mkdir -p "$I"
+witem() { # id title owner status
+  printf '# %s\n\n## Brief\nDo it.\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=%s repo=o/r parent=- model=opus effort=high\n2026-10-03T05:00:00Z 1d68120b status=%s\n' \
+    "$2" "$3" "$4" > "$I/$1.md"
+}
+witem 1790836850aaaaaaaa 'Stored task' agent ready
+witem 1790836851aaaaaaaa 'Stored ruling' human-ruling ready
+assert 'an agent item is a pickup candidate' bash -c "sh '$PL' --all | grep -q '◆ Stored task'"
+assert 'with its id beneath' bash -c "sh '$PL' --all | grep -q '^    1790836850aaaaaaaa$'"
+assert 'a ruling item counts toward the docket' bash -c "sh '$PL' | grep -q '^Docket: 2 awaiting'"
+eq 'take on an item claims it through work-item' 'taken 1790836850aaaaaaaa' "$(sh "$PL" take 1790836850aaaaaaaa 1111111122223333)"
+eq 'the claim is in the item log' 'status=claimed' "$(tail -1 "$I/1790836850aaaaaaaa.md" | cut -d' ' -f2-3 | cut -d' ' -f2)"
+eq 'a taken item leaves the default view' '' "$(sh "$PL" --all | grep 'Stored task' || true)"
+assert 'and shows its holder with --closed' bash -c "sh '$PL' --closed | grep 'Stored task' -A0 | grep -q 'taken by 11111111'"
+assert 'a second session cannot take it' bash -c "! sh '$PL' take 1790836850aaaaaaaa 4444444455556666 2>/dev/null"
+eq 'its holder opens it again' 'open 1790836850aaaaaaaa' "$(sh "$PL" open 1790836850aaaaaaaa 1111111122223333)"
+assert 'and it is back in the view' bash -c "sh '$PL' --all | grep -q 'Stored task'"
+assert 'a ruling item cannot be taken' bash -c "! sh '$PL' take 1790836851aaaaaaaa 1111111122223333 2>/dev/null"
+assert 'show reaches a ruling item' bash -c "sh '$PL' show 1790836851aaaaaaaa | grep -q 'Stored ruling'"
+rm -rf "$I"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

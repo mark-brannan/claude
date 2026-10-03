@@ -390,6 +390,41 @@ GIT_COMMITTER_DATE='2026-09-01T12:00:00Z' GIT_AUTHOR_DATE='2026-09-01T12:00:00Z'
 eq_ust "claude_cards: a committed card carries its blame time" '2026-09-01T12:00:00Z' \
   "$( ( . "$HOOKS/lib-state.sh"; claude_cards "$KB/kanban.md" ) | head -1 | cut -f1)"
 
+# --- the store's items/ read as the board (kanban -> items, stage one) -----------
+# board_union, board_card and claude_cards read kanban.md and items/ as one;
+# an item whose id is a card's replaces the card; an item's claim is its log's.
+KI="$SCRATCH/ki"; mkdir -p "$KI/items"
+printf '# Board\n\n## Needs ruling\n\n### global\n- [ ] a ruling ([x](https://example.invalid/r))\n\n## Claude'"'"'s\n\n- [ ] **Old** ([x](https://example.invalid/o)) id: 1790836861aaaaaaaa\n- [ ] **Keep** ([x](https://example.invalid/k))\n' > "$KI/kanban.md"
+ki() { # id title owner repo status brief [log time] [holder]
+  printf '# %s\n\n## Brief\n%s\n\n## Log\n%s 1d68120b status=open owner=%s repo=%s parent=- model=- effort=-\n%s %s status=%s\n' \
+    "$2" "$6" "${7:-2026-10-03T05:00:00Z}" "$3" "$4" "${7:-2026-10-03T05:00:00Z}" "${8:-1d68120b}" "$5" > "$KI/items/$1.md"
+}
+ki 1790836861aaaaaaaa 'Old moved' agent - ready '**Old moved** -- now an item id: 1790836861aaaaaaaa'
+ki 1790836862aaaaaaaa 'Stored ruling' human-ruling o/colregs ready 'Decide it.'
+ki 1790836863aaaaaaaa 'Blocked one' agent - blocked 'Waits.'
+ki 1790836864aaaaaaaa 'Held one' agent - claimed 'Held.' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" abcd1234
+ki 1790836865aaaaaaaa 'Stale hold' agent - claimed 'Let go.' 2026-09-01T00:00:00Z eeeeeeee
+ki 1790836866aaaaaaaa 'Done one' agent - 'done' 'Over.'
+WI="$HOOKS/../../.local/bin/work-item"
+lsi() { WORK_ITEM_BIN=$WI HOOK_DIR=/nonexistent sh -c '. "'"$HOOKS"'/lib-state.sh"; '"$1" _ "$KI/kanban.md"; }
+eq_ust "items: claude_cards drops the replaced card, adds the agent's live items, not blocked or done" \
+  '**Keep**|**Old moved**|**Held one**|**Stale hold**|' \
+  "$(lsi 'claude_cards "$1"' | cut -f2- | sed -E 's/^(- \[ \] )?(\*\*[^*]+\*\*).*/\2/' | tr '\n' '|')"
+eq_ust "items: an item's updated is its newest log line" '2026-10-03T05:00:00Z' \
+  "$(lsi 'claude_cards "$1"' | grep 'Old moved' | cut -f1)"
+eq_ust "items: board_card finds a ruling item, grouped by its repo" 'Needs ruling|colregs|- [ ] **Stored ruling**: Decide it. repo: o/colregs id: 1790836862aaaaaaaa' \
+  "$(lsi 'board_card "$1" 1790836862aaaaaaaa' | tr '\t' '|')"
+eq_ust "items: board_card finds a board card still" "Claude's" "$(lsi 'board_card "$1" 0000000000aaaaaaaa; board_card "$1" 1790836861aaaaaaaa' | cut -f1)"
+eq_ust "items: board_union keeps the board, then the items by section" \
+  "## Needs ruling|### global|## Claude's|## Needs ruling|### colregs|## Claude's" \
+  "$(lsi 'board_union "$1"' | grep '^##' | tr '\n' '|' | sed 's/|$//')"
+eq_ust "items: a live holder's item is taken, by id" 'taken|abcd1234' \
+  "$(lsi 'work_claims_load "$1"; claude_cards "$1" | grep "Held one" | work_records --cards' | cut -d "$(printf '\037')" -f3,5 | tr '\037' '|')"
+eq_ust "items: a stale holder has let go" 'open|' \
+  "$(lsi 'work_claims_load "$1"; claude_cards "$1" | grep "Stale hold" | work_records --cards' | cut -d "$(printf '\037')" -f3,5 | tr '\037' '|')"
+eq_ust "items: no items/ reads the board alone" '**Old**|**Keep**|' \
+  "$(WORK_ITEM_DIR=$SCRATCH/none lsi 'claude_cards "$1"' | cut -f2- | sed -E 's/^- \[ \] (\*\*[^*]+\*\*).*/\1/' | tr '\n' '|')"
+
 # --- ruling_readiness ----------------------------------------------------------
 # Under sh as well as bash: worklist sources this file from /bin/sh. gh is
 # faked: the reply for ref n is read from $RR/state.<n>, and every call logged.
