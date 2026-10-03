@@ -151,12 +151,18 @@ mk ended-cadence '.ended.reason = "pause-cadence"'
 expect ended-cadence 1 PASS 'a cadence pause is a clean end'
 mk ended-band '.ended.reason = "pause-band"'
 expect ended-band 1 PASS 'a review-band pause is a clean end'
+mk ended-odd '.ended.reason = "finished"'
+expect ended-odd 1 FAIL 'a reason grind never writes'
 
 # 2. spend: total 2.30; limit = session budget + a quarter of the item cap
 mk overspent '.session_budget = 1'
 expect overspent 2 FAIL '$2.30 over $1 + $1.25'
 mk within-tolerance '.session_budget = 1.1'
 expect within-tolerance 2 PASS '$2.30 within $1.10 + $1.25'
+mk no-item-budget 'del(.item_budget)'
+expect no-item-budget 2 PASS 'no item_budget: the pr cap stands in, not zero'
+eq 'and row 3 still passes with that cap' PASS "$(verdict 3)"
+case $(evidence 2) in *"pr cap stands in"*) ok ;; *) bad 'row 2 says the pr cap stood in' "$OUT" ;; esac
 
 # 3. over twice the cap with nothing delivered
 mk over-cap ".items += [$(item o/alpha#6 failed 10.5)]"
@@ -220,6 +226,12 @@ mk wrong-repo ".items += [$(item o/beta#12 blocked 0.1)]"
 expect wrong-repo 9 FAIL 'alpha#5'"'"'s branch opened a PR in beta during the run'
 mk general-card ".items += [$(item card:tidy-everything blocked 0.1)]"
 expect general-card 9 FAIL 'a general card that names no repo'
+# No invoked_cwd on record: the reviewer's own cwd must not stand in for it.
+git init -q "$HOME/beta" && git -C "$HOME/beta" remote add origin https://github.com/o/beta.git
+mk no-cwd 'del(.lock.invoked_cwd)'
+OUT=$(cd "$HOME/beta" && "$CHECK" "$S/st/no-cwd/$SID.json" --json 2>&1); RC=$?
+eq 'run from a checkout of o/beta, row 9 does not search beta (row 9)' PASS "$(verdict 9)"
+case $(evidence 9) in *beta*) bad 'row 9 searched the reviewer cwd' "$OUT" ;; *) ok ;; esac
 
 # 10. the lock
 mk lock-held .
@@ -247,6 +259,9 @@ expect empty 12 FAIL 'no items and no ended'
 mk mid-item .
 : > "$S/st/mid-item/$SID.rc"
 expect mid-item 13 FAIL 'a leftover .rc'
+mk mid-write .
+: > "$S/st/mid-write/$SID.json.tmp"
+expect mid-write 13 FAIL 'a leftover .json.tmp from a record half written'
 
 printf '%d passed, %d failed (%ss)\n' "$pass" "$fail" "$(( $(date +%s) - t0 ))"
 [ "$fail" -eq 0 ]

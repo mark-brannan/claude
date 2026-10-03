@@ -50,7 +50,8 @@ pr_cap=1.25          # grind's pr_item_cap: a pr item's cap unless --item-budget
 cheap_fail=0.50      # row 11: a "broken dependency" failure costs less than this
 
 srepo=$(sj '.repo // ""'); project=$(sj '.project // ""'); kinds=$(sj '.kinds // ""')
-item_budget=$(sj '.item_budget // 0'); session_budget=$(sj '.session_budget // empty')
+item_budget=$(sj 'if (.item_budget // 0) > 0 then .item_budget else empty end'); session_budget=$(sj '.session_budget // empty')
+ib_note=""; [ -n "$item_budget" ] || { item_budget=$pr_cap; ib_note=" (item_budget not recorded; the pr cap stands in)"; }
 nitems=$(sj '.items | length? // 0')
 new_schema=$(sj 'if has("ended") or any(.items[]?; has("claim_released") or has("worker_sid")) then 1 else 0 end')
 
@@ -194,7 +195,7 @@ total=$(sj '[.items[]?.cost // 0] | add // 0')
 if [ -z "$session_budget" ]; then row 2 spend N/A "no session_budget recorded"
 else
   limit=$(awk -v s="$session_budget" -v i="$item_budget" -v f="$overshoot_share" 'BEGIN { printf "%.4f", s + i * f }')
-  ev="$(usd "$total") spent; limit $(usd "$limit") = budget $(usd "$session_budget") + $overshoot_share x $(usd "$item_budget") item cap"
+  ev="$(usd "$total") spent; limit $(usd "$limit") = budget $(usd "$session_budget") + $overshoot_share x $(usd "$item_budget") item cap$ib_note"
   if gt "$total" "$limit"; then row 2 spend FAIL "$ev"; else row 2 spend PASS "$ev"; fi
 fi
 
@@ -207,7 +208,7 @@ while IFS=$US read -r _ ref kind _ _ status cost _; do
 done < <(each_item)
 if [ "$nitems" -eq 0 ]; then row 3 over-cap N/A "no items"
 elif [ -s "$off" ]; then row 3 over-cap FAIL "$(brief "$off")"
-else row 3 over-cap PASS "no undelivered item over 2x its cap ($nitems checked)"
+else row 3 over-cap PASS "no undelivered item over 2x its cap ($nitems checked)$ib_note"
 fi
 
 # 4. no ref attempted more than twice, nor after a done record for it. A pr ref
@@ -381,8 +382,9 @@ fi
 # 9. every item worked in the repo its ref names: no PR on its branch opened
 # in the run in another repo, and no card that names no repo at all.
 : > "$off"
-others=$(printf '%s\n' "$srepo" "$(repo_at "$(sj '.lock.invoked_cwd // "."')" 2>/dev/null)" \
-  "$(cut -d "$US" -f4 "$items_tsv")" | grep -E '^[^/ ]+/[^/ ]+$' | sort -u)
+cwd=$(sj '.lock.invoked_cwd // ""'); cwd_repo=""
+[ -z "$cwd" ] || cwd_repo=$(repo_at "$cwd" 2>/dev/null) || cwd_repo=""
+others=$(printf '%s\n' "$srepo" "$cwd_repo" "$(cut -d "$US" -f4 "$items_tsv")" | grep -E '^[^/ ]+/[^/ ]+$' | sort -u)
 while IFS=$US read -r _ ref kind repo branch _; do
   [ "$kind" = pr ] && continue
   if [ "$kind" = card ]; then
@@ -441,10 +443,10 @@ else row 12 not-empty FAIL "no items and no ended record: a run file written bef
 fi
 
 # 13. no per-item scratch files left: the run died mid-item.
-left=""
-for x in live result rc lasttext sid json.tmp; do [ -e "$sdir/$session.$x" ] && left="$left $session.$x"; done
+scratch="live result rc lasttext sid marker json.tmp"; left=""
+for x in $scratch; do [ -e "$sdir/$session.$x" ] && left="$left $session.$x"; done
 if [ -n "$left" ]; then row 13 mid-item FAIL "left in $sdir:$left"
-else row 13 mid-item PASS "no .live/.result/.rc/.lasttext/.sid left"
+else row 13 mid-item PASS "none of .$(printf '%s' "$scratch" | sed 's/ /\/./g') left"
 fi
 
 # --- report -------------------------------------------------------------------
