@@ -3,15 +3,12 @@
 Proposal for [#17](https://github.com/mark-brannan/dotfiles/issues/17), researched
 2026-08-20. Not auto-loaded into sessions; read when working on config sync.
 Revised same day to fold in an independent security review of the draft:
-verify-then-run bootstrap (H1), touch-required hardware signing key (H2),
-downgrade refusal, namespace-bound signers, fingerprint cross-check,
-symlink-flip installs, and authorship provenance on auto-pushes (M1-M6,
-L1-L2).
+symlink-flip installs and authorship provenance on auto-pushes (L1-L2).
 
 **Recommendation in one sentence:** keep dotfiles as the public source of truth,
-publish `~/.claude` config through a signed-tag release channel with one installer
-script, consume it pinned everywhere ephemeral (cloud setup script, a composite
-action for CI), and close the local loop with a scoped Stop-hook auto-commit and a
+install `~/.claude` config from the tip of `main` with one atomic installer
+script everywhere ephemeral (cloud setup script, a composite action for CI), and
+close the local loop with a scoped Stop-hook auto-commit and a
 SessionStart staleness brief.
 
 ---
@@ -22,9 +19,9 @@ SessionStart staleness brief.
 this repo, but nothing guarantees any given session runs current config:
 
 - Cloud sessions start from a fresh VM; only the environment's setup script puts
-  config there, and today it floats on `main`.
+  config there, and the environment snapshot can serve it a week stale.
 - CI sessions in other repos fabricate `$HOME/.claude` with a bespoke `curl` —
-  unpinned, unbounded, and able to leave a mixed old/new instruction set
+  unbounded, and able to leave a mixed old/new instruction set
   (CodeRabbit findings on signalk-noaa-space-weather#97).
 - Local machines drift in both directions: push depends on remembering yadm,
   pull depends on running `dotsync`, and neither direction has a staleness signal.
@@ -52,8 +49,8 @@ This proposal covers gaps 1 and 3.
 | --- | --- | --- |
 | Local interactive (Mac, WSL, Pi) | yadm working tree in `$HOME` | manual push/pull, no drift signal |
 | Local headless (`claude -p`, cron) | same working tree | same |
-| Cloud sessions (claude.ai/code, mobile) | env setup script → `cloud-session-setup.sh` | floats on `main`; per-file copy; env form unversioned |
-| CI in other repos (`claude-review.yml`) | bespoke curl per repo | unpinned, non-atomic, bespoke |
+| Cloud sessions (claude.ai/code, mobile) | env setup script → `cloud-session-setup.sh` | snapshot-stale; per-file copy; env form unversioned |
+| CI in other repos (`claude-review.yml`) | bespoke curl per repo | non-atomic, bespoke |
 | Sub-sessions spawned from cloud | inherit the spawning environment | covered iff cloud is |
 | Desktop / Cowork local | reads local `~/.claude` | covered iff local is |
 | Cowork remote, cloud routines, claude.ai skills | server-side account store | unreachable client-side (out of scope) |
@@ -64,7 +61,7 @@ This proposal covers gaps 1 and 3.
 `cloud-session-setup.sh` is better than the usual community answer and most of it
 should survive: the yadm-machine refusal, the ephemeral-marker requirement, the
 INSTALL allowlist, SKIP_GLOBS tripwires, per-file backups, and prune-with-KEEP.
-What it lacks is exactly what #17 names: a pin, atomicity across the set, and a
+What it lacks is exactly what #17 names: atomicity across the set and a
 completion signal a session can read.
 
 The continuity hooks prove the two patterns this proposal reuses: Stop-hook-grade
@@ -73,7 +70,7 @@ automation ("commits and pushes every Stop, unprompted") and loud degradation
 
 The env setup-script web form is itself config that nothing version-controls.
 Today it holds clone-and-run logic; anything that stays in it should be a
-seldom-changing bootstrap, with the logic and the pin in-repo.
+seldom-changing bootstrap, with the logic in-repo.
 
 ## 4. Threat model
 
@@ -101,13 +98,13 @@ Threats, in the order they matter:
   rule is "commit straight to main" for dotfiles-scale edits, and Claude
   sessions carry the user's push credentials. A prompt-injected session
   that edits
-  a hook on `main` becomes code running in every unpinned consumer's next
-  session. This is the central design driver: the pin-and-review gate is a
-  human checkpoint between an agent-writable branch and agent-executing
-  sessions — it is not only about external attackers.
-- **T2 — fetch-path substitution.** Unpinned `curl`/clone means whatever the
-  network returns becomes standing orders. Pin to a commit SHA and verify with
-  git itself. (Do not hash GitHub tarballs: codeload archives are explicitly
+  a hook on `main` becomes code running in every consumer's next session.
+  `main`'s branch protection is the gate, the same one every other repo the
+  user owns relies on; first-party config is not pinned (R3), so nothing
+  sits between a merge and the next session.
+- **T2 — fetch-path substitution.** A loose-file `curl` means whatever the
+  network returns becomes standing orders. Fetch with git, so what installs is
+  one commit's tree. (Do not hash GitHub tarballs: codeload archives are explicitly
   not checksum-stable.)
 - **T3 — partial failure.** One of two files fetched → mixed instruction set
   (the CodeRabbit finding). Stage everything, verify completeness, then install;
@@ -136,8 +133,10 @@ Threats, in the order they matter:
 
 1. **R1 coverage** — every entry point in §2 that is client-reachable.
 2. **R2 atomicity** — a session sees the old set or the new set, never a mix.
-3. **R3 pinned + reviewed** — ephemeral consumers run a revision a human
-   deliberately promoted; bumping is an explicit act (chosen posture).
+3. **R3 current** — every consumer runs the tip of `main`. First-party
+   config is never pinned, at any hop
+   ([mark-brannan/.github#18](https://github.com/mark-brannan/.github/issues/18)):
+   a pin is a bump only the user can do, in every consumer, forever.
 4. **R4 local push** — Stop-hook-grade, not memory.
 5. **R5 local pull** — automated fetch with a visible behind/ahead signal.
 6. **R6 failure visibility** — degraded sessions know and say so.
@@ -147,70 +146,30 @@ Threats, in the order they matter:
 10. **R10 extractable** — no hardcoded owner/repo/paths in the core, so the
     mechanism can become a community tool without rework.
 
-## 6. Design: a signed release channel
+## 6. Design: one installer, tracking `main`
 
 ### 6.1 Source and channel
 
-The source of truth stays here, public, yadm-managed. Releases are annotated
-tags `claude-config/vN` on reviewed commits.
-
-Promotion is a small script (`claude-config-release`) run by the user on a real
-machine: it shows `git diff <last-release>..HEAD -- .claude/`, asks once, then
-creates an SSH-signed tag and pushes it. That diff-then-sign moment **is** the
-review gate. SSH signing (verified via `ssh-keygen -Y verify`) avoids a gpg
-dependency on consumers — Ubuntu VMs have `ssh-keygen`.
-
-The signing key must be **touch-required hardware-backed** — `sk-ssh-ed25519`
-(FIDO2) or a Secure Enclave key. This is load-bearing, not preference: local
-Claude runs as the user with file-based keys reachable, and a pattern guard on
-`git tag` is bypassable by anything that shells around it. With a
-touch-required key, every signature is a physical human act, so a
-prompt-injected session cannot mint a valid tag non-interactively — the gate
-survives instruction-level compromise. (H2 in the 2026-08-20 security review
-of this doc.)
-
-Two supporting layers behind the ceremony, both ergonomics rather than
-boundaries:
-
-- A GitHub ruleset protecting `claude-config/*`: no updates, no deletions,
-  creation restricted (keeps the claude.ai app actor from minting tags even
-  with push access).
-- A PreToolUse guard denying `git tag claude-config/*` / `git push` of such
-  refs from Claude sessions, mirroring `guard-add-repo.sh` — it catches the
-  accidental path, not a determined bypass; the hardware key is the boundary.
-
-Rotation and revocation: replacing the signer line in the environment form
-(and the in-repo fingerprint, §6.3) invalidates every tag the old key signed
-at the next seed. For fencing off a bad-but-validly-signed release without
-rotating, the installer honors a signed floor: it refuses any tag below the
-version named in the newest `claude-config-floor/*` tag.
-
-The gate's job is to make promotion a deliberate, visible, signed act rather
-than a side effect of any push to `main` — that converts T1 from "every
-consumer executes whatever landed last" into "an attacker needs a physical
-key touch and an explicit ceremony."
+The source of truth stays here, public, yadm-managed. The channel is `main`:
+every consumer installs its tip. No release tags, no signing ceremony, no
+per-consumer bump; a fix lands everywhere at the next session start (R3).
 
 ### 6.2 One installer
 
 `cloud-session-setup.sh` evolves rather than being replaced — its guards are
 the part the community versions get wrong (see §7). Changes:
 
-1. Run **from a checkout of the promoted revision**, so script and content are
-   the same revision — no version skew between installer logic and file set.
-   (How the first execution gets verified is §6.3's job — the installer is
-   never the thing that authorizes itself.)
+1. Run **from the checkout it installs**, so script and content are the same
+   revision — no version skew between installer logic and file set.
 2. Stage the full INSTALL set into a versioned dir and flip a single
    `~/.claude-config/current` symlink — the flip is the install, so a crash
    at any point leaves the previous set fully intact. (Promoted from optional
    to the default: per-file `mv` keeps a stage-to-install window open — L2.)
 3. Write `~/.claude/.sync-status.json` **last**:
-   `{channel, tag, sha, installed_at, complete, source}`. No status file or
+   `{channel, sha, installed_at, complete, source}`. No status file or
    `complete: false` means degraded, and the brief says so.
-4. Signature or pin verification failure: install nothing, keep anything
-   already present, report loudly. Never fall back to unpinned `main` — and
-   never satisfy a failure by selecting an *older* tag (that's a downgrade
-   vector, M3). Version moves are monotonic: refuse any tag at or below the
-   currently-installed one.
+4. Fetch or completeness failure: install nothing, keep anything already
+   present, report loudly.
 5. Install the *complete* hook set or none of it: a partial set plus the
    `$CLAUDE_PROJECT_DIR` fallback in `settings.json` is T8 — third-party
    code running with user-scope trust. PR #20 removes that fallback and
@@ -224,51 +183,22 @@ invalidated only by editing the script or network list. A setup script that
 "fetches current config" actually serves a week-old copy to most sessions.
 So provisioning is two-stage:
 
-**Seed (setup script, runs rarely).** The form holds a self-contained
-bootstrap whose only trust anchor is the public signing key, embedded in the
-script text (env-panel variables don't reach setup scripts). Order is the
-whole point — **verify, then run** (H1): the bootstrap itself clones,
-resolves the highest `claude-config/v*` tag, writes the signers file from
-its own embedded text, runs `git verify-tag`, and checks out the verified
-revision — all before executing a single repo-supplied line. Only then does
-it exec the installer *from the checkout it just verified*:
+**Seed (setup script, runs rarely).** The form holds a short bootstrap: clone
+`main`, run the installer from that checkout.
 
 ```
 set -e
 SEED="$HOME/.local/share/dotfiles-seed"
-git clone -q https://github.com/mark-brannan/dotfiles "$SEED"
-printf '%s\n' 'mark-brannan namespaces="git" sk-ssh-ed25519@openssh.com AAAA…' \
-  > "$SEED/../allowed_signers"
-TAG=$(git -C "$SEED" tag -l 'claude-config/v*' | sort -t/ -k2 -V | tail -1)
-git -C "$SEED" -c gpg.ssh.allowedSignersFile="$SEED/../allowed_signers" \
-  verify-tag "$TAG"                     # refuses: exit, install nothing
-git -C "$SEED" checkout -q "$TAG"
-CLOUD_SESSION=1 sh "$SEED/.local/bin/claude-config-install.sh" --tag "$TAG"
+git clone -q --depth 1 https://github.com/mark-brannan/dotfiles "$SEED"
+CLOUD_SESSION=1 sh "$SEED/.local/bin/claude-config-install.sh"
 exit 0
 ```
 
-An earlier draft had the freshly-cloned installer do its own verification —
-which authorizes nothing, since a compromised `main` ships an installer that
-skips the check. The verification an attacker must beat has to live in the
-form, upstream of any code the repo supplies.
-
-The signers line binds a principal and `namespaces="git"` (M4) — a signature
-lifted from any other SSH-signing context won't verify. The installer
-persists it to `~/.claude-config/allowed_signers` for the refresh stage;
-where the file outlives a session (local machines), it should be root-owned
-(M5). The repo also carries the key's *fingerprint* — never the trust anchor
-itself, but a second channel: bootstrap and refresh warn loudly when form
-key and in-repo fingerprint disagree (M6).
-
 **Refresh (SessionStart hook, runs every session).** The seeded config
-includes a hook step: bounded `git fetch --tags`, verify the newest tag
-against the *persisted* signers file, install if newer — never lower (M3) —
+includes a hook step: bounded `git fetch` of `main`, install if the tip moved,
 update `.sync-status.json` either way. This is what makes a session current
 despite the snapshot, and it's where provenance comes from — without it,
 "which config is this session running" is unanswerable after the fact.
-Auto-refresh does not reopen the gate it bypasses (M1): with the
-touch-required key, every tag it can accept began as a physical human act.
-Consumers that want a ceiling anyway can pin `--max-tag` per environment.
 
 **Workspace trust does not gate this (verified 2026-08-21).** P0's V1 found
 that a cloud workspace has `hasTrustDialogAccepted: false` in `~/.claude.json`,
@@ -295,14 +225,11 @@ scope trust leaves alone. Three consequences the design has to carry:
   message. Until measured (V5 below), assume a cloud session may run with
   permissions degraded and design hooks to fail visibly rather than silently.
 - **The brief reports it.** `.sync-status.json` and the SessionStart brief
-  record the workspace trust flag alongside the installed tag, so a session
+  record the workspace trust flag alongside the installed sha, so a session
   running with a degraded permission set says so rather than being diagnosed a
   week later from behaviour.
 
-Bumping the pin needs **no web-form edits** — the form changes only on key
-rotation. (Fallback design, simpler but weaker ops: a full commit SHA in the
-form. It inherits the snapshot problem — the pin only takes effect when the
-form edit invalidates the cache — so it's a fallback, not a peer.)
+The form never changes once written: what changes lives in git.
 
 This also fixes T4: the form's content becomes a stable, documented bootstrap,
 and everything that changes lives in git.
@@ -310,17 +237,16 @@ and everything that changes lives in git.
 ### 6.4 CI in other repos
 
 A composite action in this repo, `.github/actions/claude-config`, replaces the
-bespoke curl. Consumers pin it the way actions are pinned:
+bespoke curl. Consumers call it at `@main`, like every first-party action:
 
 ```yaml
-- uses: mark-brannan/dotfiles/.github/actions/claude-config@<full-sha>
+- uses: mark-brannan/dotfiles/.github/actions/claude-config@main
 ```
 
-The action checks out dotfiles at that same SHA and runs the installer from it
-into `$HOME/.claude`, before the Claude step. Both CodeRabbit findings on
-signalk#97 are fixed structurally: the pin is the action ref (auditable in the
-consuming repo's history, bumpable by Dependabot PR — which *is* the
-per-consumer review gate), and atomicity is the installer's stage-then-install.
+The action checks out `main` and runs the installer from it into
+`$HOME/.claude`, before the Claude step. The atomicity finding on signalk#97
+is fixed structurally by the installer's stage-then-install; the pinning
+finding is answered by R3.
 
 ### 6.5 Local push (R4)
 
@@ -328,8 +254,8 @@ A Stop hook, same shape as `stop-continuity.sh`: if yadm-managed paths under
 `.claude/` on the INSTALL list have uncommitted changes, commit and push them
 (`yadm add <paths> && yadm commit && yadm push`), with the existing `pre_commit`
 secret guard in the loop and a flock against parallel sessions. Failure lands
-in the checkpoint, not in silence. Auto-push to `main` is consistent with the
-chosen posture because the gate sits downstream at promotion, not at push.
+in the checkpoint, not in silence. Auto-push to `main` means an edit reaches every
+session at its next start; that is the posture (R3).
 
 One exception: `settings.json`. Claude Code rewrites it at runtime (#62486),
 so auto-committing it would push runtime churn — and occasionally runtime
@@ -339,9 +265,7 @@ is agent-untouched at runtime and safe to auto-commit.
 
 Auto-committed pushes carry distinct authorship (the Claude co-author
 trailer), because auto-push otherwise launders agent edits under the user's name
-(L1). The promotion diff is the review surface either way — the release
-script shows *what* is being promoted regardless of who committed it — but
-authorship in the log keeps provenance readable when reviewing that diff.
+(L1), so the log shows which edits an agent made.
 
 ### 6.6 Local pull (R5)
 
@@ -356,10 +280,10 @@ other sessions run is not worth the risk on day one.
 One or two lines merged into the existing SessionStart continuity hook — a new
 hook would double the fixed context tax:
 
-- `config: claude-config/v3 (current)` — healthy.
-- `config: claude-config/v2, v3 available` / `main is 4 commits ahead of v3`.
-- `config: DEGRADED — <reason>` — no status file, incomplete install, fetch or
-  signature failure.
+- `config: main@1a2b3c4 (current)` — healthy.
+- `config: main@1a2b3c4, origin 4 ahead` — refresh pending or failed quietly.
+- `config: DEGRADED — <reason>` — no status file, incomplete install, fetch
+  failure.
 
 Known limit, worth stating in the brief's doc comment: a running session will
 not re-read a skill it already loaded (#36693), and hook config is cached for
@@ -425,7 +349,7 @@ on rebase conflicts. These justify R7-as-tripwire and the notify-only default
 in §6.6.
 
 **Nobody has solved** (recurring across every source): user config into cloud
-sessions at all (official answer is "commit it to each repo"); atomic, pinned
+sessions at all (official answer is "commit it to each repo"); atomic
 provisioning with provenance ("this session ran config version X" is
 unrecoverable everywhere); and staleness signaling — every failure above was
 discovered by behavior, never by a signal. §6 is aimed squarely at those
@@ -440,10 +364,9 @@ proxy, but the state repo 403s until attached per-session.
 ## 8. Alternatives considered
 
 - **Plugin as the backbone.** The only mechanism that spans local, cloud, CI
-  and devcontainers today, with genuine SHA pinning at the plugin-source
-  level. Three disqualifiers for standing orders: it cannot carry CLAUDE.md
-  or permission blocks (the core of what needs syncing), the marketplace
-  catalog layer is unpinnable (`ref` only), and cloud consumption requires
+  and devcontainers today. Two disqualifiers for standing orders: it cannot
+  carry CLAUDE.md or permission blocks (the core of what needs syncing), and
+  cloud consumption requires
   declaring the plugin in *every repo's* project settings — per-repo
   duplication of user config. Serious candidate for the hooks/skills subset
   later (§13 P5); wrong foundation for the whole.
@@ -452,10 +375,9 @@ proxy, but the state repo 403s until attached per-session.
   env source attachment quirks). A3 is accepted by choice, and the public repo
   is part of the community story. Not worth it; the state repo stays the
   private half.
-- **Status-quo plus pinning bolted on.** A SHA pasted into each environment
-  form and each workflow, no channel. Works, but every bump is N manual edits,
-  drift between consumers is invisible, and nothing marks a revision as
-  *reviewed* — a pin to an arbitrary `main` commit gates nothing.
+- **Pinning: a SHA per consumer, or a signed release channel.** Every bump
+  is a manual edit or ceremony that only the user can do, across every
+  consumer. Out by R3.
 - **Per-repo bespoke fetch (today's CI answer).** Rejected by the issue itself;
   each copy re-earns the same review findings.
 
@@ -464,21 +386,14 @@ proxy, but the state repo 403s until attached per-session.
 - **bats suite** for the installer, run in dotfiles CI (ubuntu + macos matrix):
   fresh install; re-run idempotence; INSTALL-entry missing from checkout;
   simulated truncated stage (kill mid-stage — the `current` symlink must
-  still point at the previous set); signature failure (must install nothing,
-  report); **verify-then-run** (tamper the installer on a fake `main`; the
-  bootstrap must refuse before executing it); downgrade refusal (offer a
-  lower signed tag; must be rejected); namespace binding (a signature made
-  outside `namespaces="git"` must not verify); fingerprint cross-check
-  warning; tag resolution version-sorts (`v10` after `v9`, not lexically);
-  user-scope install in an untrusted
+  still point at the previous set); fetch failure (must install nothing,
+  report); user-scope install in an untrusted
   workspace (hooks must still fire); SKIP_GLOBS tripwire; prune with KEEP; yadm-machine refusal; dry-run parity.
 - **Composite action smoke test**: a workflow in this repo consumes the action
-  at HEAD-SHA, then asserts `$HOME/.claude/CLAUDE.md` matches the checkout and
+  at `@main`, then asserts `$HOME/.claude/CLAUDE.md` matches the checkout and
   `.sync-status.json` says `complete: true`.
-- **Release script test**: tag creation refused on dirty tree; produced tag
-  verifies against the allowed-signers file.
-- **Canary**: the existing environment, one throwaway session after each
-  promotion — the brief line is the assertion. No standing infrastructure.
+- **Canary**: the existing environment, one throwaway session after a config
+  change lands — the brief line is the assertion. No standing infrastructure.
 
 ## 10. What to ask Anthropic for
 
@@ -487,9 +402,8 @@ survey shows the asks are currently scattered and stale-botted:
 
 1. First-class environment provisioning from a dotfiles repo for cloud
    sessions — the Codespaces `dotfiles` feature (which runs your `install.sh`
-   in every codespace) is the working precedent, plus a pin-to-ref option.
-2. SHA pinning for the marketplace catalog layer (plugin sources already
-   take one), and manual invalidation or a version stamp for environment
+   in every codespace) is the working precedent.
+2. Manual invalidation or a version stamp for environment
    snapshots — today a setup-script change is the only lever and sessions
    can't tell what config generation they got.
 3. The #84611 skill APIs (publish, **list-with-hash**, delete) so cloud
@@ -501,14 +415,10 @@ survey shows the asks are currently scattered and stale-botted:
 
 ## 11. Costs
 
-- Setup window: one clone + verify + copy, same order as today (~5s measured).
+- Setup window: one clone + copy, same order as today (~5s measured).
 - Context: 1-2 brief lines (~50-100 tokens) per session, replacing nothing.
-- Promotion friction: one script run per config release — the friction *is*
-  the review gate; if it stalls adoption, drop to the SHA-in-form fallback
-  consciously rather than un-pinning.
-- Maintenance: allowed-signers rotation documented in the release script;
-  Dependabot bumps in consumer repos reviewed like any dependency.
-- Build cost: installer surgery + release script + action + hook changes, each
+- Maintenance: none per release; nothing to bump.
+- Build cost: installer surgery + action + hook changes, each
   phase shippable alone (§13).
 
 ## 12. Verify before building
@@ -537,10 +447,9 @@ survey shows the asks are currently scattered and stale-botted:
 
 - **P0** — V1-V5 experiments; file results on #17. V1/V2/V3 answered
   2026-08-21 and folded into §6.3; V4's staleness half and V5 remain.
-- **P1** — installer atomicity + status file + brief line, still tracking
-  `main`. Fixes T3/T7 immediately; no ceremony change yet.
-- **P2** — release script, first signed tag, ruleset, guard hook, bootstrap
-  swap in the environment form. Fixes T1/T2/T4.
+- **P1** — installer atomicity + status file + brief line, tracking `main`.
+  Fixes T3/T7.
+- **P2** — bootstrap swap in the environment form (§6.3). Fixes T2/T4.
 - **P3** — composite action; PR to signalk replacing the curl step; close the
   CodeRabbit findings there.
 - **P4** — local Stop-hook push + SessionStart fetch/notify. Fixes R4/R5.
@@ -552,7 +461,7 @@ Each phase leaves the system strictly better and none depends on a later one.
 ## 14. Bar for evaluating any quick fix
 
 A patch for #17 (including the one in flight) should be measured against:
-pinned to a reviewed revision, not `main` (R3) · old-or-new, never mixed (R2) ·
+tracks `main`, never a pin (R3) · old-or-new, never mixed (R2) ·
 degraded is announced (R6) · secrets structurally excluded (R7) · covers cloud
 *and* CI *and* local, or says which it skips (R1) · failure paths tested (R9) ·
 no second copy of install logic to drift (the composite action and the cloud
