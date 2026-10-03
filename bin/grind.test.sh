@@ -964,7 +964,27 @@ mkdir -p "$S/state/grind/locks/project_fam.lock"; jq -n '{pid: 999999, hostname:
 run fam
 eq 'a project lock is keyed by the project, not a repo' 1 "$RC"
 has 'and names the project' 'another grind is already running against project fam'
-rm -rf "$S/state/grind/locks/project_fam.lock" "$S/ready-beta.json"
+rm -rf "$S/state/grind/locks/project_fam.lock"
+rm -f "$S/state/grind"/*.json
+
+# --- a project grind takes each member repo's lock; one held elsewhere drops ---
+# that repo from the run, and the rest of the family still runs.
+mkdir -p "$S/state/grind/locks/o_beta.lock"
+jq -n --argjson pid "$$" --arg host "$(uname -n)" '{pid:$pid, hostname:$host}' > "$S/state/grind/locks/o_beta.lock/meta.json"
+run fam
+eq 'a project run with one member held still exits 0' 0 "$RC"
+has 'the held member is dropped, on one WARN line' "WARN  o/beta: another grind holds it \\(pid $$\\); it is out of this run"
+eq 'only the free member is worked' 'o/alpha#5=done' "$(jq -r '[.items[] | "\(.ref)=\(.status)"] | join(" ")' "$(latest_session)")"
+assert 'the other grind keeps its member lock' test -d "$S/state/grind/locks/o_beta.lock"
+assert 'this run released the member lock it took' bash -c '[ ! -d "$1/state/grind/locks/o_alpha.lock" ]' _ "$S"
+rm -f "$S/state/grind"/*.json
+mkdir -p "$S/state/grind/locks/o_alpha.lock"; cp "$S/state/grind/locks/o_beta.lock/meta.json" "$S/state/grind/locks/o_alpha.lock/"
+: > "$CLAUDE_LOG"
+run fam
+eq 'every member held: exit 1' 1 "$RC"
+has 'and says so' 'every repo in project fam is held by another grind'
+eq 'no worker ran' 0 "$(calls_claude)"
+rm -rf "$S/state/grind/locks/o_alpha.lock" "$S/state/grind/locks/o_beta.lock" "$S/ready-beta.json"
 rm -f "$S/state/grind"/*.json
 
 # --- sub-issues: a parent is worked through its open Ready sub-issues ----------
@@ -1011,6 +1031,21 @@ grep -q -- '^pr list --repo o/beta --head grind-12 ' "$GH_LOG" && ok || bad 'the
 grep -qF 'The PR body says `Fixes o/beta#12` and `Part of o/alpha#5`.' "$S/prompt.txt" && ok || bad 'the prompt names the sub-issue and its parent' "$(cat "$S/prompt.txt")"
 rm -rf "$S/subs"
 rm -f "$S/state/grind"/*.json
+
+# --- --policy cheapest-first: cheapest estimate first, across kinds -------------
+cat > "$S/ready.json" <<'JSON'
+[{"number": 2, "title": "Opus high", "body": "model: opus\neffort: high", "url": "https://github.com/o/alpha/issues/2", "labels": [{"name": "ready"}]},
+ {"number": 3, "title": "Default pair", "body": "no pair", "url": "https://github.com/o/alpha/issues/3", "labels": [{"name": "ready"}]},
+ {"number": 4, "title": "Haiku low", "body": "model: haiku\neffort: low", "url": "https://github.com/o/alpha/issues/4", "labels": [{"name": "ready"}]}]
+JSON
+run --dry-run --policy cheapest-first
+eq 'a cheapest-first dry-run exits 0' 0 "$RC"
+eq 'haiku/low, then the default pair, then opus/high' 'o/alpha#4 o/alpha#3 o/alpha#2' \
+  "$(grep -oE '^\[[0-9]+/[0-9]+\] o/alpha#[0-9]+' <<<"$OUT" | sed 's/^[^ ]* //' | tr '\n' ' ' | sed 's/ $//')"
+has 'and each item keeps its own pair' '--model haiku --effort low'
+run --dry-run --policy cheapest
+eq 'an unknown policy exits 2' 2 "$RC"
+has 'and names all three' 'finish-first, start-first or cheapest-first'
 
 # --- empty queue -----------------------------------------------------------------
 cat > "$S/ready.json" <<'JSON'
