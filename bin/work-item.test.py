@@ -185,6 +185,11 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(run(A, "show", "1790000000ffffffff").returncode, 1, "an unknown id is not found")
         self.assertEqual(run(A, "fold", "179000").returncode, 2, "a malformed id is refused")
 
+    def test_12_dir(self):
+        r = run(A, "dir")
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, str(self.dir)),
+                         "dir names the items directory, so callers need not hard-code it")
+
 
 if __name__ == "__main__":
     unittest.main()
