@@ -87,7 +87,7 @@ Every item this skill touches gets, and keeps:
    question with its four fields and a **direct link** to the stored
    context, readable by the user. It also lists the open curiae exactly as
    the curia skill's bare `/curia` does (`status: open` in the header; a
-   redirect collapses into its target; a header-less digest is open) and says whether the item is a
+   header-less digest is open) and says whether the item is a
    sub-question of one; if so the pick is "fold
    into `<id>`" and the outcome is **Folded**. A subagent has no channel
    to the user, so it never asks; it only prepares. <!-- Context budget and

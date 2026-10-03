@@ -141,7 +141,8 @@ waive.
 6. **The user confirms the id.** The id is a kebab-case slug of the
    question's own words — `widget-retirement`, not a coined name — so
    confirming one names nothing. The user renames at will; a rename moves
-   the folder and leaves a one-line redirect `digest.md` at the old id.
+   the folder and adds `formerly: <old-id>` to the digest's header, the
+   only trace of the old id; nothing stays at the old path.
 
 Only then: create the folder, copy [template.md](template.md) to
 `digest.md`, fill in the question, the origin link, the date, who ordered
@@ -163,9 +164,10 @@ the fold as a unilateral call.
 0. **List the open curiae** first, whatever the argument, exactly as bare
    `/curia` does — a deterministic pre-step, one line each, count in view:
    each open curia's id, timestamp and working title.
-1. **Resolve the id.** Read `state/global/curia/<id>/digest.md`; a
-   one-line redirect left by a rename points at the new id; follow it.
-   **No folder at all → say the id didn't resolve, then guess.** From the step 0 list, pick the curia the argument most
+1. **Resolve the id.** Read `state/global/curia/<id>/digest.md`.
+   **No folder → check the `formerly:` lines** in every digest's header;
+   a match is the renamed curia, and opens without asking.
+   **No folder and no match → say the id didn't resolve, then guess.** From the step 0 list, pick the curia the argument most
    likely meant — closest fuzzy match on id and question first, most
    recently touched to break a tie — and recommend it in one line, as
    bare `/curia` does; continue there on the user's yes. Never create the
@@ -234,8 +236,7 @@ curia for it. It becomes a line under `## Open questions` here, or a
 List the open curiae, newest-touched first (recency matters;
 first-in-last-out), each as its id, question and last-touched in one
 line, with the count in view against the WIP limit at gate 5. Open means
-`status: open` in `digest.md`'s header. A folder holding only a one-line
-redirect (a renamed curia) collapses into its target.
+`status: open` in `digest.md`'s header.
 Recommend one and why, in one sentence. Open nothing until the user names
 an id, and never a new one from here. If the list is long, say so
 plainly — a perpetually full list is a decision-making process failure,
