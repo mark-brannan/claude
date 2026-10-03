@@ -122,13 +122,20 @@ Every item this skill touches gets, and keeps:
    Nothing else from the subagent enters the sitting's context.
 3. The user rules: yes / no / a value / **confer** / other.
 4. Apply the output per the contract, immediately; don't batch.
-   Then commit and push what the ruling touched in the state repo
-   (`~/claude_prompts_scratch`), by path, never `git add state/` or `-A`
-   (`work-item` writes only edit files and commit nothing; the paths are
-   the card, the brief and the ruling's log line): `git add <paths> && git commit -m
-   "State: agora session <sid8> (<date>)"`, then `git pull --rebase
-   --autostash && git push origin HEAD`, the Stop hook's own shape. A
-   held edit trips every other session's kanban-gate until Stop.
+   Then commit and push what the ruling touched in the state repo, by
+   path: the card, the brief and the ruling's log line (`work-item`
+   writes only edit files). Never `git add state/` or `-A`, and the
+   commit takes the same pathspec, or it sweeps up what other sessions
+   staged. Under the Stop hook's push lock, in one Bash call:
+
+   ```bash
+   . ~/.claude/hooks/lib-state.sh && state_lock_wait "$STATE_PUSH_LOCK" 90 \
+     && trap state_unlock EXIT && cd ~/claude_prompts_scratch \
+     && git add -- <paths> && git commit -q -m "State: agora session <sid8> (<date>)" -- <paths> \
+     && git pull -q --rebase --autostash && git push -q origin HEAD
+   ```
+
+   A held edit trips every other session's kanban-gate until Stop.
 5. Discard the subagent. Next item.
 
 ## Confer: handing a hard item to a confer session
