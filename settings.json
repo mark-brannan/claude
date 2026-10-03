@@ -18,7 +18,6 @@
       "Bash(git merge-base *)",
       "Bash(gh-resolve-thread:*)",
       "Bash(git push origin HEAD:main)",
-      "Bash(languette-step-two-ready *)",
       "Bash(npm run generate:check)",
       "Bash(npm run typecheck)",
       "Bash(npm test)",
