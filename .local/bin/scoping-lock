@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """The scoping lock: one writer per scoping target, at a time.
 
-Ruled by Solace, 2026-10-01 (one-entry-point curia, §1t and §1u, pen): the
-scoping touch point runs one session per target at a time; a held scoping
-refuses rather than warns; the lock is a second, hard file beside the
-curia's LIVE, which stays the soft sitting marker it is. The file and its
-format are the agent's, Solace shown the format:
+The scoping touch point runs one session per target at a time; a held scoping
+refuses rather than warns. The lock is a second, hard file beside the curia's
+LIVE, which stays the soft sitting marker it is. Its format:
 
   <session-id> <ISO-8601 UTC> <read>
 
@@ -20,7 +18,7 @@ rebase, a rejected push -- exits 2 and the run stops. The lock is pushed at
 once, not left for the Stop hook's debounced push, because a lock another
 machine cannot see is no lock.
 
-A lease, not a hold (Solace, 2026-10-01): a scoping runs 10 to 25 minutes,
+A lease, not a hold: a scoping runs 10 to 25 minutes,
 and the lock lapses SCOPING_LOCK_STALE_SECS (default 25m) after it was
 taken. The lapse is the release; nothing has to run at minute 25. The
 holder's own re-take keeps the original time, so re-taking never extends a

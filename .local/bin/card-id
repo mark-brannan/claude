@@ -1,17 +1,16 @@
 #!/bin/sh
 # card-id -- mint a work item's identifier, and look one up.
 #
-# Ruled by Solace, 2026-10-01 (one-entry-point curia, §1v, pen): the work
-# item's identifier is epoch seconds then the minting session's eight hex, no
-# separator -- 1790836842077c62eb -- never edited, never reused. Every card
-# carries it as its last field, `id: <id>`, and kanban-lint's L11 refuses a
-# card without one.
+# A work item's identifier is epoch seconds then the minting session's eight
+# hex, no separator -- 1790836842077c62eb -- never edited, never reused. Every
+# card carries it as its last field, `id: <id>`, and kanban-lint's L11 refuses
+# a card without one.
 #
 #   card-id mint [<session-id>]   print a fresh id (session from
 #                                 $CLAUDE_CODE_SESSION_ID when not given)
 #   card-id show <id>             the card: `<section>\t<group>\t<card>`
 #
-# Fire and forget (Solace, 2026-10-01): no lock, no ledger, no check against
+# Fire and forget: no lock, no ledger, no check against
 # the board. Two sessions never share a hex, and one session minting twice in
 # the same second is the only collision left; the odds carry it, the way a
 # UUID's do.
