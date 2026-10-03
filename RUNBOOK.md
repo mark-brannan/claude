@@ -726,14 +726,24 @@ project colregs`.
 the machine that holds the signing key** — elsewhere grind refuses the run and
 the wakeup is wasted.
 
+**The timer stays off.** Do not enable it until the watched `grind` run
+(card 179098332412f38edd) has passed.
+
+The units are installed by dotfiles (yadm) at `~/.config/systemd/user/`; this
+repo's `systemd/` copy is not installed. Confirm what systemd loads:
+
+```bash
+systemctl --user cat grind-prs@.service
+```
+
 The unit is templated on the path below `$HOME`, with `/` written as `-`:
 
 ```bash
 systemd-escape "src/colregs"          # prints src-colregs; a repo at ~/dotfiles is just `dotfiles`
 ```
 
-Enable it, then run it once by hand rather than waiting four hours for the
-first answer:
+After the watched run passes, enable it, then run it once by hand rather than
+waiting four hours for the first answer:
 
 ```bash
 systemctl --user daemon-reload
