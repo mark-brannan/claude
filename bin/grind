@@ -595,7 +595,12 @@ fi
 if [ "$dry_run" -eq 0 ]; then
   # A --resume already has its file; a new session gets it now, with the
   # lock's diagnostics mirrored in (write_lock skips a file that isn't there).
-  if [ -z "$resume_id" ]; then create_state_file && write_lock "" ""; fi
+  # Loud on failure: `set -e` ignores a failure left of && or ||,
+  # and the run would then spend on items it can never record.
+  if [ -z "$resume_id" ]; then
+    create_state_file || { printf 'grind: cannot write %s\n' "$state_file" >&2; exit 1; }
+    write_lock "" ""
+  fi
   info "session $session_id on $scope: $count item(s) ($kind_counts; $policy), cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
   info "state: $state_file"
 fi
