@@ -22,14 +22,14 @@ GITEV="$(state_dir)/metrics/git-events"
 # Excludes *.nag.json: metrics-live.sh's own crossing state, not the cache.
 F=""
 if [ $# -ge 1 ]; then
-  for c in "$LIVE/$1"*.json; do
+  for c in "$LIVE/$1"*.json "$LIVE"/*/"$1"*.json; do
     case "$c" in *.nag.json) continue ;; esac
     [ -f "$c" ] && F="$c" && break
   done
 else
   # shellcheck disable=SC2012,SC2045  # newest by mtime; a glob can't sort, and
   # session ids are hex, so `ls` output here needs no further quoting care
-  for c in $(ls -t "$LIVE"/*.json 2>/dev/null); do
+  for c in $(ls -t "$LIVE"/*.json "$LIVE"/*/*.json 2>/dev/null); do
     case "$c" in *.nag.json) continue ;; esac
     F="$c"; break
   done
@@ -45,7 +45,7 @@ jq -r '
   "tool calls \(.tool_calls // 0)"
 ' "$F"
 
-GF="$GITEV/$sid.jsonl"
+GF=$(state_shard_path "$GITEV" "$sid.jsonl" "$sid")
 if [ -f "$GF" ]; then
   echo "git events:"
   jq -r '.kind' "$GF" 2>/dev/null | sort | uniq -c | sort -rn | sed 's/^/  /'

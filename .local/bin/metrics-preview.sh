@@ -90,7 +90,7 @@ fi
 # Populate the cache both readouts print from, through the real producer.
 payload "git commit -m preview" | bash "$HOOKS/metrics-live.sh" git 0 >/dev/null
 
-F="$(state_dir)/metrics/live/$sid.json"
+F=$(state_shard_path "$(state_dir)/metrics/live" "$sid.json" "$sid")
 [ -f "$F" ] || { echo "metrics-live.sh wrote no cache at $F" >&2; exit 1; }
 
 # --- silence ---------------------------------------------------------------

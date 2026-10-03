@@ -157,6 +157,8 @@ copy .local/bin/cloud-session-setup.sh
 copy .local/bin/create-pr-labels.sh
 copy .local/bin/gh-resolve-thread
 copy .local/bin/gh-resolve-thread.test.sh
+copy .local/bin/github-limits
+copy .local/bin/github-limits.test.py
 copy .local/bin/grind
 copy .local/bin/grind.test.sh
 copy .local/bin/languette-step-two

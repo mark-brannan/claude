@@ -181,7 +181,7 @@ JQPROG="$HOOK_DIR/session-metrics.jq"
 [ -f "$JQPROG" ] || exit 0
 
 LIVE="$(state_dir)/metrics/live"
-OUT="$LIVE/$sid.json"
+OUT=$(state_shard_path "$LIVE" "$sid.json" "$sid")
 
 # Throttle: the statusline asks constantly, events ask rarely. An event
 # always recomputes; the statusline only does so if the cache has gone stale.
@@ -226,7 +226,7 @@ if [ -n "$work_root" ]; then
   fi
 fi
 
-mkdir -p "$LIVE" 2>/dev/null || exit 0
+mkdir -p "${OUT%/*}" 2>/dev/null || exit 0
 
 # Wall clock, read once. The sitting clock in the engine below is the only
 # thing that reads it, and only a prompt moves that clock.
@@ -255,8 +255,9 @@ fi
 # Edge-triggered. State lives in one small file per session next to the cache;
 # it is NOT the cache, because stop-continuity.sh deletes the cache at the end
 # of a session and the crossings have to outlive it.
-NAGF="$LIVE/$sid.nag.json"
+NAGF=$(state_shard_path "$LIVE" "$sid.nag.json" "$sid")
 CROSSD="$(state_dir)/metrics/crossings"
+CROSSF=$(state_shard_path "$CROSSD" "$sid.jsonl" "$sid")
 # state_lock installs no trap of its own (a caller's is easily clobbered);
 # this one covers every save_nag write below and every exit path, including
 # the Stop `block` decision's early `exit 0`.
@@ -396,6 +397,8 @@ save_nag() {
   # of this same session (dotfiles#161 findings 1/2/4) just skips this
   # write rather than waiting or failing the hook.
   state_lock "$LIVE/$sid.lock" || return 0
+  # Its own shard dir: the live cache may still sit at the flat path.
+  mkdir -p "${NAGF%/*}" 2>/dev/null
   jq -n --argjson cl "$ctx_line" --argjson cr "$ctx_rungs" --argjson cs "$ctx_stop_line" \
         --argjson tl "$time_line" --argjson ts "$tl_sitting" \
         --argjson ft "$fric_tripped" \
@@ -588,11 +591,11 @@ add_model() { model_line="${model_line:+$model_line
 add_arch()  { arch_lines="${arch_lines:+$arch_lines
 }$1"; }
 record_crossing() {
-  mkdir -p "$CROSSD" 2>/dev/null || return 0
+  mkdir -p "${CROSSF%/*}" 2>/dev/null || return 0
   jq -nc --arg sid "$sid" --arg now "$now" --arg kind "$1" \
          --argjson at "$2" --arg text "$3" \
     '{session_id: $sid, ts: $now, kind: $kind, at: $at, text: $text}' \
-    >> "$CROSSD/$sid.jsonl" 2>/dev/null || true
+    >> "$CROSSF" 2>/dev/null || true
 }
 
 # `stay` or `stay <minutes>` and nothing else (any case, optional leading
@@ -607,7 +610,7 @@ is_stay() {
 # gap. Runs before the engine can record a crossing, so the crossing's own
 # prompt never stamps it. Measured only; nothing here speaks.
 stamp_time_after() {
-  local f="$CROSSD/$sid.jsonl" stay=false sm out
+  local f="$CROSSF" stay=false sm out
   [ -f "$f" ] || return 0
   is_stay "${prompt_text:-}" && { stay=true; sm=$(printf '%s' "$prompt_text" | tr -cd 0-9); }
   out=$(jq -sc --argjson now "$now_ts" --arg ts "$now" --argjson stay "$stay" \
@@ -717,7 +720,7 @@ if [ "$run_engine" -eq 1 ]; then
       add_line "$t"; record_crossing bed_ask 0 "$t"
     fi
     save_sitting
-  elif [ "$EVENT" = stop ]; then echo "$CROSSD/$sid.jsonl" | stamp_time_last "$last_prompt" "$sit_start"
+  elif [ "$EVENT" = stop ]; then echo "$CROSSF" | stamp_time_last "$last_prompt" "$sit_start"
   fi
   sit_quiet=0; [ "$quiet_until" -gt "$now_ts" ] && sit_quiet=1
 
@@ -929,7 +932,7 @@ archival_reasons=""
 archival_verdict=""
 archivable() {
   local rec at
-  rec="$(state_dir)/metrics/sessions/$sid.json"
+  rec=$(state_shard_path "$(state_dir)/metrics/sessions" "$sid.json" "$sid")
   archival_verdict=$(jq -r '.verdict // empty' "$rec" 2>/dev/null)
   at=$(jq -r '.verdict_at // 0' "$rec" 2>/dev/null)
   case "$at" in ''|*[!0-9]*) at=0 ;; esac

@@ -8,6 +8,8 @@
 # runs unconditionally on Stop and needs nothing from the conversation.
 #
 # It writes six things, all derived from the transcript and from git:
+# (each <dir>/<id>.* below sits in <dir>/<first two of id>/; lib-state.sh
+# state_shard_path)
 #   metrics/sessions/<id>.json    cost and shape of the session
 #   metrics/decisions/<id>.jsonl  each decision pushed to the user, typed by cost
 #   metrics/friction/<id>.jsonl   each friction event, typed by cost -- see
@@ -60,8 +62,12 @@ metrics=$(jq -s \
 
 SD=$(state_dir)
 LIVE="$SD/metrics/live"
-mkdir -p "$SD/metrics/sessions" "$SD/metrics/decisions" "$SD/metrics/friction" "$SD/metrics/blocked" \
-         "$SD/log/auto" "$LIVE" 2>/dev/null || exit 0
+SESSF=$(state_shard_path "$SD/metrics/sessions" "$sid.json" "$sid")
+DECF=$(state_shard_path "$SD/metrics/decisions" "$sid.jsonl" "$sid")
+FRICF=$(state_shard_path "$SD/metrics/friction" "$sid.jsonl" "$sid")
+BLKF=$(state_shard_path "$SD/metrics/blocked" "$sid.jsonl" "$sid")
+ckpt=$(state_shard_path "$SD/log/auto" "$today-$work_repo-${sid:0:8}.md" "$sid")
+mkdir -p "${SESSF%/*}" "${DECF%/*}" "${FRICF%/*}" "${BLKF%/*}" "${ckpt%/*}" "$LIVE" 2>/dev/null || exit 0
 
 # The per-session lock metrics-live.sh's nag read-modify-write also takes
 # (dotfiles#161). state_lock installs no trap of its own (lib-state.sh), so
@@ -88,10 +94,10 @@ ncommits=0
 
 printf '%s\n' "$metrics" \
   | jq -c --argjson c "${ncommits:-0}" '.session + {commits: $c}' \
-  > "$SD/metrics/sessions/$sid.json"
-printf '%s\n' "$metrics" | jq -c '.decisions[]' > "$SD/metrics/decisions/$sid.jsonl"
-printf '%s\n' "$metrics" | jq -c '.friction[]' > "$SD/metrics/friction/$sid.jsonl"
-printf '%s\n' "$metrics" | jq -c '.blocked[]' > "$SD/metrics/blocked/$sid.jsonl"
+  > "$SESSF"
+printf '%s\n' "$metrics" | jq -c '.decisions[]' > "$DECF"
+printf '%s\n' "$metrics" | jq -c '.friction[]' > "$FRICF"
+printf '%s\n' "$metrics" | jq -c '.blocked[]' > "$BLKF"
 
 # The live snapshot has served its purpose; the finished session file
 # supersedes it, so drop it rather than leaving two records of one session.
@@ -99,12 +105,12 @@ printf '%s\n' "$metrics" | jq -c '.blocked[]' > "$SD/metrics/blocked/$sid.jsonl"
 # finding 4); a lock that could not be taken still gets the delete, just
 # unprotected -- deleting nothing is not a safer failure than a stale file.
 state_lock "$LIVE/$sid.lock"
-rm -f "$SD/metrics/live/$sid.json" 2>/dev/null
+rm -f "$(state_shard_path "$LIVE" "$sid.json" "$sid")" 2>/dev/null
 state_unlock
 bash "$HOOK_DIR/metrics-rollup.sh" 2>/dev/null || true
 
 # ---------------------------------------------------------------- checkpoint
-ckpt="$SD/log/auto/$today-$work_repo-${sid:0:8}.md"
+# $ckpt is set above, beside the metrics paths.
 
 # The resume block (dotfiles#110) is the one part of this file a *model*
 # writes, and this hook rewrites the whole file on every Stop -- so it has to
@@ -264,7 +270,7 @@ set_verdict() {
        !done && /^\*\*Verdict:\*\* / { print v; done = 1; next } { print }
      ' "$ckpt" > "$tmpc" 2>/dev/null; then mv -f "$tmpc" "$ckpt" 2>/dev/null; else rm -f "$tmpc"; fi
 
-  sf="$SD/metrics/sessions/$sid.json"
+  sf="$SESSF"
   if [ -f "$sf" ]; then
     tmpj="$sf.$$"
     if jq -c --arg v "$verdict" --argjson at "$(date -u +%s)" \
@@ -578,7 +584,7 @@ pickup_item() {
       "$status" "$now" "$sid" \
       "$(printf '%s' "$metrics" | jq -r '.session.model // "?"')"
     printf 'branch: %s\npr: %s\nwhere: %s\n' \
-      "$pi_branch_line" "$pi_pr" "log/auto/$(basename "$ckpt")"
+      "$pi_branch_line" "$pi_pr" "${ckpt#"$SD"/}"
     # until: is written by a model or the user (a date, an event or a PR/issue
     # link); the hook only carries it across rewrites, and writes no empty
     # line for an item that has none.
@@ -668,13 +674,21 @@ git -c user.name="${GIT_AUTHOR_NAME:-Claude}" \
     commit -q -m "State: $work_repo session ${sid:0:8} ($today)" >/dev/null 2>&1 || { set_verdict "state-repo commit failed"; exit 0; }
 
 # Debounce the push, not the commit: every Stop still commits locally (cheap,
-# never lost), but pushes to GitHub at most once per 5 minutes. Measured
-# 2026-09-10: ~560 pushes/day to claude_prompts_scratch, bursty enough to
-# risk GitHub's abuse-rate heuristics. A cloud session pushes whenever
-# archivable, so its last commit is never left on a VM about to be reaped; a
-# local one batches, because its commit is already safe in the clone.
+# never lost), but this clone pushes at most once per debounce window, however
+# many sessions stop. A cloud session pushes whenever archivable, so its last
+# commit is never left on a VM about to be reaped; a local one batches, because
+# its commit is already safe in the clone and a later Stop carries it.
+#
+# The stamp lives in the clone's git dir, never in the tracked tree. Under
+# state/ it was committed by the next Stop, shared with every other machine,
+# and rewritten by any `pull --rebase --autostash` that brought in another
+# machine's stamp -- or left as conflict markers, which read as "never pushed"
+# and let the next Stop push at once. It records the attempt, not the success:
+# a push that keeps failing is retried once per window, not on every Stop.
 cloud=0; [ "${CLAUDE_CODE_REMOTE:-}" = true ] && cloud=1
-PUSH_SENTINEL="$SD/.last-state-push"
+# "$SR/.git" is the directory state_repo found, not a git query that can come
+# back empty and put the stamp at the filesystem root.
+PUSH_SENTINEL="$SR/.git/claude-last-state-push"
 debounce_secs=300
 if { [ "$cloud" -eq 0 ] || [ "$verdict" != "archivable" ]; } && [ -f "$PUSH_SENTINEL" ]; then
   last_push=$(cat "$PUSH_SENTINEL" 2>/dev/null || echo 0)
@@ -684,16 +698,14 @@ if { [ "$cloud" -eq 0 ] || [ "$verdict" != "archivable" ]; } && [ -f "$PUSH_SENT
     exit 0   # committed locally; next push (debounced or archivable) carries it
   fi
 fi
+date -u +%s > "$PUSH_SENTINEL" 2>/dev/null
 
 for attempt in 1 2; do
   # A conflicted rebase left in place wedges this clone for every later Stop
   # and every hand commit; back out, and let the push below fail and say so.
   timeout 120 git pull --rebase --autostash -q >/dev/null 2>&1 \
     || git rebase --abort >/dev/null 2>&1
-  if timeout 120 git push -q origin HEAD >/dev/null 2>&1; then
-    date -u +%s > "$PUSH_SENTINEL" 2>/dev/null
-    exit 0
-  fi
+  timeout 120 git push -q origin HEAD >/dev/null 2>&1 && exit 0
   sleep $((attempt * 3))
 done
 # In the cloud the optimistic verdict is now known to be wrong. Correcting it

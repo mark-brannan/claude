@@ -8,7 +8,7 @@
 # to resolve a conflict in generated JSON. Untracked, the file is still here
 # to read; each machine regenerates its own from whatever sessions it has.
 # Reads that must not depend on a local rollup use the `jq -s` one-liners in
-# metrics/README.md over sessions/*.json directly.
+# metrics/README.md over sessions/*.json (and sessions/*/*.json) directly.
 # (Decided 2026-08-20 after one such conflict; see the metrics README.)
 set -uo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,7 +34,7 @@ find "$M/live" -name '*.json.*' -mtime +1 -delete 2>/dev/null
 # file immediately before calling here, so `live/` is usually empty and
 # metrics.json was simply never regenerated.
 shopt -s nullglob
-files=( "$M"/sessions/*.json "$M"/live/*.json )
+files=( "$M"/sessions/*.json "$M"/sessions/*/*.json "$M"/live/*.json "$M"/live/*/*.json )
 [ "${#files[@]}" -gt 0 ] || exit 0
 
 # A finished session (sessions/) wins over its own live snapshot.

@@ -31,6 +31,10 @@
 # is valid when the folded status is ready or closed and no other session
 # holds it. A GitHub-homed item carries `home=`, with no link back.
 #
+# Refused at write: a create whose brief carries no link (kanban-lint's L6); a
+# `status=done` line with no `evidence=`; any `status=closed`, which only the
+# future whole-tree sweep writes (docs/work-item-lifecycle.md).
+#
 # Pencil (dotfiles#510's defaults): a flat folder; a holder that wrote nothing
 # on the item for WORK_ITEM_STALE_SECS (2h) has let go; and this is a GATE --
 # a write that cannot land, or is refused, exits non-zero (1 refused, 2 usage).
@@ -121,6 +125,9 @@ def word(name, v):
 def points_ok(p):
     if p not in POINTS:
         die(f"points is one of 1 2 3 5 8 13, got [{p}]")
+
+
+LINK = re.compile(r"https?://|(^|[^\w./-])[\w.-]+/[\w.-]+#\d+|\]\((\.\./)*log/")
 
 
 def num(s):
@@ -383,6 +390,9 @@ def create(args):
     if opt["points"]:
         points_ok(opt["points"])
     sid = me()
+    if not LINK.search(brief):
+        refuse("the brief carries no link: an http link or owner/repo#n, "
+               "so a loop with no home gets a log entry first")
     it = Item(opt["id"] or f"{int(time.time())}{sid}")
     try:
         items_dir().mkdir(parents=True, exist_ok=True)
@@ -443,11 +453,20 @@ def main(argv):
             die("a log line is one line")
         sid = me()
         to = ""
+        evidence = False
         for w in args:
             if w.startswith("status="):
                 to = w[len("status="):]
             elif w.startswith("owner="):
                 check_owner(w[len("owner="):])
+            elif w.startswith("evidence=") and len(w) > len("evidence="):
+                evidence = True
+        if to == "closed":
+            refuse("status=closed is the whole-tree sweep's, which does not exist yet "
+                   "(docs/work-item-lifecycle.md); log status=done evidence=<link>")
+        if to == "done" and not evidence:
+            refuse("status=done needs evidence=<link>: the PR, commit, roll anchor or "
+                   "decisions line that shows it")
         it.lock()
         if to:
             it.move(sid, to)

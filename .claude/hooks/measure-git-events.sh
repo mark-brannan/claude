@@ -30,13 +30,13 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // ""')
 sid=$(printf '%s' "$input" | jq -r '.session_id // "unknown"')
 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-SD="$(state_dir)/metrics/git-events"
+GF=$(state_shard_path "$(state_dir)/metrics/git-events" "$sid.jsonl" "$sid")
 emit() {  # kind, detail-json
-  mkdir -p "$SD" 2>/dev/null || exit 0
+  mkdir -p "${GF%/*}" 2>/dev/null || exit 0
   jq -nc --arg ts "$ts" --arg sid "$sid" --arg kind "$1" \
          --arg repo "$repo" --arg branch "$branch" --argjson d "$2" \
     '{ts:$ts, session_id:$sid, kind:$kind, repo:$repo, branch:$branch} + $d' \
-    >> "$SD/$sid.jsonl"
+    >> "$GF"
 }
 
 case "$tool" in

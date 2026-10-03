@@ -119,7 +119,7 @@ while IFS= read -r repo; do
     reason='' extra='' landed=0
 
     if [ -n "$ckpt_dir" ]; then
-      matches=$(grep -rl "session \`$sid\`" "$ckpt_dir"/*.md 2>/dev/null)
+      matches=$(grep -rl "session \`$sid\`" "$ckpt_dir"/*.md "$ckpt_dir"/*/*.md 2>/dev/null)
       nmatch=0
       if [ -n "$matches" ]; then nmatch=$(printf '%s\n' "$matches" | wc -l); fi
 

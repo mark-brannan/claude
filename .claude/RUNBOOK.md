@@ -283,7 +283,7 @@ decision line on screen or to the model. The decisions-per-session-hour ratio
 (session clock, first prompt to last) appears in exactly two places, the
 session-start "Decision load, last 7 days" block and the Stop checkpoint's
 `- decision rate:` line. Do not add it to the statusline or the event block.
-Verify: `grep -c 'decision rate' ~/claude_prompts_scratch/state/global/log/auto/*.md | tail -3`
+Verify: `grep -c 'decision rate' ~/claude_prompts_scratch/state/global/log/auto/*/*.md | tail -3`
 after a session with two or more prompts.
 
 Fields are `env`, `cost`, `time`, `dec`, `turns`, `work` (plus `split`, unused).

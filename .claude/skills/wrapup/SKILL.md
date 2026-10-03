@@ -18,7 +18,7 @@ was being paid every session — including sessions whose work already had a
 home, where all it produced was a second copy of what GitHub held.
 
 Read the verdict line at the top of this session's auto-checkpoint
-(`state/global/log/auto/<date>-<repo>-<id>.md`, written by the Stop hook):
+(`state/global/log/auto/<first two of id>/<date>-<repo>-<id>.md`, written by the Stop hook):
 
 - **`archivable`** — the branch has a PR or a pointer, the worktree is clean,
   nothing is unpushed, this session's state committed (pushed too, in the

@@ -461,5 +461,18 @@ for sh_ in bash sh; do
   rm -f "$RR"/state.*
 done
 
+# --- state_shard_path: per-session files split by the id's first two chars ---
+SH="$SCRATCH/shard"; mkdir -p "$SH"
+shp() { bash -c '. "$0/lib-state.sh"; state_shard_path "$@"' "$HOOKS" "$@"; }
+eq_ust 'shard: a new file goes under the first two chars of the id' \
+  "$SH/3f/3fa9-01.json" "$(shp "$SH" 3fa9-01.json 3fa9-01)"
+eq_ust 'shard: the name need not start with the id' \
+  "$SH/3f/2026-01-02-repo-3fa9.md" "$(shp "$SH" 2026-01-02-repo-3fa9.md 3fa9-01)"
+: > "$SH/3fa9-01.json"
+eq_ust 'shard: a file still at the flat path is used where it is' \
+  "$SH/3fa9-01.json" "$(shp "$SH" 3fa9-01.json 3fa9-01)"
+eq_ust 'shard: an empty id goes under _, never the dir itself' \
+  "$SH/_/x.json" "$(shp "$SH" x.json '')"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

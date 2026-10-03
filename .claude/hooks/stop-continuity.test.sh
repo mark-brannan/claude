@@ -74,7 +74,7 @@ CKPT=""
 stop() {  # stop -- run the hook and set $CKPT to the checkpoint it wrote
   printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$SID" "$WORK" \
     | bash "$HOOK" >/dev/null 2>&1
-  CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
+  CKPT=$(ls "$AUTO"/*/*"${SID:0:8}".md 2>/dev/null | head -1)
 }
 verdict() { sed -n 's/^\*\*Verdict:\*\* //p' "$CKPT" | head -1; }
 
@@ -87,10 +87,10 @@ GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
 assert 'a checkpoint was written' test -n "$CKPT"
 eq 'clean, pushed, PR: archivable' 'archivable' "$(verdict)"
 eq 'the metrics record says the same' 'archivable' \
-  "$(jq -r .verdict "$HOME/.claude/state/global/metrics/sessions/$SID.json")"
+  "$(jq -r .verdict "$HOME/.claude/state/global/metrics/sessions/${SID:0:2}/$SID.json")"
 # metrics-live.sh refuses a verdict older than its Stop sequence's start, so
 # the record has to say when this one was reached.
-at=$(jq -r '.verdict_at // empty' "$HOME/.claude/state/global/metrics/sessions/$SID.json")
+at=$(jq -r '.verdict_at // empty' "$HOME/.claude/state/global/metrics/sessions/${SID:0:2}/$SID.json")
 assert "the metrics record stamps verdict_at in epoch seconds, got [$at]" \
   test "${at:-0}" -ge $(( $(date -u +%s) - 60 ))
 has 'the worktree is recorded for resume-list' "^- worktree .$WORK.$" "$CKPT"
@@ -103,7 +103,7 @@ NGSID=nogit000-1111-2222-3333
 printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$NGSID" "$NOGIT" \
   | bash "$HOOK" >/dev/null 2>&1
 eq 'not a git repo: the verdict says so' 'not archivable: not a git repo' \
-  "$(jq -r .verdict "$HOME/.claude/state/global/metrics/sessions/$NGSID.json")"
+  "$(jq -r .verdict "$HOME/.claude/state/global/metrics/sessions/${NGSID:0:2}/$NGSID.json")"
 
 # --- one gh round trip per Stop ---------------------------------------------------
 # The verdict's home check and the pickup item's `pr:` lookup ask the same
@@ -368,7 +368,7 @@ stop_salvage() {  # stop_salvage [VAR=value ...] -- run the hook with the salvag
   # sets them back on purpose, as arguments.
   printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$SID" "$SWORK" \
     | env -u GITHUB_ACTIONS -u CI CLAUDE_STOP_COMMIT=on "$@" bash "$HOOK" >/dev/null 2>&1
-  CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
+  CKPT=$(ls "$AUTO"/*/*"${SID:0:8}".md 2>/dev/null | head -1)
 }
 WIP="wip/$SID"
 snapshot() {
@@ -544,6 +544,9 @@ EOF
 chmod +x "$BIN/flock"
 export FLOCK_CALLED="$S/flock-called"
 
+# stamp <clone> -- the push-debounce stamp: in the clone's git dir, never tracked.
+stamp() { printf '%s/.git/claude-last-state-push' "$1"; }
+
 SRORIGIN="$S/state-origin.git"; SREPO="$S/state-repo"
 git init -q --bare "$SRORIGIN"
 git init -q -b main "$SREPO"
@@ -569,7 +572,7 @@ rel=state/global/both.txt
 echo upstream > "$SRCLONE/$rel"
 gitq "$SRCLONE" add "$rel"; gitq "$SRCLONE" commit -m upstream-conflict; gitq "$SRCLONE" push origin main
 echo local > "$SREPO/$rel"
-rm -f "$SREPO/state/global/.last-state-push"   # past the push debounce
+rm -f "$(stamp "$SREPO")"   # past the push debounce
 
 # In the cloud the clone dies with the VM, so a failed push is a reason.
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" CLAUDE_CODE_REMOTE=true stop
@@ -579,25 +582,34 @@ assert 'conflicting pull: no apply-backend rebase left either' \
   test ! -d "$(git -C "$SREPO" rev-parse --absolute-git-dir)/rebase-apply"
 assert 'conflicting pull: still on main' git -C "$SREPO" symbolic-ref -q HEAD
 assert 'conflicting pull: the verdict says the push failed' \
-  grep -qE 'state-repo push failed' "$SREPO/state/global/log/auto/"*"-work-${SID:0:8}.md"
+  grep -qE 'state-repo push failed' "$SREPO/state/global/log/auto/"*/*"-work-${SID:0:8}.md"
 eq 'conflicting pull: and so does the metrics record' \
   'not archivable: state-repo push failed' \
-  "$(jq -r .verdict "$SREPO/state/global/metrics/sessions/$SID.json")"
+  "$(jq -r .verdict "$SREPO/state/global/metrics/sessions/${SID:0:2}/$SID.json")"
 
 # The local twin: the same failed push on a machine that keeps its clone. The
 # commit is the promise there, and it held (ruled for dotfiles#149).
-rm -f "$SREPO/state/global/.last-state-push"
+rm -f "$(stamp "$SREPO")"
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" stop
 assert 'conflicting pull, local: the push really failed' \
   test "$(git -C "$SRORIGIN" log -1 --format=%s main)" = upstream-conflict
 eq 'conflicting pull, local: the verdict stays archivable' archivable \
-  "$(sed -n 's/^\*\*Verdict:\*\* //p' "$SREPO/state/global/log/auto/"*"-work-${SID:0:8}.md" | head -1)"
+  "$(sed -n 's/^\*\*Verdict:\*\* //p' "$SREPO/state/global/log/auto/"*/*"-work-${SID:0:8}.md" | head -1)"
 eq 'conflicting pull, local: and so does the metrics record' archivable \
-  "$(jq -r .verdict "$SREPO/state/global/metrics/sessions/$SID.json")"
+  "$(jq -r .verdict "$SREPO/state/global/metrics/sessions/${SID:0:2}/$SID.json")"
+
+# A failed push stamps the window too: the push above failed a moment ago, so
+# this Stop commits and makes no second pull-and-push attempt.
+pulls() { git -C "$SREPO" reflog --format=%gs | grep -c '^pull --rebase'; }
+p0=$(pulls)
+echo more > "$SREPO/state/global/more.txt"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" stop
+eq 'failed push: the next Stop in the window does not try again' "$p0" "$(pulls)"
 
 # --- the board's items/ are committed like any other state ------------------
 # No lint stands between an item and the commit; on_exit still releases the
-# push lock. (The push above still conflicts, so this checks the commit only.)
+# push lock. (The failed push above holds the window, so this checks the commit
+# only.)
 it=state/global/items/1790000000d654192b.md
 mkdir -p "$SREPO/state/global/items"
 printf -- '- [ ] an item https://example.invalid/8\n' > "$SREPO/$it"
@@ -605,6 +617,61 @@ GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" st
 assert 'items/: a new item is committed' \
   git -C "$SREPO" cat-file -e HEAD:"$it"
 assert 'items/: the push lock is released' test ! -e "$TMPDIR/claude-state-push.lock.d"
+
+# --- the push debounce holds across a pull, however many sessions stop ---------
+# The stamp used to be state/global/.last-state-push, tracked like any state:
+# another machine's Stop committed its own stamp, and a pull here with this
+# clone's stamp modified left conflict markers, read as "never pushed", so the
+# next Stop pushed at once. The stamp is the clone's alone now.
+DORIGIN="$S/debounce-origin.git"; DREPO="$S/debounce-repo"; DPEER="$S/debounce-peer"
+git init -q --bare "$DORIGIN"
+git init -q -b main "$DREPO"
+gitq "$DREPO" remote add origin "$DORIGIN"
+mkdir -p "$DREPO/state/global"; echo 1 > "$DREPO/state/global/.last-state-push"
+gitq "$DREPO" add state; gitq "$DREPO" commit -m seed
+gitq "$DREPO" push -u origin main
+dstop() {  # dstop <sid> -- a local Stop against the debounce clone
+  printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$1" "$WORK" \
+    | GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$DREPO" \
+      bash "$HOOK" >/dev/null 2>&1
+}
+dstop debounce-aaaa-0000-1111
+eq 'debounce: the first Stop pushes' "State: work session debounce" \
+  "$(git -C "$DORIGIN" log -1 --format=%s main | sed 's/ (.*//')"
+eq 'debounce: the push leaves the tracked tree clean' '' \
+  "$(git -C "$DREPO" status --porcelain -- state/global/.last-state-push)"
+git clone -q -b main "$DORIGIN" "$DPEER" >/dev/null 2>&1   # another machine
+echo 0 > "$DPEER/state/global/.last-state-push"
+gitq "$DPEER" commit -am peer-stamp; gitq "$DPEER" push origin main
+gitq "$DREPO" pull --rebase --autostash -q
+echo two > "$DREPO/state/global/two.txt"
+dstop debounce-bbbb-0000-1111
+echo three > "$DREPO/state/global/three.txt"
+dstop debounce-cccc-0000-1111
+eq 'debounce: Stops in the window after a pull push nothing' peer-stamp \
+  "$(git -C "$DORIGIN" log -1 --format=%s main)"
+assert 'debounce: but each one committed locally' \
+  test "$(git -C "$DREPO" rev-list --count origin/main..main)" -eq 2
+echo 1 > "$(stamp "$DREPO")"   # the window has passed
+dstop debounce-dddd-0000-1111
+eq 'debounce: the next Stop past the window carries every held commit' 4 \
+  "$(git -C "$DORIGIN" log --format=%s main | grep -c '^State: work session debounce ')"
+assert 'debounce: the stamp is in the clone'"'"'s git dir' test -s "$(stamp "$DREPO")"
+
+# A git that answers `rev-parse --absolute-git-dir` with nothing must not move
+# the stamp to the filesystem root, where it is never written and every Stop
+# pushes: the path comes from the directory state_repo found, not from git.
+cat > "$BIN/git" <<EOF
+#!/bin/sh
+case "\$*" in *rev-parse*--absolute-git-dir*) exit 1 ;; esac
+exec $(command -v git) "\$@"
+EOF
+chmod +x "$BIN/git"
+echo five > "$DREPO/state/global/five.txt"
+dstop debounce-eeee-0000-1111
+eq 'no git dir answer: a Stop in the window pushes nothing' 4 \
+  "$(git -C "$DORIGIN" log --format=%s main | grep -c '^State: work session debounce ')"
+rm -f "$BIN/git"
 
 # --- a live metrics-live.sh holding the per-session lock never blocks Stop (#161) --
 # Pre-create $LIVE/<sid>.lock with meta naming this test process's own pid, so
@@ -618,7 +685,7 @@ GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]'
 printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$SID" "$WORK" \
   | GH_PRS="$GH_PRS" timeout 10 bash "$HOOK" >/dev/null 2>&1
 rc=$?
-CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
+CKPT=$(ls "$AUTO"/*/*"${SID:0:8}".md 2>/dev/null | head -1)
 assert 'a held live lock never blocks Stop' test "$rc" -ne 124
 assert 'the checkpoint is still written when the lock is held' test -n "$CKPT"
 rm -rf "$LIVE/$SID.lock"
@@ -651,13 +718,13 @@ sequence() {  # sequence -- run the real Stop sequence; prints metrics-live's st
 }
 box() { printf '%s' "$1" | jq -r '.systemMessage // ""' 2>/dev/null | grep '📦'; }
 ck_verdict() {
-  sed -n 's/^\*\*Verdict:\*\* //p' "$SREPO2/state/global/log/auto/"*"-work-${SID3:0:8}.md" | head -1
+  sed -n 's/^\*\*Verdict:\*\* //p' "$SREPO2/state/global/log/auto/"*/*"-work-${SID3:0:8}.md" | head -1
 }
 
 # Debounced: a push went out a moment ago, so this Stop only commits locally,
 # and the clone ends holding the other session's commit and this one's.
 other 1
-date -u +%s > "$SREPO2/state/global/.last-state-push"
+date -u +%s > "$(stamp "$SREPO2")"
 out=$(sequence)
 assert 'incident, debounced: the clone holds unpushed commits' \
   test "$(git -C "$SREPO2" rev-list --count '@{u}..HEAD')" -ge 2
@@ -670,7 +737,7 @@ assert 'incident, debounced: the 📦 line never names the state repo' \
 # A push in the same Stop: the sentinel is gone, so this Stop pushes its own
 # commit and the parallel session's with it, while the notice waits its turn.
 other 2
-rm -f "$SREPO2/state/global/.last-state-push"
+rm -f "$(stamp "$SREPO2")"
 out=$(sequence)
 eq 'incident, pushed: origin got this Stop'"'"'s commit' "State: work session ${SID3:0:8}" \
   "$(git -C "$SRORIGIN2" log -1 --format=%s main | sed 's/ (.*//')"

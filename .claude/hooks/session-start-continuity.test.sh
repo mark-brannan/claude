@@ -133,6 +133,19 @@ run
 lacks 'no session files, no ratio, no crash'    'per session-hour'
 has   'block still prints'                      'Decision load, last 7 days'
 
+# --- per-session files: flat (pre-split) and sharded are read together -------
+reset_state
+mkdir -p "$SD/metrics/decisions/ab" "$SD/metrics/sessions/ab" "$SD/log/auto/ab"
+printf '{"ts":"%s","type":"gate"}\n' "$now" > "$SD/metrics/decisions/ab/ab12.jsonl"
+printf '{"ts":"%s","decisions":{"total":4},"friction":{"total":0},"prompt_span_seconds":3600}\n' \
+  "$now" > "$SD/metrics/sessions/ab/ab12.json"
+printf -- '- session ab12 — a sharded checkpoint\n\n' > "$SD/log/auto/ab/2026-01-02-repo-ab12.md"
+run
+has   'flat and sharded decisions counted together' '2 gate, 1 scoping'
+has   'a sharded session record is read'            'last session: 4 decisions in 1h00'
+has   'a sharded checkpoint is listed'              '2026-01-02-repo-ab12'
+has   'the flat checkpoint still is'                '2026-01-01-1200-abc'
+
 # --- sitting rungs: what followed them, last 28 days -------------------------
 reset_state
 mkdir -p "$SD/metrics/crossings"

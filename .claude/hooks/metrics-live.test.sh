@@ -43,6 +43,7 @@ STATE="$HOME/.claude/state/global"
 # (stop-sequence.py runs that hook first). Plant what its set_verdict would
 # have written; the git checks behind a verdict are stop-continuity.test.sh's.
 plant() {  # plant <sid> [verdict] [verdict_at]
+  # Flat, as a record written before the shard split: the reader must find it.
   mkdir -p "$STATE/metrics/sessions"
   jq -nc --arg v "${2:-archivable}" --argjson at "${3:-$(date -u +%s)}" \
     '{verdict: $v, verdict_at: $at}' > "$STATE/metrics/sessions/$1.json"
@@ -81,7 +82,7 @@ hasnt 'no threshold line rides in front of it' 'still room' "$(msg "$out2")"
 has   'the stop rung still reaches the verdict' '— 💸$' "$(msg "$out2")"
 hasnt 'and the tail carries no words'          'propose|stopping' "$(msg "$out2")"
 
-CROSS="$STATE/metrics/crossings/$SID.jsonl"
+CROSS="$STATE/metrics/crossings/${SID:0:2}/$SID.jsonl"
 t 'both crossings are recorded, in order' \
   "$(printf '100000\n150000')" \
   "$(jq -r 'select(.kind == "context") | .at' "$CROSS" 2>/dev/null)"
@@ -102,7 +103,7 @@ clock() {  # clock <minutes since sitting start> <minutes since last prompt>
 }
 clock_clear() { rm -f "$SITF"; }
 sitting() {  # sitting <session id> <minutes since sitting start> <minutes since last prompt>
-  local n=$STATE/metrics/live/$1.nag.json
+  local n=$STATE/metrics/live/${1:0:2}/$1.nag.json
   mkdir -p "$(dirname "$n")"
   jq -n '{context_line:200000, time_line:0, time_line_sitting:0,
           friction_tripped:false, since_nag:false,
@@ -167,7 +168,7 @@ has  'the next prompt is what reports it' '⏱ 1h0[0-9]' "$(msg "$out")"
 # so each chat says a threshold once where its reader is looking.
 TPM="$SCRATCH/multi.jsonl"; turn "$TPM" 1000
 P() { payload "$TPM" "$1" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1; }
-nag_field() { jq -r "$2" "$STATE/metrics/live/$1.nag.json" 2>/dev/null; }
+nag_field() { jq -r "$2" "$STATE/metrics/live/${1:0:2}/$1.nag.json" 2>/dev/null; }
 
 clock_clear
 P mA >/dev/null
@@ -177,7 +178,7 @@ t 'the first prompt anywhere starts the one clock' yes \
 P mB >/dev/null
 t 'a second session id does not start a second clock' "$started" "$(sit_start)"
 t 'and no session keeps a clock of its own' '' \
-  "$(cat "$STATE"/metrics/live/m[AB].nag.json | jq -r '.sitting_start // empty')"
+  "$(cat "$STATE"/metrics/live/m[AB]/m[AB].nag.json | jq -r '.sitting_start // empty')"
 
 # A prompt in either session is the same person still sitting: it advances the
 # shared last_prompt, and both sessions read the same elapsed time back.
@@ -211,13 +212,21 @@ has 'and reports 1h00 at its next prompt' '⏱ 1h0[0-9]' "$(msg "$outF2")"
 # with no sitting to belong to. Spend it rather than trust it: the sitting it
 # was recorded in is one this machine has no record of.
 clock 61 10
-old=$STATE/metrics/live/mOld.nag.json
+old=$STATE/metrics/live/mO/mOld.nag.json
+mkdir -p "${old%/*}"
 jq -n --argjson ss "$(( $(date +%s) - 900 ))" \
   '{context_line:200000, time_line:60, friction_tripped:false,
     sitting_start:$ss, last_prompt:$ss, since_nag:false,
     resume_ts:0, nag_pending:false}' > "$old"
 has 'a pre-move nag file does not suppress the new hour' '⏱ 1h0[0-9]' \
     "$(msg "$(P mOld)")"
+
+# A live cache still at the flat path (written before the shard split) must
+# not stop the nag file landing in its own shard.
+mkdir -p "$STATE/metrics/live"; printf '{}\n' > "$STATE/metrics/live/flatLive.json"
+P flatLive >/dev/null
+t 'a flat live cache: the nag file is still written, in its shard' yes \
+  "$([ -f "$STATE/metrics/live/fl/flatLive.nag.json" ] && echo yes || echo no)"
 
 # When the shared clock restarts, every session is free to speak again, not
 # only the one whose prompt restarted it: a spent time_line belongs to the
@@ -461,7 +470,7 @@ has 'and the glyph count is capped, with the total after it' \
     '⛁⛁⛁⛁⛁\(x6\)' "$(msg "$out5")"
 t 'six rungs cross in one jump, in order' \
   "$(printf '100000\n150000\n200000\n250000\n300000\n350000')" \
-  "$(jq -r 'select(.kind == "context") | .at' "$STATE/metrics/crossings/$SID5.jsonl" 2>/dev/null)"
+  "$(jq -r 'select(.kind == "context") | .at' "$STATE/metrics/crossings/${SID5:0:2}/$SID5.jsonl" 2>/dev/null)"
 
 # --- 6. model injection rides its own context ladder -------------------------
 # Below the first rung, nothing reaches the model. At or above it, the prompt
@@ -641,7 +650,7 @@ t   'and asks the model for a one-line acknowledgement' \
 t   'quiet_until lands in the machine-wide clock file' yes \
     "$( q=$(jq -r '.quiet_until' "$SITF"); d=$(( q - $(date +%s) - 2400 )); [ "${d#-}" -le 5 ] && echo yes || echo no )"
 t   'and the use is logged as a stay crossing' 40 \
-    "$(jq -r 'select(.kind == "stay") | .at' "$STATE/metrics/crossings/stay1.jsonl" 2>/dev/null)"
+    "$(jq -r 'select(.kind == "stay") | .at' "$STATE/metrics/crossings/st/stay1.jsonl" 2>/dev/null)"
 
 # Two hours passes inside the quiet window: nothing on screen, nothing to the model.
 q=$(jq -r '.quiet_until' "$SITF")
@@ -677,7 +686,7 @@ BT() { payload "$TPb" "$1" "$SCRATCH" PostToolUse | env "${NIGHT[@]}" bash "$HOO
 BD() { payload "$TPb" "$1" "$SCRATCH" UserPromptSubmit "$2" | bash "$HOOK" prompt 0 2>&1; }
 bedf() { jq -r "$1" "$SITF" 2>/dev/null; }
 set_bed() { jq --argjson b "$1" '.bed_at = $b' "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"; }
-kinds() { jq -r '.kind' "$STATE/metrics/crossings/$1.jsonl" 2>/dev/null | grep '^bed_' | tr '\n' ' '; }
+kinds() { jq -r '.kind' "$STATE/metrics/crossings/${1:0:2}/$1.jsonl" 2>/dev/null | grep '^bed_' | tr '\n' ' '; }
 clock_clear
 o=$(BD bed1 "go on")
 t 'by day nothing is asked' '' "$(msg "$o")"
@@ -867,10 +876,10 @@ old_second() {  # old_second <merged.json>
 rendered_second() { grep -oE '⇢.*' <<<"$1" | head -1; }
 
 t 'clean tree: turns line matches the jq it replaced' \
-  "$(old_second "$STATE/metrics/live/show9.json")" \
+  "$(old_second "$STATE/metrics/live/sh/show9.json")" \
   "$(rendered_second "$(msg "$o9")")"
 t 'dirty tree: turns line matches the jq it replaced' \
-  "$(old_second "$STATE/metrics/live/show9b.json")" \
+  "$(old_second "$STATE/metrics/live/sh/show9b.json")" \
   "$(rendered_second "$(msg "$o9b")")"
 
 # --- 10. the block survives $OUT being deleted mid-run -----------------------
@@ -905,7 +914,7 @@ sleep 0.3
 echo 1
 GH
 chmod +x "$SCRATCH/bin/gh"
-OUT10="$STATE/metrics/live/race.json"
+OUT10="$STATE/metrics/live/ra/race.json"
 payload "$TP10" race "$REPO10" Stop \
   | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show > "$SCRATCH/o10.out" 2>&1 &
 hook_pid=$!
@@ -1064,12 +1073,12 @@ out14=$(payload "$TP14" "$SID14" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>
 t    'a held lock never blocks the hook' 0 "$rc14"
 has  'the block still renders normally' '⛁' "$(msg "$out14")"
 t    'and the nag write is skipped while the lock is held' no \
-     "$([ -f "$STATE/metrics/live/$SID14.nag.json" ] && echo yes || echo no)"
+     "$([ -f "$STATE/metrics/live/${SID14:0:2}/$SID14.nag.json" ] && echo yes || echo no)"
 
 rm -rf "$LOCKDIR"
 payload "$TP14" "$SID14" "$SCRATCH" | bash "$HOOK" posttooluse 0 show >/dev/null 2>&1
 t    'once the lock is free, the same session writes normally' yes \
-     "$([ -f "$STATE/metrics/live/$SID14.nag.json" ] && echo yes || echo no)"
+     "$([ -f "$STATE/metrics/live/${SID14:0:2}/$SID14.nag.json" ] && echo yes || echo no)"
 t    'and releases the lock dir behind it' no \
      "$([ -d "$LOCKDIR" ] && echo yes || echo no)"
 
@@ -1078,7 +1087,7 @@ t    'and releases the lock dir behind it' no \
 # that prompt, whether it was a `stay`, and whether the gap ran past the
 # sitting gap. The crossing's own prompt never stamps it.
 TP15="$SCRATCH/after.jsonl"; turn "$TP15" 1000
-X15="$STATE/metrics/crossings/aft.jsonl"
+X15="$STATE/metrics/crossings/af/aft.jsonl"
 backdate() {  # backdate <minutes> -- move every time crossing's ts that far back
   jq -c --arg ts "$(date -u -d "@$(( $(date +%s) - $1 * 60 ))" +%Y-%m-%dT%H:%M:%SZ)" \
     'if .kind == "time" then .ts = $ts else . end' "$X15" > "$X15.t" && mv "$X15.t" "$X15"
@@ -1094,7 +1103,7 @@ payload "$TP15" aft "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
 t 'and a crossing is stamped once' 1 "$(after | wc -l | tr -d ' ')"
 
 sitting aft2 61 5
-X15="$STATE/metrics/crossings/aft2.jsonl"
+X15="$STATE/metrics/crossings/af/aft2.jsonl"
 payload "$TP15" aft2 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
 backdate 40
 payload "$TP15" aft2 "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "stay here and fix it"}' \
@@ -1103,7 +1112,7 @@ t 'a gap past the sitting gap is quiet; a sentence is not a stay' \
   '[60,40,false,true]' "$(after)"
 
 sitting aft3 61 5
-X15="$STATE/metrics/crossings/aft3.jsonl"
+X15="$STATE/metrics/crossings/af/aft3.jsonl"
 payload "$TP15" aft3 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
 backdate 1
 payload "$TP15" aft3 "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "/stay 30"}' \
@@ -1121,22 +1130,22 @@ shift_ts() {  # shift_ts <file> <kind> <minutes> -- move that kind's ts back
 said() { payload "$TP15" "$1" "$SCRATCH" UserPromptSubmit | jq -c --arg p "$2" '. + {prompt: $p}' \
   | bash "$HOOK" prompt 0 >/dev/null 2>&1; }
 stop() { payload "$TP15" "$1" "$SCRATCH" Stop | bash "$HOOK" stop 0 >/dev/null 2>&1; }
-last() { jq -c 'select(.kind == "time_last") | [.min_to_last, .overrun]' "$STATE/metrics/crossings/$1.jsonl"; }
+last() { jq -c 'select(.kind == "time_last") | [.min_to_last, .overrun]' "$STATE/metrics/crossings/${1:0:2}/$1.jsonl"; }
 
-sitting end1 61 5; said end1 go; shift_ts "$STATE/metrics/crossings/end1.jsonl" time 10
+sitting end1 61 5; said end1 go; shift_ts "$STATE/metrics/crossings/en/end1.jsonl" time 10
 said end1 'stay 30'
 t '`stay <n>` keeps its minutes' 30 \
-  "$(jq 'select(.kind == "time_after") | .stay_min' "$STATE/metrics/crossings/end1.jsonl")"
+  "$(jq 'select(.kind == "time_after") | .stay_min' "$STATE/metrics/crossings/en/end1.jsonl")"
 stop end1
 t 'Stop stamps minutes to the last prompt, deadline not overrun' '[10,false]' "$(last end1)"
 stop end1
 t 'and an unchanged reading is not stamped again' 1 "$(last end1 | wc -l | tr -d ' ')"
 
-sitting end2 61 5; said end2 go; X16="$STATE/metrics/crossings/end2.jsonl"
+sitting end2 61 5; said end2 go; X16="$STATE/metrics/crossings/en/end2.jsonl"
 shift_ts "$X16" time 15; said end2 'stay 2'; shift_ts "$X16" time_after 5; stop end2
 t 'a prompt past the `stay <n>` deadline is an overrun' '[15,true]' "$(last end2)"
 
-sitting end3 61 5; said end3 go; shift_ts "$STATE/metrics/crossings/end3.jsonl" time 50
+sitting end3 61 5; said end3 go; shift_ts "$STATE/metrics/crossings/en/end3.jsonl" time 50
 sitting end4 80 40; said end4 back
 t 'the next sitting start stamps every chat, from the old last prompt' '[10,null]' "$(last end3)"
 

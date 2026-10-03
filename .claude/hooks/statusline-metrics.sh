@@ -24,7 +24,7 @@ printf '%s' "$input" | bash "$HOOK_DIR/metrics-live.sh" statusline 15
 # carry has to come back from here.
 [ -n "${model:-}" ] && printf '%s  ' "$model"
 
-F="$(state_dir)/metrics/live/$sid.json"
+F=$(state_shard_path "$(state_dir)/metrics/live" "$sid.json" "$sid")
 [ -f "$F" ] || { printf '⛁ warming up'; exit 0; }
 
 # A cache written before these fields existed, or one caught mid-write, used

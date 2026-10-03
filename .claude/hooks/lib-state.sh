@@ -43,6 +43,19 @@ state_dir() {
 # True when state_dir is inside the git repo, i.e. worth committing.
 state_is_repo() { state_repo >/dev/null 2>&1; }
 
+# state_shard_path <dir> <name> <session-id> -- the path of a per-session file.
+# A directory that gains a file per session splits into subdirectories named
+# by the id's first two characters (hex, so 256 at most), so no one directory
+# grows without bound and a listing stays quick. Keyed by id, not date: a
+# session that runs past midnight keeps one file. A file still at the flat
+# path, written before the split, is used where it is until it is moved.
+# Readers that list a whole directory glob both: "$dir"/*.json "$dir"/*/*.json.
+state_shard_path() {
+  local k="${3:0:2}"
+  if [ -e "$1/$2" ]; then printf '%s/%s' "$1" "$2"
+  else printf '%s/%s/%s' "$1" "${k:-_}" "$2"; fi
+}
+
 # True when $1 appears as a whole branch-name token in text on stdin -- not
 # merely as a substring. `-w` alone is not enough: branch names are built
 # from hyphens too, so claude/homed-extra is a `-w` match for claude/homed.

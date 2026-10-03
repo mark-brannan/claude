@@ -127,7 +127,7 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
   board_view
 
   if [ -d "$SD/log/auto" ]; then
-    recent=$(ls -t "$SD/log/auto"/*.md 2>/dev/null | head -3)
+    recent=$(ls -t "$SD/log/auto"/*.md "$SD/log/auto"/*/*.md 2>/dev/null | head -3)
     if [ -n "$recent" ]; then
       echo
       echo "### Where recent sessions left off"
@@ -145,7 +145,7 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
   if [ -d "$SD/metrics/decisions" ]; then
     since=$(date -u -d '7 days ago' +%Y-%m-%d 2>/dev/null \
             || date -u -v-7d +%Y-%m-%d 2>/dev/null || echo "")
-    counts=$(cat "$SD/metrics/decisions"/*.jsonl 2>/dev/null \
+    counts=$(cat "$SD/metrics/decisions"/*.jsonl "$SD/metrics/decisions"/*/*.jsonl 2>/dev/null \
       | jq -r --arg since "$since" 'select(.ts >= $since) | .type' 2>/dev/null \
       | sort | uniq -c | awk '{printf "%s %s, ", $1, $2}' | sed 's/, $//')
     if [ -n "$counts" ]; then
@@ -154,7 +154,7 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
       echo
       # Per session-hour, session clock first prompt to last. Measured only:
       # shown here and in the Stop checkpoint, never nudged (§5, 2026-09-30).
-      week=$(cat "$SD/metrics/sessions"/*.json 2>/dev/null | jq -rs --arg since "$since" \
+      week=$(cat "$SD/metrics/sessions"/*.json "$SD/metrics/sessions"/*/*.json 2>/dev/null | jq -rs --arg since "$since" \
         '[.[] | select(.ts >= $since and (.prompt_span_seconds // 0) >= 60)]
          | [(map(.decisions.total) | add // 0), (map(.prompt_span_seconds) | add // 0)] | @tsv' 2>/dev/null)
       wd=${week%%$'\t'*}; ws=${week##*$'\t'}
@@ -162,7 +162,7 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
       [ "${ws:-0}" -gt 0 ] 2>/dev/null \
         && perh=$(awk -v d="$wd" -v s="$ws" 'BEGIN { printf " · %.1f decisions per session-hour", d * 3600 / s }')
       echo "$counts$perh"
-      last=$(cat "$SD/metrics/sessions"/*.json 2>/dev/null | jq -rs \
+      last=$(cat "$SD/metrics/sessions"/*.json "$SD/metrics/sessions"/*/*.json 2>/dev/null | jq -rs \
         '[.[] | select((.prompt_span_seconds // 0) >= 60)] | sort_by(.ts) | last
          | select(. != null) | [.decisions.total, .prompt_span_seconds, .friction.total] | @tsv' 2>/dev/null)
       if [ -n "$last" ]; then
@@ -182,7 +182,7 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
   if [ -d "$SD/metrics/crossings" ]; then
     since28=$(date -u -d '28 days ago' +%Y-%m-%d 2>/dev/null \
               || date -u -v-28d +%Y-%m-%d 2>/dev/null || echo "")
-    rungs=$(cat "$SD/metrics/crossings"/*.jsonl 2>/dev/null | jq -rs --arg since "$since28" \
+    rungs=$(cat "$SD/metrics/crossings"/*.jsonl "$SD/metrics/crossings"/*/*.jsonl 2>/dev/null | jq -rs --arg since "$since28" \
       '[.[] | select(.kind == "time_after" and .ts >= $since)]
        | group_by(.at) | map(
            (map(.min) | sort) as $m | ($m | length) as $n
@@ -191,7 +191,7 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
     [ -n "$rungs" ] && { echo; echo "Sitting rungs, last 28 days: $rungs"; }
     # How each rung's sitting ended (stamp_time_last; the latest reading per
     # crossing counts). A rung "ended it" when the final prompt came within 10m.
-    ends=$(cat "$SD/metrics/crossings"/*.jsonl 2>/dev/null | jq -rs --arg since "$since28" \
+    ends=$(cat "$SD/metrics/crossings"/*.jsonl "$SD/metrics/crossings"/*/*.jsonl 2>/dev/null | jq -rs --arg since "$since28" \
       'def med: sort | (.[(length - 1) / 2 | floor] + .[length / 2 | floor]) / 2 | floor;
        def key: .session_id + .crossing_ts;
        (map(select(.kind == "time_after" and .stay_min != null)) | INDEX(key)) as $st
