@@ -1,0 +1,31 @@
+name: CI
+
+# Every gating job fans into `ci-gate`, so the ruleset requires one context:
+# `ci-gate / gate`. Add a job here, then add it to the gate's `needs`.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  nonempty:
+    permissions:
+      contents: read
+    uses: mark-brannan/.github/.github/workflows/nonempty-diff.yml@main
+
+  ci-gate:
+    needs: [nonempty]
+    if: always()
+    permissions: {}
+    uses: mark-brannan/.github/.github/workflows/ci-gate.yml@main
+    with:
+      results: ${{ toJSON(needs) }}
