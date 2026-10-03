@@ -41,12 +41,9 @@
     "/home/*/CLAUDE.md",
     "/Users/*/CLAUDE.md",
     "/root/CLAUDE.md",
-    "**/dotfiles/.claude/CLAUDE.md",
-    "**/dotfiles/.claude/rules/**",
-    "**/dotfiles/.claude/worktrees/*/.claude/CLAUDE.md",
-    "**/dotfiles/.claude/worktrees/*/.claude/rules/**",
-    "/*/*/.claude/worktrees/*/.claude/CLAUDE.md",
-    "/*/*/.claude/worktrees/*/.claude/rules/**"
+    "**/claude/CLAUDE.md",
+    "**/claude/.claude/worktrees/*/CLAUDE.md",
+    "**/grind-worktrees/claude/*/CLAUDE.md"
   ],
   "disableClaudeAiConnectors": true,
   "deniedMcpServers": [
