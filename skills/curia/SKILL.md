@@ -232,8 +232,9 @@ the fold as a unilateral call.
    reopening with no line citing it is a pull. It hands back a patch of
    the mechanical fixes, written under `<id>/inputs/`, and a findings
    list of at most 600 words; only the list enters this context. Lint is
-   toil: apply the patch with one `git apply`, delete the patch file in
-   the same commit — the applied diff is its record, and a patch left in
+   toil: apply the patch with one `git apply`, then delete the patch
+   file before committing, so it never enters a commit — the applied
+   diff is its record, and a patch left in
    `inputs/` would be read by the next lint as an input — and show the
    diff; beside it, size from `wc -lw`, one line per file —
    the document step 1 read, and `agent-notes.md` — before
