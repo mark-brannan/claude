@@ -142,5 +142,26 @@ check "an unrelated -C before push is not the push's -C" "$verdict" deny
 run_hook_cmd "git -C $dirty push && git -C $clean status" "$clean"
 check "a second -C after the push is not the push's -C" "$verdict" deny
 
+# `cd /a || git push` must not swallow the `|| git push` into the directory
+# it captures -- the push itself still runs (regardless of whether `cd`
+# succeeded), so the stop class must treat `|` as a separator too.
+run_hook_cmd "cd $dirty || git push" "$clean"
+check "cd DIR || git push does not swallow the fallback into the path" "$verdict" deny
+
+# A bare `cd` (no argument) goes to $HOME, same as the shell.
+HOME_SAVE=$HOME
+export HOME=$dirty
+run_hook_cmd "cd && git push" "$clean"
+check "bare cd checks \$HOME, not cwd" "$verdict" deny
+export HOME=$HOME_SAVE
+
+# -C gets the same ~/\$HOME expansion as a leading cd.
+HOME_SAVE=$HOME
+dirty_parent=$(dirname "$dirty")
+export HOME=$dirty_parent
+run_hook_cmd "git -C ~/$(basename "$dirty") push" "$clean"
+check "git -C ~/DIR push expands the tilde" "$verdict" deny
+export HOME=$HOME_SAVE
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

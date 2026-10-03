@@ -50,25 +50,38 @@ cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)
 
 target_cwd=$cwd
 
-# Only a `cd` at the very start of the command counts -- `git push && cd ..`
-# must not be read as the push's directory (tail -1 over an unanchored match
-# used to pick that up). `cd -` has no way to resolve OLDPWD from here, so it
-# is left unhandled rather than guessed.
-leading_cd=$(printf '%s' "$cmd" | grep -oE '^[[:space:]]*cd[[:space:]]+[^;&]*' | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]*(&&.*)?$//; s/^["'"'"']//; s/["'"'"']$//')
 # shellcheck disable=SC2088,SC2016  # matching the literal text "~" / "$HOME"
 # from the push command, not expanding this script's own tilde or variable.
-case $leading_cd in
-  '-') leading_cd='' ;;
-  '~') leading_cd=$HOME ;;
-  '~/'*) leading_cd="$HOME/${leading_cd#\~/}" ;;
-  '$HOME') leading_cd=$HOME ;;
-  '$HOME/'*) leading_cd="$HOME/${leading_cd#'$HOME/'}" ;;
-esac
-if [ -n "$leading_cd" ]; then
-  case $leading_cd in
-    /*) target_cwd=$leading_cd ;;
-    *) target_cwd=$cwd/$leading_cd ;;
+# A bare `cd` (empty argument) goes to $HOME, same as the shell. `cd -`
+# can't be resolved without OLDPWD, which this hook doesn't have, so it is
+# left unhandled rather than guessed.
+expand_leading() {
+  case $1 in
+    '-') printf '' ;;
+    '~') printf '%s' "$HOME" ;;
+    '~/'*) printf '%s/%s' "$HOME" "${1#\~/}" ;;
+    '$HOME') printf '%s' "$HOME" ;;
+    '$HOME/'*) printf '%s/%s' "$HOME" "${1#'$HOME/'}" ;;
+    *) printf '%s' "$1" ;;
   esac
+}
+apply_target() {
+  [ -n "$1" ] || return 0
+  case $1 in
+    /*) target_cwd=$1 ;;
+    *) target_cwd=$target_cwd/$1 ;;
+  esac
+}
+
+# Only a leading `cd` (anchored to the start of the command) counts as the
+# push's directory; one reached after it, as in `git push && cd ..`, does
+# not. The stop class excludes `|` too, so `cd /a || git push` captures just
+# `/a`, not `/a || git push`.
+leading_cd_raw=$(printf '%s' "$cmd" | grep -oE '^[[:space:]]*cd([[:space:]]+[^;&|]*|[[:space:]]*($|[;&|]))')
+if [ -n "$leading_cd_raw" ]; then
+  leading_cd=$(printf '%s' "$leading_cd_raw" | sed -E 's/^[[:space:]]*cd[[:space:]]*//; s/[[:space:]]*$//; s/[;&|]$//; s/[[:space:]]*$//; s/^["'"'"']//; s/["'"'"']$//')
+  [ -n "$leading_cd" ] || leading_cd='~'
+  apply_target "$(expand_leading "$leading_cd")"
 fi
 
 # -C is only the push's own, from the matched `git ... push` invocation
@@ -78,15 +91,13 @@ pushseg=$(printf '%s' "$cmd" | grep -oE \
   '(^|[^A-Za-z0-9_./-])git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--[^[:space:]]+))*[[:space:]]+push([[:space:]]|$)' \
   | tail -1)
 cflag=$(printf '%s' "$pushseg" | grep -oE '\-C[[:space:]]+[^[:space:]]+' | tail -1 | sed -E 's/^-C[[:space:]]+//; s/^["'"'"']//; s/["'"'"']$//')
-if [ -n "$cflag" ]; then
-  case $cflag in
-    /*) target_cwd=$cflag ;;
-    *) target_cwd=$target_cwd/$cflag ;;
-  esac
-fi
+apply_target "$(expand_leading "$cflag")"
 
-# A resolved target that doesn't exist (bad expansion, typo) falls back to
-# payload.cwd rather than exiting 0 -- a gate hook fails closed, not open.
+# A named target that doesn't resolve to a real directory (bad expansion, a
+# typo, a `cd` into a directory the command creates later) falls back to the
+# session cwd rather than exiting 0 -- the same uncertain-case-allows
+# default this hook uses everywhere else (see the top-of-file note), not a
+# guarantee the right repo got checked.
 [ -d "$target_cwd" ] && cwd=$target_cwd
 
 cd "$cwd" || exit 0
