@@ -1,5 +1,4 @@
 #!/bin/sh
-echo "grind: halted. Do not run grind; see https://github.com/mark-brannan/dotfiles/issues/439" >&2; exit 1
 # grind -- a zero-token orchestrator that works the agent's queue one
 # `claude -p` session at a time.
 #
@@ -23,19 +22,35 @@ echo "grind: halted. Do not run grind; see https://github.com/mark-brannan/dotfi
 # the agent's pick under the 2026-09-28 delegation, not a ruling.
 #
 # Per item:
+#   0. The cap stops dispatch, never a worker: an item is not started when
+#      the session budget left is below its cap. A card is claimed in the
+#      work-item store here, before any spend; one another session holds is
+#      skipped.
 #   1. A fresh worktree on a new branch, named after the item (a card's is
-#      grind-card-<slug of its bold name>).
+#      grind-card-<slug of its bold name>). A worktree or local branch left
+#      by an earlier attempt that holds commits on no remote is pushed as
+#      wip/grind-<n> (wip/grind-card-<slug>; a pr's as wip/<branch>-<ts>)
+#      before it is cleared.
 #   2. One `claude -p --output-format stream-json --verbose --max-budget-usd
-#      <item cap> --model <m> --effort <e>` (the item's own, see below) with the issue body (plus a short
-#      contract appended below) as the prompt, read line by line. Each
-#      `assistant` event's `message.usage` is accumulated into a small state
-#      file so the heartbeat can show a running token/cost estimate; the
+#      <session budget left> --model <m> --effort <e>` (the item's own, see
+#      below) with the issue body (plus a short contract appended below) as
+#      the prompt, read line by line. The prompt names the item cap as the
+#      point to stop and report; --max-budget-usd is only the run's backstop.
+#      Each `assistant` event's input-side usage is accumulated into a small
+#      state file so the heartbeat can show a running estimate (input only:
+#      those events carry the message's opening usage, not its output); the
 #      worker's `result` event still carries the exact `total_cost_usd` and
 #      result text. That session does the work and opens the PR. Merging
 #      stays the human's.
 #   3. Parse the final result event for cost and tokens; print one line:
 #      item, model, cost, tokens, running total, percent of session budget.
 #      Crossing 25/50/75% prints a louder line, once each, per session.
+#      Whatever ended the worker -- the backstop, an error, no result event
+#      at all -- the claim below is still checked against GitHub and the
+#      item recorded (cost from the heartbeat's estimate when there is no
+#      result, marked cost_estimated). The worker's claim stamp and a card's
+#      work-item claim are released on every path; the worktree is removed
+#      only after the record is written.
 #   4. The worker ends its final message with one of three status lines:
 #      "GRIND_STATUS: done" (the PR is open), "GRIND_STATUS: carded" (a
 #      ruling only the repo owner can make; the worker filed the card
@@ -50,7 +65,8 @@ echo "grind: halted. Do not run grind; see https://github.com/mark-brannan/dotfi
 #      success and left no PR, no card and no commit behind; that is the
 #      failure these checks exist to catch.
 #   5. Pause -- print a tally and the exact resume command, then exit 0 --
-#      when: the session budget is reached, one item costs more than twice
+#      when: the session budget is reached or what is left is below the next
+#      item's cap, one item costs more than twice
 #      the running median, or every N items. Nothing here waits on a
 #      terminal. A run also refuses to start at all -- before touching any
 #      item -- when ten or more PRs on the repo are awaiting a look (the
@@ -105,13 +121,12 @@ echo "grind: halted. Do not run grind; see https://github.com/mark-brannan/dotfi
 # so a session and a headless worker cannot be working to different rules.
 # `done` is checked against Mergify's label, not a PR existing; a PR whose
 # checks are all `cancelled` gets `gh run rerun --failed` instead of a worker.
-# A pr item is capped at $1.25 unless --item-budget says otherwise, whatever
+# A pr item's cap is $1.25 unless --item-budget says otherwise, whatever
 # the other kinds get; a run that is only prs defaults to a $5 session. The
-# contract's stop rule is ~$1 and the extra quarter is headroom to carry it
-# out: a worker cannot see its exact spend, and a cap equal to the stop kills
-# it on the turn it is labelling and pushing (grind-20260929T022433Z). A pr
-# worker the cap kills anyway still gets its stop rule -- grind applies the
-# fixup-hard label and the one comment for it -- and its claim stamp released. The pr
+# contract's stop rule is ~$1 and the cap is what dispatch holds back for it;
+# the worker is never killed at it. A pr worker the backstop or an error
+# stops anyway still gets its stop rule -- grind applies the fixup-hard label
+# and the one comment for it -- and its claim stamp released. The pr
 # kind needs a signing key, pr-label-audit, lib-state.sh and the contract: a
 # run that asked for it (--prs, --kind pr) refuses without them, one that got
 # it by default drops the kind and says so.
@@ -119,10 +134,13 @@ echo "grind: halted. Do not run grind; see https://github.com/mark-brannan/dotfi
 # A card item is a ## Claude's card on the board -- a work item in items/ --
 # whose `repo:` field, or without one its trailing link, names this repo. The
 # worker gets the card verbatim and the issue contract; `done` is checked the
-# same way (a PR on the item's branch). grind then retires the item: it claims
-# it (work-item allows done only from claimed) and logs `status=done`, then
-# commits and pushes the item file, since the PR is the work's one home from
-# there on.
+# same way (a PR on the item's branch). grind claims the item at dispatch and
+# then either logs `status=done` with the PR as evidence or releases it back
+# to ready, committing and pushing the item file each time.
+#
+# The session file ends with `.ended = {at, reason, exit}` on every way out
+# once the lock is held; reason is pause-budget, pause-outlier,
+# pause-cadence, pause-band, queue-exhausted, signal or error.
 #
 # Output: one INFO line per unit of work started and finished, a heartbeat
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
@@ -134,9 +152,9 @@ echo "grind: halted. Do not run grind; see https://github.com/mark-brannan/dotfi
 # them. A worker runs unattended in a throwaway worktree it is meant to
 # commit and push, so that is the mode it needs; --permission-mode narrows it
 # again for a caller who wants that. A
-# heartbeat line carries a live, `~`-marked token/cost estimate once the
+# heartbeat line carries a live, `~`-marked input-side estimate once the
 # worker has emitted at least one assistant event, e.g.:
-#   still working on owner/repo#97 (3m elapsed, ~48k tokens, ~$0.90 so far)
+#   still working on owner/repo#97 (3m elapsed, ~48k input tokens, ~$0.90 so far, input only)
 # `--output-format json` was dropped rather than kept behind a flag: the
 # worker is always read as a stream now, and the two paths would otherwise
 # duplicate all of the cost/status parsing below for no user-visible gain.
@@ -180,12 +198,6 @@ project=""
 resume_id=""
 heartbeat=60
 permission_mode=bypassPermissions
-# Where a `carded` worker is expected to have written, and where a worked card
-# is retired: the work-item store, one file per item. work-item reads the same
-# variable, so grind and work-item cannot disagree. Overridable for tests and
-# for a machine that keeps the state repo elsewhere.
-items_dir=${WORK_ITEM_DIR:-$HOME/claude_prompts_scratch/state/global/items}
-export WORK_ITEM_DIR=$items_dir
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -251,16 +263,22 @@ lib_state=$(find_beside hooks/lib-state.sh) || lib_state=""
 contract_file=$(find_beside skills/pickup/SKILL.md) || contract_file=""
 claim_stamp=$(find_beside hooks/claim-stamp.sh) || claim_stamp=""
 work_item_bin=${GRIND_WORK_ITEM:-$(command -v work-item 2>/dev/null || find_beside bin/work-item || true)}
+# Where a `carded` worker is expected to have written, and where a card is
+# claimed and retired: the work-item store, named by work-item itself so the
+# two cannot disagree. Empty when there is no work-item; the card kind then
+# refuses each card before any spend.
+items_dir=""
+[ -z "$work_item_bin" ] || items_dir=$("$work_item_bin" dir 2>/dev/null) || items_dir=""
+[ -z "$items_dir" ] || export WORK_ITEM_DIR="$items_dir"
 worklist_bin=${GRIND_WORKLIST:-$(command -v worklist 2>/dev/null || find_beside bin/worklist || true)}
 [ -n "$worklist_bin" ] || { echo "grind: needs worklist (the queue reader); not on PATH or beside grind" >&2; exit 1; }
 
 # The contract is the pickup skill's section 6, read rather than copied
 # (dotfiles#267). Extracting it is what keeps the two runners on one text; a
 # copy in this file would drift the first time either side is edited.
-# The contract's stop rule says ~$1; the hard cap sits a quarter above it so
-# a worker that stops on its own estimate still has the turns to label,
-# comment and push. A cap equal to the stop killed both fixups of
-# grind-20260929T022433Z mid-wrap-up. Proposed, not ruled.
+# The contract's stop rule says ~$1; dispatch holds back a quarter more so a
+# worker that stops on its own estimate still has the turns to label,
+# comment and push. Proposed, not ruled.
 pr_stop_usd=1
 pr_item_cap=$(awk -v s="$pr_stop_usd" 'BEGIN { printf "%g", s * 1.25 }')
 
@@ -320,7 +338,9 @@ no_checkout() {  # the one drop line, for a repo neither the cwd nor $GRIND_CHEC
 
 # --- state file ---------------------------------------------------------------
 # {session, repo, item_budget, session_budget, pause_every,
-#  items: [{ref, status, cost, model, effort}]}
+#  items: [{ref, status, cost, cost_estimated, model, effort, claim_released,
+#           wip_branch, worker_sid}],
+#  ended: {at, reason, exit}}
 new_session_id() { date -u +%Y%m%dT%H%M%SZ; }
 
 if [ -n "$resume_id" ]; then
@@ -429,6 +449,28 @@ write_lock() {
     > "$state_file.tmp" 2>/dev/null && mv "$state_file.tmp" "$state_file" || true
 }
 
+# Every way out once the lock is held: the session file says how the run
+# ended, a worker still in flight has its claims let go, and the lock goes.
+end_reason=error
+in_flight=0
+held_card=""
+# shellcheck disable=SC2317  # reached through the EXIT trap
+on_exit() {
+  rc=$?
+  if [ "$in_flight" -eq 1 ]; then
+    [ -n "${worker_sid:-}" ] || worker_sid=$(cat "$sid_file" 2>/dev/null || echo "")
+    release_worker_claim || true
+    [ -z "$held_card" ] || card_let_go "$held_card" release "" || true
+  fi
+  if [ -f "$state_file" ]; then
+    jq --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg r "$end_reason" --argjson x "$rc" \
+       '.ended = {at:$at, reason:$r, exit:$x}' "$state_file" > "$state_file.tmp" 2>/dev/null \
+      && mv "$state_file.tmp" "$state_file" || true
+  fi
+  rm -rf "$lock_dir"
+  exit "$rc"
+}
+
 if [ "$dry_run" -eq 0 ]; then
   invoked_cwd=$(pwd)
   if ! mkdir "$lock_dir" 2>/dev/null; then
@@ -451,9 +493,9 @@ if [ "$dry_run" -eq 0 ]; then
   # someone noticed and removed it by hand (2026-09-13). TERM and INT get
   # their own trap that also calls exit, so the signal itself is what
   # cleans up.
-  trap 'rm -rf "$lock_dir"' EXIT
-  trap 'rm -rf "$lock_dir"; exit 143' TERM
-  trap 'rm -rf "$lock_dir"; exit 130' INT
+  trap on_exit EXIT
+  trap 'end_reason=signal; exit 143' TERM
+  trap 'end_reason=signal; exit 130' INT
   lock_acquired_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   write_lock
 fi
@@ -510,14 +552,14 @@ if [ "$dry_run" -eq 0 ]; then
     if [ "$awaiting_human_count" -ge 5 ]; then
       printf 'grind: paused -- %d PR(s) awaiting your look on %s (resumes below 5)\n' \
         "$awaiting_human_count" "$scope"
-      exit 0
+      end_reason=pause-band; exit 0
     fi
     rm -f "$band_marker"
   elif [ "$awaiting_human_count" -ge 10 ]; then
     : > "$band_marker"
     printf 'grind: pausing -- %d PR(s) awaiting your look on %s (band 5-10; resumes below 5)\n' \
       "$awaiting_human_count" "$scope"
-    exit 0
+    end_reason=pause-band; exit 0
   fi
 fi
 
@@ -584,7 +626,7 @@ count=$(printf '%s' "$items" | jq 'length')
 kind_counts=$(printf '%s' "$items" | jq -r 'group_by(.kind) | map("\(length) \(.[0].kind)") | join(", ")')
 if [ "$count" -eq 0 ]; then
   echo "grind: nothing to work on $scope (kinds: $kinds)"
-  exit 0
+  end_reason=queue-exhausted; exit 0
 fi
 
 if [ "$dry_run" -eq 0 ]; then
@@ -596,7 +638,8 @@ rerun_used=0
 
 # Every way out of the loop goes through here so a skipped item fails the
 # run whether it ended by pause or by exhausting the queue.
-finish() {
+finish() {  # finish <end reason>
+  end_reason=$1
   if [ "$skipped" -gt 0 ]; then
     err "$skipped item(s) skipped (worktree could not be created); see WARN lines above"
     exit 1
@@ -688,8 +731,9 @@ build_pr_prompt() {
   printf '\nYou are alone in a fresh worktree at %s, on %s -- the PR\047s own head\n' "$3" "$2"
   printf 'branch. Make no other branch. The worktree is deleted when you exit, so\n'
   printf 'anything not committed and pushed is lost.\n\n'
-  printf 'The stop rule\047s $%s is yours to act on; the process is killed at $%s.\n' "$pr_stop_usd" "$item_cap"
-  printf 'The difference is for labelling, commenting and pushing -- not more work.\n\n'
+  printf 'The stop rule\047s $%s is yours to act on: grind does not stop you at it.\n' "$pr_stop_usd"
+  printf 'The only hard stop is the run\047s backstop, $%s, so the stop rule is\n' "$left"
+  printf 'the whole of your budget -- label, comment and push at it, then end.\n\n'
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
   printf '  GRIND_STATUS: done     you finished. grind checks the PR for the\n'
   printf '                         awaiting-human label Mergify computes, or for a\n'
@@ -717,6 +761,10 @@ build_prompt() {
   printf 'mergeable PR: commit, push the branch, and open the PR yourself with gh.\n'
   printf 'Do not merge it. The worktree is deleted when you exit, so anything you\n'
   printf 'have not committed and pushed is lost.\n\n'
+  printf 'Your budget for this item is ~$%s. grind does not stop you at it, so\n' "$item_cap"
+  printf 'stop and report at ~$%s: commit and push what you have, then end with\n' "$item_cap"
+  printf 'the status line that fits -- blocked, saying how far you got, if the\n'
+  printf 'work is not finished.\n\n'
   [ -z "${5:-}" ] || printf 'This is a sub-issue of %s. The PR body says `Fixes %s` and `Part of %s`.\n\n' "$5" "$p_ref" "$5"
   printf 'Every write under .claude/ is refused, whatever your permission mode --\n'
   printf 'that is a harness protection, not something this settings.json can widen.\n'
@@ -754,38 +802,40 @@ build_prompt() {
   fi
 }
 
-# retire_card <card text> <note> <PR url> -- a worked card leaves the agent's queue:
-# its PR is the work's one home from here on. The card is an item in items/
-# (its `id:`), so retiring it is work-item's `status=done`. done is reachable
-# only from claimed (ready -> claimed -> done), and the item has not been
-# claimed -- grind claims at retirement, not at dispatch, so a worker that
-# fails leaves nothing to release -- so this walks it there under grind's own
-# session id: open -> ready if it is still open, claim, then done with the PR
-# as its evidence. The claim is always taken, never assumed: a claim already
-# on the item is another session's (or a dead run's), and work-item refuses
-# a live one and lets a stale one go. grind never writes closed; that is the
-# user's acceptance. The item
-# file is in the private state repo, so the change is committed there and
-# pushed best-effort; a failed push is a WARN, the item is done either way.
-# Returns 1 when the item could not be marked done (no id, no work-item, no
-# PR for evidence, or a refusal such as a live holder).
-retire_card() {
-  card_id=$(printf '%s' "$1" | grep -oE '(^|[ (])id:[[:space:]]*[0-9]{10}[0-9a-f]{8}' | head -n 1 | grep -oE '[0-9]{10}[0-9a-f]{8}$') || card_id=""
-  if [ -z "$card_id" ]; then warn "card has no id: <item id>; nothing to mark done"; return 1; fi
-  if [ -z "$work_item_bin" ]; then warn "work-item not found; cannot mark $card_id done"; return 1; fi
-  if [ -z "$3" ]; then warn "no PR found to cite as evidence; cannot mark $card_id done"; return 1; fi
-  wi() { CLAUDE_CODE_SESSION_ID=$grind_sid "$work_item_bin" "$@"; }
-  card_status=$(wi fold "$card_id" 2>/dev/null | sed -n 's/^status=//p') || card_status=""
-  [ "$card_status" = open ] && { wi log "$card_id" status=ready >/dev/null || return 1; }
-  wi claim "$card_id" >/dev/null || return 1
-  wi log "$card_id" status=done "evidence=$3" >/dev/null || return 1
-  card_file="$items_dir/$card_id.md"
+# A card is an item in the work-item store (its `id:`), claimed at dispatch
+# under grind's own session id so a card another session holds is skipped
+# before any spend, and let go once the result is known: `status=done` with
+# the PR as evidence, or released back to ready. work-item refuses a live
+# claim and lets a stale one go; grind never writes closed, that is the
+# user's acceptance. The item file is in the private state repo, so every
+# change is committed there and pushed best-effort; a failed push is a WARN.
+wi() { CLAUDE_CODE_SESSION_ID=$grind_sid "$work_item_bin" "$@"; }
+card_id_of() {  # card_id_of <card text> -> its item id, or nothing
+  printf '%s' "$1" | grep -oE '(^|[ (])id:[[:space:]]*[0-9]{10}[0-9a-f]{8}' | head -n 1 | grep -oE '[0-9]{10}[0-9a-f]{8}$' || true
+}
+commit_item() {  # commit_item <id> <message>
   bdir=$(dirname "$items_dir")
-  if git -C "$bdir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    if ! { git -C "$bdir" add -- "$card_file" && git -C "$bdir" commit -q -m "grind: worked card -- $2"; } >/dev/null 2>&1; then
-      warn "item $card_id marked done in $card_file but not committed; commit it by hand"; return 0
-    fi
-    git -C "$bdir" push -q origin HEAD >/dev/null 2>&1 || warn "item commit made in $bdir but not pushed; push it by hand"
+  git -C "$bdir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  if ! { git -C "$bdir" add -- "$items_dir/$1.md" && git -C "$bdir" commit -q -m "$2"; } >/dev/null 2>&1; then
+    warn "item $1 changed in $items_dir but not committed; commit it by hand"; return 0
+  fi
+  git -C "$bdir" push -q origin HEAD >/dev/null 2>&1 || warn "item commit made in $bdir but not pushed; push it by hand"
+}
+# card_claim <id> <title> -- the reason it cannot be claimed, or nothing.
+card_claim() {
+  card_status=$(wi fold "$1" 2>/dev/null | sed -n 's/^status=//p') || card_status=""
+  if [ "$card_status" = open ]; then wi log "$1" status=ready >/dev/null 2>&1 || { printf 'work-item refused to ready %s' "$1"; return; }; fi
+  wi claim "$1" >/dev/null 2>&1 || { printf 'work-item refused the claim on %s (status %s; another session may hold it)' "$1" "${card_status:-unknown}"; return; }
+  commit_item "$1" "grind: claimed card -- $2"
+}
+# card_let_go <id> done|release <PR url> -- returns 1 when work-item refused.
+card_let_go() {
+  if [ "$2" = "done" ]; then
+    wi log "$1" status=done "evidence=$3" >/dev/null || return 1
+    commit_item "$1" "grind: worked card -- $title${3:+ -> $3}"
+  else
+    wi release "$1" >/dev/null || return 1
+    commit_item "$1" "grind: released card -- $title"
   fi
 }
 
@@ -879,10 +929,10 @@ verify_pr_fixup() {
 # said -- the nearest thing to "what was tried" it left.
 stop_rule_for_worker() {
   said=$(printf '%s' "$3" | cut -c1-1500)
-  body=$(printf 'grind: the fixup worker stopped at %s, against a $%s hard cap, before it could carry out the stop rule itself -- so grind labelled this PR `fixup-hard`.
+  body=$(printf 'grind: the fixup worker stopped at %s, against the run\047s $%s backstop, before it could carry out the stop rule itself -- so grind labelled this PR `fixup-hard`.
 
 ' \
-           "$(fmt_usd "$2")" "$item_cap"
+           "$(fmt_usd "$2")" "$left"
          if [ -n "$said" ]; then printf 'Its last message:
 
 '; printf '%s
@@ -896,9 +946,26 @@ stop_rule_for_worker() {
 # release_worker_claim: the worker is gone whatever it reported, and its
 # session claimed the branch at start. A stamp it never released says a dead
 # session holds the PR for two hours. Uses the loop's worker_sid and wt_path.
+# Returns 1 only when a session ran and there is no claim-stamp.sh to
+# release it with.
 release_worker_claim() {
-  [ -n "$worker_sid" ] && [ -n "$claim_stamp" ] || return 0
+  [ -n "$worker_sid" ] || return 0
+  [ -n "$claim_stamp" ] || return 1
   sh "$claim_stamp" release -C "$wt_path" --scan "$worker_sid" >/dev/null 2>&1 || true
+}
+
+# keep_unpushed <wip branch> -- before an earlier attempt's worktree or
+# local branch is cleared, push what it holds that no remote has. Prints the
+# branch pushed, if any; returns 1 when the push failed and nothing may be
+# deleted. The worktree's HEAD wins over the branch: it is the later state.
+keep_unpushed() {
+  for tip in "$(git -C "$wt_path" rev-parse -q --verify HEAD 2>/dev/null)" \
+             "$(git -C "$checkout" rev-parse -q --verify "refs/heads/$branch" 2>/dev/null)"; do
+    [ -n "$tip" ] || continue
+    [ -n "$(git -C "$checkout" rev-list -n 1 "$tip" --not --remotes 2>/dev/null)" ] || continue
+    git -C "$checkout" push -q origin "$tip:refs/heads/$1" >/dev/null 2>&1 || return 1
+    printf '%s' "$1"; return 0
+  done
 }
 
 # verify_carded <issue number> <worker start, ISO 8601>
@@ -995,13 +1062,22 @@ while [ "$i" -lt "$count" ]; do
 
   is_done_ref "$ref" && continue
 
+  # The cap stops dispatch, never a worker: an item starts only while the
+  # session has its whole cap left, and the worker's own --max-budget-usd is
+  # what is left -- a backstop, not the item's stop (dotfiles#439).
+  left=$(awk -v a="$running_total" -v b="$session_budget" 'BEGIN { printf "%.2f", (b - a > 0) ? b - a : 0 }')
   if [ "$dry_run" -eq 0 ]; then
-    already_reached=$(awk -v a="$running_total" -v b="$session_budget" 'BEGIN { print (a >= b) ? 1 : 0 }')
-    if [ "$already_reached" -eq 1 ]; then
+    if [ "$(awk -v l="$left" 'BEGIN { print (l <= 0) ? 1 : 0 }')" -eq 1 ]; then
       printf 'pause: session budget reached (%s / %s). %d item(s) processed this run.\n' \
         "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$processed_this_run"
       printf 'resume: %s\n' "$resume_cmd"
-      finish
+      finish pause-budget
+    fi
+    if [ "$(awk -v l="$left" -v c="$item_cap" 'BEGIN { print (l < c) ? 1 : 0 }')" -eq 1 ]; then
+      printf 'pause: session budget left (%s of %s) is below %s'"'"'s cap (%s). %d item(s) processed this run.\n' \
+        "$(fmt_usd "$left")" "$(fmt_usd "$session_budget")" "$ref" "$(fmt_usd "$item_cap")" "$processed_this_run"
+      printf 'resume: %s\n' "$resume_cmd"
+      finish pause-budget
     fi
   fi
 
@@ -1050,9 +1126,9 @@ while [ "$i" -lt "$count" ]; do
   e=$(item_field effort "$pair_text"); [ -z "$e" ] || effort=$e
 
   case $kind in
-    pr)   cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $item_cap --model $model --effort $effort" ;;
-    card) cmd_display="claude -p <card $ref text> --output-format stream-json --verbose --max-budget-usd $item_cap --model $model --effort $effort" ;;
-    *)    cmd_display="claude -p <issue $ref body> --output-format stream-json --verbose --max-budget-usd $item_cap --model $model --effort $effort" ;;
+    pr)   cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $left --model $model --effort $effort" ;;
+    card) cmd_display="claude -p <card $ref text> --output-format stream-json --verbose --max-budget-usd $left --model $model --effort $effort" ;;
+    *)    cmd_display="claude -p <issue $ref body> --output-format stream-json --verbose --max-budget-usd $left --model $model --effort $effort" ;;
   esac
 
   if [ "$dry_run" -eq 1 ]; then
@@ -1063,11 +1139,38 @@ while [ "$i" -lt "$count" ]; do
       printf '  worktree: git -C %s worktree add -b %s %s\n' "$checkout" "$branch" "$wt_path"
     fi
     printf '  command:  %s\n' "$cmd_display"
+    printf '  budget:   stop at ~%s, backstop %s\n' "$(fmt_usd "$item_cap")" "$(fmt_usd "$left")"
     continue
   fi
 
   info "[$i/$count] starting $ref -- $title"
+  # A card is claimed before anything is cut or spent: a card with no id or
+  # no work-item cannot be claimed or retired, and one another session holds
+  # is theirs.
+  held_card=""
+  if [ "$kind" = card ]; then
+    card_id=$(card_id_of "$(printf '%s' "$item" | jq -r '.text')")
+    if [ -z "$card_id" ]; then reason="card has no id: <item id>"
+    elif [ -z "$work_item_bin" ] || [ -z "$items_dir" ]; then reason="no work-item to claim it with"
+    else reason=$(card_claim "$card_id" "$title")
+    fi
+    if [ -n "$reason" ]; then warn "skipping $ref -- $reason"; continue; fi
+    held_card=$card_id
+  fi
   mkdir -p "$wt_base"
+  # What an earlier attempt left that no remote has is pushed before it is
+  # cleared; if that push fails, nothing is cleared and the item waits.
+  case $kind in
+    pr)   wip_name="wip/$branch-$(date -u +%Y%m%dT%H%M%SZ)" ;;
+    card) wip_name="wip/grind-card-$slug" ;;
+    *)    wip_name="wip/grind-$number" ;;
+  esac
+  if ! wip_branch=$(keep_unpushed "$wip_name"); then
+    warn "skipping $ref -- could not push the earlier attempt's unpushed commits to $wip_name; $wt_path and $branch left as they are"
+    [ -z "$held_card" ] || card_let_go "$held_card" release "" || true
+    skipped=$((skipped + 1)); continue
+  fi
+  [ -z "$wip_branch" ] || info "pushed the earlier attempt's unpushed commits on $ref to $wip_branch before clearing it"
   # Remove the directory first, then prune: a worktree kept from a previous
   # unverified attempt is still registered, and git refuses to delete a
   # branch a registered worktree holds.
@@ -1087,6 +1190,7 @@ while [ "$i" -lt "$count" ]; do
       || { warn "skipping $ref -- could not check out $branch: $wt_err"; skipped=$((skipped + 1)); continue; }
   elif ! wt_err=$(git -C "$checkout" worktree add -q -b "$branch" "$wt_path" 2>&1 >/dev/null); then
     warn "skipping $ref -- could not create worktree $wt_path on branch $branch: $wt_err"
+    [ -z "$held_card" ] || card_let_go "$held_card" release "" || true
     skipped=$((skipped + 1))
     continue
   fi
@@ -1102,7 +1206,7 @@ while [ "$i" -lt "$count" ]; do
   # log line or issue comment must follow.
   started_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   write_lock "$ref" "$started"
-  info "worker running: claude -p --model $model --effort $effort --max-budget-usd $item_cap --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
+  info "worker running: claude -p --model $model --effort $effort --max-budget-usd $left (stop at ~$(fmt_usd "$item_cap")) --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
 
   # live_file holds "input output cache_read cache_creation" running totals
   # (all the heartbeat reads), then the last message's id -- never empty, or
@@ -1131,10 +1235,12 @@ while [ "$i" -lt "$count" ]; do
         live=$(cat "$live_file" 2>/dev/null || printf '0 0 0 0')
         set -- $live
         li=${1:-0}; lo=${2:-0}; lcr=${3:-0}; lcc=${4:-0}
-        ltotal=$((li + lo + lcr + lcc))
+        # Input side only: each assistant event carries its message's opening
+        # usage, so output_tokens there reads a handful per message.
+        ltotal=$((li + lcr + lcc))
         if [ "$ltotal" -gt 0 ]; then
-          lcost=$(estimate_cost "$model" "$li" "$lo" "$lcr" "$lcc")
-          info "still working on $ref (${elapsed_m}m elapsed, ~$(fmt_tokens "$ltotal") tokens, ~$(fmt_usd "$lcost") so far)"
+          lcost=$(estimate_cost "$model" "$li" 0 "$lcr" "$lcc")
+          info "still working on $ref (${elapsed_m}m elapsed, ~$(fmt_tokens "$ltotal") input tokens, ~$(fmt_usd "$lcost") so far, input only)"
         else
           info "still working on $ref (${elapsed_m}m elapsed)"
         fi
@@ -1158,9 +1264,11 @@ while [ "$i" -lt "$count" ]; do
   # it. Best-effort TERM claude's direct children by its own pid once it
   # exits, closing their end of the pipe too. Found 2026-09-13: a grind run
   # sat like this for 490+ elapsed minutes on one item.
+  worker_sid=""
+  in_flight=1
   ( cd "$wt_path" || exit 1
     printf '%s' "$prompt" | claude -p --output-format stream-json --verbose \
-         --max-budget-usd "$item_cap" --model "$model" --effort "$effort" \
+         --max-budget-usd "$left" --model "$model" --effort "$effort" \
          --permission-mode "$permission_mode" &
     cpid=$!
     # `wait` and the `command -v` test both report non-zero in the ordinary
@@ -1226,6 +1334,7 @@ while [ "$i" -lt "$count" ]; do
   result_json=$(cat "$result_file" 2>/dev/null || echo "")
   last_text=$(cat "$last_text_file" 2>/dev/null || echo "")
   worker_sid=$(cat "$sid_file" 2>/dev/null || echo "")
+  live_now=$(cat "$live_file" 2>/dev/null || echo "0 0 0 0")
   rm -f "$live_file" "$result_file" "$rc_file" "$last_text_file" "$sid_file"
 
   # `kill` here is bare under `set -e`: if the heartbeat already exited on
@@ -1245,35 +1354,38 @@ while [ "$i" -lt "$count" ]; do
     2) info "moved staged .claude/ files into place and pushed for $ref" ;;
   esac
 
-  # Unparseable/empty JSON means the worker never produced a result, so its
-  # spend is unknown: don't record it, and let --resume retry it.
-  # Its worktree is kept: it may hold commits the worker never pushed.
-  # Its claim stamp is released either way; no fixup-hard, since --resume
-  # retries this and the label would turn the retry into a skip.
-  if ! printf '%s' "$result_json" | jq -e . >/dev/null 2>&1; then
-    [ "$kind" = pr ] && release_worker_claim
-    warn "keeping worktree $wt_path on branch $branch for inspection"
-    printf 'FAILED: %s -- %s -- claude invocation did not complete; not recorded, will retry on --resume\n' \
-      "$ref" "$title" >&2
-    continue
+  # No parseable result event -- killed mid-turn, a crash, a signal -- is
+  # still judged from what is on GitHub and recorded, at the heartbeat's
+  # input-side estimate (cost_estimated): an unrecorded attempt is spend the
+  # session budget never sees. No fixup-hard for it: --resume retries it, and
+  # the label would turn that retry into a skip.
+  no_result=0; cost_estimated=false
+  if printf '%s' "$result_json" | jq -e . >/dev/null 2>&1; then
+    cost=$(printf '%s' "$result_json" | jq -r '.total_cost_usd // 0' 2>/dev/null); cost=${cost:-0}
+    tokens=$(printf '%s' "$result_json" | jq -r '
+      ((.usage.input_tokens // 0) + (.usage.output_tokens // 0)
+       + (.usage.cache_creation_input_tokens // 0) + (.usage.cache_read_input_tokens // 0))' 2>/dev/null)
+    text=$(printf '%s' "$result_json" | jq -r '.result // ""' 2>/dev/null)
+    is_error=$(printf '%s' "$result_json" | jq -r '.is_error // false' 2>/dev/null)
+  else
+    no_result=1; cost_estimated=true; is_error=true
+    set -- $live_now
+    cost=$(estimate_cost "$model" "${1:-0}" 0 "${3:-0}" "${4:-0}")
+    tokens=$(( ${1:-0} + ${3:-0} + ${4:-0} ))
+    text="claude invocation did not complete (no result event)"
   fi
-
-  cost=$(printf '%s' "$result_json" | jq -r '.total_cost_usd // 0' 2>/dev/null); cost=${cost:-0}
-  tokens=$(printf '%s' "$result_json" | jq -r '
-    ((.usage.input_tokens // 0) + (.usage.output_tokens // 0)
-     + (.usage.cache_creation_input_tokens // 0) + (.usage.cache_read_input_tokens // 0))' 2>/dev/null)
   tokens=${tokens:-0}
-  text=$(printf '%s' "$result_json" | jq -r '.result // ""' 2>/dev/null)
-  is_error=$(printf '%s' "$result_json" | jq -r '.is_error // false' 2>/dev/null)
   errored=0
   if [ "$claude_rc" -ne 0 ] || [ "$is_error" = true ]; then errored=1; fi
 
   # The claim, from the result text or else the worker's last message. A
-  # worker that errored is only as good as a claim GitHub bears out: the cap
-  # can land between its push and its exit, and what it pushed is real
-  # (grind-20260929T022433Z recorded two fixups failed regardless). With no
-  # claim at all an errored worker is failed outright -- cost kept, so the
-  # session budget stays honest, and retried on --resume.
+  # worker that errored is only as good as a claim GitHub bears out: the
+  # backstop can land between its push and its exit, and what it pushed is
+  # real. With no claim at all, an errored worker is still done when GitHub
+  # says the work is: a PR on its branch (Mergify's awaiting-human for a
+  # fixup -- a moved head alone is not that word, the stop can land between
+  # two commits of one fixup). Otherwise failed -- cost kept, so the session
+  # budget stays honest, and retried on --resume.
   claim_text=$text
   case "$claim_text" in *"GRIND_STATUS: "*) ;; *) claim_text=$last_text ;; esac
   status=done
@@ -1282,13 +1394,10 @@ while [ "$i" -lt "$count" ]; do
     *"GRIND_STATUS: blocked"*) status=blocked ;;
     *"GRIND_STATUS: done"*) ;;
     *)
-      # No claim at all: failed -- unless Mergify has already called the
-      # fixup finished. awaiting-human is the same word a `done` claim is
-      # checked against, and a cap that lands between the push and the
-      # claim (dotfiles#249) has not lost the fixup. A moved head alone is
-      # not that word: the cap can land between two commits of one fixup.
       if [ "$errored" -eq 1 ]; then
-        if [ "$kind" = pr ] && pr_labels "$number" | grep -qx awaiting-human; then :; else status=failed; fi
+        if [ "$kind" = pr ]; then pr_labels "$number" | grep -qx awaiting-human || status=failed
+        else verify_pr "$branch" "$started_iso" || status=failed
+        fi
       fi ;;
   esac
 
@@ -1332,48 +1441,60 @@ while [ "$i" -lt "$count" ]; do
     unverified_why="its staged .claude/ files were never pushed"
     status=unverified
   fi
-  # A verified card is retired only now, after every check that can still
-  # make the item unverified: --resume reads the current queue, so a card
-  # marked done and then UNVERIFIED would never be queued again.
-  if [ "$status" = "done" ] && [ "$kind" = card ]; then
-    pr_url=$(gh pr list --repo "$repo" --head "$branch" --state open --json url --jq '.[0].url // ""' 2>/dev/null) || pr_url=""
-    if retire_card "$(printf '%s' "$item" | jq -r '.text')" "$title${pr_url:+ -> $pr_url}" "$pr_url"; then
-      info "marked card '$title' done in $items_dir"
+
+  # A failed fixup is one the backstop or an error cut off before it could
+  # carry out the contract's stop rule, so grind carries it out: the
+  # fixup-hard label and one comment, the whole handover. Not when Mergify
+  # has already called the PR finished, nor when there was no result.
+  if [ "$kind" = pr ] && [ "$status" = failed ] && [ "$no_result" -eq 0 ] \
+     && ! pr_labels "$number" | grep -qx awaiting-human; then
+    if stop_rule_for_worker "$number" "$cost" "$last_text"; then
+      info "labelled $ref fixup-hard and left the stop-rule comment for its worker"
     else
-      warn "could not mark card '$title' done in $items_dir; log status=done on it by hand"
+      warn "could not label $ref fixup-hard or comment on it; do it by hand"
     fi
   fi
 
-  if [ "$kind" = pr ]; then
-    # A failed fixup is one the cap or an error cut off before it could
-    # carry out the contract's stop rule, so grind carries it out: the
-    # fixup-hard label and one comment, the whole handover. Not when
-    # Mergify has already called the PR finished.
-    if [ "$status" = failed ] && ! pr_labels "$number" | grep -qx awaiting-human; then
-      if stop_rule_for_worker "$number" "$cost" "$last_text"; then
-        info "labelled $ref fixup-hard and left the stop-rule comment for its worker"
+  # Every claim the item took is let go, whatever the outcome. A card is
+  # done only now, after every check that can still make it unverified:
+  # --resume reads the current queue, so a card marked done and then
+  # UNVERIFIED would never be queued again.
+  claim_released=true
+  release_worker_claim || claim_released=false
+  if [ -n "$held_card" ]; then
+    if [ "$status" = "done" ]; then
+      pr_url=$(gh pr list --repo "$repo" --head "$branch" --state open --json url --jq '.[0].url // ""' 2>/dev/null) || pr_url=""
+      if [ -n "$pr_url" ] && card_let_go "$held_card" "done" "$pr_url"; then
+        info "marked card '$title' done in $items_dir"
       else
-        warn "could not label $ref fixup-hard or comment on it; do it by hand"
+        warn "could not mark card '$title' done in $items_dir; log status=done on it by hand"
+        card_let_go "$held_card" release "" || claim_released=false
       fi
+    else
+      card_let_go "$held_card" release "" || claim_released=false
     fi
-    release_worker_claim
   fi
+  in_flight=0; held_card=""
 
-  # An unverified or failed item keeps its worktree: it is the only record
-  # of what the worker did -- a failed one may hold a commit the cap cut off
-  # before the push -- and the next attempt at this item clears it anyway.
-  # So does any item whose staged .claude/ files were never pushed.
+  running_total=$(awk -v a="$running_total" -v b="$cost" 'BEGIN { printf "%.4f", a + b }')
+  processed_this_run=$((processed_this_run + 1))
+  jq --arg ref "$ref" --arg status "$status" --argjson cost "$cost" --argjson est "$cost_estimated" \
+     --arg model "$model" --arg effort "$effort" --argjson released "$claim_released" --arg wip "$wip_branch" \
+     --arg sid "$worker_sid" \
+     '.items += [{ref:$ref, status:$status, cost:$cost, cost_estimated:$est, model:$model, effort:$effort,
+                  claim_released:$released, wip_branch:(if $wip == "" then null else $wip end),
+                  worker_sid:(if $sid == "" then null else $sid end)}]' \
+     "$state_file" > "$state_file.tmp" && mv "$state_file.tmp" "$state_file"
+
+  # Only now, with the result recorded, may the worktree go. An unverified or
+  # failed item keeps it: it is the only record of what the worker did, and
+  # the next attempt pushes what it holds before clearing it. So does any
+  # item whose staged .claude/ files were never pushed.
   if [ "$status" = unverified ] || [ "$status" = failed ] || [ "$stage_rc" -eq 1 ]; then
     warn "keeping worktree $wt_path on branch $branch for inspection"
   else
     git -C "$checkout" worktree remove -f "$wt_path" >/dev/null 2>&1 || true
   fi
-
-  running_total=$(awk -v a="$running_total" -v b="$cost" 'BEGIN { printf "%.4f", a + b }')
-  processed_this_run=$((processed_this_run + 1))
-  jq --arg ref "$ref" --arg status "$status" --argjson cost "$cost" --arg model "$model" --arg effort "$effort" \
-     '.items += [{ref:$ref, status:$status, cost:$cost, model:$model, effort:$effort}]' "$state_file" > "$state_file.tmp" \
-     && mv "$state_file.tmp" "$state_file"
 
   percent=$(pct "$running_total" "$session_budget")
   if [ "$status" = failed ]; then
@@ -1381,6 +1502,7 @@ while [ "$i" -lt "$count" ]; do
     # budget cap, an API error): first line, trimmed, so the FAILED line
     # says why and not just that.
     why=$(printf '%s' "$text" | sed -n '1p' | cut -c1-200)
+    [ "$cost_estimated" = false ] || why="$why; cost estimated"
     printf 'FAILED: %s -- %s -- worker reported an error: %s (%s, %s tokens, running %s / %s -- %s%%); will retry on --resume\n' \
       "$ref" "$title" "${why:-no result text}" "$(fmt_usd "$cost")" "$tokens" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$percent" >&2
   elif [ "$status" = unverified ]; then
@@ -1418,19 +1540,19 @@ while [ "$i" -lt "$count" ]; do
     printf 'pause: session budget reached (%s / %s). %d item(s) processed this run.\n' \
       "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$processed_this_run"
     printf 'resume: %s\n' "$resume_cmd"
-    finish
+    finish pause-budget
   fi
   if [ "$outlier" -eq 1 ]; then
     printf 'pause: %s cost %s, more than twice the running median (%s). %d item(s) processed this run.\n' \
       "$ref" "$(fmt_usd "$cost")" "$(fmt_usd "$prior_median")" "$processed_this_run"
     printf 'resume: %s\n' "$resume_cmd"
-    finish
+    finish pause-outlier
   fi
   if [ "$processed_this_run" -ge "$pause_every" ]; then
     printf 'pause: %d items processed this run (pause every %d). Running total %s / %s.\n' \
       "$processed_this_run" "$pause_every" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")"
     printf 'resume: %s\n' "$resume_cmd"
-    finish
+    finish pause-cadence
   fi
 done
 
@@ -1439,4 +1561,4 @@ if [ "$dry_run" -eq 1 ]; then
 fi
 
 printf 'done: queue exhausted (%s). Running total %s / %s. %d skipped.\n' "$kind_counts" "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$skipped"
-finish
+finish queue-exhausted
