@@ -1,6 +1,6 @@
 ---
 name: arete-check
-description: Assess one governing document — a curia, an ADR, a design doc, or a PR that touches one — for its effect on people, harm and flourishing both, and print graded findings with a recommendation and its reasons; the user rules. Runs on demand, and as the gate before a draft ADR is promoted to a PR. Use on "/arete-check <target>", "what could this harm", "is this good for people", "arete check before we promote". Not for whether the ink is dry (/doc-settledness-check), running a sitting (/curia) or ruling (/agora).
+description: Assess one target — a governing document first (a curia, an ADR, a design doc), but also any PR, file, directory or script — for its effect on people, harm and flourishing both, and print graded findings with a recommendation and its reasons; the user rules. Runs on demand, and as the gate before a draft ADR is promoted to a PR. Use on "/arete-check <target>", "what could this harm", "is this good for people", "arete check before we promote", "arete check this PR". Never refuse a target because it is not a governing document. Not for whether the ink is dry (/doc-settledness-check), running a sitting (/curia) or ruling (/agora).
 ---
 
 # Arete check
@@ -12,6 +12,12 @@ settledness, which asks whether deliberation has stopped moving; a
 settled item can still be harmful, and an unsettled one can be good.
 The areas and their meanings are in `areas.md` beside this file.
 
+Governing documents are the primary target, since they shape every
+decision under them. The areas apply just as well to anything else
+that touches people: a PR of code, a hook, a script, a workflow, a
+README. Any reasonable target is in scope; an area that does not
+apply to it reads `n/a` with its reason.
+
 **It grades and recommends; the user is the gate.** Each area gets a
 grade, its findings and their evidence; the brief ends in a one-line
 recommendation, whether the item meets the standard and why. The user
@@ -19,7 +25,7 @@ may overrule it; the decision is theirs.
 
 ## When it runs
 
-- on demand, on any governing document;
+- on demand, on any reasonable target;
 - as the gate before a draft ADR is promoted to a PR: a promotion goes
   ahead only after the user has read this brief and ruled on it.
 
@@ -32,12 +38,24 @@ may overrule it; the decision is theirs.
 
 ## Steps
 
-1. **Resolve the one target,** exactly as `doc-settledness-check` does:
-   a curia id (`~/claude_prompts_scratch/state/global/curia/<id>/`), a
-   path (kind `adr` under an `adr/` directory or named `*.adr.md`,
-   otherwise `design`), or a PR (`owner/repo#n` or a URL; a diff that
-   touches no governing document is not a target). Anything else: say so
-   in one line and stop.
+1. **Resolve the one target.** Whatever its kind, the areas are read
+   against what it does or changes; the kinds are
+   `doc-settledness-check`'s, widened.
+   - **curia id** — `~/claude_prompts_scratch/state/global/curia/<id>/`
+     exists. Kind `curia`. Read-set: the folder.
+   - **path** — a file or directory in any repo on this machine. Kind
+     `adr` under an `adr/` directory or named `*.adr.md`; `design` for
+     another document; otherwise `code` (a script, a hook, a skill, a
+     config, a directory of them). Read-set: the file or directory,
+     `git log` for it, and the documents that govern it where one is
+     named or obvious.
+   - **PR** — `owner/repo#n` or a URL. Kind `pr`. Read-set: `gh pr
+     view`, `gh pr diff`, review comments, and the files the diff
+     touches, whole.
+
+   Anything else, or a target that does not resolve cleanly: say in one
+   line how you read it, take the nearest kind and the read-set the words
+   point at, and continue.
 
 2. **Send the reading to one sub-agent.** `Agent`, `subagent_type:
    Explore`, `model: sonnet`, no isolation, foreground. Explore keeps
