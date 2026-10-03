@@ -166,7 +166,7 @@ the part the community versions get wrong (see §7). Changes:
    at any point leaves the previous set fully intact. (Promoted from optional
    to the default: per-file `mv` keeps a stage-to-install window open — L2.)
 3. Write `~/.claude/.sync-status.json` **last**:
-   `{channel, tag, sha, installed_at, complete, source}`. No status file or
+   `{channel, sha, installed_at, complete, source}`. No status file or
    `complete: false` means degraded, and the brief says so.
 4. Fetch or completeness failure: install nothing, keep anything already
    present, report loudly.
@@ -225,7 +225,7 @@ scope trust leaves alone. Three consequences the design has to carry:
   message. Until measured (V5 below), assume a cloud session may run with
   permissions degraded and design hooks to fail visibly rather than silently.
 - **The brief reports it.** `.sync-status.json` and the SessionStart brief
-  record the workspace trust flag alongside the installed tag, so a session
+  record the workspace trust flag alongside the installed sha, so a session
   running with a degraded permission set says so rather than being diagnosed a
   week later from behaviour.
 
