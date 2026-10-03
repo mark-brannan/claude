@@ -73,7 +73,9 @@ case "\$1 \$2" in
   "issue list") cat "$S/ready.json" ;;
   "pr list")    jq -r "\$filter" "$S/pr-list.json" ;;
   "issue view") jq -r "\$filter" "$S/issue-comments.json" ;;
+  "pr view")    f="$S/prview/\$(printf '%s' "\$3" | tr '/:' '__').json"; [ -f "\$f" ] && jq -r "\$filter" "\$f" ;;
   "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
+  "api repos/"*"/issues/"*) if [ -f "$S/updated-at" ]; then cat "$S/updated-at"; else echo 2999-01-01T00:00:00Z; fi ;;
   *) echo "gh shim: unexpected \$*" >&2; exit 1 ;;
 esac
 GH
@@ -170,7 +172,16 @@ has()  { if grep -Eq -- "$2" <<<"$OUT"; then ok; else bad "$1 (missing /$2/)" "$
 lacks(){ if grep -Eq -- "$2" <<<"$OUT"; then bad "$1 (has /$2/)" "$OUT"; else ok; fi; }
 eq()   { if [ "$2" = "$3" ]; then ok; else bad "$1: want [$2] got [$3]"; fi; }
 assert() { local d=$1; shift; if "$@"; then ok; else bad "$d"; fi; }
-run() { rm -f "$S/claude-next"; OUT=$(sh "$GRIND" "$@" 2>&1); RC=$?; }
+# grind's records of GitHub items (items carrying home=) outlive a run on
+# purpose; every test but the record's own starts without them, so an item
+# grind looked at in an earlier test is not reordered behind untouched ones.
+forget_records() {
+  for d in "$S/home/.claude/state/global/items" "${WORK_ITEM_DIR:-}"; do
+    [ -n "$d" ] && [ -d "$d" ] || continue
+    grep -l ' home=' "$d"/*.md 2>/dev/null | xargs rm -f
+  done
+}
+run() { rm -f "$S/claude-next"; [ -n "${KEEP_RECORDS:-}" ] || forget_records; OUT=$(sh "$GRIND" "$@" 2>&1); RC=$?; }
 calls_claude() { wc -l < "$CLAUDE_LOG" | tr -d ' '; }
 latest_session() { ls -t "$S/state/grind"/*.json 2>/dev/null | head -1; }
 
@@ -483,7 +494,7 @@ reply 0.50 "done" 1
 : > "$CLAUDE_LOG"
 run --session-budget 100 --pause-every 1
 has 'a done claim with no PR is UNVERIFIED, and says why' \
-  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but no PR opened or pushed to on head branch grind-5 \(\$0\.50, 150 tokens, running \$0.50 / \$100.00 -- 0%\); will retry on --resume'
+  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but no PR opened or pushed to on head branch grind-5, nor any other PR opened during the run \(\$0\.50, 150 tokens, running \$0.50 / \$100.00 -- 0%\); will retry on --resume'
 lacks 'no success line for an unverified item' '^o/alpha#5: First item --'
 assert 'gh was asked for a PR whose head is the item branch' \
   grep -q -- 'pr list --repo o/alpha --head grind-5 --state all' "$GH_LOG"
@@ -1206,6 +1217,19 @@ eq 'and the session file says the claim was let go' true "$(jq -r '.items[0].cla
 forget_card() { git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/card-alpha-tidy-the-widget" >/dev/null 2>&1
                 git -C "$S/repo" branch -D grind-card-alpha-tidy-the-widget >/dev/null 2>&1; true; }
 forget_card
+# a blocked card is logged blocked, not handed back as ready, with grind's
+# outcome on it; the next run leaves it be until someone else writes on it
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+rm -f "$WORK_ITEM_DIR/17909840241dc56754.md"
+mkitem 17909840241dc56754 'alpha: tidy the widget' ready
+reply 0.30 blocked 1
+run --kind card --pause-every 10
+eq 'a blocked card is blocked' blocked "$(itemstatus 17909840241dc56754)"
+assert "with grind's outcome line on it" grep -q ' grind outcome=blocked run=grind-' "$WORK_ITEM_DIR/17909840241dc56754.md"
+assert 'and its cost line' grep -qE ' cost tokens=150 usd=0\.30? by=grind$' "$WORK_ITEM_DIR/17909840241dc56754.md"
+rm -f "$S/state/grind"/*.json
+run --dry-run --kind card
+has 'the next run skips it' '^card:alpha-tidy-the-widget -- SKIP: grind recorded blocked at .*, and nothing has changed since$'
 # a claim another live session holds is never taken over, and is found before
 # any spend: no worker runs
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
@@ -1319,6 +1343,7 @@ case "\$1 \$2" in
   "pr list")    jq -r "\$filter" "$S/pr-list.json" ;;
   "issue view") jq -r "\$filter" "$S/issue-comments.json" ;;
   "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
+  "api repos/"*"/issues/"*) if [ -f "$S/updated-at" ]; then cat "$S/updated-at"; else echo 2999-01-01T00:00:00Z; fi ;;
   "pr view")    jq -r "\$filter" "$S/pr-\$3.json" ;;
   "run rerun")  [ "\${GH_RERUN_FAIL:-0}" = 1 ] && exit 1; exit 0 ;;
   "pr edit"|"pr comment") exit 0 ;;
@@ -1732,7 +1757,9 @@ case "\$1 \$2" in
   "issue list") cat "$S/ready.json" ;;
   "pr list")    jq -r "\$filter" "$S/pr-list.json" ;;
   "issue view") jq -r "\$filter" "$S/issue-comments.json" ;;
+  "pr view")    f="$S/prview/\$(printf '%s' "\$3" | tr '/:' '__').json"; [ -f "\$f" ] && jq -r "\$filter" "\$f" ;;
   "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
+  "api repos/"*"/issues/"*) if [ -f "$S/updated-at" ]; then cat "$S/updated-at"; else echo 2999-01-01T00:00:00Z; fi ;;
   *) echo "gh shim: unexpected \$*" >&2; exit 1 ;;
 esac
 GH
@@ -1831,6 +1858,128 @@ eq 'no worker invocation' 0 "$(calls_claude)"
 assert 'no state file written' bash -c '! ls '"$S"'/state/grind/*.json >/dev/null 2>&1'
 run --dry-run
 eq 'dry-run does not consult auth' 0 "$RC"
+
+# --- grind's own record, and what it has already looked at ---------------------
+# Run grind-20261003T134428Z: two workers ended their real answer with
+# GRIND_STATUS: blocked, the interactive Stop hook made each say one more
+# line, grind read that line, called both "claimed success" and would have
+# paid for both again on --resume. What matters: the last status line
+# anywhere in the worker's output is the claim; grind itself writes the
+# outcome, cost and run on the item's work item in the private store (never
+# on GitHub); a later run skips an item whose outcome is newer than its last
+# real change and works untouched items first; a done claim backed by a PR
+# opened in another repo during the run is verified.
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
+cat > "$S/prompt.txt"
+n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
+echo "\$n \$*" >> "$CLAUDE_LOG"
+echo \$((n + 1)) > "$S/claude-next"
+reply="$S/claude-replies/\$n.json"
+if [ -f "\$reply" ]; then cat "\$reply"; else
+  echo '{"type":"result","total_cost_usd":0.10,"usage":{"input_tokens":100,"output_tokens":50},"result":"GRIND_STATUS: done"}'
+fi
+GH
+chmod +x "$S/bin/claude"
+# said <n> <cost> <message>... -- one assistant event per message, then a
+# result whose text is the last message, as claude -p streams it.
+said() {
+  n=$1; c=$2; shift 2; : > "$S/claude-replies/$n.json"
+  for m in "$@"; do
+    jq -nc --arg t "$m" '{type:"assistant", message:{content:[{type:"text", text:$t}], usage:{input_tokens:100,output_tokens:50}}}' >> "$S/claude-replies/$n.json"
+  done
+  jq -nc --argjson c "$c" --arg t "$m" '{type:"result", total_cost_usd:$c, usage:{input_tokens:1000,output_tokens:234}, result:$t}' >> "$S/claude-replies/$n.json"
+}
+cat > "$S/ready.json" <<'JSON'
+[
+  {"number": 5, "title": "First item", "body": "do the first thing", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]},
+  {"number": 20, "title": "Second item", "body": "do the second thing", "url": "https://github.com/o/alpha/issues/20", "labels": [{"name": "ready"}]}
+]
+JSON
+echo '[]' > "$S/pr-list.json"
+rec="$S/rec-state"; export WORK_ITEM_DIR="$rec/items"
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid
+mkdir -p "$WORK_ITEM_DIR"; "$REAL_GIT" -C "$rec" init -q; "$REAL_GIT" -C "$rec" commit -q --allow-empty -m init
+home_of() { grep -l " home=$1\$" "$WORK_ITEM_DIR"/*.md 2>/dev/null | head -n 1; }
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$S/updated-at"; forget_records; : > "$CLAUDE_LOG"
+
+# outcome 3: the status line is found though a later message has none
+said 1 1.37 'Ruled already in dotfiles#94; nothing to build.
+Left a comment on the issue saying so.
+GRIND_STATUS: blocked' 'Landed in the pickup item at state/global/pickup/x.md'
+run --session-budget 100 --pause-every 1
+has 'a status line before the hand-off line is the claim' '^blocked: o/alpha#5 -- First item \(\$1\.37, 1234 tokens'
+lacks 'not a claimed success' 'UNVERIFIED: o/alpha#5'
+rec_sess=$(basename "$(latest_session)" .json)
+
+# outcome 1: the record, on the GitHub item's work item, in the store's form
+f=$(home_of 'o/alpha#5')
+assert 'the issue gained a work item whose home is it' test -n "$f"
+LOG=$(cat "$f" 2>/dev/null)
+OUT=$LOG
+has 'the cost line, in the store form' ' cost tokens=1234 usd=1\.37 by=grind$'
+has 'the outcome line: status, run and no PR' " grind outcome=blocked run=$rec_sess prs= said: "
+has 'what the worker did, on one line, from the message with the status' 'said: Ruled already in dotfiles#94; nothing to build\. Left a comment on the issue saying so\.$'
+lacks 'not the hand-off line' 'pickup item'
+eq 'the item is blocked' blocked "$("$GRIND_WORK_ITEM" fold "$(basename "$f" .md)" | sed -n 's/^status=//p')"
+eq 'its cost folds' '1234 1.37' "$("$GRIND_WORK_ITEM" fold "$(basename "$f" .md)" | sed -n 's/^cost_tokens=//p; s/^cost_usd=//p' | paste -sd' ' -)"
+eq 'and it is committed in the state repo' 'grind: blocked -- o/alpha#5' "$("$REAL_GIT" -C "$rec" log -1 --format=%s)"
+assert 'grind posted nothing on GitHub' bash -c '! grep -Eq "(issue|pr) comment" "$GH_LOG"'
+
+# --resume never retries a blocked item
+: > "$CLAUDE_LOG"; rm -f "$S/claude-replies"/*.json
+echo '[{"createdAt": "2999-01-01T00:00:00Z", "updatedAt": "2999-01-01T00:00:00Z", "state": "OPEN", "url": "https://github.com/o/alpha/pull/21"}]' > "$S/pr-list.json"
+KEEP_RECORDS=1 run --resume "$rec_sess" --pause-every 1
+has 'resume moves on to the untouched item' '^o/alpha#20: Second item'
+lacks 'and never retries the blocked one' 'starting o/alpha#5'
+echo '[]' > "$S/pr-list.json"
+
+# outcome 2: a new run skips what grind looked at and nothing has changed since
+echo 2001-01-01T00:00:00Z > "$S/updated-at"
+rm -f "$S/state/grind"/*.json; : > "$CLAUDE_LOG"
+KEEP_RECORDS=1 run --dry-run
+has 'the dry run says why it skips' '^o/alpha#5 -- SKIP: grind recorded blocked at .* \(run '"$rec_sess"'\), and nothing has changed since$'
+has 'and the other one too' '^o/alpha#20 -- SKIP: grind recorded done at'
+KEEP_RECORDS=1 run --session-budget 100
+has 'a real run skips both, on INFO lines' 'INFO  skipping o/alpha#5 -- grind recorded blocked'
+eq 'and pays for neither' 0 "$(calls_claude)"
+assert 'the GitHub item was asked when it last changed' grep -q 'api repos/o/alpha/issues/5 --jq .updated_at' "$GH_LOG"
+# a line on the work item from anyone but grind is a change
+CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log "$(basename "$(home_of 'o/alpha#5')" .md)" triaged >/dev/null
+KEEP_RECORDS=1 run --dry-run
+has 'a human line on the item makes it workable again' '^\[1/1\] o/alpha#5 -- First item$'
+# so is a change on GitHub; and an item grind never touched goes first
+echo 2999-01-01T00:00:00Z > "$S/updated-at"
+jq '. + [{"number": 30, "title": "Third item", "body": "untouched", "url": "https://github.com/o/alpha/issues/30", "labels": [{"name": "ready"}]}]' "$S/ready.json" > "$S/ready.tmp" && mv "$S/ready.tmp" "$S/ready.json"
+KEEP_RECORDS=1 run --dry-run
+has 'the untouched item first' '^\[1/3\] o/alpha#30 -- Third item$'
+has 'then the changed ones, lowest number first' '^\[2/3\] o/alpha#5 -- First item$'
+has 'a GitHub change makes an item workable again' '^\[3/3\] o/alpha#20 -- Second item$'
+
+# outcome 4: done, with the PR in another repo, opened during the run
+cat > "$S/ready.json" <<'JSON'
+[{"number": 17, "title": "Cross-repo item", "body": "fix it in .github", "url": "https://github.com/o/alpha/issues/17", "labels": [{"name": "ready"}]}]
+JSON
+mkdir -p "$S/prview"
+echo '{"createdAt": "2999-01-01T00:00:00Z"}' > "$S/prview/https___github.com_o_dotgithub_pull_47.json"
+echo '{"createdAt": "2001-01-01T00:00:00Z"}' > "$S/prview/https___github.com_o_alpha_pull_3.json"
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$CLAUDE_LOG"
+said 1 0.80 'The fix belongs in o/dotgithub: opened https://github.com/o/dotgithub/pull/47 (see also https://github.com/o/alpha/pull/3).
+GRIND_STATUS: done'
+run --session-budget 100 --pause-every 1
+has 'a PR opened in another repo during the run verifies done' '^o/alpha#17: Cross-repo item -- sonnet, \$0\.80'
+f=$(home_of 'o/alpha#17'); OUT=$(cat "$f" 2>/dev/null)
+has 'the record names it, and only the PR opened during the run' ' grind outcome=done run=[^ ]+ prs=https://github\.com/o/dotgithub/pull/47 said: '
+has 'and it is the done evidence' ' status=done evidence=https://github\.com/o/dotgithub/pull/47$'
+# a PR it merely mentions, opened before the run, is not its work
+git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+said 1 0.80 'Already in flight as https://github.com/o/alpha/pull/3.
+GRIND_STATUS: done'
+run --session-budget 100 --pause-every 1
+has 'an old PR it names does not verify done' '^UNVERIFIED: o/alpha#17 -- Cross-repo item -- worker claimed success but no PR opened'
+unset WORK_ITEM_DIR GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
