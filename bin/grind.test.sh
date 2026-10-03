@@ -2022,6 +2022,19 @@ said 1 0.80 'Already in flight as https://github.com/o/alpha/pull/3.
 GRIND_STATUS: done'
 run --session-budget 100 --pause-every 1
 has 'an old PR it names does not verify done' '^UNVERIFIED: o/alpha#17 -- Cross-repo item -- worker claimed success but no PR opened'
+# a status mentioned mid-sentence is not a claim; a line that opens with one is
+git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+said 1 0.80 'Reading the issue; I will end with GRIND_STATUS: blocked if it is ruled.' 'Nothing ruled it. Opened nothing yet.'
+run --session-budget 100 --pause-every 1
+lacks 'a mid-sentence mention is no claim' '^blocked: o/alpha#17'
+has 'so the item is a claimed success to verify' '^UNVERIFIED: o/alpha#17'
+git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+said 1 0.80 'Ruled in dotfiles#94.
+**GRIND_STATUS: blocked**' 'Landed in the pickup item.'
+run --session-budget 100 --pause-every 1
+has 'a bolded status line is a claim' '^blocked: o/alpha#17'
 unset WORK_ITEM_DIR GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 
 printf '%d passed, %d failed\n' "$pass" "$fail"

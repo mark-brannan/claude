@@ -1128,9 +1128,12 @@ home_record() {
   commit_item "$hid" "grind: $status -- $ref"
 }
 
-# last_status <text> -> the word of the last GRIND_STATUS line in it.
+# last_status <text> -> the word of the last GRIND_STATUS line in it: a line
+# that starts with one, markdown emphasis aside. A mention mid-sentence ("I'll
+# end with GRIND_STATUS: blocked") is not a claim.
+status_line_re='^[[:space:]*_`>]*GRIND_STATUS: (done|carded|blocked)'
 last_status() {
-  printf '%s\n' "$1" | grep -oE 'GRIND_STATUS: (done|carded|blocked)' | tail -n 1 | sed 's/.*: //'
+  printf '%s\n' "$1" | grep -oE "$status_line_re" | tail -n 1 | sed 's/.*: //'
 }
 
 # prs_opened_since <ISO 8601> <urls, one per line> -> the ones GitHub says
@@ -1596,7 +1599,7 @@ while [ "$i" -lt "$count" ]; do
           # hook can make the worker say one more thing after it -- "Landed in
           # the pickup item at ..." -- which cost grind the status of two
           # blocked items on 2026-10-03 and paid for them twice.
-          case "$ltext" in *"GRIND_STATUS: "*) printf '%s\n' "$ltext" > "$status_text_file" ;; esac
+          if [ -n "$(last_status "$ltext")" ]; then printf '%s\n' "$ltext" > "$status_text_file"; fi
           usage=$(printf '%s' "$line" | jq -c '.message.usage // empty' 2>/dev/null)
           [ -n "$usage" ] && [ "$usage" != "null" ] || continue
           # claude -p emits one assistant event per content block, each
@@ -1691,7 +1694,7 @@ while [ "$i" -lt "$count" ]; do
   # two commits of one fixup). Otherwise failed -- cost kept, so the session
   # budget stays honest, and retried on --resume.
   claim_text=$text
-  case "$claim_text" in *"GRIND_STATUS: "*) ;; *) claim_text=${status_text:-$last_text} ;; esac
+  [ -n "$(last_status "$claim_text")" ] || claim_text=${status_text:-$last_text}
   # The PRs it opened, in any repo: every PR URL it named that GitHub says
   # was opened since it started.
   opened_prs=$(prs_opened_since "$started_iso" "$pr_urls")
