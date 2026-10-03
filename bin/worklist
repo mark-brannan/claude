@@ -99,6 +99,7 @@ QUERY='query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){
   issues(states:OPEN,first:100){pageInfo{hasNextPage} nodes{number title url updatedAt labels(first:20){nodes{name}}
     milestone{title} body parent{number title url repository{nameWithOwner}}}}
   refs(refPrefix:"refs/heads/",first:100){nodes{name associatedPullRequests(first:1){totalCount}}}
+  wip: refs(refPrefix:"refs/heads/wip/",first:100){nodes{name target{... on Commit{committedDate}}}}
 }}'
 
 # Resolve owner, key, label and the repo list into globals. Returns 1 with
@@ -293,6 +294,15 @@ def workable: (.labels | index("ready")) and (.labels | index("blocked") | not);
     | {kind: "issue", repo: $r, number, title, url, updatedAt, body, labels: labels,
        milestone: (.milestone.title // null), notes: (.updatedAt[:10] // ""),
        parent_issue: (.parent | if . then {repo: .repository.nameWithOwner, number, title, url} else null end)} ] as $is
+# The Stop hook'"'"'s salvage refs (wip/<session-id>, dotfiles#285/#318), oldest
+# first: the ones nearest prune-wip-refs'"'"'s floor lead. Their own `wip` query
+# alias, not the 100-branch `refs` page, where they sort last and fall off.
+| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.wip.nodes // [])[]
+    | ((.target.committedDate // null) | if . then (fromdateiso8601? // null) else null end) as $t
+    | {repo: $s, ref: "wip/\(.name)", session: .name, committed: $t,
+       age_days: (if $t then ((now - $t) / 86400 | floor) else null end),
+       age_hours: (if $t then ((now - $t) / 3600 | floor) else null end)} ]
+  | sort_by(.committed // 0) as $salvaged
 # A milestone view is a filter over the same cache: the fetch and the cache
 # stay unscoped, so one cache serves both views.
 | ($is | if $milestone == "" then . else map(select(.milestone == $milestone)) end) as $is
@@ -341,7 +351,7 @@ def workable: (.labels | index("ready")) and (.labels | index("blocked") | not);
 | ({ awaiting_human: ($prs | map(select(.awaiting_human))),
      queued: ($prs | map(select(.autoMerge))),
      not_ready: ($prs | map(select((.autoMerge|not) and (.awaiting_human|not)))),
-     ready: $rd, ready_parents: $parents, blocked: $bl, untriaged: $untri, stranded: $stranded,
+     ready: $rd, ready_parents: $parents, blocked: $bl, untriaged: $untri, stranded: $stranded, salvaged: $salvaged,
      rulings: ($cards | map(select(.section == "rulings"))),
      humans: ($cards | map(select(.section == "humans"))),
      claudes: ($cards | map(select(.section == "claudes"))) }) as $buckets
@@ -387,6 +397,9 @@ def ready_rows: . as $b
   table_bucket("Human'"'"'s turn"; "Notes"; $b.awaiting_human | map(row)),
   table_bucket("Queued (auto-merge)"; "Notes"; $b.queued | map(row)),
   table_bucket("Stranded branches (no PR)"; "Notes"; $b.stranded | map(.item |= cut)),
+  table_bucket("Salvaged edits (wip refs)"; "Notes"; $b.salvaged | map(
+    {ref: .repo, item: .ref,
+     notes: (if .age_days == null then "age unknown" elif .age_days >= 1 then "\(.age_days)d old" else "\(.age_hours)h old" end)})),
   table_bucket("Ready"; "Updated"; $b | ready_rows),
   table_bucket("Blocked"; "Updated"; $b.blocked | map(row)),
   table_bucket("Not ready (agent'"'"'s turn)"; "Notes"; $b.not_ready | map(row)),
@@ -441,7 +454,7 @@ STRANDED_CANDIDATES='
 [ .records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.defaultBranchRef.name // "main") as $def
   | { repo: $s,
       branches: [ (.data.refs.nodes // [])[] | select(.associatedPullRequests.totalCount == 0 and (.name|IN("main","master",$def)|not)
-        and (.name|startswith("release-please--")|not)) | .name ],
+        and (.name|startswith("release-please--")|not) and (.name|startswith("wip/")|not)) | .name ],
       issues: [ (.data.issues.nodes // [])[] | ((.title // "") + " " + (.body // "") | gsub("\n"; " ")) ] }
   | select(.branches | length > 0) ]
 '
