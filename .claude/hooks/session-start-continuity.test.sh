@@ -68,7 +68,6 @@ lacks 'no kanban dump: ticked card absent'     'TICKED-CARD-TEXT'
 lacks 'no kanban dump: legacy section absent'  'LEGACY-SECTION-CARD'
 lacks 'old heading gone'                       'Open board items'
 lacks 'no missing-worklist line'               'worklist not installed'
-lacks 'no lint warning on a clean board'       'WARNING: kanban.md'
 has   'checkpoints still printed'              'Where recent sessions left off'
 has   'checkpoint session line'                'session abc'
 has   'decision load still printed'            'Decision load, last 7 days'
@@ -109,24 +108,6 @@ run
 n=$(printf '%s' "$CTX" | wc -c)
 if [ "$n" -lt 6000 ]; then ok; else bad "oversize worklist not clipped: context is $n bytes"; fi
 has   'clipped output still starts with the stamp' 'as of 12:00Z'
-
-# --- card above the first heading ----------------------------------------------
-reset_state
-worklist_shim 'echo "as of 12:00Z"'
-printf -- '# Board\n\n- [ ] ORPHAN-CARD https://example.invalid/4\n\n## Claude'"'"'s\n\n- [ ] fine https://example.invalid/5\n' > "$SD/kanban.md"
-run
-has   'orphan card warned'                     "WARNING: kanban.md has a card above its first \`## \` heading"
-reset_state
-printf -- '# Board\n\nProse intro, not a card.\n\n## Claude'"'"'s\n\n- [ ] fine https://example.invalid/5\n' > "$SD/kanban.md"
-run
-lacks 'prose above heading is not a card'      'WARNING: kanban.md'
-reset_state
-printf -- '## Claude'"'"'s\n\n- [x] ticked https://example.invalid/6\n' > "$SD/kanban.md"
-run
-lacks 'ticked card under a heading: no orphan warning' 'WARNING: kanban.md'
-rm -f "$SD/kanban.md"
-run
-lacks 'no kanban file: no warning'             'WARNING: kanban.md'
 
 # --- state repo missing ----------------------------------------------------
 rm -rf "$STATE"

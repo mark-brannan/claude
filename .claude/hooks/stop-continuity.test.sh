@@ -595,20 +595,16 @@ eq 'conflicting pull, local: the verdict stays archivable' archivable \
 eq 'conflicting pull, local: and so does the metrics record' archivable \
   "$(jq -r .verdict "$SREPO/state/global/metrics/sessions/$SID.json")"
 
-# --- a board that fails kanban-lint stays out; a hand-staged blob comes back --
-# on_exit restores it: the one EXIT trap, which also releases the push lock.
-kb=state/global/kanban.md
-printf '# Open loops\n\n## Claude'"'"'s\n' > "$SREPO/$kb"
-gitq "$SREPO" add "$kb"; gitq "$SREPO" commit -m board
-printf -- '- staged by hand\n' >> "$SREPO/$kb"; gitq "$SREPO" add "$kb"
-staged=$(git -C "$SREPO" rev-parse ":$kb")
-printf '## Yours\n' >> "$SREPO/$kb"
+# --- the board's items/ are committed like any other state ------------------
+# No lint stands between an item and the commit; on_exit still releases the
+# push lock. (The push above still conflicts, so this checks the commit only.)
+it=state/global/items/1790000000d654192b.md
+mkdir -p "$SREPO/state/global/items"
+printf -- '- [ ] an item https://example.invalid/8\n' > "$SREPO/$it"
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" stop
-eq 'lint-failed board: the hand-staged blob is back in the index' \
-  "$staged" "$(git -C "$SREPO" rev-parse ":$kb")"
-assert 'lint-failed board: its edit is not committed' \
-  bash -c '! git -C "$1" show HEAD:"$2" | grep -q Yours' _ "$SREPO" "$kb"
-assert 'lint-failed board: the push lock is released' test ! -e "$TMPDIR/claude-state-push.lock.d"
+assert 'items/: a new item is committed' \
+  git -C "$SREPO" cat-file -e HEAD:"$it"
+assert 'items/: the push lock is released' test ! -e "$TMPDIR/claude-state-push.lock.d"
 
 # --- a live metrics-live.sh holding the per-session lock never blocks Stop (#161) --
 # Pre-create $LIVE/<sid>.lock with meta naming this test process's own pid, so

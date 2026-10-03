@@ -263,16 +263,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "p=$(cat); [ \"$(printf '%s' \"$p\" | jq -r '.stop_hook_active // false' 2>/dev/null)\" = true ] && exit 0; h=\"$HOME/.claude/hooks/kanban-gate.sh\"; { [ -f \"$h\" ] && printf '%s' \"$p\" | sh \"$h\"; } || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"kanban-gate.sh is missing from $HOME/.claude/hooks or crashed, so uncommitted kanban.md changes in the state repo could not be linted. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry; if you edited kanban.md this session, say which cards changed, then end the turn again.\"}'",
-            "timeout": 30,
-            "statusMessage": "Linting uncommitted kanban.md changes in the state repo"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "p=$(cat); h=\"$HOME/.claude/hooks/branch-home-gate.sh\"; { [ -f \"$h\" ] && printf '%s' \"$p\" | sh \"$h\"; } || { if command -v jq >/dev/null 2>&1; then active=$(printf '%s' \"$p\" | jq -r '.stop_hook_active // false' 2>/dev/null); else active=false; printf '%s' \"$p\" | grep -q '\"stop_hook_active\"[[:space:]]*:[[:space:]]*true' && active=true; fi; [ \"$active\" = true ] || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"branch-home-gate.sh is missing from $HOME/.claude/hooks or crashed, so the branch this session worked could not be checked for a PR or a pointer card. This is a gate and fails closed: run dotsync (or cloud-session-setup.sh) and retry; if the branch is ahead of the default branch, open the PR or file a pointer card naming the branch and what it holds, then end the turn again.\"}'; }",
             "timeout": 60,
             "statusMessage": "Checking this branch has a PR or a pointer card"
@@ -333,15 +323,6 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/prose-budget-edit.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/kanban-lint.sh\"; [ -f \"$h\" ] && sh \"$h\" || true"
           }
         ]
       },

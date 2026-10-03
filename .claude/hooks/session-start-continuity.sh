@@ -113,16 +113,6 @@ board_view() {
   rm -f "$out"
 }
 
-# A card written above the first "## " heading belongs to no section, so the
-# lint, worklist and every reader skip it. One line, so someone moves it.
-board_lint_warning() {
-  [ -f "$SD/kanban.md" ] || return 0
-  if awk '/^## / { exit } /^- \[/ { found = 1; exit } END { exit !found }' "$SD/kanban.md"; then
-    echo
-    echo "WARNING: kanban.md has a card above its first \`## \` heading -- no section, invisible to every reader. Move it under \`## Needs ruling\` or \`## Claude's\`."
-  fi
-}
-
 # Freshen the board, but never block session start on it.
 timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
 
@@ -135,7 +125,6 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
 
   echo
   board_view
-  board_lint_warning
 
   if [ -d "$SD/log/auto" ]; then
     recent=$(ls -t "$SD/log/auto"/*.md 2>/dev/null | head -3)

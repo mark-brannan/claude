@@ -101,8 +101,6 @@ INSTALL="
 .claude/hooks/connector-budget.sh
 .claude/hooks/prose-budget-commit.sh
 .claude/hooks/prose-budget-edit.sh
-.claude/hooks/kanban-lint.sh
-.claude/hooks/kanban-gate.sh
 .claude/hooks/branch-home-gate.sh
 .claude/hooks/claim-stamp.sh
 .claude/hooks/public-issue-guard.sh

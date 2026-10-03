@@ -11,7 +11,7 @@
 # for every branch, but until one exists a pointer must -- a board card or an
 # open issue naming the branch and what it holds.
 #
-# Runs on Stop, alongside kanban-gate.sh and pr-threads-gate.sh. The quiet
+# Runs on Stop, alongside pr-threads-gate.sh. The quiet
 # path costs nothing: HEAD on the default branch, a detached HEAD, no origin,
 # or no commits ahead and the hook exits before any network call.
 #
