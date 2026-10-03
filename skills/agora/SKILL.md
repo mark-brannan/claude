@@ -124,8 +124,8 @@ Every item this skill touches gets, and keeps:
 4. Apply the output per the contract, immediately; don't batch.
    Then commit and push what the ruling touched in the state repo
    (`~/claude_prompts_scratch`), by path, never `git add state/` or `-A`
-   (`work-item` writes are plain files and commit nothing; the card's
-   file, the brief, the log line): `git add <paths> && git commit -m
+   (`work-item` writes only edit files and commit nothing; the paths are
+   the card, the brief and the ruling's log line): `git add <paths> && git commit -m
    "State: agora session <sid8> (<date>)"`, then `git pull --rebase
    --autostash && git push origin HEAD`, the Stop hook's own shape. A
    held edit trips every other session's kanban-gate until Stop.
