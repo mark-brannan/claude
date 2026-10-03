@@ -1,8 +1,8 @@
 # The arete areas
 
-Read by the assessing sub-agent. Each area gets a question, its evidence
-and who it touches. No marks: the brief carries what the user needs to
-grade, and the grade is theirs.
+Read by the assessing sub-agent. Each area gets a grade, its finding,
+the evidence and who it touches; the brief ends in a recommendation with
+its reasons. The user rules. Grades: `good`, `concern`, `harm`, `n/a`.
 
 ## Areas
 
@@ -22,19 +22,39 @@ grade, and the grade is theirs.
 7. **flourishing** — the positive sign: does this increase quality of
    life, and for whom? What good does it make possible that was not
    possible before?
+8. **judgment kept** — which decisions it moves from a person to an
+   agent, and whether it assists the doing that builds judgment or
+   replaces it.
+9. **cost** — tokens, water, and screen hours per run; a read-set or a
+   loop with no ceiling is a cost with none.
+10. **truth** — whether its claims can be verified and its sources are
+   named; where it could state the plausible as the present.
+11. **elegance** — the smallest form that carries the whole meaning;
+   beauty, goodness and truth were one idea of excellence before they
+   were three.
+12. **well-formedness** — one home per fact, no contradiction with
+   itself or with what it governs.
 
 ## Format
 
 ```
-| area            | question                                   | evidence                     | touches        |
-|-----------------|--------------------------------------------|------------------------------|----------------|
-| privacy         | Does the log keep hostnames it prints?     | docs/adr/0026.md:41          | the operator   |
-| security        | n/a — reads only, runs nothing             |                              |                |
-| accountability  | Who owns a wrong automatic merge?          | §3, no owner named           | maintainers    |
-| bias/fairness   | n/a — one user, no defaults over others    |                              |                |
-| transparency    | Is the skip rule visible to the reader?    | skill.md:22, rule is implicit| the reader     |
-| social/economic | Does it add a daily review to someone?     | §4, "every morning"          | the user       |
-| flourishing     | Does it free an hour a week, or add one?   | §1, stated aim; no measure   | the user       |
+| area            | grade   | finding                                  | evidence                     | touches      |
+|-----------------|---------|------------------------------------------|------------------------------|--------------|
+| privacy         | concern | the log keeps the hostnames it prints    | docs/adr/0026.md:41          | the operator |
+| security        | n/a     | reads only, runs nothing                 |                              |              |
+| accountability  | concern | no owner for a wrong automatic merge     | §3, no owner named           | maintainers  |
+| bias/fairness   | n/a     | one user, no defaults over others        |                              |              |
+| transparency    | concern | the skip rule is implicit                | skill.md:22                  | the reader   |
+| social/economic | good    | no daily review added                    | §4                           | the user     |
+| flourishing     | good    | frees the weekly triage hour             | §1, stated aim; no measure   | the user     |
+| judgment kept   | good    | merge stays the user's                   | §2                           | the user     |
+| cost            | concern | read-set has no ceiling                  | §4, "every repo"             | the user     |
+| truth           | good    | each count cites its query               | §2 table                     | the reader   |
+| elegance        | concern | two sections say the skip rule twice     | §3, §5                       | the reader   |
+| well-formedness | concern | §3 and §5 disagree on the default        | §3:12, §5:40                 | maintainers  |
 
-Grade:
+Recommendation: not yet — §3 and §5 contradict each other on the default;
+fix that and name a merge owner, the rest can follow.
+
+Ruling:
 ```

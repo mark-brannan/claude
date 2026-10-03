@@ -7,7 +7,8 @@ description: Measure how settled one governing document is — a curia, an ADR, 
 
 The directory name is a description, not a name; the user names it later.
 
-It **measures and gives a verdict; it gates nothing.** The dry run is
+It **measures and recommends, with reasons; the user is the gate** and
+may overrule the verdict. It gates nothing on its own. The dry run is
 the first shape, not a ruling that it stays one. It applies to any
 governing document, not only a curia. The rows and their meanings are in
 `rubric.md` beside this file.
