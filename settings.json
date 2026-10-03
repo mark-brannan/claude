@@ -20,15 +20,15 @@
       "Bash(npm run generate:check)",
       "Bash(npm run typecheck)",
       "Bash(npm test)",
-      "Bash(pickup-list find *)",
-      "Bash(scoping-lock check *)",
       "Bash(worklist *)",
       "Bash(gh search *)",
       "Bash(shellcheck *)",
       "Bash(yadm log *)",
       "Bash(resign-branch.sh *)",
       "Bash(~/.claude/bin/card-id *)",
-      "Bash(~/.claude/bin/resign-branch.sh *)"
+      "Bash(~/.claude/bin/resign-branch.sh *)",
+      "Bash(~/.claude/bin/pickup-list find *)",
+      "Bash(~/.claude/bin/scoping-lock check *)"
     ],
     "deny": [
       "Bash(git reset --hard:*)"

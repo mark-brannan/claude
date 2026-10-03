@@ -30,7 +30,7 @@ target, and why, in the first line.
 ## 2. The lock: one writer per target, 25 minutes
 
 ```bash
-scoping-lock take <lock-folder> ${CLAUDE_SESSION_ID} <record-file>   # an issue: its updatedAt
+~/.claude/bin/scoping-lock take <lock-folder> ${CLAUDE_SESSION_ID} <record-file>   # an issue: its updatedAt
 ```
 
 `<record-file>` is the file step 1's table names. For a curia that is
@@ -49,7 +49,7 @@ nothing of yours runs between turns. Re-taking your own live lock never
 extends it. At the top of every turn and before every write:
 
 ```bash
-scoping-lock check <lock-folder> ${CLAUDE_SESSION_ID}   # 0 ours, 1 held, 3 lapsed or free
+~/.claude/bin/scoping-lock check <lock-folder> ${CLAUDE_SESSION_ID}   # 0 ours, 1 held, 3 lapsed or free
 ```
 
 - **15m, not close to the yes:** say so in one line, with what is still open.
@@ -67,7 +67,7 @@ scoping-lock check <lock-folder> ${CLAUDE_SESSION_ID}   # 0 ours, 1 held, 3 laps
 Read only the decided record and open questions; never edit them, and
 never anything else in the target. State today comes from the files the
 rulings name (read them), and in flight from open PRs and issues (`gh`)
-and other sessions' pickup items (`pickup-list find <word>`). A wide state
+and other sessions' pickup items (`~/.claude/bin/pickup-list find <word>`). A wide state
 sweep goes to a read-only sub-agent (no worktree, no sub-agents of its
 own) that returns the rows; a curia's worth of greps does not need one.
 Build nothing.
@@ -130,10 +130,10 @@ each yes'd item exactly as proposed:
 
 - a card owned `agent`, worded as `/card-write` words one (a link to the
   target in it), written to the item store with
-  `work-item create --owner agent [--repo <r>] [--model <m>] [--effort <e>] --brief - "$title"`
+  `~/.claude/bin/work-item create --owner agent [--repo <r>] [--model <m>] [--effort <e>] --brief - "$title"`
   (the card text on stdin; it prints the new id; `$title` is read from a
   quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe), then
-  `work-item log <id> status=ready` so it is claimable;
+  `~/.claude/bin/work-item log <id> status=ready` so it is claimable;
 - at most one GitHub issue this session, never a batch (Solace,
   2026-10-01, pen); further issue-homed items stay in the proposal, marked
   unfiled, and the hand-off names them.
@@ -143,7 +143,7 @@ card or issue. Record what was filed in the proposal file (each card by its
 printed id), then:
 
 ```bash
-scoping-lock release <lock-folder> ${CLAUDE_SESSION_ID}
+~/.claude/bin/scoping-lock release <lock-folder> ${CLAUDE_SESSION_ID}
 ```
 
 A run that ends without a yes releases the same way. A dead session's lock
