@@ -19,15 +19,15 @@
 #     is emitted only on the sessions where it changed -- rare by
 #     construction, since most refreshes change nothing at all.
 #
-# Remote-only. On a real machine yadm owns $HOME and the installer refuses
-# there anyway, but returning before the network call keeps a local session
+# Remote-only. On a real machine ~/.claude is a git clone and the installer
+# refuses there anyway, but returning before the network call keeps a local session
 # start free of it.
 set -uo pipefail
 
 [ "${CLAUDE_CODE_REMOTE:-}" = true ] || exit 0
 
-SEED="${DOTFILES_SEED:-$HOME/.local/share/dotfiles-seed}"
-SETUP="$SEED/.local/bin/cloud-session-setup.sh"
+SEED="${CLAUDE_SEED:-$HOME/.local/share/claude-seed}"
+SETUP="$SEED/bin/cloud-session-setup.sh"
 ORDERS="$HOME/.claude/CLAUDE.md"
 
 [ -x "$SETUP" ] || [ -f "$SETUP" ] || exit 0
