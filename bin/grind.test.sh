@@ -1953,7 +1953,7 @@ GRIND_STATUS: blocked'
 run --session-budget 100 --pause-every 1
 has 'with no home item, grind says so' 'INFO  no work item has home=o/alpha#5; outcome not recorded'
 assert 'and makes no item' test -z "$(home_of 'o/alpha#5')"
-eq 'nor any item at all' 0 "$(ls "$WORK_ITEM_DIR" | grep -c . || true)"
+eq 'nor any item at all' 0 "$(find "$WORK_ITEM_DIR" -mindepth 1 | grep -c . || true)"
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$CLAUDE_LOG"
 git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/5" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-5 >/dev/null 2>&1
 mkhome 'o/alpha#5' 1790985001aaaaaaa1
