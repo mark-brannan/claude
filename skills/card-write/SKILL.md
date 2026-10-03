@@ -155,12 +155,13 @@ A tentative-ADR card is a ruling card whose decision is already tentatively
 taken, living with the codebase until a ruling session writes it up as a
 colregs-family ADR (the next number in `docs/adr/`, a budget entry in
 `docs/budgets.json`) — never a direct edit to a public repo's docs. It
-carries `kind: tentative ADR` and `gates:`/`settle:`/`repos:` in place of
-`default:`/`undo:`/`until:`/`risk:`; the decision itself is the card's own
+carries `kind: tentative ADR` and `until:`/`settle:`/`repos:` in place of
+`default:`/`undo:`/`risk:`; `until:` holds the date, event and link as on any
+ruling card; the decision itself is the card's own
 sentence, and `judgment:` gates it as it gates any ruling card:
 
 ```markdown
-the decision, one sentence ([link](https://...)) kind: tentative ADR gates: <what it gates> settle: <what would settle it> repos: <repo(s) it touches> judgment: <values | risk | direction | legal | people>
+the decision, one sentence ([link](https://...)) kind: tentative ADR until: <date, event and link> settle: <what would settle it> repos: <repo(s) it touches> judgment: <values | risk | direction | legal | people>
 ```
 
 A click-work card, owner `human-click`, carries two proofs:
@@ -191,7 +192,7 @@ Nothing lints a card at write time; these are yours to hold. A card:
 3. has a link;
 4. if `human-ruling`, has all of `default:`, `undo:`, `until` (in the brief, or logged as a date), `risk:`,
    `judgment:`, and a `judgment:` that is one of the five kinds (a
-   `kind: tentative ADR` card has `gates:`, `settle:`, `repos:`, `judgment:`
+   `kind: tentative ADR` card has `until:`, `settle:`, `repos:`, `judgment:`
    instead, and the same `judgment:` rule);
 5. if `human-click`, has `why you:`, and `why this:` unless `why you:` is
    `learn`.
