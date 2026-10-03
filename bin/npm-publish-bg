@@ -1,7 +1,7 @@
 #!/bin/sh
 # Run `npm publish` in the background and hand the browser-2FA approval URL
-# to the human directly -- desktop notification, and the controlling terminal
-# -- instead of returning it on stdout.
+# to the human directly -- the browser, a desktop notification, the
+# controlling terminal -- instead of returning it on stdout.
 #
 # Why this exists: this npm account uses browser passkey 2FA (see
 # ~/.claude/rules/code.md, "Publishing"). `npm publish` prints the approval
@@ -11,14 +11,18 @@
 # stalls waiting for an approval nobody was told about.
 #
 # So this wrapper never prints the URL at all. It goes out of band, on the
-# one channel that does not pass back through the agent. What comes back on
-# stdout is only the pid and the logfile.
+# channels that do not pass back through the agent. What comes back on
+# stdout is the pid, the logfile, and which channels took the URL -- or, when
+# none did, that the human must read the log themselves.
 #
 # Returns as soon as npm has had a chance to print the URL; the upload and
 # the approval itself continue in the background. A zero exit means the
 # publish was *started*, not that it succeeded -- read the log for that.
 #
 # Usage: npm-publish-bg [args passed through to `npm publish`]
+#
+# NPM_PUBLISH_BG_OPEN names the command that opens the URL in a browser,
+# overriding the per-platform guess; `:` turns the browser channel off.
 set -u
 
 STATE_DIR="${NPM_PUBLISH_BG_STATE:-$HOME/.local/state/npm-publish-bg}"
@@ -93,29 +97,67 @@ elif mkdir "$lockdir" 2>/dev/null; then
   # with no process to point at and no pid in the message. The trap covers
   # exactly that window and is cleared the moment the child owns the lock.
   trap 'rmdir "$lockdir" 2>/dev/null' EXIT HUP INT TERM
+  # (Cleared straight after the spawn, not after the pid lands: from the
+  # spawn on, a child may be running npm, and a trap firing then -- the
+  # caller's timeout killing this shell -- would free its lock.)
 else
   printf 'npm publish is locked here (%s).\n' "$lockdir" >&2
   printf 'If no publish is running, clear it: rmdir %s\n' "$lockdir" >&2
   exit 1
 fi
 
-# Best effort on every channel available: a desktop notifier if one exists,
-# and -- because it is the one channel guaranteed not to be redacted or
-# routed back through an agent -- the controlling terminal directly. Silently
-# a no-op on a headless session with neither; that is fine, browser passkey
-# 2FA implies a human at a machine to begin with.
+# The browser opener for this platform, if any. WSL is checked before
+# xdg-open: there xdg-open exists but looks for a Linux browser, while the
+# human's browser is on the Windows side.
+opener() {
+  if [ -n "${NPM_PUBLISH_BG_OPEN+set}" ]; then
+    printf '%s' "$NPM_PUBLISH_BG_OPEN"
+  elif [ "$(uname -s)" = Darwin ] && command -v open >/dev/null 2>&1; then
+    printf open
+  elif grep -qi microsoft /proc/version 2>/dev/null && command -v explorer.exe >/dev/null 2>&1; then
+    printf explorer.exe
+  elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null 2>&1; then
+    printf xdg-open
+  fi
+}
+
+# Every channel available, each recorded in $sent only when it took the
+# message. An agent's shell tool has no controlling terminal and a WSL
+# desktop has no notification daemon, so any one channel can fail silently;
+# the caller is told which ones worked rather than assured that one did.
+# $1 is the message; $2, when set, is a URL to open in the browser, which
+# auth_url only ever hands over on npm's own domain.
+sent=""
 notify() {
   msg=$1
-  command -v notify-send >/dev/null 2>&1 && notify-send "npm publish" "$msg" 2>/dev/null
+  link=${2:-}
+  if [ -n "$link" ]; then
+    o=$(opener)
+    if [ -n "$o" ] && [ "$o" != : ]; then
+      # explorer.exe exits 1 even when it opened the page, so its status
+      # says nothing; it counts as handed over.
+      if "$o" "$link" >/dev/null 2>&1 || [ "$o" = explorer.exe ]; then
+        sent="$sent browser"
+      fi
+    fi
+  fi
+  if command -v notify-send >/dev/null 2>&1 &&
+     notify-send "npm publish" "$msg" >/dev/null 2>&1; then
+    sent="$sent notification"
+  fi
   # Pass $msg as an argv element rather than building it into the AppleScript
   # source: it carries text npm wrote to its own stdout, reachable in
   # principle by a compromised transitive dependency's lifecycle script, and
   # a stray quote must not break out of a string literal into script.
-  command -v osascript >/dev/null 2>&1 && osascript \
-    -e 'on run argv' \
-    -e 'display notification (item 1 of argv) with title "npm publish"' \
-    -e 'end run' "$msg" >/dev/null 2>&1
-  { printf '\n\a[npm publish] %s\n' "$msg" >/dev/tty; } 2>/dev/null
+  if command -v osascript >/dev/null 2>&1 && osascript \
+       -e 'on run argv' \
+       -e 'display notification (item 1 of argv) with title "npm publish"' \
+       -e 'end run' "$msg" >/dev/null 2>&1; then
+    sent="$sent notification"
+  fi
+  if { printf '\n\a[npm publish] %s\n' "$msg" >/dev/tty; } 2>/dev/null; then
+    sent="$sent terminal"
+  fi
   return 0
 }
 
@@ -150,6 +192,7 @@ if command -v setsid >/dev/null 2>&1; then
 else
   nohup sh -c "$child" sh "$@" >"$logfile" 2>&1 </dev/null &
 fi
+[ "$HOLD" = "mkdir" ] && trap - EXIT HUP INT TERM
 
 # Wait for the child's pid to land. The file may still hold an older run's,
 # so wait for it to differ from what was there before the spawn.
@@ -161,36 +204,49 @@ while [ "$n" -lt 40 ]; do
   n=$((n + 1))
   sleep 0.1
 done
-[ -n "$pid" ] || die "publish did not start (see $logfile)"
+# A child that never wrote its pid may still be running, so under mkdir the
+# lock stays and the message says how to clear it once nothing is.
+if [ -z "$pid" ]; then
+  [ "$HOLD" = "mkdir" ] &&
+    printf 'If no publish is running, clear the lock: rmdir %s\n' "$lockdir" >&2
+  die "publish did not start (see $logfile)"
+fi
 
-# The child owns the lock from here; this shell must not take it away when it
-# returns in a moment, with npm still running.
-[ "$HOLD" = "mkdir" ] && trap - EXIT HUP INT TERM
-
-# Prefer a URL on npm's own domain -- npm's notice banner also prints
-# registry and docs links, and the first https:// in the log is often one of
-# those. Fall back to any URL rather than miss an approval prompt whose
-# wording changed.
+# Prefer a URL whose host is npm's own domain -- npm's notice banner also
+# prints registry and docs links, and the first https:// in the log is often
+# one of those. The host is anchored, so `https://evil.example/npmjs.com/`
+# does not pass for npm's: a lifecycle script runs before the auth prompt
+# and can print what it likes. Only that URL is opened in the browser
+# (prefix "npm "); the fallback to any URL, kept so a reworded prompt is not
+# missed, is shown but never opened (prefix "any ").
 auth_url() {
-  grep -Eom1 'https://[^[:space:]]*npmjs\.com/[^[:space:]]*' "$logfile" 2>/dev/null && return 0
-  grep -Eom1 'https://[^[:space:]]+' "$logfile" 2>/dev/null
+  u=$(grep -Eom1 'https://([A-Za-z0-9-]+\.)*npmjs\.com/[^[:space:]]*' "$logfile" 2>/dev/null) &&
+    { printf 'npm %s' "$u"; return 0; }
+  u=$(grep -Eom1 'https://[^[:space:]]+' "$logfile" 2>/dev/null) &&
+    printf 'any %s' "$u"
 }
 
-url=""
+found=""
 end=$(( $(date +%s) + WAIT ))
 while [ "$(date +%s)" -lt "$end" ]; do
-  url=$(auth_url)
-  [ -n "$url" ] && break
-  kill -0 "$pid" 2>/dev/null || { url=$(auth_url); break; }
+  found=$(auth_url)
+  [ -n "$found" ] && break
+  kill -0 "$pid" 2>/dev/null || { found=$(auth_url); break; }
   sleep 0.5
 done
 
-if [ -n "$url" ]; then
-  notify "Approve at: $url"
-  printf 'npm publish running in the background (pid %s, log %s).\n' "$pid" "$logfile"
-  printf 'An approval URL was sent to the terminal/notifications -- approve it there.\n'
+printf 'npm publish running in the background (pid %s, log %s).\n' "$pid" "$logfile"
+if [ -n "$found" ]; then
+  url=${found#* }
+  case $found in npm\ *) open_url=$url ;; *) open_url="" ;; esac
+  notify "Approve at: $url" "$open_url"
+  if [ -n "$sent" ]; then
+    printf 'The approval URL went to the user by:%s. Ask them to approve it there.\n' "$sent"
+  else
+    printf 'No channel reached the user (no browser, notifier or terminal here).\n'
+    printf 'Ask them to run, in their own terminal: cat %s\n' "$logfile"
+  fi
 else
   notify "publish started, no auth URL seen in ${WAIT}s -- check $logfile"
-  printf 'npm publish running in the background (pid %s, log %s).\n' "$pid" "$logfile"
   printf 'No approval URL appeared within %ss; it may not need one. Tail the log.\n' "$WAIT"
 fi

@@ -5,7 +5,9 @@
 # case needs and exits -- so the round trip (background, watch the log,
 # notify out of band, report the pid) runs without touching a registry.
 # A stub `notify-send` records what the notifier was handed, which is how
-# the "the URL goes out of band and never to stdout" claim is checked.
+# the "the URL goes out of band and never to stdout" claim is checked, and a
+# stub browser opener does the same for the browser channel -- set for every
+# case, so the suite never opens a real browser on the machine running it.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -21,11 +23,21 @@ export PATH="$STUB:$PATH"
 export NPM_PUBLISH_BG_WAIT=3
 
 NOTIFY_LOG="$WORK/notified"
+NOTIFY_FAIL="$WORK/notify-fails"   # exists: the notifier has no daemon
 cat >"$STUB/notify-send" <<EOF
 #!/bin/sh
+[ -e "$NOTIFY_FAIL" ] && exit 1
 printf '%s\n' "\$*" >>"$NOTIFY_LOG"
 EOF
 chmod +x "$STUB/notify-send"
+
+OPEN_LOG="$WORK/opened"
+cat >"$STUB/open-browser" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >>"$OPEN_LOG"
+EOF
+chmod +x "$STUB/open-browser"
+export NPM_PUBLISH_BG_OPEN="$STUB/open-browser"
 
 stub_npm() {  # stub_npm <script body for the publish case>
   cat >"$STUB/npm" <<EOF
@@ -42,6 +54,7 @@ bad()  { fail=$((fail + 1)); printf 'FAIL: %s\n  %s\n' "$1" "${2-}"; }
 run() {  # run <cwd> [args...] -> sets OUT, RC; fresh state + notify log
   local dir=$1; shift
   : >"$NOTIFY_LOG"
+  : >"$OPEN_LOG"
   : "${NPM_PUBLISH_BG_STATE:=$WORK/state}"
   export NPM_PUBLISH_BG_STATE
   mkdir -p "$dir"
@@ -65,6 +78,38 @@ else bad "the auth URL should reach the notifier" "$(cat "$NOTIFY_LOG")"; fi
 
 if grep -q 'running in the background' <<<"$OUT"; then ok
 else bad "stdout should report the background run" "$OUT"; fi
+
+if grep -qx "$URL" "$OPEN_LOG"; then ok
+else bad "an npmjs.com URL should be opened in the browser" "$(cat "$OPEN_LOG")"; fi
+
+if grep -q 'by: browser notification' <<<"$OUT"; then ok
+else bad "stdout should name the channels that took the URL" "$OUT"; fi
+
+# --- npmjs.com in the path is not npm's host ------------------------------
+# A lifecycle script prints before npm's own prompt. Its URL may still be
+# shown, as the fallback, but the browser only ever opens npm's.
+SPOOF='https://evil.example.invalid/www.npmjs.com/auth/cli/x'
+stub_npm "echo '$SPOOF'; sleep 5"
+run "$WORK/pkg-spoof"
+if [ ! -s "$OPEN_LOG" ]; then ok
+else bad "a URL not on npm's host must not be opened" "$(cat "$OPEN_LOG")"; fi
+if grep -q "$SPOOF" "$NOTIFY_LOG"; then ok
+else bad "the fallback URL should still be shown" "$(cat "$NOTIFY_LOG")"; fi
+
+# --- no channel takes the URL: say so, and where the human can read it -----
+# setsid drops the controlling terminal, as an agent's shell tool has none;
+# the notifier fails as it does on a desktop without a daemon.
+if command -v setsid >/dev/null 2>&1; then
+  stub_npm "echo '$URL'; sleep 5"
+  : >"$NOTIFY_FAIL"
+  mkdir -p "$WORK/pkg-none"
+  OUT=$(cd "$WORK/pkg-none" && NPM_PUBLISH_BG_OPEN=: setsid -w "$SCRIPT" 2>&1)
+  rm -f "$NOTIFY_FAIL"
+  if grep -q 'No channel reached the user' <<<"$OUT" && grep -q 'cat .*\.log' <<<"$OUT"; then ok
+  else bad "with no channel, stdout should say so and name the log" "$OUT"; fi
+  if grep -q "$URL" <<<"$OUT"; then bad "the URL must not reach stdout even then" "$OUT"
+  else ok; fi
+fi
 
 # --- npm's own domain wins over an unrelated URL printed first ------------
 stub_npm "echo 'npm notice registry https://registry.example.invalid/'; echo '$URL'; sleep 5"
