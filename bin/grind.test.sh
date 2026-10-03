@@ -983,6 +983,11 @@ sess=$(latest_session)
 eq 'lock diagnostics land in the state file: user' "$(id -un)" "$(jq -r '.lock.user' "$sess")"
 eq 'lock diagnostics land in the state file: hostname' "$(uname -n)" "$(jq -r '.lock.hostname' "$sess")"
 eq 'lock cleared current_item after the item finished' null "$(jq -r '.lock.current_item' "$sess")"
+lock_tty=$(jq -r '.lock.tty' "$sess")
+case $lock_tty in none|/dev/*) tty_ok=1 ;; *) tty_ok=0 ;; esac
+eq 'lock tty is a device path or "none", never tty(1)'"'"'s "not a tty"' 1 "$tty_ok"
+eq 'lock grind_rev is the rev of the repo holding the script' \
+  "$(git -C "$(dirname "$GRIND")" rev-parse --short HEAD)" "$(jq -r '.lock.grind_rev' "$sess")"
 
 # --- a held lock refuses a second grind, no work done -----------------------
 mkdir -p "$lock_dir"

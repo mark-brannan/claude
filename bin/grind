@@ -394,8 +394,14 @@ fi
 # at a stuck lock or a stale state file needs exactly this.
 hostname_now=$(uname -n 2>/dev/null || echo unknown)
 whoami_now=$(id -un 2>/dev/null || whoami 2>/dev/null || echo unknown)
-tty_now=$(tty 2>/dev/null || echo none)
-grind_rev=$(git -C "$(dirname "$0")" rev-parse --short HEAD 2>/dev/null || echo unknown)
+# `tty` prints "not a tty" on stdout and exits 1 when there is none, so the
+# fallback must replace its output, not append to it.
+tty_now=$(tty 2>/dev/null) || tty_now=none
+# The rev is the repo that holds the running script, through a symlink if
+# grind was invoked by one (readlink -f is absent on some BSDs: fall back).
+grind_src=$(readlink -f "$0" 2>/dev/null) || grind_src=$0
+grind_rev=$(git -C "$(dirname "$grind_src")" rev-parse --short HEAD 2>/dev/null) || grind_rev=
+[ -n "$grind_rev" ] || grind_rev=unknown
 claude_session=${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-none}}
 # grind's own identity on the work-item store: work-item takes a session's
 # first eight hex from CLAUDE_CODE_SESSION_ID, and a headless grind has none.
