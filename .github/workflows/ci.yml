@@ -17,13 +17,132 @@ permissions:
   contents: read
 
 jobs:
+  # The jobs below down to tool-tests are ported from dotfiles' ci.yml, which
+  # holds the reasoning for each; they run the copied layer's suites here.
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
+          shellcheck --severity=warning .claude/hooks/*.sh .claude/cloud-setup.sh .local/bin/*.sh
+
+  # Every hook settings.json references is seeded by cloud-session-setup.sh.
+  # Both files are copies, so the four guards they name and this repo lacks
+  # pass here: the check compares the two lists, not the files on disk.
+  seeded:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Every settings.json hook is in the INSTALL list
+        run: |
+          set -euo pipefail
+          { grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.sh' .claude/settings.json
+            grep -ho 'lib-[A-Za-z0-9._-]*\.\(awk\|sh\|jq\)' .claude/hooks/*.sh \
+              | sed 's|^|.claude/hooks/|'
+          } | sort -u > /tmp/referenced
+          sed -n '/^INSTALL="/,/^"/p' .local/bin/cloud-session-setup.sh \
+            | grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\)' \
+            | sort -u > /tmp/installed
+          missing=$(comm -23 /tmp/referenced /tmp/installed)
+          if [ -n "$missing" ]; then
+            echo "::error::settings.json references hooks that cloud-session-setup.sh never seeds:"
+            echo "$missing"
+            exit 1
+          fi
+          echo "ok: all $(wc -l < /tmp/referenced) referenced hooks are seeded"
+      - name: settings.json hooks run from \$HOME only
+        run: |
+          set -euo pipefail
+          if grep -q 'CLAUDE_PROJECT_DIR/.claude/hooks' .claude/settings.json; then
+            echo "::error::settings.json falls back to \$CLAUDE_PROJECT_DIR for a hook."
+            exit 1
+          fi
+          echo "ok: no \$CLAUDE_PROJECT_DIR hook fallbacks"
+
+  # The suites on the shared awk tokenizer (lib-shell-words.awk), under all
+  # three awks in one job. The four coupled guards' suites stay in dotfiles.
+  guard-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install mawk, gawk and original-awk
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q mawk gawk original-awk jq
+      - name: Run the lib-shell-words suites under each awk
+        run: |
+          set -euo pipefail
+          status=0
+          for impl in mawk gawk original-awk; do
+            d=$(mktemp -d)
+            ln -s "$(command -v "$impl")" "$d/awk"
+            for t in .claude/hooks/issue-door.test.sh \
+                     .claude/hooks/pr-ownership-context.test.sh; do
+              echo "::group::$t under $impl"
+              if AWK_PATH=$d bash "$t"; then echo "ok"; else status=1; echo "::error::$t failed under $impl"; fi
+              echo "::endgroup::"
+            done
+          done
+          exit $status
+
+  tool-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update -q && sudo apt-get install -y -q jq
+      - name: Python test suites
+        run: for t in .local/bin/*.test.py .claude/hooks/*.test.py; do echo "== $t"; python3 "$t"; done
+      - name: Run every other test suite in parallel
+        run: |
+          set -euo pipefail
+          printf '%s\n' .claude/hooks/*.test.sh .local/bin/*.test.sh \
+            | grep -vFf <(printf '%s\n' \
+                .claude/hooks/issue-door.test.sh \
+                .claude/hooks/pr-ownership-context.test.sh) \
+            | xargs -P 4 -I{} bash -c '
+                t="$1"
+                echo "::group::$t"
+                if bash "$t"; then echo "ok"; else echo "::error::$t failed"; exit 1; fi
+                echo "::endgroup::"
+              ' _ {}
+
+  # Dotfiles is the source until delivery is ruled. Red when a copied file
+  # stops matching dotfiles main, from either side, or when a file under a
+  # copied root appears in one repo only. .github/dotfiles-drift/ has the
+  # list and the script.
+  dotfiles-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: mark-brannan/dotfiles
+          ref: main
+          path: .dotfiles-main
+          persist-credentials: false
+      - run: python3 .github/dotfiles-drift/drift.py check --source .dotfiles-main
+
   nonempty:
     permissions:
       contents: read
     uses: mark-brannan/.github/.github/workflows/nonempty-diff.yml@main
 
   ci-gate:
-    needs: [nonempty]
+    needs: [shellcheck, seeded, guard-tests, tool-tests, dotfiles-drift, nonempty]
     if: always()
     permissions: {}
     uses: mark-brannan/.github/.github/workflows/ci-gate.yml@main
