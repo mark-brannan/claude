@@ -130,7 +130,7 @@ ev=$(cat <<'EOF'
 <link>
 EOF
 )
-work-item log <id> status=done "evidence=$ev"
+~/.claude/bin/work-item log <id> status=done "evidence=$ev"
 ```
 
 `'evidence=<link>'` above, and in the other skills, is shorthand for this.
