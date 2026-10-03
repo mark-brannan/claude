@@ -139,8 +139,11 @@
 # to ready, committing and pushing the item file each time.
 #
 # The session file ends with `.ended = {at, reason, exit}` on every way out
-# once the lock is held; reason is pause-budget, pause-outlier,
-# pause-cadence, pause-band, queue-exhausted, signal or error.
+# once the lock is held and the file exists; reason is pause-budget,
+# pause-outlier, pause-cadence, pause-band, queue-exhausted, signal or error.
+# A new session's file is created only once there is something to work, so
+# its band pause, failed fetch or empty queue leaves no file at all, and
+# pause-band is recorded only on a --resume.
 #
 # Output: one INFO line per unit of work started and finished, a heartbeat
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
@@ -373,15 +376,20 @@ else
   session_id=grind-$(new_session_id)
   state_file="$state_root/$session_id.json"
   [ -n "$repo$project" ] || repo=$(cwd_repo) || { printf 'grind: not in a GitHub repo; pass --repo owner/name or a project\n' >&2; exit 1; }
-  if [ "$dry_run" -eq 0 ]; then
-    jq -n --arg repo "$repo" --arg project "$project" \
-          --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson pe "$pause_every" --argjson prs "$prs" \
-          --arg kinds "$kinds" --arg policy "$policy" \
-      '{repo:$repo, project:$project, item_budget:$ib, session_budget:$sb, pause_every:$pe, prs:$prs,
-        kinds:$kinds, policy:$policy, items:[]}' \
-      > "$state_file"
-  fi
 fi
+
+# A new session's file is written by create_state_file, once the run has
+# something to work (below): every exit before that -- the lock held by
+# another grind, a failed fetch, the review-band pause, an empty queue --
+# used to leave an orphan items:[] file under $state_root per timer firing.
+create_state_file() {
+  jq -n --arg repo "$repo" --arg project "$project" \
+        --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson pe "$pause_every" --argjson prs "$prs" \
+        --arg kinds "$kinds" --arg policy "$policy" \
+    '{repo:$repo, project:$project, item_budget:$ib, session_budget:$sb, pause_every:$pe, prs:$prs,
+      kinds:$kinds, policy:$policy, items:[]}' \
+    > "$state_file"
+}
 
 resume_cmd="grind --resume $session_id"
 # The scope names the run everywhere a repo used to: the lock, the band
@@ -642,6 +650,14 @@ if [ "$count" -eq 0 ]; then
 fi
 
 if [ "$dry_run" -eq 0 ]; then
+  # A --resume already has its file; a new session gets it now, with the
+  # lock's diagnostics mirrored in (write_lock skips a file that isn't there).
+  # Loud on failure: `set -e` ignores a failure left of && or ||,
+  # and the run would then spend on items it can never record.
+  if [ -z "$resume_id" ]; then
+    create_state_file || { rm -f "$state_file"; printf 'grind: cannot write %s\n' "$state_file" >&2; exit 1; }
+    write_lock "" ""
+  fi
   info "session $session_id on $scope: $count item(s) ($kind_counts; $policy), cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
   info "state: $state_file"
 fi
