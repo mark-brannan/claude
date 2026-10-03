@@ -107,6 +107,7 @@ INSTALL="
 .local/bin/worklist
 .local/bin/pickup-list
 .local/bin/card-id
+.local/bin/work-item
 .local/bin/scoping-lock
 .local/bin/gh-resolve-thread
 .local/bin/pr-label-audit
