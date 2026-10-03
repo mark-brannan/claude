@@ -190,7 +190,8 @@ if [ "$MAX_AGE" -gt 0 ] && [ -f "$OUT" ]; then
   [ "$age" -lt "$MAX_AGE" ] && exit 0
 fi
 
-# METRICS_NOW pins the wall clock to an epoch, for tests: the bedtime arms
+# METRICS_NOW pins the engine's clock to an epoch, for tests (the cache-age and
+# local-hour reads stay on the real clock): the bedtime arms
 # compare minute-rounded times against it, so a test that reads the real clock
 # is red at some minutes of the hour and green at others.
 # Only a plain integer is taken: the value feeds shell arithmetic.
