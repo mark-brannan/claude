@@ -24,7 +24,8 @@ strip exactly one to get the prompt back.
 The prompt that opens a sitting, `/curia <id> ...`, arrives before the skill
 writes LIVE, so it is matched by the id it names instead. Task notifications
 and agent messages also fire UserPromptSubmit and stay out. A dialog's
-free-text answers and notes are one entry; a picked label stays out.
+free-text answers and notes are one entry; a picked label stays out, and so
+does the harness's answer to a dismissed dialog.
 
 The app attaches its own notices to a prompt as leading <system-reminder>
 blocks (the worktree notice, the fork notice). Those are not the user's words:
@@ -62,6 +63,11 @@ HARNESS = re.compile(
 )
 
 
+# What the harness puts in place of an answer when the user dismisses a dialog.
+# Keep in step with DISMISSED in state/global/transcript-archive/extract.py.
+DISMISSED = "[User dismissed — do not proceed, wait for next instruction]"
+
+
 def strip_harness(text):
     """The text without its leading harness reminders, as build-roll.py's words()."""
     while (m := HARNESS.match(text)):
@@ -81,6 +87,8 @@ def dialog_words(questions, answers, annotations=None):
     for q in questions or []:
         labels = {o.get("label") for o in q.get("options") or []}
         a, ann = ((d or {}).get(q.get("question")) for d in (answers, annotations))
+        if a == DISMISSED:  # whole answer only: the sentence holds a ", ", so no split
+            a = ""
         if isinstance(a, str):  # a multi-select keeps only its typed parts
             a = ", ".join(p for p in a.split(", ") if p not in labels) if q.get("multiSelect") else "" if a in labels else a
         note = ann.get("notes") if isinstance(ann, dict) else None

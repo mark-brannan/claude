@@ -217,6 +217,20 @@ class CuriaRollTest(unittest.TestCase):
         self.dialog({"Which colour?": "Red", "Which sizes?": "Large", "Anything else?": "No"})
         self.assertFalse((self.curia / "c" / "roll.md").exists())
 
+    DISMISSED = "[User dismissed — do not proceed, wait for next instruction]"
+
+    def test_a_dismissed_dialog_writes_nothing(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Which colour?": self.DISMISSED, "Which sizes?": self.DISMISSED,
+                     "Anything else?": self.DISMISSED})
+        self.assertFalse((self.curia / "c" / "roll.md").exists())
+
+    def test_a_dismissal_beside_real_answers_is_dropped_and_they_are_kept(self):
+        self.sitting("c", f"{SID} t\n")
+        self.dialog({"Which colour?": "teal", "Which sizes?": self.DISMISSED,
+                     "Anything else?": "words, typed"})
+        self.assertEqual([e[2] for e in self.entries("c")], ["teal\n\nwords, typed"])
+
     def test_a_note_typed_beside_a_picked_option_is_kept(self):
         self.sitting("c", f"{SID} t\n")
         self.dialog({"Which colour?": "Red", "Which sizes?": "Small", "Anything else?": "No"},

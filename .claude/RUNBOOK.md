@@ -407,10 +407,10 @@ ahead/dirty state.
 every AskUserQuestion dialog. When the session is named in a curia's
 `LIVE` file, it appends the prompt verbatim to that curia's `roll.md`
 under a stamp heading. A dialog becomes one entry of its free-text
-answers and typed notes; a picked option label is the agent's and stays
-out, as do task notifications, other sessions' messages and the app's
-worktree and fork notices. It skips a curia folder with no `digest.md`:
-there `roll.md` is still the curated document, and appending prompts would
+answers and typed notes; a picked option label and a dismissal stay out,
+as do task notifications, other sessions' messages and the app's worktree
+and fork notices. It skips a curia folder with no `digest.md`: there
+`roll.md` is still the curated document, and appending prompts would
 corrupt it. The hook prints nothing and always exits 0, so a roll that
 silently stopped looks the same as one that works. Check the roll itself:
 
