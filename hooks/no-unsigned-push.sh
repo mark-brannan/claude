@@ -18,9 +18,15 @@
 #     it falls back to a GitHub-API-signed commit with no local key), so it
 #     can say so in the handoff
 #
-# Only the current branch of the payload's cwd is inspected. A push that
-# names another ref, or runs after a `cd`, is not caught; that is accepted
-# imprecision, not a bypass anyone would reach for.
+# The current branch of the *pushed* repo is inspected -- which is the
+# payload's cwd unless the command itself names a different one, via a
+# leading `cd DIR &&`/`cd DIR;` or a `git -C DIR push`. Without following
+# those, a push run against one repo from a session sitting in another gets
+# checked against the wrong repo: a false deny (the real target is clean but
+# the session's cwd has unsigned commits) or a false allow (the reverse).
+# A push that names another ref, or a `cd` reached through a pipe or a
+# multi-hop chain, is still not caught; that is accepted imprecision, not a
+# bypass anyone would reach for.
 #
 # GATE where a key exists: no jq or unreadable payload -> deny. Anything
 # else uncertain (not a repo, no upstream and no origin/HEAD) -> allow.
@@ -40,7 +46,26 @@ printf '%s' "$cmd" | grep -Eq \
   || exit 0
 
 cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)
-[ -n "$cwd" ] && [ -d "$cwd" ] && cd "$cwd" || exit 0
+[ -n "$cwd" ] && [ -d "$cwd" ] || exit 0
+
+target_cwd=$cwd
+leading_cd=$(printf '%s' "$cmd" | grep -oE '(^|&&|;)[[:space:]]*cd[[:space:]]+[^;&]*' | tail -1 | sed -E 's/^(&&|;)?[[:space:]]*cd[[:space:]]+//; s/[[:space:]]*(&&.*)?$//; s/^["'"'"']//; s/["'"'"']$//')
+if [ -n "$leading_cd" ]; then
+  case $leading_cd in
+    /*) target_cwd=$leading_cd ;;
+    *) target_cwd=$cwd/$leading_cd ;;
+  esac
+fi
+cflag=$(printf '%s' "$cmd" | grep -oE '\-C[[:space:]]+[^[:space:]]+' | tail -1 | sed -E 's/^-C[[:space:]]+//; s/^["'"'"']//; s/["'"'"']$//')
+if [ -n "$cflag" ]; then
+  case $cflag in
+    /*) target_cwd=$cflag ;;
+    *) target_cwd=$target_cwd/$cflag ;;
+  esac
+fi
+cwd=$target_cwd
+
+[ -d "$cwd" ] && cd "$cwd" || exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 git symbolic-ref -q HEAD >/dev/null 2>&1 || exit 0   # detached: nothing sensible to check
 

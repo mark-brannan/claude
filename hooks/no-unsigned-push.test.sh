@@ -54,6 +54,16 @@ run_hook() {
   esac
 }
 
+# Sets $verdict / $hook_out for an arbitrary command + cwd pair.
+run_hook_cmd() {
+  hook_out=$(jq -nc --arg c "$1" --arg d "$2" '{tool_input:{command:$c},cwd:$d}' | sh "$HOOK")
+  case $hook_out in
+    '') verdict=silent ;;
+    *'"deny"'*) verdict=deny ;;
+    *) verdict=allow ;;
+  esac
+}
+
 # The bug: a pushed branch that merges a main carrying unsigned commits was
 # denied for main's commits, which @{u}..HEAD counted as its own.
 w=$(setup)
@@ -98,6 +108,29 @@ git -C "$w" switch -q -c clean
 git -C "$w" commit -q --allow-empty -m signed
 run_hook "$w"
 check "signed branch passes" "$verdict" silent
+
+# The repo actually being pushed is the one to check, not wherever the
+# session's cwd happens to sit. cwd here is a clean repo; the command names
+# a different, unsigned one via `-C` -- that one must be denied.
+clean=$(setup)
+dirty=$(setup)
+git -C "$clean" switch -q -c feat
+git -C "$clean" commit -q --allow-empty -m 'signed on feat'
+git -C "$dirty" switch -q -c feat
+unsigned_commit "$dirty" 'unsigned on feat'
+run_hook_cmd "git -C $dirty push" "$clean"
+check "git -C DIR push checks DIR, not cwd" "$verdict" deny
+
+# Same, but cwd is the unsigned repo and the command's -C target is clean:
+# must not deny on the cwd's unsigned commits.
+run_hook_cmd "git -C $clean push" "$dirty"
+check "git -C DIR push does not fall back to cwd's commits" "$verdict" silent
+
+# A leading `cd DIR &&` before the push has the same effect.
+run_hook_cmd "cd $dirty && git push" "$clean"
+check "cd DIR && git push checks DIR, not cwd" "$verdict" deny
+run_hook_cmd "cd $clean && git push" "$dirty"
+check "cd DIR && git push does not fall back to cwd's commits" "$verdict" silent
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
