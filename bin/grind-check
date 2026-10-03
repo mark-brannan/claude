@@ -52,7 +52,7 @@ cheap_fail=0.50      # row 11: a "broken dependency" failure costs less than thi
 srepo=$(sj '.repo // ""'); project=$(sj '.project // ""'); kinds=$(sj '.kinds // ""')
 item_budget=$(sj '.item_budget // 0'); session_budget=$(sj '.session_budget // empty')
 nitems=$(sj '.items | length? // 0')
-new_schema=$(sj 'if has("ended") or any(.items[]?; has("claim_released")) then 1 else 0 end')
+new_schema=$(sj 'if has("ended") or any(.items[]?; has("claim_released") or has("worker_sid")) then 1 else 0 end')
 
 # The run's window: start from the session id (an older id carries no lock
 # time worth trusting), end from `ended`, else the last heartbeat.
@@ -181,7 +181,7 @@ off=$cache/off
 if [ "$(sj 'has("ended")')" = true ]; then
   reason=$(sj '.ended.reason // ""'); ex=$(sj '.ended.exit // "?"'); at=$(sj '.ended.at // "?"')
   case $reason in
-    pause-budget|pause-outlier|pause-cadence|queue-exhausted) row 1 ended PASS "$reason, exit $ex, at $at" ;;
+    pause-budget|pause-outlier|pause-cadence|pause-band|queue-exhausted) row 1 ended PASS "$reason, exit $ex, at $at" ;;
     signal|error) row 1 ended FAIL "ended by $reason, exit $ex, at $at" ;;
     *) row 1 ended FAIL "ended.reason '$reason' is not one grind writes" ;;
   esac

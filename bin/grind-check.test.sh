@@ -149,6 +149,8 @@ mk ended-error '.ended.reason = "error" | .ended.exit = 1'
 expect ended-error 1 FAIL 'a run that ended by error'
 mk ended-cadence '.ended.reason = "pause-cadence"'
 expect ended-cadence 1 PASS 'a cadence pause is a clean end'
+mk ended-band '.ended.reason = "pause-band"'
+expect ended-band 1 PASS 'a review-band pause is a clean end'
 
 # 2. spend: total 2.30; limit = session budget + a quarter of the item cap
 mk overspent '.session_budget = 1'
@@ -195,6 +197,10 @@ expect stamp-left 7 PASS 'a stamp from before the run is not the run'"'"'s'
 mk stamp-sid '.items[0].worker_sid = "cafef00d-1234"'
 put comments/o_alpha__40.json '[{"id":1,"body":"<!-- claim-stamp sid=cafef00d epoch=1790000000 machine=host-abc -->\n**Claimed**"}]'
 expect stamp-sid 7 FAIL 'a stamp carrying the recorded worker sid, whatever its age'
+put comments/o_alpha__40.json '[{"id":1,"body":"<!-- claim-stamp sid=deadbeef epoch=1791023400 machine=host-abc -->\n**Claimed**"}]'
+expect stamp-sid 7 PASS 'with worker_sid recorded, another session'"'"'s stamp inside the window is not the run'"'"'s'
+mk stamp-sid-null '.items |= map(.worker_sid = null)'
+expect stamp-sid-null 7 FAIL 'a null worker_sid falls back to the window'
 rm -f "$GH_FIX/comments/o_alpha__40.json"
 
 # 8. stranded work: unpushed commits, a kept dirty worktree, a wip exemption
