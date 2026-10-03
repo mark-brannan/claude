@@ -220,23 +220,28 @@ the fold as a unilateral call.
    (session id and ISO timestamp, written at step 4) from a different
    session, say so in one line and ask — the user runs parallel sittings on
    purpose sometimes, and stale markers happen. Never refuse outright.
-3. **Lint by sub-agent.** A read-only sub-agent (no worktree, no
-   sub-agents of its own) checks the derived sections for contradictions,
+3. **Lint by sub-agent, on Sonnet.** A read-only sub-agent (no worktree, no
+   sub-agents of its own; it writes one file, its patch) checks the derived sections for contradictions,
    stale claims and orphan terms, and reports overlap with the other open
    curiae from step 0 — a question this one shares with another — from
    which this session rewrites `related:`. It reads every `roll.md`
    entry after the last words that **Where this stands** cites, and any
    input quoting the user verbatim, and proposes quotes to pull and
    prune under the rule above: a ruling, a lean, a correction or a
-   reopening with no line citing it is a pull. Only its list enters this
-   context. Lint is toil: apply the mechanical fixes and show the diff
-   for the record; beside it, size from `wc -lw`, one line per file —
+   reopening with no line citing it is a pull. It hands back a patch of
+   the mechanical fixes, written under `<id>/inputs/`, and a findings
+   list of at most 600 words; only the list enters this context. Lint is
+   toil: apply the patch with one `git apply` and show the diff for the
+   record; beside it, size from `wc -lw`, one line per file —
    the document step 1 read, and `agent-notes.md` — before
    and after the fixes: `digest.md 2,242 → 2,198 lines · 33,516 → 32,870
    words`. Only a
    finding that touches a ruling or a name becomes a question in the
    dialogue. <!-- pencil: lint-is-toil is assumed
    (design doc, the lint-diff-is-toil open question). -->
+   In the same step, whatever the argument points at — a PR, a diff, a
+   log, a hand-off — goes to its own read-only sub-agent, run beside
+   lint; only its summary enters the sitting.
 4. Write the `LIVE` file, before the first question: the hook records
    the user's words only while it names this session, so a sitting
    without it records nothing. Read the header and **Where this stands**:
@@ -263,8 +268,9 @@ curia for it. It becomes a line under `## Open questions` here, or a
    reference, `<id>/roll.md#<stamp>`, what is unsettled, the X of Y
    position for next time, and the size lines again, all three counts
    on one line — before lint, after lint, now: `digest.md 2,242 → 2,198
-   → 2,310 lines · 33,516 → 32,870 → 34,020 words`. One sitting's
-   closing count is the next one's opening. If the user has ruled the
+   → 2,310 lines · 33,516 → 32,870 → 34,020 words · context at first
+   question 74k`, that last figure read from the transcript. One
+   sitting's closing count is the next one's opening. If the user has ruled the
    question itself settled, set `status: settled` in the header too —
    bare `/curia` lists
    open curiae, and nothing else retires one.
