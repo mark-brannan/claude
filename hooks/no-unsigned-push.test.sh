@@ -163,5 +163,15 @@ run_hook_cmd "git -C ~/$(basename "$dirty") push" "$clean"
 check "git -C ~/DIR push expands the tilde" "$verdict" deny
 export HOME=$HOME_SAVE
 
+# grep's `^` anchors every line, so a `cd` opening a later line of a
+# multi-line command must not be read as the push's directory either.
+run_hook_cmd "git push
+cd $dirty" "$clean"
+check "a cd on a later line is not the push's directory" "$verdict" silent
+
+# Several -C flags chain, as git does: `-C parent -C w` is parent/w.
+run_hook_cmd "git -C $(dirname "$dirty") -C $(basename "$dirty") push" "$clean"
+check "chained -C flags resolve like git's" "$verdict" deny
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

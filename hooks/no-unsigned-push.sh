@@ -76,8 +76,9 @@ apply_target() {
 # Only a leading `cd` (anchored to the start of the command) counts as the
 # push's directory; one reached after it, as in `git push && cd ..`, does
 # not. The stop class excludes `|` too, so `cd /a || git push` captures just
-# `/a`, not `/a || git push`.
-leading_cd_raw=$(printf '%s' "$cmd" | grep -oE '^[[:space:]]*cd([[:space:]]+[^;&|]*|[[:space:]]*($|[;&|]))')
+# `/a`, not `/a || git push`. grep anchors `^` per line, so only the first
+# line is offered: a `cd` opening a later line runs after the push.
+leading_cd_raw=$(printf '%s\n' "$cmd" | head -n 1 | grep -oE '^[[:space:]]*cd([[:space:]]+[^;&|]*|[[:space:]]*($|[;&|]))')
 if [ -n "$leading_cd_raw" ]; then
   leading_cd=$(printf '%s' "$leading_cd_raw" | sed -E 's/^[[:space:]]*cd[[:space:]]*//; s/[[:space:]]*$//; s/[;&|]$//; s/[[:space:]]*$//; s/^["'"'"']//; s/["'"'"']$//')
   [ -n "$leading_cd" ] || leading_cd='~'
@@ -86,12 +87,17 @@ fi
 
 # -C is only the push's own, from the matched `git ... push` invocation
 # itself -- not from an unrelated `git commit -C HEAD` earlier in the
-# command, nor from a second `git -C other ...` after it.
+# command, nor from a second `git -C other ...` after it. Several -C flags
+# chain, as git does: `git -C a -C b push` runs in a/b.
 pushseg=$(printf '%s' "$cmd" | grep -oE \
   '(^|[^A-Za-z0-9_./-])git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--[^[:space:]]+))*[[:space:]]+push([[:space:]]|$)' \
   | tail -1)
-cflag=$(printf '%s' "$pushseg" | grep -oE '\-C[[:space:]]+[^[:space:]]+' | tail -1 | sed -E 's/^-C[[:space:]]+//; s/^["'"'"']//; s/["'"'"']$//')
-apply_target "$(expand_leading "$cflag")"
+cflags=$(printf '%s' "$pushseg" | grep -oE '\-C[[:space:]]+[^[:space:]]+' | sed -E 's/^-C[[:space:]]+//; s/^["'"'"']//; s/["'"'"']$//')
+while IFS= read -r cflag; do
+  apply_target "$(expand_leading "$cflag")"
+done <<EOF_CFLAGS
+$cflags
+EOF_CFLAGS
 
 # A named target that doesn't resolve to a real directory (bad expansion, a
 # typo, a `cd` into a directory the command creates later) falls back to the
