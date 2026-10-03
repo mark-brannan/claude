@@ -439,7 +439,7 @@ for sh_ in bash sh; do
   eq_ust "$sh_: a date inside words counts"     ready   "$(rr 'x until: M6 card, 2026-09-30 judgment: risk')"
   eq_ust "$sh_: an event in words is waiting"   waiting "$(rr 'x until: the next session rooted in dotfiles risk: z')"
   eq_ust "$sh_: a bare #n names no repo, words" waiting "$(rr 'x until: before #15 or #16 is picked up risk: z')"
-  eq_ust "$sh_: no until: at all is ready"      ready   "$(rr 'x kind: tentative ADR gates: y')"
+  eq_ust "$sh_: no until: at all is ready"      ready   "$(rr 'x kind: tentative ADR settle: y')"
   eq_ust "$sh_: a field after until: is not read as its value" waiting "$(rr 'x until: next week risk: 2026-01-01 outage')"
   printf 'pr-open' > "$RR/state.1"; printf 'issue-open' > "$RR/state.2"
   printf 'issue-inflight' > "$RR/state.3"; printf 'issue-closed' > "$RR/state.4"

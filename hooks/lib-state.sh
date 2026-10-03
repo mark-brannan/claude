@@ -721,7 +721,7 @@ claude_cards() {
 #     closed is past due, and past due is shown), an issue that is closed, or
 #     an open issue that an open PR closes. An open issue with no such PR is
 #     waiting.
-#   - no `until:` at all (a kind: tentative ADR card, a legacy card) is ready:
+#   - no `until:` at all (a legacy card) is ready:
 #     nothing names a condition to wait on. A link gh cannot answer for is
 #     ready too. Showing a waiting card costs a line; hiding a ready one costs
 #     the ruling.
@@ -733,7 +733,7 @@ ruling_until() {
   printf '%s\n' "$1" | awk '
     { l = tolower($0); p = index(l, "until:"); if (!p) exit 1
       v = substr($0, p + 6)
-      if (match(tolower(v), /[ (;,.*](default|undo|risk|judgment|gates|settle|repos|repo|kind|why you|why this|id):/)) v = substr(v, 1, RSTART - 1)
+      if (match(tolower(v), /[ (;,.*](default|undo|risk|judgment|settle|repos|repo|kind|why you|why this|id):/)) v = substr(v, 1, RSTART - 1)
       sub(/^[ \t*]+/, "", v); sub(/[ \t*.;,]+$/, "", v); print v; found = 1; exit }
     END { if (!found) exit 1 }'
 }
