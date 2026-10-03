@@ -28,7 +28,6 @@ Procedures only. The hook designs and the scars behind them are in
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
 
 **GitHub repository**
-- [Cut and promote a prose-budget engine version](#cut-and-promote-a-prose-budget-engine-version)
 - [Set the auth token for the PR review workflows](#set-the-auth-token-for-the-pr-review-workflows)
 - [Re-sign a branch whose commits are unsigned](#re-sign-a-branch-whose-commits-are-unsigned)
 
@@ -402,37 +401,6 @@ means one of four things: the hook is not wired for that event
 ~/.claude/settings.json` prints nothing), the session
 id in `LIVE` is not this one, `digest.md` is missing, or
 `~/.claude/hooks/curia-roll.py` is absent (`dotsync`).
-
-## Cut and promote a prose-budget engine version
-
-An immutable `prose-budget/vX.Y.Z` tag here names the engine; a moving `v1`
-on `mark-brannan/.github` names the workflow that fetches it. Consumers pin
-`v1` and nothing else — never add a `dotfiles-ref` to a consumer. No checkout
-below, so nothing touches `$HOME`.
-
-```bash
-# 1. tag the SHA of the latest green hook-tests run on main, named from its VERSION line
-read -r SHA OK < <(gh run list --repo mark-brannan/dotfiles --workflow hook-tests.yml \
-  --branch main --limit 1 --json headSha,conclusion --jq '.[0] | "\(.headSha) \(.conclusion)"')
-TAG="prose-budget/v$(gh api "repos/mark-brannan/dotfiles/contents/.local/bin/prose-budget?ref=$SHA" \
-  --jq .content | base64 -d | awk -F'"' '/^VERSION = / {print $2; exit}')"
-echo "$OK $TAG"                                   # success prose-budget/vX.Y.Z
-gh api -X POST repos/mark-brannan/dotfiles/git/refs -f ref="refs/tags/$TAG" -f sha="$SHA"
-
-# 2. PR on mark-brannan/.github: set the dotfiles-ref default in
-#    .github/workflows/prose-budget.yml to $TAG. Merge it. Then promote:
-PREV=$(gh api repos/mark-brannan/.github/git/ref/tags/v1 --jq .object.sha)
-gh api -X PATCH repos/mark-brannan/.github/git/refs/tags/v1 \
-  -f sha="$(gh api repos/mark-brannan/.github/commits/main --jq .sha)" -F force=true
-
-# 3. verify: the workflow at v1 names $TAG ...
-gh api 'repos/mark-brannan/.github/contents/.github/workflows/prose-budget.yml?ref=v1' \
-  --jq .content | base64 -d | grep -c "default: $TAG"            # 1
-# ... and the next consumer PR's prose-budget job fetched it (its log echoes the input)
-gh api repos/mark-brannan/colregs/actions/jobs/<job-id>/logs | grep -c "dotfiles-ref: $TAG"   # 1
-```
-
-Roll back with the same `PATCH` and `-f sha="$PREV"`.
 
 ## Set the auth token for the PR review workflows
 
