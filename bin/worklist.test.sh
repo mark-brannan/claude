@@ -408,6 +408,14 @@ eq 'json ready holds leaves, never a parent' '[]' "$(printf '%s' "$OUT" | jq -c 
 eq 'json child names its parent' 'o/alpha#50' "$(printf '%s' "$OUT" | jq -r '.buckets.ready[] | select(.repo == "o/beta") | .parent')"
 cp "$FIXTURES/alpha-plain.json" "$FIXTURES/alpha.json"
 
+# --- more than 100 wip refs: the page is cut by name, so say so -------------------------------
+jq -c '.data.repository.wip.pageInfo = {hasNextPage: true}' "$FIXTURES/alpha-plain.json" > "$FIXTURES/alpha.json"
+run --fresh
+has 'a truncated wip page is named' '^alpha: more than 100 wip refs -- Salvaged edits truncated \(by name, not age\)$'
+cp "$FIXTURES/alpha-plain.json" "$FIXTURES/alpha.json"
+run --fresh
+lacks 'no wip truncation line under the cap' 'more than 100 wip refs'
+
 # --- one repo 403 ---------------------------------------------------------------------------
 GH_MODE=403 run --fresh
 eq 'exit 0' 0 "$RC"

@@ -99,7 +99,7 @@ QUERY='query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){
   issues(states:OPEN,first:100){pageInfo{hasNextPage} nodes{number title url updatedAt labels(first:20){nodes{name}}
     milestone{title} body parent{number title url repository{nameWithOwner}}}}
   refs(refPrefix:"refs/heads/",first:100){nodes{name associatedPullRequests(first:1){totalCount}}}
-  wip: refs(refPrefix:"refs/heads/wip/",first:100){nodes{name target{... on Commit{committedDate}}}}
+  wip: refs(refPrefix:"refs/heads/wip/",first:100){pageInfo{hasNextPage} nodes{name target{... on Commit{committedDate}}}}
 }}'
 
 # Resolve owner, key, label and the repo list into globals. Returns 1 with
@@ -297,12 +297,12 @@ def workable: (.labels | index("ready")) and (.labels | index("blocked") | not);
 # The Stop hook'"'"'s salvage refs (wip/<session-id>, dotfiles#285/#318), oldest
 # first: the ones nearest prune-wip-refs'"'"'s floor lead. Their own `wip` query
 # alias, not the 100-branch `refs` page, where they sort last and fall off.
-| [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.wip.nodes // [])[]
+| ([ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s | (.data.wip.nodes // [])[]
     | ((.target.committedDate // null) | if . then (fromdateiso8601? // null) else null end) as $t
     | {repo: $s, ref: "wip/\(.name)", session: .name, committed: $t,
        age_days: (if $t then ((now - $t) / 86400 | floor) else null end),
        age_hours: (if $t then ((now - $t) / 3600 | floor) else null end)} ]
-  | sort_by(.committed // 0) as $salvaged
+  | sort_by(.committed // 0)) as $salvaged
 # A milestone view is a filter over the same cache: the fetch and the cache
 # stay unscoped, so one cache serves both views.
 | ($is | if $milestone == "" then . else map(select(.milestone == $milestone)) end) as $is
@@ -340,7 +340,8 @@ def workable: (.labels | index("ready")) and (.labels | index("blocked") | not);
       else $e[] | "\(.repo): \(.error)" end ] as $fails
 | [ $c.records[] | select(.data) | (.repo|split("/")[1]) as $s
     | (if .data.pullRequests.pageInfo.hasNextPage then "\($s): more than 50 open PRs -- PR buckets truncated" else empty end),
-      (if .data.issues.pageInfo.hasNextPage then "\($s): more than 100 open issues -- issue buckets, Untriaged and the stranded-branch pointer check truncated" else empty end) ] as $trunc
+      (if .data.issues.pageInfo.hasNextPage then "\($s): more than 100 open issues -- issue buckets, Untriaged and the stranded-branch pointer check truncated" else empty end),
+      (if .data.wip.pageInfo.hasNextPage then "\($s): more than 100 wip refs -- Salvaged edits truncated (by name, not age)" else empty end) ] as $trunc
 | ($c.counts | if (.prs|type) == "string" and (.issues|type) == "string" and .prs == .issues and (.prs|test("^[0-9]")|not)
       then "unavailable (\(.prs))"
       else "\(.prs) open PRs, \(.issues) open issues across \($owner)" end) as $acct
