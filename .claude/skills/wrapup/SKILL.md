@@ -21,7 +21,8 @@ Read the verdict line at the top of this session's auto-checkpoint
 (`state/global/log/auto/<date>-<repo>-<id>.md`, written by the Stop hook):
 
 - **`archivable`** — the branch has a PR or a pointer, the worktree is clean,
-  nothing is unpushed, the state repo pushed — **and** every open loop has a
+  nothing is unpushed, this session's state committed (pushed too, in the
+  cloud) — **and** every open loop has a
   home (an issue, a PR or a card): say so in one line, name where the work
   lives, and **stop**. No log, no hand-off prompt. Archivable means archive;
   it does not mean silent: if a next session should continue there, write

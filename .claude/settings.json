@@ -272,9 +272,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" stop 0 show 2>/dev/null || true",
-            "timeout": 30,
-            "statusMessage": "Checking the session against the nag thresholds"
+            "command": "h=\"$HOME/.claude/hooks/stop-sequence.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null || true",
+            "timeout": 330,
+            "statusMessage": "Saving the session, then checking it against the nag thresholds"
           }
         ]
       },
@@ -285,15 +285,6 @@
             "command": "h=\"$HOME/.claude/hooks/no-prose-gate.sh\"; [ -f \"$h\" ] && sh \"$h\" 2>/dev/null || true",
             "timeout": 30,
             "statusMessage": "Checking the turn does not end asking permission"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/stop-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
-            "timeout": 300
           }
         ]
       },

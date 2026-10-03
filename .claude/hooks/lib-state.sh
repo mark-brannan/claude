@@ -213,6 +213,42 @@ archivable_reasons() {
   printf '%s' "$reasons"
 }
 
+# verdict_explain <verdict> -- one line per reason the verdict names: what is
+# at risk, then what to do. A bare "not archivable" sent the user back to the
+# session to ask what it meant, a turn spent on every reason here. Matched by
+# pattern, not split on commas: a reason's own text can hold one. A reason
+# with no line here is still printed in the verdict itself.
+verdict_explain() {
+  local v="$1"
+  case "$v" in *"not a git repo"*)
+    echo "→ not a git repo: the session ran outside any repo, so there was no branch to check." ;; esac
+  case "$v" in *"worktree dirty"*)
+    echo "→ worktree dirty: edits in this worktree are not on the branch. Commit them, or discard them." ;; esac
+  case "$v" in *" commit(s) unpushed"*)
+    echo "→ commits unpushed: they exist on this machine only. Push the branch." ;; esac
+  case "$v" in *"has no upstream (never pushed)"*)
+    echo "→ never pushed: the branch exists on this machine only. Push it with -u." ;; esac
+  case "$v" in *"detached HEAD"*)
+    echo "→ detached HEAD: the commits are on no branch. Check out or create one." ;; esac
+  case "$v" in *"could not count unpushed commits"*)
+    echo "→ git could not compare the branch with its upstream. Run git status there." ;; esac
+  case "$v" in *"no PR and no pointer"*)
+    echo "→ no PR and no pointer: nothing tells a future session this branch exists. Open a PR, or card it." ;; esac
+  case "$v" in *"branch home unverified"*)
+    echo "→ home unverified: gh could not check for a PR or card (network or auth). The next Stop retries." ;; esac
+  case "$v" in *"session live"*)
+    echo "→ session live: another session holds this branch. Closing this chat is safe; archiving the worktree is not." ;; esac
+  case "$v" in *"state repo not committed"*|*"state-repo commit failed"*)
+    echo "→ state not committed: this session's checkpoint and board edits are not saved, even locally. Run git status in the state repo." ;; esac
+  case "$v" in *"board not committed"*)
+    echo "→ board not committed: kanban-lint rejected the board. Run kanban-lint and fix what it names." ;; esac
+  case "$v" in *"state-repo push failed"*)
+    echo "→ state not pushed: this cloud VM's state commit is not on GitHub and dies with the VM." ;; esac
+  case "$v" in *"did not finish"*)
+    echo "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries." ;; esac
+  return 0
+}
+
 # state_lock <dir> / state_unlock -- mkdir atomic test-and-set, copied from
 # grind's per-repo lock (no flock: macOS has none). meta carries pid+host; a
 # same-host dead pid is reclaimed via rename-then-rm. Installs no trap of its

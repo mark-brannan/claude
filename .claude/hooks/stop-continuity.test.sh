@@ -88,7 +88,22 @@ assert 'a checkpoint was written' test -n "$CKPT"
 eq 'clean, pushed, PR: archivable' 'archivable' "$(verdict)"
 eq 'the metrics record says the same' 'archivable' \
   "$(jq -r .verdict "$HOME/.claude/state/global/metrics/sessions/$SID.json")"
+# metrics-live.sh refuses a verdict older than its Stop sequence's start, so
+# the record has to say when this one was reached.
+at=$(jq -r '.verdict_at // empty' "$HOME/.claude/state/global/metrics/sessions/$SID.json")
+assert "the metrics record stamps verdict_at in epoch seconds, got [$at]" \
+  test "${at:-0}" -ge $(( $(date -u +%s) - 60 ))
 has 'the worktree is recorded for resume-list' "^- worktree .$WORK.$" "$CKPT"
+
+# --- outside any repo ---------------------------------------------------------------
+# The 📦 notice now shows this verdict, so its reason has to read as one: there
+# is no branch to name.
+NOGIT="$S/nogit"; mkdir -p "$NOGIT"
+NGSID=nogit000-1111-2222-3333
+printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$NGSID" "$NOGIT" \
+  | bash "$HOOK" >/dev/null 2>&1
+eq 'not a git repo: the verdict says so' 'not archivable: not a git repo' \
+  "$(jq -r .verdict "$HOME/.claude/state/global/metrics/sessions/$NGSID.json")"
 
 # --- one gh round trip per Stop ---------------------------------------------------
 # The verdict's home check and the pickup item's `pr:` lookup ask the same
@@ -556,7 +571,8 @@ gitq "$SRCLONE" add "$rel"; gitq "$SRCLONE" commit -m upstream-conflict; gitq "$
 echo local > "$SREPO/$rel"
 rm -f "$SREPO/state/global/.last-state-push"   # past the push debounce
 
-GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" stop
+# In the cloud the clone dies with the VM, so a failed push is a reason.
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" CLAUDE_CODE_REMOTE=true stop
 assert 'conflicting pull: no rebase left in progress' \
   test ! -d "$(git -C "$SREPO" rev-parse --absolute-git-dir)/rebase-merge"
 assert 'conflicting pull: no apply-backend rebase left either' \
@@ -564,6 +580,20 @@ assert 'conflicting pull: no apply-backend rebase left either' \
 assert 'conflicting pull: still on main' git -C "$SREPO" symbolic-ref -q HEAD
 assert 'conflicting pull: the verdict says the push failed' \
   grep -qE 'state-repo push failed' "$SREPO/state/global/log/auto/"*"-work-${SID:0:8}.md"
+eq 'conflicting pull: and so does the metrics record' \
+  'not archivable: state-repo push failed' \
+  "$(jq -r .verdict "$SREPO/state/global/metrics/sessions/$SID.json")"
+
+# The local twin: the same failed push on a machine that keeps its clone. The
+# commit is the promise there, and it held (ruled for dotfiles#149).
+rm -f "$SREPO/state/global/.last-state-push"
+GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" stop
+assert 'conflicting pull, local: the push really failed' \
+  test "$(git -C "$SRORIGIN" log -1 --format=%s main)" = upstream-conflict
+eq 'conflicting pull, local: the verdict stays archivable' archivable \
+  "$(sed -n 's/^\*\*Verdict:\*\* //p' "$SREPO/state/global/log/auto/"*"-work-${SID:0:8}.md" | head -1)"
+eq 'conflicting pull, local: and so does the metrics record' archivable \
+  "$(jq -r .verdict "$SREPO/state/global/metrics/sessions/$SID.json")"
 
 # --- a board that fails kanban-lint stays out; a hand-staged blob comes back --
 # on_exit restores it: the one EXIT trap, which also releases the push lock.
@@ -596,6 +626,65 @@ CKPT=$(ls "$AUTO"/*"${SID:0:8}".md 2>/dev/null | head -1)
 assert 'a held live lock never blocks Stop' test "$rc" -ne 124
 assert 'the checkpoint is still written when the lock is held' test -n "$CKPT"
 rm -rf "$LIVE/$SID.lock"
+
+# --- the incident: the checkpoint and the 📦 notice answer once (dotfiles#149) --
+# Two Stop hooks ran in parallel: the notice counted every session's unpushed
+# state-repo commits and computed its own verdict while this hook was still
+# committing, so the checkpoint said "archivable" and the notice said "not:
+# state repo N commit(s) unpushed". stop-sequence.py runs them in order and
+# the notice reads this hook's verdict back. A parallel session's unpushed
+# commit sits in the clone; the work branch is clean, pushed, and has a PR.
+SEQ="$HOOKS/stop-sequence.py"
+SRORIGIN2="$S/state-origin2.git"; SREPO2="$S/state-repo2"
+git init -q --bare "$SRORIGIN2"
+git init -q -b main "$SREPO2"
+gitq "$SREPO2" remote add origin "$SRORIGIN2"
+mkdir -p "$SREPO2/state/global/log/auto"; echo seed > "$SREPO2/state/global/.seed"
+gitq "$SREPO2" add state; gitq "$SREPO2" commit -m seed
+gitq "$SREPO2" push -u origin main
+other() {  # other <n> -- a parallel session's state commit, not pushed
+  echo "other $1" > "$SREPO2/state/global/log/auto/2026-10-02T09-00-other-par$1.md"
+  gitq "$SREPO2" add state; gitq "$SREPO2" commit -m "State: work session par$1"
+}
+SID3=incident-0000-1111-2222
+sequence() {  # sequence -- run the real Stop sequence; prints metrics-live's stdout
+  printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s","hook_event_name":"Stop"}' \
+      "$TP" "$SID3" "$WORK" \
+    | GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO2" \
+      METRICS_STOP_HOUR=24 METRICS_NIGHT_END_HOUR=0 python3 "$SEQ" 2>/dev/null
+}
+box() { printf '%s' "$1" | jq -r '.systemMessage // ""' 2>/dev/null | grep '📦'; }
+ck_verdict() {
+  sed -n 's/^\*\*Verdict:\*\* //p' "$SREPO2/state/global/log/auto/"*"-work-${SID3:0:8}.md" | head -1
+}
+
+# Debounced: a push went out a moment ago, so this Stop only commits locally,
+# and the clone ends holding the other session's commit and this one's.
+other 1
+date -u +%s > "$SREPO2/state/global/.last-state-push"
+out=$(sequence)
+assert 'incident, debounced: the clone holds unpushed commits' \
+  test "$(git -C "$SREPO2" rev-list --count '@{u}..HEAD')" -ge 2
+eq 'incident, debounced: the checkpoint says archivable' archivable "$(ck_verdict)"
+eq 'incident, debounced: and the 📦 line agrees' \
+  "📦 archivable. (claude/work ${SID3:0:8})" "$(box "$out")"
+assert 'incident, debounced: the 📦 line never names the state repo' \
+  bash -c '! grep -q "state repo" <<<"$1"' _ "$(box "$out")"
+
+# A push in the same Stop: the sentinel is gone, so this Stop pushes its own
+# commit and the parallel session's with it, while the notice waits its turn.
+other 2
+rm -f "$SREPO2/state/global/.last-state-push"
+out=$(sequence)
+eq 'incident, pushed: origin got this Stop'"'"'s commit' "State: work session ${SID3:0:8}" \
+  "$(git -C "$SRORIGIN2" log -1 --format=%s main | sed 's/ (.*//')"
+assert 'incident, pushed: and the parallel session'"'"'s with it' \
+  test -n "$(git -C "$SRORIGIN2" log --format=%s main --grep='session par2' -1)"
+eq 'incident, pushed: the checkpoint says archivable' archivable "$(ck_verdict)"
+eq 'incident, pushed: and the 📦 line agrees' \
+  "📦 archivable. (claude/work ${SID3:0:8})" "$(box "$out")"
+assert 'incident, pushed: the 📦 line never names the state repo' \
+  bash -c '! grep -q "state repo" <<<"$1"' _ "$(box "$out")"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

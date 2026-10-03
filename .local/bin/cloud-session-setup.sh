@@ -72,6 +72,7 @@ INSTALL="
 .claude/hooks/lib-metrics-test-harness.sh
 .claude/hooks/session-start-continuity.sh
 .claude/hooks/stop-continuity.sh
+.claude/hooks/stop-sequence.py
 .claude/hooks/measure-git-events.sh
 .claude/hooks/no-persistent-polling.sh
 .claude/hooks/no-late-pr-subscribe.sh

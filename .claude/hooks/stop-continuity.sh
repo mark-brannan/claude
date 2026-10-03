@@ -222,9 +222,16 @@ sc_note() { printf '\n## Stop-commit\n\n%s\n' "$1" >> "$ckpt"; }
 #      can never disagree about what counts as a home;
 #   2. the worktree is clean;
 #   3. nothing is unpushed;
-#   4. the state-repo push succeeded (passed in by the caller, because it is
-#      not known until the bottom of this script).
+#   4. this session's state is committed to the state repo -- locally is
+#      enough on a machine that keeps its clone, and the push batches. A cloud
+#      VM's clone dies with the VM, so there the push must also succeed.
+#      Other sessions' unpushed commits in the same clone are theirs, never a
+#      reason here. Passed in by the caller: not known until the bottom.
 # "Could not verify" is never a pass, here as in the gate.
+#
+# This is the one verdict. metrics-live.sh's 📦 notice runs after this hook
+# (stop-sequence.py) and reads it back from the metrics record, verdict_at
+# included, rather than computing its own (dotfiles#149's second answer).
 verdict=""
 _archivable_reasons=""
 _archivable_reasons_cached=0
@@ -241,7 +248,9 @@ set_verdict() {
     if [ -n "$work_root" ]; then
       _archivable_reasons=$(archivable_reasons "$work_root" "$work_branch" "$sid")
     else
-      _archivable_reasons="no PR and no pointer for \`$work_branch\`"
+      # The label metrics-live.sh's notice used before it read this verdict
+      # back; "no PR and no pointer for \`\`" named a branch that isn't there.
+      _archivable_reasons="not a git repo"
     fi
     _archivable_reasons_cached=1
   fi
@@ -260,7 +269,8 @@ set_verdict() {
   sf="$SD/metrics/sessions/$sid.json"
   if [ -f "$sf" ]; then
     tmpj="$sf.$$"
-    if jq -c --arg v "$verdict" '. + {verdict: $v}' "$sf" > "$tmpj" 2>/dev/null; then
+    if jq -c --arg v "$verdict" --argjson at "$(date -u +%s)" \
+         '. + {verdict: $v, verdict_at: $at}' "$sf" > "$tmpj" 2>/dev/null; then
       mv -f "$tmpj" "$sf" 2>/dev/null
     else rm -f "$tmpj"; fi
   fi
@@ -690,14 +700,15 @@ git -c user.name="${GIT_AUTHOR_NAME:-Claude}" \
     commit -q -m "State: $work_repo session ${sid:0:8} ($today)" >/dev/null 2>&1 || { set_verdict "state-repo commit failed"; exit 0; }
 
 # Debounce the push, not the commit: every Stop still commits locally (cheap,
-# never lost), but pushes to GitHub at most once per 5 minutes unless the
-# session is actually ending (verdict already computed above by set_verdict).
-# Measured 2026-09-10: ~560 pushes/day to claude_prompts_scratch, bursty
-# enough to risk GitHub's abuse-rate heuristics. Force-push whenever archivable, so a real
-# session end is never held back by the debounce window.
+# never lost), but pushes to GitHub at most once per 5 minutes. Measured
+# 2026-09-10: ~560 pushes/day to claude_prompts_scratch, bursty enough to
+# risk GitHub's abuse-rate heuristics. A cloud session pushes whenever
+# archivable, so its last commit is never left on a VM about to be reaped; a
+# local one batches, because its commit is already safe in the clone.
+cloud=0; [ "${CLAUDE_CODE_REMOTE:-}" = true ] && cloud=1
 PUSH_SENTINEL="$SD/.last-state-push"
 debounce_secs=300
-if [ "$verdict" != "archivable" ] && [ -f "$PUSH_SENTINEL" ]; then
+if { [ "$cloud" -eq 0 ] || [ "$verdict" != "archivable" ]; } && [ -f "$PUSH_SENTINEL" ]; then
   last_push=$(cat "$PUSH_SENTINEL" 2>/dev/null || echo 0)
   now_epoch=$(date -u +%s)
   case "$last_push" in ''|*[!0-9]*) last_push=0 ;; esac
@@ -717,8 +728,9 @@ for attempt in 1 2; do
   fi
   sleep $((attempt * 3))
 done
-# The optimistic verdict is now known to be wrong. Correcting it leaves the
-# checkpoint one commit behind the state repo -- the next Stop carries both
-# the correction and this commit.
-set_verdict "state-repo push failed"
+# In the cloud the optimistic verdict is now known to be wrong. Correcting it
+# leaves the checkpoint one commit behind the state repo -- the next Stop
+# carries both the correction and this commit. Locally the commit is the
+# promise, and it held.
+[ "$cloud" -eq 1 ] && set_verdict "state-repo push failed"
 exit 0

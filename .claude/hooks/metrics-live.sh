@@ -918,28 +918,26 @@ fi
 # preview or a test harness asking for the `stop` readout never blocks a turn.
 #
 # "archivable" is the verdict that the chat can be closed without losing
-# anything: clean worktree, nothing unpushed, the state repo's own commits
-# pushed, and the branch either has an open PR or is named by a pointer card.
+# anything. stop-continuity.sh computes it -- after its salvage, after its
+# state commit -- and stop-sequence.py runs this only once that hook is done,
+# so this reads the verdict back instead of computing a second one. Two
+# computations, run in parallel against a state repo mid-commit, are how a
+# checkpoint said "archivable" while this said "not" (dotfiles#149's second
+# answer). STOP_VERDICT_SINCE is the epoch the sequence started: a verdict
+# older than that is the last turn's, and this turn's never came.
 archival_reasons=""
+archival_verdict=""
 archivable() {
-  local sr n
-  archival_reasons=""
-  add_areason() { archival_reasons="${archival_reasons:+$archival_reasons, }$1"; }
-
-  if [ -z "$work_root" ]; then
-    add_areason "not a git repo"
-  else
-    # archivable_reasons() is lib-state.sh's -- the home/dirty/unpushed
-    # check shared with stop-continuity.sh's Stop-hook verdict (#149).
-    archival_reasons=$(archivable_reasons "$work_root" "$work_branch" "$sid")
+  local rec at
+  rec="$(state_dir)/metrics/sessions/$sid.json"
+  archival_verdict=$(jq -r '.verdict // empty' "$rec" 2>/dev/null)
+  at=$(jq -r '.verdict_at // 0' "$rec" 2>/dev/null)
+  case "$at" in ''|*[!0-9]*) at=0 ;; esac
+  if [ -z "$archival_verdict" ] || [ "$at" -lt "${STOP_VERDICT_SINCE:-0}" ]; then
+    archival_verdict="not archivable: the Stop hook did not finish"
   fi
-
-  sr=$(state_repo 2>/dev/null) || sr=""
-  if [ -n "$sr" ]; then
-    n=$(git -C "$sr" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
-    [ "${n:-0}" -eq 0 ] || add_areason "state repo $n commit(s) unpushed"
-  fi
-
+  archival_reasons=${archival_verdict#archivable}
+  archival_reasons=${archival_reasons#not archivable: }
   [ -z "$archival_reasons" ]
 }
 
@@ -974,6 +972,8 @@ if [ "$hook_name" = Stop ]; then
     add_arch "📦 archivable. (${archivable_tag})"
   else
     add_arch "📦 not archivable: ${archival_reasons}. (${archivable_tag})"
+    why=$(verdict_explain "$archival_verdict")
+    [ -z "$why" ] || add_arch "$why"
   fi
 
   if [ "$nag_pending" -eq 1 ]; then

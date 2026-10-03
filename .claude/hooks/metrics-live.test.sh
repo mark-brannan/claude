@@ -39,6 +39,15 @@ STATE="$HOME/.claude/state/global"
 # shellcheck source=lib-metrics-test-harness.sh
 . "$(dirname "$HOOK")/lib-metrics-test-harness.sh"
 
+# The 📦 verdict is stop-continuity.sh's, read back from the metrics record
+# (stop-sequence.py runs that hook first). Plant what its set_verdict would
+# have written; the git checks behind a verdict are stop-continuity.test.sh's.
+plant() {  # plant <sid> [verdict] [verdict_at]
+  mkdir -p "$STATE/metrics/sessions"
+  jq -nc --arg v "${2:-archivable}" --argjson at "${3:-$(date -u +%s)}" \
+    '{verdict: $v, verdict_at: $at}' > "$STATE/metrics/sessions/$1.json"
+}
+
 t() {  # t <desc> <want> <got>
   if [ "$2" = "$3" ]; then pass=$((pass+1))
   else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi
@@ -120,8 +129,8 @@ has   'two hours names the elapsed time'  '⏱ 2h01' "$(msg "$out")"
 hasnt 'and gives no instruction either'   'stop here|/wrapup' "$(msg "$out")"
 
 # --- 2b. the clock belongs to the prompt -------------------------------------
-# $SCRATCH is not a git repo, so archivable() refuses and the Stop nag stays
-# out of the way; what is under test here is only the clock.
+# No verdict is planted for these sessions, so archivable() refuses and the
+# Stop nag stays out of the way; what is under test here is only the clock.
 # 0 when the file is not there at all: no clock is a clock at zero, and the
 # assertions below are about a Stop never creating one.
 sit_start() { jq -r '.sitting_start // 0' "$SITF" 2>/dev/null || true; \
@@ -229,9 +238,8 @@ REPO="$SCRATCH/repo"; mkdir -p "$REPO"
 git -C "$REPO" init -q -b feat/nags
 git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 # A real upstream, pushed and clean -- these tests are about the sitting
-# clock and the Stop block, not about unpushed work, and a branch with no
-# upstream at all is its own "not archivable" reason (metrics-live's
-# archivable() checks that before anything else below runs).
+# clock and the Stop block, not about unpushed work. The verdict itself is
+# planted per session (plant, above), as stop-continuity.sh would write it.
 git init -q --bare "$SCRATCH/repo.git"
 git -C "$REPO" remote add origin "$SCRATCH/repo.git"
 git -C "$REPO" push -q -u origin feat/nags
@@ -254,6 +262,7 @@ TP3="$SCRATCH/stop.jsonl"; turn "$TP3" 1000
 arm() {  # arm <session id> <minutes on the shared clock>
   clock "$2" 10
   payload "$TP3" "$1" "$REPO" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+  plant "$1"
   payload "$TP3" "$1" "$REPO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1
 }
 o=$(arm arm1 61)
@@ -263,7 +272,7 @@ t 'but it does not arm the Stop block' '' "$(printf '%s' "$o" | jq -r '.decision
 o=$(arm arm2 121)
 t 'the two-hour crossing does' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 
-S() { payload "$TP3" stop1 "$REPO" Stop \
+S() { plant stop1; payload "$TP3" stop1 "$REPO" Stop \
       | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
 
 o1=$(S)
@@ -283,7 +292,7 @@ handoff() {  # handoff <sid> -- a pickup item whose body was edited past the def
     "$1" > "$PK/2026-09-09T10-00-$1.md"
 }
 handoff stop0
-S0() { payload "$TP3" stop0 "$REPO" Stop \
+S0() { plant stop0; payload "$TP3" stop0 "$REPO" Stop \
        | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
 o=$(S0)
 t     'an armed Stop with the block on disk does not block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
@@ -309,7 +318,7 @@ hasnt 'not the message again'        'Next time' "$(msg "$o3")"
 
 # The block was ignored: no edited body anywhere. Say so, do not claim one,
 # and do not block again -- the late-hour arm is spent for the session.
-S3() { payload "$TP3" stop3 "$REPO" Stop \
+S3() { plant stop3; payload "$TP3" stop3 "$REPO" Stop \
        | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
 o=$(S3); t 'blocks once' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 o=$(S3)
@@ -322,6 +331,7 @@ o=$(S3); t 'and stays quiet after' '' "$(printf '%s' "$o" | jq -r '.decision // 
 # reason carries the resume instruction, and the metrics land in the block on
 # the next Stop, which is the one that passes.
 TP4="$SCRATCH/cross.jsonl"; turn "$TP4" 103000
+plant stop4
 o=$(payload "$TP4" stop4 "$REPO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t   'a context crossing at Stop blocks' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 hasnt 'and the reason carries no threshold line' '⛁' \
@@ -329,6 +339,7 @@ hasnt 'and the reason carries no threshold line' '⛁' \
 
 # A dirty tree is not archivable, so nothing blocks however late it is.
 : > "$REPO/dirty"
+plant stop2 'not archivable: worktree dirty'
 o4=$(payload "$TP3" stop2 "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
 t 'a dirty tree is never archivable' '' "$(printf '%s' "$o4" | jq -r '.decision // ""')"
 
@@ -346,6 +357,7 @@ git -C "$REPOO" remote add origin "$SCRATCH/repoo.git"
 git -C "$REPOO" push -q -u origin feat/order
 
 TPO="$SCRATCH/order.jsonl"; turn "$TPO" 103000
+plant orderx
 oO1=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t 'order setup: the first Stop blocks' block "$(printf '%s' "$oO1" | jq -r '.decision // ""')"
 
@@ -354,6 +366,7 @@ handoff orderx
 # Second Stop: also crosses 150k while confirming the hand-off, so a
 # nag, the block, and the archival tail all fire together -- no re-block.
 turn "$TPO" 152000
+plant orderx
 oO2=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
 t 'order: the confirming Stop does not re-block' '' "$(printf '%s' "$oO2" | jq -r '.decision // ""')"
 msgO2=$(msg "$oO2")
@@ -777,30 +790,51 @@ has 'the sitting line carries the context' '^⏱ 1h0[0-9] · context 41k' "$(msg
 has 'and shows the dirty tree at its end'  '^⏱ 1h0[0-9] · context 41k ⎇ 1~$' "$(msg "$o7")"
 clock_clear
 
-# --- 8. no upstream is only a hazard with something on the branch to lose ----
-# The carve-out this PR's review asked for, mirroring stop-continuity.sh's
-# set_verdict (#126): a branch with no @{u} isn't flagged unless it's ahead
-# of the default branch -- $REPO/$REPO7 above have no origin at all, so
-# that comparison always falls back to "not ahead" for them. Exercise it
-# for real with an origin that has a main to compare against.
-ORIGIN8="$SCRATCH/origin8.git"; git init -q --bare "$ORIGIN8"
+# --- 8. the 📦 line is stop-continuity.sh's verdict, read back -------------
+# Whether a branch with no upstream is a hazard is stop-continuity.sh's call
+# now (stop-continuity.test.sh: "never pushed", "zero commits ahead"). What
+# is left here: the notice shows the planted reason, explains it, and refuses
+# a verdict older than this Stop sequence's start (STOP_VERDICT_SINCE).
 REPO8="$SCRATCH/repo8"; mkdir -p "$REPO8"
-git -C "$REPO8" init -q -b main
+git -C "$REPO8" init -q -b feat/ahead
 git -C "$REPO8" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
-git -C "$REPO8" remote add origin "$ORIGIN8"
-git -C "$REPO8" push -q -u origin main
 TP8="$SCRATCH/repo8.jsonl"; turn "$TP8" 1000
+S8() { payload "$TP8" "$1" "$REPO8" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1; }
+after_box() { printf '%s\n' "$1" | awk '/📦/ { getline; print; exit }'; }
 
-git -C "$REPO8" checkout -q -b feat/ahead
-git -C "$REPO8" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
-o8=$(payload "$TP8" stop8a "$REPO8" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
-has 'no upstream, ahead of origin/main: not archivable' \
-    'has no upstream \(never pushed\)' "$(msg "$o8")"
+plant stop8a 'not archivable: `feat/ahead` has no upstream (never pushed)'
+m8=$(msg "$(S8 stop8a)")
+has 'a planted reason is the 📦 line' \
+    '^📦 not archivable: `feat/ahead` has no upstream \(never pushed\)\. \(feat/ahead stop8a\)$' "$m8"
+has 'and the line under it explains it' '^→ never pushed: ' "$(after_box "$m8")"
 
-git -C "$REPO8" checkout -q -b feat/nothing-to-lose main
-o8b=$(payload "$TP8" stop8b "$REPO8" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
-hasnt 'no upstream, nothing ahead of origin/main: not flagged' \
-      'has no upstream' "$(msg "$o8b")"
+plant stop8b
+m8b=$(msg "$(S8 stop8b)")
+has   'a planted archivable verdict is the 📦 line' '^📦 archivable\. \(feat/ahead stop8b\)$' "$m8b"
+hasnt 'and nothing explains it' '^→ ' "$m8b"
+
+plant stop8c 'not archivable: worktree dirty, 2 commit(s) unpushed'
+m8c=$(msg "$(S8 stop8c)")
+t 'two reasons, one explanation line each' 2 "$(grep -c '^→ ' <<<"$m8c")"
+
+now8=$(date -u +%s)
+plant stop8d archivable $((now8 - 100))
+m8d=$(msg "$(payload "$TP8" stop8d "$REPO8" Stop \
+      | STOP_VERDICT_SINCE=$now8 METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)")
+has 'a verdict older than this Stop reads as did not finish' \
+    '^📦 not archivable: the Stop hook did not finish\. ' "$m8d"
+has 'and is explained as such' '^→ no verdict this turn: ' "$(after_box "$m8d")"
+m8e=$(msg "$(payload "$TP8" stop8d "$REPO8" Stop \
+      | STOP_VERDICT_SINCE=$((now8 - 100)) METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)")
+has 'the same verdict at the boundary is current' '^📦 archivable\. ' "$m8e"
+
+m8f=$(msg "$(S8 stop8none)")
+has 'no verdict at all reads as did not finish' \
+    '^📦 not archivable: the Stop hook did not finish\. ' "$m8f"
+
+plant stop8g 'not archivable: something no explanation knows'
+m8g=$(msg "$(S8 stop8g)")
+has 'an unknown reason is still shown' 'something no explanation knows' "$m8g"
 
 # --- 9. the turns line survives a clean tree --------------------------------
 # The block's second line is "⇢ turns ⚙ tools", with git state appended only
