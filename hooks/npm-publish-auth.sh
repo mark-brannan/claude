@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PreToolUse hook: a Bash call running `npm publish` directly is denied and
 # pointed at `npm-publish-bg`, which does the same publish but pushes the
-# browser-2FA approval URL to Solace out of band.
+# browser-2FA approval URL to the user out of band.
 #
-# Why: her npm account uses browser passkey 2FA (see ~/.claude/rules/code.md,
+# Why: the user's npm account uses browser passkey 2FA (see ~/.claude/rules/code.md,
 # "Publishing"). `npm publish` prints the approval URL mid-run, and that URL
 # is one of the strings the harness redacts from a Bash tool result before it
 # reaches Claude -- so a plain `npm publish` leaves Claude unable to read the
@@ -49,6 +49,10 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 # matched -- resolving that would need a table of which npm flags consume the
 # next word. Fail open is the right side to miss on: the publish then runs
 # as it did before this hook existed.
+#
+# `--dry-run` is let through: it packs and reports without contacting the
+# registry's auth, so there is no URL to lose, and /npm-first-publish has the
+# agent run it as a precondition.
 match=$(printf '%s\n' "$cmd" | awk "$(cat "$LIB")"'
 function is_publish(a, b,   i) {
   for (i = a; i <= b; i++) {
@@ -58,9 +62,14 @@ function is_publish(a, b,   i) {
   }
   return 0
 }
+function dry_run(a, b,   i) {
+  for (i = a; i <= b; i++)
+    if (k[i] == "w" && (w[i] == "--dry-run" || w[i] == "--dry-run=true")) return 1
+  return 0
+}
 function segment(a, b, nested,   c) {
   c = cmd_index(w, k, a, b, "(^|/)npm$", nested, "")
-  if (c && is_publish(c + 1, b)) { print "MATCH"; exit }
+  if (c && is_publish(c + 1, b) && !dry_run(c + 1, b)) { print "MATCH"; exit }
 }
 { buf = buf $0 "\n" }
 END {
@@ -78,6 +87,6 @@ END {
 }' 2>/dev/null)
 [ "$match" = MATCH ] || exit 0
 
-jq -cn --arg r "Blocked by ~/.claude/hooks/npm-publish-auth.sh: run \`npm-publish-bg\` instead of \`npm publish\` -- same arguments, same directory. Solace's npm account uses browser passkey 2FA, and the approval URL npm prints is redacted from your tool result before you see it, so a plain publish stalls on an approval nobody was told about. npm-publish-bg runs the publish detached and pushes that URL to her directly (notification and terminal); you will never see it, by design, so don't ask her for it or try to print it. It returns a pid and a logfile -- tail the log, and confirm with \`npm view <pkg> dist-tags\`. See ~/.claude/rules/code.md, 'Publishing'." \
+jq -cn --arg r "Blocked by ~/.claude/hooks/npm-publish-auth.sh: run \`npm-publish-bg\` instead of \`npm publish\` -- same arguments, same directory. The user's npm account uses browser passkey 2FA, and the approval URL npm prints is redacted from your tool result before you see it, so a plain publish stalls on an approval nobody was told about. npm-publish-bg runs the publish detached and pushes that URL to the user directly (browser, notification, terminal); you will never see it, by design, so don't ask for it or try to print it. It returns a pid and a logfile -- tail the log, and confirm with \`npm view <pkg> dist-tags\`. See ~/.claude/rules/code.md, 'Publishing'." \
   '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
 exit 0

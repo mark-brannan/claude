@@ -3,7 +3,11 @@
 #
 # The hook only decides -- nothing here runs npm -- so every case is a
 # payload in and a decision out.
+#
+# AWK_PATH, as in the other lib-shell-words suites, is a directory whose
+# `awk` is the implementation to test; ci.yml runs this under all three.
 set -uo pipefail
+[ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$HERE/npm-publish-auth.sh"
@@ -41,6 +45,8 @@ denies "compound"               'cd packages/foo && npm publish'
 denies "nested sh -c"           "sh -c 'npm publish'"
 denies "absolute path"          '/usr/local/bin/npm publish'
 denies "after a semicolon"      'npm run build; npm publish'
+denies "dry run switched off"   'npm publish --dry-run=false'
+denies "dry run in another segment" 'npm pack --dry-run && npm publish'
 
 # --- non-matches -----------------------------------------------------------
 allows  "npm install"           'npm install'
@@ -53,6 +59,8 @@ allows  "a heredoc mentioning it" 'cat <<EOF > notes.md
 then run npm publish
 EOF'
 allows  "another tool entirely" 'yarn publish'
+allows  "a dry run needs no auth" 'npm publish --dry-run'
+allows  "a dry run, compound"   'cd packages/foo && npm publish --access public --dry-run'
 
 # --- the deny reason names the replacement, not the URL --------------------
 out=$(printf '%s' "$(payload 'npm publish')" | bash "$HOOK" 2>&1)
