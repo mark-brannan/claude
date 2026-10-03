@@ -1,10 +1,14 @@
-# The Claude layer as copied from mark-brannan/dotfiles, at the same paths.
-# drift.py (beside this file) reads it; see its docstring for what is red.
+# The Claude layer as copied from mark-brannan/dotfiles. Paths are dotfiles
+# paths; this repo's root is ~/.claude, so drift.py maps .claude/X to X,
+# .local/bin/X to bin/X and .config/systemd/user/X to systemd/X. drift.py
+# (beside this file) reads it; see its docstring for the mapping, the layout
+# rewrites and what is red.
 #
 #   root <dir/>   every tracked file under it, in either repo, is listed below
-#   copy <path>   in both repos, byte for byte equal to dotfiles main
+#   copy <path>   in both repos, equal to dotfiles main after layout rewrites
 #   skip <path>   on dotfiles main under a root, deliberately not copied
-#   own  <path>   only in this repo, under a root
+#   own  <path>   only in this repo, under a root; a path in THIS repo's
+#                 layout, and one ending in / covers everything under it
 #
 # Not copied, and outside the roots so not checked:
 #   .github/workflows/claude-code-review.yml   this repo has its own brief
@@ -20,6 +24,16 @@ root .config/systemd/user/
 root .github/actions/claude-config/
 root docs/
 
+# Repo scaffolding: .claude/ is a root and maps to this repo's whole root, so
+# everything that is not the layer itself is listed here. It lands in
+# ~/.claude too, where Claude Code ignores it.
+own .editorconfig
+own .github/dotfiles-drift/
+own .github/workflows/
+own .gitignore
+own .mergify.yml
+own README.md
+
 # The four guards coupled to dotfiles, held for hook-guards-strategy
 # question 4. settings.json, copied as is, still names them.
 skip .claude/hooks/no-checkout-home.sh
@@ -34,7 +48,10 @@ skip .claude/hooks/public-issue-guard.test.sh
 # Machine tooling that stays in dotfiles (dotfiles-split curia, question 3).
 skip .local/bin/.keep
 skip .local/bin/dotfiles-add-secret.sh
+skip .local/bin/dotfiles-claude-clone.sh
+skip .local/bin/dotfiles-claude-clone.test.sh
 skip .local/bin/dotfiles-sync.sh
+skip .local/bin/dotfiles-sync.test.sh
 skip .local/bin/dotfiles-triage.sh
 skip .local/bin/myrebase.sh
 skip .local/bin/repo_release_please_app_vars.sh

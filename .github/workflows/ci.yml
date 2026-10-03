@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
-          shellcheck --severity=warning .claude/hooks/*.sh .claude/cloud-setup.sh .local/bin/*.sh
+          shellcheck --severity=warning hooks/*.sh cloud-setup.sh bin/*.sh
 
   # Every hook settings.json references is seeded by cloud-session-setup.sh.
   # Both files are copies, so the four guards they name and this repo lacks
@@ -43,11 +43,11 @@ jobs:
       - name: Every settings.json hook is in the INSTALL list
         run: |
           set -euo pipefail
-          { grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.sh' .claude/settings.json
-            grep -ho 'lib-[A-Za-z0-9._-]*\.\(awk\|sh\|jq\)' .claude/hooks/*.sh \
+          { grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.sh' settings.json
+            grep -ho 'lib-[A-Za-z0-9._-]*\.\(awk\|sh\|jq\)' hooks/*.sh \
               | sed 's|^|.claude/hooks/|'
           } | sort -u > /tmp/referenced
-          sed -n '/^INSTALL="/,/^"/p' .local/bin/cloud-session-setup.sh \
+          sed -n '/^INSTALL="/,/^"/p' bin/cloud-session-setup.sh \
             | grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\)' \
             | sort -u > /tmp/installed
           missing=$(comm -23 /tmp/referenced /tmp/installed)
@@ -60,7 +60,7 @@ jobs:
       - name: settings.json hooks run from \$HOME only
         run: |
           set -euo pipefail
-          if grep -q 'CLAUDE_PROJECT_DIR/.claude/hooks' .claude/settings.json; then
+          if grep -q 'CLAUDE_PROJECT_DIR/.claude/hooks' settings.json; then
             echo "::error::settings.json falls back to \$CLAUDE_PROJECT_DIR for a hook."
             exit 1
           fi
@@ -86,8 +86,8 @@ jobs:
           for impl in mawk gawk original-awk; do
             d=$(mktemp -d)
             ln -s "$(command -v "$impl")" "$d/awk"
-            for t in .claude/hooks/issue-door.test.sh \
-                     .claude/hooks/pr-ownership-context.test.sh; do
+            for t in hooks/issue-door.test.sh \
+                     hooks/pr-ownership-context.test.sh; do
               echo "::group::$t under $impl"
               if AWK_PATH=$d bash "$t"; then echo "ok"; else status=1; echo "::error::$t failed under $impl"; fi
               echo "::endgroup::"
@@ -103,14 +103,14 @@ jobs:
           persist-credentials: false
       - run: sudo apt-get update -q && sudo apt-get install -y -q jq
       - name: Python test suites
-        run: for t in .local/bin/*.test.py .claude/hooks/*.test.py; do echo "== $t"; python3 "$t"; done
+        run: for t in bin/*.test.py hooks/*.test.py; do echo "== $t"; python3 "$t"; done
       - name: Run every other test suite in parallel
         run: |
           set -euo pipefail
-          printf '%s\n' .claude/hooks/*.test.sh .local/bin/*.test.sh \
+          printf '%s\n' hooks/*.test.sh bin/*.test.sh \
             | grep -vFf <(printf '%s\n' \
-                .claude/hooks/issue-door.test.sh \
-                .claude/hooks/pr-ownership-context.test.sh) \
+                hooks/issue-door.test.sh \
+                hooks/pr-ownership-context.test.sh) \
             | xargs -P 4 -I{} bash -c '
                 t="$1"
                 echo "::group::$t"

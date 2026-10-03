@@ -1,0 +1,42 @@
+#!/bin/sh
+# card-id -- mint a work item's identifier, and look one up.
+#
+# A work item's identifier is epoch seconds then the minting session's eight
+# hex, no separator -- 1790836842077c62eb -- never edited, never reused. A
+# work item's file is named by it, and its card line carries it as `id: <id>`.
+#
+#   card-id mint [<session-id>]   print a fresh id (session from
+#                                 $CLAUDE_CODE_SESSION_ID when not given)
+#   card-id show <id>             the item: `<section>\t<group>\t<card>`
+#
+# Fire and forget: no lock, no ledger, no check against
+# the store. Two sessions never share a hex, and one session minting twice in
+# the same second is the only collision left; the odds carry it, the way a
+# UUID's do.
+set -u
+
+self=$0
+case $self in */*) ;; *) self=$(command -v "$self" 2>/dev/null || printf '%s' "$self") ;; esac
+self_dir=$(cd "$(dirname "$self")" 2>/dev/null && pwd)
+lib=""
+for c in "$self_dir/../hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
+  [ -f "$c" ] && { lib=$c; break; }
+done
+[ -n "$lib" ] || { printf 'card-id: lib-state.sh not found\n' >&2; exit 2; }
+# shellcheck disable=SC1090
+. "$lib"
+
+die() { printf 'card-id: %s\n' "$*" >&2; exit 2; }
+
+case "${1:-}" in
+  mint)
+    sid=${2:-${CLAUDE_CODE_SESSION_ID:-}}
+    hex=$(printf '%s' "$sid" | tr -d '-' | cut -c1-8 | tr 'A-F' 'a-f')
+    case $hex in ????????) ;; *) die "no session id (pass one, or run inside a session)" ;; esac
+    case $hex in *[!0-9a-f]*) die "session id $sid does not start with eight hex" ;; esac
+    printf '%s%s\n' "$(date -u +%s)" "$hex" ;;
+  show)
+    is_card_id "${2:-}" || die "not a card id: ${2:-<id>}"
+    board_card "$2" || { printf 'card-id: no item %s in %s\n' "$2" "$(items_dir)" >&2; exit 1; } ;;
+  *) sed -n '9,11p' "$0" | sed 's/^#   //' >&2; exit 2 ;;
+esac
