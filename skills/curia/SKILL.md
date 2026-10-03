@@ -44,7 +44,9 @@ durable document is the point), Architecture Decision Records (ADR),
   fetch goes to a read-only sub-agent (no worktree, no sub-agents of its
   own) that returns a summary. Its product — and any spike or side chat's
   — lands in the curia's folder and is committed the moment it is
-  produced, never held for the close. A fork that never lands loses it.
+  produced, never held for the close: a report or a spike as a file,
+  lint's fixes as the commit that applies them. A fork that never lands
+  loses it.
 
 ## Where a curia lives
 
