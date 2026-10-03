@@ -14,6 +14,8 @@
 set -uo pipefail
 
 GRIND="$(cd "$(dirname "$0")" && pwd)/grind"
+GRIND_WORK_ITEM="$(cd "$(dirname "$0")" && pwd)/work-item"
+export GRIND_WORK_ITEM
 # grind is halted (dotfiles#439): it must refuse to run. The suite below is
 # kept for when it is revived; delete this block and the exit then.
 out=$("$GRIND" --dry-run 2>&1); rc=$?
@@ -568,7 +570,13 @@ run --session-budget 100 --pause-every 1
 lacks 'no staging log line when nothing was staged' 'moved staged \.claude/ files'
 eq 'no push logged either' 0 "$(wc -l < "$GIT_PUSH_LOG" | tr -d ' ')"
 
-# `carded` with an untouched board and no new comment on the issue
+# `carded` with an untouched item store and no new comment on the issue. An
+# item whose log is all in the past is not a new one: grind reads the log
+# lines' timestamps, not the file's mtime.
+export WORK_ITEM_DIR="$S/carded-items"
+mkdir -p "$WORK_ITEM_DIR"
+printf '# an old item\n\n## Brief\n\n## Log\n2001-01-01T00:00:00Z feedface status=open owner=agent\n' \
+  > "$WORK_ITEM_DIR/17909840241dc56754.md"
 cat > "$S/issue-comments.json" <<'JSON'
 {"comments": [{"createdAt": "2001-01-01T00:00:00Z"}]}
 JSON
@@ -577,27 +585,41 @@ reply 0.50 "carded" 1
 : > "$CLAUDE_LOG"
 run --session-budget 100 --pause-every 1
 has 'a carded claim with nothing written is UNVERIFIED, and says why' \
-  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but board file unchanged and no new comment on the issue'
+  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but no item created or logged and no new comment on the issue'
 lacks 'not logged as carded' '^carded: o/alpha#5'
 
-# a card written to the board file counts too, without any issue comment
-export GRIND_BOARD="$S/kanban.md"
-: > "$GRIND_BOARD"
+# an item logged during the run counts too, without any issue comment
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
 [ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 echo "\$*" >> "$CLAUDE_LOG"
-sleep 1.1
-printf -- '- [ ] a card\n' >> "$GRIND_BOARD"
+printf '%s feedface note\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$WORK_ITEM_DIR/17909840241dc56754.md"
 echo '{"type":"result","total_cost_usd":0.50,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: carded"}'
 GH
 chmod +x "$S/bin/claude"
 rm -f "$S/state/grind"/*.json
 : > "$CLAUDE_LOG"
 run --session-budget 100 --pause-every 1
-has 'a board file written during the run verifies the card' '^carded: o/alpha#5 -- First item'
-unset GRIND_BOARD
+has 'an item logged during the run verifies the card' '^carded: o/alpha#5 -- First item'
+# so does a new item file
+cat > "$S/bin/claude" <<GH
+#!/bin/sh
+[ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
+cat > "$S/prompt.txt"
+echo "\$*" >> "$CLAUDE_LOG"
+printf '# new\n\n## Brief\n\n## Log\n%s feedface status=open owner=human-ruling\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$WORK_ITEM_DIR/17909850001a2b3c4d.md"
+echo '{"type":"result","total_cost_usd":0.50,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"result":"GRIND_STATUS: carded"}'
+GH
+chmod +x "$S/bin/claude"
+rm -f "$S/state/grind"/*.json
+rm -f "$WORK_ITEM_DIR/17909850001a2b3c4d.md" "$WORK_ITEM_DIR/17909840241dc56754.md"
+printf '# an old item\n\n## Brief\n\n## Log\n2001-01-01T00:00:00Z feedface status=open owner=agent\n' \
+  > "$WORK_ITEM_DIR/17909840241dc56754.md"
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+has 'an item created during the run verifies the card' '^carded: o/alpha#5 -- First item'
+unset WORK_ITEM_DIR
 
 # --- blocked: a third status, logged, recorded, not retried ---------------------
 cat > "$S/bin/claude" <<GH
@@ -995,10 +1017,11 @@ assert 'the rename-based reclaim leaves no quarantined .stale.* dir behind' \
 # card starts work), on a branch named from its bold name; only cards linking
 # this repo are queued; --kind narrows the run and --prs is --kind pr; a
 # keyless machine drops the pr kind by default but refuses it when asked; a
-# verified card leaves the board, the other card stays.
+# verified card's item is marked done (and committed in the state repo), the
+# other card's is not.
 cat > "$S/cards.json" <<'JSON'
-[{"kind":"card","section":"claudes","group":"global","text":"**alpha: tidy the widget** — the widget is untidy ([o/alpha](https://github.com/o/alpha))","name":"alpha: tidy the widget","link":"https://github.com/o/alpha","repo":"o/alpha"},
- {"kind":"card","section":"claudes","group":"global","text":"**beta: elsewhere** — not this repo ([o/beta](https://github.com/o/beta))","name":"beta: elsewhere","link":"https://github.com/o/beta","repo":"o/beta"}]
+[{"kind":"card","section":"claudes","group":"global","text":"**alpha: tidy the widget** — the widget is untidy ([o/alpha](https://github.com/o/alpha)) id: 17909840241dc56754","name":"alpha: tidy the widget","link":"https://github.com/o/alpha","repo":"o/alpha"},
+ {"kind":"card","section":"claudes","group":"global","text":"**beta: elsewhere** — not this repo ([o/beta](https://github.com/o/beta)) id: 17909840242aaaaaaa","name":"beta: elsewhere","link":"https://github.com/o/beta","repo":"o/beta"}]
 JSON
 cat > "$S/ready.json" <<'JSON'
 [
@@ -1006,10 +1029,20 @@ cat > "$S/ready.json" <<'JSON'
   {"number": 5, "title": "First item", "body": "do the first thing", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]}
 ]
 JSON
-export GRIND_BOARD="$S/kanban.md"
-printf '%s\n' "## Claude's" \
-  "- [ ] **alpha: tidy the widget** — the widget is untidy ([o/alpha](https://github.com/o/alpha))" \
-  "- [ ] **beta: elsewhere** — not this repo ([o/beta](https://github.com/o/beta))" > "$GRIND_BOARD"
+# The items are files in a state repo, as on a real machine; work-item makes
+# them, so the fixtures are the real format. The grind session is not the one
+# that created them.
+sr="$S/state-repo"; export WORK_ITEM_DIR="$sr/items"
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid
+mkdir -p "$WORK_ITEM_DIR"; "$REAL_GIT" -C "$sr" init -q
+mkitem() {  # mkitem <id> <title> <status after create: open|ready>
+  CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" create --id "$1" --repo o/alpha "$2" >/dev/null || return 1
+  [ "$3" = open ] || CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log "$1" status=ready
+}
+itemstatus() { "$GRIND_WORK_ITEM" fold "$1" | sed -n 's/^status=//p'; }
+mkitem 17909840241dc56754 'alpha: tidy the widget' ready
+mkitem 17909840242aaaaaaa 'beta: elsewhere' ready
+"$REAL_GIT" -C "$sr" add -- items && "$REAL_GIT" -C "$sr" commit -q -m fixtures
 rm -f "$S/state/grind"/*.json
 run --dry-run
 eq 'dry-run exit 0' 0 "$RC"
@@ -1026,20 +1059,8 @@ eq '--prs on a keyless machine still refuses' 1 "$RC"
 has 'and says what the pr kind needs' '^grind: the pr kind needs a signing key'
 run --dry-run --kind widget
 eq 'an unknown kind is a usage error' 2 "$RC"
-# a card that is a work item in items/ beside the board is not queued: grind
-# retires only kanban.md lines, so it would stay ready and be worked again
-cp "$S/cards.json" "$S/cards.json.orig"
-jq -c '. + [{kind:"card", section:"claudes", group:"global", text:"**gamma: an item** — in the store ([o/alpha](https://github.com/o/alpha)) id: 17909840241dc56754", name:"gamma: an item", link:"https://github.com/o/alpha", repo:"o/alpha"}]' "$S/cards.json.orig" > "$S/cards.json"
-mkdir -p "$S/items"; : > "$S/items/17909840241dc56754.md"
-run --dry-run --kind card
-has 'beside an item, the plain card is still queued' 'card:alpha-tidy-the-widget'
-lacks 'a card that is a work item is not queued' 'gamma'
-rm -rf "$S/items"
-run --dry-run --kind card
-has 'with no such item file, the same card is queued' 'gamma: an item'
-mv "$S/cards.json.orig" "$S/cards.json"
-
 rm -f "$S/state/grind"/*.json; : > "$CLAUDE_LOG"
+jq -c 'map(.url = "https://github.com/o/alpha/pull/1")' "$S/pr-list.json" > "$S/pr-list.url" && mv "$S/pr-list.url" "$S/pr-list.json"
 run --kind card --pause-every 10
 eq 'card run exit 0' 0 "$RC"
 eq 'one worker for the one card' 1 "$(calls_claude)"
@@ -1048,16 +1069,25 @@ prompt_has 'the worker gets the card verbatim' '**alpha: tidy the widget** — t
 prompt_has 'framed as a card, not an issue' 'This item is a card from the agent'
 prompt_has 'on its branch' 'grind-card-alpha-tidy-the-widget'
 has 'the done line carries the card ref' '^card:alpha-tidy-the-widget: alpha: tidy the widget -- sonnet, \$0\.10'
-assert 'the verified card left the board' bash -c '! grep -q "tidy the widget" "'"$GRIND_BOARD"'"'
-assert 'the other card is still there' grep -q 'beta: elsewhere' "$GRIND_BOARD"
-has 'and grind said so' 'INFO  removed card .alpha: tidy the widget. from'
+eq 'the verified card is a done item' 'done' "$(itemstatus 17909840241dc56754)"
+eq 'the other card is still ready' ready "$(itemstatus 17909840242aaaaaaa)"
+has 'and grind said so' "INFO  marked card .alpha: tidy the widget. done in $WORK_ITEM_DIR"
+eq 'its log reads claimed, then done, by one session' 'status=claimed status=done' \
+  "$(awk '/^## Log/ {l=1; next} l && /status=(claimed|done)/ {print $3}' "$WORK_ITEM_DIR/17909840241dc56754.md" | paste -sd' ' -)"
+assert 'and the done line cites the PR as evidence' grep -qE ' status=done evidence=https?://[^ ]+$' "$WORK_ITEM_DIR/17909840241dc56754.md"
+eq 'the done is committed in the state repo' 'grind: worked card -- alpha: tidy the widget -> https://github.com/o/alpha/pull/1' "$("$REAL_GIT" -C "$sr" log -1 --format=%s)"
+eq 'and the state repo is clean' '' "$("$REAL_GIT" -C "$sr" status --porcelain)"
+assert 'and pushed' grep -q 'push -q origin HEAD$' "$GIT_PUSH_LOG"
 eq 'the state file records the card ref' 'card:alpha-tidy-the-widget' "$(jq -r '.items[0].ref' "$(latest_session)")"
 eq 'and the kinds' card "$(jq -r '.kinds' "$(latest_session)")"
-# a card whose staged .claude/ files fail to push is UNVERIFIED and stays on
-# the board: a card removed and then left unverified would never be queued
-# again, since --resume reads the current board
-printf '%s\n' "- [ ] **alpha: tidy the widget** — the widget is untidy ([o/alpha](https://github.com/o/alpha))" >> "$GRIND_BOARD"
+# a card whose staged .claude/ files fail to push is UNVERIFIED and its item
+# stays ready: an item marked done and then left unverified would never be
+# queued again, since --resume reads the current queue
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$GIT_PUSH_LOG"
+cp "$S/cards.json" "$S/cards.json.all"
+jq -c 'map(select(.name | startswith("alpha")))' "$S/cards.json.all" > "$S/cards.json"
+rm -f "$WORK_ITEM_DIR/17909840241dc56754.md"
+mkitem 17909840241dc56754 'alpha: tidy the widget' ready
 # the shim that stages what it finds under claude-stage/<n>, as above
 cat > "$S/bin/claude" <<GH
 #!/bin/sh
@@ -1079,10 +1109,34 @@ mkdir -p "$S/claude-stage/1/hooks"
 echo 'echo staged' > "$S/claude-stage/1/hooks/example.test.sh"
 GIT_PUSH_FAIL=1 run --kind card --pause-every 10
 has 'a card with a failed staging push is UNVERIFIED' '^UNVERIFIED: card:alpha-tidy-the-widget -- alpha: tidy the widget -- worker claimed success but its staged \.claude/ files were never pushed'
-assert 'and the card is still on the board' grep -q 'tidy the widget' "$GRIND_BOARD"
-lacks 'and grind did not say it removed it' 'removed card'
+eq 'and its item is still ready' ready "$(itemstatus 17909840241dc56754)"
+lacks 'and grind did not say it marked it done' 'marked card'
 rm -rf "$S/claude-stage"
-unset GRIND_BOARD; rm -f "$S/cards.json"
+
+# an item still `open` is walked open -> ready -> claimed -> done; a card with
+# no id has no item to mark, so grind says so and the card stays queued
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+rm -f "$WORK_ITEM_DIR/17909840241dc56754.md"
+mkitem 17909840241dc56754 'alpha: tidy the widget' open
+run --kind card --pause-every 10
+eq 'an open item is retired too' 'done' "$(itemstatus 17909840241dc56754)"
+eq 'through ready and claimed' 'status=open status=ready status=claimed status=done' \
+  "$(awk '/^## Log/ {l=1; next} l && /status=/ {for (i = 3; i <= NF; i++) if ($i ~ /^status=/) print $i}' "$WORK_ITEM_DIR/17909840241dc56754.md" | paste -sd' ' -)"
+# a claim another live session holds is never taken over: the done is refused
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+rm -f "$WORK_ITEM_DIR/17909840241dc56754.md"
+mkitem 17909840241dc56754 'alpha: tidy the widget' ready
+CLAUDE_CODE_SESSION_ID=0badc0de "$GRIND_WORK_ITEM" claim 17909840241dc56754
+run --kind card --pause-every 10
+eq 'an item another session holds stays claimed' claimed "$(itemstatus 17909840241dc56754)"
+has 'and grind says to log it by hand' "WARN  could not mark card .alpha: tidy the widget. done"
+jq -c 'map(.text |= sub(" id: [0-9a-f]+$"; ""))' "$S/cards.json" > "$S/cards.json.noid"; mv "$S/cards.json.noid" "$S/cards.json"
+rm -f "$S/state/grind"/*.json
+run --kind card --pause-every 10
+has 'a card with no item id is UNVERIFIED-free but warns' 'WARN  card has no id: <item id>; nothing to mark done'
+has 'and says which card it could not retire' "could not mark card 'alpha: tidy the widget' done"
+mv "$S/cards.json.all" "$S/cards.json"
+unset WORK_ITEM_DIR GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL; rm -f "$S/cards.json"
 
 # --- --prs -------------------------------------------------------------------------
 # What matters here: only the two unfinished sections become items; every skip
