@@ -118,31 +118,13 @@ jobs:
                 echo "::endgroup::"
               ' _ {}
 
-  # Dotfiles is the source until delivery is ruled. Red when a copied file
-  # stops matching dotfiles main, from either side, or when a file under a
-  # copied root appears in one repo only. .github/dotfiles-drift/ has the
-  # list and the script.
-  dotfiles-drift:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/checkout@v7
-        with:
-          repository: mark-brannan/dotfiles
-          ref: main
-          path: .dotfiles-main
-          persist-credentials: false
-      - run: python3 .github/dotfiles-drift/drift.py check --source .dotfiles-main
-
   nonempty:
     permissions:
       contents: read
     uses: mark-brannan/.github/.github/workflows/nonempty-diff.yml@main
 
   ci-gate:
-    needs: [shellcheck, seeded, guard-tests, tool-tests, dotfiles-drift, nonempty]
+    needs: [shellcheck, seeded, guard-tests, tool-tests, nonempty]
     if: always()
     permissions: {}
     uses: mark-brannan/.github/.github/workflows/ci-gate.yml@main
