@@ -139,8 +139,11 @@
 # to ready, committing and pushing the item file each time.
 #
 # The session file ends with `.ended = {at, reason, exit}` on every way out
-# once the lock is held; reason is pause-budget, pause-outlier,
-# pause-cadence, pause-band, queue-exhausted, signal or error.
+# once the lock is held and the file exists; reason is pause-budget,
+# pause-outlier, pause-cadence, pause-band, queue-exhausted, signal or error.
+# A new session's file is created only once there is something to work, so
+# its band pause, failed fetch or empty queue leaves no file at all, and
+# pause-band is recorded only on a --resume.
 #
 # Output: one INFO line per unit of work started and finished, a heartbeat
 # every --heartbeat seconds (default 60, 0 disables) while a worker runs, WARN
