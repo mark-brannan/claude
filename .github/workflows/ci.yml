@@ -90,6 +90,7 @@ jobs:
             d=$(mktemp -d)
             ln -s "$(command -v "$impl")" "$d/awk"
             for t in hooks/issue-door.test.sh \
+                     hooks/npm-publish-auth.test.sh \
                      hooks/pr-ownership-context.test.sh; do
               echo "::group::$t under $impl"
               if AWK_PATH=$d bash "$t"; then echo "ok"; else status=1; echo "::error::$t failed under $impl"; fi
@@ -113,6 +114,7 @@ jobs:
           printf '%s\n' hooks/*.test.sh bin/*.test.sh \
             | grep -vFf <(printf '%s\n' \
                 hooks/issue-door.test.sh \
+                hooks/npm-publish-auth.test.sh \
                 hooks/pr-ownership-context.test.sh) \
             | xargs -P 4 -I{} bash -c '
                 t="$1"

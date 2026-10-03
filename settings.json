@@ -41,12 +41,9 @@
     "/home/*/CLAUDE.md",
     "/Users/*/CLAUDE.md",
     "/root/CLAUDE.md",
-    "**/dotfiles/.claude/CLAUDE.md",
-    "**/dotfiles/.claude/rules/**",
-    "**/dotfiles/.claude/worktrees/*/.claude/CLAUDE.md",
-    "**/dotfiles/.claude/worktrees/*/.claude/rules/**",
-    "/*/*/.claude/worktrees/*/.claude/CLAUDE.md",
-    "/*/*/.claude/worktrees/*/.claude/rules/**"
+    "**/claude/CLAUDE.md",
+    "**/claude/.claude/worktrees/*/CLAUDE.md",
+    "**/grind-worktrees/claude/*/CLAUDE.md"
   ],
   "disableClaudeAiConnectors": true,
   "deniedMcpServers": [
@@ -187,6 +184,17 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/no-persistent-polling.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/npm-publish-auth.sh\"; [ -f \"$h\" ] && bash \"$h\" || true",
+            "timeout": 5,
+            "statusMessage": "Checking that npm publish goes through npm-publish-bg"
           }
         ]
       },
