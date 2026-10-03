@@ -190,7 +190,15 @@ if [ "$MAX_AGE" -gt 0 ] && [ -f "$OUT" ]; then
   [ "$age" -lt "$MAX_AGE" ] && exit 0
 fi
 
-now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+# METRICS_NOW pins the engine's clock to an epoch, for tests (the cache-age and
+# local-hour reads stay on the real clock): the bedtime arms
+# compare minute-rounded times against it, so a test that reads the real clock
+# is red at some minutes of the hour and green at others.
+# Only a plain integer is taken: the value feeds shell arithmetic.
+now_ts=${METRICS_NOW:-}
+case "$now_ts" in ''|*[!0-9]*) now_ts=$(date +%s) ;; esac
+now=$(date -u -d "@$now_ts" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$now_ts" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u +%Y-%m-%dT%H:%M:%SZ)
 work_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || echo "")
 work_repo=$([ -n "$work_root" ] && basename "$work_root" || basename "$cwd")
 work_branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -236,8 +244,6 @@ mkdir -p "${OUT%/*}" 2>/dev/null || exit 0
 # kept its own break timer alive simply by being drawn. A clock the display
 # winds is not measuring the user. It is gone, and with it break_nag in
 # lib-metrics-fmt.jq -- the sitting clock is the only sitting clock now.
-now_ts=$(date +%s)
-
 merged=$(printf '%s\n' "$metrics" | jq -c \
   --arg ev "$EVENT" --arg now "$now" \
   --argjson d "${dirty:-0}" --argjson u "${unpushed:-0}" --argjson c "${ncommits:-0}" \
@@ -557,7 +563,7 @@ bed_resolve() {  # bed_resolve <hour> <minute>
 # meal window, then the daylight left), the list second.
 sit_tail() {
   local h w lo hi left
-  h=$(date +%H); h=$((10#$h))
+  h=$(date -d "@$now_ts" +%H 2>/dev/null || date -r "$now_ts" +%H); h=$((10#$h))
   for w in $NAG_MEAL_WINDOWS; do
     lo=${w%-*}; hi=${w#*-}
     if [ "$h" -ge "$lo" ] && [ "$h" -lt "$hi" ]; then
