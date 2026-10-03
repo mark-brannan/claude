@@ -59,7 +59,7 @@ state/global/curia/<id>/
   roll.md     the user's words: append-only, one stamped entry per prompt, written by a hook
   digest.md   the document: where it stands, decided, open questions
   LIVE        the last sitting's session id and ISO timestamp; closing leaves it
-  agent-notes.md the agent's own notes, for the next agent: free rein, any format
+  agent-notes.md the agent's working memory and trace, for the next agent (see Agent notes)
   inputs/     read-only side products: spikes, side-chat pastes, subagent reports
 ```
 
@@ -151,8 +151,50 @@ gate 4 that touch it, ids only; lint keeps it derived from then on — and
 commit. That placeholder is the
 whole opening; the first sitting does the rest. Say the id in the opening
 session's record.
-Also create `agent-notes.md` and use this for salient thinking or memory
-that you want to share across sessions with future agents.
+Also create `agent-notes.md` from the header in
+[forms/agent-notes.md](forms/agent-notes.md).
+
+## Form
+
+A curia starts open-ended. [template.md](template.md) seeds one open
+question, *what form does this curia need to take?*, with the forms the
+skill can offer, and nothing else. **The user directs the early sittings.**
+The agent never forces a form: it proposes one only when the dialogue has
+taken a shape it is confident matches one, says which and why in one
+line, and waits for the word. A form, once the user chooses it, adds its
+sections to `digest.md` from its file under [forms/](forms/):
+
+| Form | Ancestor | Fits when |
+|---|---|---|
+| working-backwards | Amazon PR/FAQ; Covey's "begin with the end in mind" | the end state is felt but unwritten |
+| problem-then-solution | the design doc's diagnosis-then-design | the pain is clear, the fix is not |
+| bdd | behaviour-driven development, given/when/then | behaviour is the contract |
+| mvp-and-narrative | lean startup's MVP, plus its story | the user wants to test by using |
+| success-metric | OKR / North Star metric | the measure is the hard part |
+
+A curia may mix forms, and may change them; the user says which. Each
+choice is a dated Decided line with its reference, and a change is a new
+line naming the one it replaces. A dropped form's sections leave
+`digest.md` with it; what they held that still earns its place moves to
+**Decided** or **Open questions**, and lint shows the move: a reversal is
+a finding, not an error.
+
+A section's `<!-- -->` comment is a rule or a prompt. A rule says how the
+section is kept (*Derived; rewritten in place…*) and stays. A prompt says
+what to write (*One number, how it is measured…*) and is replaced by its
+answer the first time the section is written.
+
+## Agent notes
+
+`agent-notes.md` is the agent's extended memory for the curia, read in
+full at every opening, with two parts. **Working memory**: at most 60
+lines, rewritten at every close, holding what the next agent must know
+before the first question: live traps, the user's leanings not yet ruled,
+what not to re-ask. **Trace**: newest first, one entry per sitting, a few
+lines each, pruned by lint once an entry stops earning its place. Both
+point to roll stamps, inputs and commits, never copy them. Not here: the
+user's words (`roll.md`), rulings (`digest.md`), reports (`inputs/`).
+`state/global/curia/one-entry-point/agent-notes.md` is the worked example.
 
 If a session finds itself past gate 1 with a folder it created, the fix
 is not to delete it but to fold it into an open curia: its files into that

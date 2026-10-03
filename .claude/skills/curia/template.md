@@ -38,6 +38,12 @@ Not yet sat. The first sitting reads the origin and opens the dialogue at
 <!-- Derived; rewritten in place. Numbered across sessions — numbering
      continues, never restarts. Each by concept and domain word. -->
 
+1. **What form does this curia need to take?** Open-ended until the user
+   says, or the dialogue takes a shape the agent is confident matches one
+   (SKILL.md, Form): working-backwards, problem-then-solution, bdd,
+   mvp-and-narrative, success-metric, or a mix. The user may change it
+   later.
+
 ## Notes and inputs
 
 <!-- A link the moment a side product lands: agent-notes.md, inputs/. -->
