@@ -224,8 +224,11 @@ the fold as a unilateral call.
    sub-agents of its own) checks the derived sections for contradictions,
    stale claims and orphan terms, and reports overlap with the other open
    curiae from step 0 — a question this one shares with another — from
-   which this session rewrites `related:`. It proposes quotes to pull and
-   prune under the rule above. Only its list enters this
+   which this session rewrites `related:`. It reads every `roll.md`
+   entry after the last words that **Where this stands** cites, and any
+   input quoting the user verbatim, and proposes quotes to pull and
+   prune under the rule above: a ruling, a lean, a correction or a
+   reopening with no line citing it is a pull. Only its list enters this
    context. Lint is toil: apply the mechanical fixes and show the diff
    for the record; beside it, size from `wc -lw`, one line per file —
    the document step 1 read, and `agent-notes.md` — before
