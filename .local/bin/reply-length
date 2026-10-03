@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+# reply-length: how long Claude's replies are, how long the user takes to
+# answer, and how often they ask for clarification. Read-only.
+#
+# For each interactive main-thread session modified in the last DAYS days
+# (default 28), pair the assistant's final text of a turn with the user's next
+# real prompt, then print three reports over those pairs:
+#   buckets  clarification/friction rate and reply delay by reply word count
+#   slope    implied reading speed between buckets, plus two-proportion tests
+#   (header) the reply-length quartiles
+#
+# Usage: reply-length [--days N] [--key prose|total|table|code] [--dump FILE]
+#        --key sets the count the buckets report sorts by; slope always uses prose.
+# Env:   DAYS             default for --days
+#        CLAUDE_PROJECTS  transcripts glob root   (default ~/.claude/projects)
+#        FRICTION_DIR     friction *.jsonl dir    (optional; friction column
+#                                                 is 0 when absent)
+# --dump writes one row per pair (with 300/200-char reply/prompt excerpts) to
+# FILE; the printed reports carry no excerpts, ids or paths.
+import argparse, glob, json, math, os, re, statistics as st, sys, time
+from datetime import datetime
+
+HUMAN_EP = {"claude-desktop", "cli", "claude-vscode", "claude-code"}
+NONPROMPT = ("<task-notification", "<system-reminder", "<local-command",
+             "Caveat:", "[Request interrupted")
+CLAR = re.compile(r"""(\bwhat (is|are|does|do|was|were)\b(?! (next|left|the plan|the status))|
+    what do you mean|what does (that|this|it) mean|\bi don'?t (follow|understand|get it|know what)|
+    \bconfus|\bexplain|\bin plain (words|english)|\bplain words|\btl;?dr\b|too long|\bwhich (one|pr|file|card)\b|
+    \bwhy (did|is|are|does|do|would)\b|\bmeaning\b|\bwhat'?s (that|this|a|an)\b|\bhuh\b|\?\?|
+    \bcontext\b|\bwhat\?|\bunclear\b|\bshorthand\b|\bjargon\b|\bdecode\b)""", re.I | re.X)
+STRICT = re.compile(r"(what (do you|does (that|this|it)) mean|\bi don'?t (follow|understand)|\bin plain (words|english)|"
+                    r"\bplain words|\btl;?dr\b|too long|\bconfus|\bwhat is [`'\"]?[A-Za-z_#.-]+[`'\"]?\s*\?|"
+                    r"what('?s| is| are) (that|this|these|those)\b|\bjargon\b|\bshorthand\b|\bexplain\b)", re.I)
+SLOP = re.compile(r"\b(too long|tl;?dr|slop|wall of text|shorter|fewer words|too many words|stop reading|didn'?t read)\b", re.I)
+
+CAP = 600        # gaps over 10 min: walked away, excluded from gap stats
+TYPE_S = 1.5     # assumed seconds per typed word (~40 wpm); inference
+EDGES = [0, 25, 50, 75, 100, 150, 200, 300, 500, 10**6]
+
+
+def ts(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
+
+def words(t):
+    return len(re.findall(r"[A-Za-z0-9][\w'’./#:-]*", t))
+
+
+def split_text(t):
+    """Return (prose_words, table_words, code_words)."""
+    prose, table, code = [], [], []
+    inblock = False
+    for line in t.splitlines():
+        if line.strip().startswith("```"):
+            inblock = not inblock
+            continue
+        if inblock:
+            code.append(line)
+        elif line.lstrip().startswith("|"):
+            table.append(line)
+        else:
+            prose.append(line)
+    return words("\n".join(prose)), words("\n".join(table)), words("\n".join(code))
+
+
+def prompt_text(rec):
+    if rec.get("type") != "user" or rec.get("isMeta") or rec.get("isSidechain"):
+        return None
+    c = rec.get("message", {}).get("content")
+    if isinstance(c, list):
+        if any(b.get("type") == "tool_result" for b in c if isinstance(b, dict)):
+            return None
+        c = "\n".join(b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text")
+    if not isinstance(c, str) or not c.strip():
+        return None
+    s = c.lstrip()
+    if s.startswith(NONPROMPT):
+        return None
+    if s.startswith("<command-"):
+        m = re.search(r"<command-args>(.*?)</command-args>", s, re.S)
+        n = re.search(r"<command-name>(.*?)</command-name>", s, re.S)
+        return "SLASH " + (n.group(1) if n else "") + " " + (m.group(1) if m else "")
+    return c
+
+
+def load_friction(d):
+    f = {}
+    for p in glob.glob(os.path.join(d, "*.jsonl")) if d else []:
+        with open(p, errors="replace") as fh:
+            for line in fh:
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if r.get("retracted") or not r.get("session_id"):
+                    continue
+                f.setdefault(r["session_id"], []).append((r.get("excerpt") or "")[:40].strip())
+    return f
+
+
+def collect(days, root, fric_dir):
+    cutoff = time.time() - days * 86400
+    fric = load_friction(fric_dir)
+    files = [p for p in glob.glob(os.path.join(root, "*", "*.jsonl")) if os.path.getmtime(p) >= cutoff]
+    pairs = []
+    for p in files:
+        sid = os.path.basename(p)[:-6]
+        recs, human = [], False
+        with open(p, errors="replace") as fh:
+            for line in fh:
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if r.get("entrypoint") in HUMAN_EP and r.get("type") == "user":
+                    human = True
+                recs.append(r)
+        if not human:
+            continue
+        last_text, last_ts, turn_text, after_tool = None, None, [], False
+        held, held_ts = None, None
+        for r in recs:
+            if r.get("isSidechain"):
+                continue
+            t = r.get("type")
+            if t == "assistant":
+                c = r.get("message", {}).get("content") or []
+                for b in c if isinstance(c, list) else []:
+                    if b.get("type") == "text" and b.get("text", "").strip():
+                        if after_tool:
+                            turn_text, after_tool = [], False
+                        turn_text.append(b["text"])
+                        last_ts = r.get("timestamp")
+                    elif b.get("type") == "tool_use":
+                        after_tool = True
+                if turn_text:
+                    last_text = "\n".join(turn_text)
+                continue
+            if t == "user" and r.get("isMeta"):
+                c = r.get("message", {}).get("content")
+                if isinstance(c, str) and c.startswith("Stop hook feedback"):
+                    if last_text and not after_tool:
+                        held = (held + "\n" if held else "") + last_text
+                        held_ts = held_ts or last_ts
+                    last_text, turn_text, after_tool = None, [], False
+                    continue
+            pt = prompt_text(r)
+            if pt is None:
+                continue
+            if held:
+                last_text = held + ("\n" + last_text if last_text and not after_tool else "")
+                last_ts = last_ts if (last_ts and not after_tool) else held_ts
+                after_tool = False
+            try:  # one malformed timestamp skips its pair, not the report
+                now = ts(r["timestamp"]) if last_text and last_ts and not after_tool else None
+                first = ts(held_ts or last_ts) if now is not None else None
+            except (KeyError, TypeError, ValueError):
+                now = None
+            if now is not None:
+                pw, tw, cw = split_text(last_text)
+                slash = pt.startswith("SLASH")
+                pairs.append({
+                    "gap": now - ts(last_ts),
+                    "prose": pw, "table": tw, "code": cw, "total": pw + tw + cw,
+                    "slash": slash,
+                    "clar": bool(CLAR.search(pt)) and not slash,
+                    "strict": bool(STRICT.search(pt)),
+                    "slop": bool(SLOP.search(pt)),
+                    "fric": any(e and e[:30] in pt for e in fric.get(sid, [])),
+                    "plen": words(pt), "hooked": bool(held),
+                    "gap_from_first": now - first,
+                    "ts": last_ts, "reply": last_text[:300], "prompt": pt[:200]})
+            last_text, last_ts, turn_text, after_tool = None, None, [], False
+            held, held_ts = None, None
+    return len(files), pairs
+
+
+def buckets(P, key):
+    vals = sorted(p[key] for p in P)
+    q = lambda f: vals[int(f * (len(vals) - 1))]
+    print(f"n={len(P)} key={key} quartiles p25={q(.25)} p50={q(.5)} p75={q(.75)} p90={q(.9)} "
+          f"share<=50: {sum(v <= 50 for v in vals)/len(vals):.0%}  share<=75: {sum(v <= 75 for v in vals)/len(vals):.0%}")
+    print(f"{'bucket':>9} {'n':>5} {'n<10m':>5} {'medGap':>6} {'medAdj':>6} {'read360':>7} {'clar%':>6} {'strict%':>7} {'fric%':>6} {'slop%':>5}")
+    for lo, hi in zip(EDGES, EDGES[1:]):
+        b = [p for p in P if lo <= p[key] < hi]
+        if not b:
+            continue
+        g = [p for p in b if p["gap"] <= CAP]
+        mg = st.median(p["gap"] for p in g) if g else 0
+        ma = st.median(max(0, p["gap"] - TYPE_S * p["plen"]) for p in g) if g else 0
+        mid = st.median(p[key] for p in b)
+        pct = lambda k: 100 * sum(p[k] for p in b) / len(b)
+        lab = f"{lo}-{hi-1}" if hi < 10**6 else f"{lo}+"
+        print(f"{lab:>9} {len(b):>5} {len(g):>5} {mg:>6.0f} {ma:>6.0f} {mid/6:>7.0f} "
+              f"{pct('clar'):>6.1f} {pct('strict'):>7.1f} {pct('fric'):>6.1f} {pct('slop'):>5.1f}")
+
+
+def wilson(k, n, z=1.96):
+    ph = k / n
+    d = 1 + z * z / n
+    c = (ph + z * z / (2 * n)) / d
+    h = z * math.sqrt(ph * (1 - ph) / n + z * z / (4 * n * n)) / d
+    return f"{100*ph:4.1f}% [{100*(c-h):.1f},{100*(c+h):.1f}]"
+
+
+def ztest(a, b, k):
+    if not a or not b:
+        return "n/a (empty group)"
+    n1, n2 = len(a), len(b)
+    p1 = sum(x[k] for x in a) / n1
+    p2 = sum(x[k] for x in b) / n2
+    pp = (p1 * n1 + p2 * n2) / (n1 + n2)
+    se = math.sqrt(pp * (1 - pp) * (1 / n1 + 1 / n2))
+    if se == 0:
+        return f"{100*p1:.1f}% (n={n1}) vs {100*p2:.1f}% (n={n2}) z=n/a"
+    zz = (p1 - p2) / se
+    return (f"{100*p1:.1f}% (n={n1}) vs {100*p2:.1f}% (n={n2}) "
+            f"z={zz:.2f} p={math.erfc(abs(zz)/math.sqrt(2)):.3f}")
+
+
+def slope(P):
+    for name, sel, gk in [("unhooked", lambda p: not p["hooked"], "gap"),
+                          ("hooked, gap from main reply", lambda p: p["hooked"], "gap_from_first")]:
+        S = [p for p in P if sel(p)]
+        print(f"== {name} {len(S)}")
+        prev = None
+        for lo, hi in zip(EDGES, EDGES[1:]):
+            b = [p for p in S if lo <= p["prose"] < hi]
+            g = [max(0, p[gk] - TYPE_S * p["plen"]) for p in b if 0 <= p[gk] <= CAP]
+            if len(g) < 10:
+                continue
+            mw, ma = st.median(p["prose"] for p in b), st.median(g)
+            wpm = "" if prev is None or ma <= prev[1] else f"{60*(mw-prev[0])/(ma-prev[1]):.0f}wpm"
+            print(f"  {lo}-{hi}: n={len(b)} medAdj={ma:.0f}s read360={mw/6:.0f}s {wpm}  "
+                  f"clar {wilson(sum(p['clar'] for p in b), len(b))} fric {wilson(sum(p['fric'] for p in b), len(b))}")
+            prev = (mw, ma)
+    U = [p for p in P if not p["hooked"]]
+    r = lambda lo, hi: [p for p in U if lo <= p["prose"] < hi]
+    print("clar <50 vs 50-200 ", ztest(r(0, 50), r(50, 200), "clar"))
+    print("clar 200+ vs 50-200", ztest(r(200, 10**6), r(50, 200), "clar"))
+    print("fric <50 vs 50-200 ", ztest(r(0, 50), r(50, 200), "fric"))
+    print("fric 200+ vs 50-200", ztest(r(200, 10**6), r(50, 200), "fric"))
+    for lo, hi in [(50, 200), (200, 10**6)]:
+        b = r(lo, hi)
+        print(f"table vs none, prose {lo}-{hi}: clar",
+              ztest([p for p in b if p["table"] > 0], [p for p in b if p["table"] == 0], "clar"))
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Reply length vs. the user's next move.")
+    ap.add_argument("--days", type=int, default=int(os.environ.get("DAYS", 28)))
+    ap.add_argument("--key", default="prose", choices=["prose", "total", "table", "code"])
+    ap.add_argument("--dump", metavar="FILE", help="write one JSON row per pair to FILE")
+    a = ap.parse_args()
+    root = os.path.expanduser(os.environ.get("CLAUDE_PROJECTS", "~/.claude/projects"))
+    fric = os.path.expanduser(os.environ.get("FRICTION_DIR", ""))
+    nfiles, pairs = collect(a.days, root, fric)
+    if a.dump:
+        with os.fdopen(os.open(a.dump, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            for p in pairs:
+                f.write(json.dumps(p) + "\n")
+    P = [p for p in pairs if not p["slash"] and p["gap"] >= 0]
+    print(f"files={nfiles} pairs={len(pairs)} days={a.days}")
+    if not P:
+        print("no pairs: nothing to report")
+        return 0
+    print("\n## buckets")
+    buckets(P, a.key)
+    print("\n## slope")
+    slope(P)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

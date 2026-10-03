@@ -1,0 +1,192 @@
+# The Claude layer as copied from mark-brannan/dotfiles, at the same paths.
+# drift.py (beside this file) reads it; see its docstring for what is red.
+#
+#   root <dir/>   every tracked file under it, in either repo, is listed below
+#   copy <path>   in both repos, byte for byte equal to dotfiles main
+#   skip <path>   on dotfiles main under a root, deliberately not copied
+#   own  <path>   only in this repo, under a root
+#
+# Not copied, and outside the roots so not checked:
+#   .github/workflows/claude-code-review.yml   this repo has its own brief
+#   .github/workflows/claude-config-action-smoke.yml   seeds dotfiles at the
+#       pull request's own head SHA, which exists only in dotfiles
+#   .github/workflows/churn-guard.yml   dotfiles' own churn budget
+#   ci.yml jobs shellcheck, seeded, guard-tests, tool-tests: ported into this
+#       repo's ci.yml, minus what tests dotfiles alone
+
+root .claude/
+root .local/bin/
+root .config/systemd/user/
+root .github/actions/claude-config/
+root docs/
+
+# The four guards coupled to dotfiles, held for hook-guards-strategy
+# question 4. settings.json, copied as is, still names them.
+skip .claude/hooks/no-checkout-home.sh
+skip .claude/hooks/no-checkout-home.test.sh
+skip .claude/hooks/no-foreign-worktree.sh
+skip .claude/hooks/no-foreign-worktree.test.sh
+skip .claude/hooks/prose-budget-commit.sh
+skip .claude/hooks/prose-budget-commit.test.sh
+skip .claude/hooks/public-issue-guard.sh
+skip .claude/hooks/public-issue-guard.test.sh
+
+# Machine tooling that stays in dotfiles (dotfiles-split curia, question 3).
+skip .local/bin/.keep
+skip .local/bin/dotfiles-add-secret.sh
+skip .local/bin/dotfiles-sync.sh
+skip .local/bin/dotfiles-triage.sh
+skip .local/bin/myrebase.sh
+skip .local/bin/repo_release_please_app_vars.sh
+skip .local/bin/yadm-post-checkout.sh
+skip .local/bin/yadm-post-checkout.test.sh
+
+# Dotfiles' own repo docs, not the layer's.
+skip docs/budgets.json
+skip docs/decisions.md
+
+# Copied: hooks, skills, settings.json, standing orders and rules, the Claude
+# runbook and docs, cloud setup, the bin tooling and its tests, grind and
+# languette-step-two units, the claude-config action.
+copy .claude/CLAUDE.md
+copy .claude/RUNBOOK.md
+copy .claude/cloud-setup.sh
+copy .claude/docs/config-sync-strategy.md
+copy .claude/docs/cost-practices.md
+copy .claude/docs/token-budget.md
+copy .claude/docs/trust-anchor-tradeoff.md
+copy .claude/hooks/abandon-branch.sh
+copy .claude/hooks/abandon-branch.test.sh
+copy .claude/hooks/branch-brief.test.sh
+copy .claude/hooks/branch-home-gate.sh
+copy .claude/hooks/branch-home-gate.test.sh
+copy .claude/hooks/claim-stamp.sh
+copy .claude/hooks/claim-stamp.test.sh
+copy .claude/hooks/connector-budget.sh
+copy .claude/hooks/curia-roll.py
+copy .claude/hooks/curia-roll.test.py
+copy .claude/hooks/fixtures/friction-blocked.jsonl
+copy .claude/hooks/fixtures/friction-calm.jsonl
+copy .claude/hooks/fixtures/friction-contentious.jsonl
+copy .claude/hooks/fixtures/gen-friction-fixtures.py
+copy .claude/hooks/guard-add-repo.sh
+copy .claude/hooks/issue-door.sh
+copy .claude/hooks/issue-door.test.sh
+copy .claude/hooks/kanban-gate.sh
+copy .claude/hooks/lib-metrics-fmt.jq
+copy .claude/hooks/lib-metrics-test-harness.sh
+copy .claude/hooks/lib-shell-words.awk
+copy .claude/hooks/lib-state.sh
+copy .claude/hooks/lib-state.test.sh
+copy .claude/hooks/lib_state.py
+copy .claude/hooks/local-config-push.sh
+copy .claude/hooks/local-config-push.test.sh
+copy .claude/hooks/log-commit.sh
+copy .claude/hooks/measure-git-events.sh
+copy .claude/hooks/metrics-format.sh
+copy .claude/hooks/metrics-format.test.sh
+copy .claude/hooks/metrics-live-requirements.md
+copy .claude/hooks/metrics-live.examples.sh
+copy .claude/hooks/metrics-live.sh
+copy .claude/hooks/metrics-live.test.sh
+copy .claude/hooks/metrics-rollup.sh
+copy .claude/hooks/no-late-pr-subscribe.sh
+copy .claude/hooks/no-persistent-polling.sh
+copy .claude/hooks/no-persistent-polling.test.sh
+copy .claude/hooks/no-prose-gate.sh
+copy .claude/hooks/no-prose-gate.test.sh
+copy .claude/hooks/no-unsigned-push.sh
+copy .claude/hooks/no-unsigned-push.test.sh
+copy .claude/hooks/no-update-branch.sh
+copy .claude/hooks/no-update-branch.test.sh
+copy .claude/hooks/pr-ownership-context.sh
+copy .claude/hooks/pr-ownership-context.test.sh
+copy .claude/hooks/pr-threads-gate.sh
+copy .claude/hooks/pr-threads-gate.test.sh
+copy .claude/hooks/prose-budget-edit.sh
+copy .claude/hooks/prose-budget-edit.test.sh
+copy .claude/hooks/session-metrics.jq
+copy .claude/hooks/session-metrics.test.sh
+copy .claude/hooks/session-start-continuity.sh
+copy .claude/hooks/session-start-continuity.test.sh
+copy .claude/hooks/session-start-seed-refresh.sh
+copy .claude/hooks/statusline-metrics.sh
+copy .claude/hooks/stop-continuity-requirements.md
+copy .claude/hooks/stop-continuity.sh
+copy .claude/hooks/stop-continuity.test.sh
+copy .claude/hooks/stop-sequence.py
+copy .claude/hooks/stop-sequence.test.py
+copy .claude/rules/code.md
+copy .claude/rules/writing.md
+copy .claude/settings.json
+copy .claude/skills/agora/SKILL.md
+copy .claude/skills/agora/brief.md
+copy .claude/skills/arete-check/SKILL.md
+copy .claude/skills/arete-check/areas.md
+copy .claude/skills/card-helper/SKILL.md
+copy .claude/skills/card-write/SKILL.md
+copy .claude/skills/critical-review/SKILL.md
+copy .claude/skills/curia/SKILL.md
+copy .claude/skills/curia/forms/agent-notes.md
+copy .claude/skills/curia/forms/bdd.md
+copy .claude/skills/curia/forms/mvp-and-narrative.md
+copy .claude/skills/curia/forms/problem-then-solution.md
+copy .claude/skills/curia/forms/success-metric.md
+copy .claude/skills/curia/forms/working-backwards.md
+copy .claude/skills/curia/template.md
+copy .claude/skills/doc-settledness-check/SKILL.md
+copy .claude/skills/doc-settledness-check/rubric.md
+copy .claude/skills/iada/SKILL.md
+copy .claude/skills/npm-first-publish/SKILL.md
+copy .claude/skills/orchestrate/SKILL.md
+copy .claude/skills/pickup/SKILL.md
+copy .claude/skills/reconcile/SKILL.md
+copy .claude/skills/scoping/SKILL.md
+copy .claude/skills/sweep/SKILL.md
+copy .claude/skills/worklist/SKILL.md
+copy .claude/skills/wrapup/SKILL.md
+copy .config/systemd/user/grind-prs@.service
+copy .config/systemd/user/grind-prs@.timer
+copy .config/systemd/user/languette-step-two.service
+copy .config/systemd/user/languette-step-two.timer
+copy .github/actions/claude-config/action.yml
+copy .local/bin/card-id
+copy .local/bin/card-id.test.sh
+copy .local/bin/cloud-session-setup-tailscale.sh
+copy .local/bin/cloud-session-setup.sh
+copy .local/bin/create-pr-labels.sh
+copy .local/bin/gh-resolve-thread
+copy .local/bin/gh-resolve-thread.test.sh
+copy .local/bin/github-limits
+copy .local/bin/github-limits.test.py
+copy .local/bin/grind
+copy .local/bin/grind.test.sh
+copy .local/bin/languette-step-two
+copy .local/bin/languette-step-two-ready
+copy .local/bin/languette-step-two-ready.test.py
+copy .local/bin/languette-step-two.test.py
+copy .local/bin/mark-as-churn-ok.sh
+copy .local/bin/metrics-breakdown.sh
+copy .local/bin/metrics-preview.sh
+copy .local/bin/pickup-list
+copy .local/bin/pickup-list.test.sh
+copy .local/bin/pr-label-audit
+copy .local/bin/pr-label-audit.test.sh
+copy .local/bin/prose-budget
+copy .local/bin/prose-budget.test.py
+copy .local/bin/prune-branches
+copy .local/bin/prune-branches.test.sh
+copy .local/bin/prune-wip-refs
+copy .local/bin/prune-wip-refs.test.sh
+copy .local/bin/reply-length
+copy .local/bin/resign-branch.sh
+copy .local/bin/resign-branch.test.sh
+copy .local/bin/scoping-lock
+copy .local/bin/scoping-lock.test.py
+copy .local/bin/work-item
+copy .local/bin/work-item.test.py
+copy .local/bin/worklist
+copy .local/bin/worklist.live.sh
+copy .local/bin/worklist.test.sh
+copy docs/references.md
+copy docs/work-item-lifecycle.md

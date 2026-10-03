@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+# github-limits: measure a repo against the limits GitHub documents, so
+# "well within" is a number rather than a feeling.
+#
+# Each row is one measurement beside the documented limit it mirrors, the
+# share of that limit used, and a status: ok under 50%, warn from 50%,
+# over at 100%. Limits are GitHub's recommendations unless the row says
+# "hard"; sources:
+#   docs.github.com/en/repositories/creating-and-managing-repositories/repository-limits
+#   docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github
+#   docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+#
+# Usage: github-limits [REPO_DIR] [--offline] [--json]
+#
+# REPO_DIR defaults to $CLAUDE_STATE_REPO; one or the other is required. --offline skips the three
+# `gh api` calls (repo size, push activity, rate limit); rate_limit itself
+# costs no quota. Exit 1 when any row is over, 0 otherwise, 2 on usage,
+# 3 when git or gh fails (no network, not logged in, not a repo).
+# Python 3 stdlib only; on PATH from dotfiles.
+import argparse
+import collections
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+
+MIB = 1024 * 1024
+WARN, OVER = 0.5, 1.0
+
+
+def git(repo, *args):
+    return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True).stdout
+
+
+def gh_json(path, paginate=False):
+    cmd = ["gh", "api", path] + (["--paginate"] if paginate else [])
+    out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
+    # --paginate concatenates one JSON array per page.
+    return json.loads("[" + re.sub(r"\]\s*\[", "],[", out) + "]") if paginate else json.loads(out)
+
+
+def widest_dir(paths):
+    """(entries, dir) for the directory with the most direct children, files and subdirectories both."""
+    children = collections.defaultdict(set)
+    for p in paths:
+        parts = p.split("/")
+        for i in range(len(parts)):
+            children["/".join(parts[:i]) or "."].add(parts[i])
+    d, kids = max(children.items(), key=lambda kv: len(kv[1]), default=(".", set()))
+    return len(kids), d
+
+
+def deepest(paths):
+    return max((p.count("/") for p in paths), default=0)
+
+
+def peak_per_minute(timestamps):
+    """(count, minute) of the busiest calendar minute among ISO-8601 timestamps."""
+    c = collections.Counter(t[:16] for t in timestamps)
+    return max(((n, m) for m, n in c.items()), default=(0, "-"))
+
+
+def status(value, limit):
+    if limit is None:
+        return "info"
+    share = value / limit
+    return "over" if share >= OVER else "warn" if share >= WARN else "ok"
+
+
+def row(metric, value, limit, unit="", note=""):
+    return {"metric": metric, "value": value, "limit": limit, "unit": unit,
+            "used": None if limit is None else round(value / limit, 3),
+            "status": status(value, limit), "note": note}
+
+
+def local_rows(repo):
+    paths = git(repo, "ls-tree", "-r", "--name-only", "HEAD").splitlines()
+    blobs = [l.split(None, 4) for l in git(repo, "ls-tree", "-r", "-l", "HEAD").splitlines()]
+    size, biggest = max(((int(b[3]), b[4]) for b in blobs if b[3] != "-"), default=(0, "-"))
+    width, wdir = widest_dir(paths)
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    commits_day = int(git(repo, "rev-list", "--count", f"--since={since}", "HEAD"))
+    # Remote-tracking refs, not ls-remote, so --offline stays off the network.
+    heads = sum(1 for l in git(repo, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/").splitlines()
+                if l != "refs/remotes/origin/HEAD")
+    co = dict(l.split(": ", 1) for l in git(repo, "count-objects", "-v").splitlines())
+    pack = (int(co["size-pack"]) + int(co["size"])) * 1024
+    return [
+        row("largest file", round(size / MIB, 1), 50, "MiB", f"{biggest}; hard block at 100 MiB"),
+        row("widest directory", width, 3000, "entries", wdir),
+        row("deepest path", deepest(paths), 50, "levels"),
+        row("tracked files", len(paths), None),
+        row("remote branches", heads, 5000),
+        row("commits, last 24 h", commits_day, None, "", "no documented limit"),
+        row("commits on HEAD", int(git(repo, "rev-list", "--count", "HEAD")), None, "",
+            "Commits tab lists 10,000; display only"),
+        row("local objects", round(pack / MIB, 1), 1024, "MiB", "packed + loose; 1 GB recommended"),
+    ]
+
+
+def slug(repo):
+    url = git(repo, "remote", "get-url", "origin").strip()
+    m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", url)
+    if not m:
+        raise ValueError(f"origin is not a GitHub remote: {url}")
+    return m.group(1)
+
+
+def remote_rows(repo):
+    s = slug(repo)
+    kb = gh_json(f"repos/{s}")["size"]
+    pages = gh_json(f"repos/{s}/activity?activity_type=push&time_period=day&per_page=100", paginate=True)
+    stamps = [a["timestamp"] for page in pages for a in page]
+    peak, minute = peak_per_minute(stamps)
+    rl = gh_json("rate_limit")["resources"]
+    rows = [
+        row("size on GitHub", round(kb / 1024, 1), 1024, "MiB", "1 GB recommended, 5 GB strongly"),
+        row("peak pushes in a minute, 24 h", peak, 6, "", f"{minute}Z; all machines"),
+        row("pushes, last 24 h", len(stamps), None, "", "no documented limit"),
+    ]
+    for name in ("core", "graphql", "search"):
+        r = rl[name]
+        rows.append(row(f"API {name} used this window", r["used"], r["limit"], "", "hard; per user, all machines"))
+    return rows
+
+
+def render(rows):
+    mark = {"ok": " ", "warn": "!", "over": "X", "info": " "}
+    w = max(len(r["metric"]) for r in rows)
+    out = []
+    for r in rows:
+        lim = "-" if r["limit"] is None else f"{r['limit']:,}"
+        pct = "" if r["used"] is None else f"{r['used']:.0%}"
+        out.append(f"{mark[r['status']]} {r['metric']:<{w}}  {r['value']:>10,} / {lim:<6} {r['unit']:<7} {pct:>5}  {r['note']}".rstrip())
+    return "\n".join(out)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="github-limits")
+    ap.add_argument("repo", nargs="?", default=os.environ.get("CLAUDE_STATE_REPO"))
+    ap.add_argument("--offline", action="store_true", help="skip gh api calls")
+    ap.add_argument("--json", action="store_true", help="one JSON object, for logging")
+    a = ap.parse_args(argv)
+    if not a.repo:
+        ap.error("give REPO_DIR or set CLAUDE_STATE_REPO")
+    try:
+        rows = local_rows(a.repo) + ([] if a.offline else remote_rows(a.repo))
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError) as e:
+        detail = getattr(e, "stderr", None) or str(e)
+        print(f"github-limits: could not measure: {detail.strip().splitlines()[-1] if detail.strip() else e}", file=sys.stderr)
+        return 3
+    if a.json:
+        print(json.dumps({"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": rows}))
+    else:
+        print(render(rows))
+    return 1 if any(r["status"] == "over" for r in rows) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
