@@ -55,6 +55,8 @@ target_cwd=$cwd
 # used to pick that up). `cd -` has no way to resolve OLDPWD from here, so it
 # is left unhandled rather than guessed.
 leading_cd=$(printf '%s' "$cmd" | grep -oE '^[[:space:]]*cd[[:space:]]+[^;&]*' | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]*(&&.*)?$//; s/^["'"'"']//; s/["'"'"']$//')
+# shellcheck disable=SC2088,SC2016  # matching the literal text "~" / "$HOME"
+# from the push command, not expanding this script's own tilde or variable.
 case $leading_cd in
   '-') leading_cd='' ;;
   '~') leading_cd=$HOME ;;
