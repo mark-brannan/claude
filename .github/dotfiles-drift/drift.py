@@ -73,7 +73,6 @@ ADAPT = {
         ("parents[2]", "parents[1]"),
         ('REPO / ".local/bin/languette-step-two"', 'REPO / "bin/languette-step-two"'),
     ],
-    ".claude/hooks/local-config-push.test.sh": [('"$d/.local/bin', '"$d/.claude/bin')],
 }
 
 
