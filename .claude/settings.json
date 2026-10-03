@@ -27,8 +27,7 @@
       "Bash(yadm log *)",
       "Bash(resign-branch.sh *)",
       "Bash(~/.local/bin/card-id *)",
-      "Bash(~/.local/bin/resign-branch.sh *)",
-      "mcp__Claude_Code_Remote__add_repo"
+      "Bash(~/.local/bin/resign-branch.sh *)"
     ],
     "deny": [
       "Bash(git reset --hard:*)"
@@ -162,7 +161,7 @@
         ]
       },
       {
-        "matcher": "mcp__Claude_Code_Remote__add_repo",
+        "matcher": "mcp__claude-code-remote__add_repo",
         "hooks": [
           {
             "type": "command",
