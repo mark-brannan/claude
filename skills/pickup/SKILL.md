@@ -155,7 +155,7 @@ should not hand the same item to the next one as if nothing happened, and an
 item still listed open after two sessions took it is worse than none.
 
 ```
-pickup-list take <id>
+~/.claude/bin/pickup-list take <id>
 ```
 
 `pickup-list` drops it from the default view from then on; the file keeps
