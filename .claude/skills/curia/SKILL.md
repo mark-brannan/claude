@@ -61,8 +61,6 @@ state/global/curia/<id>/
   LIVE        the last sitting's session id and ISO timestamp; closing leaves it
   agent-notes.md the agent's own notes, for the next agent: free rein, any format
   inputs/     read-only side products: spikes, side-chat pastes, subagent reports
-  folded/<id>/  a whole curia opened past the gates, moved under this one (see below);
-              a folded question is a line under Open questions, never a folder
 ```
 
 Two files, two grains. **`roll.md` is append-only.** While a `LIVE` file
@@ -156,9 +154,9 @@ Also create `agent-notes.md` and use this for salient thinking or memory
 that you want to share across sessions with future agents.
 
 If a session finds itself past gate 1 with a folder it created, the fix
-is not to delete it but to fold it: its files into that curia's inputs/, its
-question under that curia's `## Open questions`, and card the fold as a
-unilateral call.
+is not to delete it but to fold it into an open curia: its files into that
+curia's `inputs/`, its question under its `## Open questions`, and card
+the fold as a unilateral call.
 
 ## Opening (`/curia <id>`)
 
@@ -166,13 +164,8 @@ unilateral call.
    `/curia` does — a deterministic pre-step, one line each, count in view:
    each open curia's id, timestamp and working title.
 1. **Resolve the id.** Read `state/global/curia/<id>/digest.md`; a
-   folder with `thread.md` and no `digest.md` is from before the split,
-   so read `thread.md` there instead. A one-line redirect points at a
-   document elsewhere (a grandfathered curia); follow it — that
-   document's own loop section then governs read order and replaces
-   step 4's reading, while the LIVE check, the lint and every dialogue
-   rule still apply, with the LIVE file in the redirect's folder. **No folder at all → say the id didn't resolve,
-   then guess.** From the step 0 list, pick the curia the argument most
+   one-line redirect left by a rename points at the new id; follow it.
+   **No folder at all → say the id didn't resolve, then guess.** From the step 0 list, pick the curia the argument most
    likely meant — closest fuzzy match on id and question first, most
    recently touched to break a tie — and recommend it in one line, as
    bare `/curia` does; continue there on the user's yes. Never create the
@@ -242,8 +235,7 @@ List the open curiae, newest-touched first (recency matters;
 first-in-last-out), each as its id, question and last-touched in one
 line, with the count in view against the WIP limit at gate 5. Open means
 `status: open` in `digest.md`'s header. A folder holding only a one-line
-redirect (a renamed or folded curia) collapses into its target; a digest
-without the header (grandfathered) counts as open until it says settled.
+redirect (a renamed curia) collapses into its target.
 Recommend one and why, in one sentence. Open nothing until the user names
 an id, and never a new one from here. If the list is long, say so
 plainly — a perpetually full list is a decision-making process failure,
