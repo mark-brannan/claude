@@ -378,52 +378,45 @@ eq_ust "work_record: a stale claim leaves it open" 'open' \
 eq_ust "work_record: same field count for both kinds" '10 10' \
   "$(wr "$WR/2026-09-09T10-00-abcd1234.md" | awk -F'|' '{print NF}') $(wr '- [ ] **A** ([x](https://example.invalid/a))' | awk -F'|' '{print NF}')"
 
-# --- claude_cards: only the agent's section, folded, ticked lines skipped -----
-KB="$SCRATCH/kb"; mkdir -p "$KB"
-printf '# Board\n\n## Needs ruling\n\n### global\n- [ ] a ruling ([x](https://example.invalid/r))\n\n## Claude'"'"'s\n\n- [ ] **One** -- first\n  continued ([x](https://example.invalid/1))\n- [x] **Done** ([x](https://example.invalid/d))\n- [ ] **Two** ([x](https://example.invalid/2))\n\n## Human'"'"'s\n\n- [ ] click ([x](https://example.invalid/c))\n' > "$KB/kanban.md"
-cc() { ( . "$HOOKS/lib-state.sh"; claude_cards "$KB/kanban.md" ) | cut -f2- | tr '\n' '|'; }
-eq_ust "claude_cards: Claude's only, folded, unticked" \
-  '- [ ] **One** -- first continued ([x](https://example.invalid/1))|- [ ] **Two** ([x](https://example.invalid/2))|' "$(cc)"
-gitq "$KB" init -q -b main
-gitq "$KB" add kanban.md
-GIT_COMMITTER_DATE='2026-09-01T12:00:00Z' GIT_AUTHOR_DATE='2026-09-01T12:00:00Z' gitq "$KB" commit -q -m one
-eq_ust "claude_cards: a committed card carries its blame time" '2026-09-01T12:00:00Z' \
-  "$( ( . "$HOOKS/lib-state.sh"; claude_cards "$KB/kanban.md" ) | head -1 | cut -f1)"
-
-# --- the store's items/ read as the board (kanban -> items, stage one) -----------
-# board_union, board_card and claude_cards read kanban.md and items/ as one;
-# an item whose id is a card's replaces the card; an item's claim is its log's.
+# --- the work-item store is the whole board ------------------------------------
+# board_union, board_card and claude_cards read items/ and nothing else: a
+# kanban.md beside it is never opened. An item's claim is its log's.
 KI="$SCRATCH/ki"; mkdir -p "$KI/items"
-printf '# Board\n\n## Needs ruling\n\n### global\n- [ ] a ruling ([x](https://example.invalid/r))\n\n## Claude'"'"'s\n\n- [ ] **Old** ([x](https://example.invalid/o)) id: 1790836861aaaaaaaa\n- [ ] **Keep** ([x](https://example.invalid/k))\n' > "$KI/kanban.md"
+printf '# Board\n\n## Claude'"'"'s\n\n- [ ] **Old** ([x](https://example.invalid/o)) id: 1790836860aaaaaaaa\n' > "$KI/kanban.md"
 ki() { # id title owner repo status brief [log time] [holder]
   printf '# %s\n\n## Brief\n%s\n\n## Log\n%s 1d68120b status=open owner=%s repo=%s parent=- model=- effort=-\n%s %s status=%s\n' \
     "$2" "$6" "${7:-2026-10-03T05:00:00Z}" "$3" "$4" "${7:-2026-10-03T05:00:00Z}" "${8:-1d68120b}" "$5" > "$KI/items/$1.md"
 }
-ki 1790836861aaaaaaaa 'Old moved' agent - ready '**Old moved** -- now an item id: 1790836861aaaaaaaa'
+ki 1790836861aaaaaaaa 'Old moved' agent - ready '**Old moved** -- an item id: 1790836861aaaaaaaa'
 ki 1790836862aaaaaaaa 'Stored ruling' human-ruling o/colregs ready 'Decide it.'
 ki 1790836863aaaaaaaa 'Blocked one' agent - blocked 'Waits.'
 ki 1790836864aaaaaaaa 'Held one' agent - claimed 'Held.' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" abcd1234
 ki 1790836865aaaaaaaa 'Stale hold' agent - claimed 'Let go.' 2026-09-01T00:00:00Z eeeeeeee
 ki 1790836866aaaaaaaa 'Done one' agent - 'done' 'Over.'
+ki 1790836867aaaaaaaa 'Click it' human-click - ready 'In the UI.'
 WI="$HOOKS/../../.local/bin/work-item"
-lsi() { WORK_ITEM_BIN=$WI HOOK_DIR=/nonexistent sh -c '. "'"$HOOKS"'/lib-state.sh"; '"$1" _ "$KI/kanban.md"; }
-eq_ust "items: claude_cards drops the replaced card, adds the agent's live items, not blocked or done" \
-  '**Keep**|**Old moved**|**Held one**|**Stale hold**|' \
-  "$(lsi 'claude_cards "$1"' | cut -f2- | sed -E 's/^(- \[ \] )?(\*\*[^*]+\*\*).*/\2/' | tr '\n' '|')"
+lsi() { WORK_ITEM_DIR=${LSI_DIR:-$KI/items} WORK_ITEM_BIN=$WI HOOK_DIR=/nonexistent sh -c '. "'"$HOOKS"'/lib-state.sh"; '"$1" _; }
+eq_ust "items: claude_cards lists the agent's ready and claimed items, not blocked, done, rulings or click work" \
+  '**Old moved**|**Held one**|**Stale hold**|' \
+  "$(lsi 'claude_cards' | cut -f2- | sed -E 's/^(- \[ \] )?(\*\*[^*]+\*\*).*/\2/' | tr '\n' '|')"
+eq_ust "items: a kanban.md card is not a candidate" '' "$(lsi 'claude_cards' | grep -F 'Old' | grep -v 'Old moved' || true)"
 eq_ust "items: an item's updated is its newest log line" '2026-10-03T05:00:00Z' \
-  "$(lsi 'claude_cards "$1"' | grep 'Old moved' | cut -f1)"
+  "$(lsi 'claude_cards' | grep 'Old moved' | cut -f1)"
 eq_ust "items: board_card finds a ruling item, grouped by its repo" 'Needs ruling|colregs|- [ ] **Stored ruling**: Decide it. repo: o/colregs id: 1790836862aaaaaaaa' \
-  "$(lsi 'board_card "$1" 1790836862aaaaaaaa' | tr '\t' '|')"
-eq_ust "items: board_card finds a board card still" "Claude's" "$(lsi 'board_card "$1" 0000000000aaaaaaaa; board_card "$1" 1790836861aaaaaaaa' | cut -f1)"
-eq_ust "items: board_union keeps the board, then the items by section" \
-  "## Needs ruling|### global|## Claude's|## Needs ruling|### colregs|## Claude's" \
-  "$(lsi 'board_union "$1"' | grep '^##' | tr '\n' '|' | sed 's/|$//')"
+  "$(lsi 'board_card 1790836862aaaaaaaa' | tr '\t' '|')"
+eq_ust "items: board_card finds an agent item" "Claude's" "$(lsi 'board_card 0000000000aaaaaaaa; board_card 1790836861aaaaaaaa' | cut -f1)"
+eq_ust "items: board_card does not find a kanban.md card" '' "$(lsi 'board_card 1790836860aaaaaaaa' || true)"
+eq_ust "items: board_union is the items by section" \
+  "## Needs ruling|### colregs|## Human's|## Claude's" \
+  "$(lsi 'board_union' | grep '^##' | tr '\n' '|' | sed 's/|$//')"
 eq_ust "items: a live holder's item is taken, by id" 'taken|abcd1234' \
-  "$(lsi 'work_claims_load "$1"; claude_cards "$1" | grep "Held one" | work_records --cards' | cut -d "$(printf '\037')" -f3,5 | tr '\037' '|')"
+  "$(lsi 'work_claims_load; claude_cards | grep "Held one" | work_records --cards' | cut -d "$(printf '\037')" -f3,5 | tr '\037' '|')"
 eq_ust "items: a stale holder has let go" 'open|' \
-  "$(lsi 'work_claims_load "$1"; claude_cards "$1" | grep "Stale hold" | work_records --cards' | cut -d "$(printf '\037')" -f3,5 | tr '\037' '|')"
-eq_ust "items: no items/ reads the board alone" '**Old**|**Keep**|' \
-  "$(WORK_ITEM_DIR=$SCRATCH/none lsi 'claude_cards "$1"' | cut -f2- | sed -E 's/^- \[ \] (\*\*[^*]+\*\*).*/\1/' | tr '\n' '|')"
+  "$(lsi 'work_claims_load; claude_cards | grep "Stale hold" | work_records --cards' | cut -d "$(printf '\037')" -f3,5 | tr '\037' '|')"
+eq_ust "items: no items/ is an empty board, not a kanban.md read" '' \
+  "$(LSI_DIR=$SCRATCH/none lsi 'claude_cards; board_union')"
+eq_ust "items: the default store is items/ in the state dir" 'yes' \
+  "$(WORK_ITEM_DIR='' sh -c '. "'"$HOOKS"'/lib-state.sh"; [ "$(items_dir)" = "$(state_dir)/items" ] && echo yes')"
 
 # --- ruling_readiness ----------------------------------------------------------
 # Under sh as well as bash: worklist sources this file from /bin/sh. gh is

@@ -30,8 +30,35 @@ git -C "$S/repo" init -q && git -C "$S/repo" remote add origin https://github.co
 cd "$S/repo" || exit 1
 
 # --- the board -----------------------------------------------------------------
+# The cards are written in the old kanban.md line format and moved into the
+# store the way the cutover did: one item per card, the line its brief
+# verbatim (an id: is appended where a card has none), the section its owner,
+# a `### group` its repo. kanban.md itself is never written.
+I="$S/state/state/global/items"
+migrate() { # migrate <board text file> <items dir> [<first synthetic id number>]
+  local n=${3:-0}
+  mkdir -p "$2"
+  awk '
+    function flush() { if (txt != "") print owner "\t" repo "\t" txt; txt = "" }
+    /^## / { flush(); owner = ($0 ~ /Needs ruling/ ? "human-ruling" : $0 ~ /Human/ ? "human-click" : "agent"); repo = "-"; next }
+    /^### / { flush(); repo = "o/" substr($0, 5); if (repo == "o/global") repo = "-"; next }
+    /^- \[[xX]\]/ { flush(); skip = 1; next }
+    /^- \[ \] / { flush(); skip = 0; txt = substr($0, 7); next }
+    txt != "" && !skip && /^[ \t]+[^ \t]/ { t = $0; sub(/^[ \t]+/, "", t); txt = txt " " t; next }
+    { flush() }
+    END { flush() }' "$1" > "$S/migrate.tsv"
+  while IFS=$'\t' read -r owner repo line; do
+    n=$((n + 1))
+    id=$(printf '%s' "$line" | grep -oE 'id: [0-9]{10}[0-9a-f]{8}' | head -1 | cut -c5-)
+    if [ -z "$id" ]; then id=$(printf '1790837%03d%08x' "$n" "$n"); line="$line id: $id"; fi
+    title=$(printf '%s' "$line" | sed -nE 's/^\*\*([^*]+)\*\*.*/\1/p')
+    [ -n "$title" ] || title=$(printf '%s' "$line" | sed -E 's/\[([^]]*)\]\([^)]*\)/\1/g' | cut -c1-60)
+    printf '# %s\n\n## Brief\n%s\n\n## Log\n2026-09-01T05:00:00Z 1d68120b status=open owner=%s repo=%s parent=- model=- effort=-\n2026-09-01T05:00:00Z 1d68120b briefed\n2026-09-01T05:00:00Z 1d68120b status=ready\n' \
+      "$title" "$line" "$owner" "$repo" > "$2/$id.md"
+  done < "$S/migrate.tsv"
+}
 {
-  printf '# Board\n\nA card names the pushed branch pointed-by-board somewhere in its body.\n\n## Needs ruling\n'
+  printf '# Board\n\n## Needs ruling\n'
   printf -- '### demo\n'
   printf -- '- [ ] **Board sections** — decide whether a question is a card or an issue ([o/r#90](https://github.com/o/r/pull/90))\n'
   printf -- '- [ ] **Later** — decide after the migration ([o/r#95](https://github.com/o/r/pull/95))\n'
@@ -40,7 +67,7 @@ cd "$S/repo" || exit 1
   printf -- '- [ ] **Engine pin** — decide whether to pin the engine by tag ([o/r#93](https://github.com/o/r/pull/93)) id: 1790836842077c62eb\n'
   printf -- '### colregs\n'
   printf -- '- [ ] **Give-way rule** — decide whether rule 15 wins ([o/r#94](https://github.com/o/r/pull/94))\n'
-  printf '\n## Human'"'"'s\n- [ ] **Not an agent card** — [x](https://example.invalid)\n\n## Claude'"'"'s\n'
+  printf '\n## Human'"'"'s\n- [ ] **Not an agent card** — pointed-by-board names a pushed branch ([x](https://example.invalid))\n\n## Claude'"'"'s\n'
   printf -- '- [ ] **Card 0** — linked to its evidence, worked elsewhere ([o/beta#5](https://github.com/o/beta/pull/5)) repo: o/alpha id: 1790836843077c62eb\n'
   for i in 1 2 3 4 5 6 7; do
     printf -- '- [ ] **Card %s** — a card body long enough to be cut at eighty characters when brief is asked for ([link](https://example.invalid/%s))\n' "$i" "$i"
@@ -51,7 +78,8 @@ cd "$S/repo" || exit 1
   printf -- '- [ ] **Card 8** — newer, same repo ([link](https://example.invalid/8)) repo: o/alpha id: 1790836844077c62eb\n'
   printf -- '- [ ] **Card 9** — oldest, no repo ([link](https://example.invalid/9)) id: 1790836840077c62eb\n'
   printf -- '- [x] **Ticked card** — done ([link](https://example.invalid/t))\n'
-} > "$S/state/state/global/kanban.md"
+} > "$S/board-src.md"
+migrate "$S/board-src.md" "$I"
 
 # --- canned GitHub -------------------------------------------------------------
 pr() { # number title draft mergeable rollup automerge unresolved contexts-json author
@@ -183,7 +211,7 @@ assert 'and after the counts header' \
   [ "$(printf '%s\n' "$OUT_ALL" | grep -nE '^(counts:|Needs ruling)' | head -1 | cut -d: -f1)" -lt \
     "$(printf '%s\n' "$OUT_ALL" | grep -n '^Needs ruling' | cut -d: -f1)" ]
 OUT=$(section "Needs ruling")
-has 'a ruling card renders, unprefixed in its own project' '^- \*\*Board sections\*\* — decide whether a question is a card or an issue'
+has 'a ruling card renders, unprefixed in its own project' '^- ([0-9a-f]{18} )?\*\*Board sections\*\* — decide whether a question is a card or an issue'
 has '### global is in scope everywhere' '^- 1790836842077c62eb \*\*Engine pin\*\*'
 lacks 'another project'"'"'s group is out of scope' 'Give-way rule'
 lacks 'a waiting card is hidden by default' 'Later'
@@ -195,21 +223,21 @@ OUT=$OUT_ALL
 run --all-rulings
 has 'all rulings shows every group' '^Needs ruling \(ready\), showing 3 of 3$'
 OUT=$(section "Needs ruling")
-has 'a card carries its group'      '^- demo: \*\*Board sections\*\*'
-has 'the other project is listed'   '^- colregs: \*\*Give-way rule\*\*'
+has 'a card carries its group'      '^- demo: ([0-9a-f]{18} )?\*\*Board sections\*\*'
+has 'the other project is listed'   '^- colregs: ([0-9a-f]{18} )?\*\*Give-way rule\*\*'
 lacks 'nothing is hidden'           'in other projects'
 
 # --waiting and --all: the drill paths behind the counts line.
 run --waiting
 OUT=$(section "Needs ruling")
-has 'waiting lists the card whose until: is words' '^- \*\*Later\*\* — decide after the migration'
+has 'waiting lists the card whose until: is words' '^- ([0-9a-f]{18} )?\*\*Later\*\* — decide after the migration'
 lacks 'waiting hides the ready cards' 'Board sections|Engine pin'
 run --brief
 has 'brief carries the counts line too' '^Board: Needs ruling 3 \(2 ready, 1 waiting'
 run --all
 has 'all lists every in-scope ruling card' '^Needs ruling \(all\), showing 3 of 3$'
 OUT=$(section "Needs ruling")
-has 'all marks the waiting card' '^- \[waiting\] \*\*Later\*\*'
+has 'all marks the waiting card' '^- \[waiting\] ([0-9a-f]{18} )?\*\*Later\*\*'
 has 'all leaves a ready card unmarked' '^- 1790836842077c62eb \*\*Engine pin\*\*'
 OUT=$OUT_ALL
 has 'all lifts the 8-card cap on a board section' "^Board \(## Claude's, showing 10 of 10\)$"
@@ -290,7 +318,7 @@ lacks 'no urls in brief' 'https://github.com/o/alpha/pull/10'
 cut_title=$(printf '%s\n' "$OUT" | sed -n 's/^| alpha#28 | \(.*\) |  |$/\1/p')
 eq 'long title cut to 80 chars ending in ...' '80 ...' "$(printf '%s' "$cut_title" | wc -m | tr -d ' ') $(printf '%s' "$cut_title" | tail -c 3)"
 lacks 'long title not whole' 'cut it short somewhere'
-card1=$(printf '%s\n' "$OUT" | sed -n 's/^- \(\*\*Card 1\*\*.*\)$/\1/p')
+card1=$(printf '%s\n' "$OUT" | sed -n 's/^- \(.*\*\*Card 9\*\*.*\)$/\1/p')
 eq 'card cut to 80 chars ending in ...' '80 ...' "$(printf '%s' "$card1" | wc -m | tr -d ' ') $(printf '%s' "$card1" | tail -c 3)"
 has 'brief keeps the failing check names' 'failing: ci-gate / gate, coverage'
 
@@ -418,8 +446,12 @@ eq 'exit 0 outside a repo' 0 "$RC"
 has 'says so' '^not in a GitHub repo'
 cd "$S/repo" || exit 1
 
-# --- board edge: no kanban ------------------------------------------------------------------
-mv "$S/state/state/global/kanban.md" "$S/kb.bak"; run; has 'missing board named' '^Board: no kanban.md or items/ at'; mv "$S/kb.bak" "$S/state/state/global/kanban.md"
+# --- board edge: no items/ ------------------------------------------------------------------
+# A kanban.md beside the store is not a fallback: with no items/ the board is
+# unavailable, whatever the file holds.
+cp "$S/board-src.md" "$S/state/state/global/kanban.md"
+mv "$I" "$S/items.bak"; run; has 'missing store named' '^Board: no items/ at'; lacks 'a kanban.md is not read' 'Engine pin'; mv "$S/items.bak" "$I"
+rm -f "$S/state/state/global/kanban.md"
 
 # --- the pickup bucket is first (dotfiles#110) ------------------------------------
 run
@@ -438,13 +470,13 @@ eq 'a card renders in the same shape' ok "$(shape '^  ◆ ')"
 rm -rf "$S/state/state/global/pickup"
 
 # --- the background refresh warms the ruling-link cache --brief reads ------------
-kb="$S/state/state/global/kanban.md"; cp "$kb" "$S/kanban.bak"
-awk '{ print } /^### global$/ { print "- [ ] **Linked** — wait on it ([o/r#7](https://github.com/o/r/issues/7)) default: a undo: revert until: o/r#7 risk: low judgment: direction" }' "$S/kanban.bak" > "$kb"
+printf '## Needs ruling\n### global\n- [ ] **Linked** — wait on it ([o/r#7](https://github.com/o/r/issues/7)) default: a undo: revert until: o/r#7 risk: low judgment: direction\n' > "$S/linked.md"
+migrate "$S/linked.md" "$I" 500
 sh "$WL" --_refresh
 eq 'refresh caches the state of an until: link' issue-open "$(cut -d' ' -f2 "$XDG_CACHE_HOME/ruling-refs/o_r_7" 2>/dev/null)"
 run --brief
 has 'brief reads the warmed cache: the linked card waits' '^Board: Needs ruling 4 \(2 ready, 2 waiting'
-cp "$S/kanban.bak" "$kb"
+rm -f "$I"/1790837501*.md
 
 # --- a card id is a handle ----------------------------------------------------
 run card 1790836842077c62eb
@@ -461,6 +493,7 @@ lacks 'the trailing id field is not repeated' 'alpha id:'
 CLAUDE_CODE_SESSION_ATTENDED=1 run --brief
 has 'attended brief offers a side task' "^Side task \(Claude's queue, oldest in this repo\):$"
 has 'side task names the cwd-repo card by id' '^  1790836843077c62eb Card 0$'
+OUT=$(printf '%s\n' "$OUT" | sed -n '/^Side task/,/^$/p')
 lacks 'a newer card in the same repo does not beat the oldest' 'Card 8'
 lacks 'an older card outside the repo does not beat the cwd-repo card' 'Card 9'
 has 'side task says land it or re-card it' '^  -> do it after the main work, or leave a one-line reason on the card$'
@@ -471,38 +504,34 @@ OUT=$(cat "$S/side.out")
 has 'outside a repo the side task falls back to oldest overall' "^Side task \(Claude's queue, oldest overall\):$"
 has 'oldest overall is the oldest id, not the first line or the cwd-repo card' '^  1790836840077c62eb Card 9$'
 
-# --- the store's items/ read as the board (kanban -> items, stage one) -------------
-# An item renders as a card under its owner's section; an item whose id is a
-# board card's replaces that card; a done item is not on the board.
-I="$S/state/state/global/items"; mkdir -p "$I"
+# --- more items ------------------------------------------------------------------
+# An item renders as a card under its owner's section; a done item is not on
+# the board.
 item() { # id title owner repo status brief
   printf '# %s\n\n## Brief\n%s\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=%s repo=%s parent=- model=opus effort=high\n2026-10-03T05:00:00Z 1d68120b briefed\n2026-10-03T05:00:00Z 1d68120b status=%s\n' \
     "$2" "$6" "$3" "$4" "$5" > "$I/$1.md"
 }
 item 1790836845aaaaaaaa 'Item task' agent o/alpha ready 'Do the stored thing.'
-item 1790836843077c62eb 'Card 0 moved' agent o/alpha ready '**Card 0 moved** — the card, now an item id: 1790836843077c62eb'
 item 1790836846aaaaaaaa 'Stored ruling' human-ruling o/colregs ready 'Decide the stored thing.'
 item 1790836847aaaaaaaa 'Finished item' agent o/alpha 'done' 'Already done.'
 run --all
 has 'an item is a Claude card, drawn with its title and id' '^- 1790836845aaaaaaaa \*\*Item task\*\*: Do the stored thing\. repo: o/alpha model: opus effort: high$'
-has 'an item replaces the board card with its id' '^- 1790836843077c62eb \*\*Card 0 moved\*\*'
-lacks 'the replaced board card is gone' 'linked to its evidence'
 lacks 'a done item is not on the board' 'Finished item'
-has 'the Claude count is board and items as one' "^Board \(## Claude's, showing 11 of 11\)$"
+has 'the Claude count is every agent item' "^Board \(## Claude's, showing 11 of 11\)$"
 run --all-rulings
 has 'a ruling item is grouped by its repo' '^- colregs: 1790836846aaaaaaaa \*\*Stored ruling\*\*'
 run card 1790836845aaaaaaaa
 has 'card <id> finds an item' "^## Claude's$"
 run --fresh --json
 eq 'json carries the item' 1 "$(printf '%s' "$OUT" | jq '[.. | strings | select(contains("1790836845aaaaaaaa"))] | length > 0 | if . then 1 else 0 end')"
-rm -rf "$I"
+rm -f "$I"/179083684[567]aaaaaaaa.md
 
-# --- a board past the argv limit (one arg is capped near 128KB) ------------------------
-cp "$kb" "$S/kanban.big"
-awk 'BEGIN{print "\n## Human'"'"'s"; for(i=0;i<1500;i++) printf "- [ ] **Bulk card %d** — padding padding padding padding padding padding padding padding padding padding ([o/r#%d](https://github.com/o/r/issues/%d)) id: 17908%013d\n", i, i, i, i}' >> "$kb"
+# --- a store past the argv limit (one arg is capped near 128KB) ------------------------
+awk 'BEGIN{print "## Human'"'"'s"; for(i=0;i<1500;i++) printf "- [ ] **Bulk card %d** — padding padding padding padding padding padding padding padding padding padding ([o/r#%d](https://github.com/o/r/issues/%d)) id: 17908%013d\n", i, i, i, i}' > "$S/bulk.md"
+migrate "$S/bulk.md" "$I"
 run --fresh --json; eq 'oversized board: json exit 0' 0 "$RC"
 lacks 'oversized board: no argv overflow' 'Argument list too long'
-cp "$S/kanban.big" "$kb"
+rm -f "$I"/17908000*.md "$I"/179080[0-9]*.md
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

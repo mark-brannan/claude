@@ -4,7 +4,7 @@
 # same cases under it; CI does this for each.
 #
 # What matters: the quiet path really is quiet (default branch, detached HEAD,
-# nothing ahead, no origin, not a repo); a PR, a board card or an open issue
+# nothing ahead, no origin, not a repo); a PR, a work item or an open issue
 # each count as a home, and a false substring match doesn't; nothing at all
 # blocks once and only once per session; "cannot look" blocks rather than
 # passing.
@@ -21,11 +21,18 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 gitq() { git -C "$1" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "${@:2}" >/dev/null 2>&1; }
 
-# --- a state repo whose board mentions no branch until a test writes one ------
+# --- a state repo whose items name no branch until a test writes one ----------
 SR="$SCRATCH/claude_prompts_scratch"; mkdir -p "$SR/state/global"; gitq "$SR" init -q
-BOARD="$SR/state/global/kanban.md"
-printf '# Open loops\n\n## Claude'"'"'s\n- [ ] **Something else** ([log](log/x.md))\n' > "$BOARD"
+ITEMS="$SR/state/global/items"
 export CLAUDE_STATE_REPO="$SR"
+export WORK_ITEM_BIN="$HOOKS/../../.local/bin/work-item"
+# item <id> <brief> -- one agent item whose brief is the text; clear_items drops them all.
+item() {
+  mkdir -p "$ITEMS"
+  printf '# Design\n\n## Brief\n%s\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=agent repo=- parent=- model=- effort=-\n2026-10-03T05:00:00Z 1d68120b status=ready\n' "$2" > "$ITEMS/$1.md"
+}
+clear_items() { rm -rf "$ITEMS"; }
+item 1790000000aaaaaaaa 'Something else.'
 
 # --- a fake gh whose answers come from the environment ------------------------
 BIN="$SCRATCH/bin"; mkdir -p "$BIN"
@@ -121,19 +128,18 @@ setup_repo claude/homed
 GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' check silent 'an open PR has this head' h1
 export GH_PRS='[]'
 
-# The board is a local file, so it is read before gh is: a card is a home even
+# The store is local files, so it is read before gh is: an item is a home even
 # when gh cannot answer at all.
-printf -- '- [ ] **Design lives on `claude/homed`** ([log](log/d.md))\n' >> "$BOARD"
-GH_FAIL=1 check silent 'a board card names the branch' h2
-gitq "$SR" checkout -- state/global/kanban.md 2>/dev/null || \
-  printf '# Open loops\n\n## Claude'"'"'s\n- [ ] **Something else** ([log](log/x.md))\n' > "$BOARD"
+item 1790000002aaaaaaaa 'It lives on `claude/homed`.'
+GH_FAIL=1 check silent 'a work item names the branch' h2
+item 1790000002aaaaaaaa 'Something else.'
 
-# An item in the store's items/ is read with the board (kanban -> items, stage one).
-mkdir -p "$SR/state/global/items"
-printf '# Design\n\n## Brief\nIt lives on `claude/homed`.\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=agent repo=- parent=- model=- effort=-\n2026-10-03T05:00:00Z 1d68120b status=ready\n' \
-  > "$SR/state/global/items/1790000002aaaaaaaa.md"
-WORK_ITEM_BIN="$HOOKS/../../.local/bin/work-item" GH_FAIL=1 check silent 'an item names the branch' h2b
-rm -rf "$SR/state/global/items"
+# kanban.md is not read: a card there, with the store empty, is no home.
+clear_items
+printf -- '# Board\n\n## Claude'"'"'s\n- [ ] **Design lives on `claude/homed`** ([log](log/d.md))\n' > "$SR/state/global/kanban.md"
+GH_FAIL=1 check block 'a kanban.md card is not a home' h2b
+rm -f "$SR/state/global/kanban.md"
+item 1790000000aaaaaaaa 'Something else.'
 
 GH_ISSUES='[{"number":4,"title":"t","body":"the work is on claude/homed"}]' \
   check silent 'an open issue names the branch' h3
@@ -148,10 +154,9 @@ GH_PRS_ALL='[{"url":"https://github.com/o/r/pull/9","headRefName":"stack/mark-br
 # A card or issue naming a longer branch must not give a false home to its
 # prefix: claude/homed-extra does not mean claude/homed has one.
 setup_repo claude/homed
-printf -- '- [ ] **Design lives on `claude/homed-extra`** ([log](log/e.md))\n' >> "$BOARD"
-GH_FAIL=1 check block 'a board card for a longer branch is not a home' h4
-gitq "$SR" checkout -- state/global/kanban.md 2>/dev/null || \
-  printf '# Open loops\n\n## Claude'"'"'s\n- [ ] **Something else** ([log](log/x.md))\n' > "$BOARD"
+item 1790000004aaaaaaaa 'Design lives on `claude/homed-extra`.'
+GH_FAIL=1 check block 'a work item for a longer branch is not a home' h4
+item 1790000004aaaaaaaa 'Something else.'
 
 setup_repo claude/homed
 GH_ISSUES='[{"number":5,"title":"t","body":"the work is on claude/homed-extra"}]' \
@@ -205,12 +210,11 @@ GH_ISSUES='[{"number":4,"title":"t","body":"work on claude/carded","url":"https:
 cardis 'nothing is none'                 'none'
 GH_FAIL=1 cardis 'a failed lookup says so' 'unverified: gh pr list failed (not authenticated here?)'
 
-# The local board is a home but not a card: a private file on one machine is
+# A local work item is a home but not a card: a private file on one machine is
 # not something a second machine can read a claim off.
-printf -- '- [ ] **Design lives on `claude/carded`** ([log](log/d.md))\n' >> "$BOARD"
-cardis 'a board card is not a card here' 'none'
-gitq "$SR" checkout -- state/global/kanban.md 2>/dev/null || \
-  printf '# Open loops\n\n## Claude'"'"'s\n- [ ] **Something else** ([log](log/x.md))\n' > "$BOARD"
+item 1790000005aaaaaaaa 'Design lives on `claude/carded`.'
+cardis 'a work item is not a card here' 'none'
+item 1790000005aaaaaaaa 'Something else.'
 
 setup_repo ""
 cardis 'the default branch has no card'  'none'

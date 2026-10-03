@@ -1,6 +1,6 @@
 #!/bin/sh
-# pickup-list -- the pickup items across every session and the cards on the
-# board's `## Claude's`, newest first, plus the agora docket count.
+# pickup-list -- the pickup items across every session and the agent's ready
+# work items, newest first, plus the agora docket count.
 #
 # Why: a hand-off that lives in a chat, a prose prompt or a block a model
 # had to remember to write is lost the moment the session ends any other
@@ -8,8 +8,8 @@
 # session under state/global/pickup/, every Stop, from the transcript and
 # git alone; the body is the hand-off a model may write over the hook's
 # default, and an edited body survives every rewrite. This is the view
-# over those items. Questions for Solace live on the board's `## Needs
-# ruling` (the agora's docket) and are only counted here; the user's words
+# over those items. Questions for Solace are the human-ruling items
+# (the agora's docket) and are only counted here; the user's words
 # live in each curia's roll.md, written by a hook, and are not listed.
 #
 #   pickup-list                 open items, newest first, top five
@@ -49,7 +49,6 @@ done
 HOOK_DIR=$(dirname "$lib")
 
 PICKUP="$(state_dir)/pickup"
-BOARD="$(state_dir)/kanban.md"
 now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 now_s=$(date -u +%s)
 
@@ -71,10 +70,10 @@ set_field() {
   ' "$1" > "$tmp" && mv -f "$tmp" "$1" || { rm -f "$tmp"; return 1; }
 }
 
-# card_text <id|link> -- the folded card on `## Claude's` whose id or link it
-# is, or fail: only the agent's section holds pickup candidates.
+# card_text <id|link> -- the folded card of the agent's ready or claimed item
+# whose id or link it is, or fail: only agent items are pickup candidates.
 card_text() {
-  claude_cards "$BOARD" | cut -f2- | while IFS= read -r c; do
+  claude_cards | cut -f2- | while IFS= read -r c; do
     r=$(work_record "$c")
     [ "$(printf '%s' "$r" | cut -d "$(printf '\037')" -f8)" = "$1" ] \
       || [ "$(printf '%s' "$r" | cut -d "$(printf '\037')" -f9)" = "$1" ] && { printf '%s\n' "$c"; break; }
@@ -82,11 +81,9 @@ card_text() {
 }
 
 # --- writes ------------------------------------------------------------------
-# A card is named by its `id:` (or, minted before ids, its link). Taking one
-# is a claim on the card through claim-stamp.sh, keyed by its link, so a
-# second session -- here or on another machine -- reads it taken; `open`
-# releases every claim on it. A card is never `done` here: done work leaves
-# the board when its line is deleted.
+# A card is a work item, named by its id (or its link). Taking one is a
+# claim in the item's own log (work-item claim); `open` releases it. An item
+# is never `done` here: work-item log <id> status=done does that.
 cmd=${1:-}
 handle=${2:-}
 card=0
@@ -98,18 +95,19 @@ if [ "$card" = 1 ]; then
     WORK_CLAIMS=""
     if [ "$cmd" = show ] && is_card_id "$handle"; then
       # any section: a ruling or click-work card is shown, never taken
-      c=$(board_card "$BOARD" "$handle" | cut -f3-) || { printf 'pickup-list: no card %s on the board\n' "$handle" >&2; exit 1; }
+      c=$(board_card "$handle") || { printf 'pickup-list: no item %s in the store\n' "$handle" >&2; exit 1; }
+      c=$(printf '%s\n' "$c" | cut -f3-)
     else
-      c=$(card_text "$handle") || { printf 'pickup-list: no card on ## Claude'"'"'s with id or link %s\n' "$handle" >&2; exit 1; }
+      c=$(card_text "$handle") || { printf 'pickup-list: no agent item with id or link %s\n' "$handle" >&2; exit 1; }
     fi
     link=$(work_record "$c" | cut -d "$(printf '\037')" -f8)
-    # A card that is a work item is claimed in its own log, not by link.
-    if is_card_id "$handle" && [ -f "$(items_dir "$BOARD")/$handle.md" ] && [ "$cmd" != show ]; then
+    # An item is claimed in its own log, not by link.
+    if is_card_id "$handle" && [ -f "$(items_dir)/$handle.md" ] && [ "$cmd" != show ]; then
       sid=${3:-${CLAUDE_CODE_SESSION_ID:-}}
       [ -n "$sid" ] || { printf 'pickup-list %s: no session id (pass one, or run inside a session)\n' "$cmd" >&2; exit 1; }
       case "$cmd" in take) verb=claim; st=taken ;; open) verb=release; st=open ;;
         *) printf 'pickup-list done: an item is done by work-item log %s status=done\n' "$handle" >&2; exit 1 ;; esac
-      WORK_ITEM_DIR=$(items_dir "$BOARD") CLAUDE_CODE_SESSION_ID=$sid python3 "$self_dir/work-item" "$verb" "$handle" || exit 1
+      WORK_ITEM_DIR=$(items_dir) CLAUDE_CODE_SESSION_ID=$sid python3 "$self_dir/work-item" "$verb" "$handle" || exit 1
       printf '%s %s\n' "$st" "$handle"; exit 0
     fi
     case "$cmd" in
@@ -119,7 +117,7 @@ if [ "$card" = 1 ]; then
             printf 'taken %s\n' "$handle" ;;
       open) sh "$HOOK_DIR/claim-stamp.sh" card-release "$link" || exit 1
             printf 'open %s\n' "$handle" ;;
-      done) printf 'pickup-list done: a card is done when its line leaves the board\n' >&2; exit 1 ;;
+      done) printf 'pickup-list done: an item is done by work-item log <id> status=done\n' >&2; exit 1 ;;
       show) printf '%s\n' "$c"; [ -z "$link" ] || sh "$HOOK_DIR/claim-stamp.sh" card-claims "$link" ;;
     esac
     exit 0 ;;
@@ -180,25 +178,25 @@ fi
 hard=$(cat "$hard_cache" 2>/dev/null) || hard=""
 [ -n "$hard" ] && printf 'Hard -- a fixer gave up on these; take one before any item\n\n%s\n\n' "$hard"
 
-# The agora docket is the board's `## Needs ruling`, items/ read in (board_union);
+# The agora docket is the human-ruling items (board_union's `## Needs ruling`);
 # one count, one drill path.
 docket() {
-  n=$(board_union "$BOARD" 2>/dev/null | awk '/^## / { f = ($0 ~ /^## Needs ruling[[:space:]]*$/); next }
+  n=$(board_union 2>/dev/null | awk '/^## / { f = ($0 ~ /^## Needs ruling[[:space:]]*$/); next }
            f && /^- \[ \]/ { n++ }
            END { print n + 0 }')
   [ "${n:-0}" -gt 0 ] || return 0
-  printf '\nDocket: %s awaiting an agora -- kanban.md `## Needs ruling`\n' "$n"
+  printf '\nDocket: %s awaiting an agora -- human-ruling items\n' "$n"
 }
 
 # One record per unit of work, from work_record (lib-state.sh): pickup items
-# and the cards on `## Claude's` alike, so both render in one line shape.
+# and the agent's items alike, so both render in one line shape.
 sep=$(printf '\037')
-work_claims_load "$BOARD"
+work_claims_load
 set -- "$PICKUP"/*.md; [ -f "$1" ] || set --
 if [ -n "$find_word" ]; then
   for f; do shift; grep -qiF -- "$find_word" "$f" 2>/dev/null && set -- "$@" "$f"; done
 fi
-recs=$(claude_cards "$BOARD" | { if [ -n "$find_word" ]; then grep -iF -- "$find_word"; else cat; fi; } \
+recs=$(claude_cards | { if [ -n "$find_word" ]; then grep -iF -- "$find_word"; else cat; fi; } \
   | work_records --cards "$@" | awk -F "$sep" -v closed="$closed" 'closed || $3 == "open"')
 [ -n "$recs" ] || { printf 'Pickup: none\n'; docket; exit 0; }
 

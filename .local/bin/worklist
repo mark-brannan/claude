@@ -221,7 +221,7 @@ if [ -n "$card_id" ]; then
   done
   command -v board_card >/dev/null 2>&1 || { printf 'worklist card: lib-state.sh not found\n' >&2; exit 2; }
   is_card_id "$card_id" || { printf 'worklist card: not a card id: %s (epoch seconds then eight hex)\n' "$card_id" >&2; exit 2; }
-  hit=$(board_card "$(state_dir)/kanban.md" "$card_id") || { printf 'worklist card: no card %s on %s or in items/\n' "$card_id" "$(state_dir)/kanban.md" >&2; exit 1; }
+  hit=$(board_card "$card_id") || { printf 'worklist card: no item %s in %s\n' "$card_id" "$(items_dir)" >&2; exit 1; }
   printf '%s\n' "$hit" | awk -F '\t' '{ printf "## %s%s\n", $1, ($2 != "" ? " / " $2 : ""); print substr($0, length($1) + length($2) + 3) }'
   exit 0
 fi
@@ -395,10 +395,10 @@ def ready_rows: . as $b
 | join("\n")
 '
 
-# board_path -- sets $kb to the board this view reads: kanban.md and the
-# store's items/ as one text (board_union in lib-state.sh), written once to a
-# file every section view below parses. Returns 1 with $board_err set and $kb
-# empty when there is neither.
+# board_path -- sets $kb to the board this view reads: the store's items/ as
+# one text (board_union in lib-state.sh), written once to a file every section
+# view below parses. Returns 1 with $board_err set and $kb empty when there
+# is no items/.
 board_err=""; kb=""; kb_tmp=""
 board_path() {
   board_err=""; kb=""
@@ -410,11 +410,10 @@ board_path() {
   [ -n "$lib" ] || { board_err="Board: unavailable (lib-state.sh not found)"; return 1; }
   # shellcheck disable=SC1090
   . "$lib"
-  src="$(state_dir)/kanban.md"
-  [ -f "$src" ] || [ -d "$(items_dir "$src")" ] || { board_err="Board: no kanban.md or items/ at $(dirname "$src")"; return 1; }
+  [ -d "$(items_dir)" ] || { board_err="Board: no items/ at $(dirname "$(items_dir)")"; return 1; }
   kb_tmp=$(mktemp "${TMPDIR:-/tmp}/worklist-board.XXXXXX") || { board_err="Board: no temp file"; return 1; }
   trap 'rm -f "$kb_tmp"' EXIT
-  board_union "$src" > "$kb_tmp"
+  board_union > "$kb_tmp"
   kb=$kb_tmp
   return 0
 }
@@ -451,7 +450,7 @@ STRANDED_CANDIDATES='
 # branches" bucket, one row per branch (not grouped by repo) so brief mode's
 # row cap and "+N more" line work the same as every other bucket. A branch
 # is dropped from the bucket, not merely annotated, once a home names it --
-# a board card (names_branch against $kb, set by board_path) or an open
+# a work item (names_branch against $kb, set by board_path) or an open
 # issue in the same repo (whole-token match against title+body). Same
 # names_branch as branch-home-gate.sh (dotfiles#114), shared via
 # lib-state.sh so a branch counts as pointed-at the same way in both

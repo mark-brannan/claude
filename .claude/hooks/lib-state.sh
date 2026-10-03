@@ -60,7 +60,7 @@ names_branch() {
 # One JSON-string escaper for the hooks that source this. It takes its text as
 # an argument, and falls back to sed/awk where jq is absent -- a hook that
 # cannot emit its reason is a hook that fails open. Do not add a second
-# json_str with a different signature: kanban-gate.sh once sourced this file
+# json_str with a different signature: a gate hook once sourced this file
 # and then shadowed it, and the two disagreed about stdin vs "$1".
 json_str() {
   if command -v jq >/dev/null 2>&1; then
@@ -140,7 +140,7 @@ unpushed_state() {
 # Lives here for the same reason unpushed_state does: metrics-live.sh's live
 # nag and stop-continuity.sh's Stop-hook verdict must never disagree about
 # what "archivable" means (dotfiles#149). Before this they didn't even
-# agree on what a "home" is -- metrics-live.sh re-checked PR-or-kanban
+# agree on what a "home" is -- metrics-live.sh re-checked PR-or-card
 # inline and never looked for a pointer issue, the one branch-home-gate.sh
 # already finds.
 #
@@ -239,9 +239,7 @@ verdict_explain() {
   case "$v" in *"session live"*)
     echo "→ session live: another session holds this branch. Closing this chat is safe; archiving the worktree is not." ;; esac
   case "$v" in *"state repo not committed"*|*"state-repo commit failed"*)
-    echo "→ state not committed: this session's checkpoint and board edits are not saved, even locally. Run git status in the state repo." ;; esac
-  case "$v" in *"board not committed"*)
-    echo "→ board not committed: kanban-lint rejected the board. Run kanban-lint and fix what it names." ;; esac
+    echo "→ state not committed: this session's checkpoint and item edits are not saved, even locally. Run git status in the state repo." ;; esac
   case "$v" in *"state-repo push failed"*)
     echo "→ state not pushed: this cloud VM's state commit is not on GitHub and dies with the VM." ;; esac
   case "$v" in *"did not finish"*)
@@ -490,7 +488,7 @@ branch_brief() {
 }
 
 # ------------------------------------------------------------- units of work
-# A pickup item and a card on the board's `## Claude's` are facets of one
+# A pickup item and an agent-owned work item are facets of one
 # thing, the unit of work and of continuity between sessions (one-entry-point
 # curia, Solace, 2026-10-01). Until they are one record on disk they are one
 # record on read: every view that lists work reads it through work_record, so
@@ -509,7 +507,7 @@ branch_brief() {
 # names none. A card's come from its own `model:`, `effort:`, `until:` fields
 # and its first link; its id is its `id:` field (the link on a card minted
 # before ids), and a claim on it is keyed by that link. A card's <updated> is the caller's to
-# pass (claude_cards takes it from git blame); its status is `taken` while a
+# pass (claude_cards takes it from the item's log); its status is `taken` while a
 # live claim stands, and claim is the holder's short session id.
 work_record() {
   if [ -f "$1" ]; then work_records "$1"
@@ -592,18 +590,17 @@ work_records() {
   ' "$@"
 }
 
-# work_claims_load [<kanban.md>] -- set $WORK_CLAIMS to every card claim on record, one
+# work_claims_load -- set $WORK_CLAIMS to every card claim on record, one
 # `live|stale <sid8> <machine> <age>m <url>` line each (claim-stamp.sh owns
 # the ledger and its format), then each item's live holder with the item's id
 # for <url>. Empty when neither has one.
-# shellcheck disable=SC2120  # the board path is optional; work_records calls it bare
 work_claims_load() {
   local cs="${HOOK_DIR:-$HOME/.claude/hooks}/claim-stamp.sh"
   WORK_CLAIMS=""
   [ -f "$cs" ] && WORK_CLAIMS=$(sh "$cs" card-claims 2>/dev/null)
   # An item's claim is in its own log (work-item claim), keyed by its id.
   local held
-  item_rows "${1:-$(state_dir)/kanban.md}" >/dev/null
+  item_rows >/dev/null
   held=$(printf '%s\n' "$ITEM_ROWS" | awk -F '\t' '$4 != "" { printf "live\t%s\t-\t-\t%s\n", $4, $1 }')
   [ -z "$held" ] || WORK_CLAIMS=${WORK_CLAIMS:+$WORK_CLAIMS
 }$held
@@ -618,25 +615,22 @@ is_card_id() {
   return 1
 }
 
-# --- The work-item store beside the board (stage one of the move) -----------
-# Until kanban.md is retired, every reader of the board reads the board and
-# the store's items/ as one: an item renders as a card line (work-item list
-# draws it) under the section its owner names, and a card whose id is also an
-# item is the item's -- the store wins. items/ sits beside kanban.md, or is
-# $WORK_ITEM_DIR.
+# --- The work-item store: where every reader gets its cards -----------------
+# items/ in the state dir, or $WORK_ITEM_DIR, is the whole board. An item
+# renders as a card line (work-item list draws it) under the section its
+# owner names, so every reader that parses the board's sections parses the
+# store the same way. There is no other source.
 
-# items_dir <kanban.md>
-items_dir() { printf '%s' "${WORK_ITEM_DIR:-$(dirname "$1")/items}"; }
+items_dir() { printf '%s' "${WORK_ITEM_DIR:-$(state_dir)/items}"; }
 
-# item_rows <kanban.md> -- work-item list's rows for the items beside the
-# board: `id owner status holder updated repo line`, tab-separated. Read
-# once per shell into $ITEM_ROWS (one python start, not one per item), so a
-# caller primes it outside $(...) -- `item_rows f >/dev/null; rows=$ITEM_ROWS`
-# -- or the cache dies with the subshell. Empty when there is no items/ or no
-# work-item to read it.
+# item_rows -- work-item list's rows for the store: `id owner status holder
+# updated repo line`, tab-separated. Read once per shell into $ITEM_ROWS (one
+# python start, not one per item), so a caller primes it outside $(...) --
+# `item_rows >/dev/null; rows=$ITEM_ROWS` -- or the cache dies with the
+# subshell. Empty when there is no items/ or no work-item to read it.
 item_rows() {
   local d wi c
-  d=$(items_dir "$1")
+  d=$(items_dir)
   if [ "${ITEM_ROWS_FOR-}" != "$d" ]; then
     ITEM_ROWS=""; ITEM_ROWS_FOR=$d; wi=""
     for c in "${WORK_ITEM_BIN:-}" "${self_dir:+$self_dir/work-item}" \
@@ -648,22 +642,13 @@ item_rows() {
   [ -z "$ITEM_ROWS" ] || printf '%s\n' "$ITEM_ROWS"
 }
 
-# board_union <kanban.md> -- the board as one text: kanban.md with every card
-# whose id is an item dropped, then the items as `- [ ] ` cards under
-# `## Needs ruling` (owner human-ruling, `### <repo name>` as the group, else
-# `### global`), `## Human's` (human-click) and `## Claude's` (agent). Every
-# reader that parses the board's sections parses this the same way.
+# board_union -- the store as one board text: every item as a `- [ ] ` card
+# under `## Needs ruling` (owner human-ruling, `### <repo name>` as the
+# group, else `### global`), `## Human's` (human-click) or `## Claude's`
+# (agent). Empty when the store is.
 board_union() {
   local rows
-  item_rows "$1" >/dev/null; rows=$ITEM_ROWS
-  { [ -f "$1" ] && cat "$1"; printf '\n'; } | ROWS=$rows awk '
-    BEGIN { n = split(ENVIRON["ROWS"], R, "\n"); for (i = 1; i <= n; i++) { split(R[i], c, "\t"); if (c[1] != "") item[c[1]] = 1 } }
-    function cid(t,   m) { return match(t, /(^|[ (])id:[ \t]*[0-9]{10}[0-9a-f]{8}/) ? substr(t, RSTART + RLENGTH - 18, 18) : "" }
-    function flush() { if (txt != "" && !(cid(txt) in item)) printf "%s", buf; txt = buf = "" }
-    /^(- |[0-9]+\. )/ { flush(); txt = $0; buf = $0 "\n"; next }
-    txt != "" && /^[ \t]+[^ \t]/ { t = $0; sub(/^[ \t]+/, "", t); txt = txt " " t; buf = buf $0 "\n"; next }
-    { flush(); print }
-    END { flush() }'
+  item_rows >/dev/null; rows=$ITEM_ROWS
   [ -n "$rows" ] || return 0
   printf '%s\n' "$rows" | awk -F '\t' '
     { g = $6; sub(/^.*\//, "", g); if (g == "" || g == "-") g = "global"
@@ -676,14 +661,12 @@ board_union() {
       if (na) { print "## Claude'"'"'s"; for (i = 1; i <= na; i++) print a[i]; print "" } }'
 }
 
-# board_card <kanban.md> <id> -- the card whose `id:` is <id>, from any
-# section of the board or items/ (board_union), as
-# `<section>\t<group>\t<folded card>`; fails when none is. The
-# one lookup from an id back to the card's title, date and link. Matches the
-# field the way kanban-lint's L11 does, so a card the lint passes is found.
+# board_card <id> -- the item whose `id:` is <id>, as
+# `<section>\t<group>\t<folded card>`; fails when none is. The one lookup
+# from an id back to the card's title, date and link.
 board_card() {
-  [ -f "$1" ] || [ -d "$(items_dir "$1")" ] || return 1
-  board_union "$1" | awk -v want="$2" '
+  [ -d "$(items_dir)" ] || return 1
+  board_union | awk -v want="$1" '
     function flush() { if (txt != "" && txt ~ ("(^|[ (])id:[ \t]*" want "([^0-9a-z]|$)")) { print sec "\t" grp "\t" txt; hit = 1 } txt = "" }
     /^## /  { flush(); sec = substr($0, 4); grp = ""; next }
     /^### / { flush(); grp = substr($0, 5); next }
@@ -694,55 +677,18 @@ board_card() {
   '
 }
 
-# claude_cards <kanban.md> -- the pickup candidates on a board: every card
-# under `## Claude's`, folded onto one line with its indented continuations,
-# ticked lines skipped. One `<updated>\t<card text>` per card, <updated> the
-# ISO time git blame gives the card's newest line, or empty off git.
-# Only the agent's section: a ruling waits for the user and click work is
-# theirs, so neither is work a session can pick up.
+# claude_cards -- the pickup candidates: every agent-owned item that is ready
+# or claimed. One `<updated>\t<card text>` per card, <updated> the item's
+# newest log line. Only the agent's items: a ruling waits for the user and
+# click work is theirs, so neither is work a session can pick up. An open
+# item cannot be claimed until it is ready (work-item's transitions) and a
+# blocked one waits on something, so both are left out; a claimed one is
+# listed and reads taken through work_claims_load.
 claude_cards() {
-  local f="$1" times rows
-  item_rows "$f" >/dev/null; rows=$ITEM_ROWS
-  [ -f "$f" ] || { claude_items "$rows"; return 0; }
-  times=$(git -C "$(dirname "$f")" blame --line-porcelain -- "$(basename "$f")" 2>/dev/null \
-    | awk '/^[0-9a-f]+ [0-9]+ [0-9]+/ { n = $3 } /^author-time / { print "@T " n " " $2 }')
-  printf '%s\n' "$times" | ROWS=$rows awk '
-    BEGIN { n = split(ENVIRON["ROWS"], R, "\n"); for (i = 1; i <= n; i++) { split(R[i], c, "\t"); if (c[1] != "") item[c[1]] = 1 } }
-    function cid(t) { return match(t, /(^|[ (])id:[ \t]*[0-9]{10}[0-9a-f]{8}/) ? substr(t, RSTART + RLENGTH - 18, 18) : "" }
-    # days_to_civil (Howard Hinnant), so no date(1) call per card
-    function iso(e,   z, era, doe, yoe, y, doy, mp, d, m, s) {
-      if (e == "") return ""
-      s = e % 86400; z = int(e / 86400) + 719468
-      era = int(z / 146097); doe = z - era * 146097
-      yoe = int((doe - int(doe / 1460) + int(doe / 36524) - int(doe / 146096)) / 365)
-      y = yoe + era * 400; doy = doe - (365 * yoe + int(yoe / 4) - int(yoe / 100))
-      mp = int((5 * doy + 2) / 153); d = doy - int((153 * mp + 2) / 5) + 1
-      m = mp < 10 ? mp + 3 : mp - 9; if (m <= 2) y++
-      return sprintf("%04d-%02d-%02dT%02d:%02d:%02dZ", y, m, d, int(s / 3600), int(s % 3600 / 60), s % 60)
-    }
-    function flush() { if (txt != "" && !(cid(txt) in item)) print iso(newest) "\t" txt; txt = ""; newest = "" }
-    function seen(n) { if ((n in at) && (newest == "" || at[n] > newest)) newest = at[n] }
-    /^@T / { split($0, a, " "); at[a[2]] = a[3]; next }
-    /^## /       { flush(); sec = ($0 ~ /^## Claude/); next }
-    /^#/         { flush(); next }
-    !sec         { next }
-    /^[ \t]*$/   { flush(); next }
-    /^- \[[xX]\]/ { flush(); skip = 1; next }
-    /^(- |[0-9]+\. )/ { flush(); skip = 0; txt = $0; seen(FNR); next }
-    txt != "" && !skip { t = $0; sub(/^[ \t]+/, "", t); txt = txt " " t; seen(FNR) }
-    END { flush() }
-  ' - "$f"
-  claude_items "$rows"
-}
-
-# claude_items <item rows> -- the agent's items in claude_cards' shape,
-# <updated> the item's newest log line. Only a ready item can be claimed
-# (work-item's transitions), so an open or blocked one is left out though the
-# board still draws it; a claimed one is listed and reads taken through
-# work_claims_load.
-claude_items() {
-  [ -n "$1" ] || return 0
-  printf '%s\n' "$1" | awk -F '\t' '$2 == "agent" && ($3 == "ready" || $3 == "claimed") { print $5 "\t" $7 }'
+  local rows
+  item_rows >/dev/null; rows=$ITEM_ROWS
+  [ -n "$rows" ] || return 0
+  printf '%s\n' "$rows" | awk -F '\t' '$2 == "agent" && ($3 == "ready" || $3 == "claimed") { print $5 "\t" $7 }'
 }
 
 # --- Ruling-card readiness -------------------------------------------------------

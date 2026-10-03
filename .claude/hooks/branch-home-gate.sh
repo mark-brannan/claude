@@ -150,14 +150,13 @@ else
 fi
 
 # ------------------------------------------------------------ find a home
-# 0 found, 1 none, 2 could not verify. The board is a local file, so it is
-# read before anything costs a network call.
+# 0 found, 1 none, 2 could not verify. The board is local files (items/), so
+# it is read before anything costs a network call.
 found=
 unverified=
 card=
-board="$(state_dir)/kanban.md"
-if [ "$CARD" != 1 ] && board_union "$board" 2>/dev/null | names_branch "$branch"; then
-  found="a card on $board names it"
+if [ "$CARD" != 1 ] && board_union 2>/dev/null | names_branch "$branch"; then
+  found="a work item in $(items_dir) names it"
 fi
 
 if [ -z "$found" ]; then

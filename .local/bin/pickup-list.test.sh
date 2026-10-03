@@ -2,7 +2,7 @@
 # Tests for pickup-list. Run: bash .local/bin/pickup-list.test.sh
 # What matters: newest is on top and --oldest reverses it; a taken item
 # leaves the default view but stays findable; the docket count reads the
-# board's `## Needs ruling` and nothing else; nothing is ever dropped for
+# human-ruling items and nothing else; nothing is ever dropped for
 # being uncheckable.
 set -uo pipefail
 [ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
@@ -48,88 +48,50 @@ assert 'show prints until:' bash -c "sh '$PL' show 2026-09-20T10-00-0a0a0a0a | g
 rm -f "$PICKUP/2026-09-20T10-00-0a0a0a0a.md"
 assert 'show of a missing id fails' bash -c "! sh '$PL' show nope 2>/dev/null"
 
-# The docket count is the board's `## Needs ruling` open boxes, nothing else.
-cat > "$SR/state/global/kanban.md" <<'EOF'
-# Board
-
-## Needs ruling
-
-- [ ] one question
-- [x] a ruled one
-- [ ] another question
-
-## Human's
-
-- [ ] click work does not count
-EOF
-assert 'the docket counts open Needs-ruling boxes' bash -c "sh '$PL' | grep -q '^Docket: 2 awaiting an agora'"
-rm "$SR/state/global/kanban.md"
-assert 'no board, no docket line' bash -c "! sh '$PL' | grep -q '^Docket:'"
-
-# --- cards on the board's `## Claude's` are pickup items too -----------------
-# An example.invalid link is no GitHub card, so a take is the ledger alone -- the part a
-# second run reads.
+# --- work items are the cards ---------------------------------------------------
+# items/ is the only source of cards: kanban.md is never read. The docket is
+# the human-ruling items, nothing else; an agent item is a pickup candidate;
+# take and open run through work-item claim/release, so the claim lands in
+# the item's own log.
 export TMPDIR="$S/tmp"; mkdir -p "$TMPDIR"
 unset CI GITHUB_ACTIONS
-CARD=https://example.invalid/card-1
-cat > "$SR/state/global/kanban.md" <<EOF
-# Board
-
-## Needs ruling
-
-### global
-- [ ] a ruling ([x](https://example.invalid/ruling)) default: a undo: b until: c risk: d judgment: values
-
-## Claude's
-
-- [ ] **Card one** -- a card a session can take ([x]($CARD)) model: opus effort: high
-EOF
-assert 'a card is listed with pickup items' bash -c "sh '$PL' --all | grep -qxF '    $CARD'"
-assert 'a ruling is not a pickup candidate' bash -c "! sh '$PL' --all | grep -q 'example.invalid/ruling'"
-assert 'nor can it be taken' bash -c "! sh '$PL' take https://example.invalid/ruling 1111111122223333 2>/dev/null"
-assert 'take of a card needs a session id' bash -c "! CLAUDE_CODE_SESSION_ID= sh '$PL' take '$CARD' 2>/dev/null"
-eq 'take on a card claims it' "taken $CARD" "$(sh "$PL" take "$CARD" 1111111122223333)"
-eq 'a second run sees it taken' '' "$(sh "$PL" --all | grep -F "$CARD" || true)"
-assert 'and shows the holder with --closed' bash -c "sh '$PL' --closed | grep -q 'taken by 11111111'"
-assert 'a second session cannot take it' bash -c "! sh '$PL' take '$CARD' 4444444455556666 2>/dev/null"
-assert 'done refuses a card' bash -c "! sh '$PL' done '$CARD' 2>/dev/null"
-sh "$PL" open "$CARD" >/dev/null
-assert 'open releases it' bash -c "sh '$PL' --all | grep -qxF '    $CARD'"
-
-# --- a card's id is its handle ------------------------------------------------
-ID=1790836842077c62eb
-printf -- '- [ ] **Card two** -- a card with an id ([x](https://example.invalid/card-2)) id: %s\n' "$ID" >> "$SR/state/global/kanban.md"
-assert 'a card with an id is listed by its id' bash -c "sh '$PL' --all 2>/dev/null | grep -qxF '    $ID'"
-eq 'take by id claims it' "taken $ID" "$(sh "$PL" take "$ID" 1111111122223333)"
-assert 'the claim is keyed by link, so a take by link is refused' bash -c "! sh '$PL' take https://example.invalid/card-2 4444444455556666 2>/dev/null"
-sh "$PL" open "$ID" >/dev/null
-assert 'show by id prints the card' bash -c "sh '$PL' show '$ID' | grep -q 'Card two'"
-printf '\n## Human'"'"'s\n- [ ] **Click it** -- in the UI ([x](https://example.invalid/h)) why you: learn id: 1790836842d654192b\n' >> "$SR/state/global/kanban.md"
-assert 'show by id reaches any section' bash -c "sh '$PL' show 1790836842d654192b | grep -q 'Click it'"
-assert 'but a click-work card cannot be taken' bash -c "! sh '$PL' take 1790836842d654192b 1111111122223333 2>/dev/null"
-
-# --- the store's items/ read with the board (kanban -> items, stage one) --------
-# An agent item is a pickup candidate like a Claude card; take and open run
-# through work-item claim/release, so the claim lands in the item's own log.
-I="$SR/state/global/items"; mkdir -p "$I"
-witem() { # id title owner status
-  printf '# %s\n\n## Brief\nDo it.\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=%s repo=o/r parent=- model=opus effort=high\n2026-10-03T05:00:00Z 1d68120b status=%s\n' \
-    "$2" "$3" "$4" > "$I/$1.md"
+I="$SR/state/global/items"
+witem() { # id title owner status [brief]
+  mkdir -p "$I"
+  printf '# %s\n\n## Brief\n%s\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=%s repo=o/r parent=- model=opus effort=high\n2026-10-03T05:00:00Z 1d68120b status=%s\n' \
+    "$2" "${5:-Do it.}" "$3" "$4" > "$I/$1.md"
 }
-witem 1790836850aaaaaaaa 'Stored task' agent ready
+assert 'no store, no docket line' bash -c "! sh '$PL' | grep -q '^Docket:'"
+mkdir -p "$SR/state/global"
+printf '# Board\n\n## Needs ruling\n\n- [ ] a card on the old board\n\n## Claude'"'"'s\n\n- [ ] **Old card** -- id: 1790836849aaaaaaaa\n' > "$SR/state/global/kanban.md"
+assert 'a kanban.md is not read for the docket' bash -c "! sh '$PL' | grep -q '^Docket:'"
+assert 'nor for pickup candidates' bash -c "! sh '$PL' --all | grep -q 'Old card'"
+rm "$SR/state/global/kanban.md"
+
+witem 1790836850aaaaaaaa 'Stored task' agent ready 'Do it ([x](https://example.invalid/card-1)).'
 witem 1790836851aaaaaaaa 'Stored ruling' human-ruling ready
+witem 1790836852aaaaaaaa 'Second ruling' human-ruling open
+witem 1790836853aaaaaaaa 'Click work' human-click ready
+witem 1790836854aaaaaaaa 'Not yet' agent open
 assert 'an agent item is a pickup candidate' bash -c "sh '$PL' --all | grep -q '◆ Stored task'"
 assert 'with its id beneath' bash -c "sh '$PL' --all | grep -q '^    1790836850aaaaaaaa$'"
-assert 'a ruling item counts toward the docket' bash -c "sh '$PL' | grep -q '^Docket: 2 awaiting'"
+assert 'an open (not ready) item is not a candidate' bash -c "! sh '$PL' --all | grep -q 'Not yet'"
+assert 'a ruling is not a pickup candidate' bash -c "! sh '$PL' --all | grep -q 'Stored ruling'"
+assert 'the docket counts the human-ruling items, not click work' bash -c "sh '$PL' | grep -q '^Docket: 2 awaiting an agora'"
+assert 'take needs a session id' bash -c "! CLAUDE_CODE_SESSION_ID= sh '$PL' take 1790836850aaaaaaaa 2>/dev/null"
 eq 'take on an item claims it through work-item' 'taken 1790836850aaaaaaaa' "$(sh "$PL" take 1790836850aaaaaaaa 1111111122223333)"
-eq 'the claim is in the item log' 'status=claimed' "$(tail -1 "$I/1790836850aaaaaaaa.md" | cut -d' ' -f2-3 | cut -d' ' -f2)"
+eq 'the claim is in the item log' 'status=claimed' "$(tail -1 "$I/1790836850aaaaaaaa.md" | cut -d' ' -f3)"
 eq 'a taken item leaves the default view' '' "$(sh "$PL" --all | grep 'Stored task' || true)"
 assert 'and shows its holder with --closed' bash -c "sh '$PL' --closed | grep 'Stored task' -A0 | grep -q 'taken by 11111111'"
 assert 'a second session cannot take it' bash -c "! sh '$PL' take 1790836850aaaaaaaa 4444444455556666 2>/dev/null"
+assert 'done refuses an item' bash -c "! sh '$PL' done 1790836850aaaaaaaa 2>/dev/null"
 eq 'its holder opens it again' 'open 1790836850aaaaaaaa' "$(sh "$PL" open 1790836850aaaaaaaa 1111111122223333)"
 assert 'and it is back in the view' bash -c "sh '$PL' --all | grep -q 'Stored task'"
 assert 'a ruling item cannot be taken' bash -c "! sh '$PL' take 1790836851aaaaaaaa 1111111122223333 2>/dev/null"
+assert 'a not-ready item cannot be taken' bash -c "! sh '$PL' take 1790836854aaaaaaaa 1111111122223333 2>/dev/null"
 assert 'show reaches a ruling item' bash -c "sh '$PL' show 1790836851aaaaaaaa | grep -q 'Stored ruling'"
+assert 'show reaches click work' bash -c "sh '$PL' show 1790836853aaaaaaaa | grep -q 'Click work'"
+assert 'show of an unknown item fails' bash -c "! sh '$PL' show 1790836859aaaaaaaa 2>/dev/null"
 rm -rf "$I"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
