@@ -58,7 +58,7 @@ state/global/curia/<id>/
   roll.md     the user's words: append-only, one stamped entry per prompt, written by a hook
   digest.md   the document: where it stands, decided, open questions
   LIVE        the last sitting's session id and ISO timestamp; closing leaves it
-  agent-notes.md    the agent's own notes, any format it likes (optional)
+  agent-notes.md    the agent's own notes, for the next agent: free rein, any format; every curia has one
   inputs/     read-only side products: spikes, side-chat pastes, subagent reports
   folded/<id>/  a whole curia opened past the gates, moved under this one (see below);
               a folded question is a line under Open questions, never a folder
@@ -145,7 +145,7 @@ waive.
    the folder and leaves a one-line redirect `digest.md` at the old id.
 
 Only then: create the folder, copy [template.md](template.md) to
-`digest.md`, fill in the question, the origin link, the date, who ordered
+`digest.md`, create `agent-notes.md` with an `# Agent notes` heading, fill in the question, the origin link, the date, who ordered
 it and a reference to the words, and `related:` — the ids of open curiae from
 gate 4 that touch it, ids only; lint keeps it derived from then on — and
 commit. That placeholder is the
@@ -191,7 +191,7 @@ call. The three early placeholders (`andon-rubric`,
    prune under the rule above. Only its list enters this
    context. Lint is toil: apply the mechanical fixes and show the diff
    for the record; beside it, size from `wc -lw`, one line per file —
-   the document step 1 read, and `agent-notes.md` when present — before
+   the document step 1 read, and `agent-notes.md` — before
    and after the fixes: `digest.md 2,242 → 2,198 lines · 33,516 → 32,870
    words`. Only a
    finding that touches a ruling or a name becomes a question in the
