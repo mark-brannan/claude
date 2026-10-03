@@ -96,8 +96,6 @@ copy .claude/hooks/lib-shell-words.awk
 copy .claude/hooks/lib-state.sh
 copy .claude/hooks/lib-state.test.sh
 copy .claude/hooks/lib_state.py
-copy .claude/hooks/local-config-push.sh
-copy .claude/hooks/local-config-push.test.sh
 copy .claude/hooks/log-commit.sh
 copy .claude/hooks/measure-git-events.sh
 copy .claude/hooks/metrics-format.sh
