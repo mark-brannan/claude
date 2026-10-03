@@ -16,7 +16,7 @@ epic or log.
 `--milestone <title>` scopes the Ready, Blocked and Untriaged buckets to open
 issues on that milestone, and stops treating it as deferred — its unlabelled
 issues become the Untriaged table with no `(deferred to a milestone: N)`
-suffix. PR buckets, stranded branches, the board sections and the `counts:`
+suffix. PR buckets, stranded branches, salvaged edits, the board sections and the `counts:`
 line are unscoped either way, and so is the cache and the fetch behind it:
 the filter is applied at render time, so one cache serves both views.
 `--json` applies the same filter to every record's issue nodes and changes
@@ -47,6 +47,11 @@ Queued (auto-merge)       auto-merge enabled, waiting on checks
 Stranded branches         pushed branches with no PR and no pointer — a
                           board card or open issue naming the branch counts
                           as a home and drops it from this bucket
+Salvaged edits (wip refs) `wip/<session-id>` refs on origin, oldest first, with
+                          age: the Stop hook's snapshot of a dirty tree.
+                          The Item cell is the ref, so `git fetch origin
+                          <ref>` works as printed; `/pickup` offers it, never
+                          merges it. `prune-wip-refs` deletes them later.
 Ready                     `ready` issues — agent-startable now
 Blocked                   `blocked` issues, with the updated date
 Not ready (agent's turn)  open PRs that are none of the above, with why
