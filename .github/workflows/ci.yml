@@ -31,25 +31,28 @@ jobs:
           command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
           shellcheck --severity=warning hooks/*.sh cloud-setup.sh bin/*.sh
 
-  # Every hook settings.json references is seeded by cloud-session-setup.sh.
-  # Both files are copies, so the four guards they name and this repo lacks
-  # pass here: the check compares the two lists, not the files on disk.
+  # Every hook settings.json references is seeded by cloud-session-setup.sh,
+  # from INSTALL (this repo) or GUARD_HOOKS (the four guards dotfiles still
+  # tracks). The check compares the lists, not the files on disk.
   seeded:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Every settings.json hook is in the INSTALL list
+      - name: Every settings.json hook is in INSTALL or GUARD_HOOKS
         run: |
           set -euo pipefail
-          { grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.sh' settings.json
+          { grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.sh' settings.json \
+              | sed 's|^\.claude/||'
             grep -ho 'lib-[A-Za-z0-9._-]*\.\(awk\|sh\|jq\)' hooks/*.sh \
-              | sed 's|^|.claude/hooks/|'
+              | sed 's|^|hooks/|'
           } | sort -u > /tmp/referenced
-          sed -n '/^INSTALL="/,/^"/p' bin/cloud-session-setup.sh \
-            | grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\)' \
-            | sort -u > /tmp/installed
+          { sed -n '/^INSTALL="/,/^"/p' bin/cloud-session-setup.sh \
+              | grep -o '^hooks/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\)'
+            sed -n '/^GUARD_HOOKS="/,/^"/p' bin/cloud-session-setup.sh \
+              | grep -o '^[A-Za-z0-9._-]*\.sh' | sed 's|^|hooks/|'
+          } | sort -u > /tmp/installed
           missing=$(comm -23 /tmp/referenced /tmp/installed)
           if [ -n "$missing" ]; then
             echo "::error::settings.json references hooks that cloud-session-setup.sh never seeds:"
