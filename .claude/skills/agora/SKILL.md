@@ -17,24 +17,31 @@ cadence; the ruling's default that holds is "act after a veto window".
 
 ## The sitting
 
-<!-- Sourcing is settled in design (awake items from the board's
-     ## Needs ruling); the awake/asleep mechanism (worklist rung 3) is not
-     built. Until then: -->
+<!-- Sourcing is settled in design (awake items from the ruling items);
+     the awake/asleep mechanism (worklist rung 3) is not built. Until
+     then: -->
 
-Pull candidates from `## Needs ruling` in kanban.md, anything `/reconcile`
-flagged as an implicit "Pending:" tail, and anything the user names. That
-list is the **agora-docket**. Count it before the first question, and show
-the count on every question. <!-- When worklist awake/asleep lands, filter
-to awake only. -->
+Pull candidates from the state repo's items with `owner=human-ruling`
+(`work-item list | awk -F'\t' '$2 == "human-ruling" && ($3 == "ready" ||
+$3 == "open")'`, since a held item cannot be claimed and a blocked one
+waits on its `until=`; the card line is the last column, the id the first),
+anything `/reconcile` flagged as an implicit "Pending:" tail, and
+anything the user names; a candidate with no item skips every
+`work-item` step below. That list is the **agora-docket**. Count it
+before the first question, show the count on every question, and say once
+how many ruling items it left out as blocked or held. <!-- When
+worklist awake/asleep lands, filter to awake only. -->
 
 **Admission** (pencil, the agent's proposal in the one-entry-point
 curia's §6, "The agora petition"; not ruled). Each candidate passes one
 test: could the user rule on it from the card alone, with no prior
 context? If not, a subagent writes a brief and only then admits it. The
 brief is a file, `state/global/agora/briefs/<card-id>.md`, and the card
-gains its link, so the card stays one line, the context has one home, and
-the next sitting reuses it. A card whose question events have overtaken
-never reaches the user: restate the live question under it, or route it
+gains its link (`work-item brief <id> -`, fed the text under `## Brief` in
+`work-item show <id>`, less its `points:` line, plus the link), so the
+card stays one line, the context has one home, and the next sitting
+reuses it. A card whose question events have overtaken never reaches the
+user: restate the live question under it, or route it
 to `/sweep`. "May I delete this?" is never the item. The docket is counted
 after admission; a card routed away leaves the count.
 
@@ -63,13 +70,23 @@ Every item this skill touches gets, and keeps:
   `until`, `risk`. Not "figure out X"; that is unscoped work, sent back
   to be scoped.
 - **Output** — exactly one of:
-  - **Ruling** — the user answers; written at once to `docs/decisions.md`
-    in the primary repo, or the state repo's log if it fails the
-    private-terms check.
+  - **Ruling** — the user answers; the ruling is written at once to
+    `docs/decisions.md` in the primary repo, or the state repo's log if it
+    fails the private-terms check. The card retires in the same turn, per
+    [the lifecycle](../../../docs/work-item-lifecycle.md): an `open` item
+    gets `work-item log <id> status=ready` first, then `work-item claim
+    <id>`, then `work-item log <id> status=done 'evidence=<link>'`, the
+    link to where the answer is recorded (the roll or decisions line, the
+    spawned work, the curia's open question). Stop there: no skill writes
+    `closed`. A refused `claim` leaves the card as it is, and a `done` that
+    fails after the claim takes `work-item release <id>`; either goes in
+    the output line.
   - **Spawned work item** — the answer was "build X to find out"; open
-    the issue or card, link it, this item closes.
+    the issue or card, link it, this item retires as a ruling does.
   - **Item (partly) unblocked** — the ruling removes one dependency; say
-    which, and what still blocks.
+    which, and what still blocks (`work-item log <id> 'unblocked: <which>,
+    still blocked by <what>'`; single-quoted, with no `=` or `'` in the
+    words, since a `key=value` word moves the item or sets a fact).
   - **Confer** — the user's one word; the item leaves the sitting for a
     one-off confer session (see below). Not a failure of the item; a
     rating of its difficulty and possibly of the question's quality.
@@ -79,11 +96,14 @@ Every item this skill touches gets, and keeps:
     paired with closing or deleting.
   - **Folded** — the item is a sub-question of an open curia; a yes writes
     it under that curia's `## Open questions` with its provenance, and
-    the card closes. No folder is touched beyond that line.
+    the card retires as a ruling does. No folder is touched beyond that
+    line.
 
 ## Per item: the steps
 
-1. A fresh subagent gathers the item's context and returns the typed
+1. A fresh subagent gathers the item's context, starting from
+   `work-item show <id>` (a confer mark or an unblocked note lives in its
+   log, not on the docket row), and returns the typed
    question with its four fields and a **direct link** to the stored
    context, readable by the user. It also lists the open curiae exactly as
    the curia skill's bare `/curia` does (`status: open` in the header; a
@@ -106,9 +126,10 @@ Every item this skill touches gets, and keeps:
 
 ## Confer: handing a hard item to a confer session
 
-On the word *confer*: record it on the card (<!-- format open -->
-`confer: <YYYY-MM-DD>`), leave the card where it is, and move on. **Create
-nothing under `state/global/curia/`.** A curia question
+On the word *confer*: record it on the card
+(<!-- format open; this is its pencil form -->
+`work-item log <id> confer=<YYYY-MM-DD>`), leave the card where it is,
+and move on. **Create nothing under `state/global/curia/`.** A curia question
 petitions the agora first; no lower-level session creates a curia. The
 agora is one gate of several; a curia opens only when
 the user says so inside the confer session, at the curia skill's gates.
