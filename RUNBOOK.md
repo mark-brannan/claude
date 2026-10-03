@@ -64,9 +64,9 @@ part of the environment — they attach per session, as sources.
 `Trusted` and `Full network access`:
 
 ```sh
-git clone -q https://github.com/mark-brannan/dotfiles \
-  "$HOME/.local/share/dotfiles-seed" 2>/dev/null
-CLOUD_SESSION=1 sh "$HOME/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh" || true
+git clone -q https://github.com/mark-brannan/claude \
+  "$HOME/.local/share/claude-seed" 2>/dev/null
+CLOUD_SESSION=1 sh "$HOME/.local/share/claude-seed/bin/cloud-session-setup.sh" || true
 ```
 
 `Default (with tailscale)`: the contents of
@@ -78,7 +78,7 @@ seed at every SessionStart.
 
 **2 — Sources.** Add **both**:
 
-- `mark-brannan/dotfiles` — carries `.claude/settings.json`, so any session
+- `mark-brannan/claude` — carries `settings.json`, so any session
   started on this repo gets the hooks even with no user-scope settings at all.
 - `mark-brannan/claude_prompts_scratch` — the private state repo. The
   continuity hooks read the board from it and write their state back to it.
@@ -121,21 +121,24 @@ The other paths it searches, in order: `$CLAUDE_STATE_REPO`,
 
 ## Add a file to the cloud seed
 
-Edit the `INSTALL` allowlist in `.local/bin/cloud-session-setup.sh` — repo-
-relative paths, one per line, copied to the same path under `$HOME`. Expand
+Edit the `INSTALL` allowlist in `bin/cloud-session-setup.sh` — paths relative
+to the repo root (which is `~/.claude`), one per line, copied to the same path
+under `~/.claude`. Expand
 deliberately: every line lands in every cloud session.
 
 ```bash
-$EDITOR .local/bin/cloud-session-setup.sh
-sh .local/bin/cloud-session-setup.sh --dry-run   # safe on any machine, including yadm-managed
+$EDITOR bin/cloud-session-setup.sh
+# the installer refuses on a real machine, so give the dry run a scratch HOME
+# that holds the two seeds (claude-seed and dotfiles-seed under .local/share)
+HOME=$(mktemp -d) sh bin/cloud-session-setup.sh --dry-run
 ```
 
 Two guards make expansion safe, and both will simply refuse rather than warn:
 
 - `SKIP_GLOBS` hard-blocks `.gitconfig*`, `.gitignore` and anything sops-shaped
   even if added to `INSTALL` by mistake.
-- The script refuses to run where `$HOME` is yadm-managed, and skips entirely
-  unless `CLOUD_SESSION=1` or `CLAUDE_CODE_REMOTE=true`.
+- The script refuses to run where `$HOME` is yadm-managed or `~/.claude` is a
+  git checkout, and skips entirely unless `CLOUD_SESSION=1` or `CLAUDE_CODE_REMOTE=true`.
 
 If the new file lives in a directory not already in `OWNED_DIRS`, decide
 whether that directory is *wholly owned* by this script. Only wholly-owned leaf
@@ -143,8 +146,12 @@ directories go in `OWNED_DIRS` — the script links them into `$HOME` as a
 single symlink to the staged release rather than mirroring them file by file;
 `OWNED_NEVER` lists the shared ones that must never be linked that way.
 
-**Every hook `.claude/settings.json` references must be in `INSTALL`, and so
-must every library a hook loads (`lib-*.awk`).** A convenience hook wired in
+**Every hook `settings.json` references must be in `INSTALL` or `GUARD_HOOKS`,
+and so must every library a hook loads (`lib-*.awk`).** `GUARD_HOOKS` is the four
+guards (`no-checkout-home`, `no-foreign-worktree`, `prose-budget-commit`,
+`public-issue-guard`) that dotfiles still tracks; the installer clones
+`mark-brannan/dotfiles` itself to stage them, so both repos must be sources on
+the environment, or the stage is incomplete and nothing is activated. A convenience hook wired in
 settings but missing from the seed is a silent no-op in every cloud session —
 its settings entry is `[ -f ]`-guarded and ends in `|| true`, so it looks
 identical to a hook that ran and found nothing to do. A gate hook
@@ -154,9 +161,9 @@ seed gap there blocks every Bash call with a message naming the hook. After
 editing either file, diff the two lists (CI runs the same check):
 
 ```bash
-{ grep -o '\.claude/hooks/[a-z-]*\.sh' .claude/settings.json
-  grep -ho 'lib-[a-z-]*\.awk' .claude/hooks/*.sh | sed 's|^|.claude/hooks/|'; } | sort -u
-sed -n '/^INSTALL=/,/^"$/p' .local/bin/cloud-session-setup.sh | grep hooks/
+{ grep -o 'hooks/[a-z-]*\.sh' settings.json
+  grep -ho 'lib-[a-z-]*\.awk' hooks/*.sh | sed 's|^|hooks/|'; } | sort -u
+sed -n '/^\(INSTALL\|GUARD_HOOKS\)=/,/^"$/p' bin/cloud-session-setup.sh | grep -v '^[A-Z_]*="'|grep hooks/
 ```
 
 ## Refresh the MCP connector deny list
@@ -169,7 +176,7 @@ refreshed.
 1. Run the `ListConnectors` tool in a session to get the live list.
 2. Server names are the connector's display name with spaces replaced by
    underscores.
-3. Update the `DENY` array in `.claude/cloud-setup.sh`, and mirror any addition
+3. Update the `DENY` array in `cloud-setup.sh`, and mirror any addition
    into `deniedMcpServers` in `.claude/settings.json`.
 
 `cloud-setup.sh` merges rather than clobbers — an existing `settings.json`
@@ -177,7 +184,7 @@ keeps its other keys and its existing `deniedMcpServers` entries are unioned
 with the new ones — and it degrades to a non-`jq` path when `jq` is absent.
 
 ```bash
-sh .claude/cloud-setup.sh
+sh cloud-setup.sh
 jq '.deniedMcpServers | length' ~/.claude/settings.json
 ```
 
@@ -832,37 +839,38 @@ with no user-scope settings at all. What the seed buys is the *other* repos.
 
 ## A cloud session is running an old rule
 
-The seed checkout at `~/.local/share/dotfiles-seed` is a real clone, so ask it:
+The seed checkouts at `~/.local/share/claude-seed` (and `dotfiles-seed`, for
+the four guard hooks) are real clones, so ask them:
 
 ```bash
-git -C ~/.local/share/dotfiles-seed log --oneline -1
+git -C ~/.local/share/claude-seed log --oneline -1
 ```
 
 Behind `origin/main` means the refresh is not running. Either the container
 predates it — `ls ~/.claude/hooks/session-start-seed-refresh.sh` — or the pull
 failed, which the installer reports rather than swallowing:
-`CLOUD_SESSION=1 sh ~/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh`
+`CLOUD_SESSION=1 sh ~/.local/share/claude-seed/bin/cloud-session-setup.sh`
 prints the reason. A blocked proxy leaves the last-known-good seed in place on
 purpose; that is a stale session, not a broken one.
 
 ## A deleted hook keeps running
 
-`$HOME/.claude/hooks` is a symlink to `~/.claude-config/current/.claude/hooks`
-(and `.claude/rules` the same), so a file dropped from `INSTALL` simply isn't
+`~/.claude/hooks` is a symlink to `~/.claude-config/current/hooks`
+(and `rules` and `bin` the same), so a file dropped from `INSTALL` simply isn't
 in the next staged release — there is no separate prune step to fall out of
 sync, unlike the per-file-copy design this replaced. If a stale hook is still
 running, check first that its directory is actually in `OWNED_DIRS` in
-`.local/bin/cloud-session-setup.sh` — a file outside those two directories is
+`bin/cloud-session-setup.sh` — a file outside those directories is
 linked individually and a rename can leave the old name behind:
 
 ```bash
-ls -la ~/.claude/hooks   # should be a symlink -> ~/.claude-config/current/.claude/hooks
+ls -la ~/.claude/hooks   # should be a symlink -> ~/.claude-config/current/hooks
 cat ~/.claude/.sync-status.json   # sha/installed_at of what's actually live
 ```
 
 If the symlink target is stale (points at a release dir other than
 `~/.claude-config/current`'s own target, or is missing), re-run the installer:
-`CLOUD_SESSION=1 sh ~/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh`.
+`CLOUD_SESSION=1 sh ~/.local/share/claude-seed/bin/cloud-session-setup.sh`.
 If the hook's directory isn't in `OWNED_DIRS` at all, add it there — that's the
 structural fix, not a one-off `rm`.
 

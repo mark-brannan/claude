@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copy-paste source for the "Default (with tailscale)" cloud environment's
-# setup-script field, per .claude/RUNBOOK.md § Create a cloud environment.
+# setup-script field, per RUNBOOK.md § Create a cloud environment.
 #
 # The platform does not execute this file — the setup-script field only takes
 # pasted text, and this variant installs tailscale before the seed exists to
@@ -19,6 +19,6 @@ curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list
 apt-get update || true
 apt-get install -y tailscale openssh-client
 
-git clone -q https://github.com/mark-brannan/dotfiles \
-  "$HOME/.local/share/dotfiles-seed" 2>/dev/null
-CLOUD_SESSION=1 sh "$HOME/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh"
+git clone -q https://github.com/mark-brannan/claude \
+  "$HOME/.local/share/claude-seed" 2>/dev/null
+CLOUD_SESSION=1 sh "$HOME/.local/share/claude-seed/bin/cloud-session-setup.sh"
