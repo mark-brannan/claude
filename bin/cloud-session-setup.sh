@@ -1,24 +1,45 @@
 #!/bin/sh
-# cloud-session-setup.sh — install a chosen subset of these dotfiles into $HOME
-# on an ephemeral cloud-session VM (Ubuntu, root, ~5 min setup window).
+# cloud-session-setup.sh -- seed ~/.claude on an ephemeral cloud-session VM
+# (Ubuntu, root, ~5 min setup window) from mark-brannan/claude, whose repo root
+# IS ~/.claude, plus the four guard hooks that still live in mark-brannan/dotfiles.
 #
 # Wire it up in the environment's setup-script field:
 #
-#   git clone -q https://github.com/mark-brannan/dotfiles \
-#     "$HOME/.local/share/dotfiles-seed" 2>/dev/null
-#   CLOUD_SESSION=1 sh "$HOME/.local/share/dotfiles-seed/.local/bin/cloud-session-setup.sh" || true
+#   git clone -q https://github.com/mark-brannan/claude \
+#     "$HOME/.local/share/claude-seed" 2>/dev/null
+#   CLOUD_SESSION=1 sh "$HOME/.local/share/claude-seed/bin/cloud-session-setup.sh" || true
 #
-# Deliberately NOT yadm. This repo uses no yadm encryption (secrets are
-# sops+age, and the age key never reaches a VM) and its only alternate is
-# .gitconfig — which must not be installed here, because it would replace the
-# session's own git identity and commit-signing config.
+# Why not clone straight into ~/.claude: a cloud VM's ~/.claude already holds
+# the harness's own state (projects/, sessions, settings.local.json), so a
+# clone would be refused or would have to be forced over it, and neither is
+# atomic. The seed stays a separate clone, a release is staged from it, and
+# one symlink flip makes it live -- the scheme this script already had, kept
+# because only the source of the tree changed, not the reason for it.
+#
+# Why dotfiles is still read: settings.json runs no-checkout-home,
+# no-foreign-worktree, prose-budget-commit and public-issue-guard from
+# ~/.claude/hooks and FAILS CLOSED when one is missing -- every Bash call is
+# denied. Those four stay tracked in dotfiles (GUARD_HOOKS below), so a VM
+# that did not get them would be unusable, not merely less guarded. They are
+# staged into the same release, so the claude tree and the guards go live
+# together or not at all. Both repos must therefore be sources on the
+# environment: the GitHub proxy 403s any repo that is not attached.
+#
+# Deliberately NOT yadm, and never over a real checkout: it refuses where
+# $HOME is yadm-managed or where ~/.claude is a git clone (every real
+# machine). Secrets are sops+age, the age key never reaches a VM, and the
+# .gitconfig alternate must not be installed here (see SKIP_GLOBS).
 #
 # Usage:
 #   CLOUD_SESSION=1 sh cloud-session-setup.sh          install
-#   sh cloud-session-setup.sh --dry-run                show what would happen,
-#                                                      safe on any machine
+#   HOME=$(mktemp -d) sh cloud-session-setup.sh --dry-run
+#                                                      show what would happen;
+#                                                      on a real machine the
+#                                                      guards below refuse, so
+#                                                      point HOME at a scratch
+#                                                      dir holding the seeds
 #
-# Always exits 0: a missing dotfile must never stop a session from starting.
+# Always exits 0: a missing file must never stop a session from starting.
 # -f is load-bearing, not tidiness: `for glob in $SKIP_GLOBS` and
 # `for path in $INSTALL` undergo pathname expansion as well as word splitting,
 # so run from a directory holding a .gitconfig##default the pattern
@@ -26,95 +47,107 @@
 # literal `.gitconfig` it exists to block. -f keeps both lists literal.
 set -uf
 
-SEED="${DOTFILES_SEED:-$HOME/.local/share/dotfiles-seed}"
-BACKUP="$HOME/.dotfiles-replaced"
+# The claude seed: this repo, whose root is ~/.claude.
+SEED="${CLAUDE_SEED:-$HOME/.local/share/claude-seed}"
+# The guard seed: dotfiles, read for GUARD_HOOKS only.
+GUARDS_SEED="${DOTFILES_SEED:-$HOME/.local/share/dotfiles-seed}"
+GUARDS_URL="${DOTFILES_URL:-https://github.com/mark-brannan/dotfiles}"
+CLAUDE_HOME="$HOME/.claude"
+BACKUP="$HOME/.claude-replaced"
 # Versioned releases + the "current" symlink that makes an install atomic --
 # see "Stage" and "Flip" below. Overridable, but on its own it is NOT a test
 # harness: the Link step still writes symlinks under the real $HOME, and
 # STATUS_FILE is still under it. Isolating a run means overriding $HOME.
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-config}"
-STATUS_FILE="$HOME/.claude/.sync-status.json"
+STATUS_FILE="$CLAUDE_HOME/.sync-status.json"
 STATUS_TMP="$STATUS_FILE.$$"
 DRY_RUN=no
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=yes
 
 # --- what to install -----------------------------------------------------
-# Repo-relative paths, files or directories, copied to the same path under
-# $HOME. Expand deliberately: every line lands in every cloud session.
+# Paths relative to the claude repo root (= ~/.claude), files or directories,
+# copied to the same path under ~/.claude. Expand deliberately: every line
+# lands in every cloud session.
 # Every hook that settings.json references (directly or transitively) MUST be
-# listed here. settings.json now runs hooks from $HOME ONLY -- the old
+# listed here or in GUARD_HOOKS. settings.json runs hooks from $HOME ONLY -- the old
 # $CLAUDE_PROJECT_DIR fallback was removed because in a cloud session on a
 # third-party repo it executed THAT repo's .claude/hooks/*.sh under user-scope
 # trust. Fail-closed is only safe if $HOME is complete: an omission here means
 # the hook silently stops running, not that a stranger's copy runs instead.
 INSTALL="
-.claude/settings.json
-.claude/CLAUDE.md
-.claude/rules/code.md
-.claude/rules/writing.md
-.claude/skills/card-helper/SKILL.md
-.claude/skills/card-write/SKILL.md
-.claude/skills/wrapup/SKILL.md
-.claude/skills/worklist/SKILL.md
-.claude/skills/sweep/SKILL.md
-.claude/skills/pickup/SKILL.md
-.claude/skills/orchestrate/SKILL.md
-.claude/skills/agora/SKILL.md
-.claude/skills/agora/brief.md
-.claude/skills/curia/SKILL.md
-.claude/skills/curia/template.md
-.claude/skills/curia/forms/agent-notes.md
-.claude/skills/curia/forms/working-backwards.md
-.claude/skills/curia/forms/problem-then-solution.md
-.claude/skills/curia/forms/bdd.md
-.claude/skills/curia/forms/mvp-and-narrative.md
-.claude/skills/curia/forms/success-metric.md
-.claude/skills/scoping/SKILL.md
-.claude/hooks/lib-state.sh
-.claude/hooks/lib_state.py
-.claude/hooks/curia-roll.py
-.claude/hooks/session-metrics.jq
-.claude/hooks/lib-metrics-fmt.jq
-.claude/hooks/lib-metrics-test-harness.sh
-.claude/hooks/session-start-continuity.sh
-.claude/hooks/stop-continuity.sh
-.claude/hooks/stop-sequence.py
-.claude/hooks/measure-git-events.sh
-.claude/hooks/no-persistent-polling.sh
-.claude/hooks/no-late-pr-subscribe.sh
-.claude/hooks/pr-ownership-context.sh
-.claude/hooks/pr-threads-gate.sh
-.claude/hooks/no-prose-gate.sh
-.claude/hooks/no-unsigned-push.sh
-.claude/hooks/no-update-branch.sh
-.claude/hooks/no-checkout-home.sh
-.claude/hooks/no-foreign-worktree.sh
-.claude/hooks/lib-shell-words.awk
-.claude/hooks/session-start-seed-refresh.sh
-.claude/hooks/guard-add-repo.sh
-.claude/hooks/metrics-format.sh
-.claude/hooks/metrics-live.sh
-.claude/hooks/metrics-rollup.sh
-.claude/hooks/log-commit.sh
-.claude/hooks/statusline-metrics.sh
-.claude/hooks/connector-budget.sh
-.claude/hooks/prose-budget-commit.sh
-.claude/hooks/prose-budget-edit.sh
-.claude/hooks/branch-home-gate.sh
-.claude/hooks/claim-stamp.sh
-.claude/hooks/public-issue-guard.sh
-.claude/hooks/issue-door.sh
-.claude/hooks/fixtures
-.local/bin/metrics-preview.sh
-.local/bin/metrics-breakdown.sh
-.local/bin/prose-budget
-.local/bin/worklist
-.local/bin/pickup-list
-.local/bin/card-id
-.local/bin/work-item
-.local/bin/scoping-lock
-.local/bin/gh-resolve-thread
-.local/bin/pr-label-audit
+settings.json
+CLAUDE.md
+rules/code.md
+rules/writing.md
+skills/card-helper/SKILL.md
+skills/card-write/SKILL.md
+skills/wrapup/SKILL.md
+skills/worklist/SKILL.md
+skills/sweep/SKILL.md
+skills/pickup/SKILL.md
+skills/orchestrate/SKILL.md
+skills/agora/SKILL.md
+skills/agora/brief.md
+skills/curia/SKILL.md
+skills/curia/template.md
+skills/curia/forms/agent-notes.md
+skills/curia/forms/working-backwards.md
+skills/curia/forms/problem-then-solution.md
+skills/curia/forms/bdd.md
+skills/curia/forms/mvp-and-narrative.md
+skills/curia/forms/success-metric.md
+skills/scoping/SKILL.md
+hooks/lib-state.sh
+hooks/lib_state.py
+hooks/curia-roll.py
+hooks/session-metrics.jq
+hooks/lib-metrics-fmt.jq
+hooks/lib-metrics-test-harness.sh
+hooks/session-start-continuity.sh
+hooks/stop-continuity.sh
+hooks/stop-sequence.py
+hooks/measure-git-events.sh
+hooks/no-persistent-polling.sh
+hooks/no-late-pr-subscribe.sh
+hooks/pr-ownership-context.sh
+hooks/pr-threads-gate.sh
+hooks/no-prose-gate.sh
+hooks/no-unsigned-push.sh
+hooks/no-update-branch.sh
+hooks/lib-shell-words.awk
+hooks/session-start-seed-refresh.sh
+hooks/guard-add-repo.sh
+hooks/metrics-format.sh
+hooks/metrics-live.sh
+hooks/metrics-rollup.sh
+hooks/log-commit.sh
+hooks/statusline-metrics.sh
+hooks/connector-budget.sh
+hooks/prose-budget-edit.sh
+hooks/branch-home-gate.sh
+hooks/claim-stamp.sh
+hooks/issue-door.sh
+hooks/fixtures
+bin/metrics-preview.sh
+bin/metrics-breakdown.sh
+bin/prose-budget
+bin/worklist
+bin/pickup-list
+bin/card-id
+bin/work-item
+bin/scoping-lock
+bin/gh-resolve-thread
+bin/pr-label-audit
+"
+
+# Hooks that still live in mark-brannan/dotfiles at .claude/hooks/<name>,
+# staged into hooks/ beside the INSTALL ones. A missing one is a missing
+# INSTALL entry: the stage is incomplete and is not activated.
+GUARD_HOOKS="
+no-checkout-home.sh
+no-foreign-worktree.sh
+prose-budget-commit.sh
+public-issue-guard.sh
 "
 
 # --- what is wholly owned by this installer -------------------------------
@@ -125,23 +158,23 @@ INSTALL="
 # these needs no separate prune step, because the next stage simply doesn't
 # contain it (see "Stage" below).
 #
-# Only wholly-owned leaf directories go here. `.claude` itself must NEVER
-# appear: it also holds state/, projects/, todos/ and settings.local.json,
-# none of which this script put there.
-OWNED_DIRS='.claude/hooks .claude/rules'
+# Only wholly-owned leaf directories go here. `.` (~/.claude itself) must
+# NEVER appear: it also holds state/, projects/, todos/ and
+# settings.local.json, none of which this script put there.
+OWNED_DIRS='hooks rules bin'
 
 # A tripwire for OWNED_DIRS, in the same spirit as SKIP_GLOBS: these are
 # shared directories that hold files this script never put there, so linking
 # one as a whole would hide a stranger's files behind the symlink swap.
-# `.claude` is the live example -- INSTALL names files directly under it,
-# which would otherwise make it look owned, and settings.local.json, state/
-# and projects/ all live there.
-OWNED_NEVER='. .claude .config .local .local/bin .ssh'
+# `.` is the live example -- INSTALL names files directly under it, which
+# would otherwise make it look owned, and settings.local.json, state/ and
+# projects/ all live there.
+OWNED_NEVER='. state projects todos plugins'
 
 # The continuity hooks read and write the private state repo
 # (claude_prompts_scratch). This script cannot clone it -- a VM has no
 # credentials for a private repo at setup time -- so it must be added as a
-# SECOND SOURCE on the cloud environment alongside dotfiles. Without it the
+# SECOND SOURCE on the cloud environment alongside claude and dotfiles. Without it the
 # hooks still run, but they write to ~/.claude/state/global, which dies with
 # the container. session-start-continuity.sh says so at the top of every
 # session rather than failing quietly.
@@ -158,8 +191,8 @@ OWNED_NEVER='. .claude .config .local .local/bin .ssh'
 #                      are), so they are inert here and only add surface area
 SKIP_GLOBS='.gitconfig* .gitignore secrets/* *.sops.* *.bashrc *.zshrc *.zshenv *.profile *.zprofile'
 
-say() { echo "dotfiles: $*"; }
-warn() { echo "dotfiles: $*" >&2; }
+say() { echo "cloud-seed: $*"; }
+warn() { echo "cloud-seed: $*" >&2; }
 
 # =========================================================================
 # Guard 1 — refuse to touch a machine whose $HOME yadm actually manages.
@@ -189,6 +222,14 @@ if repo=$(yadm_repo); then
   exit 0
 fi
 
+# A real machine's ~/.claude is a clone of the claude repo. Linking over it
+# would back up and replace tracked files in a working tree someone is using.
+if [ -e "$CLAUDE_HOME/.git" ] && [ ! -L "$CLAUDE_HOME" ]; then
+  warn "REFUSING -- $CLAUDE_HOME is a git checkout, not a cloud VM's bare state dir."
+  warn "  On a real machine: git -C ~/.claude pull --rebase --autostash"
+  exit 0
+fi
+
 # =========================================================================
 # Guard 2 — require positive evidence this is an ephemeral session.
 # =========================================================================
@@ -209,11 +250,16 @@ fi
 # =========================================================================
 # Refresh — bring the seed checkout up to date before installing from it.
 # =========================================================================
-# The setup-script blob's `git clone` is a no-op once $SEED exists, and a
-# cloud container is checkpointed and reused across sessions. Without this
-# the seed is frozen at whatever it cloned the first time the environment
-# was provisioned, so a rule edited here never reaches a session again --
-# and it fails silently, exactly like the deleted-hook scar above.
+# Scar: the setup script runs once, at container creation, not once per
+# session. The blob's `git clone` is a no-op once $SEED exists, and a cloud
+# container is checkpointed and reused, so a seed that is only ever cloned
+# freezes at whatever it was when the environment was provisioned. A rule
+# edited upstream then reaches only the sessions that happen to get a cold
+# VM, which look identical to the ones that do. Hence this pull, and
+# hooks/session-start-seed-refresh.sh re-running the installer at every
+# SessionStart: live rather than pinned, because a stale standing order in an
+# interactive session is worse than a changed one. The dotfiles guard seed
+# gets the same pull below.
 #
 # `pull --ff-only`, not `fetch` plus a merge of FETCH_HEAD: the latter takes
 # origin's default branch whatever the seed has checked out, so testing a
@@ -231,10 +277,35 @@ else
   say "refreshed to $(git -C "$SEED" rev-parse --short HEAD 2>/dev/null)"
 fi
 
+# The guard seed is this script's to create, not the setup blob's: the blob
+# only has to know where to find THIS file. Same never-fatal stance as above;
+# GUARD_HOOKS entries it cannot supply are counted missing in Stage, which
+# keeps the previous release rather than activating a tree without its gates.
+if [ "$DRY_RUN" = yes ]; then
+  say "would clone or refresh $GUARDS_SEED (skipped: --dry-run does no network)"
+elif [ -d "$GUARDS_SEED/.git" ]; then
+  out=$(git -C "$GUARDS_SEED" pull -q --ff-only 2>&1) ||
+    warn "guard refresh failed, using the existing checkout: ${out:-unknown error}"
+elif out=$(git clone -q --depth 1 "$GUARDS_URL" "$GUARDS_SEED" 2>&1); then
+  say "cloned guard seed $GUARDS_SEED"
+else
+  warn "guard seed clone failed: ${out:-unknown error}"
+  rm -rf "$GUARDS_SEED"
+fi
+
 
 # =========================================================================
 # Stage — build the next release in full, touching nothing under $HOME.
 # =========================================================================
+# Scar: seeding without pruning is why a deleted hook kept running. A
+# container seeded it once, the repo dropped it, and the copy under ~/.claude
+# was still there and still won. The fix is structural, not a sweep of stale
+# files: OWNED_DIRS (hooks, rules, bin) are linked whole into ~/.claude, so a
+# file dropped from INSTALL or GUARD_HOOKS is simply not in the next staged
+# release, with no prune step to keep in sync. OWNED_NEVER guards the shared
+# directories (~/.claude itself, state/, projects/) that would otherwise be
+# hidden behind a symlink.
+#
 # T3 (partial failure -> mixed instruction set) is fixed here, not by care
 # at install time: this stage either produces a complete tree or it doesn't,
 # and $HOME never sees the difference until the flip below. A file dropped
@@ -244,7 +315,15 @@ fi
 # existing release rather than rebuilding it, which is only sound because a
 # git SHA pins exactly what was staged. With no SHA to be had, fall back to a
 # name unique to this run so that shortcut can never match a stale tree.
-REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null) || REV="unknown.$$"
+# Two sources feed one release, so the name carries both SHAs (claude first:
+# the SessionStart brief shows the first seven characters of the status sha).
+CLAUDE_REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null)
+GUARDS_REV=$(git -C "$GUARDS_SEED" rev-parse HEAD 2>/dev/null)
+if [ -n "$CLAUDE_REV" ] && [ -n "$GUARDS_REV" ]; then
+  REV="$CLAUDE_REV-$GUARDS_REV"
+else
+  REV="unknown.$$"
+fi
 STAGE="$CONFIG_DIR/releases/$REV"
 STAGE_TMP="$CONFIG_DIR/releases/.tmp.$$"
 CURRENT_TMP="$CONFIG_DIR/.current.$$"
@@ -283,6 +362,35 @@ for path in $INSTALL; do
 
   dst="$STAGE_TMP/$path"
   mkdir -p "$(dirname "$dst")" && cp -a "$src" "$dst" ||
+    { warn "  FAILED to stage $path"; failed=$((failed + 1)); continue; }
+  installed=$((installed + 1))
+done
+
+# GUARD_HOOKS come from the dotfiles seed, into the same staged hooks/.
+for name in $GUARD_HOOKS; do
+  [ -n "$name" ] || continue
+  path="hooks/$name"
+  blocked=no
+  for glob in $SKIP_GLOBS; do
+    # shellcheck disable=SC2254  # $glob is a pattern on purpose
+    case "$path" in $glob) blocked=yes; break ;; esac
+  done
+  if [ "$blocked" = yes ]; then
+    warn "  REFUSED $path — on the never-install list"
+    refused=$((refused + 1)); continue
+  fi
+  src="$GUARDS_SEED/.claude/hooks/$name"
+  if [ ! -e "$src" ]; then
+    warn "  MISSING $path — not in $GUARDS_SEED (guard seed absent, or moved?)"
+    missing=$((missing + 1)); continue
+  fi
+  if [ "$DRY_RUN" = yes ]; then
+    say "  would stage $path (from dotfiles)"
+    installed=$((installed + 1)); continue
+  fi
+  dst="$STAGE_TMP/$path"
+  # -L: a guard that is a symlink in dotfiles would dangle inside the release.
+  mkdir -p "$(dirname "$dst")" && cp -L "$src" "$dst" ||
     { warn "  FAILED to stage $path"; failed=$((failed + 1)); continue; }
   installed=$((installed + 1))
 done
@@ -413,7 +521,7 @@ fi
 # =========================================================================
 # Link — point $HOME at "current", once. Never needs to move again.
 # =========================================================================
-# Every entry INSTALL names ends up reachable at $HOME/<path>, but not as a
+# Every entry INSTALL names ends up reachable at ~/.claude/<path>, but not as a
 # copy: a symlink through $CONFIG_DIR/current, so the Flip step above is the
 # only place content ever changes. A directory in OWNED_DIRS is linked once
 # as a whole (so a file INSTALL later drops from it just disappears, with no
@@ -427,7 +535,7 @@ fi
 link_path() {
   rel=$1
   [ "$DRY_RUN" = yes ] || [ -e "$CONFIG_DIR/current" ] || return
-  dst="$HOME/$rel"
+  dst="$CLAUDE_HOME/$rel"
   target="$CONFIG_DIR/current/$rel"
 
   if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$target" ]; then
@@ -440,7 +548,7 @@ link_path() {
     # never silently discarded, same policy as everywhere else in this
     # script: back it up, then replace it.
     if [ "$DRY_RUN" = yes ]; then
-      say "  would replace $rel with a symlink (backup to ~/.dotfiles-replaced/$rel)"
+      say "  would replace $rel with a symlink (backup to ~/.claude-replaced/$rel)"
       linked=$((linked + 1)); return
     fi
     mkdir -p "$BACKUP/$(dirname "$rel")" && rm -rf "${BACKUP:?}/${rel:?}" 2>/dev/null
@@ -481,6 +589,27 @@ for dir in $OWNED_DIRS; do
     continue
   fi
   link_path "$dir"
+done
+
+# The tools are reachable as ~/.claude/bin/<name>, but a VM's PATH has no
+# ~/.claude/bin (the rc files that add it on a real machine are inert here),
+# and skills and hooks call them bare. ~/.local/bin is where the old layout
+# put them, so keep them there: one symlink per bin/ entry into the
+# already-linked bin/ directory. -n so a name that is a directory is never
+# descended into; a regular file of someone else's is left alone.
+for path in $INSTALL; do
+  case "$path" in bin/*) ;; *) continue ;; esac
+  name=${path#bin/}
+  dst="$HOME/.local/bin/$name"
+  if [ "$DRY_RUN" = yes ]; then
+    say "  would link ~/.local/bin/$name -> ~/.claude/$path"; continue
+  fi
+  [ -e "$CONFIG_DIR/current" ] || continue
+  if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+    warn "  left ~/.local/bin/$name alone — not a symlink"; continue
+  fi
+  mkdir -p "$HOME/.local/bin" && ln -sfn "$CLAUDE_HOME/$path" "$dst" ||
+    { warn "  FAILED to link ~/.local/bin/$name"; failed=$((failed + 1)); }
 done
 
 # =========================================================================
@@ -548,7 +677,8 @@ else
 {
   "channel": "$BRANCH",
   "tag": null,
-  "sha": "$ACTIVE",
+  "sha": "${ACTIVE%%-*}",
+  "guards_sha": "$([ "${ACTIVE#*-}" != "$ACTIVE" ] && echo "${ACTIVE#*-}")",
   "installed_at": "$NOW",
   "complete": $COMPLETE,
   "source": "cloud-session-setup.sh"
