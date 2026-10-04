@@ -1,0 +1,387 @@
+#!/usr/bin/env python3
+"""prune-worktrees [--delete] [--hours N] [--no-fetch] [--repo DIR]... [--no-plugins]
+
+Removes (dry run unless --delete) linked git worktrees that hold nothing a
+removal could lose, in every git repository directly under $HOME (and
+~/.claude), and drops the project-scoped entries in
+~/.claude/plugins/installed_plugins.json whose directory no longer exists.
+
+A worktree is removed only when all of these hold:
+  - it is not the repo's main checkout and not locked;
+  - no running process has its cwd inside it (a live session);
+  - its HEAD and reflog are older than --hours (default 24);
+  - `git status --porcelain` is empty (no edits, no untracked files);
+  - its HEAD commit is on some remote ref, its branch's upstream is gone
+    (PR merged and deleted), or every commit is patch-equivalent to the
+    default branch (squash-merged).
+Removal is `git worktree remove` without --force, so git refuses anything
+dirty that slipped past. The branch is left alone: local branches are
+prune-branches's. Each removal prints its undo (`git worktree add`).
+
+Worktree metadata whose directory is already gone is cleared with
+`git worktree prune --expire=now` (git's own default waits three months),
+but only when the directory's parent exists: a missing parent reads as an
+unmounted disk, and that entry is kept. A fetch that fails or hangs (no
+ssh agent under a timer) is a warning, not a skip, but a stale remote ref
+can still hold a commit the remote dropped, so that repo falls back to the
+patch-equivalent and squash checks alone.
+
+A worktree with submodules is removed (git insists on --force for those)
+only when no submodule holds a commit that is on none of its remotes.
+
+Plugin entries: Claude Code records one project-scope install per directory
+whose .claude/settings.json enables a plugin, so every worktree cut from such
+a checkout adds one and nothing removes it. The pruned file is written
+atomically after a timestamped backup in ~/.local/state/prune-worktrees/,
+and not at all if Claude Code changed it during the run (next run retries).
+
+Exit 1 if a repo could not be read or a removal failed.
+"""
+import argparse
+import datetime
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+PLUGINS = os.path.join(HOME, ".claude", "plugins", "installed_plugins.json")
+STATE = os.path.join(
+    os.environ.get("XDG_STATE_HOME", os.path.join(HOME, ".local", "state")),
+    "prune-worktrees")
+KEEP_BACKUPS = 5
+FETCH_TIMEOUT = 60
+# Unattended: a remote that wants a password fails at once instead of
+# waiting on a prompt nobody will answer. ssh's passphrase prompt is
+# BatchMode, set per fetch so a repo's core.sshCommand survives.
+GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+
+
+def git(repo, *args, check=False, timeout=None, env=None):
+    # --no-optional-locks: a read must not refresh the index, or this run's
+    # own `git status` makes every worktree look touched the next time.
+    r = subprocess.run(["git", "--no-optional-locks", "-C", repo, *args], capture_output=True, text=True,
+                       errors="surrogateescape", env=env or GIT_ENV, timeout=timeout)
+    if check and r.returncode:
+        raise RuntimeError(r.stderr.strip())
+    return r
+
+
+def find_repos(explicit):
+    """One path per repository (by common dir), main checkout preferred."""
+    cands = explicit or sorted(
+        os.path.join(HOME, n) for n in os.listdir(HOME)
+        if os.path.exists(os.path.join(HOME, n, ".git")))
+    if not explicit and os.path.exists(os.path.join(HOME, ".claude", ".git")):
+        cands.append(os.path.join(HOME, ".claude"))
+    seen, out = set(), []
+    for c in cands:
+        r = git(c, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        if r.returncode:
+            print(f"{c}: not a git repository -- skipped", file=sys.stderr)
+            continue
+        common = r.stdout.strip()
+        if common in seen:
+            continue
+        seen.add(common)
+        # The main checkout is the common dir's parent for a non-bare repo.
+        main = os.path.dirname(common) if common.endswith("/.git") else c
+        out.append(main)
+    return out
+
+
+def worktrees(repo):
+    """Parse `git worktree list --porcelain` into dicts."""
+    items, cur = [], {}
+    for line in git(repo, "worktree", "list", "--porcelain").stdout.splitlines():
+        if not line:
+            if cur:
+                items.append(cur)
+            cur = {}
+            continue
+        k, _, v = line.partition(" ")
+        cur[k] = v or True
+    if cur:
+        items.append(cur)
+    return items
+
+
+def live_cwds():
+    cwds = set()
+    for pid in os.listdir("/proc"):
+        if pid.isdigit():
+            try:
+                cwds.add(os.readlink(f"/proc/{pid}/cwd").removesuffix(" (deleted)"))
+            except OSError:
+                pass
+    return cwds
+
+
+def in_use(path, cwds):
+    p = path.rstrip("/") + "/"
+    return any(c == path or c.startswith(p) for c in cwds)
+
+
+def last_touch(wt):
+    """Newest mtime of the worktree's HEAD and reflog: checkout and commit.
+    Not the index -- any tool's `git status` rewrites it. Uncommitted work
+    shows as dirty instead."""
+    r = git(wt, "rev-parse", "--path-format=absolute", "--git-dir")
+    gd = r.stdout.strip()
+    times = []
+    for f in ("HEAD", "logs/HEAD"):
+        try:
+            times.append(os.path.getmtime(os.path.join(gd, f)))
+        except OSError:
+            pass
+    return max(times) if times else 0
+
+
+class Landed:
+    """Answers "is this commit safe on the remote?" for one repo."""
+
+    def __init__(self, repo, trust_remotes=True):
+        self.repo = repo
+        # False when the fetch failed: a remote ref not pruned may still
+        # hold a commit the remote has dropped, and [gone] can't be seen.
+        self.trust_remotes = trust_remotes
+        r = git(repo, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD")
+        self.base = r.stdout.strip() or "origin/main"
+        self._base_ids = None
+
+    def base_ids(self):
+        if self._base_ids is None:
+            log = git(self.repo, "log", "-p", "--no-merges", "--since=120.days",
+                      self.base).stdout
+            ids = subprocess.run(["git", "-C", self.repo, "patch-id", "--stable"],
+                                 input=log, capture_output=True, text=True, errors="surrogateescape").stdout
+            self._base_ids = {l.split()[0] for l in ids.splitlines() if l}
+        return self._base_ids
+
+    def reason(self, sha, branch):
+        if self.trust_remotes:
+            return self.on_remote(sha, branch) or self.merged(sha)
+        return self.merged(sha)
+
+    def on_remote(self, sha, branch):
+        holders = git(self.repo, "for-each-ref", "--format=%(refname:short)",
+                      "--contains", sha, "refs/remotes").stdout.split()
+        holders = [h for h in holders if not h.endswith("/HEAD")]
+        if holders:
+            return f"on {self.base if self.base in holders else holders[0]}"
+        if branch:
+            track = git(self.repo, "for-each-ref", "--format=%(upstream:short)|%(upstream:track)",
+                        f"refs/heads/{branch}").stdout.strip()
+            up, _, tr = track.partition("|")
+            if up and tr == "[gone]":
+                return f"upstream {up} gone"
+        return None
+
+    def merged(self, sha):
+        mb = git(self.repo, "merge-base", self.base, sha).stdout.strip()
+        if not mb or not git(self.repo, "diff", "--quiet", mb, sha).returncode:
+            return None  # no net diff proves nothing
+        cherry = git(self.repo, "cherry", self.base, sha).stdout
+        if cherry and "+" not in [l[:1] for l in cherry.splitlines()]:
+            return f"patch-equivalent to {self.base}"
+        diff = git(self.repo, "diff", mb, sha).stdout
+        pid = subprocess.run(["git", "-C", self.repo, "patch-id", "--stable"],
+                             input=diff, capture_output=True, text=True, errors="surrogateescape").stdout.split()
+        if pid and pid[0] in self.base_ids():
+            return f"squash-merged into {self.base}"
+        return None
+
+
+def fetch(repo):
+    """True when the remote refs here are fresh."""
+    # GIT_SSH_COMMAND outranks core.sshCommand, so build on whichever is set.
+    ssh = (os.environ.get("GIT_SSH_COMMAND")
+           or git(repo, "config", "--get", "core.sshCommand").stdout.strip() or "ssh")
+    env = dict(GIT_ENV, GIT_SSH_COMMAND=ssh + " -o BatchMode=yes")
+    try:
+        return git(repo, "fetch", "--prune", "--quiet", timeout=FETCH_TIMEOUT, env=env).returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def unpushed_in_submodules(path):
+    """Commits in any submodule (recursively) on none of its remotes."""
+    r = git(path, "submodule", "foreach", "--quiet", "--recursive",
+            "git rev-list --count HEAD --branches --not --remotes")
+    if r.returncode:
+        return None  # unknown: treat as unsafe
+    return sum(int(n) for n in r.stdout.split() if n.isdigit())
+
+
+def prune_metadata(repo, label, args, tally):
+    """Clear entries whose directory is gone, sparing any whose parent is
+    gone too (unmounted disk): those are locked across the prune."""
+    missing = [w for w in worktrees(repo)[1:] if w.get("prunable") and not w.get("locked")]
+    spare = [w["worktree"] for w in missing if not os.path.isdir(os.path.dirname(w["worktree"]))]
+    for p in spare:
+        print(f"{label}: keep metadata for {p} -- its parent directory is missing too (unmounted?)")
+    gone = [w["worktree"] for w in missing if w["worktree"] not in spare]
+    for p in gone:
+        print(f"{label}: {'cleared' if args.delete else 'would clear'} metadata: {p}")
+    tally["metadata"] += len(gone)
+    if not (gone and args.delete):
+        return
+    locked = [p for p in spare if not git(repo, "worktree", "lock", "--reason",
+                                          "prune-worktrees: path unavailable", p).returncode]
+    try:
+        if len(locked) < len(spare):
+            print(f"{label}: could not lock an unavailable worktree -- metadata left alone", file=sys.stderr)
+            tally["errors"] += 1
+        else:
+            git(repo, "worktree", "prune", "--expire=now")
+    finally:
+        for p in locked:
+            git(repo, "worktree", "unlock", p)
+
+
+def prune_repo(repo, args, cwds, me, tally):
+    label = os.path.relpath(repo, HOME)
+    fresh = True
+    if not args.no_fetch and not fetch(repo):
+        fresh = False
+        print(f"{label}: fetch failed -- trusting only patch-equivalence to {Landed(repo).base}",
+              file=sys.stderr)
+
+    prune_metadata(repo, label, args, tally)
+
+    cutoff = datetime.datetime.now().timestamp() - args.hours * 3600
+    landed = Landed(repo, trust_remotes=fresh)
+    for w in worktrees(repo)[1:]:
+        path = w["worktree"]
+        branch = w.get("branch", "").removeprefix("refs/heads/") if isinstance(w.get("branch"), str) else ""
+        sha = w.get("HEAD", "")
+        name = os.path.relpath(path, repo) if path.startswith(repo + "/") else path
+
+        def keep(why):
+            tally["kept"] += 1
+            if args.verbose or why.startswith("unlanded"):
+                print(f"{label}: keep {name} -- {why}")
+
+        if not os.path.isdir(path) or w.get("prunable"):
+            continue  # the metadata prune above covers it
+        if w.get("locked"):
+            keep("locked"); continue
+        if in_use(path, cwds) or (me and in_use(path, {me})):
+            keep("a live process is inside it"); continue
+        if last_touch(path) > cutoff:
+            keep(f"touched in the last {args.hours}h"); continue
+        if w.get("bare") or not sha:
+            keep("no HEAD"); continue
+        st = git(path, "status", "--porcelain")
+        if st.returncode:
+            keep("git status failed"); tally["errors"] += 1; continue
+        if st.stdout.strip():
+            n = len(st.stdout.splitlines())
+            keep(f"dirty ({n} path(s))"); tally["dirty"].append(f"{label}: {name}"); continue
+        why = landed.reason(sha, branch)
+        if not why:
+            n = git(repo, "rev-list", "--count", sha, "--not", "--remotes").stdout.strip()
+            keep(f"unlanded: {n} commit(s) on {branch or 'detached HEAD'} not on any remote")
+            tally["unlanded"].append(f"{label}: {name}")
+            continue
+        undo = f"git -C {repo} worktree add {path} {branch or sha[:12]}"
+        if args.delete:
+            r = git(repo, "worktree", "remove", path)
+            if r.returncode and "submodules" in r.stderr:
+                # git refuses any worktree with submodules. Status above
+                # proved their tracked state clean; their own commits are
+                # checked here, since removal deletes the module clones.
+                n = unpushed_in_submodules(path)
+                if n != 0:
+                    keep(f"unlanded: {'unknown' if n is None else n} commit(s) in a submodule not on any remote")
+                    tally["unlanded"].append(f"{label}: {name}")
+                    continue
+                r = git(repo, "worktree", "remove", "--force", path)
+            if r.returncode:
+                print(f"{label}: keep {name} -- remove failed: {r.stderr.strip()}", file=sys.stderr)
+                tally["errors"] += 1; continue
+        print(f"{label}: {'removed' if args.delete else 'would remove'} {name} ({why})  undo: {undo}")
+        tally["removed"] += 1
+
+
+def prune_plugins(args):
+    try:
+        before = os.stat(PLUGINS)
+        with open(PLUGINS) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return 0
+    dropped = 0
+    for key, entries in data.get("plugins", {}).items():
+        kept = [e for e in entries
+                if not (e.get("scope") == "project" and e.get("projectPath")
+                        and not os.path.isdir(e["projectPath"]))]
+        dropped += len(entries) - len(kept)
+        data["plugins"][key] = kept
+    verb = "dropped" if args.delete else "would drop"
+    print(f"plugins: {verb} {dropped} project entr{'y' if dropped == 1 else 'ies'} "
+          f"whose directory is gone")
+    if dropped and args.delete:
+        os.makedirs(STATE, exist_ok=True)
+        stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        backup = os.path.join(STATE, f"installed_plugins.{stamp}.json")
+        tmp = PLUGINS + ".prune-worktrees.tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        # Claude Code writes this file too, unlocked. If a session changed it
+        # since the read, writing ours would silently revert that change.
+        now = os.stat(PLUGINS)
+        if (now.st_mtime_ns, now.st_size) != (before.st_mtime_ns, before.st_size):
+            os.remove(tmp)
+            print("plugins: changed during the run -- left alone, next run retries", file=sys.stderr)
+            return 0
+        shutil.copy2(PLUGINS, backup)
+        os.replace(tmp, PLUGINS)
+        old = sorted(n for n in os.listdir(STATE) if n.startswith("installed_plugins."))
+        for n in old[:-KEEP_BACKUPS]:
+            os.remove(os.path.join(STATE, n))
+        print(f"plugins: undo: cp {backup} {PLUGINS}")
+    return dropped
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--delete", action="store_true")
+    ap.add_argument("--dry-run", dest="delete", action="store_false")
+    ap.add_argument("--hours", type=int, default=24)
+    ap.add_argument("--no-fetch", action="store_true")
+    ap.add_argument("--no-plugins", action="store_true")
+    ap.add_argument("--repo", action="append", default=[])
+    ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("-h", "--help", action="store_true")
+    args = ap.parse_args()
+    if args.help:
+        print(__doc__.strip()); return 0
+
+    cwds = live_cwds()
+    cwds.discard("/")
+    me = os.getcwd()
+    tally = {"removed": 0, "kept": 0, "metadata": 0, "errors": 0, "dirty": [], "unlanded": []}
+    repos = find_repos([os.path.abspath(r) for r in args.repo])
+    for repo in repos:
+        try:
+            prune_repo(repo, args, cwds, me, tally)
+        except Exception as e:  # one bad repo must not stop the sweep
+            print(f"{os.path.relpath(repo, HOME)}: error -- {e}", file=sys.stderr)
+            tally["errors"] += 1
+    if not args.no_plugins:
+        prune_plugins(args)
+
+    verb = "removed" if args.delete else "would remove"
+    print(f"{verb} {tally['removed']} worktree(s), kept {tally['kept']} "
+          f"({len(tally['dirty'])} dirty, {len(tally['unlanded'])} unlanded), "
+          f"{tally['metadata']} stale metadata, across {len(repos)} repo(s)")
+    if not args.delete and tally["removed"]:
+        print("rerun with --delete to act")
+    return 1 if tally["errors"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
