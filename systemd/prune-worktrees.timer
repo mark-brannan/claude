@@ -1,0 +1,14 @@
+# Pairs with prune-worktrees.service. Install from the ~/.claude checkout:
+#   systemctl --user link ~/.claude/systemd/prune-worktrees.service ~/.claude/systemd/prune-worktrees.timer
+#   systemctl --user enable --now prune-worktrees.timer
+
+[Unit]
+Description=Run prune-worktrees daily
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
