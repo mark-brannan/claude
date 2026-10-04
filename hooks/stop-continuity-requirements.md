@@ -147,8 +147,9 @@ path, `curia <id>` with or without the slash, or `confer <id>`), never one a
 tool call only read: a floor block between its markers (last touched,
 session, model, branch, PR) closes `## Where this stands` in `digest.md`,
 else `thread.md`, else nothing. With no heading after that section, or no
-such section, the block ends the file. The old block is dropped; text above it and `roll.md` are never
-touched. The session's item replaces the floor (question 16).
+such section, the block ends the file. The old block is dropped; text
+above it and `roll.md` are never touched. The session's item replaces the
+floor (question 16).
 
 ## 11. Refuse an unconfigured filter
 
@@ -201,18 +202,38 @@ hook writes items, `pickup/` is retired (question 14).
 - At its first Stop, a session that holds no claimed item mints one
   (question 15, pen). A session holding a claimed item writes onto that
   item and mints none (one id per life, pen).
-- Every later Stop of the session writes onto the same item, never a new
-  one. The hook's hand-off is the item's log entry (question 14, pen).
+- A later Stop of the session that writes writes onto the same item,
+  never a new one; how often it writes is open (below). The hook's
+  hand-off is the item's log entry (question 14, pen).
 - The item is created `open`, never `ready` (pen); the hook writes no
   `ready` line on it (pencil, scoping item 3).
-- Its brief is the hand-off a pickup body starts as today, the last
-  prompt's first line (job 9); its home is the
-  session's PR, `home=<owner/repo#n>`, once there is one (pencil, question
-  13).
+- Its brief is today's first hand-off, the last prompt's first line
+  (job 9's default body); its home is the session's PR,
+  `home=<owner/repo#n>`, once there is one (pencil, question 13).
 - A second mint of the same id is refused by the store and never retried
   under a fresh id (pen).
 - The write lands before job 12, so the same Stop commits it.
 - A refused or failed item write never stops the later jobs.
+
+### Open, unruled
+
+Neither the code nor a ruling settles these; the spec holds no requirement
+on them.
+
+- What a failed transcript parse (job 1) should still do. Today it skips
+  every later job, the state commit included.
+- Which link a minted item carries. `work-item create` refuses a brief with
+  no link, and a session with no PR at its first Stop has none, so row 14.1
+  cannot pass as the store stands.
+- How often the hook writes onto the item. Stop fires every turn.
+- Which item a session writes after it mints one and then claims another.
+- The owner of a minted item.
+- Whether a session that crosses midnight UTC should keep one checkpoint.
+  Its name carries the date, so today it writes two.
+- Whether a lock-wait failure (job 5) should say more than the placeholder
+  verdict.
+- What a kill at 290 s should leave. The per-job timeouts (90 s lock, 60 s
+  fetches, 30 s commits, 120 s pushes and pulls) add up past it.
 
 ## Acceptance cases
 
@@ -287,11 +308,11 @@ the card that tracks the bug).
 | 13.5 | cloud, the push fails | Stop | `not archivable: state-repo push failed` | tested |
 | 13.6 | local, the push fails | Stop | verdict unchanged; the next Stop in the window does not retry | tested |
 | 14.1 | a session with no item | first Stop | one new item; its first log line `status=open` from this session | no (item 3) |
-| 14.2 | 14.1 | every later Stop | the same item is written; no second item | no (item 3) |
+| 14.2 | 14.1 | a later Stop that writes | it writes the same item; no second item is minted | no (item 3) |
 | 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | no (item 3) |
 | 14.4 | a minted item | any Stop | no `status=ready` line from the hook | no (item 3) |
 | 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | no (item 3) |
-| 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line, the text a pickup body starts as | no (item 3) |
+| 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line | no (item 3) |
 | 14.7 | the store refuses the write, or `work-item` crashes | Stop | jobs 12 and 13 still run; exit 0 | no (item 3) |
 | 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | no (item 3) |
-| 14.9 | the hook writes items | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | no (item 5) |
+| 14.9 | the hook writes items and the duplicates are retired | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | no (item 5) |
