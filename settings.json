@@ -25,6 +25,7 @@
       "Bash(shellcheck *)",
       "Bash(yadm log *)",
       "Bash(resign-branch.sh *)",
+      "Bash(~/.claude/bin/agent-decision *)",
       "Bash(~/.claude/bin/card-id *)",
       "Bash(~/.claude/bin/resign-branch.sh *)",
       "Bash(~/.claude/bin/pickup-list find *)",

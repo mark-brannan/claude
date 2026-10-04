@@ -125,7 +125,12 @@ in nobody's queue but this session's.
     a rebase, a resign) is visible on the PR page before anyone merges it,
     not discovered after (dotfiles#286). Add the line if it's missing,
     replace it if it's there: `gh pr edit <n> --body "$new_body"` with the
-    line set to `git rev-parse HEAD`.
+    line set to `git rev-parse HEAD`;
+  - **every pencil call the change stands on is logged** — each default
+    taken under the one-way-door test, in the body's `## Pencil:` list and
+    appended with `~/.claude/bin/agent-decision "<call>" --undo "<undo>" --link <PR>`
+    (add `--curia <id>` when the work came from a curia), committed in this
+    PR. None taken: say `## Pencil: none`.
 - **A PR handed to the user needs a judgment pass, not a "did this even build"
   pass.** His read is for the call I can't make — is this the right change,
   does it fit the design. Anything a machine could have caught should

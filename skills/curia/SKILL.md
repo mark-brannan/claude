@@ -62,6 +62,7 @@ state/global/curia/<id>/
   digest.md   the document: where it stands, decided, open questions
   LIVE        the last sitting's session id and ISO timestamp; closing leaves it
   agent-notes.md the agent's working memory and trace, for the next agent (see Agent notes)
+  agent_decisions.md agents' pencil calls that touch this curia: append-only, stamped, written by `agent-decision`
   inputs/     read-only side products: spikes, side-chat pastes, subagent reports
 ```
 
