@@ -57,3 +57,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261004t072330z
 - Shared helpers named lib/lock.py and lib/gitrun.py Undo: git mv both modules and update the six importers and INSTALL ([#40](https://github.com/mark-brannan/claude/pull/40))
 - bin/prune-worktrees keeps its own git runner; gitrun.run takes no env= or input= Undo: add env= and input= to gitrun.run and repoint prune-worktrees ([#40](https://github.com/mark-brannan/claude/pull/40))
+
+### 20261004t082808z
+- A cloud-session release is named by both seed SHAs plus a checksum of $HOME and the state repo's path, since Localise writes both into it. Undo: drop the third part of REV and guards_sha's second-field parse in cloud-session-setup.sh ([#54](https://github.com/mark-brannan/claude/pull/54))
