@@ -16,7 +16,7 @@ pass=0; fail=0
 S=$(mktemp -d); trap 'rm -rf "$S"' EXIT
 export HOME="$S/home"; mkdir -p "$HOME"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-unset CLAUDE_CONFIG_DIR CLAUDE_SEED DOTFILES_SEED DOTFILES_URL YADM_DIR CLAUDE_CODE_REMOTE XDG_DATA_HOME
+unset CLAUDE_STATE_REPO CLAUDE_CONFIG_DIR CLAUDE_SEED DOTFILES_SEED DOTFILES_URL YADM_DIR CLAUDE_CODE_REMOTE XDG_DATA_HOME
 mkdir -p "$S/bin"; printf '#!/bin/sh\nexit 0\n' >"$S/bin/claude"; chmod +x "$S/bin/claude"
 export PATH="$S/bin:$PATH"
 
@@ -79,11 +79,35 @@ for h in $(grep -o '\$HOME/\.claude/hooks/[A-Za-z0-9._-]*' "$REPO/settings.json"
   f="$HOME${h#\$HOME}"
   check "cold: settings.json hook ${h##*/} present" '[ -f "$f" ]'
 done
+# The repo's absolute paths name a real machine; the VM gets its own. A terms
+# path left pointing elsewhere makes the plugin deny every public post.
+sj() { jq -r "$1" "$HOME/.claude/settings.json" 2>/dev/null; }
+check "cold: PROSE_BUDGET localised and runnable" \
+  '[ "$(sj .env.PROSE_BUDGET)" = "$HOME/.claude/bin/prose-budget" ] && [ -x "$(sj .env.PROSE_BUDGET)" ]'
+check "cold: CLAIM_STAMP_BIN localised and runnable" \
+  '[ "$(sj .env.CLAIM_STAMP_BIN)" = "$HOME/.claude/hooks/claim-stamp.sh" ] && [ -x "$(sj .env.CLAIM_STAMP_BIN)" ]'
+# Expected is computed by lib-state.sh's own search, not hard-coded: a host
+# with the state repo at /home/user/claude_prompts_scratch finds it there.
+exp_state=$(bash -c '. "$1" && state_repo' _ "$REPO/hooks/lib-state.sh" 2>/dev/null)
+[ -n "$exp_state" ] || exp_state=/workspace/claude_prompts_scratch
+check "cold: private_terms_file localised to the state repo" \
+  '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_terms_file")" = "$exp_state/state/global/private-terms.txt" ]'
+check "cold: private_repos kept" \
+  '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_repos")" = mark-brannan/claude_prompts_scratch ]'
 
 # --- re-run on the same SHAs reuses the release ---------------------------
 out=$(run)
 has "already staged" "$out" "re-run"
 check "re-run: one release" '[ "$(ls "$HOME/.claude-config/releases" | wc -l)" -eq 1 ]'
+
+# --- the state repo turns up later: same SHAs, a new release --------------
+# A release reused by SHA alone would keep the terms path staged before the
+# clone, and the plugin would deny every public post from then on.
+mkdir -p "$S/state/.git"
+out=$(CLAUDE_STATE_REPO="$S/state" run)
+check "state repo later: terms path follows it" \
+  '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_terms_file")" = "$S/state/state/global/private-terms.txt" ]'
+check "state repo later: old release pruned" '[ "$(ls "$HOME/.claude-config/releases" | wc -l)" -eq 1 ]'
 
 # --- an upstream move lands, the old release is pruned --------------------
 echo "# moved" >>"$UP_DOT/.claude/hooks/public-issue-guard.sh"
