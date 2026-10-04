@@ -13,10 +13,13 @@ Where the doc runs ahead of the code, the case says so.
 - Always exits 0. A failure in one job never fails the Stop.
 - `stop-sequence.py` runs it first, then `metrics-live.sh`'s readout, which
   reads this hook's verdict back. It gets 290 s and is killed as a process
-  group past that.
-- Every file it writes is the session's own, sharded by `state_shard_path`
-  (`lib-state.sh`), except a curia digest (job 10) and the state commit
-  (jobs 12, 13). Two parallel sessions never write the same file.
+  group (`SIGKILL`) past that: no trap runs, and the next Stop reclaims any
+  lock the dead hook held, its pid gone.
+- Every file it writes under the state dir is the session's own, except
+  `metrics-rollup.sh`'s untracked rollup (job 3), a curia digest (job 10)
+  and the state commit (jobs 12, 13). The metrics and the checkpoint are
+  sharded by `state_shard_path` (`lib-state.sh`). Two parallel sessions
+  never write the same session file.
 
 ## 1. Read the Stop
 
@@ -70,13 +73,16 @@ otherwise `not archivable: ` and the reasons, comma-joined, in this order:
 3. no home: no open PR and no pointer card or issue, by
    `branch-home-gate.sh --check`
 4. session live: another session's fresh claim stamp on the branch's card;
-   the session's own never counts
+   the session's own never counts. The store's claim replaces the stamp
+   (question 16)
 5. the caller's own: `not a git repo`; `state repo not committed (git
    filter <f> unconfigured)`; `state-repo commit failed`; and in the cloud
    only, `state-repo push failed`
 
-Reasons 3 and 4 are asked only when 1 and 2 are clear. Could not verify is
-never a pass. The home check runs once per Stop. The verdict replaces the
+Reason 3 is asked only when 1 and 2 are clear, reason 4 only when 1 to 3
+are. Could not verify is never a pass: a count git cannot make, or a home
+check that cannot reach GitHub, is a reason. The home check runs at most
+once per Stop, job 9 reusing its answer. The verdict replaces the
 checkpoint's verdict line, never adds a second, and goes into the session
 record as `verdict` and `verdict_at` (epoch seconds).
 
@@ -86,9 +92,9 @@ A dirty work repo is committed to this session's own `wip/<session-id>` ref
 and that ref is pushed; the session's branch never keeps or pushes the commit.
 
 Silent, with nothing done, when: not in a git repo; the work repo is the
-state repo; `CLAUDE_STOP_COMMIT=off`; nothing uncommitted. Otherwise refused,
-the reason under `## Stop-commit` in the checkpoint and the files left on
-disk, when:
+state repo; `CLAUDE_STOP_COMMIT=off`; nothing uncommitted. Otherwise the
+branch is re-read, then the salvage is refused, the reason under
+`## Stop-commit` in the checkpoint and the files left on disk, when:
 
 - the checkout is `$HOME`
 - the branch is `main`, `master`, a detached `HEAD` or unnamed
@@ -103,7 +109,7 @@ disk, when:
 - an untracked path was tracked in `HEAD`'s history, is absent from base,
   and matches its last tracked content: a stale leftover; paths named
 
-The commit: the branch is re-read first; `git add -A`; signing forced on,
+The commit: `git add -A`; signing forced on,
 key or not; 30 s; message `wip: session <id8> at Stop (<date>)`. A failed
 commit resets the index and is a refusal. The commit is written to
 `refs/heads/wip/<session-id>`, the branch is reset (mixed) to where it was
@@ -137,10 +143,11 @@ The session's item replaces this file (questions 14, 16).
 ## 10. Stamp the curia floor
 
 For each curia the user named in a prompt (a `state/global/curia/<id>`
-path, `/curia <id>` or `confer <id>`), never one a tool call only read: a
-floor block between its markers (last touched, session, model, branch, PR)
-closes `## Where this stands` in `digest.md`, else `thread.md`, else
-nothing. The old block is dropped; text above it and `roll.md` are never
+path, `curia <id>` with or without the slash, or `confer <id>`), never one a
+tool call only read: a floor block between its markers (last touched,
+session, model, branch, PR) closes `## Where this stands` in `digest.md`,
+else `thread.md`, else nothing. With no heading after that section, or no
+such section, the block ends the file. The old block is dropped; text above it and `roll.md` are never
 touched. The session's item replaces the floor (question 16).
 
 ## 11. Refuse an unconfigured filter
@@ -194,10 +201,12 @@ hook writes items, `pickup/` is retired (question 14).
 - At its first Stop, a session that holds no claimed item mints one
   (question 15, pen). A session holding a claimed item writes onto that
   item and mints none (one id per life, pen).
-- Every later Stop of the session writes onto the same item, never a new one.
+- Every later Stop of the session writes onto the same item, never a new
+  one. The hook's hand-off is the item's log entry (question 14, pen).
 - The item is created `open`, never `ready` (pen); the hook writes no
   `ready` line on it (pencil, scoping item 3).
-- Its brief is the hand-off the pickup item carries today; its home is the
+- Its brief is the hand-off a pickup body starts as today, the last
+  prompt's first line (job 9); its home is the
   session's PR, `home=<owner/repo#n>`, once there is one (pencil, question
   13).
 - A second mint of the same id is refused by the store and never retried
@@ -208,11 +217,13 @@ hook writes items, `pickup/` is retired (question 14).
 ## Acceptance cases
 
 Met: **tested** (in `stop-continuity.test.sh`), **untested** (the code does
-it, no test), **no** (the code does not; the scoping item that meets it).
+it, no test), **no** (the code does not; the scoping item that meets it, or
+the card that tracks the bug).
 
 | # | Given | When | Then | Met |
 |---|---|---|---|---|
 | 0.1 | any input, including none | Stop | exit 0 | untested |
+| 0.2 | a Stop killed past 290 s after the checkpoint write, before job 6 | the next Stop | that checkpoint read `the Stop hook did not finish`; the next Stop takes any push lock the dead hook held | untested |
 | 1.1 | an event with no `transcript_path`, or one that does not exist | Stop | nothing written under the state dir | untested |
 | 1.2 | an event with no `session_id` | Stop | nothing written | untested |
 | 1.3 | a transcript `jq -s` cannot parse | Stop | exit 0 | untested |
@@ -220,7 +231,7 @@ it, no test), **no** (the code does not; the scoping item that meets it).
 | 2.2 | a transcript whose text contains `git commit` but no commit was made | Stop | `commits` is 0 | untested |
 | 2.3 | an earlier Stop wrote `decisions/<id>.jsonl` | Stop again | the file holds this transcript's events only, not the earlier ones appended | untested |
 | 3.1 | `metrics/live/<id>.json` exists | Stop | it is gone | untested |
-| 3.2 | `metrics-live.sh` holds the session's lock | Stop | the Stop completes and commits | tested |
+| 3.2 | `metrics-live.sh` holds the session's lock | Stop | the Stop completes inside 10 s and writes the checkpoint | tested |
 | 4.1 | a fresh session | Stop | the checkpoint's `**Verdict:**` line is the verdict | tested |
 | 4.2 | a checkpoint with a `## Resume` block and a `- consumed:` line | Stop | both survive verbatim, and the section after the block is still there | tested |
 | 5.1 | the state-push lock held past 90 s | Stop | exit 0; no salvage, no state commit; verdict line reads `the Stop hook did not finish` | untested |
@@ -261,7 +272,7 @@ it, no test), **no** (the code does not; the scoping item that meets it).
 | 9.6 | `pr: none`, nothing ahead, a lookup missed under 10 minutes ago | Stop | no `gh` call | untested |
 | 10.1 | a prompt naming `confer <id>`, its digest exists | Stop | one floor block closing `## Where this stands`; text above unchanged | tested |
 | 10.2 | 10.1 | Stop again | one block, never two | tested |
-| 10.3 | 10.1 | Stop again | the digest is byte-identical to after the first Stop | no (blank line grows) |
+| 10.3 | 10.1 | Stop again | the digest is byte-identical to after the first Stop | no (blank line grows; card 1790975613f676e0a7, item 5 retires the floor) |
 | 10.4 | a tool call only read the digest | Stop | digest untouched | tested |
 | 10.5 | only `thread.md` exists; or neither | Stop | floor on `thread.md`; or no write | tested |
 | 11.1 | `.gitattributes` declares `filter=x`, `filter.x.clean` unset | Stop | no state commit; checkpoint says `NOT COMMITTED`; verdict names the filter | untested |
@@ -280,7 +291,7 @@ it, no test), **no** (the code does not; the scoping item that meets it).
 | 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | no (item 3) |
 | 14.4 | a minted item | any Stop | no `status=ready` line from the hook | no (item 3) |
 | 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | no (item 3) |
-| 14.6 | the session's hand-off text, as the pickup item's body holds it | first Stop | it is the minted item's brief | no (item 3) |
+| 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line, the text a pickup body starts as | no (item 3) |
 | 14.7 | the store refuses the write, or `work-item` crashes | Stop | jobs 12 and 13 still run; exit 0 | no (item 3) |
 | 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | no (item 3) |
 | 14.9 | the hook writes items | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | no (item 5) |
