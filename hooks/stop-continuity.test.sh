@@ -298,7 +298,7 @@ has 'no PR: the brief links the checkpoint' '^Checkpoint: \[checkpoint\]\(\.\./l
 assert 'no PR: no home line' bash -c "! grep -q 'home=' '$NOPR'"
 
 # 14.3: a session that claimed an item writes onto it and mints nothing.
-CARD=$(wi 99990000-aaaa create --brief 'see https://example.invalid/1' 'a card to claim')
+CARD=$(wi 99990000-aaaa create --id 178557840199990000 --brief 'see https://example.invalid/1' 'a card to claim')
 wi 99990000-aaaa log "$CARD" status=ready >/dev/null
 wi b5b6b7b8-0000 claim "$CARD" >/dev/null
 SID=b5b6b7b8-0000-1111-2222 GH_PRS=$PR7 stop
@@ -311,8 +311,7 @@ SID=b5b6b7b8-0000-1111-2222 GH_PRS=$PR7 stop
 eq '14.3: and only once while nothing changes' "$n1" "$(nlog "$ITEMS/$CARD.md")"
 
 # A session that minted and then claims another writes onto the claimed one.
-sleep 1   # one id per second per session: the store's own rule
-CARD2=$(wi 99990000-aaaa create --brief 'see https://example.invalid/2' 'a second card')
+CARD2=$(wi 99990000-aaaa create --id 178557840299990000 --brief 'see https://example.invalid/2' 'a second card')
 wi 99990000-aaaa log "$CARD2" status=ready >/dev/null
 wi a1b2c3d4-0000 claim "$CARD2" >/dev/null
 n2=$(nlog "$MINT")
