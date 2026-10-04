@@ -47,9 +47,10 @@ jobs:
               | sed 's|^\.claude/||'
             grep -ho 'lib-[A-Za-z0-9._-]*\.\(awk\|sh\|jq\)' hooks/*.sh \
               | sed 's|^|hooks/|'
+            ls lib/*.py | grep -v '\.test\.py$'
           } | sort -u > /tmp/referenced
           { sed -n '/^INSTALL="/,/^"/p' bin/cloud-session-setup.sh \
-              | grep -o '^hooks/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\)'
+              | grep -o '^\(hooks\|lib\)/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\|py\)'
             sed -n '/^GUARD_HOOKS="/,/^"/p' bin/cloud-session-setup.sh \
               | grep -o '^[A-Za-z0-9._-]*\.sh' | sed 's|^|hooks/|'
           } | sort -u > /tmp/installed
