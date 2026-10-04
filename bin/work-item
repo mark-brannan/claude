@@ -2,9 +2,9 @@
 # work-item -- the work-item store: one file per item, a brief plus a log,
 # the id its filename (dotfiles#510).
 #
-#   work-item create [--id <id>] [--owner <o>] [--repo <r>] [--parent <id>]
+#   work-item create --id <id> [--owner <o>] [--repo <r>] [--parent <id>]
 #                    [--model <m>] [--effort <e>] [--points <n>]
-#                    [--brief <text>|-] <title>    print the new item's id
+#                    [--brief <text>|-] <title>    write the item, print its id
 #   work-item brief <id> [--points <n>] <text>|-   replace the brief, log `briefed`
 #   work-item log <id> <word>...                   append one log line
 #   work-item claim <id>                           take it: `status=claimed`
@@ -26,8 +26,9 @@
 #   2026-10-01T23:20:15Z 86eba7f7 status=open owner=agent repo=- parent=- model=sonnet effort=medium
 #   2026-10-02T08:30:11Z 9a1b2c3d cost tokens=812340 usd=1.42 by=grind
 #
-# The id is epoch seconds then the session's eight hex, opaque; the file is
-# the lookup. An item is created in `open`, always. Six statuses: open, ready,
+# The id is epoch seconds then the session's eight hex, opaque; the caller
+# makes it (`card-id mint`) and this store never does; the file is the
+# lookup. An item is created in `open`, always. Six statuses: open, ready,
 # claimed, blocked, done, closed; the transitions are ALLOWED below. A claim
 # is valid when the folded status is ready or closed and no other session
 # holds it. A GitHub-homed item carries `home=`, with no link back.
@@ -411,15 +412,15 @@ def create(args):
         items_dir().mkdir(parents=True, exist_ok=True)
     except OSError:
         refuse(f"could not create {items_dir()}")
-    # The id is chosen here, before the write: epoch seconds then this session's
-    # hex (one-entry-point curia, pen). The write is an exclusive create, the
-    # conditional PUT of a file: the store refuses a second write of an id and
-    # never picks another. A replay of one create (same id, same content) is
-    # that write landing twice, so it succeeds with the same id; a different
-    # create in the same session-second is the design's rate limit and is refused.
-    secs = int(time.time())
-    it = Item(opt["id"] or f"{secs}{sid}")
-    now = iso(secs)
+    # The caller made the id (card-id mint), on its own side, before the write;
+    # the store never picks one (one-entry-point curia, pen). The write is an
+    # exclusive create, the conditional PUT of a file: a second write of an id
+    # is refused, never retried with another id. A replay of one create (same
+    # id, same content) is that write landing twice, so it prints the same id.
+    if not opt["id"]:
+        die("create takes --id <id>: the caller's own id, from card-id mint")
+    it = Item(opt["id"])
+    now = iso(time.time())
     body = (f"# {title}\n\n" + brief_section(brief, opt["points"]) + "## Log\n"
             + f"{now} {sid} status=open owner={opt['owner']} repo={opt['repo']} "
               f"parent={opt['parent']} model={opt['model']} effort={opt['effort']}\n")

@@ -44,7 +44,7 @@ class WorkItemTest(unittest.TestCase):
         T = Path(cls.tmp.name)
         cls.dir = T / "items"
         os.environ.update(WORK_ITEM_DIR=str(cls.dir), TMPDIR=str(T))
-        cls.id = ok(A, "create", "--repo", "mark-brannan/dotfiles", "--model", "sonnet",
+        cls.id = ok(A, "create", "--id", "1690000000077c62eb", "--repo", "mark-brannan/dotfiles", "--model", "sonnet",
                     "--effort", "medium", "--points", "3",
                     "--brief", f"Measure growth per day. {LINK}", "Size the store")
         cls.f = cls.dir / f"{cls.id}.md"
@@ -75,11 +75,11 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(run(A, "create", "--id", self.id, "--brief", LINK, "Again").returncode, 1,
                          "a second create of one id is refused")
         self.assertEqual(self.lines()[0], "# Size the store", "the refused create left the file alone")
-        self.assertEqual(run(A, "create", "--points", "4", "--brief", LINK, "Bad points").returncode, 2,
+        self.assertEqual(run(A, "create", "--id", "1690000001077c62eb", "--points", "4", "--brief", LINK, "Bad points").returncode, 2,
                          "points outside fibonacci refuse")
-        self.assertEqual(run(A, "create", "--owner", "boss", "--brief", LINK, "Bad owner").returncode, 2,
+        self.assertEqual(run(A, "create", "--id", "1690000001077c62eb", "--owner", "boss", "--brief", LINK, "Bad owner").returncode, 2,
                          "an unknown owner refuses")
-        self.assertEqual(run("", "create", "--brief", LINK, "No session").returncode, 2, "no session id refuses")
+        self.assertEqual(run("", "create", "--id", "1690000001077c62eb", "--brief", LINK, "No session").returncode, 2, "no session id refuses")
 
     def test_02b_a_replayed_create_is_idempotent(self):
         # A create is a conditional PUT of its id: the same create again is the
@@ -97,22 +97,16 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(run(B, *args).returncode, 1, "the same create from another session is refused")
         self.assertEqual((self.dir / f"{first}.md").read_text(), text, "a refused create writes nothing")
 
-    def test_02c_a_second_create_in_one_session_second_is_refused(self):
-        # Deterministic: take every id this session could choose in the next few
-        # seconds, so the create lands on a taken id whatever the clock does.
+    def test_02c_the_store_never_picks_an_id(self):
+        # The caller makes the id (card-id mint); a create with none is a usage
+        # error and writes nothing, whatever the clock says.
         n = len(list(self.dir.glob("*.md")))
-        now = int(time.time())
-        taken = [self.dir / f"{now + i}9a1b2c3d.md" for i in range(4)]
-        for t in taken:
-            t.write_text("# Taken\n\n## Log\n2026-01-01T00:00:00Z 9a1b2c3d status=open\n")
-        try:
-            p = run(B, "create", "--brief", LINK, "Another in the same second")
-            self.assertEqual(p.returncode, 1, "a second create in one session-second is refused, never re-minted")
-            self.assertIn("already exists", p.stderr)
-            self.assertEqual(len(list(self.dir.glob("*.md"))), n + 4, "the refused create wrote no file")
-        finally:
-            for t in taken:
-                t.unlink()
+        p = run(B, "create", "--brief", LINK, "No id of my own")
+        self.assertEqual(p.returncode, 2, "a create without --id is refused")
+        self.assertIn("card-id mint", p.stderr, "the refusal names the generator")
+        self.assertEqual(len(list(self.dir.glob("*.md"))), n, "and wrote no file")
+        self.assertEqual(run(B, "create", "--id", "nope", "--brief", LINK, "Bad id").returncode, 2,
+                         "an id of the wrong shape is refused")
 
     def test_03_open_to_ready(self):
         self.assertEqual(run(A, "claim", self.id).returncode, 1, "an open item cannot be claimed")
@@ -171,8 +165,7 @@ class WorkItemTest(unittest.TestCase):
 
     def test_07_stale_claim(self):
         # A holder that wrote nothing on the item for two hours has let go.
-        # Its own id: the chosen one is epoch seconds, and a fast run is still
-        # in the second that chose self.id.
+        # Its own id, far from the fixed ids the other tests use.
         old = ok(A, "create", "--id", "1700000000077c62eb", "--brief", LINK, "Stale one")
         ok(A, "log", old, "status=ready")
         with open(self.dir / f"{old}.md", "a") as fh:
@@ -193,8 +186,8 @@ class WorkItemTest(unittest.TestCase):
 
     def test_09_link_is_required(self):
         n = len(list(self.dir.glob("*.md")))
-        self.assertEqual(run(A, "create", "No link").returncode, 1, "a card with no brief has no link")
-        self.assertEqual(run(A, "create", "--brief", "no link here", "No link").returncode, 1,
+        self.assertEqual(run(A, "create", "--id", "1690000002077c62eb", "No link").returncode, 1, "a card with no brief has no link")
+        self.assertEqual(run(A, "create", "--id", "1690000002077c62eb", "--brief", "no link here", "No link").returncode, 1,
                          "a brief with no link is refused")
         self.assertEqual(len(list(self.dir.glob("*.md"))), n, "a refused create wrote no file")
         for i, link in enumerate(("see mark-brannan/dotfiles#510", "[log](../log/x.md)")):
