@@ -32,7 +32,8 @@
 # is valid when the folded status is ready or closed and no other session
 # holds it. A GitHub-homed item carries `home=`, with no link back.
 #
-# Refused at write: a create whose brief carries no link (kanban-lint's L6); a
+# Refused at write: a create or brief with no link (kanban-lint's L6); a human-ruling
+# brief missing default:, undo:, until:, risk: or judgment: (its L8); a
 # `status=done` line with no `evidence=`; any `status=closed`, which only the
 # future whole-tree sweep writes (docs/work-item-lifecycle.md).
 #
@@ -361,6 +362,67 @@ def check_owner(o):
         die(f"owner is agent, human-ruling or human-click, got [{o}]")
 
 
+RULING_FIELDS = ("default", "undo", "until", "risk", "judgment")
+NEXT_FIELD = re.compile(r"[ (;,.*](default|undo|risk|judgment|gates|settle|repos|repo|kind|"
+                        r"why you|why this|id):")
+
+
+def fold_text(brief):
+    """A brief as one lowercase line, the way `list` folds it."""
+    return " " + " ".join(l.strip() for l in brief.split("\n") if l.strip()).lower()
+
+
+def until_problem(t):
+    """What is wrong with the until: value in folded text t, else ''. A date, a
+    PR/issue link or any words pass; an empty value or a date that is no
+    calendar day (2026-02-30) does not."""
+    from datetime import date
+    m = re.search(r"until:", t)
+    if not m:
+        return ""
+    v = t[m.end():]
+    cut = NEXT_FIELD.search(v)
+    v = (v[:cut.start()] if cut else v).strip(" \t*").rstrip(" \t*.;,")
+    if not v:
+        return "until: is empty"
+    for d in re.findall(r"\d{4}-\d{2}-\d{2}", v):
+        try:
+            date.fromisoformat(d)
+        except ValueError:
+            return f"until: date {d} is no calendar day"
+    return ""
+
+
+def check_link(brief):
+    """kanban-lint's L6: a card carries a link."""
+    if not LINK.search(brief):
+        refuse("the brief carries no link: an http link or owner/repo#n, "
+               "so a loop with no home gets a log entry first")
+
+
+def check_ruling(owner, brief):
+    """kanban-lint's L8: a human-ruling card carries the agent's evaluation, so
+    the ruling is one word. Every field is `name:` anywhere in the folded
+    brief, any case; judgment: names the kind; until: holds a date, a PR/issue
+    link or an event in words."""
+    if owner != "human-ruling":
+        return
+    t = fold_text(brief)
+    miss = [f for f in RULING_FIELDS if not re.search(rf"[ (]{f}:", t)]
+    if miss:
+        refuse("ruling card missing " + ", ".join(f + ":" for f in miss)
+               + " -- a human-ruling brief carries default: (what you would do), undo: (the "
+               "reversal and its cost), until: (a date, a PR/issue link, or an event in words), "
+               "risk: (the consequence if the default is wrong) and judgment: (values, risk, "
+               "direction, legal or people); without a default it is hedging, not a one-way door")
+    if not re.search(r"judgment:[ \t]*(values|risk|direction|legal|people)([^a-z]|$)", t):
+        refuse("judgment: must be values, risk, direction, legal or people -- a call that is "
+               "none of those is toil: take the default and record it where the work lands")
+    if until_problem(t):
+        refuse(until_problem(t) + " -- until: holds a date (YYYY-MM-DD), a PR/issue link, "
+               "or an event in words")
+
+
 def create(args):
     opt = {"id": "", "owner": "agent", "repo": "-", "parent": "-", "model": "-",
            "effort": "-", "points": ""}
@@ -391,6 +453,7 @@ def create(args):
         die(f"parent is an item id, got [{opt['parent']}]")
     if opt["points"]:
         points_ok(opt["points"])
+    check_ruling(opt["owner"], brief)
     sid = me()
     if not LINK.search(brief):
         refuse("the brief carries no link: an http link or owner/repo#n, "
@@ -446,6 +509,8 @@ def main(argv):
         if len(args) != 1:
             die("brief takes the text, or - for stdin")
         brief = read_brief(args[0])
+        check_link(brief)
+        check_ruling(it.facts()["owner"], brief)
         sid = me()
         it.lock()
         it.write_brief(brief, points or it.facts()["points"])
@@ -464,6 +529,7 @@ def main(argv):
                 to = w[len("status="):]
             elif w.startswith("owner="):
                 check_owner(w[len("owner="):])
+                check_ruling(w[len("owner="):], brief_text(it.path))
             elif w.startswith("evidence=") and len(w) > len("evidence="):
                 evidence = True
         if to == "closed":

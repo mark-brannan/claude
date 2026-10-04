@@ -165,7 +165,9 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(len(list(self.dir.glob("*.md"))), n, "a refused create wrote no file")
         for i, link in enumerate(("see mark-brannan/dotfiles#510", "[log](../log/x.md)")):
             ok(A, "create", "--id", f"170000010{i}077c62eb", "--brief", link, "Linked")
-        ok(A, "brief", self.id, "an older card is re-briefed without a link")
+        self.assertEqual(run(A, "brief", self.id, "re-briefed with no link").returncode, 1,
+                         "a re-brief that drops the link is refused")
+        self.assertEqual(fact(self.id, "briefed"), "2", "the refused brief logged nothing")
 
     def test_10_done_needs_evidence_and_closed_is_refused(self):
         item = ok(A, "create", "--id", "1700000200077c62eb", "--brief", LINK, "Lifecycle")
@@ -198,6 +200,50 @@ class WorkItemTest(unittest.TestCase):
                                capture_output=True, text=True)
             self.assertEqual((r.returncode, r.stdout.strip()), (0, f"{t}/state/global/items"),
                              "without WORK_ITEM_DIR the store is lib/state.py's state_dir")
+
+    RULING = (f"Pick the pin ({LINK}) default: pin it undo: unpin, one line "
+              "until: 2026-10-05 risk: low judgment: direction")
+
+    def test_14_ruling_carries_its_fields(self):
+        n = len(list(self.dir.glob("*.md")))
+        p = run(A, "create", "--owner", "human-ruling", "--brief", f"Pick ({LINK}) default: pin it", "Half")
+        self.assertEqual(p.returncode, 1, "a ruling card without its fields is refused")
+        self.assertIn("missing undo:, until:, risk:, judgment: --", p.stderr,
+                      "the refusal names exactly the missing ones")
+        self.assertEqual(len(list(self.dir.glob("*.md"))), n, "a refused create wrote no file")
+        ok(A, "create", "--id", "1700000300077c62eb", "--brief", f"Pick ({LINK}) default: a", "Agent card")
+        ok(A, "create", "--id", "1700000301077c62eb", "--owner", "human-click", "--brief", LINK, "Click card")
+        r = ok(A, "create", "--id", "1700000302077c62eb", "--owner", "human-ruling", "--brief",
+               "Pick the pin (" + LINK + ")\nDEFAULT: pin it\nUndo: unpin\nuntil: 2026-10-05\n"
+               "Risk: low\njudgment: direction", "Whole")
+        self.assertEqual(fact(r, "owner"), "human-ruling", "fields across lines, any case, pass")
+
+    def test_15_ruling_judgment_and_until(self):
+        def create(brief, i):
+            return run(A, "create", "--id", f"17000004{i:02d}077c62eb", "--owner", "human-ruling",
+                       "--brief", brief, "Ruling")
+        self.assertEqual(create(self.RULING.replace("direction", "naming"), 0).returncode, 1,
+                         "judgment: outside values, risk, direction, legal, people is toil")
+        self.assertEqual(create(self.RULING.replace("until: 2026-10-05", "until:"), 1).returncode, 1,
+                         "an empty until: is refused")
+        self.assertEqual(create(self.RULING.replace("2026-10-05", "2026-02-30"), 2).returncode, 1,
+                         "a date that is no calendar day is refused")
+        for i, u in enumerate(("2028-02-29", "https://github.com/o/r/pull/7", "o/r#8", "the next migration")):
+            self.assertEqual(create(self.RULING.replace("2026-10-05", u), 10 + i).returncode, 0,
+                             f"until: {u} passes")
+
+    def test_16_ruling_on_brief_and_log(self):
+        item = ok(A, "create", "--id", "1700000500077c62eb", "--brief", LINK, "Becomes a ruling")
+        p = run(A, "log", item, "owner=human-ruling")
+        self.assertEqual(p.returncode, 1, "an item cannot become a ruling without the fields")
+        self.assertNotIn("owner=human-ruling", (self.dir / f"{item}.md").read_text().split("## Log")[1].split("owner=agent")[1],
+                         "the refused line was not written")
+        ok(A, "brief", item, self.RULING)
+        ok(A, "log", item, "owner=human-ruling")
+        self.assertEqual(fact(item, "owner"), "human-ruling", "with the fields it can")
+        self.assertEqual(run(A, "brief", item, f"stripped ({LINK})").returncode, 1,
+                         "a ruling's brief cannot be rewritten without the fields")
+        ok(A, "brief", item, self.RULING.replace("low", "high"))
 
 
 if __name__ == "__main__":
