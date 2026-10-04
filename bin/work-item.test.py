@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -89,6 +90,21 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(ids, sorted(ids), "ids stay sortable in creation order")
         self.assertEqual(run(B, "create", "--id", ids[0], "--brief", LINK, "Repeat").returncode, 1,
                          "a true repeat of an id is still refused")
+
+    def test_02c_a_taken_second_moves_on(self):
+        # Deterministic: take every id this session could mint in the next few seconds,
+        # so the create must step past them whatever the clock does.
+        now = int(time.time())
+        taken = [self.dir / f"{now + i}9a1b2c3d.md" for i in range(4)]
+        for t in taken:
+            t.write_text("taken\n")
+        try:
+            got = ok(B, "create", "--brief", LINK, "Past the taken seconds")
+        finally:
+            for t in taken:
+                t.unlink()
+            (self.dir / f"{got}.md").unlink() if "got" in locals() else None
+        self.assertGreater(int(got[:10]), now + 3, "a minted id steps past every taken second")
 
     def test_03_open_to_ready(self):
         self.assertEqual(run(A, "claim", self.id).returncode, 1, "an open item cannot be claimed")
