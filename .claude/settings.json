@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(shellcheck *)",
+      "Bash(~/.claude/bin/worklist)",
+      "Bash(~/.claude/bin/worklist *)",
+      "mcp__github__search_issues"
+    ]
+  }
+}
