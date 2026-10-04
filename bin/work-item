@@ -395,12 +395,20 @@ def create(args):
     if not LINK.search(brief):
         refuse("the brief carries no link: an http link or owner/repo#n, "
                "so a loop with no home gets a log entry first")
-    it = Item(opt["id"] or f"{int(time.time())}{sid}")
     try:
         items_dir().mkdir(parents=True, exist_ok=True)
     except OSError:
         refuse(f"could not create {items_dir()}")
-    it.lock()
+    # A minted id is epoch seconds then the session hex. Two creates in one second
+    # from one session would mint one id, so a minted id that is taken moves on to
+    # the next second; an id passed with --id is a claim on that id and is refused.
+    secs = int(time.time())
+    while True:
+        it = Item(opt["id"] or f"{secs}{sid}")
+        it.lock()
+        if opt["id"] or not it.path.exists():
+            break
+        secs += 1
     now = iso(time.time())
     body = (f"# {title}\n\n" + brief_section(brief, opt["points"]) + "## Log\n"
             + f"{now} {sid} status=open owner={opt['owner']} repo={opt['repo']} "

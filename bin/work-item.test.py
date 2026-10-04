@@ -80,6 +80,16 @@ class WorkItemTest(unittest.TestCase):
                          "an unknown owner refuses")
         self.assertEqual(run("", "create", "--brief", LINK, "No session").returncode, 2, "no session id refuses")
 
+    def test_02b_creates_in_one_second_do_not_collide(self):
+        ids = [ok(B, "create", "--brief", LINK, f"Burst {i}") for i in range(4)]
+        self.assertEqual(len(set(ids)), 4, "four back-to-back creates mint four ids")
+        for i in ids:
+            self.assertRegex(i, r"^[0-9]{10}9a1b2c3d$", "a minted id keeps its shape")
+            self.assertTrue((self.dir / f"{i}.md").is_file(), "each create wrote its file")
+        self.assertEqual(ids, sorted(ids), "ids stay sortable in creation order")
+        self.assertEqual(run(B, "create", "--id", ids[0], "--brief", LINK, "Repeat").returncode, 1,
+                         "a true repeat of an id is still refused")
+
     def test_03_open_to_ready(self):
         self.assertEqual(run(A, "claim", self.id).returncode, 1, "an open item cannot be claimed")
         self.assertEqual(run(A, "log", self.id, "status=done").returncode, 1,
