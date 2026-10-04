@@ -61,7 +61,8 @@ changes, on a bare tick with no action attached:
 
 - **Retired** — the card leaves the board: it ends at `done`, and stays on disk
   (see After the tick). A proposed deletion (rank step 3) defaults to this.
-- **Answered** — the question is settled now; goes to `docs/decisions.md`
+- **Answered** — the question is settled now; recorded per
+  [Where a ruling lands](../agora/SKILL.md#where-a-ruling-lands)
   (see After the tick).
 - **Deferred** — not now. Push `until:` out to a date or event the user names.
   A card with no `until:` gets one for the first time here, rather than an
@@ -82,13 +83,13 @@ proof is the `churn-ok` line in `docs/decisions.md`.
 ## After the tick
 
 - **Retired:** retire the item (below); the proof is its `evidence=`.
-- **Answered:** append `- YYYY-MM-DD — <short name>: <the answer> ([link])`
-  to `docs/decisions.md` in the project's primary repo — the repo whose name
-  the `project-<name>` topic shares, else the repo the card links — newest
-  first, then retire the item. When the answer already landed as an ADR or a
-  Q-nn, the line points there rather than repeating it. On a public repo the
-  line must pass the private-terms check; failing that, it goes to the state
-  repo's log with the same date.
+- **Answered:** record the answer where
+  [Where a ruling lands](../agora/SKILL.md#where-a-ruling-lands) says:
+  the state repo's log by default; a dated line
+  `- YYYY-MM-DD — <short name>: <the answer> ([link])` in the primary repo's
+  public `docs/decisions.md` only when that section admits it. When the
+  answer already landed as an ADR or a Q-nn, point there rather than
+  repeating it. Then retire the item.
 - **Deferred:** write or rewrite `until:` per the rule above, in the brief
   (readers take `until:` from the brief's text). `brief` does not check the
   holder, so first read `work-item fold <id>`: a `holder=` that is set with

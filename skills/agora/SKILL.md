@@ -70,9 +70,8 @@ Every item this skill touches gets, and keeps:
   `until`, `risk`. Not "figure out X"; that is unscoped work, sent back
   to be scoped.
 - **Output** — exactly one of:
-  - **Ruling** — the user answers; the ruling is written at once to
-    `docs/decisions.md` in the primary repo, or the state repo's log if it
-    fails the private-terms check. The card retires in the same turn, per
+  - **Ruling** — the user answers; the ruling is written at once where
+    [Where a ruling lands](#where-a-ruling-lands) says. The card retires in the same turn, per
     [the lifecycle](../../docs/work-item-lifecycle.md): an `open` item
     gets `~/.claude/bin/work-item log <id> status=ready` first, then `~/.claude/bin/work-item claim
     <id>`, then `~/.claude/bin/work-item log <id> status=done 'evidence=<link>'`, the
@@ -98,6 +97,23 @@ Every item this skill touches gets, and keeps:
     it under that curia's `## Open questions` with its provenance, and
     the card retires as a ruling does. No folder is touched beyond that
     line.
+
+## Where a ruling lands
+
+Private by default. The ruling goes to the state repo: the sitting's log,
+`state/global/log/<date>-agora-<project>.md`, with the user's words
+verbatim, or the curia's roll when the item is a curia's sub-question.
+
+A repo's public decisions log (`docs/decisions.md`) sits just below a
+published ADR. It takes a line only when one of these holds:
+
+- the decision is large, and already built in code; or
+- the whole question was already public (argued on a public issue or PR).
+
+Never while a curia still holds the question. A public line also passes
+the private-terms check. When in doubt, it stays private, and a private
+card (`owner=human-ruling`) asks whether to publish the line. A sitting
+never opens a PR or comments on an issue just to record a ruling.
 
 ## Per item: the steps
 
