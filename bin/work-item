@@ -361,8 +361,10 @@ def brief_section(brief, points):
 def read_brief(arg):
     """The brief text, from the argument or stdin for `-`. A `## ` line would
     end the brief early on the next read, and a break other than "\\n" would
-    let the reader cut the stored text elsewhere than we checked."""
-    brief = sys.stdin.read().rstrip("\n") if arg == "-" else arg
+    let the reader cut the stored text elsewhere than we checked. CRLF is
+    one break to the reader too, so it is made "\n" first."""
+    brief = sys.stdin.read() if arg == "-" else arg
+    brief = brief.replace("\r\n", "\n").rstrip("\n")
     if not all(one_line(l) for l in brief.split("\n")):
         die("a brief breaks lines with newline only")
     if any(l.startswith("## ") for l in brief.splitlines()):

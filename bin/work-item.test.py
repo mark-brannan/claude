@@ -247,10 +247,15 @@ class WorkItemTest(unittest.TestCase):
             self.assertEqual(run(A, "create", "--repo", "a" + sp + "b", "--brief", LINK,
                                  "Word").returncode, 2, f"[{sp!r}] is space to the fold")
         self.assertEqual(self.lines()[0], "# Size the store", "no refused call touched the item")
+        ok(A, "brief", self.id, "-", stdin=f"{LINK}\r\nsecond line\r\n")
+        self.assertIn("second line", run(A, "show", self.id).stdout, "a CRLF brief is one break per line")
 
     def test_10e_listing_scrub_covers_every_splitlines_break(self):
         from importlib.machinery import SourceFileLoader
-        wi = SourceFileLoader("work_item", str(WI)).load_module()
+        from importlib.util import module_from_spec, spec_from_loader
+        loader = SourceFileLoader("work_item", str(WI))
+        wi = module_from_spec(spec_from_loader("work_item", loader))
+        loader.exec_module(wi)
         for n in range(sys.maxunicode + 1):
             c = chr(n)
             if not wi.one_line("a" + c + "b"):
