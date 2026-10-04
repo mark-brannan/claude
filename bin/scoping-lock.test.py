@@ -138,6 +138,16 @@ class ScopingLockTest(unittest.TestCase):
         git("remote", "set-url", "origin", str(self.S / "gone.git"), cwd=self.S / "a")
         self.assertEqual(2, self.run_sl("a", "take", D, "sid-four", "x")[0], "an unreachable origin")
 
+    def test_11_finds_the_repo_where_lib_state_sh_does(self):
+        # $HOME/src is on lib-state.sh's search path, never on the old
+        # private one ($CLAUDE_STATE_REPO or ~/claude_prompts_scratch only).
+        home = self.S / "home11"
+        git("clone", "-q", str(self.S / "origin.git"), str(home / "src" / "claude_prompts_scratch"), cwd=self.S)
+        env = {k: v for k, v in self.env.items() if k != "CLAUDE_STATE_REPO"}
+        p = subprocess.run([sys.executable, str(SL), "read", D], env={**env, "HOME": str(home)},
+                           capture_output=True, text=True)
+        self.assertEqual(0, p.returncode, p.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
