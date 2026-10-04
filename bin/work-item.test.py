@@ -190,6 +190,15 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual((r.returncode, r.stdout.strip()), (0, str(self.dir)),
                          "dir names the items directory, so callers need not hard-code it")
 
+    def test_13_dir_comes_from_lib_state(self):
+        with tempfile.TemporaryDirectory() as t:
+            (Path(t) / ".git").mkdir()
+            env = {k: v for k, v in os.environ.items() if k != "WORK_ITEM_DIR"}
+            r = subprocess.run([sys.executable, str(WI), "dir"], env={**env, "CLAUDE_STATE_REPO": t},
+                               capture_output=True, text=True)
+            self.assertEqual((r.returncode, r.stdout.strip()), (0, f"{t}/state/global/items"),
+                             "without WORK_ITEM_DIR the store is lib/state.py's state_dir")
+
 
 if __name__ == "__main__":
     unittest.main()

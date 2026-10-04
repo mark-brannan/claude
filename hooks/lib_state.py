@@ -1,38 +1,31 @@
 """Shared helpers for the Python hooks. Imported, never run directly.
 
-The bash hooks' answer to "where does durable state live on this machine?"
-is lib-state.sh's state_repo. This module asks that same function rather
-than keeping a second copy of its search path: two lists would drift, and a
-Python hook would then write state somewhere the bash hooks never read.
+A shim: the state-dir lookup lives in lib/state.py, its one home
+(dotfiles#517), and is re-exported here so the hooks that import lib_state
+keep working unchanged. lib/ sits beside hooks/ in a checkout and under
+~/.claude alike.
+
+Fails open: if lib/ is missing (a seed whose INSTALL lacks it) the import
+fails, state_repo and state_dir return None, and a hook reads that as "no
+state here" and exits 0 rather than breaking. One line on stderr says why.
 """
 import json
 import os
-import subprocess
 import sys
 
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(HOOK_DIR), "lib"))
 
+try:
+    from state import state_dir, state_repo  # noqa: F401  (re-exported)
+except ImportError as e:
+    print(f"lib_state: lib/state.py not importable ({e}); no state dir", file=sys.stderr)
 
-def _lib(fn):
-    """Run one lib-state.sh function and return what it printed, or None."""
-    try:
-        out = subprocess.run(
-            ["bash", "-c", '. "$1" && ' + fn, "_", os.path.join(HOOK_DIR, "lib-state.sh")],
-            capture_output=True, text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
+    def state_repo():
         return None
-    return out.stdout if out.returncode == 0 and out.stdout else None
 
-
-def state_repo():
-    """The private state repo's working tree, or None if it isn't here."""
-    return _lib("state_repo")
-
-
-def state_dir():
-    """Where state files go: the repo's state/global, else lib-state.sh's
-    local fallback. None only if bash itself could not run."""
-    return _lib("state_dir")
+    def state_dir():
+        return None
 
 
 def event():
