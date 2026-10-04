@@ -79,6 +79,17 @@ for h in $(grep -o '\$HOME/\.claude/hooks/[A-Za-z0-9._-]*' "$REPO/settings.json"
   f="$HOME${h#\$HOME}"
   check "cold: settings.json hook ${h##*/} present" '[ -f "$f" ]'
 done
+# The repo's absolute paths name a real machine; the VM gets its own. A terms
+# path left pointing elsewhere makes the plugin deny every public post.
+sj() { jq -r "$1" "$HOME/.claude/settings.json" 2>/dev/null; }
+check "cold: PROSE_BUDGET localised and runnable" \
+  '[ "$(sj .env.PROSE_BUDGET)" = "$HOME/.claude/bin/prose-budget" ] && [ -x "$(sj .env.PROSE_BUDGET)" ]'
+check "cold: CLAIM_STAMP_BIN localised and runnable" \
+  '[ "$(sj .env.CLAIM_STAMP_BIN)" = "$HOME/.claude/hooks/claim-stamp.sh" ] && [ -x "$(sj .env.CLAIM_STAMP_BIN)" ]'
+check "cold: private_terms_file localised to the state repo default" \
+  '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_terms_file")" = /workspace/claude_prompts_scratch/state/global/private-terms.txt ]'
+check "cold: private_repos kept" \
+  '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_repos")" = mark-brannan/claude_prompts_scratch ]'
 
 # --- re-run on the same SHAs reuses the release ---------------------------
 out=$(run)

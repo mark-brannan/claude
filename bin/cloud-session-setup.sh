@@ -403,6 +403,43 @@ for name in $GUARD_HOOKS; do
 done
 
 # =========================================================================
+# Localise — settings.json's absolute paths, rewritten for this VM.
+# =========================================================================
+# settings.json names three paths for the languette plugin: env.PROSE_BUDGET,
+# env.CLAIM_STAMP_BIN and its private_terms_file option. Claude Code expands
+# neither ~ nor ${HOME} in env or pluginConfigs values (probed: the hook saw
+# the literal string), so the repo holds a real machine's absolute paths, and
+# here they would name a HOME that doesn't exist. A terms file that is set but
+# unreadable makes the plugin's public-issue-guard deny every public post, so
+# the staged copy gets this VM's own: its $HOME, and the state repo where the
+# old guard's search finds it -- /workspace when not cloned yet, the path its
+# denial tells a session to clone to. jq missing or failing marks the install
+# incomplete and leaves the repo's values: fail closed, and say so.
+STATE_REPO=/workspace/claude_prompts_scratch
+for d in /home/user/claude_prompts_scratch /workspace/claude_prompts_scratch \
+         "$HOME/claude_prompts_scratch" "$HOME/src/claude_prompts_scratch" \
+         "$HOME/Projects/claude_prompts_scratch" "$HOME/code/claude_prompts_scratch"; do
+  [ -d "$d/.git" ] && { STATE_REPO=$d; break; }
+done
+if [ "$DRY_RUN" = yes ]; then
+  say "would localise settings.json paths to $HOME and $STATE_REPO"
+elif [ -f "$STAGE_TMP/settings.json" ]; then
+  if jq --arg home "$HOME" --arg terms "$STATE_REPO/state/global/private-terms.txt" '
+       .env.PROSE_BUDGET = ($home + "/.claude/bin/prose-budget")
+       | .env.CLAIM_STAMP_BIN = ($home + "/.claude/hooks/claim-stamp.sh")
+       | .pluginConfigs["languette@languette"].options.private_terms_file = $terms' \
+       "$STAGE_TMP/settings.json" >"$STAGE_TMP/settings.json.tmp" 2>/dev/null &&
+     mv -f "$STAGE_TMP/settings.json.tmp" "$STAGE_TMP/settings.json"; then
+    say "settings.json paths localised to $HOME and $STATE_REPO"
+  else
+    rm -f "$STAGE_TMP/settings.json.tmp"
+    warn "  FAILED to localise settings.json paths (jq?) -- the plugin's"
+    warn "  public-issue-guard will deny public posts until it is rerun"
+    failed=$((failed + 1))
+  fi
+fi
+
+# =========================================================================
 # Flip — atomically swap what "current" points to.
 # =========================================================================
 # The rename is the whole install: every path under $HOME that reaches its
