@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+# agent-decision -- append an agent's pencil call to the decisions logs.
+#
+#   agent-decision [--repo <dir>] [--curia <id>]... [--undo <text>]
+#                  [--link <url>] <the call>
+#
+# One entry, appended to <repo>/docs/agent_decisions.md (the repo is the git
+# checkout holding the cwd unless --repo names one) and, for each --curia, to
+# that curia's agent_decisions.md in the state repo:
+#
+#   ### 20261003t232843z
+#   - Points on the brief are 1 2 3 5 8 13. Undo: revert the scale line. ([#511](https://...))
+#
+# The heading is the curia roll's stamp, UTC to the second, so an entry's
+# anchor is `#<stamp>` (work item 179098332512f38edd).
+# Both files are append-only: nothing edits an entry after it is written.
+# Two calls in the same second share one heading, as roll.md's words do. The
+# curia copy never goes in roll.md, which holds the user's words alone.
+#
+# The repo file and its header are created on the first entry; a curia must
+# already have its folder. Exits 0 on success, 1 when a target is refused, 2
+# on usage. Python 3 stdlib only.
+import argparse
+import datetime
+import fcntl
+import os
+import re
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks"))
+import lib_state  # noqa: E402
+
+HEADER = """# Agent decisions
+
+Append-only. Each entry is a call an agent made in pencil: a default it took
+under the one-way-door test, with its undo. Written by `agent-decision`; the
+heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
+"""
+LAST = re.compile(rb"\n### (\d{8}t\d{6}z)\n(?:- [^\n]*\n)+\Z")
+
+
+def line(call, undo, link):
+    text = " ".join(call.split())
+    if undo:
+        text += " Undo: " + " ".join(undo.split())
+    if link:
+        text += f" ({link})"
+    return f"- {text}\n"
+
+
+def append(path, bullet, now, header=""):
+    """Append one bullet under this second's heading, under an exclusive lock."""
+    stamp = now.strftime("%Y%m%dt%H%M%Sz")
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        old = os.pread(fd, os.fstat(fd).st_size, 0)
+        m = LAST.search(old)
+        same = m and m.group(1).decode() == stamp
+        text = ("" if old else header) + ("" if same else f"\n### {stamp}\n") + bullet
+        os.write(fd, text.encode("utf-8"))
+    finally:
+        os.close(fd)
+
+
+def repo_root(given):
+    if given:
+        return given
+    out = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def main(argv):
+    p = argparse.ArgumentParser(prog="agent-decision", add_help=True)
+    p.add_argument("--repo")
+    p.add_argument("--curia", action="append", default=[])
+    p.add_argument("--undo")
+    p.add_argument("--link")
+    p.add_argument("call", nargs="+")
+    a = p.parse_args(argv)
+    bullet = line(" ".join(a.call), a.undo, a.link)
+    if not bullet.strip("- \n"):
+        print("agent-decision: the call is empty", file=sys.stderr)
+        return 2
+    root = repo_root(a.repo)
+    if not root or not os.path.isdir(root):
+        print("agent-decision: not in a git checkout; pass --repo", file=sys.stderr)
+        return 1
+    targets = [(os.path.join(root, "docs", "agent_decisions.md"), HEADER)]
+    if a.curia:
+        state = lib_state.state_dir()
+        for cid in a.curia:
+            folder = os.path.join(state or "", "curia", cid)
+            if not state or not re.fullmatch(r"[A-Za-z0-9][\w.-]*", cid) or not os.path.isdir(folder):
+                print(f"agent-decision: no curia folder for {cid!r}", file=sys.stderr)
+                return 1
+            targets.append((os.path.join(folder, "agent_decisions.md"), HEADER))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    os.makedirs(os.path.dirname(targets[0][0]), exist_ok=True)
+    for path, header in targets:
+        append(path, bullet, now, header)
+        print(path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
