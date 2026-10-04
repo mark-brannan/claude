@@ -422,8 +422,9 @@ done
 # here they would name a HOME that doesn't exist. A terms file that is set but
 # unreadable makes the plugin's public-issue-guard deny every public post, so
 # the staged copy gets this VM's own: its $HOME, and $STATE_REPO (resolved
-# above, where the release is named). jq missing or failing marks the install
-# incomplete and leaves the repo's values: fail closed, and say so.
+# above, where the release is named). jq missing or failing counts as a failed
+# stage, so the unlocalised copy is never flipped live: the previous release
+# keeps serving, as for any other partial stage below.
 if [ "$DRY_RUN" = yes ]; then
   say "would localise settings.json paths to $HOME and $STATE_REPO"
 elif [ -f "$STAGE_TMP/settings.json" ]; then
@@ -436,8 +437,7 @@ elif [ -f "$STAGE_TMP/settings.json" ]; then
     say "settings.json paths localised to $HOME and $STATE_REPO"
   else
     rm -f "$STAGE_TMP/settings.json.tmp"
-    warn "  FAILED to localise settings.json paths (jq?) -- the plugin's"
-    warn "  public-issue-guard will deny public posts until it is rerun"
+    warn "  FAILED to localise settings.json paths (is jq installed?)"
     failed=$((failed + 1))
   fi
 fi
