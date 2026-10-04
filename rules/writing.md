@@ -46,8 +46,9 @@ shows it dead weight, never for being long.
 - **Show the render.** Before a human reads a doc change, look at it as they
   will, rendered at their width, and run the one-line check on it.
 - **The bar is a number in the repo.** `docs/budgets.json` caps README lines
-  and words per change; `prose-budget` runs in CI and the gate needs it.
-  Raising a cap lands alone, with its reason.
+  and words per change; `prose-budget` runs in CI and the gate needs it. A
+  repo without the file has only the one-line check above; say so in the
+  PR. Raising a cap lands alone, with its reason.
 
 ## Don't touch a human-written doc without being asked
 
