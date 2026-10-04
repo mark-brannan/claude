@@ -660,6 +660,7 @@ git -C "$S/repo" reset -q --hard "$main_before"
 # clears them; these scenarios each start from a clean slate instead.
 forget_item5() {
   git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/alpha/5" >/dev/null 2>&1
+  git -C "$S/repo" update-ref -d refs/remotes/origin/wip/grind-5 >/dev/null 2>&1
   git -C "$S/repo" branch -D grind-5 >/dev/null 2>&1; true
 }
 # a push that fails leaves the item unverified and its worktree kept: the
@@ -1767,6 +1768,9 @@ GRIND_STATUS: done" sess-donecap
     jq -nc '{type:"result", subtype:"error_max_budget_usd", is_error:true, session_id:"sess-donecap", total_cost_usd:2.50, usage:{input_tokens:1000,output_tokens:900,cache_read_input_tokens:0,cache_creation_input_tokens:0}}'
     exit 1 ;;
   noresult)
+    echo half > half-done.txt   # an edit the cap lands before it is committed
+    echo s3cr3t > .env.local    # one shaped like a secret
+    echo tok > tokenizer.py      # and one that only sounds like it
     say "Committing." sess-noresult
     exit 1 ;;
 esac
@@ -1803,29 +1807,54 @@ eq 'and recorded, cost marked estimated, claim released' 'failed true true' \
 assert 'the estimate is the heartbeat input-side one, not zero' \
   test "$(jq -r '.items[0].cost > 0' "$sess")" = true
 assert 'its stamp is released from the stream session id' grep -Eq -- '^release .*--scan sess-noresult$' "$S/stamp.log"
-assert 'its worktree is kept, holding the unpushed commit' test -d "$TMPDIR/grind-worktrees/alpha/78"
+assert 'its worktree is kept' test -d "$TMPDIR/grind-worktrees/alpha/78"
 
-# --- a retry keeps the work: unpushed commits go to wip/ before anything is cleared ----
+# --- claude#43: a stopped attempt keeps its work at the stop, and the retry resumes it ----
+# Saved now, not on the next attempt: its commit and its uncommitted edit alike.
+has 'the stop saves the attempt' 'INFO  saved the stopped attempt on o/alpha#78 to wip/grind-78; the retry resumes from it'
+assert 'pushed as wip/grind-78' grep -q 'refs/heads/wip/grind-78' "$GIT_PUSH_LOG"
+eq 'and recorded on the attempt' 'wip/grind-78' "$(jq -r '.items[0].wip_branch' "$sess")"
+co=$(git -C "$TMPDIR/grind-worktrees/alpha/78" rev-parse --path-format=absolute --git-common-dir)   # the checkout grind cut from
+eq 'the saved tip carries the uncommitted edit' 'half' "$(git --git-dir="$co" show origin/wip/grind-78:half-done.txt 2>/dev/null)"
+eq 'in an unhooked snapshot commit on top of its own' \
+  'grind: snapshot of o/alpha#78 at its stop (failed), for the retry to resume from|the work on grind-78' \
+  "$(git --git-dir="$co" log --format=%s -n 2 origin/wip/grind-78 | paste -sd '|')"
+saved_tip=$(git --git-dir="$co" rev-parse origin/wip/grind-78)
+lacks_in_tree() { ! git --git-dir="$co" cat-file -e "origin/wip/grind-78:$1" 2>/dev/null; }
+assert 'but not a new file shaped like a secret' lacks_in_tree .env.local
+has 'which it names as held back' 'WARN  not saving .env.local from o/alpha#78: shaped like a secret'
+eq 'while a file that only sounds like one is saved' 'tok' "$(git --git-dir="$co" show origin/wip/grind-78:tokenizer.py 2>/dev/null)"
 : > "$GIT_PUSH_LOG"; echo donecap > "$S/claude-mode"
 run --resume "$(basename "$sess" .json)"
-has 'the retry says it pushed the earlier attempt' 'INFO  pushed the earlier attempt.s unpushed commits on o/alpha#78 to wip/grind-78'
-assert 'as wip/grind-78' grep -q 'refs/heads/wip/grind-78' "$GIT_PUSH_LOG"
-eq 'and the retry records it' 'wip/grind-78' "$(jq -r '.items[1].wip_branch' "$sess")"
-eq 'a first attempt has none' 'null' "$(jq -r '.items[0].wip_branch' "$sess")"
+has 'the retry resumes from it' 'INFO  resuming o/alpha#78 from the stopped attempt saved on wip/grind-78'
+lacks 'with nothing left to push first' 'pushed the earlier attempt'
+eq 'and records that' 'wip/grind-78' "$(jq -r '.items[1].resumed_from' "$sess")"
+eq 'a first attempt resumed nothing' 'null' "$(jq -r '.items[0].resumed_from' "$sess")"
+assert 'the worker is told what is already there' grep -q 'An earlier attempt at this item was stopped' "$S/prompt.txt"
+assert 'commit by commit' grep -q 'grind: snapshot of o/alpha#78 at its stop' "$S/prompt.txt"
+eq 'and its branch was cut from the saved tip' "$saved_tip" "$(git --git-dir="$co" rev-parse grind-78~1)"
 
-# a wip push that fails clears nothing: the item waits, its worktree intact
+# a save that fails at the stop warns and keeps the worktree; a retry whose
+# push fails too clears nothing: the item waits, its worktree intact
 cat > "$S/ready.json" <<'JSON'
 [{"number": 79, "title": "Stuck item", "body": "b", "url": "https://github.com/o/alpha/issues/79", "labels": [{"name": "ready"}]}]
 JSON
 echo '[]' > "$S/pr-list.json"; echo noresult > "$S/claude-mode"
 rm -f "$S/state/grind"/*.json
-run --kind issue --session-budget 100 --pause-every 10
+GIT_PUSH_FAIL=1 run --kind issue --session-budget 100 --pause-every 10
+has 'a failed save at the stop warns' 'WARN  could not save the stopped attempt on o/alpha#79 to wip/grind-79; its worktree is the only copy'
+eq 'and records no wip' 'null' "$(jq -r '.items[0].wip_branch' "$(latest_session)")"
 kept=$(git -C "$TMPDIR/grind-worktrees/alpha/79" rev-parse HEAD)
 : > "$CLAUDE_LOG"
 GIT_PUSH_FAIL=1 run --resume "$(basename "$(latest_session)" .json)"
 has 'a failed wip push skips the retry' 'WARN  skipping o/alpha#79 -- could not push the earlier attempt'
 eq 'without running a worker' 0 "$(calls_claude)"
 eq 'and the earlier attempt is untouched' "$kept" "$(git -C "$TMPDIR/grind-worktrees/alpha/79" rev-parse HEAD)"
+# once the push goes through, the retry pushes the leftover and resumes from it
+: > "$GIT_PUSH_LOG"; echo donecap > "$S/claude-mode"
+run --resume "$(basename "$(latest_session)" .json)"
+has 'the retry pushes what the failed save could not' 'INFO  pushed the earlier attempt.s unpushed commits on o/alpha#79 to wip/grind-79'
+has 'and resumes from it' 'INFO  resuming o/alpha#79 from the stopped attempt saved on wip/grind-79'
 
 # --- a signal ends the run on the record, and lets the worker's claim go --------------
 cat > "$S/bin/claude" <<GH

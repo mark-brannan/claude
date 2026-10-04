@@ -35,7 +35,10 @@
 #      grind-card-<slug of its bold name>). A worktree or local branch left
 #      by an earlier attempt that holds commits on no remote is pushed as
 #      wip/grind-<n> (wip/grind-card-<slug>; a pr's as wip/<branch>-<ts>)
-#      before it is cleared.
+#      before it is cleared. An attempt that will be retried saved its work
+#      to that same ref at its stop (step 3), and the branch is cut from it:
+#      a retry resumes, it does not restart (claude#43). A pr's newest
+#      snapshot counts only while it still descends from the PR's head.
 #   2. One `claude -p --output-format stream-json --verbose --max-budget-usd
 #      <item hard cap> --model <m> --effort <e>` (the item's own, see
 #      below) with the issue body (plus a short contract appended below) as
@@ -56,6 +59,8 @@
 #      result, marked cost_estimated). The worker's claim stamp is released
 #      on every path, and so is a card's work-item claim, except a card moved
 #      to `blocked`: the store keeps its holder until that holder goes stale.
+#      An item recorded failed or unverified first has its edits committed
+#      and its tip pushed to its wip ref, unhooked: a snapshot, for step 1.
 #      The worktree is removed only after the record is written.
 #   4. The worker ends its answer with one of three status lines (the last
 #      one anywhere in its output counts, so a line a Stop hook makes it add
@@ -1029,6 +1034,20 @@ pr_cancelled_rerun() {
     || printf 'all checks were cancelled, but nothing was eligible to rerun'
 }
 
+# resume_note -- for a retry cut from a stopped attempt's saved work (the
+# loop's resumed_from, resume_base, resume_tip): what is already there, so the
+# worker carries it on rather than starting over.
+resume_note() {
+  [ -n "$resumed_from" ] || return 0
+  printf 'An earlier attempt at this item was stopped before it finished. This\n'
+  printf 'branch starts from what it left, saved on %s: the commits below,\n' "$resumed_from"
+  printf 'newest first, the newest possibly grind\047s snapshot of edits it had not\n'
+  printf 'committed. Read them and their diff before anything else, and carry the\n'
+  printf 'work on from there -- do not start over.\n\n'
+  git -C "$checkout" log --oneline -n 20 "$resume_tip" --not "$resume_base" 2>/dev/null | sed 's/^/  /'
+  printf '\n'
+}
+
 # build_pr_prompt <ref> <branch> <worktree> -- the two briefs, then the one
 # contract. The briefs are run here rather than described, so the worker reads
 # the same base recommendation a session would and makes no branch decision of
@@ -1046,6 +1065,7 @@ build_pr_prompt() {
   printf '\nYou are alone in a fresh worktree at %s, on %s -- the PR\047s own head\n' "$3" "$2"
   printf 'branch. Make no other branch. The worktree is deleted when you exit, so\n'
   printf 'anything not committed and pushed is lost.\n\n'
+  resume_note
   printf 'The stop rule\047s $%s is yours to act on: grind does not stop you at it.\n' "$pr_stop_usd"
   printf 'Your hard stop is $%s: you are ended there, so the stop rule is\n' "$item_hard"
   printf 'the whole of your budget -- label, comment and push at it, then end.\n\n'
@@ -1074,13 +1094,15 @@ build_prompt() {
   printf 'Grind orchestration contract for %s.\n\n' "$p_ref"
   printf 'You are alone in a fresh worktree on branch %s. Work the item to a\n' "$p_branch"
   printf 'mergeable PR: commit, push the branch, and open the PR yourself with gh.\n'
-  printf 'Do not merge it. The worktree is deleted when you exit, so anything you\n'
-  printf 'have not committed and pushed is lost.\n\n'
+  printf 'Do not merge it. The worktree is deleted when you exit.\n\n'
   printf 'Your budget for this item is ~$%s. grind does not stop you at it, so\n' "$item_cap"
   printf 'stop and report at ~$%s: commit and push what you have, then end with\n' "$item_cap"
   printf 'the status line that fits -- blocked, saying how far you got, if the\n'
-  printf 'work is not finished. Your hard stop is $%s: you are ended there, and\n' "$item_hard"
-  printf 'whatever is not pushed by then is lost.\n\n'
+  printf 'work is not finished. Your hard stop is $%s: you are ended there.\n' "$item_hard"
+  printf 'grind then saves what you left, committed or not, and the next attempt\n'
+  printf 'starts from it -- but a commit with its own message tells that attempt\n'
+  printf 'far more than grind\047s snapshot does.\n\n'
+  resume_note
   [ -z "${5:-}" ] || printf 'This is a sub-issue of %s. The PR body says `Fixes %s` and `Part of %s`.\n\n' "$5" "$p_ref" "$5"
   printf 'Every write under .claude/ is refused, whatever your permission mode --\n'
   printf 'that is a harness protection, not something this settings.json can widen.\n'
@@ -1358,7 +1380,54 @@ keep_unpushed() {
     [ -n "$tip" ] || continue
     [ -n "$(git -C "$checkout" rev-list -n 1 "$tip" --not --remotes 2>/dev/null)" ] || continue
     git -C "$checkout" push -q origin "$tip:refs/heads/$1" >/dev/null 2>&1 || return 1
+    # The tracking ref is what the retry resumes from, so it is set here
+    # rather than left to whatever fetch refspec the checkout happens to have.
+    git -C "$checkout" update-ref "refs/remotes/origin/$1" "$tip" >/dev/null 2>&1 || true
     printf '%s' "$1"; return 0
+  done
+}
+
+# save_attempt <wip branch> -- at the stop of an attempt that will be retried:
+# commit what the worker left uncommitted (unhooked -- a snapshot, not a
+# finished change), then push the tip as keep_unpushed does. Prints the
+# branch pushed, if any; returns 1 when either step failed.
+# The push publishes, and on a public repo nobody chose these files, so a new
+# file of a secret's own shape (a key, an env or rc file, a secrets/ dir) is
+# held back: it stays in the worktree only until the retry clears it.
+# Shapes, not words: a tokenizer.py is work and goes.
+save_attempt() {
+  git -C "$wt_path" add -u >/dev/null 2>&1 || return 1
+  git -C "$wt_path" ls-files -z -o --exclude-standard -- . \
+      ':(exclude,glob)**/.env' ':(exclude,glob)**/.env.*' ':(exclude,glob)**/secrets/**' \
+      ':(exclude,glob)**/*.pem' ':(exclude,glob)**/*.key' ':(exclude,glob)**/*.p12' ':(exclude,glob)**/*.pfx' \
+      ':(exclude,glob)**/id_rsa*' ':(exclude,glob)**/id_ecdsa*' ':(exclude,glob)**/id_ed25519*' \
+      ':(exclude,glob)**/.netrc' ':(exclude,glob)**/.npmrc' ':(exclude,glob)**/.pypirc' \
+      ':(exclude,glob)**/credentials.json' \
+    | xargs -0r git -C "$wt_path" add -- >/dev/null 2>&1 || return 1
+  held=$(git -C "$wt_path" ls-files -o --exclude-standard | paste -sd ' ' -)
+  [ -z "$held" ] || warn "not saving $held from $ref: shaped like a secret; the retry will not have it"
+  if ! git -C "$wt_path" diff --cached --quiet 2>/dev/null; then
+    git -C "$wt_path" commit -q --no-verify \
+      -m "grind: snapshot of $ref at its stop ($status), for the retry to resume from" >/dev/null 2>&1 || return 1
+  fi
+  keep_unpushed "$1"
+}
+
+# resume_point <wip branch or glob> <base> -- the commit the retry's branch is
+# cut from: a saved attempt's tip, when it holds work <base> does not. A pr's
+# snapshots are timestamped, so the newest is tried, and only one that
+# descends from the PR's head: a head that moved on since makes it stale, and
+# the worker pushes to that head. Prints "<branch> <sha>" or nothing. Local
+# refs only: the save set them.
+resume_point() {
+  git -C "$checkout" for-each-ref --sort=-refname --format='%(refname:strip=3) %(objectname)' \
+      "refs/remotes/origin/$1" 2>/dev/null | while read -r rname rtip; do
+    [ -n "$(git -C "$checkout" rev-list -n 1 "$rtip" --not "$2" 2>/dev/null)" ] || continue
+    case $1 in *'*')
+      case ${rname##*-} in [0-9]*T[0-9]*Z) ;; *) continue ;; esac
+      git -C "$checkout" merge-base --is-ancestor "$2" "$rtip" 2>/dev/null || continue ;;
+    esac
+    printf '%s %s\n' "$rname" "$rtip"; break
   done
 }
 
@@ -1537,20 +1606,29 @@ while [ "$i" -lt "$count" ]; do
   # which a human may also hold locally with unpushed commits -- and `-B`
   # below resets it from the remote anyway, so the delete would be pure risk.
   [ "$kind" = pr ] || git -C "$checkout" branch -D "$branch" >/dev/null 2>&1 || true
+  # A retry starts from what the stopped attempt saved, not from scratch
+  # (claude#43): the usage it spent is in those commits.
+  resumed_from=""; resume_base=""; resume_tip=""
   if [ "$kind" = pr ]; then
     # The PR's own head branch, reset to the remote: the worker fixes this
     # pull request or it has not fixed anything. `-B` resets any local copy,
     # and a branch a worktree still holds was skipped.
     wt_err=$(git -C "$checkout" fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>&1) \
-      && wt_err=$(git -C "$checkout" worktree add -q -B "$branch" "$wt_path" "origin/$branch" 2>&1 >/dev/null) \
       || { warn "skipping $ref -- could not check out $branch: $wt_err"; skipped=$((skipped + 1)); continue; }
-  elif ! wt_err=$(git -C "$checkout" worktree add -q -b "$branch" "$wt_path" 2>&1 >/dev/null); then
+    resume_base="origin/$branch"
+    rp=$(resume_point "wip/$branch-*" "$resume_base"); resumed_from=${rp%% *}; resume_tip=${rp#* }
+    wt_err=$(git -C "$checkout" worktree add -q -B "$branch" "$wt_path" "${resume_tip:-origin/$branch}" 2>&1 >/dev/null) \
+      || { warn "skipping $ref -- could not check out $branch: $wt_err"; skipped=$((skipped + 1)); continue; }
+  elif ! { resume_base=$(git -C "$checkout" rev-parse HEAD 2>/dev/null)
+           rp=$(resume_point "$wip_name" "$resume_base"); resumed_from=${rp%% *}; resume_tip=${rp#* }
+           wt_err=$(git -C "$checkout" worktree add -q -b "$branch" "$wt_path" ${resume_tip:+"$resume_tip"} 2>&1 >/dev/null); }; then
     warn "skipping $ref -- could not create worktree $wt_path on branch $branch: $wt_err"
     [ -z "$held_card" ] || card_let_go "$held_card" release "" || true
     skipped=$((skipped + 1))
     continue
   fi
   info "worktree $wt_path on branch $branch"
+  [ -z "$resumed_from" ] || info "resuming $ref from the stopped attempt saved on $resumed_from"
 
   case $kind in
     pr)   prompt=$(build_pr_prompt "$ref" "$branch" "$wt_path") ;;
@@ -1834,6 +1912,22 @@ while [ "$i" -lt "$count" ]; do
     fi
   fi
 
+  # An attempt that will be retried -- the hard cap, an error, a claim that did
+  # not check out -- keeps its work now, at the stop, not on the next attempt
+  # (which may never come, or come from a fresh checkout): commits and edits
+  # alike go to a wip ref, and the retry resumes from it (claude#43).
+  if [ "$status" = unverified ] || [ "$status" = failed ] || [ "$stage_rc" -eq 1 ]; then
+    case $kind in pr) stop_wip="wip/$branch-$(date -u +%Y%m%dT%H%M%SZ)" ;; *) stop_wip=$wip_name ;; esac
+    if saved=$(save_attempt "$stop_wip"); then
+      if [ -n "$saved" ]; then
+        wip_branch=$saved
+        info "saved the stopped attempt on $ref to $saved; the retry resumes from it"
+      fi
+    else
+      warn "could not save the stopped attempt on $ref to $stop_wip; its worktree is the only copy"
+    fi
+  fi
+
   # Every claim the item took is let go, whatever the outcome. A card is
   # done only now, after every check that can still make it unverified:
   # --resume reads the current queue, so a card marked done and then
@@ -1876,14 +1970,15 @@ while [ "$i" -lt "$count" ]; do
   processed_this_run=$((processed_this_run + 1))
   jq --arg ref "$ref" --arg status "$status" --argjson cost "$cost" --argjson est "$cost_estimated" \
      --arg model "$model" --arg effort "$effort" --argjson released "$claim_released" --arg wip "$wip_branch" \
-     --arg sid "$worker_sid" \
+     --arg sid "$worker_sid" --arg resumed "$resumed_from" \
      '.items += [{ref:$ref, status:$status, cost:$cost, cost_estimated:$est, model:$model, effort:$effort,
                   claim_released:$released, wip_branch:(if $wip == "" then null else $wip end),
+                  resumed_from:(if $resumed == "" then null else $resumed end),
                   worker_sid:(if $sid == "" then null else $sid end)}]' \
      "$state_file" > "$state_file.tmp" && mv "$state_file.tmp" "$state_file"
 
   # Only now, with the result recorded, may the worktree go. An unverified or
-  # failed item keeps it: it is the only record of what the worker did, and
+  # failed item keeps it for inspection, and in case its save above failed:
   # the next attempt pushes what it holds before clearing it. So does any
   # item whose staged .claude/ files were never pushed.
   if [ "$status" = unverified ] || [ "$status" = failed ] || [ "$stage_rc" -eq 1 ]; then
