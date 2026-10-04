@@ -283,7 +283,10 @@ command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }
 # parse.
 item_field() {
   if_at='^|·[[:space:]]*'; [ "${3:-}" != card ] || if_at='^|·|[[:space:](]'
-  printf '%s\n' "$2" | grep -oiE "($if_at)$1:[[:space:]]*[\$a-z0-9._-]+" \
+  # A budget is dollars, `$` optional; a `budget:` that is not one is no
+  # field at all, so it never shadows an earlier one that is.
+  if_val='[a-z0-9._-]+'; [ "$1" != budget ] || if_val='\$?[0-9]+(\.[0-9]+)?'
+  printf '%s\n' "$2" | grep -oiE "($if_at)$1:[[:space:]]*$if_val" \
     | tail -1 | sed 's/.*:[[:space:]]*//' | tr 'A-Z' 'a-z'
 }
 # item_terms <item json> -> "<model> <effort> <budget>", the one reader of
@@ -443,7 +446,8 @@ if [ -n "$resume_id" ]; then
   # a flag given on --resume wins, and the file records it once the lock is
   # held. A new --session-budget brings its own hard budget unless that is
   # given too.
-  [ "$item_budget_set" -eq 1 ] || item_budget=$(jq -r '.item_budget' "$state_file")
+  [ "$item_budget_set" -eq 1 ] || { item_budget=$(jq -r '.item_budget' "$state_file")
+    item_budget_set=$(jq -r '.item_budget_set // 0' "$state_file"); }  # a pr item's cap is flat unless one was given
   [ "$session_budget_set" -eq 1 ] || session_budget=$(jq -r '.session_budget' "$state_file")
   [ "$session_hard_budget_set" -eq 1 ] || [ "$session_budget_set" -eq 1 ] \
     || session_hard_budget=$(jq -r '.session_hard_budget // ""' "$state_file")
@@ -476,11 +480,11 @@ fi
 # used to leave an orphan items:[] file under $state_root per timer firing.
 create_state_file() {
   jq -n --arg repo "$repo" --arg project "$project" \
-        --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson hb "$session_hard_budget" \
-        --argjson pe "$pause_every" --argjson prs "$prs" \
+        --argjson ib "$item_budget" --argjson ibs "$item_budget_set" --argjson sb "$session_budget" \
+        --argjson hb "$session_hard_budget" --argjson pe "$pause_every" --argjson prs "$prs" \
         --arg kinds "$kinds" --arg policy "$policy" \
-    '{repo:$repo, project:$project, item_budget:$ib, session_budget:$sb, session_hard_budget:$hb,
-      pause_every:$pe, prs:$prs, kinds:$kinds, policy:$policy, items:[]}' \
+    '{repo:$repo, project:$project, item_budget:$ib, item_budget_set:$ibs, session_budget:$sb,
+      session_hard_budget:$hb, pause_every:$pe, prs:$prs, kinds:$kinds, policy:$policy, items:[]}' \
     > "$state_file"
 }
 
@@ -623,9 +627,10 @@ if [ "$dry_run" -eq 0 ]; then
   # Loud on failure, as for a new session's file: a run on caps its file
   # does not hold would be resumed next time on the old ones.
   if [ -n "$resume_id" ]; then
-    { jq --argjson ib "$item_budget" --argjson sb "$session_budget" \
+    { jq --argjson ib "$item_budget" --argjson ibs "$item_budget_set" --argjson sb "$session_budget" \
          --argjson hb "$session_hard_budget" --argjson pe "$pause_every" \
-         'del(.ended) | .item_budget = $ib | .session_budget = $sb | .session_hard_budget = $hb | .pause_every = $pe' \
+         'del(.ended) | .item_budget = $ib | .item_budget_set = $ibs | .session_budget = $sb
+          | .session_hard_budget = $hb | .pause_every = $pe' \
          "$state_file" > "$state_file.tmp" 2>/dev/null && mv "$state_file.tmp" "$state_file"; } \
       || { rm -f "$state_file.tmp"; printf 'grind: cannot write the resumed caps to %s\n' "$state_file" >&2; exit 1; }
   fi

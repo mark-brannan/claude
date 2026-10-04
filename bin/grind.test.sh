@@ -435,7 +435,7 @@ cat > "$S/ready.json" <<'JSON'
 [{"number": 5, "title": "Sonnet medium", "body": "no fields", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]},
  {"number": 20, "title": "Opus high", "body": "model: opus\neffort: high\nbudget: $10", "url": "https://github.com/o/alpha/issues/20", "labels": [{"name": "ready"}]},
  {"number": 21, "title": "Sonnet low", "body": "effort: low", "url": "https://github.com/o/alpha/issues/21", "labels": [{"name": "ready"}]},
- {"number": 22, "title": "Budgeted", "body": "budget: 12", "url": "https://github.com/o/alpha/issues/22", "labels": [{"name": "ready"}]}]
+ {"number": 22, "title": "Budgeted", "body": "budget: 12\nbudget: tbd", "url": "https://github.com/o/alpha/issues/22", "labels": [{"name": "ready"}]}]
 JSON
 # caps_of <n> -> "soft $X hard $Y[ cut]" off item #n's dry-run budget line
 caps_of() {
@@ -447,9 +447,11 @@ run --dry-run
 eq 'sonnet/medium: the item budget, hard 3x' 'soft $5.00 hard $15.00' "$(caps_of 5)"
 eq 'opus/high: 2.5x the price, 2x the effort; its lower budget: loses; hard cut to the run' 'soft $25.00 hard $30.00 cut' "$(caps_of 20)"
 eq 'sonnet/low: half' 'soft $2.50 hard $7.50' "$(caps_of 21)"
-eq 'a higher budget: wins' 'soft $12.00 hard $30.00 cut' "$(caps_of 22)"
+eq 'a higher budget: wins; a later budget: that is not a number is no field' 'soft $12.00 hard $30.00 cut' "$(caps_of 22)"
 run --dry-run --session-hard-budget 100
 eq 'a --session-hard-budget lifts the cut' 'soft $25.00 hard $75.00' "$(caps_of 20)"
+run --dry-run --session-budget 6
+eq 'a hard budget left below the soft cap is both caps, and said to be cut' 'soft $9.00 hard $9.00 cut' "$(caps_of 20)"
 run --dry-run --session-hard-budget 10
 eq 'a hard budget below the soft one is refused' 2 "$RC"
 has 'and says so' 'session hard budget \(\$10\) is below the session budget \(\$20\)'
@@ -489,6 +491,7 @@ run --resume "$session_id" --item-budget 7 --session-budget 50 --pause-every 2
 eq 'the resumed run applies --pause-every' 2 "$(calls_claude)"
 eq 'and records the flags, the hard budget following the new soft one' '7 50 75 2' \
   "$(jq -r '"\(.item_budget) \(.session_budget) \(.session_hard_budget) \(.pause_every)"' "$sess")"
+eq 'and that the item budget was given' 1 "$(jq -r '.item_budget_set' "$sess")"
 eq 'its workers run on the new item budget: opus/high at 3x $35, cut to $74 left' '74.00' \
   "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk 'NR == 1 {print $2}')"
 # a resume that cannot write its caps back stops, saying so, before any spend
@@ -1577,15 +1580,26 @@ eq 'only one PR is reran per pass' 1 "$(grep -c 'run rerun' "$GH_LOG")"
 assert 'the first PR in the queue is the one reran' grep -Eq -- 'run rerun 9001 .*--failed' "$GH_LOG"
 has 'the second PR is skipped for the per-pass cap, not reran' 'WARN  skipping .*#61 -- this pass already reran a PR$'
 
-# --- --prs budget defaults, and flags that still override them -----------------------
-has 'default item budget is the $1 stop plus headroom' -- '^  budget: +stop at ~\$1\.25, backstop \$5\.00'
-run --prs --dry-run --item-budget 3
-has 'an explicit item budget wins' -- '^  budget: +stop at ~\$3\.00,'
-
 # --- a real --prs run: briefs plus one contract, on the PR own branch ----------------
 cat > "$S/audit.json" <<J
 $(audit_row 11 stale-label not-green '[]' solace "$(old)")
 J
+# --prs budget defaults, and flags that still override them; a resumed run
+# keeps whether the item budget was given, so a pr item's cap does not fall
+# back to the flat one
+run --prs --dry-run
+has 'default pr item budget is the $1 stop plus headroom, hard 3x' '^  budget: +soft \$1\.25 \(the worker.s stop\), hard \$3\.75 '
+run --prs --dry-run --item-budget 3
+has 'an explicit item budget wins' '^  budget: +soft \$3\.00 '
+for ibs in 1 0; do
+  jq -n --argjson ibs "$ibs" '{repo:"o/alpha", project:"", item_budget:3, item_budget_set:$ibs, session_budget:100,
+    session_hard_budget:150, pause_every:3, prs:1, kinds:"pr", policy:"finish-first", items:[]}' > "$S/state/grind/grind-ibs$ibs.json"
+done
+run --resume grind-ibs1 --dry-run
+has 'a resumed run keeps an item budget the session was given' '^  budget: +soft \$3\.00 '
+run --resume grind-ibs0 --dry-run
+has 'and the flat pr cap when it was not (an older file says nothing)' '^  budget: +soft \$1\.25 '
+rm -f "$S/state/grind"/grind-ibs*.json
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json
 reply 0.20 "done" 1
 prview 11 '["awaiting-human"]' '[]'
