@@ -29,7 +29,9 @@
 # could not be checked: liveness is what the writer recorded, and a reader
 # who wants the live state follows `where:` or `pr:`.
 #
-# CONVENIENCE: exit 0 on every read. A write that cannot land says so and
+# CONVENIENCE: exit 0 on every read, except a store that cannot be read
+# (work-item or python3 failing): `Pickup: BROKEN STORE -- <cause>` on stdout
+# and exit 1. A write that cannot land says so and
 # exits 1, because a taken item still listed as open hands one session's
 # work to two.
 set -u
@@ -176,6 +178,11 @@ if [ -z "$(find "$hard_cache" -mmin -60 2>/dev/null)" ] && command -v gh >/dev/n
   else nohup sh "$self" --_refresh >/dev/null 2>&1 </dev/null & fi
 fi
 hard=$(cat "$hard_cache" 2>/dev/null) || hard=""
+# A store that cannot be read (work-item or python3 failing) is named here,
+# in the output a hook captures, and exits 1 below: an empty list from a
+# broken store is not "Pickup: none".
+store_rc=0; item_rows >/dev/null
+[ -z "${ITEM_ROWS_ERR:-}" ] || { printf 'Pickup: BROKEN STORE -- %s; this is not an empty list\n' "$ITEM_ROWS_ERR"; store_rc=1; }
 [ -n "$hard" ] && printf 'Hard -- a fixer gave up on these; take one before any item\n\n%s\n\n' "$hard"
 
 # The agora docket is the human-ruling items (board_union's `## Needs ruling`);
@@ -198,7 +205,7 @@ if [ -n "$find_word" ]; then
 fi
 recs=$(claude_cards | { if [ -n "$find_word" ]; then grep -iF -- "$find_word"; else cat; fi; } \
   | work_records --cards "$@" | awk -F "$sep" -v closed="$closed" 'closed || $3 == "open"')
-[ -n "$recs" ] || { printf 'Pickup: none\n'; docket; exit 0; }
+[ -n "$recs" ] || { printf 'Pickup: none\n'; docket; exit "$store_rc"; }
 
 limit=5; [ "$all" = 1 ] && limit=100000
 total=$(printf '%s\n' "$recs" | grep -c '^')
@@ -245,4 +252,4 @@ printf '%s\n' "$recs" | sort -t "$sep" -k10,10"$( [ "$oldest" = 1 ] || printf r 
   }
 '
 docket
-exit 0
+exit "$store_rc"

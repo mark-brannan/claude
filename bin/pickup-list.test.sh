@@ -92,7 +92,18 @@ assert 'a not-ready item cannot be taken' bash -c "! sh '$PL' take 1790836854aaa
 assert 'show reaches a ruling item' bash -c "sh '$PL' show 1790836851aaaaaaaa | grep -q 'Stored ruling'"
 assert 'show reaches click work' bash -c "sh '$PL' show 1790836853aaaaaaaa | grep -q 'Click work'"
 assert 'show of an unknown item fails' bash -c "! sh '$PL' show 1790836859aaaaaaaa 2>/dev/null"
+
+# A store that cannot be read is named and exits 1, never "Pickup: none"
+# (card 179101773919cb0a62). The pickup items themselves still list.
+mkdir -p "$S/fakebin"; printf '#!/bin/sh\necho "python exploded" >&2\nexit 4\n' > "$S/fakebin/python3"; chmod +x "$S/fakebin/python3"
+out=$(PATH="$S/fakebin:$PATH" sh "$PL" --all); rc=$?
+eq 'a broken store exits 1' 1 "$rc"
+assert 'and names the cause' bash -c "printf '%s' '$out' | grep -q 'Pickup: BROKEN STORE -- work-item list failed (exit 4): python exploded'"
+assert 'and still lists the pickup items' bash -c "printf '%s' '$out' | grep -q 'newest work'"
 rm -rf "$I"
+out=$(PATH="$S/fakebin:$PATH" sh "$PL" --all); rc=$?
+eq 'no items/ at all is not a broken store' 0 "$rc"
+assert 'and prints no error' bash -c "! printf '%s' '$out' | grep -q BROKEN"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -640,19 +640,55 @@ items_dir() { printf '%s' "${WORK_ITEM_DIR:-$(state_dir)/items}"; }
 # updated repo line`, tab-separated. Read once per shell into $ITEM_ROWS (one
 # python start, not one per item), so a caller primes it outside $(...) --
 # `item_rows >/dev/null; rows=$ITEM_ROWS` -- or the cache dies with the
-# subshell. Empty when there is no items/ or no work-item to read it.
+# subshell. Empty when there is no items/. A store that cannot be read (no
+# work-item, no python3, work-item exiting non-zero) is empty too, but sets
+# $ITEM_ROWS_ERR to the cause: an empty board and a broken one look the same
+# otherwise, so a reader that must not pass one off as the other checks it
+# after priming. A caller that only wants what is there ignores it.
 item_rows() {
-  local d wi c
+  local d
   d=$(items_dir)
   if [ "${ITEM_ROWS_FOR-}" != "$d" ]; then
-    ITEM_ROWS=""; ITEM_ROWS_FOR=$d; wi=""
-    for c in "${WORK_ITEM_BIN:-}" "${self_dir:+$self_dir/work-item}" \
-             "${HOOK_DIR:+$HOOK_DIR/../bin/work-item}" "$HOME/.claude/bin/work-item"; do
-      [ -n "$c" ] && [ -f "$c" ] && { wi=$c; break; }
-    done
-    [ -d "$d" ] && [ -n "$wi" ] && ITEM_ROWS=$(WORK_ITEM_DIR=$d python3 "$wi" list 2>/dev/null)
+    ITEM_ROWS=""; ITEM_ROWS_ERR=""; ITEM_ROWS_FOR=$d
+    if [ -d "$d" ]; then
+      if work_item_run "$d" list; then ITEM_ROWS=$WI_OUT; else ITEM_ROWS_ERR=$WI_ERR; fi
+    fi
   fi
   [ -z "$ITEM_ROWS" ] || printf '%s\n' "$ITEM_ROWS"
+}
+
+# work_item_run <items dir> <work-item args...> -- run work-item in the
+# current shell: stdout into $WI_OUT, and on failure the cause into $WI_ERR
+# with a non-zero return.
+work_item_run() {
+  local d wi c errf rc
+  d=$1; shift; wi=""; WI_OUT=""; WI_ERR=""
+  for c in "${WORK_ITEM_BIN:-}" "${self_dir:+$self_dir/work-item}" \
+           "${HOOK_DIR:+$HOOK_DIR/../bin/work-item}" "$HOME/.claude/bin/work-item"; do
+    [ -n "$c" ] && [ -f "$c" ] && { wi=$c; break; }
+  done
+  [ -n "$wi" ] || { WI_ERR="work-item not found"; return 1; }
+  command -v python3 >/dev/null 2>&1 || { WI_ERR="python3 not found"; return 1; }
+  errf=$(mktemp "${TMPDIR:-/tmp}/work-item-err.XXXXXX" 2>/dev/null) || errf=/dev/null
+  WI_OUT=$(WORK_ITEM_DIR=$d python3 "$wi" "$@" 2>"$errf"); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    WI_ERR="work-item $1 failed (exit $rc): $(tail -n 1 "$errf" 2>/dev/null)"; WI_OUT=""
+  fi
+  [ "$errf" = /dev/null ] || rm -f "$errf"
+  return "$rc"
+}
+
+# done_rows -- the rows of every item at `done`, in item_rows' shape, into
+# $DONE_ROWS: the agent finished and logged evidence; only the user's
+# acceptance (done -> closed) remains. Not cached. A failure sets
+# $ITEM_ROWS_ERR as item_rows does, so call it unwrapped, not in $(...).
+# shellcheck disable=SC2034 # DONE_ROWS and ITEM_ROWS_ERR are read by the callers
+done_rows() {
+  DONE_ROWS=""
+  [ -d "$(items_dir)" ] || return 0
+  if work_item_run "$(items_dir)" list --all; then
+    DONE_ROWS=$(printf '%s\n' "$WI_OUT" | awk -F '\t' '$3 == "done"')
+  else ITEM_ROWS_ERR=$WI_ERR; fi
 }
 
 # board_union -- the store as one board text: every item as a `- [ ] ` card
