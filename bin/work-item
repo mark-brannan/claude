@@ -393,9 +393,10 @@ def until_problem(t):
     return ""
 
 
-def check_link(brief):
-    """kanban-lint's L6: a card carries a link."""
-    if not LINK.search(brief):
+def check_link(brief, home=""):
+    """kanban-lint's L6: a card carries a link. A GitHub-homed item's `home=` is
+    its link (`list` draws it into the card line), so its brief may carry none."""
+    if not LINK.search(brief) and not LINK.search(home or ""):
         refuse("the brief carries no link: an http link or owner/repo#n, "
                "so a loop with no home gets a log entry first")
 
@@ -408,7 +409,19 @@ def check_ruling(owner, brief):
     if owner != "human-ruling":
         return
     t = fold_text(brief)
-    miss = [f for f in RULING_FIELDS if not re.search(rf"[ (]{f}:", t)]
+    if re.search(r"[ (]kind:[ \t]*tentative[ \t]+adr", t):
+        # kanban-lint's L10 in place of L8: until:, settle:, repos:, judgment:
+        # (card-write; gates: is dropped), the same judgment: and until: rules.
+        miss = [f for f in ("until", "settle", "repos", "judgment")
+                if not re.search(rf"[ (]{f}:", t)]
+        if miss:
+            refuse("tentative-ADR card missing " + ", ".join(f + ":" for f in miss)
+                   + " -- a kind: tentative ADR card carries until:, settle: (what would settle "
+                   "it), repos: (the repo(s) it touches) and judgment: (values, risk, direction, "
+                   "legal or people) in place of default:, undo: and risk:")
+        miss = []
+    else:
+        miss = [f for f in RULING_FIELDS if not re.search(rf"[ (]{f}:", t)]
     if miss:
         refuse("ruling card missing " + ", ".join(f + ":" for f in miss)
                + " -- a human-ruling brief carries default: (what you would do), undo: (the "
@@ -509,10 +522,10 @@ def main(argv):
         if len(args) != 1:
             die("brief takes the text, or - for stdin")
         brief = read_brief(args[0])
-        check_link(brief)
-        check_ruling(it.facts()["owner"], brief)
         sid = me()
         it.lock()
+        check_link(brief, it.facts()["home"])  # under the lock: owner and brief cannot move between check and write
+        check_ruling(it.facts()["owner"], brief)
         it.write_brief(brief, points or it.facts()["points"])
         it.append(sid, "briefed")
     elif cmd == "log":
@@ -524,12 +537,13 @@ def main(argv):
         sid = me()
         to = ""
         evidence = False
+        new_owner = ""
         for w in args:
             if w.startswith("status="):
                 to = w[len("status="):]
             elif w.startswith("owner="):
-                check_owner(w[len("owner="):])
-                check_ruling(w[len("owner="):], brief_text(it.path))
+                new_owner = w[len("owner="):]
+                check_owner(new_owner)
             elif w.startswith("evidence=") and len(w) > len("evidence="):
                 evidence = True
         if to == "closed":
@@ -539,6 +553,8 @@ def main(argv):
             refuse("status=done needs evidence=<link>: the PR, commit, roll anchor or "
                    "decisions line that shows it")
         it.lock()
+        if new_owner:  # under the lock, so a concurrent `brief` cannot change what is checked
+            check_ruling(new_owner, brief_text(it.path))
         if to:
             it.move(sid, to)
         it.append(sid, line)

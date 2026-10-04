@@ -165,9 +165,12 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(len(list(self.dir.glob("*.md"))), n, "a refused create wrote no file")
         for i, link in enumerate(("see mark-brannan/dotfiles#510", "[log](../log/x.md)")):
             ok(A, "create", "--id", f"170000010{i}077c62eb", "--brief", link, "Linked")
-        self.assertEqual(run(A, "brief", self.id, "re-briefed with no link").returncode, 1,
+        plain = ok(A, "create", "--id", "1700000103077c62eb", "--brief", LINK, "Unhomed")
+        self.assertEqual(run(A, "brief", plain, "re-briefed with no link").returncode, 1,
                          "a re-brief that drops the link is refused")
-        self.assertEqual(fact(self.id, "briefed"), "2", "the refused brief logged nothing")
+        self.assertEqual(fact(plain, "briefed"), "1", "the refused brief logged nothing")
+        ok(A, "log", plain, "home=mark-brannan/dotfiles#510")
+        ok(A, "brief", plain, "re-briefed, homed on GitHub")  # the home is the link
 
     def test_10_done_needs_evidence_and_closed_is_refused(self):
         item = ok(A, "create", "--id", "1700000200077c62eb", "--brief", LINK, "Lifecycle")
@@ -231,6 +234,17 @@ class WorkItemTest(unittest.TestCase):
         for i, u in enumerate(("2028-02-29", "https://github.com/o/r/pull/7", "o/r#8", "the next migration")):
             self.assertEqual(create(self.RULING.replace("2026-10-05", u), 10 + i).returncode, 0,
                              f"until: {u} passes")
+
+    def test_17_tentative_adr_has_its_own_fields(self):
+        adr = f"Take the pin ({LINK}) kind: tentative ADR until: 2026-10-05 settle: a ruling repos: o/r judgment: direction"
+        ok(A, "create", "--id", "1700000600077c62eb", "--owner", "human-ruling", "--brief", adr, "ADR")
+        p = run(A, "create", "--id", "1700000601077c62eb", "--owner", "human-ruling", "--brief",
+                adr.replace(" settle: a ruling", "").replace(" repos: o/r", ""), "ADR short")
+        self.assertEqual(p.returncode, 1, "a tentative-ADR card missing settle: and repos: is refused")
+        self.assertIn("missing settle:, repos: --", p.stderr, "named, not default:/undo:/risk:")
+        self.assertEqual(run(A, "create", "--id", "1700000602077c62eb", "--owner", "human-ruling", "--brief",
+                             adr.replace("direction", "naming"), "ADR toil").returncode, 1,
+                         "judgment: rules apply to it as to any ruling")
 
     def test_16_ruling_on_brief_and_log(self):
         item = ok(A, "create", "--id", "1700000500077c62eb", "--brief", LINK, "Becomes a ruling")
