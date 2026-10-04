@@ -324,10 +324,20 @@ fi
 # name unique to this run so that shortcut can never match a stale tree.
 # Two sources feed one release, so the name carries both SHAs (claude first:
 # the SessionStart brief shows the first seven characters of the status sha).
+# The Localise step below also writes $HOME and the state repo's path into
+# the staged settings.json, so those are content too: a release staged before
+# the state repo was cloned, reused once it sits elsewhere, would keep a terms
+# path that no longer exists. Their checksum is the name's third part.
+# The state repo is found by lib-state.sh's own search, the one every hook
+# uses; not cloned yet, it is /workspace, the path the SessionStart brief
+# tells a session to clone it to.
+STATE_REPO=$(bash -c '. "$1" && state_repo' _ "$SEED/hooks/lib-state.sh" 2>/dev/null)
+[ -n "$STATE_REPO" ] || STATE_REPO=/workspace/claude_prompts_scratch
+LOCAL_REV=$(printf '%s\n%s\n' "$HOME" "$STATE_REPO" | cksum | cut -d' ' -f1)
 CLAUDE_REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null)
 GUARDS_REV=$(git -C "$GUARDS_SEED" rev-parse HEAD 2>/dev/null)
 if [ -n "$CLAUDE_REV" ] && [ -n "$GUARDS_REV" ]; then
-  REV="$CLAUDE_REV-$GUARDS_REV"
+  REV="$CLAUDE_REV-$GUARDS_REV-$LOCAL_REV"
 else
   REV="unknown.$$"
 fi
@@ -411,16 +421,9 @@ done
 # the literal string), so the repo holds a real machine's absolute paths, and
 # here they would name a HOME that doesn't exist. A terms file that is set but
 # unreadable makes the plugin's public-issue-guard deny every public post, so
-# the staged copy gets this VM's own: its $HOME, and the state repo where the
-# old guard's search finds it -- /workspace when not cloned yet, the path its
-# denial tells a session to clone to. jq missing or failing marks the install
+# the staged copy gets this VM's own: its $HOME, and $STATE_REPO (resolved
+# above, where the release is named). jq missing or failing marks the install
 # incomplete and leaves the repo's values: fail closed, and say so.
-STATE_REPO=/workspace/claude_prompts_scratch
-for d in /home/user/claude_prompts_scratch /workspace/claude_prompts_scratch \
-         "$HOME/claude_prompts_scratch" "$HOME/src/claude_prompts_scratch" \
-         "$HOME/Projects/claude_prompts_scratch" "$HOME/code/claude_prompts_scratch"; do
-  [ -d "$d/.git" ] && { STATE_REPO=$d; break; }
-done
 if [ "$DRY_RUN" = yes ]; then
   say "would localise settings.json paths to $HOME and $STATE_REPO"
 elif [ -f "$STAGE_TMP/settings.json" ]; then
@@ -722,7 +725,7 @@ else
   "channel": "$BRANCH",
   "tag": null,
   "sha": "${ACTIVE%%-*}",
-  "guards_sha": "$([ "${ACTIVE#*-}" != "$ACTIVE" ] && echo "${ACTIVE#*-}")",
+  "guards_sha": "$([ "${ACTIVE#*-}" != "$ACTIVE" ] && rest=${ACTIVE#*-} && echo "${rest%%-*}")",
   "installed_at": "$NOW",
   "complete": $COMPLETE,
   "source": "cloud-session-setup.sh"
