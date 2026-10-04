@@ -7,7 +7,7 @@
 # other way, which on an ephemeral cloud container is most of them. So this
 # runs unconditionally on Stop and needs nothing from the conversation.
 #
-# It writes six things, all derived from the transcript and from git:
+# It writes seven things, all derived from the transcript and from git:
 # (each <dir>/<id>.* below sits in <dir>/<first two of id>/; lib-state.sh
 # state_shard_path)
 #   metrics/sessions/<id>.json    cost and shape of the session
@@ -18,6 +18,7 @@
 #   metrics/blocked/<id>.jsonl    each tool call the permission layer refused
 #   log/auto/<date>-<repo>-<id>.md  a resumable checkpoint the next session reads
 #   pickup/<start>-<id>.md        this session's pickup item, which /pickup reads
+#   items/<id>.md                 this session's work item, via stop-item.py
 #   curia/<id>/digest.md          a floor stamped on any curia digest the
 #                                  session touched
 #
@@ -529,7 +530,7 @@ fi
 # looked up only while empty and only once the branch is on origin (a PR
 # cannot exist before that), and a miss is cached ten minutes so a pushed
 # branch with no PR does not pay a gh call every turn.
-pi_branch_line=none; pi_pr=none
+pi_branch_line=none; pi_pr=none; pi_file=""
 pickup_item() {
   local dir id f start prompt body status \
         old_prompt old_body old_status old_pr old_until ust ust_desc dirty \
@@ -539,7 +540,7 @@ pickup_item() {
   start=$(printf '%s' "$metrics" | jq -r '.session.started_at // empty')
   [ -n "$start" ] || start=$now
   id="$(printf '%s' "$start" | sed -E 's/^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}):([0-9]{2}).*/\1T\2-\3/')-${sid:0:8}"
-  f="$dir/$id.md"
+  f="$dir/$id.md"; pi_file=$f
   prompt=$(printf '%s' "$metrics" | jq -r '.session.last_prompt // empty')
 
   old_prompt=""; old_body=""; old_status=""; old_pr=""; old_until=""
@@ -604,6 +605,19 @@ pickup_item() {
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 }
 pickup_item
+
+# ------------------------------------------------------- the session's item
+# The session's record as one work item in items/ (requirements section 14):
+# minted at its first Stop, or written onto the item it claimed, before the
+# state commit below so this Stop commits it. The deciding is Python
+# (stop-item.py); every write goes through bin/work-item. It fails open: its
+# one outcome line, or why it did not run, goes in the checkpoint, and the
+# pickup item above stands either way.
+si_out=$(timeout 60 python3 "$HOOK_DIR/stop-item.py" --session "$sid" \
+  --items "$SD/items" --pickup "$pi_file" --pr "$pi_pr" --checkpoint "$ckpt" \
+  --work-root "$work_root" --repo "$work_repo" --started "$started" \
+  --model "$(printf '%s' "$metrics" | jq -r '.session.model // empty')" 2>/dev/null) || true
+printf '\n## Session item\n\n%s\n' "${si_out:-failed: stop-item.py did not run}" >> "$ckpt" 2>/dev/null
 
 # ------------------------------------------------------- curia digests
 # A session that touched a curia -- a state/global/curia/<id> path, a
