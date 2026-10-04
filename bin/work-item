@@ -135,6 +135,9 @@ def points_ok(p):
 
 
 LINK = re.compile(r"https?://|(^|[^\w./-])[\w.-]+/[\w.-]+#\d+|\]\((\.\./)*log/")
+# The one shape of `home=`: what `card_line` draws as a link, so what the checks
+# accept and what is rendered cannot drift.
+HOME = re.compile(r"[\w.-]+/[\w.-]+#\d+")
 
 
 def num(s):
@@ -310,9 +313,9 @@ def card_line(f, brief):
     if re.search(r"(^|[ (])id:[ \t]*" + i + r"([^0-9a-z]|$)", brief):
         return brief
     line = f"**{f['title']}**" + (f": {brief}" if brief else "")
-    m = re.fullmatch(r"([\w.-]+)/([\w.-]+)#(\d+)", f["home"])
-    if m and f["home"] not in brief:
-        line += f" ([{f['home']}](https://github.com/{m[1]}/{m[2]}/issues/{m[3]}))"
+    if HOME.fullmatch(f["home"]) and f["home"] not in brief:
+        repo, n = f["home"].split("#")
+        line += f" ([{f['home']}](https://github.com/{repo}/issues/{n}))"
     for k in ("repo", "model", "effort", "until"):
         if f[k] not in ("", "-") and not re.search(rf"(^|[ (]){k}:", brief):
             line += f" {k}: {f[k]}"
@@ -368,7 +371,7 @@ def check_owner(o):
 
 RULING_FIELDS = ("default", "undo", "until", "risk", "judgment")
 NEXT_FIELD = re.compile(r"[ (;,.*](default|undo|risk|judgment|gates|settle|repos|repo|kind|"
-                        r"why you|why this|id):")
+                        r"why you|why this|until|id):")
 
 
 def fold_text(brief):
@@ -376,17 +379,25 @@ def fold_text(brief):
     return " " + " ".join(l.strip() for l in brief.split("\n") if l.strip()).lower()
 
 
+def field_value(t, name):
+    """The value of `name:` in folded text t, up to the next field; None when
+    the field is absent, '' when it is empty."""
+    m = re.search(rf"[ (]{name}:", t)
+    if not m:
+        return None
+    v = t[m.end():]
+    cut = NEXT_FIELD.search(v)
+    return (v[:cut.start()] if cut else v).strip(" \t*").rstrip(" \t*.;,")
+
+
 def until_problem(t):
     """What is wrong with the until: value in folded text t, else ''. A date, a
     PR/issue link or any words pass; an empty value or a date that is no
     calendar day (2026-02-30) does not."""
     from datetime import date
-    m = re.search(r"until:", t)
-    if not m:
+    v = field_value(t, "until")
+    if v is None:
         return ""
-    v = t[m.end():]
-    cut = NEXT_FIELD.search(v)
-    v = (v[:cut.start()] if cut else v).strip(" \t*").rstrip(" \t*.;,")
     if not v:
         return "until: is empty"
     for d in re.findall(r"\d{4}-\d{2}-\d{2}", v):
@@ -400,7 +411,7 @@ def until_problem(t):
 def check_link(brief, home=""):
     """kanban-lint's L6: a card carries a link. A GitHub-homed item's `home=` is
     its link (`list` draws it into the card line), so its brief may carry none."""
-    if not LINK.search(brief) and not LINK.search(home or ""):
+    if not LINK.search(brief) and not HOME.fullmatch(home or ""):
         refuse("the brief carries no link: an http link or owner/repo#n, "
                "so a loop with no home gets a log entry first")
 
@@ -423,6 +434,10 @@ def check_ruling(owner, brief):
                    + " -- a kind: tentative ADR card carries until:, settle: (what would settle "
                    "it), repos: (the repo(s) it touches) and judgment: (values, risk, direction, "
                    "legal or people) in place of default:, undo: and risk:")
+        empty = [f for f in ("settle", "repos") if field_value(t, f) == ""]
+        if empty:
+            refuse("tentative-ADR card has an empty " + ", ".join(f + ":" for f in empty)
+                   + " -- each carries a value, not just the field name")
         miss = []
     else:
         miss = [f for f in RULING_FIELDS if not re.search(rf"[ (]{f}:", t)]
@@ -549,6 +564,9 @@ def main(argv):
             elif w.startswith("owner="):
                 new_owner = w[len("owner="):]
                 check_owner(new_owner)
+            elif w.startswith("home="):
+                if w != "home=" and not HOME.fullmatch(w[len("home="):]):
+                    refuse(f"home= is owner/repo#n, got [{w[len('home='):]}]")
             elif w.startswith("evidence=") and len(w) > len("evidence="):
                 evidence = True
         if to == "closed":

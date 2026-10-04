@@ -246,6 +246,39 @@ class WorkItemTest(unittest.TestCase):
                              adr.replace("direction", "naming"), "ADR toil").returncode, 1,
                          "judgment: rules apply to it as to any ruling")
 
+    def test_18_tentative_adr_fields_are_non_empty(self):
+        adr = f"Take the pin ({LINK}) kind: tentative ADR until: 2026-10-05 settle: a ruling repos: o/r judgment: direction"
+        for i, (a, b) in enumerate((("settle: a ruling", "settle:"), ("repos: o/r", "repos:"))):
+            p = run(A, "create", "--id", f"170000070{i}077c62eb", "--owner", "human-ruling", "--brief",
+                    adr.replace(a, b), "ADR empty")
+            self.assertEqual(p.returncode, 1, f"an empty {b} is refused")
+            self.assertIn("empty " + b, p.stderr)
+        p = run(A, "create", "--id", "1700000702077c62eb", "--owner", "human-ruling", "--brief",
+                adr.replace("until: 2026-10-05", "until:"), "ADR no until")
+        self.assertEqual(p.returncode, 1, "an empty until: is refused by until_problem")
+        self.assertIn("until: is empty", p.stderr)
+        p = run(A, "create", "--id", "1700000703077c62eb", "--owner", "human-ruling", "--brief",
+                adr.replace("2026-10-05", "2026-02-30"), "ADR bad date")
+        self.assertEqual(p.returncode, 1, "a non-date until: is refused")
+
+    def test_19_home_has_one_shape(self):
+        plain = ok(A, "create", "--id", "1700000710077c62eb", "--brief", LINK, "Homing")
+        for bad in ("home=https://x", "home=owner/repo", "home=a/b#1x", "home=a b/c#1"):
+            self.assertEqual(run(A, "log", plain, bad).returncode, 1, f"log {bad} is refused")
+        self.assertEqual(fact(plain, "home"), "", "no refused home was written")
+        ok(A, "log", plain, "home=mark-brannan/dotfiles#510")
+        # a home the check accepts is a home the card line renders as a link
+        sys.path.insert(0, str(WI.parent))
+        from importlib.machinery import SourceFileLoader
+        wi = SourceFileLoader("work_item", str(WI)).load_module()
+        self.assertTrue(wi.HOME.fullmatch("mark-brannan/dotfiles#510"))
+        line = wi.card_line({"id": "x1", "title": "T", "home": "mark-brannan/dotfiles#510",
+                             "repo": "-", "model": "-", "effort": "-", "until": "-"}, "brief")
+        self.assertIn("(https://github.com/mark-brannan/dotfiles/issues/510)", line)
+        wi.check_link("no link", "mark-brannan/dotfiles#510")
+        with self.assertRaises(wi.Exit):
+            wi.check_link("no link", "see https://x")  # matches LINK, would not render
+
     def test_16_ruling_on_brief_and_log(self):
         item = ok(A, "create", "--id", "1700000500077c62eb", "--brief", LINK, "Becomes a ruling")
         p = run(A, "log", item, "owner=human-ruling")
