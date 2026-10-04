@@ -236,7 +236,10 @@ class Item:
         except OSError:
             refuse(f"could not open the lock {p}")
         use_lib()
-        import lock as filelock
+        try:
+            import lock as filelock
+        except ImportError:
+            die("lib/lock.py not found (looked beside the tool and in ~/.claude/lib)")
         if not filelock.acquire(self.lockf, wait=10):
             refuse(f"item {self.id} is locked by another writer")
 

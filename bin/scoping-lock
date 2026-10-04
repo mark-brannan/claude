@@ -70,8 +70,8 @@ def state_repo():
 SR = state_repo()
 try:
     import gitrun
-except ImportError:
-    sys.exit("scoping-lock: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)")
+except ImportError:  # main() says so after the usage line, which needs no git
+    gitrun = None
 LEASE = int(os.environ.get("SCOPING_LOCK_STALE_SECS") or 1500)
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -238,6 +238,8 @@ def main(argv):
     if len(argv) < 2:
         print(__doc__[__doc__.index("Usage:"):].rstrip(), file=sys.stderr)
         return 2
+    if gitrun is None:
+        die("lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)")
     cmd, args = argv[0], argv[1:]
     if cmd == "read-of":
         print(read_of(args[0]))

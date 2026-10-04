@@ -3,7 +3,8 @@ stdlib only.
 
 The one home for this helper (dotfiles#517); bin/scoping-lock,
 bin/github-limits, bin/prose-budget and bin/agent-decision use it.
-Output is captured as text and never reaches the caller's terminal.
+Output is captured as UTF-8 text, with any byte that is not UTF-8 replaced
+rather than raised, and never reaches the caller's terminal.
 """
 import subprocess
 
@@ -16,7 +17,8 @@ def run(*args, cwd=None, timeout=None, check=False):
     back as returncode 124 or 127 rather than an exception. With check, any
     non-zero exit raises CalledProcessError instead."""
     try:
-        p = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
+                           encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired as e:
         p = subprocess.CompletedProcess(e.cmd, TIMEOUT, "", f"git timed out after {timeout}s")
     except OSError as e:

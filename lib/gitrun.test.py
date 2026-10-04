@@ -40,6 +40,13 @@ class GitrunTest(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             gitrun.run("rev-parse", cwd=self.T, check=True)
 
+    def test_output_that_is_not_utf8_is_replaced_not_raised(self):
+        fake = Path(self.T) / "git"
+        fake.write_text("#!/bin/sh\nprintf 'caf\\351\\n'\n")
+        fake.chmod(0o755)
+        os.environ["PATH"] = self.T + os.pathsep + self.path
+        self.assertEqual(gitrun.out("log"), "caf\ufffd")
+
     def test_missing_git_is_127(self):
         os.environ["PATH"] = self.T
         self.assertEqual(gitrun.run("status").returncode, gitrun.MISSING)

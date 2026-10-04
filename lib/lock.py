@@ -18,7 +18,7 @@ def acquire(fd, wait=None):
     if wait is None:
         fcntl.flock(fd, fcntl.LOCK_EX)
         return True
-    for left in range(int(wait), -1, -1):
+    for left in range(max(0, int(wait)), -1, -1):
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             return True

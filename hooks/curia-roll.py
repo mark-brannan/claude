@@ -54,7 +54,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 import lib_state  # noqa: E402
 try:
     import lock  # noqa: E402
-except ImportError:  # no lib/ beside hooks/: main() reads that as no state and exits 0
+except ImportError:  # a lib/ without lock.py: main() writes nothing and exits 0
     lock = None
 
 
@@ -154,7 +154,7 @@ def main():
     if not isinstance(session_id, str) or not session_id or not isinstance(prompt, str):
         return
     state_dir = lib_state.state_dir()
-    if not state_dir:
+    if not state_dir or lock is None:
         return
     now = datetime.datetime.now(datetime.timezone.utc)
     # A set: a resumed session can both type `/curia <id>` and be in its LIVE.
