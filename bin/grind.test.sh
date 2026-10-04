@@ -1775,7 +1775,7 @@ GRIND_STATUS: done" sess-donecap
     exit 1 ;;
   pushedcap)
     "$REAL_GIT" push -q origin "HEAD:refs/heads/\$b"   # as the contract asks, before the cap
-    mkdir -p .aws; echo k > .aws/credentials
+    mkdir -p .aws; echo k > .aws/credentials; echo k > Service-Account.json
     say "Pushed." sess-pushedcap
     exit 1 ;;
 esac
@@ -1872,7 +1872,7 @@ run --kind issue --session-budget 100 --pause-every 10
 pushed_tip=$(git --git-dir="$co" rev-parse origin/grind-80)
 has 'a pushed attempt is saved too' 'INFO  saved the stopped attempt on o/alpha#80 to wip/grind-80'
 eq 'at the tip the worker pushed' "$pushed_tip" "$(git --git-dir="$co" rev-parse origin/wip/grind-80)"
-has 'an .aws/ credentials file is held back' 'WARN  not saving .aws/credentials from o/alpha#80'
+has 'an .aws/ credentials file and a capitalised key are held back' 'WARN  not saving .aws/credentials Service-Account.json from o/alpha#80'
 echo donecap > "$S/claude-mode"
 run --resume "$(basename "$(latest_session)" .json)"
 has 'and the retry resumes from it' 'INFO  resuming o/alpha#80 from the stopped attempt saved on wip/grind-80'

@@ -1401,12 +1401,12 @@ keep_unpushed() {
 save_attempt() {
   git -C "$wt_path" add -u >/dev/null 2>&1 || return 1
   git -C "$wt_path" ls-files -z -o --exclude-standard -- . \
-      ':(exclude,glob)**/.env' ':(exclude,glob)**/.env.*' ':(exclude,glob)**/secrets/**' \
-      ':(exclude,glob)**/*.pem' ':(exclude,glob)**/*.key' ':(exclude,glob)**/*.p12' ':(exclude,glob)**/*.pfx' \
-      ':(exclude,glob)**/id_rsa*' ':(exclude,glob)**/id_ecdsa*' ':(exclude,glob)**/id_ed25519*' \
-      ':(exclude,glob)**/.netrc' ':(exclude,glob)**/.npmrc' ':(exclude,glob)**/.pypirc' \
-      ':(exclude,glob)**/.aws/**' ':(exclude,glob)**/kubeconfig' ':(exclude,glob)**/credentials' \
-      ':(exclude,glob)**/credentials.json' ':(exclude,glob)**/*secret*.json' ':(exclude,glob)**/service-account*.json' \
+      ':(exclude,glob,icase)**/.env' ':(exclude,glob,icase)**/.env.*' ':(exclude,glob,icase)**/secrets/**' \
+      ':(exclude,glob,icase)**/*.pem' ':(exclude,glob,icase)**/*.key' ':(exclude,glob,icase)**/*.p12' ':(exclude,glob,icase)**/*.pfx' \
+      ':(exclude,glob,icase)**/id_rsa*' ':(exclude,glob,icase)**/id_ecdsa*' ':(exclude,glob,icase)**/id_ed25519*' \
+      ':(exclude,glob,icase)**/.netrc' ':(exclude,glob,icase)**/.npmrc' ':(exclude,glob,icase)**/.pypirc' \
+      ':(exclude,glob,icase)**/.aws/**' ':(exclude,glob,icase)**/kubeconfig' ':(exclude,glob,icase)**/credentials' \
+      ':(exclude,glob,icase)**/credentials.json' ':(exclude,glob,icase)**/*secret*.json' ':(exclude,glob,icase)**/service-account*.json' \
     | xargs -0r git -C "$wt_path" add -- >/dev/null 2>&1 || return 1
   held=$(git -C "$wt_path" ls-files -o --exclude-standard | paste -sd ' ' -)
   [ -z "$held" ] || warn "not saving $held from $ref: shaped like a secret; the retry will not have it"
@@ -1416,8 +1416,12 @@ save_attempt() {
   fi
   tip=$(git -C "$wt_path" rev-parse -q --verify HEAD 2>/dev/null) || return 1
   [ -n "$(git -C "$checkout" rev-list -n 1 "$tip" --not "$resume_base" 2>/dev/null)" ] || return 0
-  if [ "$(git -C "$checkout" rev-parse -q --verify "refs/remotes/origin/$1" 2>/dev/null)" != "$tip" ]; then
-    git -C "$checkout" push -q --force-with-lease="refs/heads/$1" origin "$tip:refs/heads/$1" >/dev/null 2>&1 || return 1
+  # The lease names the sha it expects rather than leaving git to find a
+  # tracking ref through a fetch refspec this checkout may not have; an empty
+  # one means the wip ref must not exist yet.
+  seen=$(git -C "$checkout" rev-parse -q --verify "refs/remotes/origin/$1" 2>/dev/null)
+  if [ "$seen" != "$tip" ]; then
+    git -C "$checkout" push -q --force-with-lease="refs/heads/$1:$seen" origin "$tip:refs/heads/$1" >/dev/null 2>&1 || return 1
     git -C "$checkout" update-ref "refs/remotes/origin/$1" "$tip" >/dev/null 2>&1 || true
   fi
   printf '%s' "$1"
