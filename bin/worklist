@@ -227,6 +227,9 @@ if [ -n "$card_id" ]; then
   done
   command -v board_card >/dev/null 2>&1 || { printf 'worklist card: lib-state.sh not found\n' >&2; exit 2; }
   is_card_id "$card_id" || { printf 'worklist card: not a card id: %s (epoch seconds then eight hex)\n' "$card_id" >&2; exit 2; }
+  # Primed here, outside $(...), so a broken store is named, never "no item".
+  item_rows >/dev/null
+  [ -z "${ITEM_ROWS_ERR:-}" ] || { printf 'worklist card: BROKEN STORE -- %s\n' "$ITEM_ROWS_ERR" >&2; exit 3; }
   hit=$(board_card "$card_id") || { printf 'worklist card: no item %s in %s\n' "$card_id" "$(items_dir)" >&2; exit 1; }
   printf '%s\n' "$hit" | awk -F '\t' '{ printf "## %s%s\n", $1, ($2 != "" ? " / " $2 : ""); print substr($0, length($1) + length($2) + 3) }'
   exit 0
@@ -738,7 +741,8 @@ fi
 
 if [ "$have_gh" = 0 ]; then
   cache=$(find_cache)
-  [ "$json" = 1 ] && { [ -n "$cache" ] && emit_json "$cache" && exit 0; echo '{"error":"no gh"}'; exit 1; }
+  # emit_json's 3 (a broken store) stands; only its 1 (no record) is "no gh".
+  [ "$json" = 1 ] && { if [ -n "$cache" ]; then emit_json "$cache"; ejrc=$?; [ "$ejrc" = 1 ] || exit "$ejrc"; fi; echo '{"error":"no gh"}'; exit 1; }
   render "$cache" 1 "no gh -- live GitHub view unavailable${cache:+; showing the last cached view}"
   exit $?
 fi

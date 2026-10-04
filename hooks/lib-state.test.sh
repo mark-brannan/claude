@@ -415,6 +415,15 @@ eq_ust "items: a stale holder has let go" 'open|' \
   "$(lsi 'work_claims_load; claude_cards | grep "Stale hold" | work_records --cards' | cut -d "$(printf '\037')" -f3,5 | tr '\037' '|')"
 eq_ust "items: no items/ is an empty board, not a kanban.md read" '' \
   "$(LSI_DIR=$SCRATCH/none lsi 'claude_cards; board_union')"
+# A store that cannot be read is named in $ITEM_ROWS_ERR; an empty one is not
+# (card 179101773919cb0a62). item_rows still returns 0, so a hook that only
+# wants what is there carries on.
+mkdir -p "$SCRATCH/emptyitems"
+eq_ust "items: an empty items/ is healthy, not a broken store" 'rc=0 err=[]' \
+  "$(LSI_DIR=$SCRATCH/emptyitems lsi 'item_rows >/dev/null; rc=$?; done_rows; echo "rc=$rc err=[$ITEM_ROWS_ERR]"')"
+eq_ust "items: a missing work-item is a broken store, and item_rows still returns 0" 'rc=0 err=[work-item not found]' \
+  "$(WORK_ITEM_DIR=$KI/items WORK_ITEM_BIN=/nonexistent HOOK_DIR=/nonexistent HOME=/nonexistent sh -c '. "'"$HOOKS"'/lib-state.sh"; item_rows >/dev/null; echo "rc=$? err=[$ITEM_ROWS_ERR]"')"
+eq_ust "items: done_rows is the done items only" '1790836866aaaaaaaa' "$(lsi 'done_rows; printf "%s\n" "$DONE_ROWS"' | cut -f1)"
 eq_ust "items: the default store is items/ in the state dir" 'yes' \
   "$(WORK_ITEM_DIR='' sh -c '. "'"$HOOKS"'/lib-state.sh"; [ "$(items_dir)" = "$(state_dir)/items" ] && echo yes')"
 

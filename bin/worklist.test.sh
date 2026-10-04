@@ -565,6 +565,13 @@ has 'brief names it too, for the hook that keeps the output' 'BROKEN STORE -- wo
 eq 'brief exits non-zero' 3 "$RC"
 run --fresh --json
 eq 'json exits non-zero on a broken store' 3 "$RC"
+run card 1790836845aaaaaaaa
+eq 'card <id> exits 3 on a broken store' 3 "$RC"
+has 'and names it, never "no item"' '^worklist card: BROKEN STORE -- work-item list failed'
+mkdir -p "$S/noghbroken"; for f in "$S/nogh"/*; do [ "${f##*/}" = python3 ] || ln -sf "$(readlink "$f")" "$S/noghbroken/${f##*/}"; done; cp "$S/bin/python3" "$S/noghbroken/python3"
+OUT=$(PATH="$S/noghbroken" sh "$WL" --json 2>&1); RC=$?
+eq 'json without gh exits 3 on a broken store' 3 "$RC"
+lacks 'and does not blame gh' 'no gh'
 rm -f "$S/bin/python3"
 run
 eq 'a readable store exits 0 again' 0 "$RC"

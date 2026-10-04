@@ -577,8 +577,12 @@ is_done_ref() {
 fetch_dir=.
 [ -z "$repo" ] || fetch_dir=$(checkout_for "$repo") \
   || { no_checkout "$repo"; printf 'grind: no repo in scope has a local checkout\n' >&2; exit 1; }
-record=$(cd "$fetch_dir" && "$worklist_bin" "${project:---here}" --json --fresh 2>&1) \
-  || { printf 'grind: worklist --json failed: %s\n' "$(printf '%s' "$record" | jq -r '.error // .' 2>/dev/null | head -1)" >&2; exit 1; }
+# A failure names its cause: the record's .error, else the last line (a broken
+# store prints the record, then the cause on stderr, and exits 3).
+record=$(cd "$fetch_dir" && "$worklist_bin" "${project:---here}" --json --fresh 2>&1) || {
+  why=$(printf '%s' "$record" | jq -r '.error // empty' 2>/dev/null | head -1)
+  [ -n "$why" ] || why=$(printf '%s\n' "$record" | tail -n 1)
+  printf 'grind: worklist --json failed: %s\n' "$why" >&2; exit 1; }
 printf '%s' "$record" | jq -e '.buckets' >/dev/null 2>&1 \
   || { echo "grind: worklist --json carries no buckets; is worklist older than grind?" >&2; exit 1; }
 
