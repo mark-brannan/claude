@@ -81,32 +81,38 @@ class WorkItemTest(unittest.TestCase):
                          "an unknown owner refuses")
         self.assertEqual(run("", "create", "--brief", LINK, "No session").returncode, 2, "no session id refuses")
 
-    def test_02b_creates_in_one_second_do_not_collide(self):
-        ids = [ok(B, "create", "--brief", LINK, f"Burst {i}") for i in range(4)]
-        self.assertEqual(len(set(ids)), 4, "four back-to-back creates mint four ids")
-        for i in ids:
-            self.assertRegex(i, r"^[0-9]{10}9a1b2c3d$", "a minted id keeps its shape")
-            self.assertTrue((self.dir / f"{i}.md").is_file(), "each create wrote its file")
-        self.assertEqual(ids, sorted(ids), "ids stay sortable in creation order")
-        self.assertEqual(run(B, "create", "--id", ids[0], "--brief", LINK, "Repeat").returncode, 1,
-                         "a true repeat of an id is still refused")
+    def test_02b_a_replayed_create_is_idempotent(self):
+        # A create is a conditional PUT of its id: the same create again is the
+        # one write landing twice, and prints the same id. A different create
+        # with that id is refused and leaves the file alone.
+        args = ("create", "--id", "1700000300077c62eb", "--points", "2",
+                "--brief", f"Replay me. {LINK}", "Replay")
+        first = ok(A, *args)
+        text = (self.dir / f"{first}.md").read_text()
+        time.sleep(1.1)  # the replay's clock has moved on; the id and content have not
+        self.assertEqual(ok(A, *args), first, "a replayed create prints the same id")
+        self.assertEqual((self.dir / f"{first}.md").read_text(), text, "a replay writes nothing")
+        self.assertEqual(run(A, "create", "--id", first, "--brief", LINK, "Replay").returncode, 1,
+                         "the same id with other content is refused")
+        self.assertEqual(run(B, *args).returncode, 1, "the same create from another session is refused")
+        self.assertEqual((self.dir / f"{first}.md").read_text(), text, "a refused create writes nothing")
 
-    def test_02c_a_taken_second_moves_on(self):
-        # Deterministic: take every id this session could mint in the next few seconds,
-        # so the create must step past them whatever the clock does.
-        got = None
+    def test_02c_a_second_create_in_one_session_second_is_refused(self):
+        # Deterministic: take every id this session could choose in the next few
+        # seconds, so the create lands on a taken id whatever the clock does.
+        n = len(list(self.dir.glob("*.md")))
         now = int(time.time())
         taken = [self.dir / f"{now + i}9a1b2c3d.md" for i in range(4)]
         for t in taken:
-            t.write_text("taken\n")
+            t.write_text("# Taken\n\n## Log\n2026-01-01T00:00:00Z 9a1b2c3d status=open\n")
         try:
-            got = ok(B, "create", "--brief", LINK, "Past the taken seconds")
+            p = run(B, "create", "--brief", LINK, "Another in the same second")
+            self.assertEqual(p.returncode, 1, "a second create in one session-second is refused, never re-minted")
+            self.assertIn("already exists", p.stderr)
+            self.assertEqual(len(list(self.dir.glob("*.md"))), n + 4, "the refused create wrote no file")
         finally:
             for t in taken:
                 t.unlink()
-            if got:
-                (self.dir / f"{got}.md").unlink()
-        self.assertGreater(int(got[:10]), now + 3, "a minted id steps past every taken second")
 
     def test_03_open_to_ready(self):
         self.assertEqual(run(A, "claim", self.id).returncode, 1, "an open item cannot be claimed")
@@ -165,8 +171,8 @@ class WorkItemTest(unittest.TestCase):
 
     def test_07_stale_claim(self):
         # A holder that wrote nothing on the item for two hours has let go.
-        # Its own id: a minted id would fall in the second that minted self.id
-        # (or step past it), and this one must be old.
+        # Its own id: the chosen one is epoch seconds, and a fast run is still
+        # in the second that chose self.id.
         old = ok(A, "create", "--id", "1700000000077c62eb", "--brief", LINK, "Stale one")
         ok(A, "log", old, "status=ready")
         with open(self.dir / f"{old}.md", "a") as fh:

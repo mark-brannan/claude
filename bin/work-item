@@ -26,8 +26,8 @@
 #   2026-10-01T23:20:15Z 86eba7f7 status=open owner=agent repo=- parent=- model=sonnet effort=medium
 #   2026-10-02T08:30:11Z 9a1b2c3d cost tokens=812340 usd=1.42 by=grind
 #
-# The id is epoch seconds then the session's eight hex, opaque (a burst of
-# creates can run a few seconds ahead of the clock); the file is the lookup. An item is created in `open`, always. Six statuses: open, ready,
+# The id is epoch seconds then the session's eight hex, opaque; the file is
+# the lookup. An item is created in `open`, always. Six statuses: open, ready,
 # claimed, blocked, done, closed; the transitions are ALLOWED below. A claim
 # is valid when the folded status is ready or closed and no other session
 # holds it. A GitHub-homed item carries `home=`, with no link back.
@@ -361,6 +361,18 @@ def check_owner(o):
         die(f"owner is agent, human-ruling or human-click, got [{o}]")
 
 
+def replayed(path, body, now):
+    """True when the file is this same create, landed earlier: the same text
+    once the log is read at the second it was written (a replay carries the
+    same id and content; its clock may have moved on)."""
+    try:
+        have = path.read_text()
+    except OSError:
+        return False
+    m = re.search(r"^## Log\n(\S+) ", have, re.M)
+    return bool(m) and have == body.replace(now, m[1])
+
+
 def create(args):
     opt = {"id": "", "owner": "agent", "repo": "-", "parent": "-", "model": "-",
            "effort": "-", "points": ""}
@@ -399,28 +411,26 @@ def create(args):
         items_dir().mkdir(parents=True, exist_ok=True)
     except OSError:
         refuse(f"could not create {items_dir()}")
-    # A minted id is epoch seconds then the session hex. Two creates in one second
-    # from one session would mint one id, so a minted id that is taken moves on to
-    # the next second; an id passed with --id is a claim on that id and is refused.
+    # The id is chosen here, before the write: epoch seconds then this session's
+    # hex (one-entry-point curia, pen). The write is an exclusive create, the
+    # conditional PUT of a file: the store refuses a second write of an id and
+    # never picks another. A replay of one create (same id, same content) is
+    # that write landing twice, so it succeeds with the same id; a different
+    # create in the same session-second is the design's rate limit and is refused.
     secs = int(time.time())
-    while True:
-        it = Item(opt["id"] or f"{secs}{sid}")
-        it.lock()
-        if opt["id"] or not it.path.exists():
-            break
-        secs += 1
-    now = iso(time.time())
+    it = Item(opt["id"] or f"{secs}{sid}")
+    now = iso(secs)
     body = (f"# {title}\n\n" + brief_section(brief, opt["points"]) + "## Log\n"
             + f"{now} {sid} status=open owner={opt['owner']} repo={opt['repo']} "
               f"parent={opt['parent']} model={opt['model']} effort={opt['effort']}\n")
     if has_brief or opt["points"]:
         body += f"{now} {sid} briefed\n"
-    # Exclusive create: a second create of one id is refused, never an overwrite.
     try:
         with open(it.path, "x") as fh:
             fh.write(body)
     except FileExistsError:
-        refuse(f"item {it.id} already exists: {it.path}")
+        if not replayed(it.path, body, now):
+            refuse(f"item {it.id} already exists: {it.path}")
     except OSError:
         refuse(f"could not write {it.path}")
     print(it.id)
