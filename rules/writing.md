@@ -10,6 +10,10 @@ paths:
 Personal conventions for user-facing prose. Loads when touching README,
 CHANGELOG, or markdown docs.
 
+Long for the agent so the human's prose can be short. Examples and anchors,
+not adjectives. A rule here is cut by its cost only when a counted result
+shows it dead weight, never for being long.
+
 ## Default to less
 
 - Bias toward no README, or a one-paragraph README, when unsure what
@@ -19,6 +23,31 @@ CHANGELOG, or markdown docs.
   installing from an app store) — say what's non-default, nothing else.
 - When asked to cut, cut hard. Prefer deleting a paragraph to hedging it
   down by 20%. One unexplained sentence beats three mediocre ones.
+
+## The shape of a new entry
+
+- **Copy the shortest neighbour, never the longest.** A new bullet or row
+  takes the length and shape of the shortest one already in that list. That
+  is what "match the surrounding style" means; matching the longest is how a
+  list ratchets.
+- **One rendered line.** A list item or table cell says what the thing does
+  for the reader, as a sentence or a fragment, in under 110 characters once
+  link syntax is stripped: that is where GitHub wraps on a laptop screen.
+  Count it; source wrapped at 80 columns hides the length.
+- **The README says what a person decides or sets. The code header says
+  how.** Flags, fields, env vars, edge cases, scar stories: header. Missing
+  there? Add it there.
+- **"Too long" means delete.** Never answer a length comment with a clause
+  that explains, and never hedge with more detail. A detail that cannot be
+  cut gets one question: where does it live?
+- **Slop, by shape:** a table whose columns repeat each other, a parenthetical
+  that restates its bullet, a setting only an agent would touch. Delete on
+  sight.
+- **Show the render.** Before a human reads a doc change, look at it as they
+  will, rendered at their width, and run the one-line check on it.
+- **The bar is a number in the repo.** `docs/budgets.json` caps README lines
+  and words per change; `prose-budget` runs in CI and the gate needs it.
+  Raising a cap lands alone, with its reason.
 
 ## Don't touch a human-written doc without being asked
 
