@@ -93,10 +93,11 @@
 #      5-10 review band, memory: review-band-five-to-ten); it stays paused
 #      across later invocations until that count drops below five.
 #
-# Model and effort are the item's, never the run's: `model:` and `effort:`
-# lines in an issue body, a card's text, or a PR's description or last
-# comment (the hand-off prompt). An item with neither gets the one default
-# pair below, which is pencil. --model and --effort are refused.
+# Model and effort are the item's, never the run's: a card's work-item rating
+# (its log's model= and effort=), else `model:` and `effort:` fields in an
+# issue body, a card's text, or a PR's description or last comment (the
+# hand-off prompt). An item with neither gets the one default pair below,
+# which is pencil. --model and --effort are refused.
 #
 # Defaults, overridable by flag: $5/item, $20/session, pause every 3. `--dry-run` prints the plan -- one line per Ready item, the
 # exact command that item would run -- and spends nothing.
@@ -250,11 +251,40 @@ done
 command -v jq >/dev/null 2>&1 || { echo "grind: needs jq" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }
 
-# item_field <model|effort> <text> -- the last `field: value` at a line start
-# or after a `·`, the pickup hand-off's two shapes.
+# item_field <model|effort> <text> [card] -- the last `field: value` at a line
+# start or after a `·`, the pickup hand-off's two shapes. A card's text is one
+# line with its fields run on after the brief (work-item's card_line), so for a
+# card the field may also follow any space or `(`, that line's own parse.
 item_field() {
-  printf '%s\n' "$2" | grep -oiE "(^|·[[:space:]]*)$1:[[:space:]]*[a-z0-9._-]+" \
+  if_at='^|·[[:space:]]*'; [ "${3:-}" != card ] || if_at='^|·|[[:space:](]'
+  printf '%s\n' "$2" | grep -oiE "($if_at)$1:[[:space:]]*[a-z0-9._-]+" \
     | tail -1 | sed 's/.*:[[:space:]]*//' | tr 'A-Z' 'a-z'
+}
+# item_pair <item json> -> "<model> <effort>", the one reader of an item's
+# pair. Each field on its own: a card's work-item rating (the folded log's
+# model= and effort=; `-` is unset), else the last `model:`/`effort:` in its
+# text, else the one default. An issue or PR has only its text: the body, or a
+# PR's body and its last comment.
+item_pair() {
+  ip_kind=$(printf '%s' "$1" | jq -r .kind)
+  case $ip_kind in
+    pr)   ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json body,comments \
+            --jq '[.body // "", (.comments[-1].body // "")] | join("\n")' 2>/dev/null || true) ;;
+    card) ip_text=$(printf '%s' "$1" | jq -r .text) ;;
+    *)    ip_text=$(printf '%s' "$1" | jq -r .body) ;;
+  esac
+  ip_model=""; ip_effort=""
+  if [ "$ip_kind" = card ] && [ -n "$work_item_bin" ] && [ -n "$items_dir" ]; then
+    ip_id=$(card_id_of "$ip_text")
+    if [ -n "$ip_id" ] && [ -f "$items_dir/$ip_id.md" ]; then
+      ip_fold=$("$work_item_bin" fold "$ip_id" 2>/dev/null) || ip_fold=""
+      ip_model=$(printf '%s\n' "$ip_fold" | sed -n 's/^model=//p'); [ "$ip_model" != - ] || ip_model=""
+      ip_effort=$(printf '%s\n' "$ip_fold" | sed -n 's/^effort=//p'); [ "$ip_effort" != - ] || ip_effort=""
+    fi
+  fi
+  [ -n "$ip_model" ] || ip_model=$(item_field model "$ip_text" "$ip_kind")
+  [ -n "$ip_effort" ] || ip_effort=$(item_field effort "$ip_text" "$ip_kind")
+  printf '%s %s' "${ip_model:-${default_pair% *}}" "${ip_effort:-${default_pair#* }}"
 }
 
 # --- kinds and policy ----------------------------------------------------------
@@ -815,27 +845,17 @@ estimate_cost() {
     'BEGIN { printf "%.4f", (i*ip + o*op + cr*(ip*0.1) + cc*(ip*1.25)) / 1000000 }'
 }
 
-# cheapest-first: each item's pair, read once here and carried as .pair_text
-# so the dispatch below does not read it again, then a stable sort on the
-# estimate (model_price_out times the effort weight). The text reaches jq on
-# stdin, never as an argument: a PR body and its last comment can pass the
-# kernel's 128 KiB cap on one argument.
+# cheapest-first: each item's pair, read once here and carried as .pair so
+# the dispatch below does not read it again, then a stable sort on the
+# estimate (model_price_out times the effort weight).
 effort_weight() { case $1 in low) echo 0.5 ;; high) echo 2 ;; xhigh) echo 3 ;; max) echo 4 ;; *) echo 1 ;; esac; }
 if [ "$policy" = cheapest-first ]; then
   n_items=$(printf '%s' "$items" | jq 'length'); k=0
   while [ "$k" -lt "$n_items" ]; do
-    it=$(printf '%s' "$items" | jq -c ".[$k]")
-    case $(printf '%s' "$it" | jq -r .kind) in
-      pr)   pt=$(gh pr view "$(printf '%s' "$it" | jq -r .number)" --repo "$(printf '%s' "$it" | jq -r .repo)" --json body,comments \
-              --jq '[.body // "", (.comments[-1].body // "")] | join("\n")' 2>/dev/null || true) ;;
-      card) pt=$(printf '%s' "$it" | jq -r .text) ;;
-      *)    pt=$(printf '%s' "$it" | jq -r .body) ;;
-    esac
-    m=$(item_field model "$pt"); [ -n "$m" ] || m=${default_pair% *}
-    e=$(item_field effort "$pt"); [ -n "$e" ] || e=${default_pair#* }
-    est=$(awk -v p="$(model_price_out "$m")" -v w="$(effort_weight "$e")" 'BEGIN { printf "%.2f", p * w }')
-    items=$({ printf '%s\n' "$items"; printf '%s' "$pt" | jq -Rs .; } \
-      | jq -sc --argjson k "$k" --argjson est "$est" '.[1] as $pt | .[0] | .[$k] += {pair_text: $pt, est: $est}')
+    pair=$(item_pair "$(printf '%s' "$items" | jq -c ".[$k]")")
+    est=$(awk -v p="$(model_price_out "${pair% *}")" -v w="$(effort_weight "${pair#* }")" 'BEGIN { printf "%.2f", p * w }')
+    items=$(printf '%s' "$items" \
+      | jq -c --argjson k "$k" --arg pair "$pair" --argjson est "$est" '.[$k] += {pair: $pair, est: $est}')
     k=$((k + 1))
   done
   # Within one estimate, an item grind has never touched still goes first.
@@ -1394,18 +1414,10 @@ while [ "$i" -lt "$count" ]; do
     verdict=""
   fi
 
-  # The item's own pair: its text (already read under cheapest-first), else
-  # the one default.
-  if [ "$(printf '%s' "$item" | jq 'has("pair_text")')" = true ]; then pair_text=$(printf '%s' "$item" | jq -r '.pair_text')
-  else case $kind in
-    pr)   pair_text=$(gh pr view "$number" --repo "$repo" --json body,comments \
-            --jq '[.body // "", (.comments[-1].body // "")] | join("\n")' 2>/dev/null || true) ;;
-    card) pair_text=$(printf '%s' "$item" | jq -r '.text') ;;
-    *)    pair_text=$(printf '%s' "$item" | jq -r '.body') ;;
-  esac; fi
-  model=${default_pair% *}; effort=${default_pair#* }
-  m=$(item_field model "$pair_text"); [ -z "$m" ] || model=$m
-  e=$(item_field effort "$pair_text"); [ -z "$e" ] || effort=$e
+  # The item's own pair (already read under cheapest-first).
+  pair=$(printf '%s' "$item" | jq -r '.pair // empty')
+  [ -n "$pair" ] || pair=$(item_pair "$item")
+  model=${pair% *}; effort=${pair#* }
 
   case $kind in
     pr)   cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $left --model $model --effort $effort" ;;

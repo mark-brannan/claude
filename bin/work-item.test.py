@@ -98,12 +98,12 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual((self.dir / f"{first}.md").read_text(), text, "a refused create writes nothing")
 
     def test_02c_the_store_never_picks_an_id(self):
-        # The caller makes the id (card-id mint); a create with none is a usage
+        # The caller makes the id (card-id new); a create with none is a usage
         # error and writes nothing, whatever the clock says.
         n = len(list(self.dir.glob("*.md")))
         p = run(B, "create", "--brief", LINK, "No id of my own")
         self.assertEqual(p.returncode, 2, "a create without --id is refused")
-        self.assertIn("card-id mint", p.stderr, "the refusal names the generator")
+        self.assertIn("card-id new", p.stderr, "the refusal names the generator")
         self.assertEqual(len(list(self.dir.glob("*.md"))), n, "and wrote no file")
         self.assertEqual(run(B, "create", "--id", "nope", "--brief", LINK, "Bad id").returncode, 2,
                          "an id of the wrong shape is refused")

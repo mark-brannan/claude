@@ -27,7 +27,7 @@
 #   2026-10-02T08:30:11Z 9a1b2c3d cost tokens=812340 usd=1.42 by=grind
 #
 # The id is epoch seconds then the session's eight hex, opaque; the caller
-# makes it (`card-id mint`) and this store never does; the file is the
+# makes it (`card-id new`) and this store never does; the file is the
 # lookup. An item is created in `open`, always. Six statuses: open, ready,
 # claimed, blocked, done, closed; the transitions are ALLOWED below. A claim
 # is valid when the folded status is ready or closed and no other session
@@ -425,13 +425,13 @@ def create(args):
         items_dir().mkdir(parents=True, exist_ok=True)
     except OSError:
         refuse(f"could not create {items_dir()}")
-    # The caller made the id (card-id mint), on its own side, before the write;
+    # The caller made the id (card-id new), on its own side, before the write;
     # the store never picks one (one-entry-point curia, pen). The write is an
     # exclusive create, the conditional PUT of a file: a second write of an id
     # is refused, never retried with another id. A replay of one create (same
     # id, same content) is that write landing twice, so it prints the same id.
     if not opt["id"]:
-        die("create takes --id <id>: the caller's own id, from card-id mint")
+        die("create takes --id <id>: the caller's own id, from card-id new")
     it = Item(opt["id"])
     now = iso(time.time())
     body = (f"# {title}\n\n" + brief_section(brief, opt["points"]) + "## Log\n"
