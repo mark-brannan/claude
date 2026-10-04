@@ -548,6 +548,8 @@ run --all-rulings
 has 'a ruling item is grouped by its repo' '^- colregs: 1790836846aaaaaaaa \*\*Stored ruling\*\*'
 run card 1790836845aaaaaaaa
 has 'card <id> finds an item' "^## Claude's$"
+run card 1790836847aaaaaaaa
+has 'card <id> finds a done item the done queue shows' '^## Done$'
 run --fresh --json
 eq 'json carries the item' 1 "$(printf '%s' "$OUT" | jq '[.. | strings | select(contains("1790836845aaaaaaaa"))] | length > 0 | if . then 1 else 0 end')"
 

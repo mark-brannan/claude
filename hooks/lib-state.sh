@@ -691,6 +691,16 @@ done_rows() {
   else ITEM_ROWS_ERR=$WI_ERR; fi
 }
 
+# done_board -- $DONE_ROWS (done_rows above) as one more board section,
+# `## Done`: items the agent finished that wait on the user's acceptance.
+# worklist prints it as the done queue; board_card finds an id in it.
+done_board() {
+  [ -n "${DONE_ROWS:-}" ] || return 0
+  echo "## Done"
+  printf '%s\n' "$DONE_ROWS" | awk -F '\t' '{ print "- [ ] " $7 }'
+  echo
+}
+
 # board_union -- the store as one board text: every item as a `- [ ] ` card
 # under `## Needs ruling` (owner human-ruling, `### <repo name>` as the
 # group, else `### global`), `## Human's` (human-click) or `## Claude's`
@@ -715,7 +725,8 @@ board_union() {
 # from an id back to the card's title, date and link.
 board_card() {
   [ -d "$(items_dir)" ] || return 1
-  board_union | awk -v want="$1" '
+  # The done queue too: worklist shows its ids, so a lookup must find them.
+  { board_union; done_rows; done_board; } | awk -v want="$1" '
     function flush() { if (txt != "" && txt ~ ("(^|[ (])id:[ \t]*" want "([^0-9a-z]|$)")) { print sec "\t" grp "\t" txt; hit = 1 } txt = "" }
     /^## /  { flush(); sec = substr($0, 4); grp = ""; next }
     /^### / { flush(); grp = substr($0, 5); next }

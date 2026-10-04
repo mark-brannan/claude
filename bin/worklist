@@ -448,16 +448,6 @@ board_path() {
   return 0
 }
 
-# done_board -- $DONE_ROWS (done_rows in lib-state.sh) as one more board
-# section, `## Done`: items the agent finished that wait on the user's
-# acceptance. Printed by section_of like the other flat sections.
-done_board() {
-  [ -n "${DONE_ROWS:-}" ] || return 0
-  echo "## Done"
-  printf '%s\n' "$DONE_ROWS" | awk -F '\t' '{ print "- [ ] " $7 }'
-  echo
-}
-
 count_lines() { [ -n "$1" ] || { echo 0; return; }; printf '%s\n' "$1" | grep -c '^'; }
 
 # resume_section -- the open pickup items, printed first because a session
