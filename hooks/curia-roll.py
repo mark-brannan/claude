@@ -39,8 +39,9 @@ build-roll.py merges them (Solace, 2026-10-02). Until a curia's
 folder is moved to the roll/digest layout, roll.md is still the curated
 document, so a folder without digest.md is skipped.
 
-Always exits 0 and prints nothing: a roll failure must never block a prompt,
-and UserPromptSubmit stdout would land in the model's context.
+Always exits 0 and prints nothing to stdout: a roll failure must never block a
+prompt, and UserPromptSubmit stdout would land in the model's context. The one
+message, a missing lib/lock.py, goes to stderr.
 """
 import datetime
 import glob
