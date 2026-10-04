@@ -66,3 +66,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261004t082051z
 - Keep the absolute /home/solace/.claude/bin/work-item rule beside the ~ one: a rule matches the command as typed, and agents sometimes type the expanded path; the private line does not treat a username as private. Undo: delete the absolute work-item line from settings.json ([#52](https://github.com/mark-brannan/claude/pull/52))
+### 20261004t074915z
+- grind's stop snapshot commit skips git hooks: unfinished work, not a change for hooks to judge. Undo: drop --no-verify in save_attempt ([#51](https://github.com/mark-brannan/claude/pull/51))
+- A grind retry resumes from local tracking refs only and fetches nothing; other machines are out of scope for now. Undo: fetch the wip ref in resume_point ([#51](https://github.com/mark-brannan/claude/pull/51))
+- grind leaves a wip ref in place after its item is done; a reopened issue would resume from the old snapshot. Undo: delete the resumed wip ref on done ([#51](https://github.com/mark-brannan/claude/pull/51))
