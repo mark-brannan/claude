@@ -195,7 +195,7 @@ has 'first item is the lower-numbered one' '^\[1/2\] o/alpha#5 -- First item$'
 has 'second item follows' '^\[2/2\] o/alpha#20 -- Second item$'
 lacks 'blocked item excluded' 'alpha#9'
 has 'a worktree command is shown' 'git -C .* worktree add -b grind-5'
-has 'the claude command is shown, with defaults; its budget is the session backstop, not the item cap' 'claude -p <issue o/alpha#5 body> --output-format stream-json --verbose --max-budget-usd 20.00 --model sonnet --effort medium'
+has 'the claude command is shown, with defaults; its budget is the item hard cap, 3x its soft cap' 'claude -p <issue o/alpha#5 body> --output-format stream-json --verbose --max-budget-usd 15.00 --model sonnet --effort medium'
 assert 'dry-run wrote no state file' bash -c '! ls '"$S"'/state/grind/*.json >/dev/null 2>&1'
 
 # --- --model and --effort are refused; the item carries them -------------------------
@@ -206,7 +206,7 @@ run --dry-run --effort high
 eq 'an --effort flag is refused' 2 "$RC"
 run --dry-run --item-budget 2
 has 'an item with fields runs on its own pair' 'alpha#20 body>.*--model opus --effort high'
-has 'an item without fields gets the one default pair' 'alpha#5 body>.*--max-budget-usd 20.00 --model sonnet --effort medium'
+has 'an item without fields gets the one default pair' 'alpha#5 body>.*--max-budget-usd 6.00 --model sonnet --effort medium'
 
 # --- a real run: cost/tokens parsed, running total and percent printed ----------
 rm -f "$S/claude-replies"/*.json
@@ -219,7 +219,7 @@ eq 'two claude invocations' 2 "$(calls_claude)"
 has 'first item line: cost, tokens, running total, percent' '^o/alpha#5: First item -- sonnet, \$1\.00, 150 tokens -- running \$1\.00 / \$20\.00 -- 5%$'
 has 'second item line: running total accumulates' '^o/alpha#20: Second item -- opus, \$2\.00, 150 tokens -- running \$3\.00 / \$20\.00 -- 15%$'
 has 'queue exhausted, final tally' '^done: queue exhausted \(2 issue\)\. Running total \$3\.00 / \$20\.00\. 0 skipped\.$'
-has 'INFO: session line names repo, count, model, caps' 'INFO  session grind-.* on o/alpha: 2 item\(s\) \(2 issue; finish-first\), cap \$5\.00/item \$20\.00/session'
+has 'INFO: session line names repo, count, model, caps' 'INFO  session grind-.* on o/alpha: 2 item\(s\) \(2 issue; finish-first\), item budget \$5\.00 \(scaled per item; hard 3x\), session \$20\.00 soft / \$30\.00 hard, pause every 5'
 eq 'the state file records each item'"'"'s own pair' 'sonnet/medium opus/high' "$(jq -r '[.items[] | "\(.model)/\(.effort)"] | join(" ")' "$(latest_session)")"
 has 'INFO: item start line' 'INFO  \[1/2\] starting o/alpha#5 -- First item'
 has 'INFO: worker line names the permission mode' 'INFO  worker running: .*--permission-mode bypassPermissions'
@@ -423,37 +423,69 @@ lacks 'exactly 2x median does not trip the outlier pause' '^pause: o/alpha#20 co
 has 'runs to completion instead' '^done: queue exhausted'
 eq 'the session file says the queue ran out, exit 0' 'queue-exhausted 0' "$(jq -r '"\(.ended.reason) \(.ended.exit)"' "$(latest_session)")"
 
-# --- the cap stops dispatch, never a worker -------------------------------------
-# The item cap is held back before dispatch; the worker's own --max-budget-usd
-# is the session's whole remainder, a backstop it should never reach.
+# --- caps: soft and hard, per item and per run (claude#43) -----------------------
+# What matters: an item's soft cap is --item-budget scaled by its model's price
+# against Sonnet's and its effort weight, or its budget: when that is higher;
+# its hard cap is 3x, the worker's --max-budget-usd, cut to the run's hard
+# budget left (1.5x the soft by default). Dispatch stops only once spend
+# reaches the run's soft budget, however big the next item's cap. A cap flag on
+# --resume wins over the session file and is written to it.
+cp "$S/ready.json" "$S/ready.json.saved"
+cat > "$S/ready.json" <<'JSON'
+[{"number": 5, "title": "Sonnet medium", "body": "no fields", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]},
+ {"number": 20, "title": "Opus high", "body": "model: opus\neffort: high\nbudget: $10", "url": "https://github.com/o/alpha/issues/20", "labels": [{"name": "ready"}]},
+ {"number": 21, "title": "Sonnet low", "body": "effort: low", "url": "https://github.com/o/alpha/issues/21", "labels": [{"name": "ready"}]},
+ {"number": 22, "title": "Budgeted", "body": "budget: 12", "url": "https://github.com/o/alpha/issues/22", "labels": [{"name": "ready"}]}]
+JSON
+# caps_of <n> -> "soft $X hard $Y[ cut]" off item #n's dry-run budget line
+caps_of() {
+  grep -A3 -E "^\[[0-9]+/[0-9]+\] o/alpha#$1 " <<<"$OUT" | grep -m1 'budget:' \
+    | sed -E 's/.*soft (\$[0-9.]+) .*hard (\$[0-9.]+) \(its --max-budget-usd(; cut)?.*/soft \1 hard \2\3/; s/; cut/ cut/'
+}
+rm -f "$S/state/grind"/*.json
+run --dry-run
+eq 'sonnet/medium: the item budget, hard 3x' 'soft $5.00 hard $15.00' "$(caps_of 5)"
+eq 'opus/high: 2.5x the price, 2x the effort; its lower budget: loses; hard cut to the run' 'soft $25.00 hard $30.00 cut' "$(caps_of 20)"
+eq 'sonnet/low: half' 'soft $2.50 hard $7.50' "$(caps_of 21)"
+eq 'a higher budget: wins' 'soft $12.00 hard $30.00 cut' "$(caps_of 22)"
+run --dry-run --session-hard-budget 100
+eq 'a --session-hard-budget lifts the cut' 'soft $25.00 hard $75.00' "$(caps_of 20)"
+run --dry-run --session-hard-budget 10
+eq 'a hard budget below the soft one is refused' 2 "$RC"
+has 'and says so' 'session hard budget \(\$10\) is below the session budget \(\$20\)'
+# an item whose cap passes what is left of the soft budget still starts while
+# spend is under it; each worker gets at most the run's hard budget left
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
 reply 2.00 "done" 1
+reply 5.00 "done" 2
 : > "$CLAUDE_LOG"
-run --session-budget 6 --item-budget 5 --pause-every 10
-eq 'one worker ran' 1 "$(calls_claude)"
-assert 'its backstop is the session left, not the item cap' grep -q -- '--max-budget-usd 6.00 ' "$CLAUDE_LOG"
+run --session-budget 6 --pause-every 10
+eq 'two workers ran: the opus item started with $4 of soft budget left' 2 "$(calls_claude)"
+eq 'each worker is cut to the run hard budget left ($9, then $7)' '9.00 7.00' \
+  "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk '{print $2}' | paste -sd' ' -)"
 PROMPT=$(cat "$S/prompt.txt")
-prompt_has 'the worker is told where to stop' 'stop and report at ~$5'
-has 'the next item is not started with less than its cap left' '^pause: session budget left \(\$4\.00 of \$6\.00\) is below o/alpha#20.s cap \(\$5\.00\)'
+prompt_has 'the worker is told its soft cap as its stop' 'stop and report at ~$25.00'
+prompt_has 'and its hard stop' 'Your hard stop is $7.00'
+has 'dispatch stops once spend reaches the soft budget' '^pause: session budget reached \(\$7\.00 / \$6\.00\)\.'
 eq 'the session file says why it ended' 'pause-budget 0' "$(jq -r '"\(.ended.reason) \(.ended.exit)"' "$(latest_session)")"
-
-# A session budget under the default item cap still dispatches: a cap nobody
-# asked for is clamped to the session. One the user gave is kept, and the
-# dry run says nothing will start.
+# --resume with cap flags applies them and records them
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
 reply 1.00 "done" 1
 : > "$CLAUDE_LOG"
-run --session-budget 2 --pause-every 10
-assert 'a $2 session under the $5 default starts its first item' [ "$(calls_claude)" -ge 1 ]
-PROMPT=$(cat "$S/prompt.txt")
-prompt_has 'the clamped cap is the stop point' 'stop and report at ~$2'
-rm -f "$S/state/grind"/*.json
-run --dry-run --session-budget 2
-has 'dry run shows the clamped cap' 'budget:   stop at ~\$2\.00, backstop \$2\.00'
-lacks 'no warning when the cap fits' 'WARN:'
-run --dry-run --session-budget 2 --item-budget 5
-has 'an explicit cap over the session is kept' 'budget:   stop at ~\$5\.00, backstop \$2\.00'
-has 'and the dry run says nothing will start' 'WARN: +the session \(\$2\.00\) is below this item.s cap \(\$5\.00\); a real run pauses here and starts nothing'
+run --session-budget 100 --pause-every 1
+sess=$(latest_session); session_id=$(basename "$sess" .json)
+eq 'the first run recorded its caps' '5 100 150 1' "$(jq -r '"\(.item_budget) \(.session_budget) \(.session_hard_budget) \(.pause_every)"' "$sess")"
+reply 1.00 "done" 1
+reply 1.00 "done" 2
+: > "$CLAUDE_LOG"
+run --resume "$session_id" --item-budget 7 --session-budget 50 --pause-every 2
+eq 'the resumed run applies --pause-every' 2 "$(calls_claude)"
+eq 'and records the flags, the hard budget following the new soft one' '7 50 75 2' \
+  "$(jq -r '"\(.item_budget) \(.session_budget) \(.session_hard_budget) \(.pause_every)"' "$sess")"
+eq 'its workers run on the new item budget: opus/high at 3x $35, cut to $74 left' '74.00' \
+  "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk 'NR == 1 {print $2}')"
+mv "$S/ready.json.saved" "$S/ready.json"
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
 
 # --- --resume clears the last run's .ended once it holds the lock ---------------
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$S/session-mid.json"
@@ -1316,6 +1348,9 @@ has 'and under cheapest-first too' '<card card:alpha-tidy-the-widget text>.*--mo
 CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log 17909840241dc56754 model=haiku effort=low
 run --dry-run --policy cheapest-first
 has 'rated haiku/low, the card is planned first' '\[1/3\] card:alpha-tidy-the-widget'
+CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log 17909840241dc56754 budget=12
+run --dry-run --kind card --session-hard-budget 100
+has "a budget= on the card's log is its soft cap when higher" 'budget:   soft \$12\.00 .*hard \$36\.00'
 unset WORK_ITEM_DIR GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL; rm -f "$S/cards.json"
 
 # --- --prs -------------------------------------------------------------------------
@@ -1437,7 +1472,7 @@ has 'stale-label PR is an item, lowest number first' '^\[1/9\] .*#11 -- \[not-gr
 has 'unfinished PR is an item, with its verdict' '^\[[0-9]+/9\] .*#30 -- \[conflicted\] PR 30$'
 lacks 'a green, labelled PR is not an item' '#50'
 has 'the checkout is onto the PR head branch, not a new one' 'git -C .* worktree add -B fix-11 .* origin/fix-11'
-has 'the command names the briefs and the contract' 'claude -p <.*#11 briefs \+ fixup contract>.*--max-budget-usd 5.00 --model sonnet'
+has 'the command names the briefs and the contract' 'claude -p <.*#11 briefs \+ fixup contract>.*--max-budget-usd 3.75 --model sonnet'
 
 # --- every skip rule fires, with its reason ------------------------------------------
 has 'fixup-hard is skipped'      '^\[[0-9]+/9\] .*#40 -- SKIP: labelled fixup-hard$'
