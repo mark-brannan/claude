@@ -16,8 +16,8 @@ Which item, in order:
   4. none: mint it, `open`, owner `agent`. Never `ready`, no status line ever.
 
 What it writes, only when something changed (pencil):
-  - a minted item's brief is the pickup item's body, the hand-off text, with
-    one link line: the PR when there is one, else the session's checkpoint
+  - a minted item's brief is the last prompt's first line, the hand-off a
+    pickup body starts as (requirements 14.6), with one link line: the PR when there is one, else the session's checkpoint
     log in the state repo (pencil). Its `home=` follows the PR.
   - a claimed item keeps its brief; it gets one `stop` line on its first
     Stop, and `home=` the PR only while it has no home of its own.
@@ -76,14 +76,9 @@ def pr_home(url):
     return f"{m[1]}/{m[2]}#{m[3]}" if m else ""
 
 
-def handoff(pickup):
-    """The pickup item's body: everything after its first `---` line."""
-    try:
-        text = open(pickup).read()
-    except (OSError, TypeError):
-        return ""
-    head, sep, body = text.partition("\n---\n")
-    return body.strip("\n") if sep else ""
+def handoff(prompt):
+    """The hand-off a pickup body starts as: the last prompt's first line."""
+    return next((l.strip() for l in (prompt or "").splitlines() if l.strip()), "")
 
 
 def checkpoint_link(ckpt, items):
@@ -175,7 +170,7 @@ def step(a):
     if how is None:
         if not item:
             raise Failed("no session start time, so no id to mint under")
-        text = handoff(a.pickup)
+        text = handoff(a.prompt)
         brief = brief_for(text, pr, checkpoint_link(a.checkpoint, a.items))
         first = next((l.strip() for l in text.splitlines() if l.strip()), "")
         if len(first) > 72:
@@ -193,7 +188,7 @@ def step(a):
     had = facts.get("home", "")
     done, first = [], False
     if how == "minted":
-        brief = brief_for(handoff(a.pickup), pr, checkpoint_link(a.checkpoint, a.items))
+        brief = brief_for(handoff(a.prompt), pr, checkpoint_link(a.checkpoint, a.items))
         if brief != current_brief(path):
             work_item(env, "brief", item, "-", stdin=brief)
             done.append("brief")
@@ -209,7 +204,7 @@ def step(a):
 
 def main(argv):
     p = argparse.ArgumentParser(description="Write the session's work item.")
-    for name in ("session", "items", "pickup", "pr", "checkpoint", "work-root",
+    for name in ("session", "items", "prompt", "pr", "checkpoint", "work-root",
                  "repo", "model", "started"):
         p.add_argument(f"--{name}", default="")
     try:

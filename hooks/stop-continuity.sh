@@ -530,7 +530,7 @@ fi
 # looked up only while empty and only once the branch is on origin (a PR
 # cannot exist before that), and a miss is cached ten minutes so a pushed
 # branch with no PR does not pay a gh call every turn.
-pi_branch_line=none; pi_pr=none; pi_file=""
+pi_branch_line=none; pi_pr=none
 pickup_item() {
   local dir id f start prompt body status \
         old_prompt old_body old_status old_pr old_until ust ust_desc dirty \
@@ -540,7 +540,7 @@ pickup_item() {
   start=$(printf '%s' "$metrics" | jq -r '.session.started_at // empty')
   [ -n "$start" ] || start=$now
   id="$(printf '%s' "$start" | sed -E 's/^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}):([0-9]{2}).*/\1T\2-\3/')-${sid:0:8}"
-  f="$dir/$id.md"; pi_file=$f
+  f="$dir/$id.md"
   prompt=$(printf '%s' "$metrics" | jq -r '.session.last_prompt // empty')
 
   old_prompt=""; old_body=""; old_status=""; old_pr=""; old_until=""
@@ -614,8 +614,9 @@ pickup_item
 # one outcome line, or why it did not run, goes in the checkpoint, and the
 # pickup item above stands either way.
 si_out=$(timeout 60 python3 "$HOOK_DIR/stop-item.py" --session "$sid" \
-  --items "$SD/items" --pickup "$pi_file" --pr "$pi_pr" --checkpoint "$ckpt" \
+  --items "$SD/items" --pr "$pi_pr" --checkpoint "$ckpt" \
   --work-root "$work_root" --repo "$work_repo" --started "$started" \
+  --prompt "$(printf '%s' "$metrics" | jq -r '.session.last_prompt // empty')" \
   --model "$(printf '%s' "$metrics" | jq -r '.session.model // empty')" 2>/dev/null) || true
 printf '\n## Session item\n\n%s\n' "${si_out:-failed: stop-item.py did not run}" >> "$ckpt" 2>/dev/null
 

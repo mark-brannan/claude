@@ -273,8 +273,8 @@ eq '14.1: its first log line is status=open from this session' 'a1b2c3d4 status=
   "$(awk '/^## Log/{f=1;next} f{print $2, $3, $4; exit}' "$MINT")"
 eq '14.5: the PR is its home' 'o/r#7' "$(wi a1b2c3d4 fold "$MID" | sed -n 's/^home=//p')"
 SPICK=$(ls "$PICKD"/*-a1b2c3d4.md | head -1)
-eq '14.6: the brief is the pickup body, then the PR' \
-  "$(awk 'f{print} /^---$/{f=1}' "$SPICK")
+eq '14.6: the brief is the last prompt'"'"'s first line, then the PR' \
+  "$(sed -n 's/^prompt: //p' "$SPICK")
 
 PR: https://github.com/o/r/pull/7" "$(brief_of "$MINT")"
 has '14.1: the checkpoint names the minted item' "^$MID: minted, home=o/r#7\$" \
@@ -285,10 +285,9 @@ SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
 eq '14.2: a later Stop mints no second item' 1 "$(mine a1b2c3d4 | wc -l | tr -d ' ')"
 eq '14.2: nothing changed, nothing logged' "$n0" "$(nlog "$MINT")"
 
-# A new hand-off: the next Stop rewrites the brief, one `briefed` line.
-sed -i '/^---$/q' "$SPICK"; printf 'open the PR for the fixtures\n' >> "$SPICK"
-SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
-has '14.6: a changed hand-off is the new brief' '^open the PR for the fixtures$' "$MINT"
+# A new last prompt: the next Stop rewrites the brief, one `briefed` line.
+TP="$TP2" SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
+has '14.6: a new last prompt is the new brief' '^pick up the fixture work and finish it$' "$MINT"
 eq '14.2: and is one more line, briefed' "$((n0 + 1))" "$(nlog "$MINT")"
 assert '14.4: the hook writes no status=ready' bash -c "! grep -q 'status=ready' '$MINT'"
 
