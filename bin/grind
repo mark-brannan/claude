@@ -95,7 +95,7 @@
 # Model and effort are the item's, never the run's: a card's work-item rating
 # (its log's model= and effort=), else `model:` and `effort:` fields in an
 # issue body, a card's text, or a PR's description or last comment (the
-# hand-off prompt). An item with neither gets the one default pair below,
+# hand-off prompt), each only when the account grind runs as wrote it. An item with neither gets the one default pair below,
 # which is pencil. --model and --effort are refused.
 #
 # Budgets (Solace's rulings on claude#43 and #47: soft stops, not hard ones;
@@ -293,13 +293,17 @@ item_field() {
 # model= and effort=, and the last budget= on a log line, which fold does not
 # carry; `-` is unset), else the last `model:`/`effort:`/`budget:` in its
 # text, else the one default pair and `-` for no budget. An issue or PR has
-# only its text: the body, or a PR's body and its last comment. A budget is
+# only its text: the body, or a PR's body and its last comment -- each only
+# when the account grind runs as wrote it, since anyone may comment on a PR
+# and a stranger's `budget: 99999` would otherwise be obeyed. A budget is
 # dollars, `$` optional; anything else is no budget.
 item_terms() {
   ip_kind=$(printf '%s' "$1" | jq -r .kind)
   case $ip_kind in
-    pr)   ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json body,comments \
-            --jq '[.body // "", (.comments[-1].body // "")] | join("\n")' 2>/dev/null || true) ;;
+    pr)   ip_me=$(gh api user --jq .login 2>/dev/null) || ip_me=""
+          ip_text=""
+          [ -z "$ip_me" ] || ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json author,body,comments \
+            --jq "[(if .author.login == \"$ip_me\" then .body // \"\" else \"\" end), ([.comments[]? | select(.author.login == \"$ip_me\")] | last | .body // \"\")] | join(\"\\n\")" 2>/dev/null || true) ;;
     card) ip_text=$(printf '%s' "$1" | jq -r .text) ;;
     *)    ip_text=$(printf '%s' "$1" | jq -r .body) ;;
   esac

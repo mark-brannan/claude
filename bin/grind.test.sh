@@ -1463,6 +1463,7 @@ case "\$1 \$2" in
   "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
   "api repos/"*"/issues/"*) if [ -f "$S/updated-at" ]; then cat "$S/updated-at"; else echo 2999-01-01T00:00:00Z; fi ;;
   "pr view")    jq -r "\$filter" "$S/pr-\$3.json" ;;
+  "api user")   echo solace ;;
   "run rerun")  [ "\${GH_RERUN_FAIL:-0}" = 1 ] && exit 1; exit 0 ;;
   "pr edit"|"pr comment") exit 0 ;;
   "api repos/"*"/actions/runs/"*) printf '%s\n' "\${GH_RUN_ATTEMPT:-1}" ;;
@@ -1598,6 +1599,17 @@ has 'a resumed run keeps an item budget the session was given' '^  budget: +soft
 run --resume grind-ibs0 --dry-run
 has 'and the flat pr cap when it was not (an older file says nothing)' '^  budget: +soft \$1\.25 '
 rm -f "$S/state/grind"/grind-ibs*.json
+# a pr's budget: counts only where the account grind runs as wrote it: anyone
+# may comment on a PR, and a stranger's budget: is not obeyed
+cp "$S/pr-11.json" "$S/pr-11.saved"
+jq '. + {author:{login:"solace"}, body:"", comments:[{author:{login:"solace"}, body:"budget: 4"}, {author:{login:"stranger"}, body:"budget: 9999"}]}' \
+  "$S/pr-11.saved" > "$S/pr-11.json"
+run --prs --dry-run
+has 'your last comment sets the budget; a later stranger comment does not' '^  budget: +soft \$4\.00 '
+jq '. + {author:{login:"stranger"}, body:"budget: 9999", comments:[]}' "$S/pr-11.saved" > "$S/pr-11.json"
+run --prs --dry-run
+has 'nor does a stranger-written PR body' '^  budget: +soft \$1\.25 '
+mv "$S/pr-11.saved" "$S/pr-11.json"
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json
 reply 0.20 "done" 1
 prview 11 '["awaiting-human"]' '[]'
