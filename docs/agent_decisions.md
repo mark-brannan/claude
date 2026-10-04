@@ -77,4 +77,4 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261004t090000z
 - grind's stop save points the wip ref at the stop's tip even when the worker already pushed it, and may rewrite that ref under a lease so a rebased tip replaces the last snapshot. Undo: drop --force-with-lease in save_attempt ([#57](https://github.com/mark-brannan/claude/pull/57))
-- The stop snapshot's held-back list also takes .aws/, kubeconfig, bare credentials, *secret*.json and service-account*.json, as #51's description promised. Undo: drop those pathspecs in save_attempt ([#57](https://github.com/mark-brannan/claude/pull/57))
+- The stop snapshot's held-back list also takes .aws/, kubeconfig, bare credentials, *secret*.json and service-account*.json, as #51's description promised, and every held-back pattern matches in any case. Undo: drop those pathspecs and the icase magic in save_attempt ([#57](https://github.com/mark-brannan/claude/pull/57))
