@@ -169,9 +169,7 @@ class Landed:
         if self._base_ids is None:
             log = git(self.repo, "log", "-p", "--no-merges", "--since=120.days",
                       self.base).stdout
-            ids = gitrun.run("-C", self.repo, "patch-id", "--stable", input=log, env=GIT_ENV,
-                             errors="surrogateescape").stdout
-            self._base_ids = {l.split()[0] for l in ids.splitlines() if l}
+            self._base_ids = set(patch_ids(self.repo, log)[::2])  # <patch-id> <commit> pairs
         return self._base_ids
 
     def reason(self, sha, branch):
