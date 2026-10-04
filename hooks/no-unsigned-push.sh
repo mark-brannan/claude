@@ -58,10 +58,10 @@ target_cwd=$cwd
 expand_leading() {
   case $1 in
     '-') printf '' ;;
-    '~') printf '%s' "$HOME" ;;
-    '~/'*) printf '%s/%s' "$HOME" "${1#\~/}" ;;
-    '$HOME') printf '%s' "$HOME" ;;
-    '$HOME/'*) printf '%s/%s' "$HOME" "${1#'$HOME/'}" ;;
+    '~') printf '%s' "${HOME:-}" ;;
+    '~/'*) printf '%s/%s' "${HOME:-}" "${1#\~/}" ;;
+    '$HOME') printf '%s' "${HOME:-}" ;;
+    '$HOME/'*) printf '%s/%s' "${HOME:-}" "${1#'$HOME/'}" ;;
     *) printf '%s' "$1" ;;
   esac
 }

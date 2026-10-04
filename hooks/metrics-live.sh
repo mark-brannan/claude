@@ -190,13 +190,14 @@ if [ "$MAX_AGE" -gt 0 ] && [ -f "$OUT" ]; then
   [ "$age" -lt "$MAX_AGE" ] && exit 0
 fi
 
-# METRICS_NOW pins the engine's clock to an epoch, for tests (the cache-age and
-# local-hour reads stay on the real clock): the bedtime arms
+# METRICS_NOW pins the engine's clock to an epoch, for tests (only the cache-age check and the pac_hour
+# reads stay on the real clock): the bedtime arms
 # compare minute-rounded times against it, so a test that reads the real clock
 # is red at some minutes of the hour and green at others.
 # Only a plain integer is taken: the value feeds shell arithmetic.
 now_ts=${METRICS_NOW:-}
 case "$now_ts" in ''|*[!0-9]*) now_ts=$(date +%s) ;; esac
+now_ts=$((10#$now_ts))
 now=$(date -u -d "@$now_ts" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$now_ts" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u +%Y-%m-%dT%H:%M:%SZ)
 work_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || echo "")
