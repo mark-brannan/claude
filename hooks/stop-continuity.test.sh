@@ -253,6 +253,87 @@ ITEM=$(ls "$PICKD"/*-"${SID:0:8}".md 2>/dev/null | head -1)
 eq 'an untouched body follows the new prompt' 'pick up the fixture work and finish it' "$(sbody)"
 eq 'a new prompt reopens the item' open "$(sfield status)"
 
+# --- the session's item: minted at the first Stop, then written onto (14) ------
+# Requirements section 14, cases 14.1 to 14.6. stop-item.py decides; every
+# write goes through bin/work-item. Session ids here start with eight hex, as
+# a real one does: the store names its writer by them.
+ITEMS="$HOME/.claude/state/global/items"
+WI="$HOOKS/../bin/work-item"
+wi() { CLAUDE_CODE_SESSION_ID=$1 WORK_ITEM_DIR="$ITEMS" python3 "$WI" "${@:2}"; }
+mine() { ls "$ITEMS"/*"$1".md 2>/dev/null; }          # items whose id ends in the id8
+nlog() { awk '/^## Log/{f=1;next} f&&NF' "$1" | wc -l | tr -d ' '; }
+brief_of() { awk '/^## Brief/{f=1;next} /^## /{f=0} f' "$1" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'; }
+PR7='[{"url":"https://github.com/o/r/pull/7"}]'
+
+SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
+eq '14.1: a session with no item mints one' 1 "$(mine a1b2c3d4 | wc -l | tr -d ' ')"
+MINT=$(mine a1b2c3d4 | head -1)
+MID=$(basename "$MINT" .md)
+eq '14.1: its first log line is status=open from this session' 'a1b2c3d4 status=open owner=agent' \
+  "$(awk '/^## Log/{f=1;next} f{print $2, $3, $4; exit}' "$MINT")"
+eq '14.5: the PR is its home' 'o/r#7' "$(wi a1b2c3d4 fold "$MID" | sed -n 's/^home=//p')"
+SPICK=$(ls "$PICKD"/*-a1b2c3d4.md | head -1)
+eq '14.6: the brief is the last prompt'"'"'s first line, then the PR' \
+  "$(sed -n 's/^prompt: //p' "$SPICK")
+
+PR: https://github.com/o/r/pull/7" "$(brief_of "$MINT")"
+has '14.1: the checkpoint names the minted item' "^$MID: minted, home=o/r#7\$" \
+  "$(ls "$AUTO"/*/*a1b2c3d4.md | head -1)"
+
+n0=$(nlog "$MINT")
+SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
+eq '14.2: a later Stop mints no second item' 1 "$(mine a1b2c3d4 | wc -l | tr -d ' ')"
+eq '14.2: nothing changed, nothing logged' "$n0" "$(nlog "$MINT")"
+
+# A new last prompt: the brief is written once and never rewritten, and nothing is logged.
+b0=$(brief_of "$MINT")
+TP="$TP2" SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
+eq '14.6: the brief is unchanged' "$b0" "$(brief_of "$MINT")"
+eq '14.2: and no line is logged' "$n0" "$(nlog "$MINT")"
+assert '14.4: the hook writes no status=ready' bash -c "! grep -q 'status=ready' '$MINT'"
+
+# No PR yet: the link is the session's checkpoint log, and there is no home.
+SID=c9c8c7c6-0000-1111-2222 stop
+NOPR=$(mine c9c8c7c6 | head -1)
+has 'no PR: the brief links the checkpoint' '^Checkpoint: \[checkpoint\]\(\.\./log/auto/.*c9c8c7c6\.md\)$' "$NOPR"
+assert 'no PR: no home line' bash -c "! grep -q 'home=' '$NOPR'"
+
+# 14.3: a session that claimed an item writes onto it and mints nothing.
+CARD=$(wi 99990000-aaaa create --id 178557840199990000 --brief 'see https://example.invalid/1' 'a card to claim')
+wi 99990000-aaaa log "$CARD" status=ready >/dev/null
+wi b5b6b7b8-0000 claim "$CARD" >/dev/null
+SID=b5b6b7b8-0000-1111-2222 GH_PRS=$PR7 stop
+eq '14.3: nothing minted' '' "$(mine b5b6b7b8)"
+has '14.3: the claimed item gets this session'"'"'s line, the PR its home' \
+  ' b5b6b7b8 stop home=o/r#7$' "$ITEMS/$CARD.md"
+eq '14.3: its brief is left alone' 'see https://example.invalid/1' "$(brief_of "$ITEMS/$CARD.md")"
+n1=$(nlog "$ITEMS/$CARD.md")
+SID=b5b6b7b8-0000-1111-2222 GH_PRS=$PR7 stop
+eq '14.3: and only once while nothing changes' "$n1" "$(nlog "$ITEMS/$CARD.md")"
+
+# A session that minted and then claims another writes onto the claimed one.
+CARD2=$(wi 99990000-aaaa create --id 178557840299990000 --brief 'see https://example.invalid/2' 'a second card')
+wi 99990000-aaaa log "$CARD2" status=ready >/dev/null
+wi a1b2c3d4-0000 claim "$CARD2" >/dev/null
+n2=$(nlog "$MINT")
+SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
+has 'mint, then claim: the claimed item gets the line' ' a1b2c3d4 stop home=o/r#7$' "$ITEMS/$CARD2.md"
+eq 'mint, then claim: the minted item is not written' "$n2" "$(nlog "$MINT")"
+eq 'mint, then claim: still one minted item' 1 "$(mine a1b2c3d4 | wc -l | tr -d ' ')"
+
+# A last prompt that is one dash-led word still mints: it is a value, not a flag.
+TPD="$S/dash-transcript.jsonl"
+{
+  jq -c '.' "$TP" | head -3
+  printf '{"type":"queue-operation","operation":"enqueue","content":"-h","timestamp":"2026-09-26T12:00:00.000Z"}\n'
+} > "$TPD"
+TP="$TPD" SID=e5e6e7e8-0000-1111-2222 GH_PRS=$PR7 stop
+has 'a dash-led last prompt still mints' '^[0-9]*e5e6e7e8: minted, home=o/r#7$' "$CKPT"
+
+# A session id that is not hex: skipped, and the checkpoint says so.
+GH_PRS=$PR7 stop
+has 'a non-hex session id is skipped, and said' '^skipped: session id ' "$CKPT"
+
 # --- curia digests: a touched digest gets the floor ----------------------------
 # The transcript names a curia (`confer <id>` here); the Stop hook stamps a
 # floor block at the end of "Where this stands" -- model text above survives --
@@ -650,6 +731,51 @@ GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' CLAUDE_STATE_REPO="$SREPO" st
 assert 'items/: a new item is committed' \
   git -C "$SREPO" cat-file -e HEAD:"$it"
 assert 'items/: the push lock is released' test ! -e "$TMPDIR/claude-state-push.lock.d"
+
+# --- the session's item rides this Stop's state commit, or fails open (14.7, 14.8)
+SR14O="$S/state14.git"; SR14="$S/state14"
+git init -q --bare "$SR14O"
+git init -q -b main "$SR14"
+gitq "$SR14" remote add origin "$SR14O"
+mkdir -p "$SR14/state/global"; echo seed > "$SR14/state/global/.seed"
+gitq "$SR14" add state; gitq "$SR14" commit -m seed
+gitq "$SR14" push -u origin main
+SID=d1d2d3d4-0000-1111-2222 GH_PRS=$PR7 CLAUDE_STATE_REPO="$SR14" stop
+it14=$(cd "$SR14" && ls state/global/items/*d1d2d3d4.md 2>/dev/null | head -1)
+assert '14.8: the minted item is in this Stop'"'"'s state commit' \
+  git -C "$SR14" cat-file -e "HEAD:${it14:-state/global/items/none}"
+
+# stop14 <sid> -- one Stop against SR14, push window cleared; sets $rc.
+stop14() {
+  rm -f "$(stamp "$SR14")"; rc=0
+  printf '{"transcript_path":"%s","session_id":"%s","cwd":"%s"}' "$TP" "$1" "$WORK" \
+    | GH_PRS=$PR7 CLAUDE_STATE_REPO="$SR14" bash "$HOOK" >/dev/null 2>&1 || rc=$?
+}
+ck14() { ls "$SR14"/state/global/log/auto/*/*"$1".md 2>/dev/null | head -1; }
+
+# The store refuses the mint: items/ is a file, so it cannot be written.
+rm -rf "$SR14/state/global/items"; printf 'not a directory\n' > "$SR14/state/global/items"
+stop14 e1e2e3e4-0000-1111-2222
+eq '14.7, refused: exit 0' 0 "$rc"
+eq '14.7, refused: the state commit is made and pushed' 'State: work session e1e2e3e4' \
+  "$(git -C "$SR14O" log -1 --format=%s main | sed 's/ (.*//')"
+has '14.7, refused: the checkpoint says why' '^failed: work-item create refused: ' "$(ck14 e1e2e3e4)"
+assert '14.7, refused: the pickup item still lands' \
+  bash -c "ls '$SR14'/state/global/pickup/*-e1e2e3e4.md >/dev/null 2>&1"
+
+# The step itself crashes: a python3 that dies on it, and only on it.
+cat > "$BIN/python3" <<EOF
+#!/bin/sh
+case "\$1" in *stop-item.py) exit 139 ;; esac
+exec $(command -v python3) "\$@"
+EOF
+chmod +x "$BIN/python3"
+stop14 f1f2f3f4-0000-1111-2222
+rm -f "$BIN/python3"
+eq '14.7, crashed: exit 0' 0 "$rc"
+eq '14.7, crashed: the state commit is made and pushed' 'State: work session f1f2f3f4' \
+  "$(git -C "$SR14O" log -1 --format=%s main | sed 's/ (.*//')"
+has '14.7, crashed: the checkpoint says it did not run' '^failed: stop-item.py did not run$' "$(ck14 f1f2f3f4)"
 
 # --- the push debounce holds across a pull, however many sessions stop ---------
 # The stamp used to be state/global/.last-state-push, tracked like any state:
