@@ -94,6 +94,7 @@ class WorkItemTest(unittest.TestCase):
     def test_02c_a_taken_second_moves_on(self):
         # Deterministic: take every id this session could mint in the next few seconds,
         # so the create must step past them whatever the clock does.
+        got = None
         now = int(time.time())
         taken = [self.dir / f"{now + i}9a1b2c3d.md" for i in range(4)]
         for t in taken:
@@ -103,7 +104,8 @@ class WorkItemTest(unittest.TestCase):
         finally:
             for t in taken:
                 t.unlink()
-            (self.dir / f"{got}.md").unlink() if "got" in locals() else None
+            if got:
+                (self.dir / f"{got}.md").unlink()
         self.assertGreater(int(got[:10]), now + 3, "a minted id steps past every taken second")
 
     def test_03_open_to_ready(self):
@@ -163,8 +165,8 @@ class WorkItemTest(unittest.TestCase):
 
     def test_07_stale_claim(self):
         # A holder that wrote nothing on the item for two hours has let go.
-        # Its own id: the minted one is epoch seconds, and a fast run is still
-        # in the second that minted self.id.
+        # Its own id: a minted id would fall in the second that minted self.id
+        # (or step past it), and this one must be old.
         old = ok(A, "create", "--id", "1700000000077c62eb", "--brief", LINK, "Stale one")
         ok(A, "log", old, "status=ready")
         with open(self.dir / f"{old}.md", "a") as fh:

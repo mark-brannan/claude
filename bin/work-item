@@ -26,8 +26,8 @@
 #   2026-10-01T23:20:15Z 86eba7f7 status=open owner=agent repo=- parent=- model=sonnet effort=medium
 #   2026-10-02T08:30:11Z 9a1b2c3d cost tokens=812340 usd=1.42 by=grind
 #
-# The id is epoch seconds then the session's eight hex, opaque; the file is
-# the lookup. An item is created in `open`, always. Six statuses: open, ready,
+# The id is epoch seconds then the session's eight hex, opaque (a burst of
+# creates can run a few seconds ahead of the clock); the file is the lookup. An item is created in `open`, always. Six statuses: open, ready,
 # claimed, blocked, done, closed; the transitions are ALLOWED below. A claim
 # is valid when the folded status is ready or closed and no other session
 # holds it. A GitHub-homed item carries `home=`, with no link back.
