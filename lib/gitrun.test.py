@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+# Tests for lib/gitrun.py. Run: python3 lib/gitrun.test.py
+#
+# What matters: callers get a result, not an exception, for a failing git,
+# a missing git or a timeout; check=True raises the usual CalledProcessError.
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gitrun  # noqa: E402
+
+
+class GitrunTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.T = self.tmp.name
+        self.path = os.environ.get("PATH", "")
+
+    def tearDown(self):
+        os.environ["PATH"] = self.path
+        self.tmp.cleanup()
+
+    def test_ok_and_out_in_a_repo(self):
+        self.assertTrue(gitrun.ok("init", "-q", cwd=self.T))
+        self.assertEqual(os.path.realpath(gitrun.out("rev-parse", "--show-toplevel", cwd=self.T)),
+                         os.path.realpath(self.T))
+
+    def test_failure_is_a_result(self):
+        p = gitrun.run("rev-parse", "--show-toplevel", cwd=self.T)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse(gitrun.ok("rev-parse", cwd=self.T))
+        self.assertEqual(gitrun.out("rev-parse", "--show-toplevel", cwd=self.T), "")
+
+    def test_check_raises(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            gitrun.run("rev-parse", cwd=self.T, check=True)
+
+    def test_missing_git_is_127(self):
+        os.environ["PATH"] = self.T
+        self.assertEqual(gitrun.run("status").returncode, gitrun.MISSING)
+
+    def test_timeout_is_124(self):
+        fake = Path(self.T) / "git"
+        fake.write_text("#!/bin/sh\nsleep 5\n")
+        fake.chmod(0o755)
+        os.environ["PATH"] = self.T + os.pathsep + self.path
+        self.assertEqual(gitrun.run("status", timeout=0.2).returncode, gitrun.TIMEOUT)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -100,6 +100,8 @@ skills/scoping/SKILL.md
 hooks/lib-state.sh
 hooks/lib_state.py
 lib/state.py
+lib/lock.py
+lib/gitrun.py
 hooks/curia-roll.py
 hooks/session-metrics.jq
 hooks/lib-metrics-fmt.jq
