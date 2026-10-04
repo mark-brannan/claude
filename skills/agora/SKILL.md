@@ -100,20 +100,19 @@ Every item this skill touches gets, and keeps:
 
 ## Where a ruling lands
 
-Private by default. The ruling goes to the state repo: the sitting's log,
-`state/global/log/<date>-agora-<project>.md`, with the user's words
-verbatim, or the curia's roll when the item is a curia's sub-question.
+The decision is as public as the question that drove it.
 
-A repo's public decisions log (`docs/decisions.md`) sits just below a
-published ADR. It takes a line only when one of these holds:
+- **The question was already public** (a public issue or PR argued it):
+  the decision is public, a line in that repo's `docs/decisions.md`
+  passing the private-terms check.
+- **The driving force is non-public** (a card, a curia, a private
+  session): the decision stays private, in the state repo: the sitting's
+  log, `state/global/log/<date>-agora-<project>.md`, with the user's
+  words verbatim, or the curia's roll for a curia's sub-question.
 
-- the decision is large, and already built in code; or
-- the whole question was already public (argued on a public issue or PR).
-
-Never while a curia still holds the question. A public line also passes
-the private-terms check. When in doubt, it stays private, and a private
-card (`owner=human-ruling`) asks whether to publish the line. A sitting
-never opens a PR or comments on an issue just to record a ruling.
+When in doubt, it stays private, and a private card
+(`owner=human-ruling`) asks whether to publish it. A sitting never opens
+a PR or comments on an issue just to record a private ruling.
 
 ## Per item: the steps
 
