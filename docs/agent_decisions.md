@@ -72,5 +72,5 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - grind leaves a wip ref in place after its item is done; a reopened issue would resume from the old snapshot. Undo: delete the resumed wip ref on done ([#51](https://github.com/mark-brannan/claude/pull/51))
 
 ### 20261004t083549z
-- grind's stop snapshot holds back new files shaped like secrets (.env, .env.*, secrets/, *.pem, *.key, *.p12, *.pfx, id_rsa*/id_ecdsa*/id_ed25519*, .netrc, .npmrc, .pypirc, credentials.json); the retry does not get them Undo: drop the exclude pathspecs in save_attempt ([#51](https://github.com/mark-brannan/claude/pull/51))
+- grind's stop snapshot holds back new files shaped like secrets in any case (.env*, secrets/, .aws/, keys and keystores, id_* SSH keys, rc files, credentials files, *secret*.json, service-account*.json, kubeconfig; full list in save_attempt); the retry does not get them Undo: drop the exclude pathspecs in save_attempt ([#51](https://github.com/mark-brannan/claude/pull/51))
 - A non-PR grind retry is cut from the saved tip on its old base even when main has moved; the worker merges or rebases Undo: rebase the resumed tip onto HEAD in resume_point's caller ([#51](https://github.com/mark-brannan/claude/pull/51))
