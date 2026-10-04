@@ -620,11 +620,14 @@ if [ "$dry_run" -eq 0 ]; then
   # A resumed session is running again: the last run's `.ended` goes now,
   # not when this one exits, so a reader mid-run never sees it. The caps and
   # cadence this run holds, a flag's or the file's, are the session's now.
-  if [ -n "$resume_id" ] && jq --argjson ib "$item_budget" --argjson sb "$session_budget" \
-       --argjson hb "$session_hard_budget" --argjson pe "$pause_every" \
-       'del(.ended) | .item_budget = $ib | .session_budget = $sb | .session_hard_budget = $hb | .pause_every = $pe' \
-       "$state_file" > "$state_file.tmp" 2>/dev/null; then
-    mv "$state_file.tmp" "$state_file"
+  # Loud on failure, as for a new session's file: a run on caps its file
+  # does not hold would be resumed next time on the old ones.
+  if [ -n "$resume_id" ]; then
+    { jq --argjson ib "$item_budget" --argjson sb "$session_budget" \
+         --argjson hb "$session_hard_budget" --argjson pe "$pause_every" \
+         'del(.ended) | .item_budget = $ib | .session_budget = $sb | .session_hard_budget = $hb | .pause_every = $pe' \
+         "$state_file" > "$state_file.tmp" 2>/dev/null && mv "$state_file.tmp" "$state_file"; } \
+      || { rm -f "$state_file.tmp"; printf 'grind: cannot write the resumed caps to %s\n' "$state_file" >&2; exit 1; }
   fi
 fi
 

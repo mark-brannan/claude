@@ -491,6 +491,16 @@ eq 'and records the flags, the hard budget following the new soft one' '7 50 75 
   "$(jq -r '"\(.item_budget) \(.session_budget) \(.session_hard_budget) \(.pause_every)"' "$sess")"
 eq 'its workers run on the new item budget: opus/high at 3x $35, cut to $74 left' '74.00' \
   "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk 'NR == 1 {print $2}')"
+# a resume that cannot write its caps back stops, saying so, before any spend
+chmod a-w "$S/state/grind"
+: > "$CLAUDE_LOG"
+run --resume "$session_id" --item-budget 9
+chmod u+w "$S/state/grind"
+eq 'a resume that cannot record its caps exits 1' 1 "$RC"
+has 'and says so' '^grind: cannot write the resumed caps to '
+eq 'before any worker ran' 0 "$(calls_claude)"
+eq 'and the file keeps the caps it had' '7 50 75 2' \
+  "$(jq -r '"\(.item_budget) \(.session_budget) \(.session_hard_budget) \(.pause_every)"' "$sess")"
 mv "$S/ready.json.saved" "$S/ready.json"
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
 
