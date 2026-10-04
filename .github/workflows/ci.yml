@@ -56,11 +56,11 @@ jobs:
           } | sort -u > /tmp/installed
           missing=$(comm -23 /tmp/referenced /tmp/installed)
           if [ -n "$missing" ]; then
-            echo "::error::settings.json references hooks that cloud-session-setup.sh never seeds:"
+            echo "::error::settings.json references hooks, or lib/ has files, that cloud-session-setup.sh never seeds:"
             echo "$missing"
             exit 1
           fi
-          echo "ok: all $(wc -l < /tmp/referenced) referenced hooks are seeded"
+          echo "ok: all $(wc -l < /tmp/referenced) referenced hooks and lib files are seeded"
       - name: settings.json hooks run from \$HOME only
         run: |
           set -euo pipefail
