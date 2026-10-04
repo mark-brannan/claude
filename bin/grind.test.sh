@@ -102,6 +102,10 @@ case "\$1" in
   ready=\$(jq -c -s '.[0] + [.[1][] | .repo = (.repo // "o/beta")]' <(printf '%s' "\$ready") <(jq -c '[.[] | {kind:"issue", repo, number, title, url, body, labels:(.labels|map(.name))}]' "$S/ready-beta.json")) ;; esac
 jq -nc --argjson r "\$ready" --argjson b "\$blocked" --argjson p "\$prs" --argjson c "\$cards" --argjson ah "\$awaiting" --argjson repos "\$repos" \
   '{owner:"o", repos:\$repos, buckets:{awaiting_human:\$ah, queued:[], not_ready:\$p, ready:\$r, blocked:\$b, untriaged:[], stranded:[], rulings:[], humans:[], claudes:\$c}}'
+# A broken store: the record on stdout, then the cause on stderr and exit 3,
+# as the real worklist --json does.
+[ -f "$S/worklist-broken" ] && { echo 'worklist: Board: BROKEN STORE -- work-item list failed (exit 4): python exploded; this is not an empty board' >&2; exit 3; }
+exit 0
 WL
 chmod +x "$S/bin/worklist"
 
@@ -983,6 +987,13 @@ has 'and that nothing is left in scope' 'no repo in scope has a local checkout'
 run --repo o/alpha fam
 eq 'exit 2 when --repo and a project are both given' 2 "$RC"
 has 'and says they are two scopes' 'two scopes; pass one'
+
+# --- a broken store: worklist --json exits 3 with the cause on stderr ----------------
+touch "$S/worklist-broken"
+run --dry-run
+eq 'a broken store stops grind' 1 "$RC"
+has 'and grind names the cause, not the record' '^grind: worklist --json failed: worklist: Board: BROKEN STORE -- work-item list failed'
+rm -f "$S/worklist-broken"
 
 # --- a project: one queue over every repo carrying the topic ---------------------
 # The fake worklist answers a project name with two repos; beta's checkout is
