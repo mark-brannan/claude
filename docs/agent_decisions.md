@@ -74,3 +74,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261004t083549z
 - grind's stop snapshot holds back new files shaped like secrets (.env, .env.*, secrets/, *.pem, *.key, *.p12, *.pfx, id_rsa*/id_ecdsa*/id_ed25519*, .netrc, .npmrc, .pypirc, credentials.json); the retry does not get them Undo: drop the exclude pathspecs in save_attempt ([#51](https://github.com/mark-brannan/claude/pull/51))
 - A non-PR grind retry is cut from the saved tip on its old base even when main has moved; the worker merges or rebases Undo: rebase the resumed tip onto HEAD in resume_point's caller ([#51](https://github.com/mark-brannan/claude/pull/51))
+
+### 20261004t090521z
+- grind's held-back shapes match in any case and add .env*, .aws/, .docker/config.json, keystores (jks, keystore, ppk, p8), id_dsa*, .git-credentials, .pgpass, .htpasswd, kubeconfig, credentials files, *secret*.json, service-account*.json, *.tfvars, terraform.tfstate* Undo: drop those pathspecs or the icase magic in save_attempt ([#55](https://github.com/mark-brannan/claude/pull/55))

@@ -1392,17 +1392,29 @@ keep_unpushed() {
 # finished change), then push the tip as keep_unpushed does. Prints the
 # branch pushed, if any; returns 1 when either step failed.
 # The push publishes, and on a public repo nobody chose these files, so a new
-# file of a secret's own shape (a key, an env or rc file, a secrets/ dir) is
-# held back: it stays in the worktree only until the retry clears it.
+# file of a secret's own shape (a key, an env or rc file, a secrets/ dir), in
+# any case, is held back: it stays in the worktree only until the retry
+# clears it.
 # Shapes, not words: a tokenizer.py is work and goes.
 save_attempt() {
   git -C "$wt_path" add -u >/dev/null 2>&1 || return 1
   git -C "$wt_path" ls-files -z -o --exclude-standard -- . \
-      ':(exclude,glob)**/.env' ':(exclude,glob)**/.env.*' ':(exclude,glob)**/secrets/**' \
-      ':(exclude,glob)**/*.pem' ':(exclude,glob)**/*.key' ':(exclude,glob)**/*.p12' ':(exclude,glob)**/*.pfx' \
-      ':(exclude,glob)**/id_rsa*' ':(exclude,glob)**/id_ecdsa*' ':(exclude,glob)**/id_ed25519*' \
-      ':(exclude,glob)**/.netrc' ':(exclude,glob)**/.npmrc' ':(exclude,glob)**/.pypirc' \
-      ':(exclude,glob)**/credentials.json' \
+      ':(exclude,glob,icase)**/.env*' ':(exclude,glob,icase)**/secrets/**' \
+      ':(exclude,glob,icase)**/.aws/**' ':(exclude,glob,icase)**/*.pem' \
+      ':(exclude,glob,icase)**/*.key' ':(exclude,glob,icase)**/*.p12' \
+      ':(exclude,glob,icase)**/*.pfx' ':(exclude,glob,icase)**/*.jks' \
+      ':(exclude,glob,icase)**/*.keystore' ':(exclude,glob,icase)**/*.ppk' \
+      ':(exclude,glob,icase)**/id_rsa*' ':(exclude,glob,icase)**/id_ecdsa*' \
+      ':(exclude,glob,icase)**/id_ed25519*' ':(exclude,glob,icase)**/id_dsa*' \
+      ':(exclude,glob,icase)**/*.p8' ':(exclude,glob,icase)**/.netrc' \
+      ':(exclude,glob,icase)**/.npmrc' ':(exclude,glob,icase)**/.pypirc' \
+      ':(exclude,glob,icase)**/.pgpass' ':(exclude,glob,icase)**/.htpasswd' \
+      ':(exclude,glob,icase)**/.docker/config.json' ':(exclude,glob,icase)**/*.tfvars' \
+      ':(exclude,glob,icase)**/terraform.tfstate*' \
+      ':(exclude,glob,icase)**/.git-credentials' ':(exclude,glob,icase)**/kubeconfig' \
+      ':(exclude,glob,icase)**/credentials' ':(exclude,glob,icase)**/credentials.json' \
+      ':(exclude,glob,icase)**/credentials.y*ml' ':(exclude,glob,icase)**/*secret*.json' \
+      ':(exclude,glob,icase)**/service-account*.json' \
     | xargs -0r git -C "$wt_path" add -- >/dev/null 2>&1 || return 1
   held=$(git -C "$wt_path" ls-files -o --exclude-standard | paste -sd ' ' -)
   [ -z "$held" ] || warn "not saving $held from $ref: shaped like a secret; the retry will not have it"
