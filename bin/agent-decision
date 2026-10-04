@@ -21,8 +21,9 @@
 # already have its folder. The repo's .gitattributes gets
 # `docs/agent_decisions.md merge=union` if it lacks it, so two PRs that each
 # append an entry rebase without a conflict; commit it with the entry.
-# A bare GitHub PR or issue URL in --link is written as [#<n>](<url>). Exits 0 on success, 1 when a target is refused, 2
-# on usage. Python 3 stdlib only.
+# A bare GitHub PR or issue URL in --link is written as [#<n>](<url>).
+# Exits 0 on success, 1 when a target is refused, 2 on usage. Python 3
+# stdlib only.
 import argparse
 import datetime
 import fcntl
