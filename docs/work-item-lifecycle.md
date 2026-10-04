@@ -22,7 +22,7 @@ more.
 | `done` | the holder says the work is finished | the claim's holder | `evidence=<link>`: the PR, commit, roll anchor or decisions line that shows it |
 | `closed` | the user accepted the parent and its tree | the whole-tree sweep, once it exists | open |
 
-`work-item log` refuses `status=done` with no `evidence=<link>`; the skills write the link.
+`work-item log` refuses `status=done` with no non-empty `evidence=`; it does not check that the value is a link, which the skills write.
 
 ## Each ending, as the skills write it (pencil, the agent's reading)
 
