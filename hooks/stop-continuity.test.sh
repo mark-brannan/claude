@@ -285,10 +285,11 @@ SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
 eq '14.2: a later Stop mints no second item' 1 "$(mine a1b2c3d4 | wc -l | tr -d ' ')"
 eq '14.2: nothing changed, nothing logged' "$n0" "$(nlog "$MINT")"
 
-# A new last prompt: the next Stop rewrites the brief, one `briefed` line.
+# A new last prompt: the brief is written once and never rewritten, and nothing is logged.
+b0=$(brief_of "$MINT")
 TP="$TP2" SID=a1b2c3d4-0000-1111-2222 GH_PRS=$PR7 stop
-has '14.6: a new last prompt is the new brief' '^pick up the fixture work and finish it$' "$MINT"
-eq '14.2: and is one more line, briefed' "$((n0 + 1))" "$(nlog "$MINT")"
+eq '14.6: the brief is unchanged' "$b0" "$(brief_of "$MINT")"
+eq '14.2: and no line is logged' "$n0" "$(nlog "$MINT")"
 assert '14.4: the hook writes no status=ready' bash -c "! grep -q 'status=ready' '$MINT'"
 
 # No PR yet: the link is the session's checkpoint log, and there is no home.

@@ -269,8 +269,9 @@ well (scoping item 3).
 - The hook never claims the item. A session that takes it up logs `ready`,
   then `claimed` (`docs/work-item-lifecycle.md`): `open` never goes
   straight to `claimed`.
-- Its brief is today's first hand-off, the last prompt's first line
-  (job 9's default body); its home is the session's PR,
+- Its brief is written once, at the mint, from the prompt's first line
+  (job 9's default body), and never rewritten: the hook decides nothing
+  about the hand-off; its home is the session's PR,
   `home=<owner/repo#n>`, once there is one (pencil, question 13).
 - The brief carries one link; the store refuses a brief without one. Which
   link, when the session has no PR yet, is open (below).
@@ -393,7 +394,7 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | test |
 | 14.4 | a minted item | any Stop | no `status=ready` line from the hook | test |
 | 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | test |
-| 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line | test |
+| 14.6 | a fresh session | first Stop | the minted item's brief is the prompt's first line; later Stops leave it unchanged | test |
 | 14.7 | the store refuses the write, or `work-item` crashes | Stop | the state commit is made; exit 0 | test |
 | 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | test |
 | 14.9 | the hook writes items and the duplicates are retired | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | item 5 |

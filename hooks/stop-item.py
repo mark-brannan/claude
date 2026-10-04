@@ -15,10 +15,12 @@ Which item, in order:
      claim since released, so the session still has one id per life.
   4. none: mint it, `open`, owner `agent`. Never `ready`, no status line ever.
 
-What it writes, only when something changed (pencil):
-  - a minted item's brief is the last prompt's first line, the hand-off a
-    pickup body starts as (requirements 14.6), with one link line: the PR when there is one, else the session's checkpoint
-    log in the state repo (pencil). Its `home=` follows the PR.
+What it writes (pencil):
+  - a minted item's brief is written once, at the mint: the first prompt's
+    first line, with one link line: the PR when there is one, else the
+    session's checkpoint log in the state repo. Never rewritten; the hook
+    decides nothing about the hand-off. Later Stops log only `stop`, with
+    `home=` when the PR changed.
   - a claimed item keeps its brief; it gets one `stop` line on its first
     Stop, and `home=` the PR only while it has no home of its own.
 
@@ -101,19 +103,6 @@ def brief_for(text, pr, ckpt_link):
     return f"{body}\n\n{link}" if body else link
 
 
-def current_brief(path):
-    """The brief as the store holds it, points line left out."""
-    out, sec = [], ""
-    for line in open(path).read().splitlines():
-        if re.fullmatch(r"## Brief[ \t]*", line):
-            sec = "brief"
-        elif line.startswith("## "):
-            sec = "other"
-        elif sec == "brief" and not line.startswith("points:"):
-            out.append(line)
-    return "\n".join(out).strip("\n")
-
-
 def stop_lines(path, sid8):
     """Whether this session's Stop already wrote a line onto the item."""
     pat = re.compile(r"^\S+ " + sid8 + r" stop(\s|$)", re.M)
@@ -188,10 +177,6 @@ def step(a):
     had = facts.get("home", "")
     done, first = [], False
     if how == "minted":
-        brief = brief_for(handoff(a.prompt), pr, checkpoint_link(a.checkpoint, a.items))
-        if brief != current_brief(path):
-            work_item(env, "brief", item, "-", stdin=brief)
-            done.append("brief")
         words = [f"home={home}"] if home and home != had else []
     else:
         words = [f"home={home}"] if home and had in ("", "-") else []
