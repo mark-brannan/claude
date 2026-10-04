@@ -31,7 +31,17 @@
       "Bash(~/.claude/bin/card-id *)",
       "Bash(~/.claude/bin/resign-branch.sh *)",
       "Bash(~/.claude/bin/pickup-list find *)",
-      "Bash(~/.claude/bin/scoping-lock check *)"
+      "Bash(~/.claude/bin/scoping-lock check *)",
+      "Bash(~/.claude/bin/pickup-list)",
+      "Bash(~/.claude/bin/pickup-list --all)",
+      "Bash(~/.claude/bin/pickup-list --oldest)",
+      "Bash(~/.claude/bin/pickup-list --closed)",
+      "Bash(~/.claude/bin/pickup-list show *)",
+      "Bash(~/.claude/bin/worklist)",
+      "Bash(~/.claude/bin/worklist *)",
+      "Bash(~/.claude/bin/prose-budget *)",
+      "Bash(~/.claude/bin/work-item *)",
+      "Bash(/home/solace/.claude/bin/work-item *)"
     ],
     "deny": [
       "Bash(git reset --hard:*)"

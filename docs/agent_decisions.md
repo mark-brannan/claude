@@ -63,3 +63,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261004t082808z
 - A cloud-session release is named by both seed SHAs plus a checksum of $HOME and the state repo's path, since Localise writes both into it. Undo: drop the third part of REV and guards_sha's second-field parse in cloud-session-setup.sh ([#54](https://github.com/mark-brannan/claude/pull/54))
+
+### 20261004t082051z
+- Keep the absolute /home/solace/.claude/bin/work-item rule beside the ~ one: a rule matches the command as typed, and agents sometimes type the expanded path; the private line does not treat a username as private. Undo: delete the absolute work-item line from settings.json ([#52](https://github.com/mark-brannan/claude/pull/52))
