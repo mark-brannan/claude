@@ -271,6 +271,26 @@ class CuriaRollTest(unittest.TestCase):
                            capture_output=True, text=True, env=env)
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
+    def test_a_lib_without_lock_py_writes_nothing_and_exits_zero(self):
+        # A seed whose lib/ has state.py but not lock.py: a state dir is found,
+        # so the missing lock must be what stops the write, not a swallowed error.
+        import shutil
+        tree = Path(self.tmp.name) / "seed"
+        (tree / "hooks").mkdir(parents=True)
+        (tree / "lib").mkdir()
+        shutil.copy(HOOK, tree / "hooks")
+        shutil.copy(HOOK.parent / "lib_state.py", tree / "hooks")
+        shutil.copy(HOOK.parent / "lib-state.sh", tree / "hooks")  # state.py asks it for the state dir
+        shutil.copy(HOOK.parent.parent / "lib" / "state.py", tree / "lib")
+        self.sitting("one-entry-point", f"{SID} 2026-10-02T05:00:00Z\n")
+        env = dict(os.environ, CLAUDE_STATE_REPO=str(self.repo))
+        r = subprocess.run([sys.executable, str(tree / "hooks" / "curia-roll.py")],
+                           input=json.dumps({"session_id": SID, "prompt": "x"}),
+                           capture_output=True, text=True, env=env)
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+        self.assertIn("lib/lock.py not found", r.stderr, "says why, on stderr")
+        self.assertFalse((self.curia / "one-entry-point" / "roll.md").exists())
+
 
 class FoldTest(unittest.TestCase):
     """Words sharing a per-second stamp are one entry, joined by a blank line,

@@ -20,14 +20,26 @@
 # Exit 1 on any finding, 2 on a bad config or usage, 0 otherwise. A missing
 # config is a no-op (exit 0) unless --require-config. Findings go to stdout,
 # one per line as `file:line: rule: message`; counts and other information
-# go to stderr. Python 3 stdlib only; on PATH from dotfiles.
+# go to stderr. Python 3 stdlib only; needs lib/ beside it or in ~/.claude/lib (exit 2 if not).
 import argparse
 import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
+
+NAME = "prose-budget"
+sys.dont_write_bytecode = True
+for _d in (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+           os.path.expanduser("~/.claude/lib")):
+    if os.path.isfile(os.path.join(_d, "gitrun.py")):
+        sys.path.insert(0, _d)
+        break
+try:
+    import gitrun  # noqa: E402
+except ImportError:
+    print("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
+    sys.exit(2)
 
 VERSION = "1.1.0"
 CONFIG_NAMES = ("docs/budgets.json", ".prose-budgets.json")
@@ -497,7 +509,7 @@ class Repo:
         self.is_git = self.git("rev-parse", "--git-dir").returncode == 0
 
     def git(self, *args):
-        return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True)
+        return gitrun.run(*args, cwd=self.root)
 
     def all_files(self):
         if self.is_git:
@@ -890,7 +902,7 @@ def main(argv=None):
         return 0 if e.code == 0 else 2
 
     cwd = os.getcwd()
-    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, cwd=cwd)
+    top = gitrun.run("rev-parse", "--show-toplevel", cwd=cwd)
     root = top.stdout.strip() if top.returncode == 0 else cwd
     config = os.path.abspath(args.config) if args.config else find_config(cwd, root)
     if config is None:

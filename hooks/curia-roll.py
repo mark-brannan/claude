@@ -42,11 +42,11 @@ build-roll.py merges them (Solace, 2026-10-02). Until a curia's
 folder is moved to the roll/digest layout, roll.md is still the curated
 document, so a folder without digest.md is skipped.
 
-Always exits 0 and prints nothing: a roll failure must never block a prompt,
-and UserPromptSubmit stdout would land in the model's context.
+Always exits 0 and prints nothing to stdout: a roll failure must never block a
+prompt, and UserPromptSubmit stdout would land in the model's context. The one
+message, a missing lib/lock.py, goes to stderr.
 """
 import datetime
-import fcntl
 import glob
 import os
 import re
@@ -54,7 +54,12 @@ import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
 import lib_state  # noqa: E402
+try:
+    import lock  # noqa: E402
+except ImportError:  # a lib/ without lock.py: main() writes nothing and exits 0
+    lock = None
 
 
 AGENT_TEXT = ("<task-notification>", "<agent-message", "Another Claude session sent a message:")
@@ -122,9 +127,7 @@ def append(roll, prompt, now):
     # words: longer, and the same bytes up to them unless the fence widens,
     # so a kill mid-write keeps them. A stamp quoted in words is no heading.
     text = entry(prompt, now)
-    fd = os.open(roll, os.O_RDWR | os.O_CREAT, 0o644)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+    with lock.locked(roll) as fd:
         old = os.pread(fd, os.fstat(fd).st_size, 0)
         at = len(old)
         m = re.search(rb"\n### (\d{8}t\d{6}z)\n(`{3,})\n((?:(?!\n\2\n).)*)\n\2\n\Z", old, re.S)
@@ -137,8 +140,6 @@ def append(roll, prompt, now):
         while data:
             n = os.pwrite(fd, data, at)
             data, at = data[n:], at + n
-    finally:
-        os.close(fd)
 
 
 def main():
@@ -158,6 +159,9 @@ def main():
         return
     state_dir = lib_state.state_dir()
     if not state_dir:
+        return
+    if lock is None:
+        print("curia-roll: lib/lock.py not found; this prompt was not added to the roll", file=sys.stderr)
         return
     now = datetime.datetime.now(datetime.timezone.utc)
     # A set: a resumed session can both type `/curia <id>` and be in its LIVE.
