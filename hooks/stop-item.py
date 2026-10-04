@@ -16,8 +16,9 @@ Which item, in order:
   4. none: mint it, `open`, owner `agent`. Never `ready`, no status line ever.
 
 What it writes (pencil):
-  - a minted item's brief is written once, at the mint: the first prompt's
-    first line, with one link line: the PR when there is one, else the
+  - a minted item's brief is written once, at the mint: the first line of
+    the prompt that Stop sees (the session's first, unless an earlier mint
+    was refused), with one link line: the PR when there is one, else the
     session's checkpoint log in the state repo. Never rewritten; the hook
     decides nothing about the hand-off. Later Stops log only `stop`, with
     `home=` when the PR changed.
@@ -79,7 +80,8 @@ def pr_home(url):
 
 
 def handoff(prompt):
-    """The hand-off a pickup body starts as: the last prompt's first line."""
+    """The hand-off a pickup body starts as: the prompt's first line. At the
+    mint that is the latest prompt, which at a first Stop is the first."""
     return next((l.strip() for l in (prompt or "").splitlines() if l.strip()), "")
 
 
