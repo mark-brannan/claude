@@ -75,7 +75,7 @@ class GitrunTest(unittest.TestCase):
         lax = gitrun.out("ls-files", "-z", cwd=self.T)
         self.assertIn("\ufffd", lax)
         exact = gitrun.out("ls-files", "-z", cwd=self.T, errors="surrogateescape")
-        self.assertEqual(os.fsencode(exact), name)
+        self.assertEqual(os.fsencode(exact.rstrip("\0")), name)
 
 
 if __name__ == "__main__":
