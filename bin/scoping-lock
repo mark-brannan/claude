@@ -13,8 +13,10 @@ record's path, `take` takes its commit after syncing, never before; given
 anything else (an issue's updatedAt), it records that as is.
 
 A GATE, NOT A CONVENIENCE: anything that stops the lock being read from
-origin, taken and pushed -- no state repo, no origin, a pull that will not
-rebase, a rejected push -- exits 2 and the run stops. The lock is pushed at
+origin, taken and pushed -- no state repo on lib-state.sh's search path, no
+origin, a pull that will not rebase, a rejected push -- exits 2 and the run
+stops. A $CLAUDE_STATE_REPO with no .git is not an error: the search goes on
+down that path, as it does for the shell hooks. The lock is pushed at
 once, not left for the Stop hook's debounced push, because a lock another
 machine cannot see is no lock.
 
@@ -48,7 +50,25 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-SR = Path(os.environ.get("CLAUDE_STATE_REPO") or Path.home() / "claude_prompts_scratch")
+
+def state_repo():
+    """lib/state.py's state_repo, the one search path for the state repo
+    (cloud checkouts included): in this checkout beside the tool, else the
+    seeded copy. None when it cannot be found or named."""
+    here = Path(__file__).resolve().parent
+    for d in (here.parent / "lib", Path.home() / ".claude" / "lib"):
+        if (d / "state.py").is_file():
+            sys.path.insert(0, str(d))
+            break
+    else:
+        return None
+    sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
+    import state
+    r = state.state_repo()
+    return Path(r) if r else None
+
+
+SR = state_repo()
 LEASE = int(os.environ.get("SCOPING_LOCK_STALE_SECS") or 1500)
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -222,8 +242,8 @@ def main(argv):
     if cmd == "read-of":
         print(read_of(args[0]))
         return 0
-    if not (SR / ".git").is_dir():
-        die(f"no state repo at {SR}")
+    if SR is None:  # state_repo() names only a directory that has a .git
+        die("no state repo on lib-state.sh's search path (lib/state.py)")
     lock = lock_of(args[0])
     if cmd == "read":
         path = SR / lock
