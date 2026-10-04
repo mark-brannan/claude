@@ -74,9 +74,8 @@ def refuse(msg):
     raise Exit(1, msg)
 
 
-def state_dir():
-    """lib/state.py's state_dir, so the search path for the state repo has
-    one home: in this checkout beside the tool, else the seeded copy."""
+def use_lib():
+    """Put lib/ on sys.path: in this checkout beside the tool, else the seeded copy."""
     here = Path(__file__).resolve().parent
     for d in (here.parent / "lib", Path.home() / ".claude" / "lib"):
         if (d / "state.py").is_file():
@@ -85,6 +84,12 @@ def state_dir():
     else:
         die("lib/state.py not found")
     sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
+
+
+def state_dir():
+    """lib/state.py's state_dir, so the search path for the state repo has
+    one home."""
+    use_lib()
     import state
     d = state.state_dir()
     if not d:
@@ -230,7 +235,8 @@ class Item:
             self.lockf = open(p, "a")
         except OSError:
             refuse(f"could not open the lock {p}")
-        import lock as filelock  # lib/ is on sys.path: state_dir() put it there when __init__ built self.path
+        use_lib()
+        import lock as filelock
         if not filelock.acquire(self.lockf, wait=10):
             refuse(f"item {self.id} is locked by another writer")
 

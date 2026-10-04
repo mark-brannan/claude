@@ -62,6 +62,13 @@ check "cold: lib is a symlink into current" \
 # Not the shim's fail-open None: the seeded hooks really reach lib/state.py.
 check "cold: seeded lib_state imports lib/state.py" \
   'PYTHONDONTWRITEBYTECODE=1 python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import lib_state, state" "$HOME/.claude/hooks" 2>/dev/null'
+check "cold: seeded lib has lock.py and gitrun.py" \
+  '[ -f "$HOME/.claude/lib/lock.py" ] && [ -f "$HOME/.claude/lib/gitrun.py" ]'
+# Run them, not just import them: a seed whose INSTALL dropped a helper fails here.
+check "cold: seeded lib/lock.py takes a lock" \
+  'PYTHONDONTWRITEBYTECODE=1 python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import lock; f = open(sys.argv[2], \"a\"); sys.exit(0 if lock.acquire(f, wait=0) else 1)" "$HOME/.claude/lib" "$HOME/.lock-probe"'
+check "cold: seeded lib/gitrun.py runs git" \
+  'PYTHONDONTWRITEBYTECODE=1 python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import gitrun; sys.exit(0 if gitrun.run(\"--version\").returncode == 0 else 1)" "$HOME/.claude/lib"'
 check "cold: settings.json linked" '[ -L "$HOME/.claude/settings.json" ] && [ -f "$HOME/.claude/settings.json" ]'
 check "cold: projects/ untouched" '[ ! -L "$HOME/.claude/projects" ] && [ "$(cat "$HOME/.claude/projects/p/x")" = keep ]'
 check "cold: settings.local.json untouched" '[ ! -L "$HOME/.claude/settings.local.json" ]'
