@@ -1295,6 +1295,27 @@ run --kind card --pause-every 10
 has 'a card with no item id is skipped, saying so' 'WARN  skipping card:alpha-tidy-the-widget -- card has no id: <item id>'
 eq 'before any worker ran' 0 "$(calls_claude)"
 mv "$S/cards.json.all" "$S/cards.json"
+# a card's pair (claude#43): the fields at the start of its brief, on the one
+# line a card's text is; then its work-item rating, which wins field by field
+# and is what cheapest-first plans with
+rm -f "$S/state/grind"/*.json "$WORK_ITEM_DIR/17909840241dc56754.md"
+mkitem 17909840241dc56754 'alpha: tidy the widget' ready
+cp "$S/cards.json" "$S/cards.json.plain"
+jq -c 'map(.text |= sub("— "; "— model: opus · effort: high "))' "$S/cards.json.plain" > "$S/cards.json"
+run --dry-run --kind card
+has 'model: and effort: at the start of a card brief set both' '<card card:alpha-tidy-the-widget text>.*--model opus --effort high'
+CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log 17909840241dc56754 model=haiku
+run --dry-run --kind card
+has 'the rated model wins over the text, and the text still gives the unrated effort' '<card card:alpha-tidy-the-widget text>.*--model haiku --effort high'
+mv "$S/cards.json.plain" "$S/cards.json"
+CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log 17909840241dc56754 model=opus effort=high
+run --dry-run --kind card
+has 'a card rated opus/high in its log runs as opus/high' '<card card:alpha-tidy-the-widget text>.*--model opus --effort high'
+run --dry-run --policy cheapest-first
+has 'and under cheapest-first too' '<card card:alpha-tidy-the-widget text>.*--model opus --effort high'
+CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log 17909840241dc56754 model=haiku effort=low
+run --dry-run --policy cheapest-first
+has 'rated haiku/low, the card is planned first' '\[1/3\] card:alpha-tidy-the-widget'
 unset WORK_ITEM_DIR GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL; rm -f "$S/cards.json"
 
 # --- --prs -------------------------------------------------------------------------
