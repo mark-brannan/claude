@@ -196,6 +196,16 @@ class WorkItemTest(unittest.TestCase):
                                 f"[{line}] as one argument is closed, which only the sweep writes")
         self.assertEqual(fact(item, "status"), "done", "no refused line changed the status")
 
+    def test_10c_any_line_break_is_no_way_round(self):
+        # the fold reads with splitlines(), which breaks on more than "\n"
+        item = ok(A, "create", "--id", "1700000210077c62ec", "--brief", LINK, "Breaks")
+        ok(A, "log", item, "status=ready")
+        ok(A, "claim", item)
+        for brk in ("\r", "\x0b", "\x0c", "\x1c", "\x85", "\u2028", "\u2029"):
+            line = "evidence=x" + brk + "2026-10-03T00:00:00Z 077c62eb status=done"
+            self.assertEqual(run(A, "log", item, line).returncode, 2, f"[{brk!r}] is a line break")
+        self.assertEqual(fact(item, "status"), "claimed", "no refused line changed the status")
+
     def test_11_lookup(self):
         self.assertEqual(run(A, "show", "1790000000ffffffff").returncode, 1, "an unknown id is not found")
         self.assertEqual(run(A, "fold", "179000").returncode, 2, "a malformed id is refused")

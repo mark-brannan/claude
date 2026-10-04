@@ -454,7 +454,7 @@ def main(argv):
         if not args:
             die("log takes one or more words")
         line = " ".join(args)
-        if "\n" in line:
+        if line.splitlines() not in ([line], []):  # the fold's own notion of a line break
             die("a log line is one line")
         sid = me()
         to = ""
