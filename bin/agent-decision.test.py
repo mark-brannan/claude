@@ -22,6 +22,7 @@ class AgentDecisionTest(unittest.TestCase):
         t = Path(self.tmp.name)
         self.repo, self.state = t / "repo", t / "state"
         self.repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         (self.state / ".git").mkdir(parents=True)
         self.curia = self.state / "state/global/curia/one-entry-point"
         self.curia.mkdir(parents=True)
@@ -37,7 +38,7 @@ class AgentDecisionTest(unittest.TestCase):
 
     def test_two_entries_stamped_in_both_files(self):
         a = self.run_ad("--curia", "one-entry-point", "--undo", "revert it", "--link", "[#1](u)", "first call")
-        b = self.run_ad("--curia", "one-entry-point", "second\n  call")
+        b = self.run_ad("--curia", "one-entry-point", "--link", "u\n### 20990101t000000z", "second\n  call")
         self.assertEqual((a.returncode, b.returncode), (0, 0), a.stderr + b.stderr)
         log = (self.repo / "docs/agent_decisions.md").read_text()
         self.assertEqual(log, (self.curia / "agent_decisions.md").read_text())
@@ -48,8 +49,19 @@ class AgentDecisionTest(unittest.TestCase):
         self.assertTrue(all(STAMP.match(h) for h in heads), heads)
         self.assertEqual(heads, sorted(heads))
         bullets = [l for l in log.splitlines() if l.startswith("- ")]
-        self.assertEqual(bullets, ["- first call Undo: revert it ([#1](u))", "- second call"])
+        self.assertEqual(bullets, ["- first call Undo: revert it ([#1](u))", "- second call (u ### 20990101t000000z)"])
         self.assertEqual(log.count("# Agent decisions"), 1)
+
+    def test_not_a_checkout_is_refused(self):
+        p = subprocess.run([sys.executable, str(AD), "--repo", self.tmp.name, "a call"],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 1)
+
+    def test_symlinked_log_is_refused(self):
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/agent_decisions.md").symlink_to(self.curia / "roll.md")
+        self.assertEqual(self.run_ad("a call").returncode, 1)
+        self.assertEqual((self.curia / "roll.md").read_text(), "words\n")
 
     def test_unknown_curia_writes_nothing(self):
         p = self.run_ad("--curia", "no-such", "a call")

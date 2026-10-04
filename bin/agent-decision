@@ -46,14 +46,14 @@ def line(call, undo, link):
     if undo:
         text += " Undo: " + " ".join(undo.split())
     if link:
-        text += f" ({link})"
+        text += f" ({' '.join(link.split())})"
     return f"- {text}\n"
 
 
 def append(path, bullet, now, header=""):
     """Append one bullet under this second's heading, under an exclusive lock."""
     stamp = now.strftime("%Y%m%dt%H%M%Sz")
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o644)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         old = os.pread(fd, os.fstat(fd).st_size, 0)
@@ -66,10 +66,9 @@ def append(path, bullet, now, header=""):
 
 
 def repo_root(given):
-    if given:
-        return given
-    out = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
-    return out.stdout.strip() if out.returncode == 0 else None
+    out = subprocess.run(["git", "-C", given or ".", "rev-parse", "--show-toplevel"],
+                         capture_output=True, text=True)
+    return os.path.realpath(out.stdout.strip()) if out.returncode == 0 else None
 
 
 def main(argv):
@@ -100,7 +99,11 @@ def main(argv):
     now = datetime.datetime.now(datetime.timezone.utc)
     os.makedirs(os.path.dirname(targets[0][0]), exist_ok=True)
     for path, header in targets:
-        append(path, bullet, now, header)
+        try:
+            append(path, bullet, now, header)
+        except OSError as e:  # ELOOP: a symlink in the target's place
+            print(f"agent-decision: {path}: {e.strerror}", file=sys.stderr)
+            return 1
         print(path)
     return 0
 
