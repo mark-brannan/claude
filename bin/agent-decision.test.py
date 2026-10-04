@@ -51,6 +51,28 @@ class AgentDecisionTest(unittest.TestCase):
         bullets = [l for l in log.splitlines() if l.startswith("- ")]
         self.assertEqual(bullets, ["- first call Undo: revert it ([#1](u))", "- second call (u ### 20990101t000000z)"])
         self.assertEqual(log.count("# Agent decisions"), 1)
+        self.assertEqual((self.repo / ".gitattributes").read_text(), "docs/agent_decisions.md merge=union\n")
+
+    def test_bare_github_url_becomes_a_link(self):
+        url = "https://github.com/o/r/pull/7"
+        self.assertEqual(self.run_ad("--link", url, "a call").returncode, 0)
+        self.assertIn(f"- a call ([#7]({url}))\n", (self.repo / "docs/agent_decisions.md").read_text())
+
+    def test_existing_gitattributes_kept(self):
+        (self.repo / ".gitattributes").write_text("*.sh text")
+        self.run_ad("one")
+        self.run_ad("two")
+        self.assertEqual((self.repo / ".gitattributes").read_text(),
+                         "*.sh text\ndocs/agent_decisions.md merge=union\n")
+
+    def test_dash_call_is_not_empty(self):
+        self.assertEqual(self.run_ad("--", "-").returncode, 0)
+        self.assertEqual(self.run_ad("--", "  ").returncode, 2)
+
+    def test_symlinked_docs_is_refused(self):
+        (self.repo / "docs").symlink_to(self.curia)
+        self.assertEqual(self.run_ad("a call").returncode, 1)
+        self.assertFalse((self.curia / "agent_decisions.md").exists())
 
     def test_not_a_checkout_is_refused(self):
         p = subprocess.run([sys.executable, str(AD), "--repo", self.tmp.name, "a call"],

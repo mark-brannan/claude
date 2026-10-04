@@ -18,7 +18,10 @@
 # curia copy never goes in roll.md, which holds the user's words alone.
 #
 # The repo file and its header are created on the first entry; a curia must
-# already have its folder. Exits 0 on success, 1 when a target is refused, 2
+# already have its folder. The repo's .gitattributes gets
+# `docs/agent_decisions.md merge=union` if it lacks it, so two PRs that each
+# append an entry rebase without a conflict; commit it with the entry.
+# A bare GitHub PR or issue URL in --link is written as [#<n>](<url>). Exits 0 on success, 1 when a target is refused, 2
 # on usage. Python 3 stdlib only.
 import argparse
 import datetime
@@ -39,6 +42,8 @@ under the one-way-door test, with its undo. Written by `agent-decision`; the
 heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 """
 LAST = re.compile(rb"\n### (\d{8}t\d{6}z)\n(?:- [^\n]*\n)+\Z")
+UNION = "docs/agent_decisions.md merge=union"
+GH_URL = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/(?:pull|issues)/(\d+)\S*")
 
 
 def line(call, undo, link):
@@ -46,7 +51,9 @@ def line(call, undo, link):
     if undo:
         text += " Undo: " + " ".join(undo.split())
     if link:
-        text += f" ({' '.join(link.split())})"
+        link = " ".join(link.split())
+        m = GH_URL.fullmatch(link)
+        text += f" ([#{m.group(1)}]({link}))" if m else f" ({link})"
     return f"- {text}\n"
 
 
@@ -65,6 +72,24 @@ def append(path, bullet, now, header=""):
         os.close(fd)
 
 
+def ensure_union(root):
+    """Add the union-merge line to the repo's .gitattributes; True if added."""
+    path = os.path.join(root, ".gitattributes")
+    try:
+        with open(path, encoding="utf-8") as f:
+            old = f.read()
+    except FileNotFoundError:
+        old = ""
+    if UNION in old.splitlines():
+        return False
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o644)
+    try:
+        os.write(fd, (("\n" if old and not old.endswith("\n") else "") + UNION + "\n").encode())
+    finally:
+        os.close(fd)
+    return True
+
+
 def repo_root(given):
     out = subprocess.run(["git", "-C", given or ".", "rev-parse", "--show-toplevel"],
                          capture_output=True, text=True)
@@ -79,10 +104,11 @@ def main(argv):
     p.add_argument("--link")
     p.add_argument("call", nargs="+")
     a = p.parse_args(argv)
-    bullet = line(" ".join(a.call), a.undo, a.link)
-    if not bullet.strip("- \n"):
+    call = " ".join(" ".join(a.call).split())
+    if not call:
         print("agent-decision: the call is empty", file=sys.stderr)
         return 2
+    bullet = line(call, a.undo, a.link)
     root = repo_root(a.repo)
     if not root or not os.path.isdir(root):
         print("agent-decision: not in a git checkout; pass --repo", file=sys.stderr)
@@ -96,15 +122,21 @@ def main(argv):
                 print(f"agent-decision: no curia folder for {cid!r}", file=sys.stderr)
                 return 1
             targets.append((os.path.join(folder, "agent_decisions.md"), HEADER))
+    docs = os.path.join(root, "docs")
+    if os.path.realpath(docs) != docs:  # O_NOFOLLOW guards only the last component
+        print(f"agent-decision: {docs} is a symlink", file=sys.stderr)
+        return 1
     now = datetime.datetime.now(datetime.timezone.utc)
-    os.makedirs(os.path.dirname(targets[0][0]), exist_ok=True)
-    for path, header in targets:
-        try:
+    os.makedirs(docs, exist_ok=True)
+    try:
+        if ensure_union(root):
+            print(os.path.join(root, ".gitattributes"))
+        for path, header in targets:
             append(path, bullet, now, header)
-        except OSError as e:  # ELOOP: a symlink in the target's place
-            print(f"agent-decision: {path}: {e.strerror}", file=sys.stderr)
-            return 1
-        print(path)
+            print(path)
+    except OSError as e:  # ELOOP: a symlink in the target's place
+        print(f"agent-decision: {e.filename}: {e.strerror}", file=sys.stderr)
+        return 1
     return 0
 
 
