@@ -47,19 +47,20 @@ jobs:
               | sed 's|^\.claude/||'
             grep -ho 'lib-[A-Za-z0-9._-]*\.\(awk\|sh\|jq\)' hooks/*.sh \
               | sed 's|^|hooks/|'
+            ls lib/*.py | grep -v '\.test\.py$'
           } | sort -u > /tmp/referenced
           { sed -n '/^INSTALL="/,/^"/p' bin/cloud-session-setup.sh \
-              | grep -o '^hooks/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\)'
+              | grep -o '^\(hooks\|lib\)/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\|py\)'
             sed -n '/^GUARD_HOOKS="/,/^"/p' bin/cloud-session-setup.sh \
               | grep -o '^[A-Za-z0-9._-]*\.sh' | sed 's|^|hooks/|'
           } | sort -u > /tmp/installed
           missing=$(comm -23 /tmp/referenced /tmp/installed)
           if [ -n "$missing" ]; then
-            echo "::error::settings.json references hooks that cloud-session-setup.sh never seeds:"
+            echo "::error::settings.json references hooks, or lib/ has files, that cloud-session-setup.sh never seeds:"
             echo "$missing"
             exit 1
           fi
-          echo "ok: all $(wc -l < /tmp/referenced) referenced hooks are seeded"
+          echo "ok: all $(wc -l < /tmp/referenced) referenced hooks and lib files are seeded"
       - name: settings.json hooks run from \$HOME only
         run: |
           set -euo pipefail
