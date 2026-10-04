@@ -60,3 +60,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261004t075427z
 - prune-worktrees finds lib/gitrun.py with sys.path.insert(0, ...), the same as prose-budget, github-limits and agent-decision, not the append a reviewer suggested Undo: switch all four tools to sys.path.append in one PR ([#50](https://github.com/mark-brannan/claude/pull/50))
+
+### 20261004t082051z
+- Keep the absolute /home/solace/.claude/bin/work-item rule beside the ~ one: a rule matches the command as typed, and agents sometimes type the expanded path; the private line does not treat a username as private. Undo: delete the absolute work-item line from settings.json ([#52](https://github.com/mark-brannan/claude/pull/52))
