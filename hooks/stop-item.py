@@ -195,6 +195,9 @@ def step(a):
         words = [f"home={home}"] if home and home != had else []
     else:
         words = [f"home={home}"] if home and had in ("", "-") else []
+        # One `stop` line per session on a claimed item, not one per Stop
+        # (pencil): a claim that only converses goes stale after
+        # WORK_ITEM_STALE_SECS. How often to write is open in the spec, 14.
         first = how == "claimed" and not stop_lines(path, sid8)
     if words or first:
         work_item(env, "log", item, "stop", *words)
