@@ -219,7 +219,7 @@ eq 'two claude invocations' 2 "$(calls_claude)"
 has 'first item line: cost, tokens, running total, percent' '^o/alpha#5: First item -- sonnet, \$1\.00, 150 tokens -- running \$1\.00 / \$20\.00 -- 5%$'
 has 'second item line: running total accumulates' '^o/alpha#20: Second item -- opus, \$2\.00, 150 tokens -- running \$3\.00 / \$20\.00 -- 15%$'
 has 'queue exhausted, final tally' '^done: queue exhausted \(2 issue\)\. Running total \$3\.00 / \$20\.00\. 0 skipped\.$'
-has 'INFO: session line names repo, count, model, caps' 'INFO  session grind-.* on o/alpha: 2 item\(s\) \(2 issue; finish-first\), item budget \$5\.00 \(scaled per item; hard 3x\), session \$20\.00 soft / \$30\.00 hard, pause every 5'
+has 'INFO: session line names repo, count, model, caps' 'INFO  session grind-.* on o/alpha: 2 item\(s\) \(2 issue; finish-first\), item budget \$5\.00 \(scaled per item; hard 3x\), session \$20\.00, pause every 5'
 eq 'the state file records each item'"'"'s own pair' 'sonnet/medium opus/high' "$(jq -r '[.items[] | "\(.model)/\(.effort)"] | join(" ")' "$(latest_session)")"
 has 'INFO: item start line' 'INFO  \[1/2\] starting o/alpha#5 -- First item'
 has 'INFO: worker line names the permission mode' 'INFO  worker running: .*--permission-mode bypassPermissions'
@@ -426,10 +426,11 @@ eq 'the session file says the queue ran out, exit 0' 'queue-exhausted 0' "$(jq -
 # --- caps: soft and hard, per item and per run (claude#43) -----------------------
 # What matters: an item's soft cap is --item-budget scaled by its model's price
 # against Sonnet's and its effort weight, or its budget: when that is higher;
-# its hard cap is 3x, the worker's --max-budget-usd, cut to the run's hard
-# budget left (1.5x the soft by default). Dispatch stops only once spend
-# reaches the run's soft budget, however big the next item's cap. A cap flag on
-# --resume wins over the session file and is written to it.
+# its hard cap is 3x, the worker's --max-budget-usd, never cut (Solace on #47:
+# soft stops, not hard ones). Dispatch stops only once spend reaches the run's
+# soft budget, however big the next item's cap; nothing at the run level ends a
+# worker. A cap flag on --resume wins over the session file and is written to
+# it.
 cp "$S/ready.json" "$S/ready.json.saved"
 cat > "$S/ready.json" <<'JSON'
 [{"number": 5, "title": "Sonnet medium", "body": "no fields", "url": "https://github.com/o/alpha/issues/5", "labels": [{"name": "ready"}]},
@@ -437,25 +438,22 @@ cat > "$S/ready.json" <<'JSON'
  {"number": 21, "title": "Sonnet low", "body": "effort: low", "url": "https://github.com/o/alpha/issues/21", "labels": [{"name": "ready"}]},
  {"number": 22, "title": "Budgeted", "body": "budget: 12\nbudget: tbd", "url": "https://github.com/o/alpha/issues/22", "labels": [{"name": "ready"}]}]
 JSON
-# caps_of <n> -> "soft $X hard $Y[ cut]" off item #n's dry-run budget line
+# caps_of <n> -> "soft $X hard $Y" off item #n's dry-run budget line
 caps_of() {
   grep -A3 -E "^\[[0-9]+/[0-9]+\] o/alpha#$1 " <<<"$OUT" | grep -m1 'budget:' \
-    | sed -E 's/.*soft (\$[0-9.]+) .*hard (\$[0-9.]+) \(its --max-budget-usd(; cut)?.*/soft \1 hard \2\3/; s/; cut/ cut/'
+    | sed -E 's/.*soft (\$[0-9.]+) .*hard (\$[0-9.]+) \(its --max-budget-usd.*/soft \1 hard \2/'
 }
 rm -f "$S/state/grind"/*.json
 run --dry-run
 eq 'sonnet/medium: the item budget, hard 3x' 'soft $5.00 hard $15.00' "$(caps_of 5)"
-eq 'opus/high: 2.5x the price, 2x the effort; its lower budget: loses; hard cut to the run' 'soft $25.00 hard $30.00 cut' "$(caps_of 20)"
+eq 'opus/high: 2.5x the price, 2x the effort; its lower budget: loses; hard 3x, past the session' 'soft $25.00 hard $75.00' "$(caps_of 20)"
 eq 'sonnet/low: half' 'soft $2.50 hard $7.50' "$(caps_of 21)"
-eq 'a higher budget: wins; a later budget: that is not a number is no field' 'soft $12.00 hard $30.00 cut' "$(caps_of 22)"
-run --dry-run --session-hard-budget 100
-eq 'a --session-hard-budget lifts the cut' 'soft $25.00 hard $75.00' "$(caps_of 20)"
+eq 'a higher budget: wins; a later budget: that is not a number is no field' 'soft $12.00 hard $36.00' "$(caps_of 22)"
 run --dry-run --session-budget 6
-eq 'a hard budget left below the soft cap is both caps, and said to be cut' 'soft $9.00 hard $9.00 cut' "$(caps_of 20)"
-run --dry-run --session-hard-budget 10
-eq 'a hard budget below the soft one is refused' 2 "$RC"
-has 'and says so' 'session hard budget \(\$10\) is below the session budget \(\$20\)'
-for flag in --item-budget --session-budget --session-hard-budget; do
+eq 'a small session cuts no item cap' 'soft $25.00 hard $75.00' "$(caps_of 20)"
+run --dry-run --session-hard-budget 30
+eq 'there is no run hard budget flag' 2 "$RC"
+for flag in --item-budget --session-budget; do
   run --dry-run "$flag" abc
   eq "$flag abc is a usage error" 2 "$RC"
   has "and names the flag" "^grind: $flag abc is not a number of dollars$"
@@ -463,18 +461,18 @@ done
 run --dry-run --pause-every x
 eq 'a --pause-every that is not a count is a usage error' 2 "$RC"
 # an item whose cap passes what is left of the soft budget still starts while
-# spend is under it; each worker gets at most the run's hard budget left
+# spend is under it; each worker gets 3x its own soft cap, whatever is left
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
 reply 2.00 "done" 1
 reply 5.00 "done" 2
 : > "$CLAUDE_LOG"
 run --session-budget 6 --pause-every 10
 eq 'two workers ran: the opus item started with $4 of soft budget left' 2 "$(calls_claude)"
-eq 'each worker is cut to the run hard budget left ($9, then $7)' '9.00 7.00' \
+eq 'each worker gets 3x its soft cap, the session notwithstanding ($15, then $75)' '15.00 75.00' \
   "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk '{print $2}' | paste -sd' ' -)"
 PROMPT=$(cat "$S/prompt.txt")
-prompt_has 'a soft cap past the cut hard cap is told as the hard cap' 'stop and report at ~$7.00'
-prompt_has 'and its hard stop' 'Your hard stop is $7.00'
+prompt_has 'the worker is told its soft cap as the stop' 'stop and report at ~$25.00'
+prompt_has 'and its hard stop' 'Your hard stop is $75.00'
 has 'dispatch stops once spend reaches the soft budget' '^pause: session budget reached \(\$7\.00 / \$6\.00\)\.'
 eq 'the session file says why it ended' 'pause-budget 0' "$(jq -r '"\(.ended.reason) \(.ended.exit)"' "$(latest_session)")"
 # --resume with cap flags applies them and records them
@@ -483,16 +481,16 @@ reply 1.00 "done" 1
 : > "$CLAUDE_LOG"
 run --session-budget 100 --pause-every 1
 sess=$(latest_session); session_id=$(basename "$sess" .json)
-eq 'the first run recorded its caps' '5 100 150 1' "$(jq -r '"\(.item_budget) \(.session_budget) \(.session_hard_budget) \(.pause_every)"' "$sess")"
+eq 'the first run recorded its caps' '5 100 1' "$(jq -r '"\(.item_budget) \(.session_budget) \(.pause_every)"' "$sess")"
 reply 1.00 "done" 1
 reply 1.00 "done" 2
 : > "$CLAUDE_LOG"
 run --resume "$session_id" --item-budget 7 --session-budget 50 --pause-every 2
 eq 'the resumed run applies --pause-every' 2 "$(calls_claude)"
-eq 'and records the flags, the hard budget following the new soft one' '7 50 75 2' \
-  "$(jq -r '"\(.item_budget) \(.session_budget) \(.session_hard_budget) \(.pause_every)"' "$sess")"
+eq 'and records the flags' '7 50 2' \
+  "$(jq -r '"\(.item_budget) \(.session_budget) \(.pause_every)"' "$sess")"
 eq 'and that the item budget was given' 1 "$(jq -r '.item_budget_set' "$sess")"
-eq 'its workers run on the new item budget: opus/high at 3x $35, cut to $74 left' '74.00' \
+eq 'its workers run on the new item budget: opus/high at 3x $35' '105.00' \
   "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk 'NR == 1 {print $2}')"
 # a resume that cannot write its caps back stops, saying so, before any spend
 chmod a-w "$S/state/grind"
@@ -502,8 +500,8 @@ chmod u+w "$S/state/grind"
 eq 'a resume that cannot record its caps exits 1' 1 "$RC"
 has 'and says so' '^grind: cannot write the resumed caps to '
 eq 'before any worker ran' 0 "$(calls_claude)"
-eq 'and the file keeps the caps it had' '7 50 75 2' \
-  "$(jq -r '"\(.item_budget) \(.session_budget) \(.session_hard_budget) \(.pause_every)"' "$sess")"
+eq 'and the file keeps the caps it had' '7 50 2' \
+  "$(jq -r '"\(.item_budget) \(.session_budget) \(.pause_every)"' "$sess")"
 mv "$S/ready.json.saved" "$S/ready.json"
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
 
@@ -1369,7 +1367,7 @@ CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" l
 run --dry-run --policy cheapest-first
 has 'rated haiku/low, the card is planned first' '\[1/3\] card:alpha-tidy-the-widget'
 CLAUDE_CODE_SESSION_ID=cafe0000-0000-0000-0000-000000000000 "$GRIND_WORK_ITEM" log 17909840241dc56754 budget=12
-run --dry-run --kind card --session-hard-budget 100
+run --dry-run --kind card
 has "a budget= on the card's log is its soft cap when higher" 'budget:   soft \$12\.00 .*hard \$36\.00'
 unset WORK_ITEM_DIR GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL; rm -f "$S/cards.json"
 
@@ -1593,7 +1591,7 @@ run --prs --dry-run --item-budget 3
 has 'an explicit item budget wins' '^  budget: +soft \$3\.00 '
 for ibs in 1 0; do
   jq -n --argjson ibs "$ibs" '{repo:"o/alpha", project:"", item_budget:3, item_budget_set:$ibs, session_budget:100,
-    session_hard_budget:150, pause_every:3, prs:1, kinds:"pr", policy:"finish-first", items:[]}' > "$S/state/grind/grind-ibs$ibs.json"
+    pause_every:3, prs:1, kinds:"pr", policy:"finish-first", items:[]}' > "$S/state/grind/grind-ibs$ibs.json"
 done
 run --resume grind-ibs1 --dry-run
 has 'a resumed run keeps an item budget the session was given' '^  budget: +soft \$3\.00 '

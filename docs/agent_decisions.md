@@ -33,3 +33,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - grind's run hard budget defaults to 1.5x --session-budget ($30 at the $20 default). Undo: change the 1.5 where grind defaults session_hard_budget ([#47](https://github.com/mark-brannan/claude/pull/47))
 - A pr item's soft cap is not scaled by model or effort: the fixup contract's stop is a flat ~$1 every fixup worker reads. Undo: scale the pr branch of item_soft_cap like the others ([#47](https://github.com/mark-brannan/claude/pull/47))
 - grind reads a card's budget= off its log lines itself; work-item fold does not carry it, its facts being the format ruled in pen. Undo: add budget to work-item's FACTS and read it from fold ([#47](https://github.com/mark-brannan/claude/pull/47))
+
+### 20261004t050721z
+- grind: an item's hard cap is 3x its soft cap, never cut by what the run has left, and the run hard budget (--session-hard-budget, 1.5x) is gone -- Solace's ruling on #47: soft stops, not hard ones; a worker is ended only three times past the stop it was told; more cautious hard stops are a later revisit. Supersedes the 1.5x entry above. Undo: revert the commit on #47 that removed session_hard_budget from bin/grind ([#47](https://github.com/mark-brannan/claude/pull/47))
