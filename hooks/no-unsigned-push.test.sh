@@ -163,6 +163,16 @@ run_hook_cmd "git -C ~/$(basename "$dirty") push" "$clean"
 check "git -C ~/DIR push expands the tilde" "$verdict" deny
 export HOME=$HOME_SAVE
 
+# With HOME unset, ~ is unresolved rather than "": `cd ~/tmp` must not
+# become a check of /tmp (not a repo, so silent) instead of the session cwd.
+HOME_SAVE=$HOME
+unset HOME
+run_hook_cmd "cd ~/tmp && git push" "$dirty"
+check "HOME unset: cd ~/DIR falls back to cwd, not /DIR" "$verdict" deny
+run_hook_cmd "git -C '\$HOME/tmp' push" "$dirty"
+check "HOME unset: -C \$HOME/DIR falls back to cwd, not /DIR" "$verdict" deny
+export HOME=$HOME_SAVE
+
 # grep's `^` anchors every line, so a `cd` opening a later line of a
 # multi-line command must not be read as the push's directory either.
 run_hook_cmd "git push
