@@ -42,8 +42,20 @@ import datetime
 import json
 import os
 import shutil
-import subprocess
 import sys
+
+sys.dont_write_bytecode = True
+for _d in (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+           os.path.expanduser("~/.claude/lib")):
+    if os.path.isfile(os.path.join(_d, "gitrun.py")):
+        sys.path.insert(0, _d)
+        break
+try:
+    import gitrun  # noqa: E402
+except ImportError:
+    print("prune-worktrees: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)",
+          file=sys.stderr)
+    sys.exit(3)
 
 HOME = os.path.expanduser("~")
 PLUGINS = os.path.join(HOME, ".claude", "plugins", "installed_plugins.json")
@@ -58,14 +70,17 @@ FETCH_TIMEOUT = 60
 GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0")
 
 
-def git(repo, *args, check=False, timeout=None, env=None):
+def git(repo, *args, timeout=None, env=None):
     # --no-optional-locks: a read must not refresh the index, or this run's
     # own `git status` makes every worktree look touched the next time.
-    r = subprocess.run(["git", "--no-optional-locks", "-C", repo, *args], capture_output=True, text=True,
-                       errors="surrogateescape", env=env or GIT_ENV, timeout=timeout)
-    if check and r.returncode:
-        raise RuntimeError(r.stderr.strip())
-    return r
+    return gitrun.run("--no-optional-locks", "-C", repo, *args, timeout=timeout,
+                      env=env or GIT_ENV, errors="surrogateescape")
+
+
+def patch_ids(repo, text):
+    """`git patch-id --stable` output for a diff, as a list of fields."""
+    return gitrun.run("-C", repo, "patch-id", "--stable", input=text, env=GIT_ENV,
+                      errors="surrogateescape").stdout.split()
 
 
 def find_repos(explicit):
@@ -154,8 +169,8 @@ class Landed:
         if self._base_ids is None:
             log = git(self.repo, "log", "-p", "--no-merges", "--since=120.days",
                       self.base).stdout
-            ids = subprocess.run(["git", "-C", self.repo, "patch-id", "--stable"],
-                                 input=log, capture_output=True, text=True, errors="surrogateescape").stdout
+            ids = gitrun.run("-C", self.repo, "patch-id", "--stable", input=log, env=GIT_ENV,
+                             errors="surrogateescape").stdout
             self._base_ids = {l.split()[0] for l in ids.splitlines() if l}
         return self._base_ids
 
@@ -186,8 +201,7 @@ class Landed:
         if cherry and "+" not in [l[:1] for l in cherry.splitlines()]:
             return f"patch-equivalent to {self.base}"
         diff = git(self.repo, "diff", mb, sha).stdout
-        pid = subprocess.run(["git", "-C", self.repo, "patch-id", "--stable"],
-                             input=diff, capture_output=True, text=True, errors="surrogateescape").stdout.split()
+        pid = patch_ids(self.repo, diff)
         if pid and pid[0] in self.base_ids():
             return f"squash-merged into {self.base}"
         return None
@@ -199,10 +213,7 @@ def fetch(repo):
     ssh = (os.environ.get("GIT_SSH_COMMAND")
            or git(repo, "config", "--get", "core.sshCommand").stdout.strip() or "ssh")
     env = dict(GIT_ENV, GIT_SSH_COMMAND=ssh + " -o BatchMode=yes")
-    try:
-        return git(repo, "fetch", "--prune", "--quiet", timeout=FETCH_TIMEOUT, env=env).returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
+    return git(repo, "fetch", "--prune", "--quiet", timeout=FETCH_TIMEOUT, env=env).returncode == 0
 
 
 def unpushed_in_submodules(path):

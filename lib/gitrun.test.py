@@ -58,6 +58,25 @@ class GitrunTest(unittest.TestCase):
         os.environ["PATH"] = self.T + os.pathsep + self.path
         self.assertEqual(gitrun.run("status", timeout=0.2).returncode, gitrun.TIMEOUT)
 
+    def test_env_is_passed(self):
+        self.assertTrue(gitrun.ok("init", "-q", cwd=self.T))
+        env = dict(os.environ, GIT_DIR=os.path.join(self.T, "nowhere"))
+        self.assertFalse(gitrun.ok("rev-parse", "--git-dir", cwd=self.T, env=env))
+
+    def test_input_reaches_stdin(self):
+        self.assertEqual(gitrun.out("hash-object", "--stdin", input="hi\n"),
+                         "45b983be36b73c0788dc9cbcb76cbb80fc7bb057")
+
+    def test_errors_choice(self):
+        self.assertTrue(gitrun.ok("init", "-q", cwd=self.T))
+        name = b"caf\xe9"
+        Path(os.fsdecode(os.path.join(os.fsencode(self.T), name))).write_text("x")
+        subprocess.run(["git", "add", "."], cwd=self.T, check=True)
+        lax = gitrun.out("ls-files", "-z", cwd=self.T)
+        self.assertIn("\ufffd", lax)
+        exact = gitrun.out("ls-files", "-z", cwd=self.T, errors="surrogateescape")
+        self.assertEqual(os.fsencode(exact), name)
+
 
 if __name__ == "__main__":
     unittest.main()
