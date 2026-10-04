@@ -36,3 +36,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261004t050721z
 - grind: an item's hard cap is 3x its soft cap, never cut by what the run has left, and the run hard budget (--session-hard-budget, 1.5x) is gone -- Solace's ruling on #47: soft stops, not hard ones; a worker is ended only three times past the stop it was told; more cautious hard stops are a later revisit. Supersedes the 1.5x entry above. Undo: revert the commit on #47 that removed session_hard_budget from bin/grind ([#47](https://github.com/mark-brannan/claude/pull/47))
+
+### 20261004t071038z
+- work-item read_brief turns CRLF into a newline before checking, so a brief piped with Windows line endings is accepted as on main; a lone CR is still refused Undo: revert d935ba0 ([#39](https://github.com/mark-brannan/claude/pull/39))

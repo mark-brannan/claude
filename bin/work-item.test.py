@@ -208,6 +208,59 @@ class WorkItemTest(unittest.TestCase):
         self.assertIn("sweep", p.stderr, "and the refusal says whose it is")
         self.assertEqual(fact(item, "status"), "done", "a refused closed changed nothing")
 
+    def test_10b_one_quoted_argument_is_no_way_round(self):
+        # the fold reads every whitespace word of a log line, so the refusals do too
+        item = ok(A, "create", "--id", "1700000210077c62eb", "--brief", LINK, "Quoted")
+        ok(A, "log", item, "status=ready")
+        ok(A, "claim", item)
+        for line in ("note status=done", "status=done evidence=", "why: status=done evidence="):
+            self.assertEqual(run(A, "log", item, line).returncode, 1,
+                             f"[{line}] as one argument is done with no evidence")
+        self.assertEqual(fact(item, "status"), "claimed", "no refused line changed the status")
+        ok(A, "log", item, "note status=done evidence=" + LINK)
+        for line in ("note status=closed", "status=Closed", "x=1 status=closed"):
+            self.assertNotEqual(run(A, "log", item, line).returncode, 0,
+                                f"[{line}] as one argument is closed, which only the sweep writes")
+        self.assertEqual(fact(item, "status"), "done", "no refused line changed the status")
+
+    def test_10c_any_line_break_is_no_way_round(self):
+        # the fold reads with splitlines(), which breaks on more than "\n"
+        item = ok(A, "create", "--id", "1700000210077c62ec", "--brief", LINK, "Breaks")
+        ok(A, "log", item, "status=ready")
+        ok(A, "claim", item)
+        for brk in ("\r", "\x0b", "\x0c", "\x1c", "\x85", "\u2028", "\u2029"):
+            line = "evidence=x" + brk + "2026-10-03T00:00:00Z 077c62eb status=done"
+            self.assertEqual(run(A, "log", item, line).returncode, 2, f"[{brk!r}] is a line break")
+        self.assertEqual(fact(item, "status"), "claimed", "no refused line changed the status")
+
+    def test_10d_word_brief_and_title_see_every_line_break(self):
+        for brk in ("\x0b", "\x0c", "\x85", "\u2028"):
+            self.assertEqual(run(A, "create", "--repo", "a" + brk + "b", "--brief", LINK,
+                                 "Word").returncode, 2, f"[{brk!r}] in a word")
+            self.assertEqual(run(A, "create", "--brief", LINK, "Ti" + brk + "tle").returncode, 2,
+                             f"[{brk!r}] in a title")
+            self.assertEqual(run(A, "brief", self.id, f"{LINK} x{brk}## Log").returncode, 2,
+                             f"[{brk!r}] in a brief")
+            self.assertEqual(run(A, "brief", self.id, "-", stdin=f"{LINK}{brk}## Log\n").returncode, 2,
+                             f"[{brk!r}] in a stdin brief")
+        for sp in ("\u00a0", "\u2003", "\x1f"):  # str.split() splits on these too
+            self.assertEqual(run(A, "create", "--repo", "a" + sp + "b", "--brief", LINK,
+                                 "Word").returncode, 2, f"[{sp!r}] is space to the fold")
+        self.assertEqual(self.lines()[0], "# Size the store", "no refused call touched the item")
+        ok(A, "brief", self.id, "-", stdin=f"{LINK}\r\nsecond line\r\n")
+        self.assertIn("second line", run(A, "show", self.id).stdout, "a CRLF brief is one break per line")
+
+    def test_10e_listing_scrub_covers_every_splitlines_break(self):
+        from importlib.machinery import SourceFileLoader
+        from importlib.util import module_from_spec, spec_from_loader
+        loader = SourceFileLoader("work_item", str(WI))
+        wi = module_from_spec(spec_from_loader("work_item", loader))
+        loader.exec_module(wi)
+        for n in range(sys.maxunicode + 1):
+            c = chr(n)
+            if not wi.one_line("a" + c + "b"):
+                self.assertTrue(re.fullmatch(wi.LINE_BREAK, c), f"[{c!r}] breaks a line")
+
     def test_11_lookup(self):
         self.assertEqual(run(A, "show", "1790000000ffffffff").returncode, 1, "an unknown id is not found")
         self.assertEqual(run(A, "fold", "179000").returncode, 2, "a malformed id is refused")
