@@ -1,0 +1,17 @@
+# prune-worktrees --delete once a day: clean, landed worktrees out of every
+# repo under $HOME, and the plugin entries that pointed at them. A timer and
+# not the Stop hook because a session ending is not when its own worktree is
+# safe to remove, and the hooks do not run reliably at session end.
+
+[Unit]
+Description=Remove clean, landed git worktrees and their dead plugin entries
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.claude/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.claude/bin/prune-worktrees --delete
+StateDirectory=prune-worktrees
+StandardOutput=append:%S/prune-worktrees/timer.log
+StandardError=append:%S/prune-worktrees/timer.log
+# Measured about a minute with fetch across 45 repos.
+TimeoutStartSec=10m

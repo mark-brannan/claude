@@ -24,6 +24,7 @@ Procedures only. The hook designs and the scars behind them are in
 - [Change what the metrics readouts show](#change-what-the-metrics-readouts-show)
 - [Check a repo's prose budgets](#check-a-repos-prose-budgets)
 - [Prune stale Stop-hook salvage refs](#prune-stale-stop-hook-salvage-refs)
+- [Prune stale worktrees](#prune-stale-worktrees)
 - [Read the pickup items](#read-the-pickup-items)
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
 
@@ -224,7 +225,7 @@ nothing you can see, because the copy denies in its place.
 
 ```bash
 root=$(claude plugin list --json \
-  | jq -r '.[] | select(.id == "languette@languette" and .enabled) | .installPath')
+  | jq -r '.[] | select(.id == "languette@languette" and .scope == "user" and .enabled) | .installPath')
 [ -n "$root" ] && echo "plugin loaded: $root" || echo "plugin ABSENT"
 jq -n '{tool_name:"Bash",tool_input:{command:"git add -A"},cwd:env.HOME}' \
   | CLAUDE_PLUGIN_ROOT="$root" sh "$root/hooks/no-git-footguns.sh" \
@@ -349,6 +350,29 @@ prune-wip-refs --delete
 
 Verify: exit 0 and a final `deleted N wip ref(s)` line; each deletion line
 carries its undo. `prune-wip-refs --help` has the rules.
+
+## Prune stale worktrees
+
+A daily timer removes every clean worktree whose commits are on a remote,
+across all repos under `$HOME`, and drops plugin entries for directories
+that are gone. Install once:
+
+```bash
+systemctl --user link ~/.claude/systemd/prune-worktrees.service ~/.claude/systemd/prune-worktrees.timer
+```
+
+```bash
+systemctl --user enable --now prune-worktrees.timer
+```
+
+By hand: `prune-worktrees` previews, `prune-worktrees --delete` acts; each
+removal line carries its undo.
+
+Verify: the log ends in `removed N worktree(s), kept M (...)` dated today.
+
+```bash
+tail -3 ~/.local/state/prune-worktrees/timer.log
+```
 
 ## Read the pickup items
 
