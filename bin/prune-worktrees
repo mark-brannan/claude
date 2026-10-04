@@ -52,7 +52,9 @@ for _d in (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"
         break
 try:
     import gitrun  # noqa: E402
-except ImportError:
+except ModuleNotFoundError as e:
+    if e.name != "gitrun":
+        raise
     print("prune-worktrees: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)",
           file=sys.stderr)
     sys.exit(3)

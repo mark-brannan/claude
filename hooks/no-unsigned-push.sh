@@ -54,8 +54,12 @@ target_cwd=$cwd
 # from the push command, not expanding this script's own tilde or variable.
 # A bare `cd` (empty argument) goes to $HOME, same as the shell. `cd -`
 # can't be resolved without OLDPWD, which this hook doesn't have, so it is
-# left unhandled rather than guessed.
+# left unhandled rather than guessed. So is ~ or $HOME with HOME unset:
+# expanding it to "" would turn `cd ~/tmp` into a check of /tmp.
 expand_leading() {
+  case $1 in
+    '~'|'~/'*|'$HOME'|'$HOME/'*) [ -n "${HOME:-}" ] || return 0 ;;
+  esac
   case $1 in
     '-') printf '' ;;
     '~') printf '%s' "$HOME" ;;
