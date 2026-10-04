@@ -1769,7 +1769,8 @@ GRIND_STATUS: done" sess-donecap
     exit 1 ;;
   noresult)
     echo half > half-done.txt   # an edit the cap lands before it is committed
-    echo s3cr3t > .env.local    # one whose name reads like a secret
+    echo s3cr3t > .env.local    # one shaped like a secret
+    echo tok > tokenizer.py      # and one that only sounds like it
     say "Committing." sess-noresult
     exit 1 ;;
 esac
@@ -1820,8 +1821,9 @@ eq 'in an unhooked snapshot commit on top of its own' \
   "$(git --git-dir="$co" log --format=%s -n 2 origin/wip/grind-78 | paste -sd '|')"
 saved_tip=$(git --git-dir="$co" rev-parse origin/wip/grind-78)
 lacks_in_tree() { ! git --git-dir="$co" cat-file -e "origin/wip/grind-78:$1" 2>/dev/null; }
-assert 'but not a new file whose name reads like a secret' lacks_in_tree .env.local
-has 'which it names as held back' 'WARN  not saving .env.local from o/alpha#78'
+assert 'but not a new file shaped like a secret' lacks_in_tree .env.local
+has 'which it names as held back' 'WARN  not saving .env.local from o/alpha#78: shaped like a secret'
+eq 'while a file that only sounds like one is saved' 'tok' "$(git --git-dir="$co" show origin/wip/grind-78:tokenizer.py 2>/dev/null)"
 : > "$GIT_PUSH_LOG"; echo donecap > "$S/claude-mode"
 run --resume "$(basename "$sess" .json)"
 has 'the retry resumes from it' 'INFO  resuming o/alpha#78 from the stopped attempt saved on wip/grind-78'

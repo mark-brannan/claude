@@ -1392,15 +1392,20 @@ keep_unpushed() {
 # finished change), then push the tip as keep_unpushed does. Prints the
 # branch pushed, if any; returns 1 when either step failed.
 # The push publishes, and on a public repo nobody chose these files, so a new
-# file whose name reads like a secret stays behind in the kept worktree.
+# file of a secret's own shape (a key, an env or rc file, a secrets/ dir) is
+# held back: it stays in the worktree only until the retry clears it.
+# Shapes, not words: a tokenizer.py is work and goes.
 save_attempt() {
   git -C "$wt_path" add -u >/dev/null 2>&1 || return 1
   git -C "$wt_path" ls-files -z -o --exclude-standard -- . \
-      ':(exclude,glob,icase)**/.env*' ':(exclude,glob,icase)**/*.pem' ':(exclude,glob,icase)**/*.key' \
-      ':(exclude,glob,icase)**/*secret*' ':(exclude,glob,icase)**/*token*' ':(exclude,glob,icase)**/*credential*' \
+      ':(exclude,glob)**/.env' ':(exclude,glob)**/.env.*' ':(exclude,glob)**/secrets/**' \
+      ':(exclude,glob)**/*.pem' ':(exclude,glob)**/*.key' ':(exclude,glob)**/*.p12' ':(exclude,glob)**/*.pfx' \
+      ':(exclude,glob)**/id_rsa*' ':(exclude,glob)**/id_ecdsa*' ':(exclude,glob)**/id_ed25519*' \
+      ':(exclude,glob)**/.netrc' ':(exclude,glob)**/.npmrc' ':(exclude,glob)**/.pypirc' \
+      ':(exclude,glob)**/credentials.json' \
     | xargs -0r git -C "$wt_path" add -- >/dev/null 2>&1 || return 1
   held=$(git -C "$wt_path" ls-files -o --exclude-standard | paste -sd ' ' -)
-  [ -z "$held" ] || warn "not saving $held from $ref: the name reads like a secret; its worktree keeps it"
+  [ -z "$held" ] || warn "not saving $held from $ref: shaped like a secret; the retry will not have it"
   if ! git -C "$wt_path" diff --cached --quiet 2>/dev/null; then
     git -C "$wt_path" commit -q --no-verify \
       -m "grind: snapshot of $ref at its stop ($status), for the retry to resume from" >/dev/null 2>&1 || return 1
