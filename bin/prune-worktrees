@@ -52,17 +52,17 @@ STATE = os.path.join(
     "prune-worktrees")
 KEEP_BACKUPS = 5
 FETCH_TIMEOUT = 60
-# Unattended: a remote that wants a password or a passphrase fails at once
-# instead of waiting on a prompt nobody will answer.
-GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0",
-               GIT_SSH_COMMAND=os.environ.get("GIT_SSH_COMMAND", "ssh") + " -o BatchMode=yes")
+# Unattended: a remote that wants a password fails at once instead of
+# waiting on a prompt nobody will answer. ssh's passphrase prompt is
+# BatchMode, set per fetch so a repo's core.sshCommand survives.
+GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0")
 
 
-def git(repo, *args, check=False, timeout=None):
+def git(repo, *args, check=False, timeout=None, env=None):
     # --no-optional-locks: a read must not refresh the index, or this run's
     # own `git status` makes every worktree look touched the next time.
     r = subprocess.run(["git", "--no-optional-locks", "-C", repo, *args], capture_output=True, text=True,
-                       errors="surrogateescape", env=GIT_ENV, timeout=timeout)
+                       errors="surrogateescape", env=env or GIT_ENV, timeout=timeout)
     if check and r.returncode:
         raise RuntimeError(r.stderr.strip())
     return r
@@ -195,8 +195,12 @@ class Landed:
 
 def fetch(repo):
     """True when the remote refs here are fresh."""
+    # GIT_SSH_COMMAND outranks core.sshCommand, so build on whichever is set.
+    ssh = (os.environ.get("GIT_SSH_COMMAND")
+           or git(repo, "config", "--get", "core.sshCommand").stdout.strip() or "ssh")
+    env = dict(GIT_ENV, GIT_SSH_COMMAND=ssh + " -o BatchMode=yes")
     try:
-        return git(repo, "fetch", "--prune", "--quiet", timeout=FETCH_TIMEOUT).returncode == 0
+        return git(repo, "fetch", "--prune", "--quiet", timeout=FETCH_TIMEOUT, env=env).returncode == 0
     except subprocess.TimeoutExpired:
         return False
 
@@ -225,13 +229,15 @@ def prune_metadata(repo, label, args, tally):
         return
     locked = [p for p in spare if not git(repo, "worktree", "lock", "--reason",
                                           "prune-worktrees: path unavailable", p).returncode]
-    if len(locked) < len(spare):
-        print(f"{label}: could not lock an unavailable worktree -- metadata left alone", file=sys.stderr)
-        tally["errors"] += 1
-    else:
-        git(repo, "worktree", "prune", "--expire=now")
-    for p in locked:
-        git(repo, "worktree", "unlock", p)
+    try:
+        if len(locked) < len(spare):
+            print(f"{label}: could not lock an unavailable worktree -- metadata left alone", file=sys.stderr)
+            tally["errors"] += 1
+        else:
+            git(repo, "worktree", "prune", "--expire=now")
+    finally:
+        for p in locked:
+            git(repo, "worktree", "unlock", p)
 
 
 def prune_repo(repo, args, cwds, me, tally):
@@ -320,7 +326,6 @@ def prune_plugins(args):
         os.makedirs(STATE, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
         backup = os.path.join(STATE, f"installed_plugins.{stamp}.json")
-        shutil.copy2(PLUGINS, backup)
         tmp = PLUGINS + ".prune-worktrees.tmp"
         with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
@@ -332,6 +337,7 @@ def prune_plugins(args):
             os.remove(tmp)
             print("plugins: changed during the run -- left alone, next run retries", file=sys.stderr)
             return 0
+        shutil.copy2(PLUGINS, backup)
         os.replace(tmp, PLUGINS)
         old = sorted(n for n in os.listdir(STATE) if n.startswith("installed_plugins."))
         for n in old[:-KEEP_BACKUPS]:
