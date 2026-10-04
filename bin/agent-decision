@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SOFT SHOULD: id generation belongs in lib/ids.py, the one home for every
+# entity's id (card 17910884757abba648). This script still makes a roll-entry stamp itself;
+# move it there when convenient, no deadline.
 # agent-decision -- append an agent's pencil call to the decisions logs.
 #
 #   agent-decision [--repo <dir>] [--curia <id>]... [--undo <text>]

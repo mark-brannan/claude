@@ -59,6 +59,8 @@ Untriaged: N              unlabelled issues, table capped like every other
                           bucket — not count-only
 Needs ruling              the board's `## Needs ruling` cards, at most 8 —
                           one-way doors only, so normally empty
+Done                      items at `done`, any owner, at most 8: the agent
+                          finished; only the user's acceptance remains
 Board                     the `## Claude's` cards, at most 8
 ```
 
@@ -66,6 +68,9 @@ Every row carries its repo; the full view links the Ref cell, `--brief`
 prints it as bare text. Failure lines are per cause — `no gh`, `gh
 unauthenticated`, `<repo>: 403 — attach the repo`, `network` — and a bucket
 missing for one of those reasons is not an empty bucket; say so.
+`Board: BROKEN STORE -- <cause>` under the stamp (exit 3) means the work-item
+store could not be read: no cards are shown because none could be, not
+because there are none. Say so first, with the cause.
 
 ## After reporting
 
