@@ -1,11 +1,11 @@
 #!/bin/sh
-# card-id -- mint a work item's identifier, and look one up.
+# card-id -- make a work item's identifier, and look one up.
 #
 # A work item's identifier is epoch seconds then the minting session's eight
 # hex, no separator -- 1790836842077c62eb -- never edited, never reused. A
 # work item's file is named by it, and its card line carries it as `id: <id>`.
 #
-#   card-id mint [<session-id>]   print a fresh id (session from
+#   card-id new [<session-id>]    print a fresh id (session from
 #                                 $CLAUDE_CODE_SESSION_ID when not given)
 #   card-id show <id>             the item: `<section>\t<group>\t<card>`
 #
@@ -29,7 +29,7 @@ done
 die() { printf 'card-id: %s\n' "$*" >&2; exit 2; }
 
 case "${1:-}" in
-  mint)
+  new)
     sid=${2:-${CLAUDE_CODE_SESSION_ID:-}}
     hex=$(printf '%s' "$sid" | tr -d '-' | cut -c1-8 | tr 'A-F' 'a-f')
     case $hex in ????????) ;; *) die "no session id (pass one, or run inside a session)" ;; esac

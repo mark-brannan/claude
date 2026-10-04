@@ -130,7 +130,7 @@ each yes'd item exactly as proposed:
 
 - a card owned `agent`, worded as `/card-write` words one (a link to the
   target in it), written to the item store with
-  `~/.claude/bin/work-item create --id "$(~/.claude/bin/card-id mint)" --owner agent [--repo <r>] [--model <m>] [--effort <e>] --brief - "$title"`
+  `~/.claude/bin/work-item create --id "$(~/.claude/bin/card-id new)" --owner agent [--repo <r>] [--model <m>] [--effort <e>] --brief - "$title"`
   (the card text on stdin; it prints the new id; `$title` is read from a
   quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe), then
   `~/.claude/bin/work-item log <id> status=ready` so it is claimable;
