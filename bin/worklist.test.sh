@@ -424,7 +424,7 @@ has 'the other repo still rendered' 'alpha#10\].* \| Ready PR \|'
 GH_MODE=403 run --fresh --json; eq 'json exit 0 when something was fetched' 0 "$RC"
 
 # --- gh missing -------------------------------------------------------------------------
-mkdir -p "$S/nogh"; for b in sh jq awk sed grep head cut tr date sleep cat mktemp mv rm mkdir git wc dirname nohup setsid; do p=$(command -v $b) && ln -sf "$p" "$S/nogh/$b"; done
+mkdir -p "$S/nogh"; for b in sh jq awk sed grep head cut tr date sleep cat mktemp mv rm mkdir git wc dirname nohup setsid python3 tail; do p=$(command -v $b) && ln -sf "$p" "$S/nogh/$b"; done
 rm -f "$CACHE"/*.json
 OUT=$(PATH="$S/nogh" sh "$WL" 2>&1); RC=$?
 eq 'exit 0 without gh' 0 "$RC"
@@ -540,15 +540,47 @@ item 1790836846aaaaaaaa 'Stored ruling' human-ruling o/colregs ready 'Decide the
 item 1790836847aaaaaaaa 'Finished item' agent o/alpha 'done' 'Already done.'
 run --all
 has 'an item is a Claude card, drawn with its title and id' '^- 1790836845aaaaaaaa \*\*Item task\*\*: Do the stored thing\. repo: o/alpha model: opus effort: high$'
-lacks 'a done item is not on the board' 'Finished item'
+has 'a done item is in the done queue' '^Done \(awaiting your acceptance, showing 1 of 1\)$'
+has 'the done queue draws it with its title and id' '^- 1790836847aaaaaaaa \*\*Finished item\*\*: Already done\. repo: o/alpha'
+eq 'a done item is not a Claude card' '' "$(section "Board (## Claude's" | grep 'Finished item')"
 has 'the Claude count is every agent item' "^Board \(## Claude's, showing 11 of 11\)$"
 run --all-rulings
 has 'a ruling item is grouped by its repo' '^- colregs: 1790836846aaaaaaaa \*\*Stored ruling\*\*'
 run card 1790836845aaaaaaaa
 has 'card <id> finds an item' "^## Claude's$"
+run card 1790836847aaaaaaaa
+has 'card <id> finds a done item the done queue shows' '^## Done$'
 run --fresh --json
 eq 'json carries the item' 1 "$(printf '%s' "$OUT" | jq '[.. | strings | select(contains("1790836845aaaaaaaa"))] | length > 0 | if . then 1 else 0 end')"
+
+# --- a broken store is an error, never an empty board (card 179101773919cb0a62) ---
+# python3 failing under work-item must be named and exit non-zero, in the
+# output a hook captures, and not render as "nothing outstanding".
+printf '#!/bin/sh\necho "python exploded" >&2\nexit 4\n' > "$S/bin/python3"; chmod +x "$S/bin/python3"
+run
+has 'a failing work-item is named in the output' 'Board: BROKEN STORE -- work-item list failed \(exit 4\): python exploded'
+eq 'and the view exits non-zero' 3 "$RC"
+lacks 'and shows no cards as if the board were empty' "^Board \(## Claude's"
+lacks 'and does not claim an empty board' '^Board: none'
+run --brief
+has 'brief names it too, for the hook that keeps the output' 'BROKEN STORE -- work-item list failed'
+eq 'brief exits non-zero' 3 "$RC"
+run --fresh --json
+eq 'json exits non-zero on a broken store' 3 "$RC"
+run card 1790836845aaaaaaaa
+eq 'card <id> exits 3 on a broken store' 3 "$RC"
+has 'and names it, never "no item"' '^worklist card: BROKEN STORE -- work-item list failed'
+mkdir -p "$S/noghbroken"; for f in "$S/nogh"/*; do [ "${f##*/}" = python3 ] || ln -sf "$(readlink "$f")" "$S/noghbroken/${f##*/}"; done; cp "$S/bin/python3" "$S/noghbroken/python3"
+OUT=$(PATH="$S/noghbroken" sh "$WL" --json 2>&1); RC=$?
+eq 'json without gh exits 3 on a broken store' 3 "$RC"
+lacks 'and does not blame gh' 'no gh'
+rm -f "$S/bin/python3"
+run
+eq 'a readable store exits 0 again' 0 "$RC"
+lacks 'and does not name a broken store' 'BROKEN STORE'
 rm -f "$I"/179083684[567]aaaaaaaa.md
+run
+has 'with no done item the queue says so' '^Done \(awaiting your acceptance\): none$'
 
 # --- a store past the argv limit (one arg is capped near 128KB) ------------------------
 awk 'BEGIN{print "## Human'"'"'s"; for(i=0;i<1500;i++) printf "- [ ] **Bulk card %d** — padding padding padding padding padding padding padding padding padding padding ([o/r#%d](https://github.com/o/r/issues/%d)) id: 17908%013d\n", i, i, i, i}' > "$S/bulk.md"

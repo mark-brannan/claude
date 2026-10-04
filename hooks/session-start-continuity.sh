@@ -106,6 +106,10 @@ board_view() {
   kill "$wd_pid" 2>/dev/null
   if [ "$rc" -gt 128 ]; then
     echo "worklist --brief did not return in 6 s -- board view unavailable this session; run \`worklist --brief\` yourself"
+  elif [ "$rc" -eq 3 ]; then
+    # worklist's own code for a store it cannot read: the GitHub view below
+    # stands, the cards are what is missing.
+    echo "worklist --brief exited 3 -- the work-item store cannot be read, so no cards are shown below; it is not an empty board"
   elif [ "$rc" -ne 0 ]; then
     echo "worklist --brief exited $rc -- board view unavailable this session; run \`worklist --brief\` yourself"
   fi

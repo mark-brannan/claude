@@ -32,6 +32,9 @@ Run `~/.claude/bin/pickup-list`.
   one before the newest item: a human is otherwise its next reader, which
   outranks an item a session can pick up any time. The user picks; if they take
   it, it is a PR fixup — §0.
+- **`Pickup: BROKEN STORE -- <cause>`** (exit 1) — the store could not be
+  read, so the list may be short. Say so with the cause before anything
+  else; never report it as "no items".
 - **No items** — say so in one line and stop. There is nothing to resume;
   `worklist` is the tool for choosing new work, and the user will ask for it.
 - **One item** — take it.

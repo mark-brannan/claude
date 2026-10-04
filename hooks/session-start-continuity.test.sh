@@ -100,6 +100,12 @@ worklist_shim 'echo "no gh"; exit 2'
 run
 has   'nonzero exit named'                     'worklist --brief exited 2'
 has   'its own failure line kept'              'no gh'
+reset_state
+worklist_shim 'echo "Board: BROKEN STORE -- python3 not found"; echo "Pickup: open item"; exit 3'
+run
+has   'a broken store is named as one'         'exited 3 -- the work-item store cannot be read'
+has   'and its cause line kept'                'Board: BROKEN STORE -- python3 not found'
+has   'the session still gets the rest'        'Pickup: open item'
 
 # --- worklist over budget is clipped ------------------------------------------
 reset_state
