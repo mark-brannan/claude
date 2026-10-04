@@ -388,12 +388,12 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 13.4 | a pull that conflicts | Stop | rebase aborted, no rebase left in progress | test |
 | 13.5 | cloud, the push fails | Stop | `not archivable: state-repo push failed` | test |
 | 13.6 | local, the push fails | Stop | verdict unchanged; the next Stop in the window does not retry | test |
-| 14.1 | a session with no item | first Stop | one new item; its first log line `status=open` from this session | item 3 |
-| 14.2 | 14.1 | a later Stop that writes | it writes the same item; no second item is minted | item 3 |
-| 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | item 3 |
-| 14.4 | a minted item | any Stop | no `status=ready` line from the hook | item 3 |
-| 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | item 3 |
-| 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line | item 3 |
-| 14.7 | the store refuses the write, or `work-item` crashes | Stop | the state commit is made; exit 0 | item 3 |
-| 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | item 3 |
+| 14.1 | a session with no item | first Stop | one new item; its first log line `status=open` from this session | test |
+| 14.2 | 14.1 | a later Stop that writes | it writes the same item; no second item is minted | test |
+| 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | test |
+| 14.4 | a minted item | any Stop | no `status=ready` line from the hook | test |
+| 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | test |
+| 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line | test |
+| 14.7 | the store refuses the write, or `work-item` crashes | Stop | the state commit is made; exit 0 | test |
+| 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | test |
 | 14.9 | the hook writes items and the duplicates are retired | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | item 5 |
