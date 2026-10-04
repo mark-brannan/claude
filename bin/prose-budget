@@ -20,7 +20,7 @@
 # Exit 1 on any finding, 2 on a bad config or usage, 0 otherwise. A missing
 # config is a no-op (exit 0) unless --require-config. Findings go to stdout,
 # one per line as `file:line: rule: message`; counts and other information
-# go to stderr. Python 3 stdlib only; on PATH from dotfiles.
+# go to stderr. Python 3 stdlib only; needs lib/ beside it or in ~/.claude/lib (exit 2 if not).
 import argparse
 import hashlib
 import json
@@ -38,7 +38,8 @@ for _d in (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"
 try:
     import gitrun  # noqa: E402
 except ImportError:
-    sys.exit("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME)
+    print("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
+    sys.exit(2)
 
 VERSION = "1.1.0"
 CONFIG_NAMES = ("docs/budgets.json", ".prose-budgets.json")

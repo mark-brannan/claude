@@ -280,6 +280,7 @@ class CuriaRollTest(unittest.TestCase):
         (tree / "lib").mkdir()
         shutil.copy(HOOK, tree / "hooks")
         shutil.copy(HOOK.parent / "lib_state.py", tree / "hooks")
+        shutil.copy(HOOK.parent / "lib-state.sh", tree / "hooks")  # state.py asks it for the state dir
         shutil.copy(HOOK.parent.parent / "lib" / "state.py", tree / "lib")
         self.sitting("one-entry-point", f"{SID} 2026-10-02T05:00:00Z\n")
         env = dict(os.environ, CLAUDE_STATE_REPO=str(self.repo))
@@ -287,6 +288,7 @@ class CuriaRollTest(unittest.TestCase):
                            input=json.dumps({"session_id": SID, "prompt": "x"}),
                            capture_output=True, text=True, env=env)
         self.assertEqual((r.returncode, r.stdout), (0, ""))
+        self.assertIn("lib/lock.py not found", r.stderr, "says why, on stderr")
         self.assertFalse((self.curia / "one-entry-point" / "roll.md").exists())
 
 

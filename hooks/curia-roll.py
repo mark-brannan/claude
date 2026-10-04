@@ -154,7 +154,10 @@ def main():
     if not isinstance(session_id, str) or not session_id or not isinstance(prompt, str):
         return
     state_dir = lib_state.state_dir()
-    if not state_dir or lock is None:
+    if not state_dir:
+        return
+    if lock is None:
+        print("curia-roll: lib/lock.py not found; this prompt was not added to the roll", file=sys.stderr)
         return
     now = datetime.datetime.now(datetime.timezone.utc)
     # A set: a resumed session can both type `/curia <id>` and be in its LIVE.
