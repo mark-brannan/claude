@@ -95,6 +95,9 @@ if [ "$card" = 1 ]; then
   case "$cmd" in take|open|done|show)
     # shellcheck disable=SC2034 # read by work_record; a lookup needs no claims
     WORK_CLAIMS=""
+    # Primed here, outside $(...), so a broken store is named, never "no item".
+    item_rows >/dev/null
+    [ -z "${ITEM_ROWS_ERR:-}" ] || { printf 'pickup-list %s: BROKEN STORE -- %s\n' "$cmd" "$ITEM_ROWS_ERR" >&2; exit 1; }
     if [ "$cmd" = show ] && is_card_id "$handle"; then
       # any section: a ruling or click-work card is shown, never taken
       c=$(board_card "$handle") || { printf 'pickup-list: no item %s in the store\n' "$handle" >&2; exit 1; }

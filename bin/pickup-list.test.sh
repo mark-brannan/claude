@@ -100,6 +100,8 @@ out=$(PATH="$S/fakebin:$PATH" sh "$PL" --all); rc=$?
 eq 'a broken store exits 1' 1 "$rc"
 assert 'and names the cause' bash -c "printf '%s' '$out' | grep -q 'Pickup: BROKEN STORE -- work-item list failed (exit 4): python exploded'"
 assert 'and still lists the pickup items' bash -c "printf '%s' '$out' | grep -q 'newest work'"
+assert 'show on a broken store names it, not "no item"' bash -c "PATH='$S/fakebin:$PATH' sh '$PL' show 1790836851aaaaaaaa 2>&1 >/dev/null | grep -q 'pickup-list show: BROKEN STORE -- work-item list failed (exit 4)'"
+assert 'and fails' bash -c "! PATH='$S/fakebin:$PATH' sh '$PL' show 1790836851aaaaaaaa 2>/dev/null"
 rm -rf "$I"
 out=$(PATH="$S/fakebin:$PATH" sh "$PL" --all); rc=$?
 eq 'no items/ at all is not a broken store' 0 "$rc"
