@@ -57,6 +57,11 @@ check "cold: guards_sha is the guard seed" \
   '[ "$(status .guards_sha)" = "$(git -C "$HOME/.local/share/dotfiles-seed" rev-parse HEAD)" ]'
 check "cold: hooks is a symlink into current" \
   '[ "$(readlink "$HOME/.claude/hooks")" = "$HOME/.claude-config/current/hooks" ]'
+check "cold: lib is a symlink into current" \
+  '[ "$(readlink "$HOME/.claude/lib")" = "$HOME/.claude-config/current/lib" ]'
+# Not the shim's fail-open None: the seeded hooks really reach lib/state.py.
+check "cold: seeded lib_state imports lib/state.py" \
+  'PYTHONDONTWRITEBYTECODE=1 python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import lib_state, state" "$HOME/.claude/hooks" 2>/dev/null'
 check "cold: settings.json linked" '[ -L "$HOME/.claude/settings.json" ] && [ -f "$HOME/.claude/settings.json" ]'
 check "cold: projects/ untouched" '[ ! -L "$HOME/.claude/projects" ] && [ "$(cat "$HOME/.claude/projects/p/x")" = keep ]'
 check "cold: settings.local.json untouched" '[ ! -L "$HOME/.claude/settings.local.json" ]'

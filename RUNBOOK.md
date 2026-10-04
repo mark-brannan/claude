@@ -813,7 +813,7 @@ purpose; that is a stale session, not a broken one.
 ## A deleted hook keeps running
 
 `~/.claude/hooks` is a symlink to `~/.claude-config/current/hooks`
-(and `rules` and `bin` the same), so a file dropped from `INSTALL` simply isn't
+(and `rules`, `bin` and `lib` the same), so a file dropped from `INSTALL` simply isn't
 in the next staged release — there is no separate prune step to fall out of
 sync, unlike the per-file-copy design this replaced. If a stale hook is still
 running, check first that its directory is actually in `OWNED_DIRS` in

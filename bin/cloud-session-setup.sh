@@ -99,6 +99,7 @@ skills/curia/forms/success-metric.md
 skills/scoping/SKILL.md
 hooks/lib-state.sh
 hooks/lib_state.py
+lib/state.py
 hooks/curia-roll.py
 hooks/session-metrics.jq
 hooks/lib-metrics-fmt.jq
@@ -163,7 +164,7 @@ public-issue-guard.sh
 # Only wholly-owned leaf directories go here. `.` (~/.claude itself) must
 # NEVER appear: it also holds state/, projects/, todos/ and
 # settings.local.json, none of which this script put there.
-OWNED_DIRS='hooks rules bin'
+OWNED_DIRS='hooks rules bin lib'
 
 # A tripwire for OWNED_DIRS, in the same spirit as SKIP_GLOBS: these are
 # shared directories that hold files this script never put there, so linking
@@ -302,7 +303,7 @@ fi
 # Scar: seeding without pruning is why a deleted hook kept running. A
 # container seeded it once, the repo dropped it, and the copy under ~/.claude
 # was still there and still won. The fix is structural, not a sweep of stale
-# files: OWNED_DIRS (hooks, rules, bin) are linked whole into ~/.claude, so a
+# files: OWNED_DIRS (hooks, rules, bin, lib) are linked whole into ~/.claude, so a
 # file dropped from INSTALL or GUARD_HOOKS is simply not in the next staged
 # release, with no prune step to keep in sync. OWNED_NEVER guards the shared
 # directories (~/.claude itself, state/, projects/) that would otherwise be
