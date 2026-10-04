@@ -173,6 +173,33 @@ git(mod, "branch", "-q", "-D", "side")
 rc, out = run("--delete", "--no-plugins")
 check(not os.path.exists(withsub), "submodule worktree with nothing local removed", out)
 
+# --- squash-merged: two local commits, landed on main as one -------------
+# The diff carries a byte that is not UTF-8, through patch-id's stdin.
+sq = os.path.join(W, "squashed")
+git(R, "worktree", "add", "-q", "-b", "squashed", sq, "main")
+for d in (sq, R):
+    for n in ("s1", "s2"):
+        with open(os.path.join(d, n), "wb") as f:
+            f.write(b"caf\xe9 " + n.encode() + b"\n")
+    if d == sq:
+        git(sq, "add", "s1"); git(sq, "commit", "-q", "-m", "s1")
+        git(sq, "add", "s2"); git(sq, "commit", "-q", "-m", "s2")
+git(R, "add", "s1", "s2")
+git(R, "commit", "-q", "-m", "squashed (#1)")
+git(R, "push", "-q", "origin", "main")
+age(sq)
+rc, out = run("-v", "--no-plugins")
+check("would remove .claude/worktrees/squashed (squash-merged into origin/main)" in out,
+      "squash-merged branch is a candidate", out)
+
+# --- lib/gitrun.py missing: exit 3 and say so, before touching anything --
+lone = os.path.join(S, "lone")
+os.makedirs(os.path.join(lone, "bin"))
+subprocess.run(["cp", PW, os.path.join(lone, "bin", "prune-worktrees")], check=True)
+r = subprocess.run([sys.executable, os.path.join(lone, "bin", "prune-worktrees"), "--no-plugins"],
+                   capture_output=True, text=True, env=dict(ENV, HOME=lone))
+check(r.returncode == 3 and "lib/gitrun.py not found" in r.stderr, "missing lib exits 3", r.stderr)
+
 subprocess.run(["rm", "-rf", S])
 print(f"prune-worktrees: {'FAIL' if fails else 'ok'} ({fails} failure(s))")
 sys.exit(1 if fails else 0)
