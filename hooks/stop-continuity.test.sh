@@ -320,6 +320,15 @@ has 'mint, then claim: the claimed item gets the line' ' a1b2c3d4 stop home=o/r#
 eq 'mint, then claim: the minted item is not written' "$n2" "$(nlog "$MINT")"
 eq 'mint, then claim: still one minted item' 1 "$(mine a1b2c3d4 | wc -l | tr -d ' ')"
 
+# A last prompt that is one dash-led word still mints: it is a value, not a flag.
+TPD="$S/dash-transcript.jsonl"
+{
+  jq -c '.' "$TP" | head -3
+  printf '{"type":"queue-operation","operation":"enqueue","content":"-h","timestamp":"2026-09-26T12:00:00.000Z"}\n'
+} > "$TPD"
+TP="$TPD" SID=e5e6e7e8-0000-1111-2222 GH_PRS=$PR7 stop
+has 'a dash-led last prompt still mints' '^[0-9]*e5e6e7e8: minted, home=o/r#7$' "$CKPT"
+
 # A session id that is not hex: skipped, and the checkpoint says so.
 GH_PRS=$PR7 stop
 has 'a non-hex session id is skipped, and said' '^skipped: session id ' "$CKPT"

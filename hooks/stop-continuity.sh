@@ -613,11 +613,13 @@ pickup_item
 # (stop-item.py); every write goes through bin/work-item. It fails open: its
 # one outcome line, or why it did not run, goes in the checkpoint, and the
 # pickup item above stands either way.
-si_out=$(timeout 60 python3 "$HOOK_DIR/stop-item.py" --session "$sid" \
-  --items "$SD/items" --pr "$pi_pr" --checkpoint "$ckpt" \
-  --work-root "$work_root" --repo "$work_repo" --started "$started" \
-  --prompt "$(printf '%s' "$metrics" | jq -r '.session.last_prompt // empty')" \
-  --model "$(printf '%s' "$metrics" | jq -r '.session.model // empty')" 2>/dev/null) || true
+# --name=value, not --name value: a prompt of one dash-led word ("-h") would
+# otherwise be read as a flag, and argparse refuses the whole call.
+si_out=$(timeout 60 python3 "$HOOK_DIR/stop-item.py" --session="$sid" \
+  --items="$SD/items" --pr="$pi_pr" --checkpoint="$ckpt" \
+  --work-root="$work_root" --repo="$work_repo" --started="$started" \
+  --prompt="$(printf '%s' "$metrics" | jq -r '.session.last_prompt // empty')" \
+  --model="$(printf '%s' "$metrics" | jq -r '.session.model // empty')" 2>/dev/null) || true
 printf '\n## Session item\n\n%s\n' "${si_out:-failed: stop-item.py did not run}" >> "$ckpt" 2>/dev/null
 
 # ------------------------------------------------------- curia digests
