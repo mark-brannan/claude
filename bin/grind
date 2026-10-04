@@ -1479,6 +1479,9 @@ while [ "$i" -lt "$count" ]; do
   item_cap=$(item_soft_cap "$kind" "$model" "$effort" "$3")
   item_hard=$(awk -v c="$item_cap" -v a="$running_total" -v h="$session_hard_budget" \
     'BEGIN { l = h - a; if (l < 0) l = 0; printf "%.2f", (3 * c < l) ? 3 * c : l }')
+  # A hard cap cut below the soft one is the stop the worker is told: one it
+  # can never reach would only be learned of when it is killed.
+  item_cap=$(awk -v c="$item_cap" -v h="$item_hard" 'BEGIN { printf "%.2f", (h < c) ? h : c }')
 
   case $kind in
     pr)   cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $item_hard --model $model --effort $effort" ;;

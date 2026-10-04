@@ -471,7 +471,7 @@ eq 'two workers ran: the opus item started with $4 of soft budget left' 2 "$(cal
 eq 'each worker is cut to the run hard budget left ($9, then $7)' '9.00 7.00' \
   "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk '{print $2}' | paste -sd' ' -)"
 PROMPT=$(cat "$S/prompt.txt")
-prompt_has 'the worker is told its soft cap as its stop' 'stop and report at ~$25.00'
+prompt_has 'a soft cap past the cut hard cap is told as the hard cap' 'stop and report at ~$7.00'
 prompt_has 'and its hard stop' 'Your hard stop is $7.00'
 has 'dispatch stops once spend reaches the soft budget' '^pause: session budget reached \(\$7\.00 / \$6\.00\)\.'
 eq 'the session file says why it ended' 'pause-budget 0' "$(jq -r '"\(.ended.reason) \(.ended.exit)"' "$(latest_session)")"
