@@ -181,6 +181,21 @@ class WorkItemTest(unittest.TestCase):
         self.assertIn("sweep", p.stderr, "and the refusal says whose it is")
         self.assertEqual(fact(item, "status"), "done", "a refused closed changed nothing")
 
+    def test_10b_one_quoted_argument_is_no_way_round(self):
+        # the fold reads every whitespace word of a log line, so the refusals do too
+        item = ok(A, "create", "--id", "1700000210077c62eb", "--brief", LINK, "Quoted")
+        ok(A, "log", item, "status=ready")
+        ok(A, "claim", item)
+        for line in ("note status=done", "status=done evidence=", "why: status=done evidence="):
+            self.assertEqual(run(A, "log", item, line).returncode, 1,
+                             f"[{line}] as one argument is done with no evidence")
+        self.assertEqual(fact(item, "status"), "claimed", "no refused line changed the status")
+        ok(A, "log", item, "note status=done evidence=" + LINK)
+        for line in ("note status=closed", "status=Closed", "x=1 status=closed"):
+            self.assertNotEqual(run(A, "log", item, line).returncode, 0,
+                                f"[{line}] as one argument is closed, which only the sweep writes")
+        self.assertEqual(fact(item, "status"), "done", "no refused line changed the status")
+
     def test_11_lookup(self):
         self.assertEqual(run(A, "show", "1790000000ffffffff").returncode, 1, "an unknown id is not found")
         self.assertEqual(run(A, "fold", "179000").returncode, 2, "a malformed id is refused")

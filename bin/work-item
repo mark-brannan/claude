@@ -458,7 +458,7 @@ def main(argv):
         sid = me()
         to = ""
         evidence = False
-        for w in args:
+        for w in line.split():
             if w.startswith("status="):
                 to = w[len("status="):]
             elif w.startswith("owner="):
