@@ -206,6 +206,29 @@ class WorkItemTest(unittest.TestCase):
             self.assertEqual(run(A, "log", item, line).returncode, 2, f"[{brk!r}] is a line break")
         self.assertEqual(fact(item, "status"), "claimed", "no refused line changed the status")
 
+    def test_10d_word_brief_and_title_see_every_line_break(self):
+        for brk in ("\x0b", "\x0c", "\x85", "\u2028"):
+            self.assertEqual(run(A, "create", "--repo", "a" + brk + "b", "--brief", LINK,
+                                 "Word").returncode, 2, f"[{brk!r}] in a word")
+            self.assertEqual(run(A, "create", "--brief", LINK, "Ti" + brk + "tle").returncode, 2,
+                             f"[{brk!r}] in a title")
+            self.assertEqual(run(A, "brief", self.id, f"{LINK} x{brk}## Log").returncode, 2,
+                             f"[{brk!r}] in a brief")
+            self.assertEqual(run(A, "brief", self.id, "-", stdin=f"{LINK}{brk}## Log\n").returncode, 2,
+                             f"[{brk!r}] in a stdin brief")
+        for sp in ("\u00a0", "\u2003", "\x1f"):  # str.split() splits on these too
+            self.assertEqual(run(A, "create", "--repo", "a" + sp + "b", "--brief", LINK,
+                                 "Word").returncode, 2, f"[{sp!r}] is space to the fold")
+        self.assertEqual(self.lines()[0], "# Size the store", "no refused call touched the item")
+
+    def test_10e_listing_scrub_covers_every_splitlines_break(self):
+        from importlib.machinery import SourceFileLoader
+        wi = SourceFileLoader("work_item", str(WI)).load_module()
+        for n in range(sys.maxunicode + 1):
+            c = chr(n)
+            if not wi.one_line("a" + c + "b"):
+                self.assertTrue(re.fullmatch(wi.LINE_BREAK, c), f"[{c!r}] breaks a line")
+
     def test_11_lookup(self):
         self.assertEqual(run(A, "show", "1790000000ffffffff").returncode, 1, "an unknown id is not found")
         self.assertEqual(run(A, "fold", "179000").returncode, 2, "a malformed id is refused")

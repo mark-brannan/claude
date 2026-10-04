@@ -116,11 +116,21 @@ def me():
     return hex8
 
 
+def one_line(s):
+    """True when the fold's own reader, str.splitlines(), sees s as one line:
+    no break but "\\n" is narrower than what it segments on."""
+    return s.splitlines() in ([s], [])
+
+
+# every character splitlines() breaks on, plus tab: a listing row is TSV
+LINE_BREAK = r"[\t\n\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]"
+
+
 def word(name, v):
-    """A log value is one word: the line is split on spaces."""
-    if "\n" in v:
+    """A log value is one word: the fold splits lines with str.split()."""
+    if not one_line(v):
         die(f"{name} must be one line")
-    if not v or " " in v or "\t" in v:
+    if not v or any(c.isspace() for c in v):
         die(f"{name} must be one word, got [{v}]")
 
 
@@ -339,7 +349,7 @@ def list_items(args):
             continue
         row = (f["id"], f["owner"] or "agent", status, holder, f["updated"],
                f["repo"], card_line(f, brief))
-        print("\t".join(re.sub(r"[\t\r\n]", " ", v) for v in row))
+        print("\t".join(re.sub(LINE_BREAK, " ", v) for v in row))
 
 
 def brief_section(brief, points):
@@ -349,9 +359,12 @@ def brief_section(brief, points):
 
 def read_brief(arg):
     """The brief text, from the argument or stdin for `-`. A `## ` line would
-    end the brief early on the next read."""
+    end the brief early on the next read, and a break other than "\\n" would
+    let the reader cut the stored text elsewhere than we checked."""
     brief = sys.stdin.read().rstrip("\n") if arg == "-" else arg
-    if any(l.startswith("## ") for l in brief.split("\n")):
+    if not all(one_line(l) for l in brief.split("\n")):
+        die("a brief breaks lines with newline only")
+    if any(l.startswith("## ") for l in brief.splitlines()):
         die("a brief line may not start with '## '")
     return brief
 
@@ -382,7 +395,7 @@ def create(args):
     if len(args) != 1:
         die("create takes one title (quote it)")
     title = args[0]
-    if not title or "\n" in title:
+    if not title or not one_line(title):
         die("the title is one non-empty line")
     check_owner(opt["owner"])
     for k in ("repo", "parent", "model", "effort"):
@@ -454,7 +467,7 @@ def main(argv):
         if not args:
             die("log takes one or more words")
         line = " ".join(args)
-        if line.splitlines() not in ([line], []):  # the fold's own notion of a line break
+        if not one_line(line):
             die("a log line is one line")
         sid = me()
         to = ""
