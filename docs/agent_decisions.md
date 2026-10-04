@@ -28,3 +28,17 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - stop-continuity spec: sections 1 to 13 are facts about the bash until the Python replaces it; section 14 holds while its ruling does; a disagreement goes to the curia, never to the spec Undo: edit the preamble (mark-brannan/claude#36)
 ### 20261004t035750z
 - work-item create: a replay of one create (same id, same content) prints the same id and exits 0 instead of being refused; the pen line says a second write of the same id is refused, and a replay is read as the one write landing twice, not a second write Undo: delete replayed() in bin/work-item and refuse on every FileExistsError ([#37](https://github.com/mark-brannan/claude/pull/37))
+
+### 20261004t052037z
+- stop-item: a minted item stays open, never ready; the hook writes no status line after create Undo: log a later status from the step ([#42](https://github.com/mark-brannan/claude/pull/42))
+- stop-item: a minted item's brief is the last prompt's first line, today's hand-off text, plus one link line Undo: rewrite brief_for in hooks/stop-item.py ([#42](https://github.com/mark-brannan/claude/pull/42))
+
+### 20261004t052038z
+- stop-item: an item's home= is the session's PR when one exists Undo: drop the home= words ([#42](https://github.com/mark-brannan/claude/pull/42))
+- stop-item: with no PR yet, a minted item's link is the session's checkpoint log: its GitHub URL, or a link relative to the item when the state repo has no GitHub origin Undo: change checkpoint_link ([#42](https://github.com/mark-brannan/claude/pull/42))
+- stop-item: a session that mints and then claims another item writes later Stops onto the claimed one Undo: reorder find_item ([#42](https://github.com/mark-brannan/claude/pull/42))
+- stop-item: a minted item's owner is agent Undo: change --owner in step() ([#42](https://github.com/mark-brannan/claude/pull/42))
+- stop-item: the hook writes onto an item only when the PR or brief changed; a claimed item gets one stop line, at the session's first Stop Undo: write every Stop ([#42](https://github.com/mark-brannan/claude/pull/42))
+- stop-item: a claimed item's home= is written only while it has none, so a card homed on an issue keeps it Undo: always write it ([#42](https://github.com/mark-brannan/claude/pull/42))
+- stop-item: a minted item's id is the session's start second plus its id8, so every Stop finds it without a pointer file Undo: a marker line instead ([#42](https://github.com/mark-brannan/claude/pull/42))
+- stop-item: a crash or refusal fails open: exit 0, and the pickup file and the state commit still land Undo: revert the merge ([#42](https://github.com/mark-brannan/claude/pull/42))
