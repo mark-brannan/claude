@@ -1,4 +1,7 @@
 #!/bin/sh
+# SOFT SHOULD: id generation belongs in lib/ids.py, the one home for every
+# entity's id (card 17910884757abba648). This script still makes a work item's id itself;
+# move it there when convenient, no deadline.
 # card-id -- make a work item's identifier, and look one up.
 #
 # A work item's identifier is epoch seconds then the minting session's eight
