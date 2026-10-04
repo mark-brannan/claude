@@ -29,15 +29,16 @@
 # stdlib only.
 import argparse
 import datetime
-import fcntl
 import os
 import re
-import subprocess
 import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import gitrun  # noqa: E402
 import lib_state  # noqa: E402
+import lock  # noqa: E402
 
 HEADER = """# Agent decisions
 
@@ -64,16 +65,12 @@ def line(call, undo, link):
 def append(path, bullet, now, header=""):
     """Append one bullet under this second's heading, under an exclusive lock."""
     stamp = now.strftime("%Y%m%dt%H%M%Sz")
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o644)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+    with lock.locked(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW) as fd:
         old = os.pread(fd, os.fstat(fd).st_size, 0)
         m = LAST.search(old)
         same = m and m.group(1).decode() == stamp
         text = ("" if old else header) + ("" if same else f"\n### {stamp}\n") + bullet
         os.write(fd, text.encode("utf-8"))
-    finally:
-        os.close(fd)
 
 
 def ensure_union(root):
@@ -95,8 +92,7 @@ def ensure_union(root):
 
 
 def repo_root(given):
-    out = subprocess.run(["git", "-C", given or ".", "rev-parse", "--show-toplevel"],
-                         capture_output=True, text=True)
+    out = gitrun.run("-C", given or ".", "rev-parse", "--show-toplevel")
     return os.path.realpath(out.stdout.strip()) if out.returncode == 0 else None
 
 

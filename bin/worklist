@@ -31,7 +31,12 @@
 # view that goes quiet when it cannot look is indistinguishable from one that
 # looked and found nothing.
 #
-# CONVENIENCE: exit 0 always, except --json with nothing fetched.
+# CONVENIENCE: exit 0 always, except --json with nothing fetched, and a store
+# that cannot be read (no work-item, no python3, work-item failing): that
+# prints `Board: BROKEN STORE -- <cause>` under the stamp and exits 3,
+# because a board that looks empty when it is broken hides every card. The
+# SessionStart hook keeps --brief's output whatever the exit, so the session
+# still starts and says the board view failed.
 set -u
 
 usage() { printf 'usage: worklist [project|--here] [--brief] [--fresh] [--json] [--all-rulings] [--waiting|--all] [--milestone <title>]\n       worklist card <id>\n'; }
@@ -222,6 +227,9 @@ if [ -n "$card_id" ]; then
   done
   command -v board_card >/dev/null 2>&1 || { printf 'worklist card: lib-state.sh not found\n' >&2; exit 2; }
   is_card_id "$card_id" || { printf 'worklist card: not a card id: %s (epoch seconds then eight hex)\n' "$card_id" >&2; exit 2; }
+  # Primed here, outside $(...), so a broken store is named, never "no item".
+  item_rows >/dev/null
+  [ -z "${ITEM_ROWS_ERR:-}" ] || { printf 'worklist card: BROKEN STORE -- %s\n' "$ITEM_ROWS_ERR" >&2; exit 3; }
   hit=$(board_card "$card_id") || { printf 'worklist card: no item %s in %s\n' "$card_id" "$(items_dir)" >&2; exit 1; }
   printf '%s\n' "$hit" | awk -F '\t' '{ printf "## %s%s\n", $1, ($2 != "" ? " / " $2 : ""); print substr($0, length($1) + length($2) + 3) }'
   exit 0
@@ -413,7 +421,7 @@ def ready_rows: . as $b
 # one text (board_union in lib-state.sh), written once to a file every section
 # view below parses. Returns 1 with $board_err set and $kb empty when there
 # is no items/.
-board_err=""; kb=""; kb_tmp=""
+board_err=""; kb=""; kb_tmp=""; store_broken=0
 board_path() {
   board_err=""; kb=""
   [ -n "$kb_tmp" ] && [ -f "$kb_tmp" ] && { kb=$kb_tmp; return 0; }
@@ -425,9 +433,17 @@ board_path() {
   # shellcheck disable=SC1090
   . "$lib"
   [ -d "$(items_dir)" ] || { board_err="Board: no items/ at $(dirname "$(items_dir)")"; return 1; }
+  # A store that cannot be read is an error, never an empty board: say so,
+  # show no board, and let the caller exit non-zero (store_broken).
+  item_rows >/dev/null; done_rows
+  if [ -n "${ITEM_ROWS_ERR:-}" ]; then
+    store_broken=1
+    board_err="Board: BROKEN STORE -- $ITEM_ROWS_ERR; this is not an empty board"
+    return 1
+  fi
   kb_tmp=$(mktemp "${TMPDIR:-/tmp}/worklist-board.XXXXXX") || { board_err="Board: no temp file"; return 1; }
   trap 'rm -f "$kb_tmp"' EXIT
-  board_union > "$kb_tmp"
+  { board_union; done_board; } > "$kb_tmp"
   kb=$kb_tmp
   return 0
 }
@@ -668,6 +684,7 @@ render() {
     fi
     echo "$stamp"
     [ -n "$3" ] && echo "$3"
+    [ "$store_broken" = 1 ] && printf '\n%s\n' "$board_err"
     echo
     if [ -n "$kb" ]; then st=$(side_task "$kb"); [ -n "$st" ] && printf '%s\n\n' "$st"; fi
     resume_section
@@ -686,15 +703,21 @@ render() {
     echo
     if [ -n "$kb" ]; then
       section_of "$kb" '^## Human' "Board (## Human's" ")"
+      section_of "$kb" '^## Done' "Done (awaiting your acceptance" ")"
       section_of "$kb" '^## Claude' "Board (## Claude's" ")"
-    else echo "$board_err"; fi
+    elif [ "$store_broken" = 0 ]; then echo "$board_err"; fi
   } | if [ "$brief" = 1 ]; then
     awk -v max=2900 '{ n += length($0) + 1; if (n > max) { print "... (cut at 3 KB; run worklist)"; exit } print }'
   else cat; fi
+  [ "$store_broken" = 0 ] || return 3
+  return 0
 }
 
 # emit_json <cache file> -- the bucket record (build_record above).
-emit_json() { build_record "$1"; }
+emit_json() {
+  build_record "$1" || return 1
+  [ "$store_broken" = 0 ] || { echo "worklist: $board_err" >&2; return 3; }
+}
 
 # --- main ------------------------------------------------------------------
 # The background refresh also re-asks gh for every ruling card's until: links,
@@ -708,9 +731,10 @@ fi
 
 if [ "$have_gh" = 0 ]; then
   cache=$(find_cache)
-  [ "$json" = 1 ] && { [ -n "$cache" ] && emit_json "$cache" && exit 0; echo '{"error":"no gh"}'; exit 1; }
+  # emit_json's 3 (a broken store) stands; only its 1 (no record) is "no gh".
+  [ "$json" = 1 ] && { if [ -n "$cache" ]; then emit_json "$cache"; ejrc=$?; [ "$ejrc" = 1 ] || exit "$ejrc"; fi; echo '{"error":"no gh"}'; exit 1; }
   render "$cache" 1 "no gh -- live GitHub view unavailable${cache:+; showing the last cached view}"
-  exit 0
+  exit $?
 fi
 
 cache=""; [ "$fresh" = 1 ] || cache=$(find_cache)
@@ -718,9 +742,9 @@ wait_marker=""
 if [ -n "$cache" ]; then
   age=$(( now - $(jq -r .written_at "$cache") ))
   [ "$age" -gt 120 ] && spawn_refresh
-  if [ "$json" = 1 ]; then emit_json "$cache"; exit 0; fi
+  if [ "$json" = 1 ]; then emit_json "$cache"; exit $?; fi
   render "$cache" 1 ""
-  exit 0
+  exit $?
 fi
 
 # Nothing cached: fetch now, in the background so the wait can be capped.
@@ -731,12 +755,12 @@ i=0; while [ ! -f "$wait_marker" ] && [ "$i" -lt "$cap" ]; do sleep 1; i=$((i + 
 if [ -f "$wait_marker" ]; then
   IFS="$(printf '\t')" read -r kind val < "$wait_marker"; rm -f "$wait_marker"
   if [ "$kind" = key ] && [ -f "$cache_root/$val.json" ]; then
-    [ "$json" = 1 ] && { emit_json "$cache_root/$val.json"; jq -e '[.records[]|select(.data)]|length > 0' "$cache_root/$val.json" >/dev/null 2>&1; exit $?; }
-    render "$cache_root/$val.json" 0 ""; exit 0
+    [ "$json" = 1 ] && { emit_json "$cache_root/$val.json"; ejrc=$?; jq -e '[.records[]|select(.data)]|length > 0' "$cache_root/$val.json" >/dev/null 2>&1 || exit 1; exit "$ejrc"; }
+    render "$cache_root/$val.json" 0 ""; exit $?
   fi
   [ "$json" = 1 ] && { jq -n --arg e "${val:-fetch failed}" '{error:$e}'; exit 1; }
-  render "" 0 "${val:-fetch failed; nothing cached}"; exit 0
+  render "" 0 "${val:-fetch failed; nothing cached}"; exit $?
 fi
 [ "$json" = 1 ] && { echo '{"error":"still fetching"}'; exit 1; }
 render "" 0 "GitHub has not answered in ${cap} s; fetching continues in the background -- run worklist again"
-exit 0
+exit $?

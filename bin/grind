@@ -27,8 +27,8 @@
 # delegation, not a ruling.
 #
 # Per item:
-#   0. The cap stops dispatch, never a worker: an item is not started when
-#      the session budget left is below its cap. A card is claimed in the
+#   0. Dispatch stops once the run's spend reaches its soft budget; until
+#      then an item starts whatever its cap (claude#43). A card is claimed in the
 #      work-item store here, before any spend; one another session holds is
 #      skipped.
 #   1. A fresh worktree on a new branch, named after the item (a card's is
@@ -37,10 +37,10 @@
 #      wip/grind-<n> (wip/grind-card-<slug>; a pr's as wip/<branch>-<ts>)
 #      before it is cleared.
 #   2. One `claude -p --output-format stream-json --verbose --max-budget-usd
-#      <session budget left> --model <m> --effort <e>` (the item's own, see
+#      <item hard cap> --model <m> --effort <e>` (the item's own, see
 #      below) with the issue body (plus a short contract appended below) as
-#      the prompt, read line by line. The prompt names the item cap as the
-#      point to stop and report; --max-budget-usd is only the run's backstop.
+#      the prompt, read line by line. The prompt names the item's soft cap as
+#      the point to stop and report, and its hard cap as where it is ended.
 #      Each `assistant` event's input-side usage is accumulated into a small
 #      state file so the heartbeat can show a running estimate (input only:
 #      those events carry the message's opening usage, not its output); the
@@ -85,8 +85,7 @@
 #      PR its GitHub updated_at), and works untouched items before changed
 #      ones within a kind.
 #   6. Pause -- print a tally and the exact resume command, then exit 0 --
-#      when: the session budget is reached or what is left is below the next
-#      item's cap, one item costs more than twice
+#      when: the session's soft budget is reached, one item costs more than twice
 #      the running median, or every N items. Nothing here waits on a
 #      terminal. A run also refuses to start at all -- before touching any
 #      item -- when ten or more PRs on the repo are awaiting a look (the
@@ -96,16 +95,33 @@
 # Model and effort are the item's, never the run's: a card's work-item rating
 # (its log's model= and effort=), else `model:` and `effort:` fields in an
 # issue body, a card's text, or a PR's description or last comment (the
-# hand-off prompt). An item with neither gets the one default pair below,
+# hand-off prompt), each only when the account grind runs as wrote it. An item with neither gets the one default pair below,
 # which is pencil. --model and --effort are refused.
 #
-# Defaults, overridable by flag: $5/item, $20/session, pause every 3. `--dry-run` prints the plan -- one line per Ready item, the
-# exact command that item would run -- and spends nothing.
+# Budgets (Solace's rulings on claude#43 and #47: soft stops, not hard ones;
+# overshoot rather than kill good work -- "death by a thousand cuts"; more
+# cautious hard stops are for a later revisit). Every item has two caps:
+#   soft  the worker's stop, told in its prompt: the higher of the item's
+#         `budget:` and --item-budget scaled by its model's price against
+#         Sonnet's and its effort weight. At the $5 default:
+#           sonnet/low $2.50, sonnet/medium $5.00, opus/high $25.00
+#   hard  3x the soft cap (pencil), the worker's --max-budget-usd, never cut:
+#         $7.50, $15.00 and $75.00 above. It ends only a worker that has run
+#         three times past the stop it was told.
+# The run has one, --session-budget ($20), where dispatch stops; nothing at the
+# run level kills a worker, so a run overshoots by at most the last item's
+# hard cap.
+# `budget:` is read like model and effort: a card's log (`budget=`), else
+# the text. Pause every 3. `--dry-run` prints the plan -- one line per Ready
+# item, the exact command that item would run, both its caps -- and spends
+# nothing.
 #
 # State (resume bookkeeping only, never committed): a JSON file per grind
 # session under $XDG_STATE_HOME/grind holding the options and which item
 # refs are already done or carded. `--resume <session>` re-reads it, skips
-# what is already accounted for, and keeps appending to the same file.
+# what is already accounted for, and keeps appending to the same file. A cap
+# or --pause-every flag given with --resume wins over the file and is
+# written to it.
 #
 # One grind per repo at a time: an mkdir-based lock at
 # $XDG_STATE_HOME/grind/locks/<repo>.lock, held for the run and released on
@@ -145,10 +161,10 @@
 # so a session and a headless worker cannot be working to different rules.
 # `done` is checked against Mergify's label, not a PR existing; a PR whose
 # checks are all `cancelled` gets `gh run rerun --failed` instead of a worker.
-# A pr item's cap is $1.25 unless --item-budget says otherwise, whatever
-# the other kinds get; a run that is only prs defaults to a $5 session. The
-# contract's stop rule is ~$1 and the cap is what dispatch holds back for it;
-# the worker is never killed at it. A pr worker the backstop or an error
+# A pr item's soft cap is $1.25 unless --item-budget says otherwise, whatever
+# the other kinds get, and is not scaled by model or effort: the contract's
+# stop rule is a flat ~$1 every fixup worker reads. Its hard cap is 3x, as for
+# any item. A run that is only prs defaults to a $5 session. A pr worker the backstop or an error
 # stops anyway still gets its stop rule -- grind applies the fixup-hard label
 # and the one comment for it -- and its claim stamp released. The pr
 # kind needs a signing key, pr-label-audit, lib-state.sh and the contract: a
@@ -220,6 +236,7 @@ kinds_set=0       # 1 when --prs or --kind asked for the kinds explicitly
 policy=finish-first
 item_budget_set=0
 session_budget_set=0
+pause_every_set=0
 repo=""
 project=""
 resume_id=""
@@ -236,7 +253,7 @@ while [ $# -gt 0 ]; do
     --model|--effort) printf 'grind: %s is gone; the item carries it: put `model:` and `effort:` lines in its body, card or hand-off prompt\n' "$1" >&2; exit 2 ;;
     --item-budget) shift; item_budget=${1:-}; item_budget_set=1 ;;
     --session-budget) shift; session_budget=${1:-}; session_budget_set=1 ;;
-    --pause-every) shift; pause_every=${1:-} ;;
+    --pause-every) shift; pause_every=${1:-}; pause_every_set=1 ;;
     --resume) shift; resume_id=${1:-} ;;
     --heartbeat) shift; heartbeat=${1:-} ;;
     --permission-mode) shift; permission_mode=${1:-} ;;
@@ -247,44 +264,67 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -z "$repo" ] || [ -z "$project" ] || { printf 'grind: --repo and a project name are two scopes; pass one\n' >&2; exit 2; }
+# The budgets are dollars and the cadence a count, checked here: awk reads
+# `abc` as 0 and jq refuses it, so a bad value would otherwise pass every
+# comparison and fail later, or write nothing on --resume.
+for fv in "--item-budget $item_budget" "--session-budget $session_budget"; do
+  case ${fv#* } in ''|.|*[!0-9.]*|*.*.*) printf 'grind: %s is not a number of dollars\n' "$fv" >&2; exit 2 ;; esac
+done
+case $pause_every in ''|*[!0-9]*|0) printf 'grind: --pause-every %s is not a count of items\n' "$pause_every" >&2; exit 2 ;; esac
 
 command -v jq >/dev/null 2>&1 || { echo "grind: needs jq" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }
 
-# item_field <model|effort> <text> [card] -- the last `field: value` at a line
-# start or after a `·`, the pickup hand-off's two shapes. A card's text is one
-# line with its fields run on after the brief (work-item's card_line), so for a
-# card the field may also follow any space or `(`, that line's own parse.
+# item_field <model|effort|budget> <text> [card] -- the last `field: value` at
+# a line start or after a `·`, the pickup hand-off's two shapes. A card's text
+# is one line with its fields run on after the brief (work-item's card_line),
+# so for a card the field may also follow any space or `(`, that line's own
+# parse.
 item_field() {
   if_at='^|·[[:space:]]*'; [ "${3:-}" != card ] || if_at='^|·|[[:space:](]'
-  printf '%s\n' "$2" | grep -oiE "($if_at)$1:[[:space:]]*[a-z0-9._-]+" \
+  # A budget is dollars, `$` optional; a `budget:` that is not one is no
+  # field at all, so it never shadows an earlier one that is.
+  if_val='[a-z0-9._-]+'; [ "$1" != budget ] || if_val='\$?[0-9]+(\.[0-9]+)?'
+  printf '%s\n' "$2" | grep -oiE "($if_at)$1:[[:space:]]*$if_val" \
     | tail -1 | sed 's/.*:[[:space:]]*//' | tr 'A-Z' 'a-z'
 }
-# item_pair <item json> -> "<model> <effort>", the one reader of an item's
-# pair. Each field on its own: a card's work-item rating (the folded log's
-# model= and effort=; `-` is unset), else the last `model:`/`effort:` in its
-# text, else the one default. An issue or PR has only its text: the body, or a
-# PR's body and its last comment.
-item_pair() {
+# item_terms <item json> -> "<model> <effort> <budget>", the one reader of
+# what an item carries. Each field on its own: a card's work-item log (fold's
+# model= and effort=, and the last budget= on a log line, which fold does not
+# carry; `-` is unset), else the last `model:`/`effort:`/`budget:` in its
+# text, else the one default pair and `-` for no budget. An issue or PR has
+# only its text: the body, or a PR's body and its last comment -- each only
+# when the account grind runs as wrote it, since anyone may comment on a PR
+# and a stranger's `budget: 99999` would otherwise be obeyed. A budget is
+# dollars, `$` optional; anything else is no budget.
+item_terms() {
   ip_kind=$(printf '%s' "$1" | jq -r .kind)
   case $ip_kind in
-    pr)   ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json body,comments \
-            --jq '[.body // "", (.comments[-1].body // "")] | join("\n")' 2>/dev/null || true) ;;
+    pr)   ip_me=$(gh api user --jq .login 2>/dev/null) || ip_me=""
+          ip_text=""
+          [ -z "$ip_me" ] || ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json author,body,comments \
+            --jq "[(if .author.login == \"$ip_me\" then .body // \"\" else \"\" end), ([.comments[]? | select(.author.login == \"$ip_me\")] | last | .body // \"\")] | join(\"\\n\")" 2>/dev/null || true) ;;
     card) ip_text=$(printf '%s' "$1" | jq -r .text) ;;
     *)    ip_text=$(printf '%s' "$1" | jq -r .body) ;;
   esac
-  ip_model=""; ip_effort=""
+  ip_model=""; ip_effort=""; ip_budget=""
   if [ "$ip_kind" = card ] && [ -n "$work_item_bin" ] && [ -n "$items_dir" ]; then
     ip_id=$(card_id_of "$ip_text")
     if [ -n "$ip_id" ] && [ -f "$items_dir/$ip_id.md" ]; then
       ip_fold=$("$work_item_bin" fold "$ip_id" 2>/dev/null) || ip_fold=""
       ip_model=$(printf '%s\n' "$ip_fold" | sed -n 's/^model=//p'); [ "$ip_model" != - ] || ip_model=""
       ip_effort=$(printf '%s\n' "$ip_fold" | sed -n 's/^effort=//p'); [ "$ip_effort" != - ] || ip_effort=""
+      ip_budget=$(awk '/^## Log/ { l = 1; next } /^## / { l = 0 }
+        l { for (i = 3; i <= NF; i++) if ($i ~ /^budget=/) b = substr($i, 8) } END { print b }' "$items_dir/$ip_id.md")
+      [ "$ip_budget" != - ] || ip_budget=""
     fi
   fi
   [ -n "$ip_model" ] || ip_model=$(item_field model "$ip_text" "$ip_kind")
   [ -n "$ip_effort" ] || ip_effort=$(item_field effort "$ip_text" "$ip_kind")
-  printf '%s %s' "${ip_model:-${default_pair% *}}" "${ip_effort:-${default_pair#* }}"
+  [ -n "$ip_budget" ] || ip_budget=$(item_field budget "$ip_text" "$ip_kind")
+  ip_budget=${ip_budget#\$}
+  case $ip_budget in ''|.|*[!0-9.]*|*.*.*) ip_budget=- ;; esac
+  printf '%s %s %s' "${ip_model:-${default_pair% *}}" "${ip_effort:-${default_pair#* }}" "$ip_budget"
 }
 
 # --- kinds and policy ----------------------------------------------------------
@@ -332,7 +372,7 @@ worklist_bin=${GRIND_WORKLIST:-$(command -v worklist 2>/dev/null || find_beside 
 # The contract is the pickup skill's section 6, read rather than copied
 # (dotfiles#267). Extracting it is what keeps the two runners on one text; a
 # copy in this file would drift the first time either side is edited.
-# The contract's stop rule says ~$1; dispatch holds back a quarter more so a
+# The contract's stop rule says ~$1; a pr item's soft cap is a quarter more so a
 # worker that stops on its own estimate still has the turns to label,
 # comment and push. Proposed, not ruled.
 pr_stop_usd=1
@@ -350,13 +390,6 @@ if [ "$prs" -eq 1 ]; then
   [ "$item_budget_set" -eq 0 ] && item_budget=$pr_item_cap
   [ "$session_budget_set" -eq 0 ] && session_budget=5
 fi
-# A cap nobody asked for never exceeds the session: an item starts only with
-# its whole cap left, so a $2 session under the $5 default started nothing.
-# An --item-budget the user gave is kept, and the dry run says what it costs.
-clamp_cap() {  # clamp_cap <cap> -> the cap, at most the session budget
-  awk -v c="$1" -v s="$session_budget" 'BEGIN { printf "%g", (c > s) ? s : c }'
-}
-[ "$item_budget_set" -eq 1 ] || item_budget=$(clamp_cap "$item_budget")
 
 # A logged-out claude fails every item the same way -- a $0, 0-token result
 # whose only content is "OAuth session expired" -- and until 2026-09-16 that
@@ -412,9 +445,13 @@ if [ -n "$resume_id" ]; then
   session_id=$resume_id
   repo=$(jq -r '.repo' "$state_file")
   project=$(jq -r '.project // ""' "$state_file")
-  item_budget=$(jq -r '.item_budget' "$state_file")
-  session_budget=$(jq -r '.session_budget' "$state_file")
-  pause_every=$(jq -r '.pause_every' "$state_file")
+  # The caps and the cadence are the session's unless a flag says otherwise:
+  # a flag given on --resume wins, and the file records it once the lock is
+  # held.
+  [ "$item_budget_set" -eq 1 ] || { item_budget=$(jq -r '.item_budget' "$state_file")
+    item_budget_set=$(jq -r '.item_budget_set // 0' "$state_file"); }  # a pr item's cap is flat unless one was given
+  [ "$session_budget_set" -eq 1 ] || session_budget=$(jq -r '.session_budget' "$state_file")
+  [ "$pause_every_set" -eq 1 ] || pause_every=$(jq -r '.pause_every' "$state_file")
   # The kinds and policy are the session's, not the flag's: an UNVERIFIED
   # line promises a retry on --resume, and that retry has to read the same
   # queue. A file without kinds is an older session: prs, or issues.
@@ -430,17 +467,17 @@ else
   state_file="$state_root/$session_id.json"
   [ -n "$repo$project" ] || repo=$(cwd_repo) || { printf 'grind: not in a GitHub repo; pass --repo owner/name or a project\n' >&2; exit 1; }
 fi
-
 # A new session's file is written by create_state_file, once the run has
 # something to work (below): every exit before that -- the lock held by
 # another grind, a failed fetch, the review-band pause, an empty queue --
 # used to leave an orphan items:[] file under $state_root per timer firing.
 create_state_file() {
   jq -n --arg repo "$repo" --arg project "$project" \
-        --argjson ib "$item_budget" --argjson sb "$session_budget" --argjson pe "$pause_every" --argjson prs "$prs" \
+        --argjson ib "$item_budget" --argjson ibs "$item_budget_set" --argjson sb "$session_budget" \
+        --argjson pe "$pause_every" --argjson prs "$prs" \
         --arg kinds "$kinds" --arg policy "$policy" \
-    '{repo:$repo, project:$project, item_budget:$ib, session_budget:$sb, pause_every:$pe, prs:$prs,
-      kinds:$kinds, policy:$policy, items:[]}' \
+    '{repo:$repo, project:$project, item_budget:$ib, item_budget_set:$ibs, session_budget:$sb,
+      pause_every:$pe, prs:$prs, kinds:$kinds, policy:$policy, items:[]}' \
     > "$state_file"
 }
 
@@ -578,9 +615,16 @@ if [ "$dry_run" -eq 0 ]; then
   lock_acquired_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   write_lock
   # A resumed session is running again: the last run's `.ended` goes now,
-  # not when this one exits, so a reader mid-run never sees it.
-  if [ -n "$resume_id" ] && jq 'del(.ended)' "$state_file" > "$state_file.tmp" 2>/dev/null; then
-    mv "$state_file.tmp" "$state_file"
+  # not when this one exits, so a reader mid-run never sees it. The caps and
+  # cadence this run holds, a flag's or the file's, are the session's now.
+  # Loud on failure, as for a new session's file: a run on caps its file
+  # does not hold would be resumed next time on the old ones.
+  if [ -n "$resume_id" ]; then
+    { jq --argjson ib "$item_budget" --argjson ibs "$item_budget_set" --argjson sb "$session_budget" \
+         --argjson pe "$pause_every" \
+         'del(.ended) | .item_budget = $ib | .item_budget_set = $ibs | .session_budget = $sb | .pause_every = $pe' \
+         "$state_file" > "$state_file.tmp" 2>/dev/null && mv "$state_file.tmp" "$state_file"; } \
+      || { rm -f "$state_file.tmp"; printf 'grind: cannot write the resumed caps to %s\n' "$state_file" >&2; exit 1; }
   fi
 fi
 
@@ -607,8 +651,12 @@ is_done_ref() {
 fetch_dir=.
 [ -z "$repo" ] || fetch_dir=$(checkout_for "$repo") \
   || { no_checkout "$repo"; printf 'grind: no repo in scope has a local checkout\n' >&2; exit 1; }
-record=$(cd "$fetch_dir" && "$worklist_bin" "${project:---here}" --json --fresh 2>&1) \
-  || { printf 'grind: worklist --json failed: %s\n' "$(printf '%s' "$record" | jq -r '.error // .' 2>/dev/null | head -1)" >&2; exit 1; }
+# A failure names its cause: the record's .error, else the last line (a broken
+# store prints the record, then the cause on stderr, and exits 3).
+record=$(cd "$fetch_dir" && "$worklist_bin" "${project:---here}" --json --fresh 2>&1) || {
+  why=$(printf '%s' "$record" | jq -r '.error // empty' 2>/dev/null | head -1)
+  [ -n "$why" ] || why=$(printf '%s\n' "$record" | tail -n 1)
+  printf 'grind: worklist --json failed: %s\n' "$why" >&2; exit 1; }
 printf '%s' "$record" | jq -e '.buckets' >/dev/null 2>&1 \
   || { echo "grind: worklist --json carries no buckets; is worklist older than grind?" >&2; exit 1; }
 
@@ -845,17 +893,36 @@ estimate_cost() {
     'BEGIN { printf "%.4f", (i*ip + o*op + cr*(ip*0.1) + cc*(ip*1.25)) / 1000000 }'
 }
 
-# cheapest-first: each item's pair, read once here and carried as .pair so
-# the dispatch below does not read it again, then a stable sort on the
-# estimate (model_price_out times the effort weight).
 effort_weight() { case $1 in low) echo 0.5 ;; high) echo 2 ;; xhigh) echo 3 ;; max) echo 4 ;; *) echo 1 ;; esac; }
+# item_soft_cap <kind> <model> <effort> <budget|-> -> the item's soft cap, the
+# stop its worker is told: the higher of its own budget: and the run's item
+# budget scaled by the model's price against Sonnet's and the effort weight,
+# so sonnet/medium is the item budget itself. A pr is not scaled: its stop is
+# the fixup contract's flat ~$1, read by every fixup worker whatever its
+# model, so its base is $pr_item_cap unless --item-budget names one. Its hard
+# cap is 3x this (pencil), at dispatch below.
+item_soft_cap() {
+  if [ "$1" = pr ]; then
+    isc_base=$pr_item_cap; [ "$item_budget_set" -eq 0 ] || isc_base=$item_budget
+  else
+    isc_base=$(awk -v b="$item_budget" -v p="$(model_price_out "$2")" -v s="$(model_price_out sonnet)" \
+      -v w="$(effort_weight "$3")" 'BEGIN { printf "%.2f", b * (p / s) * w }')
+  fi
+  awk -v c="$isc_base" -v o="$4" 'BEGIN { printf "%.2f", (o != "-" && o + 0 > c + 0) ? o : c }'
+}
+
+# cheapest-first: each item's terms, read once here and carried as .terms so
+# the dispatch below does not read them again, then a stable sort on the
+# estimate (model_price_out times the effort weight).
 if [ "$policy" = cheapest-first ]; then
   n_items=$(printf '%s' "$items" | jq 'length'); k=0
   while [ "$k" -lt "$n_items" ]; do
-    pair=$(item_pair "$(printf '%s' "$items" | jq -c ".[$k]")")
-    est=$(awk -v p="$(model_price_out "${pair% *}")" -v w="$(effort_weight "${pair#* }")" 'BEGIN { printf "%.2f", p * w }')
+    terms=$(item_terms "$(printf '%s' "$items" | jq -c ".[$k]")")
+    # shellcheck disable=SC2086  # three words; splitting them is the point
+    set -- $terms
+    est=$(awk -v p="$(model_price_out "$1")" -v w="$(effort_weight "$2")" 'BEGIN { printf "%.2f", p * w }')
     items=$(printf '%s' "$items" \
-      | jq -c --argjson k "$k" --arg pair "$pair" --argjson est "$est" '.[$k] += {pair: $pair, est: $est}')
+      | jq -c --argjson k "$k" --arg terms "$terms" --argjson est "$est" '.[$k] += {terms: $terms, est: $est}')
     k=$((k + 1))
   done
   # Within one estimate, an item grind has never touched still goes first.
@@ -878,7 +945,7 @@ if [ "$dry_run" -eq 0 ]; then
     create_state_file || { rm -f "$state_file"; printf 'grind: cannot write %s\n' "$state_file" >&2; exit 1; }
     write_lock "" ""
   fi
-  info "session $session_id on $scope: $count item(s) ($kind_counts; $policy), cap $(fmt_usd "$item_budget")/item $(fmt_usd "$session_budget")/session, pause every $pause_every"
+  info "session $session_id on $scope: $count item(s) ($kind_counts; $policy), item budget $(fmt_usd "$item_budget") (scaled per item; hard 3x), session $(fmt_usd "$session_budget"), pause every $pause_every"
   info "state: $state_file"
 fi
 skipped=0
@@ -980,7 +1047,7 @@ build_pr_prompt() {
   printf 'branch. Make no other branch. The worktree is deleted when you exit, so\n'
   printf 'anything not committed and pushed is lost.\n\n'
   printf 'The stop rule\047s $%s is yours to act on: grind does not stop you at it.\n' "$pr_stop_usd"
-  printf 'The only hard stop is the run\047s backstop, $%s, so the stop rule is\n' "$left"
+  printf 'Your hard stop is $%s: you are ended there, so the stop rule is\n' "$item_hard"
   printf 'the whole of your budget -- label, comment and push at it, then end.\n\n'
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
   printf '  GRIND_STATUS: done     you finished. grind checks the PR for the\n'
@@ -1012,7 +1079,8 @@ build_prompt() {
   printf 'Your budget for this item is ~$%s. grind does not stop you at it, so\n' "$item_cap"
   printf 'stop and report at ~$%s: commit and push what you have, then end with\n' "$item_cap"
   printf 'the status line that fits -- blocked, saying how far you got, if the\n'
-  printf 'work is not finished.\n\n'
+  printf 'work is not finished. Your hard stop is $%s: you are ended there, and\n' "$item_hard"
+  printf 'whatever is not pushed by then is lost.\n\n'
   [ -z "${5:-}" ] || printf 'This is a sub-issue of %s. The PR body says `Fixes %s` and `Part of %s`.\n\n' "$5" "$p_ref" "$5"
   printf 'Every write under .claude/ is refused, whatever your permission mode --\n'
   printf 'that is a harness protection, not something this settings.json can widen.\n'
@@ -1255,10 +1323,10 @@ verify_pr_fixup() {
 # said -- the nearest thing to "what was tried" it left.
 stop_rule_for_worker() {
   said=$(printf '%s' "$3" | cut -c1-1500)
-  body=$(printf 'grind: the fixup worker stopped at %s, against the run\047s $%s backstop, before it could carry out the stop rule itself -- so grind labelled this PR `fixup-hard`.
+  body=$(printf 'grind: the fixup worker stopped at %s, against its $%s hard cap, before it could carry out the stop rule itself -- so grind labelled this PR `fixup-hard`.
 
 ' \
-           "$(fmt_usd "$2")" "$left"
+           "$(fmt_usd "$2")" "$item_hard"
          if [ -n "$said" ]; then printf 'Its last message:
 
 '; printf '%s
@@ -1353,32 +1421,19 @@ while [ "$i" -lt "$count" ]; do
   title=$(printf '%s' "$item" | jq -r '.title')
   slug=$(printf '%s' "$item" | jq -r '.slug // ""')
   if [ "$kind" = card ]; then ref="card:$slug"; else ref="$repo#$number"; fi
-  # A fixup is meant to be cheap and to give up loudly (dotfiles#269): the
-  # contract's own stop rule names ~$1, so that plus headroom is the pr
-  # kind's cap unless --item-budget said otherwise.
-  item_cap=$item_budget
-  [ "$kind" = pr ] && [ "$item_budget_set" -eq 0 ] && item_cap=$pr_item_cap
-  [ "$item_budget_set" -eq 1 ] || item_cap=$(clamp_cap "$item_cap")
 
   is_done_ref "$ref" && continue
 
-  # The cap stops dispatch, never a worker: an item starts only while the
-  # session has its whole cap left, and the worker's own --max-budget-usd is
-  # what is left -- a backstop, not the item's stop (dotfiles#439).
-  left=$(awk -v a="$running_total" -v b="$session_budget" 'BEGIN { printf "%.2f", (b - a > 0) ? b - a : 0 }')
-  if [ "$dry_run" -eq 0 ]; then
-    if [ "$(awk -v l="$left" 'BEGIN { print (l <= 0) ? 1 : 0 }')" -eq 1 ]; then
-      printf 'pause: session budget reached (%s / %s). %d item(s) processed this run.\n' \
-        "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$processed_this_run"
-      printf 'resume: %s\n' "$resume_cmd"
-      finish pause-budget
-    fi
-    if [ "$(awk -v l="$left" -v c="$item_cap" 'BEGIN { print (l < c) ? 1 : 0 }')" -eq 1 ]; then
-      printf 'pause: session budget left (%s of %s) is below %s'"'"'s cap (%s). %d item(s) processed this run.\n' \
-        "$(fmt_usd "$left")" "$(fmt_usd "$session_budget")" "$ref" "$(fmt_usd "$item_cap")" "$processed_this_run"
-      printf 'resume: %s\n' "$resume_cmd"
-      finish pause-budget
-    fi
+  # Dispatch stops at the run's soft budget, never short of it: an item starts
+  # while spend is under it, however much of its own cap that leaves room for
+  # (claude#43). A worker is ended only by its own hard cap (#47: nothing at
+  # the run level kills one).
+  if [ "$dry_run" -eq 0 ] \
+     && [ "$(awk -v a="$running_total" -v b="$session_budget" 'BEGIN { print (a >= b) ? 1 : 0 }')" -eq 1 ]; then
+    printf 'pause: session budget reached (%s / %s). %d item(s) processed this run.\n' \
+      "$(fmt_usd "$running_total")" "$(fmt_usd "$session_budget")" "$processed_this_run"
+    printf 'resume: %s\n' "$resume_cmd"
+    finish pause-budget
   fi
 
   if [ "$kind" = pr ]; then
@@ -1414,15 +1469,21 @@ while [ "$i" -lt "$count" ]; do
     verdict=""
   fi
 
-  # The item's own pair (already read under cheapest-first).
-  pair=$(printf '%s' "$item" | jq -r '.pair // empty')
-  [ -n "$pair" ] || pair=$(item_pair "$item")
-  model=${pair% *}; effort=${pair#* }
+  # The item's own terms (already read under cheapest-first), and its caps:
+  # the soft one is the worker's stop, the hard one (3x, pencil; never cut)
+  # its --max-budget-usd.
+  terms=$(printf '%s' "$item" | jq -r '.terms // empty')
+  [ -n "$terms" ] || terms=$(item_terms "$item")
+  # shellcheck disable=SC2086  # three words; splitting them is the point
+  set -- $terms
+  model=$1; effort=$2
+  item_cap=$(item_soft_cap "$kind" "$model" "$effort" "$3")
+  item_hard=$(awk -v c="$item_cap" 'BEGIN { printf "%.2f", 3 * c }')
 
   case $kind in
-    pr)   cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $left --model $model --effort $effort" ;;
-    card) cmd_display="claude -p <card $ref text> --output-format stream-json --verbose --max-budget-usd $left --model $model --effort $effort" ;;
-    *)    cmd_display="claude -p <issue $ref body> --output-format stream-json --verbose --max-budget-usd $left --model $model --effort $effort" ;;
+    pr)   cmd_display="claude -p <$ref briefs + fixup contract> --output-format stream-json --verbose --max-budget-usd $item_hard --model $model --effort $effort" ;;
+    card) cmd_display="claude -p <card $ref text> --output-format stream-json --verbose --max-budget-usd $item_hard --model $model --effort $effort" ;;
+    *)    cmd_display="claude -p <issue $ref body> --output-format stream-json --verbose --max-budget-usd $item_hard --model $model --effort $effort" ;;
   esac
 
   if [ "$dry_run" -eq 1 ]; then
@@ -1433,11 +1494,8 @@ while [ "$i" -lt "$count" ]; do
       printf '  worktree: git -C %s worktree add -b %s %s\n' "$checkout" "$branch" "$wt_path"
     fi
     printf '  command:  %s\n' "$cmd_display"
-    printf '  budget:   stop at ~%s, backstop %s\n' "$(fmt_usd "$item_cap")" "$(fmt_usd "$left")"
-    if [ "$(awk -v l="$left" -v c="$item_cap" 'BEGIN { print (l < c) ? 1 : 0 }')" -eq 1 ]; then
-      printf '  WARN:     the session (%s) is below this item'"'"'s cap (%s); a real run pauses here and starts nothing\n' \
-        "$(fmt_usd "$left")" "$(fmt_usd "$item_cap")"
-    fi
+    printf '  budget:   soft %s (the worker'"'"'s stop), hard %s (its --max-budget-usd, 3x)\n' \
+      "$(fmt_usd "$item_cap")" "$(fmt_usd "$item_hard")"
     continue
   fi
 
@@ -1504,7 +1562,7 @@ while [ "$i" -lt "$count" ]; do
   # log line or issue comment must follow.
   started_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   write_lock "$ref" "$started"
-  info "worker running: claude -p --model $model --effort $effort --max-budget-usd $left (stop at ~$(fmt_usd "$item_cap")) --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
+  info "worker running: claude -p --model $model --effort $effort --max-budget-usd $item_hard (hard cap; stop at ~$(fmt_usd "$item_cap")) --permission-mode $permission_mode (heartbeat every ${heartbeat}s)"
 
   # live_file holds "input output cache_read cache_creation" running totals
   # (all the heartbeat reads), then the last message's id -- never empty, or
@@ -1570,7 +1628,7 @@ while [ "$i" -lt "$count" ]; do
   in_flight=1
   ( cd "$wt_path" || exit 1
     printf '%s' "$prompt" | claude -p --output-format stream-json --verbose \
-         --max-budget-usd "$left" --model "$model" --effort "$effort" \
+         --max-budget-usd "$item_hard" --model "$model" --effort "$effort" \
          --permission-mode "$permission_mode" &
     cpid=$!
     # `wait` and the `command -v` test both report non-zero in the ordinary

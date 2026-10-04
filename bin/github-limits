@@ -16,7 +16,7 @@
 # `gh api` calls (repo size, push activity, rate limit); rate_limit itself
 # costs no quota. Exit 1 when any row is over, 0 otherwise, 2 on usage,
 # 3 when git or gh fails (no network, not logged in, not a repo).
-# Python 3 stdlib only; on PATH from dotfiles.
+# Python 3 stdlib only; needs lib/ beside it or in ~/.claude/lib (exit 3 if not).
 import argparse
 import collections
 import json
@@ -26,12 +26,25 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
+NAME = "github-limits"
+sys.dont_write_bytecode = True
+for _d in (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+           os.path.expanduser("~/.claude/lib")):
+    if os.path.isfile(os.path.join(_d, "gitrun.py")):
+        sys.path.insert(0, _d)
+        break
+try:
+    import gitrun  # noqa: E402
+except ImportError:
+    print("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
+    sys.exit(3)
+
 MIB = 1024 * 1024
 WARN, OVER = 0.5, 1.0
 
 
 def git(repo, *args):
-    return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True).stdout
+    return gitrun.run("-C", repo, *args, check=True).stdout
 
 
 def gh_json(path, paginate=False):

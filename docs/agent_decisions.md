@@ -42,3 +42,18 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - stop-item: a claimed item's home= is written only while it has none, so a card homed on an issue keeps it Undo: always write it ([#42](https://github.com/mark-brannan/claude/pull/42))
 - stop-item: a minted item's id is the session's start second plus its id8, so every Stop finds it without a pointer file Undo: a marker line instead ([#42](https://github.com/mark-brannan/claude/pull/42))
 - stop-item: a crash or refusal fails open: exit 0, and the pickup file and the state commit still land Undo: revert the merge ([#42](https://github.com/mark-brannan/claude/pull/42))
+### 20261004t033255z
+- A grind item's hard cap, its worker's --max-budget-usd, is 3x its soft cap. Undo: change the 3 in grind's item_hard ([#47](https://github.com/mark-brannan/claude/pull/47))
+- grind's run hard budget defaults to 1.5x --session-budget ($30 at the $20 default). Undo: change the 1.5 where grind defaults session_hard_budget ([#47](https://github.com/mark-brannan/claude/pull/47))
+- A pr item's soft cap is not scaled by model or effort: the fixup contract's stop is a flat ~$1 every fixup worker reads. Undo: scale the pr branch of item_soft_cap like the others ([#47](https://github.com/mark-brannan/claude/pull/47))
+- grind reads a card's budget= off its log lines itself; work-item fold does not carry it, its facts being the format ruled in pen. Undo: add budget to work-item's FACTS and read it from fold ([#47](https://github.com/mark-brannan/claude/pull/47))
+
+### 20261004t050721z
+- grind: an item's hard cap is 3x its soft cap, never cut by what the run has left, and the run hard budget (--session-hard-budget, 1.5x) is gone -- Solace's ruling on #47: soft stops, not hard ones; a worker is ended only three times past the stop it was told; more cautious hard stops are a later revisit. Supersedes the 1.5x entry above. Undo: revert the commit on #47 that removed session_hard_budget from bin/grind ([#47](https://github.com/mark-brannan/claude/pull/47))
+
+### 20261004t071038z
+- work-item read_brief turns CRLF into a newline before checking, so a brief piped with Windows line endings is accepted as on main; a lone CR is still refused Undo: revert d935ba0 ([#39](https://github.com/mark-brannan/claude/pull/39))
+
+### 20261004t072330z
+- Shared helpers named lib/lock.py and lib/gitrun.py Undo: git mv both modules and update the six importers and INSTALL ([#40](https://github.com/mark-brannan/claude/pull/40))
+- bin/prune-worktrees keeps its own git runner; gitrun.run takes no env= or input= Undo: add env= and input= to gitrun.run and repoint prune-worktrees ([#40](https://github.com/mark-brannan/claude/pull/40))

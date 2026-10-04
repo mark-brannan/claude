@@ -44,7 +44,6 @@ Usage:
 state/global/curia/<id> for a curia, state/global/scoping/<key> otherwise.
 """
 import os
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -69,6 +68,10 @@ def state_repo():
 
 
 SR = state_repo()
+try:
+    import gitrun
+except ImportError:  # main() says so after the usage line, which needs no git
+    gitrun = None
 LEASE = int(os.environ.get("SCOPING_LOCK_STALE_SECS") or 1500)
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -80,14 +83,11 @@ def die(msg):
 
 def git(*args, cwd=SR, timeout=None):
     """Run git quietly; True when it exits 0. A timeout counts as a failure."""
-    try:
-        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, timeout=timeout).returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
+    return gitrun.ok(*args, cwd=cwd, timeout=timeout)
 
 
 def git_out(*args, cwd=SR):
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True).stdout.strip()
+    return gitrun.out(*args, cwd=cwd)
 
 
 def lock_of(d):
@@ -238,6 +238,8 @@ def main(argv):
     if len(argv) < 2:
         print(__doc__[__doc__.index("Usage:"):].rstrip(), file=sys.stderr)
         return 2
+    if gitrun is None:
+        die("lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)")
     cmd, args = argv[0], argv[1:]
     if cmd == "read-of":
         print(read_of(args[0]))

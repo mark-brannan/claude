@@ -94,5 +94,18 @@ class RepoTest(unittest.TestCase):
         self.assertNotIn("Traceback", p.stderr)
 
 
+class MissingLibTest(unittest.TestCase):
+    def test_no_lib_exits_3_and_says_so(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as t:
+            (Path(t) / "bin").mkdir()
+            shutil.copy(ENGINE, Path(t) / "bin" / "github-limits")
+            env = dict(os.environ, HOME=t)
+            r = subprocess.run([sys.executable, str(Path(t) / "bin" / "github-limits"), "--version"],
+                               capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 3)
+            self.assertIn("lib/gitrun.py not found", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
