@@ -37,7 +37,8 @@
       "Bash(~/.claude/bin/pickup-list --oldest)",
       "Bash(~/.claude/bin/pickup-list --closed)",
       "Bash(~/.claude/bin/pickup-list show *)",
-      "Bash(worklist)",
+      "Bash(~/.claude/bin/worklist)",
+      "Bash(~/.claude/bin/worklist *)",
       "Bash(~/.claude/bin/prose-budget *)",
       "Bash(~/.claude/bin/work-item *)",
       "Bash(/home/solace/.claude/bin/work-item *)"
