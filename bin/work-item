@@ -33,7 +33,11 @@
 # holds it. A GitHub-homed item carries `home=`, with no link back.
 #
 # Refused at write: a create or brief with no link (kanban-lint's L6); a human-ruling
-# brief missing default:, undo:, until:, risk: or judgment: (its L8); a
+# brief missing default:, undo:, until:, risk: or judgment: (its L8; a
+# `kind: tentative ADR` one needs until:, settle:, repos:, judgment: instead, its
+# L10), a judgment: that is not values, risk, direction, legal or people, an empty
+# until: or one holding a date that is no calendar day (a field is `name:` after a
+# space or `(`; `**name:**` does not count, as in the lint); a
 # `status=done` line with no `evidence=`; any `status=closed`, which only the
 # future whole-tree sweep writes (docs/work-item-lifecycle.md).
 #
@@ -403,8 +407,8 @@ def check_link(brief, home=""):
 
 def check_ruling(owner, brief):
     """kanban-lint's L8: a human-ruling card carries the agent's evaluation, so
-    the ruling is one word. Every field is `name:` anywhere in the folded
-    brief, any case; judgment: names the kind; until: holds a date, a PR/issue
+    the ruling is one word. Every field is `name:` after a space or `(`
+    anywhere in the folded brief, any case; judgment: names the kind; until: holds a date, a PR/issue
     link or an event in words."""
     if owner != "human-ruling":
         return
@@ -431,8 +435,9 @@ def check_ruling(owner, brief):
     if not re.search(r"judgment:[ \t]*(values|risk|direction|legal|people)([^a-z]|$)", t):
         refuse("judgment: must be values, risk, direction, legal or people -- a call that is "
                "none of those is toil: take the default and record it where the work lands")
-    if until_problem(t):
-        refuse(until_problem(t) + " -- until: holds a date (YYYY-MM-DD), a PR/issue link, "
+    bad = until_problem(t)
+    if bad:
+        refuse(bad + " -- until: holds a date (YYYY-MM-DD), a PR/issue link, "
                "or an event in words")
 
 
