@@ -6,6 +6,17 @@ them, and the session's item, which the one-entry-point curia's questions
 rewrite (question 17) is generated from this file and tested against them.
 Where the doc runs ahead of the code, the case says so.
 
+Two sources. Sections 1 to 13 describe the bash as it runs today and are
+checkable against it and its tests; a line there is a fact, not a rule,
+until the Python replaces the bash. Section 14 is prescriptive and cites
+the curia; a line there holds only while its ruling does, and a
+disagreement goes back to the curia, never to this file. Where the two
+disagree, the table records a `no` row naming the item that closes the
+gap, and neither side is edited to match the other here. Once the Python
+lands and the bash is retired, this file is the source and the code
+derives from it. Job numbers are the audit's, not the run order; the order
+is under Interfaces.
+
 ## The whole hook
 
 - Runs on every Stop and needs nothing from the conversation: a session
@@ -20,6 +31,30 @@ Where the doc runs ahead of the code, the case says so.
   and the state commit (jobs 12, 13). The metrics and the checkpoint are
   sharded by `state_shard_path` (`lib-state.sh`). Two parallel sessions
   never write the same session file.
+
+## Interfaces
+
+- Run order: 1, 2, 3, 4, 5, 7, 6, 8, 9, 10, 11, 12, 13 (the verdict is
+  taken after the salvage).
+- Environment read: `CLAUDE_STOP_COMMIT` (`off` skips the salvage),
+  `CLAUDE_CODE_REMOTE` (`true` is the cloud), `CLAUDE_STATE_REPO`, `CI` and
+  `GITHUB_ACTIONS` (refuse the salvage), `GIT_AUTHOR_NAME` and
+  `GIT_AUTHOR_EMAIL` (the state commit's author), `TMPDIR`,
+  `STATE_LOCK_DIR`, `STATE_LOCK_STALE_SECS`, `WORK_ITEM_DIR`,
+  `WORK_ITEM_BIN`.
+- Files under `${TMPDIR:-/tmp}`: `claude-state-push.lock.d` (job 5),
+  `claude-stop-home.<pid>` (the home line, job 6 to job 9),
+  `claude-branch-home.*` (the gate's own), `claude-pickup-pr-miss.*`
+  (job 9's 10-minute miss).
+- Scripts called: `branch-home-gate.sh --check` prints `home:<…>` or
+  `unverified:<…>`, else nothing; `claim-stamp.sh refresh|release`;
+  `metrics-rollup.sh`. The transcript's fields are whatever
+  `session-metrics.jq` emits, which is the contract for job 2.
+- The push stamp is the literal `$SR/.git/claude-last-state-push` in the
+  state repo, on purpose: a worktree's git dir would not do.
+- Writes: the checkpoint and the metrics files are truncated and rewritten
+  in place; the pickup item and the verdict line go through a temp file and
+  a rename.
 
 ## 1. Read the Stop
 
@@ -204,7 +239,8 @@ https://docs.github.com/en/repositories/creating-and-managing-repositories/repos
 
 ### As built
 
-A 300 s window per clone, stamped in the clone's git dir, never the tracked
+A 300 s window per clone, stamped at the literal
+`$SR/.git/claude-last-state-push` in the state repo, never the tracked
 tree. The stamp records the attempt, not the success. A cloud session
 (`CLAUDE_CODE_REMOTE=true`) whose verdict is archivable skips the window.
 Two attempts, each a `pull --rebase --autostash` (a conflict is aborted,
@@ -275,83 +311,89 @@ on them.
 
 ## Acceptance cases
 
-Met: **tested** (in `stop-continuity.test.sh`), **untested** (the code does
-it, no test), **no** (the code does not; the scoping item that meets it, or
-the card that tracks the bug).
+Evidence: **test**, an assertion in `stop-continuity.test.sh`; **code**, the
+code does it and no test asserts it; **item N** or a card id, not built, and
+what builds it. Ids are the job's number and a counter, appended, never
+renumbered or reused; a retired row is struck through with a pointer. When
+the Python lands the column goes: every id must then appear in a test name,
+checked by a lint.
 
-| # | Given | When | Then | Met |
+A Then may hold several assertions of one scenario, separated by `;`; a
+test asserts each. A Given with `or` is two fixtures sharing the Then.
+
+| # | Given | When | Then | Evidence |
 |---|---|---|---|---|
-| 0.1 | any input, including none | Stop | exit 0 | untested |
-| 0.2 | a Stop killed past 290 s after the checkpoint write, before job 6 | the checkpoint is read before the next Stop | its verdict line reads `the Stop hook did not finish` | untested |
-| 0.3 | a push lock left by a hook killed past 290 s | the next Stop | it takes the lock | untested |
-| 1.1 | an event with no `transcript_path`, or one that does not exist | Stop | nothing written under the state dir | untested |
-| 1.2 | an event with no `session_id` | Stop | nothing written | untested |
-| 1.3 | a transcript `jq -s` cannot parse | Stop | exit 0 | untested |
-| 2.1 | a session with commits since its start | Stop | `sessions/<id>.json` has `commits` = `git rev-list --count --since=<start> HEAD` | untested |
-| 2.2 | a transcript whose text contains `git commit` but no commit was made | Stop | `commits` is 0 | untested |
-| 2.3 | an earlier Stop wrote `decisions/<id>.jsonl` | Stop again | the file holds this transcript's events only, not the earlier ones appended | untested |
-| 3.1 | `metrics/live/<id>.json` exists | Stop | it is gone | untested |
-| 3.2 | `metrics-live.sh` holds the session's lock | Stop | the Stop completes inside 10 s and writes the checkpoint | tested |
-| 4.1 | a fresh session | Stop | the checkpoint's `**Verdict:**` line is the verdict | tested |
-| 4.2 | a checkpoint with a `## Resume` block and a `- consumed:` line | Stop | both survive verbatim, and the section after the block is still there | tested |
-| 5.1 | the state-push lock held past 90 s | Stop | exit 0; no salvage, no state commit; verdict line reads `the Stop hook did not finish` | untested |
-| 5.2 | `flock` missing | Stop | the state repo is still committed and pushed | tested |
-| 6.1 | clean, pushed, an open PR, no foreign stamp | Stop | `archivable`, in the checkpoint and in `sessions/<id>.json` with `verdict_at` | tested |
-| 6.2 | a dirty tree with unpushed commits | Stop | reasons name dirty, then unpushed, in that order | tested |
-| 6.3 | no PR and no pointer | Stop | `no PR and no pointer for <branch>` | tested |
-| 6.4 | a branch never pushed, commits ahead | Stop | never pushed is a reason | tested |
-| 6.5 | a branch with no upstream and no commits ahead of any origin branch | Stop | not a reason | tested |
-| 6.6 | a detached `HEAD` whose commit lives on no remote branch | Stop | a reason; the same `HEAD` on a remote branch is not | tested |
-| 6.7 | `@{u}` is `main` and the commits are on a pushed `stack/` branch | Stop | not unpushed | tested |
-| 6.8 | the home check cannot reach GitHub | Stop | not archivable, `branch home unverified` | tested |
-| 6.9 | `cwd` outside any repo | Stop | `not archivable: not a git repo` | tested |
-| 6.10 | a clean, pushed branch | Stop | `branch-home-gate.sh --check` runs once | tested |
-| 6.11 | another session's fresh claim stamp on the branch's card | Stop | not archivable; the session's own stamp alone is not a reason | untested |
-| 7.1 | a dirty Claude-made worktree, level with origin | Stop | a signed commit on `wip/<id>`, pushed; branch `HEAD` and `@{u}` unchanged; files still dirty | tested |
-| 7.2 | 7.1 after a first salvage | Stop again | `wip/<id>` moves; the branch is untouched | tested |
-| 7.3 | no signing key | Stop | `refused: commit failed`; files left as they were | tested |
-| 7.4 | `GITHUB_ACTIONS` or `CI` set | Stop | `refused: running under CI` | tested |
-| 7.5 | a branch-changed file put back to base's bytes, with or without another real edit | Stop | refused as a revert, the file named | tested |
-| 7.6 | a branch-changed file edited to neither version | Stop | salvaged | tested |
-| 7.7 | an untracked stale leftover (7 in the job) | Stop | refused, the path named | tested |
-| 7.8 | a new untracked file, or a path the branch deleted and recreated with new bytes | Stop | salvaged | tested |
-| 7.9 | the branch behind `origin/<branch>` | Stop | refused, behind count named | tested |
-| 7.10 | the checkout is `$HOME` | Stop | refused, `yadm gate` | untested |
-| 7.11 | on `main` or `master`, or detached | Stop | refused, uncommitted work left in place | untested |
-| 7.12 | not under `.claude/worktrees/` and not a `claude/` branch | Stop | refused, `does not look Claude-made` | untested |
-| 7.13 | no `origin` remote | Stop | refused, `no origin remote` | untested |
-| 7.14 | a shallow clone that cannot unshallow | Stop | refused, `repo is shallow` | untested |
-| 7.15 | `CLAUDE_STOP_COMMIT=off`, a dirty tree | Stop | no commit, no `## Stop-commit` note | untested |
-| 8.1 | archivable, the session holds a stamp | Stop | `claim-stamp.sh release` for this session | untested |
-| 8.2 | not archivable, the session holds a stamp | Stop | `claim-stamp.sh refresh` for this session | untested |
-| 9.1 | a fresh session | Stop | one `pickup/<start-minute>-<id8>.md`, `status: open`, body the last prompt | tested |
-| 9.2 | a body a model wrote | Stop again | the body survives | tested |
-| 9.3 | an `until:` header; or none | Stop again | carried; or no `until:` line | tested |
-| 9.4 | `status: done`, the prompt unchanged | Stop again | still `done` | tested |
-| 9.5 | the hook's own body, a new prompt | Stop again | body is the new prompt, `status: open` | tested |
-| 9.6 | `pr: none`, nothing ahead, a lookup missed under 10 minutes ago | Stop | no `gh` call | untested |
-| 10.1 | a prompt naming `confer <id>`, its digest exists | Stop | one floor block closing `## Where this stands`; text above unchanged | tested |
-| 10.2 | 10.1 | Stop again | one block, never two | tested |
-| 10.3 | 10.1 | Stop again | the digest is byte-identical to after the first Stop | no (blank line grows; card 1790975613f676e0a7, item 5 retires the floor) |
-| 10.4 | a tool call only read the digest | Stop | digest untouched | tested |
-| 10.5 | only `thread.md` exists; or neither | Stop | floor on `thread.md`; or no write | tested |
-| 11.1 | `.gitattributes` declares `filter=x`, `filter.x.clean` unset | Stop | no state commit; checkpoint says `NOT COMMITTED`; verdict names the filter | untested |
-| 12.1 | the clone has `user.signingkey`; or none | Stop | the state commit is signed; or unsigned | tested |
-| 12.2 | a new file under `state/global/items/` | Stop | it is in the state commit | tested |
-| 12.3 | nothing changed under `state/` | Stop | no commit, no push | untested |
-| 12.4 | signing fails | Stop | no unsigned commit; state staged; verdict `state-repo commit failed` | untested |
-| 13.1 | a push under 300 s ago from this clone | Stop | committed, not pushed | tested |
-| 13.2 | 13.1, the push stamp brought in by a pull | Stop | the window still holds | tested |
-| 13.3 | cloud, archivable, a push under 300 s ago | Stop | pushed | untested |
-| 13.4 | a pull that conflicts | Stop | rebase aborted, no rebase left in progress | tested |
-| 13.5 | cloud, the push fails | Stop | `not archivable: state-repo push failed` | tested |
-| 13.6 | local, the push fails | Stop | verdict unchanged; the next Stop in the window does not retry | tested |
-| 14.1 | a session with no item | first Stop | one new item; its first log line `status=open` from this session | no (item 3) |
-| 14.2 | 14.1 | a later Stop that writes | it writes the same item; no second item is minted | no (item 3) |
-| 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | no (item 3) |
-| 14.4 | a minted item | any Stop | no `status=ready` line from the hook | no (item 3) |
-| 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | no (item 3) |
-| 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line | no (item 3) |
-| 14.7 | the store refuses the write, or `work-item` crashes | Stop | the state commit is made; exit 0 | no (item 3) |
-| 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | no (item 3) |
-| 14.9 | the hook writes items and the duplicates are retired | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | no (item 5) |
+| 0.1 | any input, including none | Stop | exit 0 | code |
+| 0.2 | a Stop killed past 290 s after the checkpoint write, before job 6 | the checkpoint is read before the next Stop | its verdict line reads `the Stop hook did not finish` | code |
+| 0.3 | a push lock left by a hook killed past 290 s | the next Stop | it takes the lock | code |
+| 1.1 | an event with no `transcript_path`, or one that does not exist | Stop | nothing written under the state dir | code |
+| 1.2 | an event with no `session_id` | Stop | nothing written | code |
+| 1.3 | a transcript `jq -s` cannot parse | Stop | exit 0 | code |
+| 2.1 | a session with commits since its start | Stop | `sessions/<id>.json` has `commits` = `git rev-list --count --since=<start> HEAD` | code |
+| 2.2 | a transcript whose text contains `git commit` but no commit was made | Stop | `commits` is 0 | code |
+| 2.3 | an earlier Stop wrote `decisions/<id>.jsonl` | Stop again | the file holds this transcript's events only, not the earlier ones appended | code |
+| 3.1 | `metrics/live/<id>.json` exists | Stop | it is gone | code |
+| 3.2 | `metrics-live.sh` holds the session's lock | Stop | the Stop completes inside 10 s and writes the checkpoint | test |
+| 4.1 | a fresh session | Stop | the checkpoint's `**Verdict:**` line is the verdict | test |
+| 4.2 | a checkpoint with a `## Resume` block and a `- consumed:` line | Stop | both survive verbatim, and the section after the block is still there | test |
+| 5.1 | the state-push lock held past 90 s | Stop | exit 0; no salvage, no state commit; verdict line reads `the Stop hook did not finish` | code |
+| 5.2 | `flock` missing | Stop | the state repo is still committed and pushed | test |
+| 6.1 | clean, pushed, an open PR, no foreign stamp | Stop | `archivable`, in the checkpoint and in `sessions/<id>.json` with `verdict_at` | test |
+| 6.2 | a dirty tree with unpushed commits | Stop | reasons name dirty, then unpushed, in that order | test |
+| 6.3 | no PR and no pointer | Stop | `no PR and no pointer for <branch>` | test |
+| 6.4 | a branch never pushed, commits ahead | Stop | never pushed is a reason | test |
+| 6.5 | a branch with no upstream and no commits ahead of any origin branch | Stop | not a reason | test |
+| 6.6 | a detached `HEAD` whose commit lives on no remote branch | Stop | a reason; the same `HEAD` on a remote branch is not | test |
+| 6.7 | `@{u}` is `main` and the commits are on a pushed `stack/` branch | Stop | not unpushed | test |
+| 6.8 | the home check cannot reach GitHub | Stop | not archivable, `branch home unverified` | test |
+| 6.9 | `cwd` outside any repo | Stop | `not archivable: not a git repo` | test |
+| 6.10 | a clean, pushed branch | Stop | `branch-home-gate.sh --check` runs once | test |
+| 6.11 | another session's fresh claim stamp on the branch's card | Stop | not archivable; the session's own stamp alone is not a reason | code |
+| 7.1 | a dirty Claude-made worktree, level with origin | Stop | a signed commit on `wip/<id>`, pushed; branch `HEAD` and `@{u}` unchanged; files still dirty | test |
+| 7.2 | 7.1 after a first salvage | Stop again | `wip/<id>` moves; the branch is untouched | test |
+| 7.3 | no signing key | Stop | `refused: commit failed`; files left as they were | test |
+| 7.4 | `GITHUB_ACTIONS` or `CI` set | Stop | `refused: running under CI` | test |
+| 7.5 | a branch-changed file put back to base's bytes, with or without another real edit | Stop | refused as a revert, the file named | test |
+| 7.6 | a branch-changed file edited to neither version | Stop | salvaged | test |
+| 7.7 | an untracked stale leftover (7 in the job) | Stop | refused, the path named | test |
+| 7.8 | a new untracked file, or a path the branch deleted and recreated with new bytes | Stop | salvaged | test |
+| 7.9 | the branch behind `origin/<branch>` | Stop | refused, behind count named | test |
+| 7.10 | the checkout is `$HOME` | Stop | refused, `yadm gate` | code |
+| 7.11 | on `main` or `master`, or detached | Stop | refused, uncommitted work left in place | code |
+| 7.12 | not under `.claude/worktrees/` and not a `claude/` branch | Stop | refused, `does not look Claude-made` | code |
+| 7.13 | no `origin` remote | Stop | refused, `no origin remote` | code |
+| 7.14 | a shallow clone that cannot unshallow | Stop | refused, `repo is shallow` | code |
+| 7.15 | `CLAUDE_STOP_COMMIT=off`, a dirty tree | Stop | no commit, no `## Stop-commit` note | code |
+| 8.1 | archivable, the session holds a stamp | Stop | `claim-stamp.sh release` for this session | code |
+| 8.2 | not archivable, the session holds a stamp | Stop | `claim-stamp.sh refresh` for this session | code |
+| 9.1 | a fresh session | Stop | one `pickup/<start-minute>-<id8>.md`, `status: open`, body the last prompt | test |
+| 9.2 | a body a model wrote | Stop again | the body survives | test |
+| 9.3 | an `until:` header; or none | Stop again | carried; or no `until:` line | test |
+| 9.4 | `status: done`, the prompt unchanged | Stop again | still `done` | test |
+| 9.5 | the hook's own body, a new prompt | Stop again | body is the new prompt, `status: open` | test |
+| 9.6 | `pr: none`, nothing ahead, a lookup missed under 10 minutes ago | Stop | no `gh` call | code |
+| 10.1 | a prompt naming `confer <id>`, its digest exists | Stop | one floor block closing `## Where this stands`; text above unchanged | test |
+| 10.2 | 10.1 | Stop again | one block, never two | test |
+| 10.3 | 10.1 | Stop again | the digest is byte-identical to after the first Stop | card 1790975613f676e0a7 |
+| 10.4 | a tool call only read the digest | Stop | digest untouched | test |
+| 10.5 | only `thread.md` exists; or neither | Stop | floor on `thread.md`; or no write | test |
+| 11.1 | `.gitattributes` declares `filter=x`, `filter.x.clean` unset | Stop | no state commit; checkpoint says `NOT COMMITTED`; verdict names the filter | code |
+| 12.1 | the clone has `user.signingkey`; or none | Stop | the state commit is signed; or unsigned | test |
+| 12.2 | a new file under `state/global/items/` | Stop | it is in the state commit | test |
+| 12.3 | nothing changed under `state/` | Stop | no commit, no push | code |
+| 12.4 | signing fails | Stop | no unsigned commit; state staged; verdict `state-repo commit failed` | code |
+| 13.1 | a push under 300 s ago from this clone | Stop | committed, not pushed | test |
+| 13.2 | 13.1, the push stamp brought in by a pull | Stop | the window still holds | test |
+| 13.3 | cloud, archivable, a push under 300 s ago | Stop | pushed | code |
+| 13.4 | a pull that conflicts | Stop | rebase aborted, no rebase left in progress | test |
+| 13.5 | cloud, the push fails | Stop | `not archivable: state-repo push failed` | test |
+| 13.6 | local, the push fails | Stop | verdict unchanged; the next Stop in the window does not retry | test |
+| 14.1 | a session with no item | first Stop | one new item; its first log line `status=open` from this session | item 3 |
+| 14.2 | 14.1 | a later Stop that writes | it writes the same item; no second item is minted | item 3 |
+| 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | item 3 |
+| 14.4 | a minted item | any Stop | no `status=ready` line from the hook | item 3 |
+| 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | item 3 |
+| 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line | item 3 |
+| 14.7 | the store refuses the write, or `work-item` crashes | Stop | the state commit is made; exit 0 | item 3 |
+| 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | item 3 |
+| 14.9 | the hook writes items and the duplicates are retired | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | item 5 |
