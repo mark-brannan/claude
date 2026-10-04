@@ -11,12 +11,12 @@ export WORK_ITEM_DIR="$T/items"
 ok() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi; }
 
 now=$(date -u +%s)
-a=$(sh "$CID" mint 077c62eb-2979-4277-b798-0d0fd9e9bb8d); ok 'epoch seconds then the session hex' 1 "$(printf '%s' "$a" | grep -cE "^(${now}|$((now + 1)))077c62eb$")"
-b=$(sh "$CID" mint 077C62EB); ok 'the hex is lowercased' 077c62eb "${b#??????????}"
-c=$(CLAUDE_CODE_SESSION_ID=d654192b-0000 sh "$CID" mint); ok 'the session comes from the environment' d654192b "${c#??????????}"
-ok 'no store is needed to mint' 18 "${#a}"
-sh "$CID" mint "" >/dev/null 2>&1; ok 'no session id refuses' 2 $?
-sh "$CID" mint zzzzzzzz >/dev/null 2>&1; ok 'a non-hex session refuses' 2 $?
+a=$(sh "$CID" new 077c62eb-2979-4277-b798-0d0fd9e9bb8d); ok 'epoch seconds then the session hex' 1 "$(printf '%s' "$a" | grep -cE "^(${now}|$((now + 1)))077c62eb$")"
+b=$(sh "$CID" new 077C62EB); ok 'the hex is lowercased' 077c62eb "${b#??????????}"
+c=$(CLAUDE_CODE_SESSION_ID=d654192b-0000 sh "$CID" new); ok 'the session comes from the environment' d654192b "${c#??????????}"
+ok 'no store is needed to make one' 18 "${#a}"
+sh "$CID" new "" >/dev/null 2>&1; ok 'no session id refuses' 2 $?
+sh "$CID" new zzzzzzzz >/dev/null 2>&1; ok 'a non-hex session refuses' 2 $?
 
 mkdir -p "$T/items"
 witem() { # id owner title brief

@@ -26,3 +26,5 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - stop-continuity spec: Evidence is one column with three values (test / code / item N), not a Source and Test split Undo: a doc PR splitting the column (mark-brannan/claude#36)
 - stop-continuity spec: a Then may hold several assertions behind ';', and 'or' in a Given is two fixtures sharing the Then Undo: split the rows (mark-brannan/claude#36)
 - stop-continuity spec: sections 1 to 13 are facts about the bash until the Python replaces it; section 14 holds while its ruling does; a disagreement goes to the curia, never to the spec Undo: edit the preamble (mark-brannan/claude#36)
+### 20261004t035750z
+- work-item create: a replay of one create (same id, same content) prints the same id and exits 0 instead of being refused; the pen line says a second write of the same id is refused, and a replay is read as the one write landing twice, not a second write Undo: delete replayed() in bin/work-item and refuse on every FileExistsError ([#37](https://github.com/mark-brannan/claude/pull/37))

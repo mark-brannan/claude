@@ -117,14 +117,16 @@ is enough for the next session. Add `blocked: <dependency>` to the brief only
 when it is actually blocked. There is no list to place a card in and `work-item list` reads
 oldest first, so state urgency in the brief's own words; nothing ranks it.
 
-Two calls, and the item exists and is pickable. `create` prints the id and
-starts the item `open`; a writer has to log `status=ready` or no reader
-picks it:
+Three calls, and the item exists and is pickable. The caller makes the id
+(`card-id new`, the store never picks one); `create` writes the item `open`,
+and a replay of the same create is a no-op that succeeds; a writer has to log
+`status=ready` or no reader picks it:
 
 ```sh
-id=$(~/.claude/bin/work-item create --owner agent --repo owner/name \
+id=$(~/.claude/bin/card-id new)
+~/.claude/bin/work-item create --id "$id" --owner agent --repo owner/name \
   --model sonnet --effort medium \
-  --brief 'action in the imperative ([link](https://...))' 'Short name')
+  --brief 'action in the imperative ([link](https://...))' 'Short name'
 ~/.claude/bin/work-item log "$id" status=ready
 ```
 
