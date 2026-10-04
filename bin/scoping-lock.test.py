@@ -141,6 +141,11 @@ class ScopingLockTest(unittest.TestCase):
     def test_11_finds_the_repo_where_lib_state_sh_does(self):
         # $HOME/src is on lib-state.sh's search path, never on the old
         # private one ($CLAUDE_STATE_REPO or ~/claude_prompts_scratch only).
+        # lib-state.sh checks the cloud paths before $HOME; where one holds a
+        # repo, `read` would succeed against it and prove nothing.
+        if any(os.path.isdir(d + "/.git") for d in
+               ("/home/user/claude_prompts_scratch", "/workspace/claude_prompts_scratch")):
+            self.skipTest("a cloud path holds a state repo here")
         home = self.S / "home11"
         git("clone", "-q", str(self.S / "origin.git"), str(home / "src" / "claude_prompts_scratch"), cwd=self.S)
         env = {k: v for k, v in self.env.items() if k != "CLAUDE_STATE_REPO"}
