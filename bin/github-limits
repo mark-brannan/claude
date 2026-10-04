@@ -26,12 +26,24 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
+NAME = "github-limits"
+sys.dont_write_bytecode = True
+for _d in (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+           os.path.expanduser("~/.claude/lib")):
+    if os.path.isfile(os.path.join(_d, "gitrun.py")):
+        sys.path.insert(0, _d)
+        break
+try:
+    import gitrun  # noqa: E402
+except ImportError:
+    sys.exit("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME)
+
 MIB = 1024 * 1024
 WARN, OVER = 0.5, 1.0
 
 
 def git(repo, *args):
-    return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True).stdout
+    return gitrun.run("-C", repo, *args, check=True).stdout
 
 
 def gh_json(path, paginate=False):

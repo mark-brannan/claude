@@ -41,7 +41,6 @@
 # a write that cannot land, or is refused, exits non-zero (1 refused, 2 usage).
 # Writes are plain files in the state repo; the Stop hook commits and pushes.
 # Python 3 stdlib only.
-import fcntl
 import os
 import re
 import sys
@@ -231,13 +230,9 @@ class Item:
             self.lockf = open(p, "a")
         except OSError:
             refuse(f"could not open the lock {p}")
-        for _ in range(11):
-            try:
-                fcntl.flock(self.lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return
-            except BlockingIOError:
-                time.sleep(1)
-        refuse(f"item {self.id} is locked by another writer")
+        import lock as filelock  # lib/ is on sys.path: state_dir() put it there when __init__ built self.path
+        if not filelock.acquire(self.lockf, wait=10):
+            refuse(f"item {self.id} is locked by another writer")
 
     def facts(self):
         stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 7200)
