@@ -265,6 +265,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -z "$repo" ] || [ -z "$project" ] || { printf 'grind: --repo and a project name are two scopes; pass one\n' >&2; exit 2; }
+# The budgets are dollars and the cadence a count, checked here: awk reads
+# `abc` as 0 and jq refuses it, so a bad value would otherwise pass every
+# comparison and fail later, or write nothing on --resume.
+for fv in "--item-budget $item_budget" "--session-budget $session_budget" "--session-hard-budget ${session_hard_budget:-0}"; do
+  case ${fv#* } in ''|.|*[!0-9.]*|*.*.*) printf 'grind: %s is not a number of dollars\n' "$fv" >&2; exit 2 ;; esac
+done
+case $pause_every in ''|*[!0-9]*|0) printf 'grind: --pause-every %s is not a count of items\n' "$pause_every" >&2; exit 2 ;; esac
 
 command -v jq >/dev/null 2>&1 || { echo "grind: needs jq" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "grind: needs gh" >&2; exit 1; }

@@ -453,6 +453,13 @@ eq 'a --session-hard-budget lifts the cut' 'soft $25.00 hard $75.00' "$(caps_of 
 run --dry-run --session-hard-budget 10
 eq 'a hard budget below the soft one is refused' 2 "$RC"
 has 'and says so' 'session hard budget \(\$10\) is below the session budget \(\$20\)'
+for flag in --item-budget --session-budget --session-hard-budget; do
+  run --dry-run "$flag" abc
+  eq "$flag abc is a usage error" 2 "$RC"
+  has "and names the flag" "^grind: $flag abc is not a number of dollars$"
+done
+run --dry-run --pause-every x
+eq 'a --pause-every that is not a count is a usage error' 2 "$RC"
 # an item whose cap passes what is left of the soft budget still starts while
 # spend is under it; each worker gets at most the run's hard budget left
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
