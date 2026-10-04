@@ -17,3 +17,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - prune-worktrees waits 24h of HEAD/reflog idleness before a worktree is eligible Undo: change --hours default in bin/prune-worktrees ([#34](https://github.com/mark-brannan/claude/pull/34))
 - prune-worktrees lets ignored files (node_modules, dist, settings.local.json) go with a removed worktree Undo: add an ignored-files keep rule ([#34](https://github.com/mark-brannan/claude/pull/34))
 - stale worktrees are pruned by a daily 04:30 systemd timer, not the Stop hook Undo: disable prune-worktrees.timer ([#34](https://github.com/mark-brannan/claude/pull/34))
+
+### 20261004t021506z
+- prune-worktrees keeps metadata for a missing worktree whose parent directory is also missing (read as an unmounted disk), locking it across the prune Undo: drop prune_metadata's spare list in bin/prune-worktrees ([#34](https://github.com/mark-brannan/claude/pull/34))
+- prune-worktrees force-removes a worktree with submodules when no submodule holds a commit on none of its remotes, rather than always keeping it Undo: keep every submodule worktree in bin/prune-worktrees ([#34](https://github.com/mark-brannan/claude/pull/34))

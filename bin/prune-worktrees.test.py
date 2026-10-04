@@ -47,8 +47,8 @@ def age(wt):
             os.utime(os.path.join(gd, f), (old, old))
 
 
-def run(*a):
-    r = subprocess.run([sys.executable, PW, "--no-fetch", "--repo", R, *a],
+def run(*a, fetch=False):
+    r = subprocess.run([sys.executable, PW, *([] if fetch else ["--no-fetch"]), "--repo", R, *a],
                        env=ENV, capture_output=True, text=True, cwd=S)
     return r.returncode, r.stdout + r.stderr
 
@@ -81,6 +81,9 @@ for name in ("landed", "dirty", "unlanded", "locked"):
 gone = os.path.join(W, "vanished")
 git(R, "worktree", "add", "-q", "-b", "vanished", gone, "main")
 subprocess.run(["rm", "-rf", gone], check=True)
+unmounted = os.path.join(S, "mnt", "disk", "wt")
+git(R, "worktree", "add", "-q", "-b", "unmounted", unmounted, "main")
+subprocess.run(["rm", "-rf", os.path.join(S, "mnt")], check=True)
 
 PL = os.path.join(HOME, ".claude", "plugins", "installed_plugins.json")
 os.makedirs(os.path.dirname(PL))
@@ -100,6 +103,7 @@ for name, why in (("dirty", "dirty"), ("unlanded", "unlanded: 1 commit"),
                   ("recent", "touched in the last 24h"), ("locked", "locked")):
     check(f"keep .claude/worktrees/{name} -- {why}" in out, f"{name} kept for {why}", out)
 check("would clear metadata" in out and "vanished" in out, "missing dir's metadata named", out)
+check("keep metadata for " + unmounted in out, "unmounted parent's metadata kept", out)
 check("would drop 1 project entry" in out, "one plugin entry named", out)
 check(all(os.path.isdir(p) for n, p in wts.items()), "dry run removes nothing")
 check(len(json.load(open(PL))["plugins"]["x@y"]) == 3, "dry run leaves plugins alone")
@@ -116,8 +120,11 @@ check(all(os.path.isdir(wts[n]) for n in ("dirty", "unlanded", "recent", "locked
       "every keeper survives", out)
 check(subprocess.run(["git", "-C", R, "rev-parse", "--verify", "-q", "refs/heads/landed"],
                      env=ENV, capture_output=True).returncode == 0, "branch is left for prune-branches")
-check("vanished" not in subprocess.run(["git", "-C", R, "worktree", "list"], env=ENV,
-                                       capture_output=True, text=True).stdout, "metadata pruned")
+wl = subprocess.run(["git", "-C", R, "worktree", "list", "--porcelain"], env=ENV,
+                    capture_output=True, text=True).stdout
+check("vanished" not in wl, "metadata pruned", wl)
+check(unmounted in wl and "locked" not in wl.split(unmounted, 1)[1].split("\n\n")[0],
+      "unmounted metadata survives, unlocked", wl)
 entries = json.load(open(PL))["plugins"]["x@y"]
 check([e.get("projectPath") for e in entries] == [None, wts["recent"]], "only the gone entry dropped",
       json.dumps(entries))
@@ -126,6 +133,45 @@ check(bool(undo), "undo printed", out)
 if undo:
     subprocess.run(shlex.split(undo[0]), env=ENV, cwd="/", capture_output=True)
     check(os.path.isdir(wts["landed"]), "undo restores the worktree", undo[0])
+
+# --- fetch fails: a remote ref the remote dropped no longer counts ---------
+dropped = os.path.join(W, "dropped")
+git(R, "worktree", "add", "-q", "-b", "dropped", dropped, "main")
+git(dropped, "commit", "-q", "--allow-empty", "-m", "pushed then dropped")
+git(dropped, "push", "-q", "-u", "origin", "dropped")
+git(REMOTE, "branch", "-D", "dropped")
+age(dropped)
+rc, out = run("-v", "--no-plugins")
+check("would remove .claude/worktrees/dropped (on origin/dropped)" in out, "fresh refs: dropped is a candidate", out)
+git(R, "remote", "set-url", "origin", os.path.join(S, "no-such-remote"))
+rc, out = run("-v", "--no-plugins", fetch=True)
+check("fetch failed" in out and "keep .claude/worktrees/dropped -- unlanded" in out,
+      "fetch failed: a stale remote ref is not trusted", out)
+git(R, "remote", "set-url", "origin", REMOTE)
+
+# --- submodules: removed only when their commits are on a remote ----------
+SUB = os.path.join(S, "sub.git")
+subprocess.run(["git", "init", "-q", "--bare", "-b", "main", SUB], env=ENV, check=True)
+seed = os.path.join(S, "seed")
+subprocess.run(["git", "clone", "-q", SUB, seed], env=ENV, check=True, capture_output=True)
+git(seed, "commit", "-q", "--allow-empty", "-m", "sub base")
+git(seed, "push", "-q", "origin", "HEAD:main")
+withsub = os.path.join(W, "withsub")
+git(R, "worktree", "add", "-q", "-b", "withsub", withsub, "main")
+git(withsub, "-c", "protocol.file.allow=always", "submodule", "add", "-q", SUB, "sub")
+git(withsub, "commit", "-q", "-m", "add sub")
+git(withsub, "push", "-q", "-u", "origin", "withsub")
+mod = os.path.join(withsub, "sub")
+git(mod, "checkout", "-q", "-b", "side")
+git(mod, "commit", "-q", "--allow-empty", "-m", "local only in the submodule")
+git(mod, "checkout", "-q", "-")
+age(withsub)
+rc, out = run("--delete", "--no-plugins")
+check(os.path.isdir(withsub) and "keep .claude/worktrees/withsub -- unlanded: 1 commit(s) in a submodule" in out,
+      "submodule with a local-only commit kept", out)
+git(mod, "branch", "-q", "-D", "side")
+rc, out = run("--delete", "--no-plugins")
+check(not os.path.exists(withsub), "submodule worktree with nothing local removed", out)
 
 subprocess.run(["rm", "-rf", S])
 print(f"prune-worktrees: {'FAIL' if fails else 'ok'} ({fails} failure(s))")

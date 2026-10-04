@@ -19,14 +19,21 @@ dirty that slipped past. The branch is left alone: local branches are
 prune-branches's. Each removal prints its undo (`git worktree add`).
 
 Worktree metadata whose directory is already gone is cleared with
-`git worktree prune --expire=now` (git's own default waits three months).
-A fetch that fails (no ssh agent under a timer) is a
-warning, not a skip: stale remote refs only make the check stricter.
+`git worktree prune --expire=now` (git's own default waits three months),
+but only when the directory's parent exists: a missing parent reads as an
+unmounted disk, and that entry is kept. A fetch that fails or hangs (no
+ssh agent under a timer) is a warning, not a skip, but a stale remote ref
+can still hold a commit the remote dropped, so that repo falls back to the
+patch-equivalent and squash checks alone.
+
+A worktree with submodules is removed (git insists on --force for those)
+only when no submodule holds a commit that is on none of its remotes.
 
 Plugin entries: Claude Code records one project-scope install per directory
 whose .claude/settings.json enables a plugin, so every worktree cut from such
 a checkout adds one and nothing removes it. The pruned file is written
-atomically after a timestamped backup in ~/.local/state/prune-worktrees/.
+atomically after a timestamped backup in ~/.local/state/prune-worktrees/,
+and not at all if Claude Code changed it during the run (next run retries).
 
 Exit 1 if a repo could not be read or a removal failed.
 """
@@ -44,12 +51,18 @@ STATE = os.path.join(
     os.environ.get("XDG_STATE_HOME", os.path.join(HOME, ".local", "state")),
     "prune-worktrees")
 KEEP_BACKUPS = 5
+FETCH_TIMEOUT = 60
+# Unattended: a remote that wants a password or a passphrase fails at once
+# instead of waiting on a prompt nobody will answer.
+GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0",
+               GIT_SSH_COMMAND=os.environ.get("GIT_SSH_COMMAND", "ssh") + " -o BatchMode=yes")
 
 
-def git(repo, *args, check=False):
+def git(repo, *args, check=False, timeout=None):
     # --no-optional-locks: a read must not refresh the index, or this run's
     # own `git status` makes every worktree look touched the next time.
-    r = subprocess.run(["git", "--no-optional-locks", "-C", repo, *args], capture_output=True, text=True, errors="surrogateescape")
+    r = subprocess.run(["git", "--no-optional-locks", "-C", repo, *args], capture_output=True, text=True,
+                       errors="surrogateescape", env=GIT_ENV, timeout=timeout)
     if check and r.returncode:
         raise RuntimeError(r.stderr.strip())
     return r
@@ -128,8 +141,11 @@ def last_touch(wt):
 class Landed:
     """Answers "is this commit safe on the remote?" for one repo."""
 
-    def __init__(self, repo):
+    def __init__(self, repo, trust_remotes=True):
         self.repo = repo
+        # False when the fetch failed: a remote ref not pruned may still
+        # hold a commit the remote has dropped, and [gone] can't be seen.
+        self.trust_remotes = trust_remotes
         r = git(repo, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD")
         self.base = r.stdout.strip() or "origin/main"
         self._base_ids = None
@@ -144,6 +160,11 @@ class Landed:
         return self._base_ids
 
     def reason(self, sha, branch):
+        if self.trust_remotes:
+            return self.on_remote(sha, branch) or self.merged(sha)
+        return self.merged(sha)
+
+    def on_remote(self, sha, branch):
         holders = git(self.repo, "for-each-ref", "--format=%(refname:short)",
                       "--contains", sha, "refs/remotes").stdout.split()
         holders = [h for h in holders if not h.endswith("/HEAD")]
@@ -155,6 +176,9 @@ class Landed:
             up, _, tr = track.partition("|")
             if up and tr == "[gone]":
                 return f"upstream {up} gone"
+        return None
+
+    def merged(self, sha):
         mb = git(self.repo, "merge-base", self.base, sha).stdout.strip()
         if not mb or not git(self.repo, "diff", "--quiet", mb, sha).returncode:
             return None  # no net diff proves nothing
@@ -169,21 +193,59 @@ class Landed:
         return None
 
 
+def fetch(repo):
+    """True when the remote refs here are fresh."""
+    try:
+        return git(repo, "fetch", "--prune", "--quiet", timeout=FETCH_TIMEOUT).returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def unpushed_in_submodules(path):
+    """Commits in any submodule (recursively) on none of its remotes."""
+    r = git(path, "submodule", "foreach", "--quiet", "--recursive",
+            "git rev-list --count HEAD --branches --not --remotes")
+    if r.returncode:
+        return None  # unknown: treat as unsafe
+    return sum(int(n) for n in r.stdout.split() if n.isdigit())
+
+
+def prune_metadata(repo, label, args, tally):
+    """Clear entries whose directory is gone, sparing any whose parent is
+    gone too (unmounted disk): those are locked across the prune."""
+    missing = [w for w in worktrees(repo)[1:] if w.get("prunable") and not w.get("locked")]
+    spare = [w["worktree"] for w in missing if not os.path.isdir(os.path.dirname(w["worktree"]))]
+    for p in spare:
+        print(f"{label}: keep metadata for {p} -- its parent directory is missing too (unmounted?)")
+    gone = [w["worktree"] for w in missing if w["worktree"] not in spare]
+    for p in gone:
+        print(f"{label}: {'cleared' if args.delete else 'would clear'} metadata: {p}")
+    tally["metadata"] += len(gone)
+    if not (gone and args.delete):
+        return
+    locked = [p for p in spare if not git(repo, "worktree", "lock", "--reason",
+                                          "prune-worktrees: path unavailable", p).returncode]
+    if len(locked) < len(spare):
+        print(f"{label}: could not lock an unavailable worktree -- metadata left alone", file=sys.stderr)
+        tally["errors"] += 1
+    else:
+        git(repo, "worktree", "prune", "--expire=now")
+    for p in locked:
+        git(repo, "worktree", "unlock", p)
+
+
 def prune_repo(repo, args, cwds, me, tally):
     label = os.path.relpath(repo, HOME)
-    if not args.no_fetch and git(repo, "fetch", "--prune", "--quiet").returncode:
-        print(f"{label}: fetch failed -- using the remote refs already here", file=sys.stderr)
+    fresh = True
+    if not args.no_fetch and not fetch(repo):
+        fresh = False
+        print(f"{label}: fetch failed -- trusting only patch-equivalence to {Landed(repo).base}",
+              file=sys.stderr)
 
-    r = git(repo, "worktree", "prune", "--expire=now", "--dry-run", "--verbose")
-    stale = (r.stdout + r.stderr).splitlines()  # git reports these on stderr
-    for line in stale:
-        print(f"{label}: {'cleared' if args.delete else 'would clear'} metadata: {line}")
-    if stale and args.delete:
-        git(repo, "worktree", "prune", "--expire=now")
-    tally["metadata"] += len(stale)
+    prune_metadata(repo, label, args, tally)
 
     cutoff = datetime.datetime.now().timestamp() - args.hours * 3600
-    landed = Landed(repo)
+    landed = Landed(repo, trust_remotes=fresh)
     for w in worktrees(repo)[1:]:
         path = w["worktree"]
         branch = w.get("branch", "").removeprefix("refs/heads/") if isinstance(w.get("branch"), str) else ""
@@ -221,8 +283,14 @@ def prune_repo(repo, args, cwds, me, tally):
         if args.delete:
             r = git(repo, "worktree", "remove", path)
             if r.returncode and "submodules" in r.stderr:
-                # git refuses any worktree with submodules; status above
-                # (which covers submodules) already proved it clean.
+                # git refuses any worktree with submodules. Status above
+                # proved their tracked state clean; their own commits are
+                # checked here, since removal deletes the module clones.
+                n = unpushed_in_submodules(path)
+                if n != 0:
+                    keep(f"unlanded: {'unknown' if n is None else n} commit(s) in a submodule not on any remote")
+                    tally["unlanded"].append(f"{label}: {name}")
+                    continue
                 r = git(repo, "worktree", "remove", "--force", path)
             if r.returncode:
                 print(f"{label}: keep {name} -- remove failed: {r.stderr.strip()}", file=sys.stderr)
@@ -233,6 +301,7 @@ def prune_repo(repo, args, cwds, me, tally):
 
 def prune_plugins(args):
     try:
+        before = os.stat(PLUGINS)
         with open(PLUGINS) as f:
             data = json.load(f)
     except FileNotFoundError:
@@ -256,6 +325,13 @@ def prune_plugins(args):
         with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
+        # Claude Code writes this file too, unlocked. If a session changed it
+        # since the read, writing ours would silently revert that change.
+        now = os.stat(PLUGINS)
+        if (now.st_mtime_ns, now.st_size) != (before.st_mtime_ns, before.st_size):
+            os.remove(tmp)
+            print("plugins: changed during the run -- left alone, next run retries", file=sys.stderr)
+            return 0
         os.replace(tmp, PLUGINS)
         old = sorted(n for n in os.listdir(STATE) if n.startswith("installed_plugins."))
         for n in old[:-KEEP_BACKUPS]:
