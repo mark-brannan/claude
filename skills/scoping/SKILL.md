@@ -139,8 +139,9 @@ taken; never overwrite an earlier one. Commit it. Shape:
    item stands on its own without the curia or a future ADR; an ADR,
    issues or cards in a mix; an issue, sub-issues; a parent card, child
    cards (`--parent <id>`); a repo, issues or cards, as a curia. An
-   umbrella item already one session in size is its own work item and
-   files nothing; a bigger one splits into children in its own system.
+   umbrella item already one session in size is its own work item, homed
+   on itself, and files nothing; a bigger one splits into children in its
+   own system.
 5. **Pencil and new words.** How many items rest on pencil, and which
    pencil; whether any item needs a new word or idea. If one does, name
    it and its two exits, a veto here or back to the curia or agora; that
