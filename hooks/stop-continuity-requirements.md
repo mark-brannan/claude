@@ -26,7 +26,10 @@ Where the doc runs ahead of the code, the case says so.
 Reads `transcript_path`, `session_id` and `cwd` from the event; `cwd`
 defaults to the working directory. With no `jq`, no transcript, no session
 id or no `session-metrics.jq`, it writes nothing. The metrics come from one
-`jq -s` over the transcript; a failed parse never fails the Stop.
+`jq -s` over the transcript; a failed parse never fails the Stop. As built,
+a failed parse, empty metrics or a failed `mkdir` exits before every later
+job, the state commit included; whether that should hold is open
+(section 14).
 
 ## 2. Write the metrics
 
@@ -57,7 +60,8 @@ session's item replaces that carry (question 16); the rest of the file stays.
 
 ## 5. Take the push lock
 
-Waits up to 90 s for the state-push lock, one pusher per clone. Not taken,
+Waits up to 90 s for the state-push lock, one pusher per `TMPDIR`
+(`claude-state-push.lock.d`). The 90 s is fixed in the code. Not taken,
 the hook exits: jobs 6 to 13 do not run and the checkpoint keeps its
 placeholder verdict. The exit releases every lock the hook holds.
 
@@ -67,22 +71,29 @@ One verdict per Stop, computed after the salvage (job 7) so it describes the
 tree the salvage leaves. `archivable` only when every condition holds;
 otherwise `not archivable: ` and the reasons, comma-joined, in this order:
 
-1. worktree dirty
-2. commits unpushed: counted as `HEAD --not --remotes=origin`, `origin/wip/*`
-   excluded; no upstream reads as never pushed
-3. no home: no open PR and no pointer card or issue, by
-   `branch-home-gate.sh --check`
-4. session live: another session's fresh claim stamp on the branch's card;
-   the session's own never counts. The store's claim replaces the stamp
-   (question 16)
+1. `worktree dirty`
+2. `<n> commit(s) unpushed`: counted as `HEAD --not --remotes=origin`,
+   `origin/wip/*` excluded. With no upstream and commits ahead:
+   `` `<branch>` has no upstream (never pushed) ``, or `detached HEAD, no
+   upstream to compare against`. A count that fails: `could not count
+   unpushed commits`. No origin refs at all, or nothing ahead of any origin
+   branch, is clear.
+3. `` no PR and no pointer for `<branch>` ``, by `branch-home-gate.sh
+   --check`; `branch home unverified (<detail>)` when the gate cannot say
+4. `session live`: another session's fresh claim stamp on the branch's card;
+   the session's own never counts
 5. the caller's own: `not a git repo`; `state repo not committed (git
    filter <f> unconfigured)`; `state-repo commit failed`; and in the cloud
    only, `state-repo push failed`
 
+The strings are the interface: `verdict_explain` in `lib-state.sh` matches
+them to explain the verdict, so a rewrite emits them byte for byte.
+
 Reason 3 is asked only when 1 and 2 are clear, reason 4 only when 1 to 3
 are. Could not verify is never a pass: a count git cannot make, or a home
-check that cannot reach GitHub, is a reason. The home check runs at most
-once per Stop, job 9 reusing its answer. The verdict replaces the
+check that cannot reach GitHub, is a reason. The home check runs once per
+Stop; job 9 reuses its answer and asks again only when it printed nothing.
+The verdict replaces the
 checkpoint's verdict line, never adds a second, and goes into the session
 record as `verdict` and `verdict_at` (epoch seconds).
 
@@ -115,6 +126,14 @@ commit resets the index and is a refusal. The commit is written to
 `refs/heads/wip/<session-id>`, the branch is reset (mixed) to where it was
 whatever else happened, and only that ref is force-pushed, 120 s. The
 checkpoint says salvaged and pushed, or salvaged with the push failed.
+
+- The commit message carries a `Co-Authored-By: Claude
+  <noreply@anthropic.com>` trailer.
+- A reset that fails after the commit leaves the commit on the branch; the
+  checkpoint says so and names the commit.
+- A fetch that fails skips the behind check.
+- With no resolvable base (`origin/HEAD`, `origin/main`, `origin/master` all
+  missing) the revert, shallow and stale checks are skipped.
 
 ## 8. Refresh or release the claim stamp
 
@@ -197,23 +216,34 @@ verdict reason; locally the commit is the promise.
 The session's record is one work item in `state/global/items/`, written
 through `work-item`. It replaces the pickup item, the claim stamp, the
 checkpoint's `## Resume` carry and the curia floor (question 16); once the
-hook writes items, `pickup/` is retired (question 14).
+hook writes items, `pickup/` is retired (question 14). Until item 5
+retires them, the hook writes the pickup file, the stamp and the floor as
+well (scoping item 3).
 
 - At its first Stop, a session that holds no claimed item mints one
   (question 15, pen). A session holding a claimed item writes onto that
-  item and mints none (one id per life, pen).
+  item and mints none (one id for the item's whole life, the sessions that
+  touch it listed on it in order, pen, roll `20261001t064716z`; the
+  claimed-item case is scoping item 3's reading, accepted at the yes).
 - A later Stop of the session that writes writes onto the same item,
   never a new one; how often it writes is open (below). The hook's
   hand-off is the item's log entry (question 14, pen).
 - The item is created `open`, never `ready` (pen); the hook writes no
   `ready` line on it (pencil, scoping item 3).
+- The hook never claims the item. A session that takes it up logs `ready`,
+  then `claimed` (`docs/work-item-lifecycle.md`): `open` never goes
+  straight to `claimed`.
 - Its brief is today's first hand-off, the last prompt's first line
   (job 9's default body); its home is the session's PR,
   `home=<owner/repo#n>`, once there is one (pencil, question 13).
+- The brief carries one link; the store refuses a brief without one. Which
+  link, when the session has no PR yet, is open (below).
 - A second mint of the same id is refused by the store and never retried
   under a fresh id (pen).
 - The write lands before job 12, so the same Stop commits it.
 - A refused or failed item write never stops the later jobs.
+- Orphaned minted items are the sweep's to retire, on the same path as old
+  cards (question 15).
 
 ### Open, unruled
 
@@ -222,9 +252,10 @@ on them.
 
 - What a failed transcript parse (job 1) should still do. Today it skips
   every later job, the state commit included.
-- Which link a minted item carries. `work-item create` refuses a brief with
-  no link, and a session with no PR at its first Stop has none, so row 14.1
-  cannot pass as the store stands.
+- Which link a minted item carries before the session has a PR. The store
+  accepts an http link, `owner/repo#n`, or a markdown link into `log/`, so
+  the session's checkpoint is available at the first Stop; item 3 takes a
+  default and names it in its PR.
 - How often the hook writes onto the item. Stop fires every turn.
 - Which item a session writes after it mints one and then claims another.
 - The owner of a minted item.
@@ -234,6 +265,13 @@ on them.
   verdict.
 - What a kill at 290 s should leave. The per-job timeouts (90 s lock, 60 s
   fetches, 30 s commits, 120 s pushes and pulls) add up past it.
+- What replaces job 8's release and refresh once the store's claim holds:
+  `work-item release` writes `status=ready`, which puts the item in grind's
+  queue, and a claim goes stale two hours after its holder's last line,
+  which ties this to how often the hook writes.
+- What the hook needs from the environment to call `work-item`: the session
+  id reaches `work-item` from the environment, the hook has it only in the
+  event.
 
 ## Acceptance cases
 
@@ -244,7 +282,8 @@ the card that tracks the bug).
 | # | Given | When | Then | Met |
 |---|---|---|---|---|
 | 0.1 | any input, including none | Stop | exit 0 | untested |
-| 0.2 | a Stop killed past 290 s after the checkpoint write, before job 6 | the next Stop | that checkpoint read `the Stop hook did not finish`; the next Stop takes any push lock the dead hook held | untested |
+| 0.2 | a Stop killed past 290 s after the checkpoint write, before job 6 | the checkpoint is read before the next Stop | its verdict line reads `the Stop hook did not finish` | untested |
+| 0.3 | a push lock left by a hook killed past 290 s | the next Stop | it takes the lock | untested |
 | 1.1 | an event with no `transcript_path`, or one that does not exist | Stop | nothing written under the state dir | untested |
 | 1.2 | an event with no `session_id` | Stop | nothing written | untested |
 | 1.3 | a transcript `jq -s` cannot parse | Stop | exit 0 | untested |
@@ -261,7 +300,7 @@ the card that tracks the bug).
 | 6.2 | a dirty tree with unpushed commits | Stop | reasons name dirty, then unpushed, in that order | tested |
 | 6.3 | no PR and no pointer | Stop | `no PR and no pointer for <branch>` | tested |
 | 6.4 | a branch never pushed, commits ahead | Stop | never pushed is a reason | tested |
-| 6.5 | a branch with no upstream and no commits ahead of main | Stop | not a reason | tested |
+| 6.5 | a branch with no upstream and no commits ahead of any origin branch | Stop | not a reason | tested |
 | 6.6 | a detached `HEAD` whose commit lives on no remote branch | Stop | a reason; the same `HEAD` on a remote branch is not | tested |
 | 6.7 | `@{u}` is `main` and the commits are on a pushed `stack/` branch | Stop | not unpushed | tested |
 | 6.8 | the home check cannot reach GitHub | Stop | not archivable, `branch home unverified` | tested |
@@ -313,6 +352,6 @@ the card that tracks the bug).
 | 14.4 | a minted item | any Stop | no `status=ready` line from the hook | no (item 3) |
 | 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | no (item 3) |
 | 14.6 | a fresh session | first Stop | the minted item's brief is the last prompt's first line | no (item 3) |
-| 14.7 | the store refuses the write, or `work-item` crashes | Stop | jobs 12 and 13 still run; exit 0 | no (item 3) |
+| 14.7 | the store refuses the write, or `work-item` crashes | Stop | the state commit is made; exit 0 | no (item 3) |
 | 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | no (item 3) |
 | 14.9 | the hook writes items and the duplicates are retired | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | no (item 5) |
