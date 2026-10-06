@@ -73,8 +73,14 @@ no GitHub home. Take the first line that fits:
   that date unprompted, so write the date the wait is expected to end, not a
   hope.
 - **Deferred to after 1.0** → the `1.0` milestone.
-- **A launchable session** — prompt written, model and effort sized → the
-  epic file's session list; a `ready` issue when no epic owns it.
+- **An epic** is one GitHub issue titled `[Epic] <aim>`, and only that:
+  not a label, a milestone, a file or a checklist. Its body is the aim,
+  the order and why; its children are GitHub sub-issues
+  (`gh issue edit <n> --add-sub-issue <m>`), which is how `worklist`, grind
+  and `/scoping` find them — a `- [ ] #m` line is invisible to all three.
+  Name one by `owner/repo#n`. Create or split one through `/scoping`.
+- **A launchable session** — prompt written, model and effort sized → a
+  sub-issue of its epic; a `ready` issue when no epic owns it.
 - **Half-done agent work** → the log and the hand-off prompt, as bare links
   with no state adjectives. A pushed branch has a PR or is a finding.
 - **Click work only the user can do** → a `human-click` card, and only
