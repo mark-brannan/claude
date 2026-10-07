@@ -99,3 +99,8 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - curia: sidecar names are working-backwards.md, scenarios.md, mvp-and-narrative.md, success-metric.md; problem-then-solution adds no sidecar Undo: rename in forms/*.md and SKILL.md ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: the ledger's seed is forms/decided.md; a pre-split digest's Decided moves whole to decided.md in lint's patch at its next opening Undo: delete forms/decided.md; drop the lint migration clause ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: a promoted Design section leaves one line linking its ADR; Where this stands shows Position and Size in place of Next; a dropped form's sidecar leaves the folder, git keeps it Undo: revert those lines in SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+### 20261007t071933z
+- Past the spend line the hand-off file may be Read as well as Written: the Write tool refuses to overwrite a file not yet read, and a retried item has the last hand-off on disk Undo: drop Read from the exemption in hooks/spend-gate.py and the settings.json fallback ([#71](https://github.com/mark-brannan/claude/pull/71))
+
+### 20261007t093718z
+- Disable only the mergify-stack skill via a permissions.deny Skill(mergify:mergify-stack) rule, keep the plugin on Undo: remove the one deny line in settings.json ([#76](https://github.com/mark-brannan/claude/pull/76))
