@@ -968,6 +968,10 @@ pickup_items() {  # each of this session's items: <path>\t<written|unwritten>
     fi
   done
 }
+handoff_field() {  # <item> <link|model|effort>: that body line's value, or ?
+  _v=$(awk -v k="$2:" 'f && index($0, k) == 1 { sub(/^[^:]*:[ \t]*/, ""); print; exit } /^---$/ { f = 1 }' "$1")
+  printf '%s' "${_v:-?}"
+}
 resume_ckpt() {
   pickup_items | awk -F'\t' '$2 == "written" { print $1; f = 1; exit } END { exit !f }'
 }
@@ -994,11 +998,18 @@ if [ "$hook_name" = Stop ]; then
   if [ -z "$items" ]; then
     add_arch "📄 no pickup item for ${sid:0:8}"
   else
+    # Written, the first Stop that sees the body stamps the time; the item
+    # file is rewritten every Stop, so its own mtime says nothing.
+    if printf '%s\n' "$items" | grep -q "$(printf '\twritten$')"; then
+      [ "$resume_ts" -gt 0 ] || resume_ts=$now_ts
+    fi
     while IFS="$(printf '\t')" read -r _f _st; do
-      case $_st in
-        written) add_arch "📄 ${_f##*/} -- hand-off written" ;;
-        *) add_arch "📄 ${_f##*/} -- no hand-off yet" ;;
-      esac
+      if [ "$_st" = written ]; then
+        add_arch "📄 ${_f##*/} (saved $(hhmm "$resume_ts"): $(handoff_field "$_f" link | sed 's|^https://github.com/||') · $(handoff_field "$_f" model) · $(handoff_field "$_f" effort))"
+      else
+        _snip=$(awk 'f && NF { print; exit } /^---$/ { f = 1 }' "$_f" | cut -c1-60)
+        add_arch "📄 ${_f##*/} (${_snip:-empty})"
+      fi
     done <<EOF_ITEMS
 $items
 EOF_ITEMS
@@ -1013,9 +1024,6 @@ EOF_ITEMS
     found=$(resume_ckpt)
     if [ -n "$found" ]; then
       resume_ts=$now_ts
-      add_arch "Archivable. Hand-off written $(hhmm "$resume_ts"). Next time: \`/pickup\`."
-    else
-      add_arch "Archivable, but no hand-off in the pickup item. Not asking again this session."
     fi
     save_nag
   elif archivable; then
@@ -1038,16 +1046,12 @@ EOF_ITEMS
       # not the user, speak last (dotfiles#391). Spend the arm; say what is there.
       since_nag=0
       [ "$resume_ts" -gt 0 ] || resume_ts=$now_ts
-      add_arch "Hand-off already written. Next time: \`/pickup\`."
     elif [ "$armed" -eq 1 ]; then
       nag_pending=1; save_nag
       # The reason is for the model alone; the notice below carries the
       # crossings, the verdict and the item names. What the body holds is /wrapup's.
       paths=$(printf '%s\n' "$items" | cut -f1 | paste -sd' ' -)
       block_reason="Write the hand-off into this session's pickup item per /wrapup (\"Write the hand-off into the pickup item\"): ${paths:-none exists yet in $(state_dir)/pickup/}. Then answer in one line naming the file."
-    elif [ "$resume_ts" -gt 0 ]; then
-      # Nothing new to say. Later Stops carry the block's age and nothing else.
-      add_arch "Hand-off $(hm $(( (now_ts - resume_ts) / 60 ))) old."
     fi
   fi
 fi
