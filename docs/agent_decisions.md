@@ -92,3 +92,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t093718z
 - Disable only the mergify-stack skill via a permissions.deny Skill(mergify:mergify-stack) rule, keep the plugin on Undo: remove the one deny line in settings.json ([#76](https://github.com/mark-brannan/claude/pull/76))
+
+### 20261007t104505z
+- Standing-orders guard line: prose names the remedy and points at the guard (editor's note on #70) Undo: revert 97aeb9e ([#70](https://github.com/mark-brannan/claude/pull/70))
