@@ -300,6 +300,17 @@ handoff() {  # handoff <sid> -- a pickup item whose body was edited past the def
   printf 'status: open\nupdated: x\nsession: %s\nmodel: m\nbranch: b\npr: none\nwhere: w\nprompt: p\n---\nnext: x\n' \
     "$1" > "$PK/2026-09-09T10-00-$1.md"
 }
+# An unedited item (body still the prompt line) is no hand-off, so the Stop
+# blocks -- and the block names that item's file, not just its directory.
+printf 'status: open\nupdated: x\nsession: stopn\nmodel: m\nbranch: b\npr: none\nwhere: w\nprompt: p\n---\np\n' \
+  > "$PK/2026-09-09T09-00-stopn.md"
+o=$(plant stopn; payload "$TP3" stopn "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
+t   'an unedited pickup item still blocks' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
+has 'and the block names its file' "pickup item 2026-09-09T09-00-stopn\.md in .*/pickup/ with" \
+    "$(printf '%s' "$o" | jq -r '.reason // ""')"
+has 'while an item-less Stop keeps the directory-only wording' "pickup item in .*/pickup/ with" \
+    "$(printf '%s' "$o1" | jq -r '.reason // ""')"
+
 handoff stop0
 S0() { plant stop0; payload "$TP3" stop0 "$REPO" Stop \
        | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
