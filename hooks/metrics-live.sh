@@ -1029,10 +1029,6 @@ EOF_ITEMS
     # spent: a missing hand-off is reported once, never re-blocked on, or this
     # would be the level-triggered nag again.
     nag_pending=0; since_nag=0
-    found=$(resume_ckpt)
-    if [ -n "$found" ]; then
-      resume_ts=$now_ts
-    fi
     save_nag
   elif archivable; then
     local_hour=$(date +%H); local_hour=${local_hour#0}
@@ -1053,13 +1049,14 @@ EOF_ITEMS
       # itself. Blocking now would force the extra turn that made the model,
       # not the user, speak last (dotfiles#391). Spend the arm; say what is there.
       since_nag=0
-      [ "$resume_ts" -gt 0 ] || resume_ts=$now_ts
     elif [ "$armed" -eq 1 ]; then
       nag_pending=1; save_nag
       # The reason is for the model alone; the notice below carries the
       # crossings, the verdict and the item names. What the body holds is /wrapup's.
-      paths=$(printf '%s\n' "$items" | cut -f1 | paste -sd' ' -)
-      block_reason="Write the hand-off into this session's pickup item per /wrapup (\"Write the hand-off into the pickup item\"): ${paths:-none exists yet in $(state_dir)/pickup/}. Then answer in one line naming the file."
+      # The closing constraint stays here, not only in /wrapup: it is what
+      # leaves the user the last word when the skill is not loaded.
+      paths=$(printf '%s\n' "$items" | awk -F'\t' 'NF { printf "%s`%s`", (n++ ? ", " : ""), $1 }')
+      block_reason="Write the hand-off into this session's pickup item per /wrapup (\"Write the hand-off into the pickup item\"): ${paths:-none exists yet in $(state_dir)/pickup/}. Then answer in one line naming the file -- no summary, no question, nothing new."
     fi
   fi
 fi

@@ -312,9 +312,11 @@ has 'the notice names the item, without its directory, as unwritten' \
     '^📄 2026-09-09T09-00-stopn\.md \(p\)$' "$(msg "$o")"
 has 'the notice still carries the metrics block' '^» ' "$(msg "$o")"
 has 'the reason gives the model the full path' \
-    ': /.*/pickup/2026-09-09T09-00-stopn\.md\. Then answer in one line' \
+    ': `/.*/pickup/2026-09-09T09-00-stopn\.md`\. Then answer in one line' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
 hasnt 'and no item lines in the reason' '📄' "$(printf '%s' "$o" | jq -r '.reason // ""')"
+has "and keeps the last word the user's" 'no summary, no question, nothing new\.$' \
+    "$(printf '%s' "$o" | jq -r '.reason // ""')"
 printf 'status: open\nprompt: p\n---\nnext: x\n' > "$PK/2026-09-09T11-00-stopm.md"
 printf 'status: open\nprompt: p\n---\np\n' > "$PK/2026-09-09T12-00-stopm.md"
 o=$(plant stopm; payload "$TP3" stopm "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
