@@ -91,4 +91,4 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - Past the spend line the hand-off file may be Read as well as Written: the Write tool refuses to overwrite a file not yet read, and a retried item has the last hand-off on disk Undo: drop Read from the exemption in hooks/spend-gate.py and the settings.json fallback ([#71](https://github.com/mark-brannan/claude/pull/71))
 
 ### 20261007t093718z
-- Disable only the mergify-stack skill via a permissions.deny Skill(mergify:mergify-stack) rule, keep the plugin on Undo: remove the one deny line in settings.json (settings-deny-mergify-stack-skill)
+- Disable only the mergify-stack skill via a permissions.deny Skill(mergify:mergify-stack) rule, keep the plugin on Undo: remove the one deny line in settings.json ([#76](https://github.com/mark-brannan/claude/pull/76))
