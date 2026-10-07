@@ -64,7 +64,7 @@ as open; the rows above stand on that reading until it rules.
 | Transitions: open → ready; ready → claimed; claimed → blocked, ready, done; blocked → claimed, ready; done → claimed or ready; done → closed by acceptance only, never on a clock; closed → claimed; never claimed from open | pen, 2026-10-02, §2, 20261002t012203z | `work-item log` refuses any other step |
 | Every work item is claimable, cards included: the claim extends to every home an item can have | pen, 2026-10-01, §2, 20261001t014929z | `work-item claim` |
 | A claim is valid from ready, blocked, done or closed, the four sources the transitions row allows, and never while another session holds it; the ruling's own words name ready and closed, and the stale-claim rule is the agent's toil | pen, 2026-10-02, §2, 20261002t012203z | `work-item claim` refuses a held item and any other source |
-| A claim lapses once the claiming session has been silent one hour since its last Stop, read from its metrics record; a new claim then takes over and logs the old session id; a resumed session re-claims. Measured over 137 session records: median 0.36 h, p90 1.07 h, none past two hours | pen, 2026-10-04, §2, 20261004t075633z | `work-item claim` |
+| A claim lapses once the claiming session has been silent one hour since its last Stop, read from its metrics record; a new claim then takes over and logs the old session id; a resumed session re-claims. Measured over 137 session records: median 0.36 h, p90 1.07 h, none past two hours | pen, 2026-10-04, §2, 20261004t075633z | `work-item claim`, with a two-hour cutoff on the item's own log, not one hour from the metrics record: the code lags the ruling |
 | A session checks the claim at start and again before the real work | pen, 2026-10-01, §2, 20261001t181542z | the skills |
 | "Pickup" is the verb, claim and read; the hand-off is a state of the brief, not a kind of item | pen, 2026-10-01, §2, 20261001t181542z | `pickup-list take` |
 | The card claim and the one-writer lock are the agent's to build; the user is shown the data format of each | pen, 2026-10-01, §2, 20261001t021650z | `work-item` holds a per-item lock while writing |
@@ -123,7 +123,7 @@ refused are in its agent notes, one line, not here.
 | bucket | a lane of the board by owner: Needs ruling, the user's click work, the agent's queue | pen, 20261001t020118z |
 | item id | epoch seconds then the creating session's eight hex; opaque, never parsed, never reused | pen, 20261001t064716z, 20261001t213901z |
 | pickup | the verb: claim an item and read it | pen, 20261001t181542z |
-| claim | a session's hold on an item; valid from ready or closed, lapsing an hour after the holder's last Stop | pen, 20261002t012203z, 20261004t075633z |
+| claim | a session's hold on an item; valid from ready, blocked, done or closed, never open, lapsing an hour after the holder's last Stop | pen, 20261002t012203z, 20261004t075633z |
 | owner | human-ruling, human-click or agent: who the item exists for | pen, 20261002t012203z |
 | toil and judgment | an assessment, made when the item is created, of why it exists for a human, an agent, or between. The words are pen; the concept is incomplete | pen, 20260929t093409z |
 | agora | the quick sitting: rulings in batch, each with a default that holds; where a Needs ruling card is answered | pen, digest-at-cut §5 |
