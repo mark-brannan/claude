@@ -44,11 +44,13 @@ class SpendGateTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_hook(self, tool, tool_input, transcript=None, **env):
+    def run_hook(self, tool, tool_input, transcript=None, extra=None, **env):
         e = {k: v for k, v in os.environ.items() if k not in ENV_KEYS}
         e.update(env)
         payload = {"session_id": "s", "transcript_path": str(transcript or self.transcript),
-                   "hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
+                   "cwd": "/w", "hook_event_name": "PreToolUse", "tool_name": tool,
+                   "tool_input": tool_input}
+        payload.update(extra or {})
         p = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload),
                            capture_output=True, text=True, env=e, timeout=10)
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -104,6 +106,29 @@ class SpendGateTest(unittest.TestCase):
         self.assertEqual(d, "allow")
         self.assertIn("Write to NEXT.md", self.run_hook(*self.BASH, **env)[1])
 
+    def test_handoff_write_must_be_inside_the_cwd(self):
+        for path in ("/etc/HANDOFF.md", "/root/.ssh/HANDOFF.md", "/w/../etc/HANDOFF.md",
+                     "/wx/HANDOFF.md"):
+            self.assertEqual(self.run_hook("Write", {"file_path": path}, SPEND_GATE_USD="5")[0],
+                             "deny", path)
+        for path in ("/w/HANDOFF.md", "/w/sub/HANDOFF.md", "HANDOFF.md"):
+            self.assertEqual(self.run_hook("Write", {"file_path": path}, SPEND_GATE_USD="5")[0],
+                             "allow", path)
+        # no cwd in the input: nothing to contain the write, so it is denied
+        self.assertEqual(self.run_hook(*self.HANDOFF_WRITE, extra={"cwd": None},
+                                       SPEND_GATE_USD="5")[0], "deny")
+
+    def test_subagent_spend_counts(self):
+        # <session>.jsonl's subagents live in <session>/subagents/agent-*.jsonl.
+        sub = Path(self.tmp.name) / "t" / "subagents"
+        sub.mkdir(parents=True)
+        line = json.dumps(assistant("msg_sub", "claude-haiku-5", out=2_000_000))  # $10
+        (sub / "agent-a1.jsonl").write_text(line + "\n")
+        self.assertEqual(self.run_hook(*self.BASH, SPEND_GATE_USD="20.45")[0], "deny")
+        self.assertEqual(self.run_hook(*self.BASH, SPEND_GATE_USD="20.46")[0], "allow")
+        # context stays the main transcript's last call
+        self.assertEqual(self.run_hook(*self.BASH, SPEND_GATE_TOKENS="150001")[0], "allow")
+
     def test_missing_transcript_allows_with_a_note(self):
         d, _, err = self.run_hook(*self.BASH, transcript="/nonexistent/t.jsonl",
                                   SPEND_GATE_USD="0.01")
@@ -153,8 +178,8 @@ class WrapperTest(unittest.TestCase):
     def run_wrapper(self, tool, tool_input, **env):
         e = {k: v for k, v in os.environ.items() if k not in ENV_KEYS}
         e.update(env, HOME=str(self.home))
-        payload = {"transcript_path": str(self.transcript), "hook_event_name": "PreToolUse",
-                   "tool_name": tool, "tool_input": tool_input}
+        payload = {"transcript_path": str(self.transcript), "cwd": "/w",
+                   "hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
         p = subprocess.run(["sh", "-c", self.cmd], input=json.dumps(payload),
                            capture_output=True, text=True, env=e, timeout=10)
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -178,6 +203,11 @@ class WrapperTest(unittest.TestCase):
                                           SPEND_GATE_USD="100"), "allow")
         self.assertEqual(self.run_wrapper("Write", {"file_path": "/w/NEXT.md"}, SPEND_GATE_USD="1",
                                           SPEND_GATE_HANDOFF="NEXT.md"), "allow")
+
+    def test_hook_missing_handoff_write_must_be_inside_the_cwd(self):
+        for path in ("/etc/HANDOFF.md", "/w/../etc/HANDOFF.md", "/wx/HANDOFF.md"):
+            self.assertEqual(self.run_wrapper("Write", {"file_path": path},
+                                              SPEND_GATE_USD="1"), "deny", path)
 
     def test_hook_crashing_with_a_line_denies_all_but_the_handoff_write(self):
         d = self.home / ".claude" / "hooks"

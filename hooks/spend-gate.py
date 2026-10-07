@@ -16,14 +16,15 @@ sets one (grind sets it per worker at the item's soft cap):
     SPEND_GATE_TOKENS    context line in tokens, e.g. 600000
     SPEND_GATE_HANDOFF   the hand-off file's name (default HANDOFF.md)
 
-Past either line, a Write whose file_path basename is SPEND_GATE_HANDOFF is
-allowed and everything else is denied, Bash included. A line that is not a
+Past either line, a Write to a file named SPEND_GATE_HANDOFF inside the
+session's cwd is allowed and everything else is denied, Bash included. A line that is not a
 number is ignored, with a note on stderr.
 
 The hook input carries no spend, so it is priced from the transcript:
 assistant events deduplicated by message id (a message's content blocks each
 arrive as an event carrying the same usage), each token class at the model's
-price. Context is the last call's input plus cache tokens.
+price, the session's subagent transcripts included. Context is the main
+transcript's last call: its input plus cache tokens.
 
 Two failures, two answers; neither locks the hand-off out:
   - The hook runs but cannot read the transcript: it allows, with a one-line
@@ -36,6 +37,7 @@ Two failures, two answers; neither locks the hand-off out:
     than running to its hard cap (3x the soft cap) unwatched, the claude#59
     shape this gate exists to end. With no line set, the wrapper allows.
 """
+import glob
 import json
 import os
 import sys
@@ -64,11 +66,10 @@ def price_of(model):
     return SONNET
 
 
-def measure(path):
-    """(spend in USD, context tokens of the last call) from a transcript.
+def read_usage(path, msgs):
+    """Fold one transcript's assistant usage into msgs, keyed by message id.
 
     Raises OSError if the transcript cannot be read."""
-    msgs = {}
     with open(path, "rb") as f:
         for line in f:
             # Cheap prefilter: most lines are tool results and user turns.
@@ -99,9 +100,11 @@ def measure(path):
             for k, v in vals.items():
                 if isinstance(v, (int, float)) and v > cur[k]:
                     cur[k] = v
+
+
+def price(msgs):
     spend = 0.0
-    ctx = 0
-    for u in msgs.values():  # dicts keep insertion order: the last is newest
+    for u in msgs.values():
         pin, pout = price_of(u["model"])
         write = u["cache_creation_input_tokens"]
         w1h = min(u["cache_1h"], write)
@@ -109,8 +112,30 @@ def measure(path):
         spend += (u["input_tokens"] * pin + u["output_tokens"] * pout
                   + u["cache_read_input_tokens"] * pin * 0.1
                   + w5m * pin * 1.25 + w1h * pin * 2.0)
-        ctx = u["input_tokens"] + u["cache_read_input_tokens"] + write
-    return spend / 1e6, ctx
+    return spend / 1e6
+
+
+def measure(path):
+    """(spend in USD, context tokens of the last call) for a session.
+
+    Spend counts the session's subagents too: Claude Code writes each one's
+    transcript to <session>/subagents/agent-<id>.jsonl beside <session>.jsonl.
+    Context is the main transcript's last call only. Raises OSError if the
+    main transcript cannot be read; an unreadable subagent one is skipped."""
+    msgs = {}
+    read_usage(path, msgs)
+    ctx = 0
+    if msgs:
+        u = next(reversed(msgs.values()))  # insertion order: the last is newest
+        ctx = u["input_tokens"] + u["cache_read_input_tokens"] + u["cache_creation_input_tokens"]
+    base = path[:-len(".jsonl")] if path.endswith(".jsonl") else path
+    for sub in glob.glob(os.path.join(glob.escape(base), "subagents", "**", "*.jsonl"),
+                         recursive=True):
+        try:
+            read_usage(sub, msgs)
+        except OSError:
+            continue
+    return price(msgs), ctx
 
 
 def line_from_env(name):
@@ -123,6 +148,16 @@ def line_from_env(name):
         print(f"spend-gate: {name}={raw!r} is not a number; ignoring it", file=sys.stderr)
         return None
     return v if v > 0 else None
+
+
+def is_handoff(file_path, cwd, handoff):
+    """The hand-off Write: named SPEND_GATE_HANDOFF and inside the session's
+    cwd, so a Write to /etc/HANDOFF.md or ~/.ssh/HANDOFF.md is still denied."""
+    if not file_path or not cwd or os.path.basename(str(file_path)) != handoff:
+        return False
+    root = os.path.realpath(cwd)
+    target = os.path.realpath(os.path.join(root, str(file_path)))
+    return os.path.commonpath([root, target]) == root
 
 
 def fmt_tokens(n):
@@ -152,8 +187,7 @@ def main():
     if not (past_usd or past_tok):
         return 0
     ti = inp.get("tool_input") or {}
-    if inp.get("tool_name") == "Write" and \
-            os.path.basename(str(ti.get("file_path") or "")) == handoff:
+    if inp.get("tool_name") == "Write" and is_handoff(ti.get("file_path"), inp.get("cwd"), handoff):
         return 0
     where = []
     if usd_line is not None:

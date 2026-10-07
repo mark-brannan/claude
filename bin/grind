@@ -1079,7 +1079,8 @@ build_pr_prompt() {
   printf 'the whole of your budget -- label, comment and push at it, then end.\n'
   printf 'Past ~$%s a hook denies every tool but one Write to %s at the\n' "$item_cap" "$handoff_file"
   printf 'worktree root: write the hand-off there (what is done, what is next,\n'
-  printf 'how to resume) and end the turn.\n\n'
+  printf 'how to resume) and end the turn. The gap between the two is for the\n'
+  printf 'label, the comment and the push, which need tools the hook denies.\n\n'
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
   printf '  GRIND_STATUS: done     you finished. grind checks the PR for the\n'
   printf '                         awaiting-human label Mergify computes, or for a\n'

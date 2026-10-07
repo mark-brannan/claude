@@ -1276,6 +1276,7 @@ cat > "$S/bin/claude" <<GH
 #!/bin/sh
 [ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
+echo "\${SPEND_GATE_USD:-} \${SPEND_GATE_HANDOFF:-}" >> "$S/claude-env.log"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 echo \$((n + 1)) > "$S/claude-next"
@@ -1629,9 +1630,13 @@ mv "$S/pr-11.saved" "$S/pr-11.json"
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json
 reply 0.20 "done" 1
 prview 11 '["awaiting-human"]' '[]'
-: > "$CLAUDE_LOG"
+: > "$CLAUDE_LOG"; : > "$S/claude-env.log"
 run --prs
 eq 'exit 0' 0 "$RC"
+# The gate sits at the soft cap, a quarter past the contract's $1 stop: at $1
+# the worker still needs Bash to label, comment and push (claude#69 review).
+eq 'a pr worker gets its soft cap ($1.25) as the spend gate line' '1.25 HANDOFF.md' \
+  "$(cat "$S/claude-env.log")"
 has 'awaiting-human alone is enough to be done' '^.*#11: PR 11 -- sonnet, \$0\.20'
 lacks 'and it is not unverified' 'UNVERIFIED'
 PROMPT=$(cat "$S/prompt.txt")
@@ -1643,6 +1648,7 @@ prompt_has 'the worker is told the head branch' 'on fix-11 -- the PR'
 prompt_has 'done is offered'                    'GRIND_STATUS: done'
 prompt_has 'blocked is offered'                 'GRIND_STATUS: blocked'
 prompt_has 'the worker is told the stop rule is its budget, not a kill' 'grind does not stop you at it'
+prompt_has 'and that the gate closes past it, at the soft cap' 'Past ~$1.25 a hook denies every tool but one Write'
 lacks 'no grind-N branch is ever made for a PR' 'grind-11'
 
 # --- done with neither the label nor a signed head move is unverified ----------------
