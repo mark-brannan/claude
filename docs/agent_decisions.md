@@ -159,3 +159,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t202646z
 - references.md: mechanisms get their own section, not entries under The order Undo: move the four entries under The order ([#84](https://github.com/mark-brannan/claude/pull/84))
+
+### 20261007t222710z
+- A cloud-session release is named <claude sha>-<checksum> and .sync-status.json drops guards_sha, now that dotfiles no longer feeds the release Undo: restore GUARDS_REV in REV and the guards_sha field in cloud-session-setup.sh ([#83](https://github.com/mark-brannan/claude/pull/83))
+- With the five guard copies gone, a machine without the languette plugin runs none of those gates; the copies' fail-closed fallback is not replaced Undo: add a settings.json PreToolUse tripwire that denies when the languette plugin is not installed ([#83](https://github.com/mark-brannan/claude/pull/83))
