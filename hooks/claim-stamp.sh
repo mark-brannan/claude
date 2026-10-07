@@ -4,7 +4,7 @@
 # session, visible to every machine.
 #
 # Why a remote stamp: nothing else says which session holds a branch in a way
-# a second machine can see. `no-foreign-worktree.sh` and `branch_brief` see
+# a second machine can see. the languette plugin's `guard-worktrees` and `branch_brief` see
 # local worktrees only, so two sessions on two machines could both pick up the
 # same branch and neither would know until a push was rejected. Ruled by
 # Solace, 2026-09-22 (dotfiles#287): stamp the card itself, so an accidental
@@ -25,7 +25,7 @@
 # CONVENIENCE, NOT A GATE: every path exits 0. No gh, no jq, gh
 # unauthenticated, no card, a failed API call -- all are silent no-ops. A
 # session must never be unable to start or end because a claim could not be
-# written. The gates in this repo (branch-home-gate.sh, public-issue-guard.sh)
+# written. The gates in this repo (branch-home-gate.sh, the plugin's guard-github-issues)
 # fail closed; this one does not, deliberately.
 #
 # Never runs under CI: the shared PR reviewer runs Claude Code inside GitHub

@@ -85,7 +85,7 @@ carry its state, which is stale the moment it is written.
 The item hands over a branch, an issue and a PR. It does **not** hand over a
 directory, and the previous session's worktree is not yours to work in even
 when it is sitting right there with the branch already checked out —
-`no-foreign-worktree.sh` refuses it, and the reason it refuses is that the
+the languette plugin's `guard-worktrees` refuses it, and the reason it refuses is that the
 owning session may still be running and may be archived out from under you
 mid-turn (PR #162).
 

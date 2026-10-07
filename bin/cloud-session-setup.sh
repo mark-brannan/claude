@@ -1,7 +1,7 @@
 #!/bin/sh
 # cloud-session-setup.sh -- seed ~/.claude on an ephemeral cloud-session VM
 # (Ubuntu, root, ~5 min setup window) from mark-brannan/claude, whose repo root
-# IS ~/.claude, plus the four guard hooks that still live in mark-brannan/dotfiles.
+# IS ~/.claude.
 #
 # Wire it up in the environment's setup-script field:
 #
@@ -15,15 +15,6 @@
 # atomic. The seed stays a separate clone, a release is staged from it, and
 # one symlink flip makes it live -- the scheme this script already had, kept
 # because only the source of the tree changed, not the reason for it.
-#
-# Why dotfiles is still read: settings.json runs no-checkout-home,
-# no-foreign-worktree, prose-budget-commit and public-issue-guard from
-# ~/.claude/hooks and FAILS CLOSED when one is missing -- every Bash call is
-# denied. Those four stay tracked in dotfiles (GUARD_HOOKS below), so a VM
-# that did not get them would be unusable, not merely less guarded. They are
-# staged into the same release, so the claude tree and the guards go live
-# together or not at all. Both repos must therefore be sources on the
-# environment: the GitHub proxy 403s any repo that is not attached.
 #
 # Deliberately NOT yadm, and never over a real checkout: it refuses where
 # $HOME is yadm-managed or where ~/.claude is a git clone (every real
@@ -49,9 +40,6 @@ set -uf
 
 # The claude seed: this repo, whose root is ~/.claude.
 SEED="${CLAUDE_SEED:-$HOME/.local/share/claude-seed}"
-# The guard seed: dotfiles, read for GUARD_HOOKS only.
-GUARDS_SEED="${DOTFILES_SEED:-$HOME/.local/share/dotfiles-seed}"
-GUARDS_URL="${DOTFILES_URL:-https://github.com/mark-brannan/dotfiles}"
 CLAUDE_HOME="$HOME/.claude"
 BACKUP="$HOME/.claude-replaced"
 # Versioned releases + the "current" symlink that makes an install atomic --
@@ -69,7 +57,7 @@ DRY_RUN=no
 # copied to the same path under ~/.claude. Expand deliberately: every line
 # lands in every cloud session.
 # Every hook that settings.json references (directly or transitively) MUST be
-# listed here or in GUARD_HOOKS. settings.json runs hooks from $HOME ONLY -- the old
+# listed here. settings.json runs hooks from $HOME ONLY -- the old
 # $CLAUDE_PROJECT_DIR fallback was removed because in a cloud session on a
 # third-party repo it executed THAT repo's .claude/hooks/*.sh under user-scope
 # trust. Fail-closed is only safe if $HOME is complete: an omission here means
@@ -133,7 +121,6 @@ hooks/connector-budget.sh
 hooks/prose-budget-edit.sh
 hooks/branch-home-gate.sh
 hooks/claim-stamp.sh
-hooks/issue-door.sh
 hooks/fixtures
 bin/metrics-preview.sh
 bin/metrics-breakdown.sh
@@ -146,16 +133,6 @@ bin/scoping-lock
 bin/gh-resolve-thread
 bin/pr-label-audit
 bin/npm-publish-bg
-"
-
-# Hooks that still live in mark-brannan/dotfiles at .claude/hooks/<name>,
-# staged into hooks/ beside the INSTALL ones. A missing one is a missing
-# INSTALL entry: the stage is incomplete and is not activated.
-GUARD_HOOKS="
-no-checkout-home.sh
-no-foreign-worktree.sh
-prose-budget-commit.sh
-public-issue-guard.sh
 "
 
 # --- what is wholly owned by this installer -------------------------------
@@ -182,7 +159,7 @@ OWNED_NEVER='. state projects todos plugins'
 # The continuity hooks read and write the private state repo
 # (claude_prompts_scratch). This script cannot clone it -- a VM has no
 # credentials for a private repo at setup time -- so it must be added as a
-# SECOND SOURCE on the cloud environment alongside claude and dotfiles. Without it the
+# SECOND SOURCE on the cloud environment alongside claude. Without it the
 # hooks still run, but they write to ~/.claude/state/global, which dies with
 # the container. session-start-continuity.sh says so at the top of every
 # session rather than failing quietly.
@@ -266,8 +243,7 @@ fi
 # VM, which look identical to the ones that do. Hence this pull, and
 # hooks/session-start-seed-refresh.sh re-running the installer at every
 # SessionStart: live rather than pinned, because a stale standing order in an
-# interactive session is worse than a changed one. The dotfiles guard seed
-# gets the same pull below.
+# interactive session is worse than a changed one.
 #
 # `pull --ff-only`, not `fetch` plus a merge of FETCH_HEAD: the latter takes
 # origin's default branch whatever the seed has checked out, so testing a
@@ -285,23 +261,6 @@ else
   say "refreshed to $(git -C "$SEED" rev-parse --short HEAD 2>/dev/null)"
 fi
 
-# The guard seed is this script's to create, not the setup blob's: the blob
-# only has to know where to find THIS file. Same never-fatal stance as above;
-# GUARD_HOOKS entries it cannot supply are counted missing in Stage, which
-# keeps the previous release rather than activating a tree without its gates.
-if [ "$DRY_RUN" = yes ]; then
-  say "would clone or refresh $GUARDS_SEED (skipped: --dry-run does no network)"
-elif [ -d "$GUARDS_SEED/.git" ]; then
-  out=$(git -C "$GUARDS_SEED" pull -q --ff-only 2>&1) ||
-    warn "guard refresh failed, using the existing checkout: ${out:-unknown error}"
-elif out=$(git clone -q --depth 1 "$GUARDS_URL" "$GUARDS_SEED" 2>&1); then
-  say "cloned guard seed $GUARDS_SEED"
-else
-  warn "guard seed clone failed: ${out:-unknown error}"
-  rm -rf "$GUARDS_SEED"
-fi
-
-
 # =========================================================================
 # Stage — build the next release in full, touching nothing under $HOME.
 # =========================================================================
@@ -309,7 +268,7 @@ fi
 # container seeded it once, the repo dropped it, and the copy under ~/.claude
 # was still there and still won. The fix is structural, not a sweep of stale
 # files: OWNED_DIRS (hooks, rules, bin, lib) are linked whole into ~/.claude, so a
-# file dropped from INSTALL or GUARD_HOOKS is simply not in the next staged
+# file dropped from INSTALL is simply not in the next staged
 # release, with no prune step to keep in sync. OWNED_NEVER guards the shared
 # directories (~/.claude itself, state/, projects/) that would otherwise be
 # hidden behind a symlink.
@@ -323,8 +282,8 @@ fi
 # existing release rather than rebuilding it, which is only sound because a
 # git SHA pins exactly what was staged. With no SHA to be had, fall back to a
 # name unique to this run so that shortcut can never match a stale tree.
-# Two sources feed one release, so the name carries both SHAs (claude first:
-# the SessionStart brief shows the first seven characters of the status sha).
+# The name carries the claude SHA first: the SessionStart brief shows the
+# first seven characters of the status sha.
 # The Localise step below also writes $HOME and the state repo's path into
 # the staged settings.json, so those are content too: a release staged before
 # the state repo was cloned, reused once it sits elsewhere, would keep a terms
@@ -336,9 +295,8 @@ STATE_REPO=$(bash -c '. "$1" && state_repo' _ "$SEED/hooks/lib-state.sh" 2>/dev/
 [ -n "$STATE_REPO" ] || STATE_REPO=/workspace/claude_prompts_scratch
 LOCAL_REV=$(printf '%s\n%s\n' "$HOME" "$STATE_REPO" | cksum | cut -d' ' -f1)
 CLAUDE_REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null)
-GUARDS_REV=$(git -C "$GUARDS_SEED" rev-parse HEAD 2>/dev/null)
-if [ -n "$CLAUDE_REV" ] && [ -n "$GUARDS_REV" ]; then
-  REV="$CLAUDE_REV-$GUARDS_REV-$LOCAL_REV"
+if [ -n "$CLAUDE_REV" ]; then
+  REV="$CLAUDE_REV-$LOCAL_REV"
 else
   REV="unknown.$$"
 fi
@@ -384,35 +342,6 @@ for path in $INSTALL; do
   installed=$((installed + 1))
 done
 
-# GUARD_HOOKS come from the dotfiles seed, into the same staged hooks/.
-for name in $GUARD_HOOKS; do
-  [ -n "$name" ] || continue
-  path="hooks/$name"
-  blocked=no
-  for glob in $SKIP_GLOBS; do
-    # shellcheck disable=SC2254  # $glob is a pattern on purpose
-    case "$path" in $glob) blocked=yes; break ;; esac
-  done
-  if [ "$blocked" = yes ]; then
-    warn "  REFUSED $path — on the never-install list"
-    refused=$((refused + 1)); continue
-  fi
-  src="$GUARDS_SEED/.claude/hooks/$name"
-  if [ ! -e "$src" ]; then
-    warn "  MISSING $path — not in $GUARDS_SEED (guard seed absent, or moved?)"
-    missing=$((missing + 1)); continue
-  fi
-  if [ "$DRY_RUN" = yes ]; then
-    say "  would stage $path (from dotfiles)"
-    installed=$((installed + 1)); continue
-  fi
-  dst="$STAGE_TMP/$path"
-  # -L: a guard that is a symlink in dotfiles would dangle inside the release.
-  mkdir -p "$(dirname "$dst")" && cp -L "$src" "$dst" ||
-    { warn "  FAILED to stage $path"; failed=$((failed + 1)); continue; }
-  installed=$((installed + 1))
-done
-
 # =========================================================================
 # Localise — settings.json's absolute paths, rewritten for this VM.
 # =========================================================================
@@ -421,7 +350,7 @@ done
 # neither ~ nor ${HOME} in env or pluginConfigs values (probed: the hook saw
 # the literal string), so the repo holds a real machine's absolute paths, and
 # here they would name a HOME that doesn't exist. A terms file that is set but
-# unreadable makes the plugin's public-issue-guard deny every public post, so
+# unreadable makes the plugin's guard-private-terms deny every public post, so
 # the staged copy gets this VM's own: its $HOME, and $STATE_REPO (resolved
 # above, where the release is named). jq missing or failing counts as a failed
 # stage, so the unlocalised copy is never flipped live: the previous release
@@ -663,9 +592,8 @@ done
 # =========================================================================
 # Plugins — settings.json enables them, but nothing installs them: user
 # settings do not auto-install in `claude -p` or a cloud session. The
-# languette plugin carries the rm, git-footgun and stacked-base guards; for
-# now it runs alongside the copies in .claude/hooks, which stay until it has
-# run on real machines. A plugin that never installed is a guard that
+# languette plugin carries the guards (worktrees, private terms, GitHub
+# issues, prose budget, rm, git-footguns, stacked-base). A plugin that never installed is a guard that
 # silently isn't there, so a failure here marks the install incomplete for
 # the SessionStart brief. Refreshed and updated, not just installed: a VM
 # restored with an old plugin cache would otherwise keep running that build.
@@ -726,7 +654,6 @@ else
   "channel": "$BRANCH",
   "tag": null,
   "sha": "${ACTIVE%%-*}",
-  "guards_sha": "$([ "${ACTIVE#*-}" != "$ACTIVE" ] && rest=${ACTIVE#*-} && echo "${rest%%-*}")",
   "installed_at": "$NOW",
   "complete": $COMPLETE,
   "source": "cloud-session-setup.sh"
