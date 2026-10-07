@@ -111,3 +111,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t100254z
 - curia: the no-private-stamp ruling is read to cover a skill's pen/pencil comments as well as specs and decisions logs, since a stamp there is provenance in prose; a spec row cites its repo's public decisions line, and the ledger line links the row Undo: restore the roll stamps in the two pencil comments; reword the spec-row sentence in SKILL.md Layers ([#64](https://github.com/mark-brannan/claude/pull/64))
+
+### 20261007t104154z
+- curia: scoping's lock records decided.md, the file every ruling lands in, so a ruling landing only in the ledger mid-scoping trips the read-moved guard; skill text, not a bin/scoping-lock change Undo: say digest.md again in skills/scoping/SKILL.md §2 ([#64](https://github.com/mark-brannan/claude/pull/64))
