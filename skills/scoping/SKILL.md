@@ -138,8 +138,13 @@ taken; never overwrite an earlier one. Commit it. Shape:
    pick that carries medium risk or more, as a table of default, undo,
    risk. Home by target (§5, 2026-10-01): a curia, cards, or issues when an
    item stands on its own without the curia or a future ADR; an ADR,
-   issues or cards in a mix; an issue, sub-issues; a parent card, child
+   issues or cards in a mix; an issue or epic, sub-issues; a parent card, child
    cards (`--parent <id>`); a repo, issues or cards, as a curia. An
+   epic's children: one sub-issue per separable item; a careful sequence
+   is one sub-issue whose body holds the sequence; anything uncertain is
+   a research sub-issue with its questions and its output, and the epic
+   carries only its line; a later phase is named in the epic, never left
+   out of it. An
    umbrella item already one session in size is its own work item, homed
    on itself, and files nothing; a bigger one splits into children in its
    own system.
