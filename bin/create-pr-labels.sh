@@ -13,6 +13,7 @@ claimed|6A737D|A session holds this branch; see the claim stamp on the card
 churn-ok|FBCA04|Waives the churn-diff gate (human-applied only)
 fixup-hard|D93F0B|A fixer session gave up; needs a bigger session or a human
 blocked|B60205|Waiting on something; body carries the Blocked by line
+epic|3E4B9E|An [Epic] issue: the aim; its sub-issues hold the work
 '
 
 ensure() { # ensure <repo> <label> <color> <desc>
