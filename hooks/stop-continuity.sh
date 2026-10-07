@@ -171,7 +171,7 @@ resume_block=""
     echo
     echo "## Uncommitted at Stop"
     echo
-    u=$(git -C "$work_root" status --porcelain 2>/dev/null | head -40)
+    u=$(dirty_paths "$work_root" | head -40)
     [ -n "$u" ] && printf '```\n%s\n```\n' "$u" || echo "clean"
 
     up=$(git -C "$work_root" rev-list --count "@{u}..HEAD" 2>/dev/null || echo "")
@@ -572,7 +572,7 @@ pickup_item() {
       *)             ust_desc="ahead unknown" ;;
     esac
     dirty=clean
-    [ -z "$(git -C "$work_root" status --porcelain 2>/dev/null)" ] || dirty=dirty
+    [ -z "$(dirty_paths "$work_root")" ] || dirty=dirty
     pi_branch_line="$work_repo $work_branch ($ust_desc, $dirty)"
     miss="${TMPDIR:-/tmp}/claude-pickup-pr-miss.$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_-' '_')"
     if [ "$pi_pr" = none ] && [ "$ust" = 'ahead 0' ] && [ -x "$HOOK_DIR/branch-home-gate.sh" ] \
