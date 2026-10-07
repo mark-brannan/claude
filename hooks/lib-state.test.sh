@@ -502,15 +502,17 @@ bs() { CLAUDE_STATE_REPO="$SR" bash -c '. "$0/lib-state.sh"; buffered_state "$1"
 rm -f "$SR/notes.txt"
 mkdir -p "$SR/state/global/pickup"; : > "$SR/state/global/pickup/h.md"
 eq_ust 'buffered_state: names the hand-off, counts the metrics' \
-  '→ buffered in the state repo, not committed yet (the Stop hook commits and pushes it): pickup/h.md, + 1 metrics file' \
+  '→ buffered in the state repo, not committed yet (the next Stop commits it): pickup/h.md, + 1 metrics file' \
   "$(bs "$SR")"
 rm -f "$SR/state/global/pickup/h.md"; : > "$SR/state/global/metrics/two.json"
 eq_ust 'buffered_state: metrics alone are a count' \
-  '→ buffered in the state repo, not committed yet (the Stop hook commits and pushes it): + 2 metrics files' \
+  '→ buffered in the state repo, not committed yet (the next Stop commits it): + 2 metrics files' \
   "$(bs "$SR")"
 mkdir -p "$WT/state"; : > "$WT/state/x"
 eq_ust 'buffered_state: silent outside the state repo' '' "$(bs "$WT")"
 rm -rf "$WT/state" "$SR/state/global/metrics/two.json" "$SR/state/global/pickup"
+gitq "$SR" add state/; gitq "$SR" commit -q -m state
+eq_ust 'buffered_state: silent when state/ is committed' '' "$(bs "$SR")"
 
 # --- verdict_explain names the dirty files when given the tree ---------------
 ve() { CLAUDE_STATE_REPO="$SR" bash -c '. "$0/lib-state.sh"; verdict_explain "$@"' "$HOOKS" "$@"; }

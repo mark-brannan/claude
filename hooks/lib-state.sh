@@ -163,8 +163,10 @@ dirty_paths() {
 }
 
 # buffered_state <work_root> -- in the state repo only, one line naming what
-# dirty_paths left out: the uncommitted files under state/, which the Stop
-# hook commits and pushes. Leaving them out of the verdict is right; leaving
+# dirty_paths left out: the uncommitted files under state/. stop-continuity.sh
+# has already committed this Stop's by the time this runs, so what is left was
+# written since, or its commit failed; the next Stop commits it, and the push is
+# debounced. Leaving them out of the verdict is right; leaving
 # them unsaid is not: a hand-off or card still on disk is worth knowing
 # about. Metrics are counted, everything else is named. Empty elsewhere, and
 # when nothing is buffered.
@@ -180,7 +182,7 @@ buffered_state() {
   if [ "$nm" -gt 0 ]; then
     named="${named:+$named, }+ $nm metrics file$([ "$nm" -eq 1 ] || echo s)"
   fi
-  echo "→ buffered in the state repo, not committed yet (the Stop hook commits and pushes it): $named"
+  echo "→ buffered in the state repo, not committed yet (the next Stop commits it): $named"
 }
 
 # archivable_reasons <work_root> <work_branch> [<session-id>] -- the reasons
