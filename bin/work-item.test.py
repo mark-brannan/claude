@@ -164,7 +164,7 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(fact(self.id, "holder"), "077c62eb", "closed -> claimed")
 
     def test_07_stale_claim(self):
-        # A holder that wrote nothing on the item for two hours has let go.
+        # A holder that wrote nothing on the item for an hour has let go.
         # Its own id, far from the fixed ids the other tests use.
         old = ok(A, "create", "--id", "1700000000077c62eb", "--brief", LINK, "Stale one")
         ok(A, "log", old, "status=ready")

@@ -30,15 +30,15 @@
 # makes it (`card-id new`) and this store never does; the file is the
 # lookup. An item is created in `open`, always. Six statuses: open, ready,
 # claimed, blocked, done, closed; the transitions are ALLOWED below. A claim
-# is valid when the folded status is ready or closed and no other session
-# holds it. A GitHub-homed item carries `home=`, with no link back.
+# is valid from ready, blocked, done or closed, never open, and never while
+# another session holds it. A GitHub-homed item carries `home=`, no link back.
 #
 # Refused at write: a create whose brief carries no link (kanban-lint's L6); a
 # `status=done` line with no `evidence=`; any `status=closed`, which only the
 # future whole-tree sweep writes (docs/work-item-lifecycle.md).
 #
-# Pencil (dotfiles#510's defaults): a flat folder; a holder that wrote nothing
-# on the item for WORK_ITEM_STALE_SECS (2h) has let go; and this is a GATE --
+# Defaults (dotfiles#510): a flat folder; a holder silent on the item for
+# WORK_ITEM_STALE_SECS (an hour since its last Stop) has let go; a GATE --
 # a write that cannot land, or is refused, exits non-zero (1 refused, 2 usage).
 # Writes are plain files in the state repo; the Stop hook commits and pushes.
 # Python 3 stdlib only.
@@ -255,7 +255,7 @@ class Item:
             refuse(f"item {self.id} is locked by another writer")
 
     def facts(self):
-        stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 7200)
+        stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 3600)
         try:
             return dict(fold(self.path, iso(time.time() - stale)))
         except OSError:
@@ -337,7 +337,7 @@ def list_items(args):
     if args not in ([], ["--all"]):
         die("list takes only --all")
     d = items_dir()
-    stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 7200)
+    stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 3600)
     cutoff = iso(time.time() - stale)
     for p in sorted(d.glob("*.md")) if d.is_dir() else []:
         if not is_item_id(p.name[:-3]):
