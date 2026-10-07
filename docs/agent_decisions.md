@@ -87,6 +87,18 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261007t044618z
 - grind's stop save points the wip ref at the stop's tip even when the worker already pushed it, and may rewrite that ref under a lease pinned to the sha this checkout last saw, so a rebased tip replaces the last snapshot Undo: drop --force-with-lease in save_attempt ([#57](https://github.com/mark-brannan/claude/pull/57))
 
+### 20261007t051846z
+- curia: The decision is the only part of a Design section that must trace to a decided.md line; what hurt, the cost to change and open are the agent's reading Undo: restore 'every design sentence has a ledger line' in skills/curia/SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: close synthesizes every ruling landed since the last close, not only this sitting's; lint flags an uncarried ledger line only when it is older than the last words Where this stands cites Undo: revert the Closing step 1 and lint clauses in skills/curia/SKILL.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: close shows the diff of the rewritten Design sections for the user's redline; a section heading is the record's words, never a coined name; a pencil stamp under Rulings carries a gloss of what it holds Undo: delete the three clauses in skills/curia/SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: whether a noun gets a spec row stays open in template.md's Vocabulary comment, per a curia ledger line of 2026-10-07, rather than ruled no Undo: restore 'a noun gets no spec of its own' in template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: the three callers that read rulings from digest.md's Decided (scoping's curia row, settledness rubric row 9 and its read-set) point at decided.md in this PR, not a follow-up Undo: revert the three one-line edits in skills/scoping and skills/doc-settledness-check ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: adr: in the digest header holds one link per promoted Design section Undo: restore the singular adr: field in template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+
+### 20261007t051847z
+- curia: sidecar names are working-backwards.md, scenarios.md, mvp-and-narrative.md, success-metric.md; problem-then-solution adds no sidecar Undo: rename in forms/*.md and SKILL.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: the ledger's seed is forms/decided.md; a pre-split digest's Decided moves whole to decided.md in lint's patch at its next opening Undo: delete forms/decided.md; drop the lint migration clause ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: a promoted Design section leaves one line linking its ADR; Where this stands shows Position and Size in place of Next; a dropped form's sidecar leaves the folder, git keeps it Undo: revert those lines in SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
 ### 20261007t071933z
 - Past the spend line the hand-off file may be Read as well as Written: the Write tool refuses to overwrite a file not yet read, and a retried item has the last hand-off on disk Undo: drop Read from the exemption in hooks/spend-gate.py and the settings.json fallback ([#71](https://github.com/mark-brannan/claude/pull/71))
 
@@ -95,3 +107,12 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t104505z
 - Standing-orders guard line: prose names the remedy and points at the guard (editor's note on #70) Undo: revert 97aeb9e ([#70](https://github.com/mark-brannan/claude/pull/70))
+### 20261007t094943z
+- curia: lint's uncarried-ledger-line check counts The problem and Vocabulary as carrying, exempts Superseded, and dates a line that cites no roll stamp by its date Undo: restore 'no Design section carries' in skills/curia/SKILL.md Opening step 3 ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: #64 keeps the opening lint, close-time synthesis in the sitting and the X-of-Y position that the 2026-10-07 pen rulings retire; #77 replaces them, so #64 flags them and lands only with #77 straight after Undo: port #77's opening, facets and Where-this-stands into #64 and rebase #77 ([#64](https://github.com/mark-brannan/claude/pull/64))
+
+### 20261007t100254z
+- curia: the no-private-stamp ruling is read to cover a skill's pen/pencil comments as well as specs and decisions logs, since a stamp there is provenance in prose; a spec row cites its repo's public decisions line, and the ledger line links the row Undo: restore the roll stamps in the two pencil comments; reword the spec-row sentence in SKILL.md Layers ([#64](https://github.com/mark-brannan/claude/pull/64))
+
+### 20261007t104154z
+- curia: scoping's lock records decided.md, the file every ruling lands in, so a ruling landing only in the ledger mid-scoping trips the read-moved guard; skill text, not a bin/scoping-lock change Undo: say digest.md again in skills/scoping/SKILL.md §2 ([#64](https://github.com/mark-brannan/claude/pull/64))
