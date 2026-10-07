@@ -149,6 +149,13 @@ I'm fine, drop it.
   before-state somewhere disposable.
 - **Give yourself a way to verify:** tests, diff, browser, second agent,
   formal methods where feasible, the cheapest that proves it.
+- **Write at the reader's altitude; don't anchor on today.** Purpose sits
+  above design, design above code; each stays true when a layer below it
+  changes. Test: would this line go false if the design or code changed
+  but the purpose didn't? Then it belongs a layer down, or as a pointer.
+  Vague about mechanism and right about purpose is correct. A decision
+  record is dated, so it may name today's mechanism. A design, a guard or
+  a fix solves the general need, not today's instance.
 - **Forbid a command with a guard, not prose.** A rule works only if it
   loads; a hook fires on the action itself.
 - **Compute runs in minutes, never hours, in CI or on my machine.** Before
