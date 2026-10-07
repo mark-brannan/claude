@@ -3,7 +3,7 @@
 The sources behind the working loop in this repo: the skills and hooks under
 `.claude/`, the board, the guards, and the standing orders. Each entry gives
 the idea in one line and what it maps to here in one line. Every citation was
-checked against the web on 2026-09-29. An entry the web could not confirm is
+checked against the web on 2026-09-29, the mechanisms section on 2026-10-07. An entry the web could not confirm is
 marked unverified, never dropped.
 
 ## Framing
@@ -294,6 +294,45 @@ Solace's, verbatim.
     notes, subagents. Prefer simple composable workflows over frameworks.
   - Maps to: the checkpoint file as structured notes, and grind as a workflow
     that never chooses its own goals.
+
+## Mechanisms, not good intentions
+
+- **Amazon Web Services.** "Building mechanisms." *Operational Readiness Reviews*,
+  AWS Well-Architected, undated.
+  [docs.aws.amazon.com](https://docs.aws.amazon.com/wellarchitected/latest/operational-readiness-reviews/building-mechanisms.html)
+  - Idea: Bezos, "good intentions don't work, mechanisms do". A mechanism is a
+    complete process: build a tool, drive its adoption, inspect the results,
+    and iterate; a virtuous cycle, not a reminder.
+  - Maps to: "forbid a command with a guard, not prose". A standing order is
+    the intention; the hook that fires on the action is the mechanism, and the
+    decision-load counters are its inspection.
+- **Bryar, C. and Carr, B. (2021).** *Working Backwards.* St. Martin's Press,
+  ch. 1, "Building Blocks". Companion interview: "How to Build an Invention
+  Machine", *First Round Review*, February 2021.
+  [review.firstround.com](https://review.firstround.com/how-to-build-an-invention-machine-6-lessons-that-powered-amazons-success/)
+  - Idea: the origin story. Bezos shadowing a customer-service call, a known
+    defect nobody had fixed, and the Andon cord that let a rep pull a product
+    from sale. The Bar Raiser, the six-pager and the PR/FAQ are mechanisms in
+    the same sense.
+  - Maps to: the arete check as a gate before a document is adopted, not a
+    reminder to think about harm. The rubric is the intention; the gate is
+    the mechanism, and it is the gate that each framework must spell for itself.
+- **Kindel, C. (2019).** "Good Intentions are Never Enough." *blog.kindel.com*,
+  9 May 2019; "Mechanisms", 6 March 2020.
+  [blog.kindel.com](https://blog.kindel.com/2019/05/09/good-intentions-are-never-enough/)
+  - Idea: the clearest public breakdown of the four parts, tool, adoption,
+    inspection, iteration, by a former Amazon leader, with the mechanism types
+    and the Andon cord worked through.
+  - Maps to: the test for whether a rule in this repo is real. One with no
+    guard, no adoption and no inspection is a good intention.
+- **Brozovich, S. (2025).** "A leader's guide to advanced mental models and
+  mechanisms" (SNR303). Talk, AWS re:Invent 2025, recorded.
+  [youtube.com](https://www.youtube.com/watch?v=mppIWlm5BA0)
+  - Idea: the phrase, the closed loop drawn, and the customer-service Andon
+    cord walked through on stage. The nearest public recording; the Bezos
+    clip itself is an internal onboarding video, no public URL found.
+  - Maps to: the article a standalone arete check would be championed with.
+    The idea is public enough to cite and spend the words on the application.
 
 ## The autonomy slider: what stays with the human
 
