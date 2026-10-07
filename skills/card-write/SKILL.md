@@ -228,10 +228,10 @@ After writing, `~/.claude/bin/work-item show <id>` prints the file, and
   endings below are the lifecycle doc's reading, still pencil.
 - **An answered ruling moves, it is not deleted.** `/agora` records the answer
   at once and retires the card as above; where `/sweep` finds one answered
-  elsewhere it appends one dated line with the answer to `docs/decisions.md`
-  in the project's primary repo (a pointer line when the ruling landed as an
-  ADR or a Q-nn) and retires it the same way. That file is where "I decided X
-  on the 24th" is found later.
+  elsewhere it records the answer where
+  [Where a ruling lands](../agora/SKILL.md#where-a-ruling-lands) says
+  (private by default; a pointer line when the ruling landed as an ADR or a
+  Q-nn) and retires it the same way.
 - No cap and no expiry: `/sweep` prunes what was ruled elsewhere or went
   stale. A card that blocks nothing and has no
   consequence is never shown; take its default and record it.
