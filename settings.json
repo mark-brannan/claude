@@ -44,7 +44,8 @@
       "Bash(/home/solace/.claude/bin/work-item *)"
     ],
     "deny": [
-      "Bash(git reset --hard:*)"
+      "Bash(git reset --hard:*)",
+      "Skill(mergify:mergify-stack)"
     ],
     "additionalDirectories": [
       "~/claude_prompts_scratch"
@@ -147,6 +148,15 @@
   ],
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "in=$(cat); [ -n \"${SPEND_GATE_USD:-}${SPEND_GATE_TOKENS:-}\" ] || exit 0; h=\"$HOME/.claude/hooks/spend-gate.py\"; { [ -f \"$h\" ] && printf '%s' \"$in\" | python3 \"$h\"; } && exit 0; o=\"${SPEND_GATE_HANDOFF:-HANDOFF.md}\"; f=$(printf '%s' \"$in\" | tr -d '\\n' | sed -n 's/.*\"file_path\" *: *\"\\([^\"]*\\)\".*/\\1/p'); c=$(printf '%s' \"$in\" | tr -d '\\n' | sed -n 's/.*\"cwd\" *: *\"\\([^\"]*\\)\".*/\\1/p'); case \"$in\" in *'\"tool_name\":\"Write\"'*|*'\"tool_name\": \"Write\"'*|*'\"tool_name\":\"Read\"'*|*'\"tool_name\": \"Read\"'*) case \"$f\" in *'/../'*) ;; \"${c:-/nonexistent}\"/*) [ \"${f##*/}\" = \"$o\" ] && exit 0 ;; esac ;; esac; printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"spend-gate.py is missing from $HOME/.claude/hooks or crashed while a spend or context line is set, so the line could not be checked. Every tool is denied except a Read or Write of %s. Write the hand-off (what is done, what is next, how to resume) there and end the turn; the hook comes back with dotsync (or cloud-session-setup.sh).\"}}\\n' \"$o\""
+          }
+        ]
+      },
       {
         "matcher": "Bash",
         "hooks": [

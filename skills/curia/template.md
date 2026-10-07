@@ -63,7 +63,8 @@ as posed.
      identifier a mechanism uses, each with its own decided.md line; a word
      no mechanism uses earns no row and no line. An identifier's shape also
      gets a spec row, since code parses it; whether a noun does is open,
-     the user's to debate (one-entry-point/roll.md#20261007t021335z). -->
+     the user's to debate (2026-10-07; the one-entry-point ledger holds the
+     stamp). -->
 
 | Noun or identifier | Meaning | Ancestor concept | Standing | Stamp |
 |---|---|---|---|---|

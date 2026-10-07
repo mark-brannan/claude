@@ -65,6 +65,9 @@ what a sitting loads.
 One folder per curia in the state repo. Deliberation is private and stays
 there; only what a curia **produces** — an ADR, a spec, an issue, a card —
 goes to a public repo, and the `decided.md` line that produced it links it.
+The link runs one way: nothing in a public file points back into the
+folder — no roll stamp, no Design section number — in a decisions log, a
+spec or a skill (the user's ruling, 2026-10-07).
 When the curia, or one Design section of it, is promoted — written up as
 an ADR — the ADR's link also joins the `adr:` field of `digest.md`'s
 header.
@@ -131,8 +134,11 @@ for the mechanism, never a coined name.
 `state/global/curia/one-entry-point/inputs/2026-10-07-digest-narrative-sample.md`
 is the worked example of one Design section. Specs are not in the folder:
 a spec lives in the public repo beside the code it governs
-(`docs/work-item-lifecycle.md` in the claude repo is the precedent), each
-row citing a digest section and a stamp, and takes three inputs: the
+(`docs/work-item-lifecycle.md` in the claude repo is the precedent for
+the shape; its roll stamps predate the ruling), each row marked pen or
+pencil with its date and citing the line in its repo's public decisions
+file once one exists, never a roll stamp or a Design section number; the
+ledger line links the row, not the other way. A spec takes three inputs: the
 rulings, the existing code, and the incidents in `inputs/`. One document
 per question; parallel files per layer and per form. A Design section
 leaves the digest only when it is promoted to an ADR in its public repo,
@@ -143,8 +149,8 @@ replicates `digest.md` alone.
      digest, the digest as an ADR-shaped narrative, forms as sidecar
      files, synthesis by the edit facet, lint's narrative-against-ledger
      check, specs in the public repo. The user's lean on the agent's
-     proposal in that sitting, not ruled:
-     one-entry-point/roll.md#20261007t021335z and #20261007t025200z. -->
+     proposal in the one-entry-point curia's sitting of that day, not
+     ruled; its ledger holds the stamps. -->
 
 **Prune what agents load, never the record.** `roll.md` and
 `agent_decisions.md` are append-only and never shrink. The digest's header
