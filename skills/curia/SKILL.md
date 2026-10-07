@@ -413,7 +413,10 @@ new open question as one line under the digest's **Open questions**; the
 narrative waits for `edit`, since synthesis is a facet, not a hope.
 Cite words by reference or by a
 curated quote with its reference, and commit as you land — a sitting's record
-must survive the session dying mid-turn.
+must survive the session dying mid-turn. Every agent commit to the state
+repo, the sitting's included, ends with the trailer
+`Co-Authored-By: Claude <noreply@anthropic.com>`, so `edit` can tell an
+agent's hand from the user's.
 
 A sitting that uncovers a second hard question does not open a second
 curia for it. It becomes a line under `## Open questions` here, or a
