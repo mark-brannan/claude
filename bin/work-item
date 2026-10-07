@@ -30,8 +30,7 @@
 # makes it (`card-id new`) and this store never does; the file is the
 # lookup. An item is created in `open`, always. Six statuses: open, ready,
 # claimed, blocked, done, closed; the transitions are ALLOWED below. A claim
-# is valid from ready, blocked, done or closed, never open, and never while
-# another session holds it. A GitHub-homed item carries `home=`, no link back.
+# is valid from any status, and never while another session holds it. A GitHub-homed item carries `home=`, no link back.
 #
 # Refused at write: a create whose brief carries no link (kanban-lint's L6); a
 # `status=done` line with no `evidence=`; any `status=closed`, which only the
@@ -57,7 +56,7 @@ ALLOWED = {
     ("open", "ready"), ("ready", "claimed"), ("claimed", "blocked"),
     ("claimed", "ready"), ("claimed", "done"), ("blocked", "claimed"),
     ("blocked", "ready"), ("done", "claimed"), ("done", "ready"),
-    ("done", "closed"), ("closed", "claimed"),
+    ("done", "closed"), ("closed", "claimed"), ("open", "claimed"),
 }
 
 

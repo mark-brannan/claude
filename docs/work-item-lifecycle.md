@@ -45,9 +45,9 @@ has a `docs/decisions.md`, a row cites its line there.
 | Rule | Code |
 |---|---|
 | Six statuses: open, ready, claimed, blocked, done, closed. One second attribute, the owner: human-ruling, human-click or agent. An item is created open, always | `work-item create` writes `status=open` |
-| Transitions: open → ready; ready → claimed; claimed → blocked, ready, done; blocked → claimed, ready; done → claimed or ready; done → closed by acceptance only, never on a clock; closed → claimed; no claimed → open | `work-item log` refuses any other step |
+| Transitions: open → ready; any status → claimed; claimed → blocked, ready, done; blocked → ready; done → ready; done → closed by acceptance only, never on a clock; no claimed → open | `work-item log` refuses any other step |
 | Every work item is claimable, cards included: the claim extends to every home an item can have | `work-item claim` |
-| A claim is valid from ready, blocked, done or closed, never open, and never while another session holds it; the stale-claim rule is the agent's toil | `work-item claim` refuses a held item and any other source |
+| A claim is valid from any status, and never while another session holds it; the stale-claim rule is the agent's toil | `work-item claim` refuses a held item |
 | A claim lapses once the claiming session has been silent one hour since its last Stop; a new claim then takes over and logs the old session id; a resumed session re-claims. Measured over 137 session records: median 0.36 h, p90 1.07 h, none past two hours | `work-item claim`; the Stop hook writes a `stop` line on the held item |
 | A session checks the claim at start and again before the real work | the skills |
 | "Pickup" is the verb, claim and read; the hand-off is a state of the brief, not a kind of item | `pickup-list take` |
@@ -108,7 +108,7 @@ notes, not here.
 | bucket | a lane of the board by owner: Needs ruling, the user's click work, the agent's queue |
 | item id | epoch seconds then the creating session's eight hex; opaque, never parsed, never reused |
 | pickup | the verb: claim an item and read it |
-| claim | a session's hold on an item; valid from ready, blocked, done or closed, never open, lapsing an hour after the holder's last Stop |
+| claim | a session's hold on an item; valid from any status, lapsing an hour after the holder's last Stop |
 | owner | human-ruling, human-click or agent: who the item exists for |
 | toil and judgment | an assessment, made when the item is created, of why it exists for a human, an agent, or between; the concept is incomplete |
 | agora | the quick sitting: rulings in batch, each with a default that holds; where a Needs ruling card is answered |
