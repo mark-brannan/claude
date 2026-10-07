@@ -286,7 +286,8 @@ S() { plant stop1; payload "$TP3" stop1 "$REPO" Stop \
 
 o1=$(S)
 t   'the first Stop blocks'  block "$(printf '%s' "$o1" | jq -r '.decision // ""')"
-has 'with the hand-off instruction' '^Write the hand-off: replace the body' \
+has 'pointing the model at /wrapup for what the body holds' \
+    '^Write the hand-off into this session.s pickup item per /wrapup' \
     "$(printf '%s' "$o1" | jq -r '.reason // ""')"
 hasnt 'and nothing about the session ending' 'last of the session' \
     "$(printf '%s' "$o1" | jq -r '.reason // ""')"
@@ -301,14 +302,27 @@ handoff() {  # handoff <sid> -- a pickup item whose body was edited past the def
     "$1" > "$PK/2026-09-09T10-00-$1.md"
 }
 # An unedited item (body still the prompt line) is no hand-off, so the Stop
-# blocks -- and the block names that item's file, not just its directory.
+# blocks. The notice names each item by file and state; the reason gives the
+# model the full path. Neither restates what the body should hold.
 printf 'status: open\nupdated: x\nsession: stopn\nmodel: m\nbranch: b\npr: none\nwhere: w\nprompt: p\n---\np\n' \
   > "$PK/2026-09-09T09-00-stopn.md"
 o=$(plant stopn; payload "$TP3" stopn "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
 t   'an unedited pickup item still blocks' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
-has 'and the block names its file' "pickup item 2026-09-09T09-00-stopn\.md in .*/pickup/ with" \
+has 'the notice names the item, without its directory, as unwritten' \
+    '^📄 2026-09-09T09-00-stopn\.md -- no hand-off yet$' "$(msg "$o")"
+has 'the notice still carries the metrics block' '^» ' "$(msg "$o")"
+has 'the reason gives the model the full path' \
+    ': /.*/pickup/2026-09-09T09-00-stopn\.md\. Then answer in one line' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
-has 'while an item-less Stop keeps the directory-only wording' "pickup item in .*/pickup/ with" \
+hasnt 'and no item lines in the reason' '📄' "$(printf '%s' "$o" | jq -r '.reason // ""')"
+printf 'status: open\nprompt: p\n---\nnext: x\n' > "$PK/2026-09-09T11-00-stopm.md"
+printf 'status: open\nprompt: p\n---\np\n' > "$PK/2026-09-09T12-00-stopm.md"
+o=$(plant stopm; payload "$TP3" stopm "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
+t 'two items for one session are each listed with their state' \
+  '📄 2026-09-09T11-00-stopm.md -- hand-off written|📄 2026-09-09T12-00-stopm.md -- no hand-off yet' \
+  "$(msg "$o" | grep '^📄' | paste -sd'|')"
+has 'an item-less Stop says there is none' '^📄 no pickup item for stop1$' "$(msg "$o1")"
+has 'and tells the model where a new one goes' 'none exists yet in /.*/pickup/\.' \
     "$(printf '%s' "$o1" | jq -r '.reason // ""')"
 
 handoff stop0
@@ -316,7 +330,8 @@ S0() { plant stop0; payload "$TP3" stop0 "$REPO" Stop \
        | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
 o=$(S0)
 t     'an armed Stop with the block on disk does not block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
-has   'and reports the hand-off it found' 'Hand-off already in 2026-09-09T10-00-stop0\.md\. Next time: `/pickup`\.' "$(msg "$o")"
+has   'and reports the hand-off it found' 'Hand-off already written\. Next time: `/pickup`\.' "$(msg "$o")"
+has   'and lists the item as written' '^📄 2026-09-09T10-00-stop0\.md -- hand-off written$' "$(msg "$o")"
 o=$(S0)
 t     'the next Stop does not block either' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
 has   'and carries only the age' 'Hand-off 0m old' "$(msg "$o")"
@@ -328,7 +343,7 @@ handoff stop1
 o2=$(S)
 t   'the second Stop does not block' '' "$(printf '%s' "$o2" | jq -r '.decision // ""')"
 has 'and reports the hand-off it found' \
-    '^Archivable\. Hand-off written [0-9]{2}:[0-9]{2} in 2026-09-09T10-00-stop1\.md\. Next time: `/pickup`\.$' \
+    '^Archivable\. Hand-off written [0-9]{2}:[0-9]{2}\. Next time: `/pickup`\.$' \
     "$(msg "$o2")"
 
 o3=$(S)
