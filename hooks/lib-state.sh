@@ -156,9 +156,9 @@ dirty_paths() {
   local root="$1" sr
   sr=$(state_repo 2>/dev/null) || sr=""
   if [ -n "$sr" ] && [ "$(cd "$root" 2>/dev/null && pwd -P)" = "$(cd "$sr" 2>/dev/null && pwd -P)" ]; then
-    git -C "$root" status --porcelain -- . ':(exclude)state/' 2>/dev/null
+    git -C "$root" -c core.quotePath=off status --porcelain -- . ':(exclude)state/' 2>/dev/null
   else
-    git -C "$root" status --porcelain 2>/dev/null
+    git -C "$root" -c core.quotePath=off status --porcelain 2>/dev/null
   fi
 }
 
@@ -255,7 +255,7 @@ verdict_explain() {
     echo "→ not a git repo: the session ran outside any repo, so there was no branch to check." ;; esac
   case "$v" in *"worktree dirty"*)
     paths=""
-    [ -z "$root" ] || paths=$(dirty_paths "$root" | cut -c4- | sed 's/.* -> //')
+    [ -z "$root" ] || paths=$(dirty_paths "$root" | cut -c4- | sed 's/.* -> //; s/^"\(.*\)"$/\1/')
     n=$(printf '%s' "$paths" | grep -c .)
     if [ "$n" -gt 0 ]; then
       shown=$(printf '%s\n' "$paths" | head -3 | paste -sd, - | sed 's/,/, /g')

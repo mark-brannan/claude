@@ -504,6 +504,11 @@ eq_ust 'verdict_explain: names three files and counts the rest' \
   '→ worktree dirty: 4 uncommitted file(s) (a, b, c, +1 more). Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
   "$(ve 'not archivable: worktree dirty' "$WT")"
 rm -f "$WT/a" "$WT/b" "$WT/c" "$WT/d"
+: > "$WT/my file"
+eq_ust 'verdict_explain: a name with a space prints unquoted' \
+  '→ worktree dirty: 1 uncommitted file(s) (my file). Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
+  "$(ve 'not archivable: worktree dirty' "$WT")"
+rm -f "$WT/my file"
 eq_ust 'verdict_explain: without the tree, no file list' \
   '→ worktree dirty: uncommitted files in this worktree. Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
   "$(ve 'not archivable: worktree dirty')"

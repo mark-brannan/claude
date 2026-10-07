@@ -213,7 +213,7 @@ metrics=$(jq -s \
 # Git state, the part that decides whether the chat is safe to kill.
 dirty=0; unpushed=0; no_upstream=0; ncommits=0; start_sha=""
 if [ -n "$work_root" ]; then
-  dirty=$(git -C "$work_root" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  dirty=$(dirty_paths "$work_root" | wc -l | tr -d ' ')
   # Whether this branch holds work that exists nowhere else. lib-state.sh
   # owns the answer, carve-outs and all, so this hook and stop-continuity.sh
   # cannot disagree about it (#149).
