@@ -345,10 +345,12 @@ save_sitting() {
 ctx_line=0; ctx_rungs=0; ctx_stop_line=0; time_line=0; tl_sitting=0; fric_tripped=0
 since_nag=0; resume_ts=0; nag_pending=0; late_nagged=0
 m_ctx_at=0; m_sit_at=0; m_sit_said=0; m_ctx_tools=0
+handoff_sum=""  # checksum of the written hand-off bodies resume_ts was stamped for
 bed_warn_at=0; bed_past_at=0
 if [ -f "$NAGF" ]; then
   IFS=$'\t' read -r bed_warn_at bed_past_at \
     <<<"$(jq -r '[(.bed_warn_at // 0), (.bed_past_at // 0)] | @tsv' "$NAGF" 2>/dev/null)"
+  handoff_sum=$(jq -r '.handoff_sum // ""' "$NAGF" 2>/dev/null)
   [ -n "$bed_warn_at" ] || bed_warn_at=0
   [ -n "$bed_past_at" ] || bed_past_at=0
   IFS=$'\t' read -r ctx_line ctx_rungs ctx_stop_line time_line tl_sitting fric_tripped \
@@ -415,7 +417,8 @@ save_nag() {
         --argjson mss "$m_sit_said" \
         --argjson mct "$m_ctx_tools" \
         --argjson bw "$bed_warn_at" --argjson bp "$bed_past_at" \
-    '{context_line: $cl, context_rungs: $cr, context_stop_line: $cs,
+        --arg hs "$handoff_sum" \
+    '{handoff_sum: $hs, context_line: $cl, context_rungs: $cr, context_stop_line: $cs,
       time_line: $tl, time_line_sitting: $ts,
       friction_tripped: ($ft == 1),
       since_nag: ($sn == 1), resume_ts: $rt, nag_pending: ($np == 1),
@@ -956,18 +959,27 @@ archivable() {
 # over the hook's default, which is the last prompt line, and the hook
 # keeps the edit). Never assume it was written because it was asked for:
 # look, and an unedited body -- still exactly the prompt line -- is none.
-resume_ckpt() {
+pickup_items() {  # each of this session's items: <path>\t<written|unwritten>
   for _f in "$(state_dir)/pickup/"*"-${sid:0:8}.md"; do
     [ -f "$_f" ] || continue
     _p=$(sed -n 's/^prompt: //p' "$_f" | head -1)
     _b=$(awk 'f { print } /^---$/ { f = 1 }' "$_f")
     if [ -n "$(printf '%s' "$_b" | tr -d '[:space:]')" ] && [ "$_b" != "$_p" ]; then
-      printf '%s\n' "$_f"; return 0
+      printf '%s\twritten\n' "$_f"
+    else
+      printf '%s\tunwritten\n' "$_f"
     fi
   done
-  return 1
+}
+handoff_field() {  # <item> <link|model|effort>: that body line's value, or ?
+  _v=$(awk -v k="$2:" 'f && index($0, k) == 1 { sub(/^[^:]*:[ \t]*/, ""); print; exit } /^---$/ { f = 1 }' "$1")
+  printf '%s' "${_v:-?}"
+}
+resume_ckpt() {  # reads to the end: an early exit is EPIPE noise where SIGPIPE is ignored (CI)
+  pickup_items | awk -F'\t' '!f && $2 == "written" { print $1; f = 1 } END { exit !f }'
 }
 
+block_reason=""
 if [ "$hook_name" = Stop ]; then
   archivable > /dev/null
   # Worktree slug is the leaf dir name only when work_root is actually a
@@ -985,6 +997,31 @@ if [ "$hook_name" = Stop ]; then
     why=$(verdict_explain "$archival_verdict" "$work_root")
     [ -z "$why" ] || add_arch "$why"
   fi
+  items=$(pickup_items)
+  if [ -z "$items" ]; then
+    add_arch "📄 no pickup item for ${sid:0:8}"
+  else
+    # The saved time is when the written body last changed: a checksum of
+    # the bodies is kept, and the time restamped when it differs. The item
+    # file is rewritten every Stop, so its own mtime says nothing.
+    _sum=$(printf '%s\n' "$items" | awk -F'\t' '$2 == "written" { print $1 }' \
+           | while IFS= read -r _f; do awk 'f { print } /^---$/ { f = 1 }' "$_f"; done \
+           | cksum | cut -d' ' -f1)
+    if printf '%s\n' "$items" | grep -q "$(printf '\twritten$')" \
+       && { [ "$resume_ts" -le 0 ] || [ "$_sum" != "$handoff_sum" ]; }; then
+      resume_ts=$now_ts; handoff_sum=$_sum
+    fi
+    while IFS="$(printf '\t')" read -r _f _st; do
+      if [ "$_st" = written ]; then
+        add_arch "📄 ${_f##*/} (saved $(hhmm "$resume_ts"): $(handoff_field "$_f" link | sed 's|^https://github.com/||') · $(handoff_field "$_f" model) · $(handoff_field "$_f" effort))"
+      else
+        _snip=$(awk 'f && NF { print; exit } /^---$/ { f = 1 }' "$_f" | cut -c1-60)
+        add_arch "📄 ${_f##*/} (${_snip:-empty})"
+      fi
+    done <<EOF_ITEMS
+$items
+EOF_ITEMS
+  fi
 
   if [ "$nag_pending" -eq 1 ]; then
     # The block above has been answered. Whether the hand-off exists is a
@@ -992,13 +1029,6 @@ if [ "$hook_name" = Stop ]; then
     # spent: a missing hand-off is reported once, never re-blocked on, or this
     # would be the level-triggered nag again.
     nag_pending=0; since_nag=0
-    found=$(resume_ckpt)
-    if [ -n "$found" ]; then
-      resume_ts=$now_ts
-      add_arch "Archivable. Hand-off written $(hhmm "$resume_ts") in $(basename "$found"). Next time: \`/pickup\`."
-    else
-      add_arch "Archivable, but no hand-off in the pickup item's body ($(state_dir)/pickup/*-${sid:0:8}.md). Not asking again this session."
-    fi
     save_nag
   elif archivable; then
     local_hour=$(date +%H); local_hour=${local_hour#0}
@@ -1019,25 +1049,13 @@ if [ "$hook_name" = Stop ]; then
       # itself. Blocking now would force the extra turn that made the model,
       # not the user, speak last (dotfiles#391). Spend the arm; say what is there.
       since_nag=0
-      [ "$resume_ts" -gt 0 ] || resume_ts=$now_ts
-      add_arch "Hand-off already in $(basename "$found"). Next time: \`/pickup\`."
     elif [ "$armed" -eq 1 ]; then
       nag_pending=1; save_nag
-      # The crossing lines that armed this Stop have already been persisted
-      # as consumed, so this reason is their only chance to be seen. They go
-      # in front of the instruction rather than being dropped -- nags, then
-      # the archival verdict, same order as the screen.
-      reason="Write the hand-off: replace the body (below \`---\`) of this session's pickup item in $(state_dir)/pickup/ with the next step, then link, model and effort lines. Then answer in one line naming where it landed -- no summary, no question, nothing new."
-      pre="$sys_lines"
-      [ -z "$arch_lines" ] || pre="${pre:+$pre
-}$arch_lines"
-      [ -z "$pre" ] || reason="$pre
-$reason"
-      printf '{"decision":"block","reason":%s}\n' "$(json_str "$reason")"
-      exit 0
-    elif [ "$resume_ts" -gt 0 ]; then
-      # Nothing new to say. Later Stops carry the block's age and nothing else.
-      add_arch "Hand-off $(hm $(( (now_ts - resume_ts) / 60 ))) old."
+      # The reason is for the model alone; the notice below carries the
+      # crossings, the verdict and the item names. It needs no skill loaded:
+      # the body's format is the one the 📄 line reads back.
+      paths=$(printf '%s\n' "$items" | awk -F'\t' 'NF { printf "%s`%s`", (n++ ? ", " : ""), $1 }')
+      block_reason="Write the hand-off: replace the body (below \`---\`) of this session's pickup item with the next step, then link:, model: and effort: lines. Item: ${paths:-none exists yet in $(state_dir)/pickup/}. Then answer in one line naming the file -- no summary, no question, nothing new."
     fi
   fi
 fi
@@ -1049,9 +1067,7 @@ fi
 # two hookSpecificOutputs from one hook invocation would be one JSON object
 # too many, and the second would be the one that was dropped.
 #
-# The model line survives only on an event that may carry one. A Stop's
-# crossings have already been folded into its block reason above; re-emitting
-# them here would say the same thing twice.
+# The model line survives only on an event that may carry one.
 inject_model_line=""
 [ "$can_inject" -eq 1 ] && inject_model_line="$model_line"
 
@@ -1155,16 +1171,18 @@ $bl_second"
   # returns one object. Screen text and model text are still separate fields
   # and are never concatenated -- the requirements doc is explicit about that.
   jq -nc --arg s "$sys_lines" --arg b "$bl_block" --arg a "$arch_lines" \
-         --arg m "$inject_model_line" --arg e "$inject_event" \
+         --arg m "$inject_model_line" --arg e "$inject_event" --arg r "$block_reason" \
     '{systemMessage: ([$s, $b, $a] | map(select(. != "")) | join("\n"))}
+     + (if $r == "" then {} else {decision: "block", reason: $r} end)
      + (if $m == "" then {}
         else {hookSpecificOutput: {hookEventName: $e,
                                    additionalContext: $m}} end)'
-elif [ -n "$sys_lines" ] || [ -n "$arch_lines" ] || [ -n "$inject_model_line" ]; then
+elif [ -n "$sys_lines" ] || [ -n "$arch_lines" ] || [ -n "$inject_model_line" ] || [ -n "$block_reason" ]; then
   jq -nc --arg s "$sys_lines" --arg a "$arch_lines" \
-         --arg m "$inject_model_line" --arg e "$inject_event" \
+         --arg m "$inject_model_line" --arg e "$inject_event" --arg r "$block_reason" \
     '(([$s, $a] | map(select(. != "")) | join("\n")) as $t
       | if $t == "" then {} else {systemMessage: $t} end)
+     + (if $r == "" then {} else {decision: "block", reason: $r} end)
      + (if $m == "" then {}
         else {hookSpecificOutput: {hookEventName: $e,
                                    additionalContext: $m}} end)'
