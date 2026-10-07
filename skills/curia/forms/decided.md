@@ -5,9 +5,10 @@
      settled it and how firmly (pen / pencil), the date, the reference
      `<id>/roll.md#<stamp>`, and a link to what it produced, if anything.
      Grouped by topic under bold headings. A queue, not an archive
-     (SKILL.md, The ledger as a queue): lint moves pencil to pen where a
-     merged commit cites the stamp, and a pen line leaves for its spec row
-     or decisions line, moved never copied. A line a later ruling replaces
+     (SKILL.md, The ledger as a queue): lint moves pencil to pen, marked
+     as lint's, where the line's link resolves to a merged commit, spec
+     row or decisions line, and a pen line leaves for its spec row or
+     decisions line, moved never copied. A line a later ruling replaces
      moves under Superseded, prefixed with what replaced it, and is
      deleted at the next prune; git and the roll keep it. -->
 

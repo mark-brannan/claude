@@ -111,3 +111,16 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t100254z
 - curia: the no-private-stamp ruling is read to cover a skill's pen/pencil comments as well as specs and decisions logs, since a stamp there is provenance in prose; a spec row cites its repo's public decisions line, and the ledger line links the row Undo: restore the roll stamps in the two pencil comments; reword the spec-row sentence in SKILL.md Layers ([#64](https://github.com/mark-brannan/claude/pull/64))
+
+### 20261007t102521z
+- curia: the three facets run inside one background sub-agent in sequence, lint then edit then status, each starting after the previous commit, so no two write digest.md at once; the runner tells each facet how it was started Undo: restore three parallel spawns in SKILL.md Facets and Closing step 2 ([#77](https://github.com/mark-brannan/claude/pull/77))
+- curia: lint marks a line it promotes to pen as 'pen (lint, <date>)' and lists it in its findings, rather than making the promotion a finding for the user Undo: make the pencil-to-pen move a finding only, in facets/lint.md and the queue table ([#77](https://github.com/mark-brannan/claude/pull/77))
+- curia: edit decomposes a split only when started by hand or at close, never from a routine, and only on a pen line the user made; the user's hand in digest.md is a commit authored by the user with no Co-Authored-By: Claude trailer Undo: drop the routine clause and the trailer test in facets/edit.md steps 2 and 4 ([#77](https://github.com/mark-brannan/claude/pull/77))
+- curia: status takes the words read at open from the spawning sitting and falls back to wc -w marked 'now' by hand or from a routine; the public decisions log gets its own read-from entry pointing at a line of its own Undo: restore wc -w only in facets/status.md; drop the decisions-log sentence under Prune what agents load ([#77](https://github.com/mark-brannan/claude/pull/77))
+
+### 20261007t102629z
+- curia: a facet commits its own mechanical fixes instead of handing a patch to a caller, since a background facet has no caller left to apply one Undo: restore the patch-under-inputs clause in facets/lint.md ([#77](https://github.com/mark-brannan/claude/pull/77))
+- curia: the digest header field is named read-from: and lint is what moves it; decided.md takes none, since it prunes by moving lines out Undo: drop the header line from skills/curia/template.md ([#77](https://github.com/mark-brannan/claude/pull/77))
+- curia: the queue table's Superseded row joins the trial's Superseded group to the proposal's deleted: moves there, deleted at the next prune Undo: pick one in the SKILL.md queue table ([#77](https://github.com/mark-brannan/claude/pull/77))
+- curia: Working memory's cap is 750 words in place of 60 lines; facet prompts live under facets/, not forms/; Where this stands gains The one big thing in place of Position Undo: restore the line count, move the prompts, restore Position ([#77](https://github.com/mark-brannan/claude/pull/77))
+- curia: the status figure for context at first question comes from the spawning sitting's transcript, or the session's metrics row by hand Undo: drop the row from facets/status.md ([#77](https://github.com/mark-brannan/claude/pull/77))
