@@ -114,3 +114,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t104154z
 - curia: scoping's lock records decided.md, the file every ruling lands in, so a ruling landing only in the ledger mid-scoping trips the read-moved guard; skill text, not a bin/scoping-lock change Undo: say digest.md again in skills/scoping/SKILL.md §2 ([#64](https://github.com/mark-brannan/claude/pull/64))
+
+### 20261007t105037z
+- Branch-vs-main rule: 'GitHub can't answer' means an error or no token; an empty ruleset list is an answer Undo: revert 6c7669a ([#67](https://github.com/mark-brannan/claude/pull/67))
