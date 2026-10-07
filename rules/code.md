@@ -30,8 +30,13 @@ project-specific facts belong in that project's own CLAUDE.md.
   out there. If git says the branch is checked out elsewhere, that is a live
   claim: report it and stop. Enforced by
   `~/.claude/hooks/no-foreign-worktree.sh`.
-- **Work on main by default. Branch-vs-main is a rule, not a judgment
-  call — don't ask.** Commit straight to main in small, verified commits,
+- **Branch-vs-main is the repo's call, then a rule.** If main requires a
+  pull request (`gh api repos/<o>/<r>/rules/branches/main` lists
+  `pull_request`), every change goes through a PR, however small; the
+  ruleset's bypass is mine, never yours. If GitHub can't answer (an
+  error or no token; an empty list is an answer) and the repo's own
+  instructions don't say, ask me. Otherwise work on main by default,
+  without asking: commit straight to main in small, verified commits,
   pushed early and often, unless one of these triggers:
   - **Explicit phrase** — I say "make this a feature," "make this a
     branch," or "this needs review." Skip the metric check; branch
@@ -40,9 +45,9 @@ project-specific facts belong in that project's own CLAUDE.md.
     of code changed** (excluding docs), **>200 lines of docs changed**,
     **session >100k tokens**, or **session >30 min wall clock**.
 
-  Everything else — small fixes, doc edits, config tweaks — goes straight
-  to main, no branch, no asking. Branching by default is the failure
-  mode here, not landing on main.
+  In a repo that allows it, everything else — small fixes, doc edits,
+  config tweaks — goes straight to main, no branch, no asking. Branching
+  by default is the failure mode here, not landing on main.
 
   When a branch *is* warranted: push it and open the PR yourself, as
   early as the work is worth looking at — local checks need not have
@@ -107,14 +112,8 @@ in nobody's queue but this session's.
     linearize it: a rebase replays only single-parent commits, so every
     edit that lives only in the merge commit's tree is silently dropped
     (`resign-branch.sh` refuses this case for that reason). A PR branch
-    tracks its own remote branch, never main. If mergify's pre-push says
-    the branch "is managed by Mergify stacks" and it is not in `mergify
-    stack list`, it tracks main: `git branch --unset-upstream`, then `git
-    push -u origin HEAD`. Never `--no-verify`: skipping hooks is the
-    user's call, asked for, never taken. `mergify stack push` is only for
-    a branch whose commits map to PRs in `mergify stack list` — a
-    Change-Id trailer alone does not make a stack, and on a plain PR
-    branch it opens one new PR per commit;
+    tracks its own remote branch, never main. Never `--no-verify`: skipping
+    hooks is the user's call, asked for, never taken;
   - the merge state says so, not just the checks — `gh pr view --json
     mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
     conflicts with main, so green checks are not a mergeable PR;
