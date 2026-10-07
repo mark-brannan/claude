@@ -81,12 +81,22 @@ class SpendGateTest(unittest.TestCase):
         d, reason, _ = self.run_hook(*self.BASH, SPEND_GATE_USD="10.45")
         self.assertEqual(d, "deny")
         self.assertEqual(reason, "Past the line: $10.45 of $10.45 (spend). Every tool is "
-                         "denied except one Write to HANDOFF.md. Write the hand-off (what is "
-                         "done, what is next, how to resume) there and end the turn.")
+                         "denied except a Read or Write of HANDOFF.md. Write the hand-off "
+                         "(what is done, what is next, how to resume) there and end the turn.")
         self.assertEqual(self.run_hook(*self.OTHER_WRITE, SPEND_GATE_USD="5")[0], "deny")
         self.assertEqual(self.run_hook("Edit", {"file_path": "/w/HANDOFF.md"},
                                        SPEND_GATE_USD="5")[0], "deny")
         self.assertEqual(self.run_hook(*self.HANDOFF_WRITE, SPEND_GATE_USD="5")[0], "allow")
+
+    def test_past_the_line_the_handoff_can_still_be_read(self):
+        # The Write tool refuses to overwrite a file the session has not read,
+        # and a retry starts with the last attempt's hand-off on disk.
+        self.assertEqual(self.run_hook("Read", {"file_path": "/w/HANDOFF.md"},
+                                       SPEND_GATE_USD="5")[0], "allow")
+        self.assertEqual(self.run_hook("Read", {"file_path": "/w/src/app.py"},
+                                       SPEND_GATE_USD="5")[0], "deny")
+        self.assertEqual(self.run_hook("Read", {"file_path": "/etc/HANDOFF.md"},
+                                       SPEND_GATE_USD="5")[0], "deny")
 
     def test_past_the_context_line(self):
         d, reason, _ = self.run_hook(*self.BASH, SPEND_GATE_TOKENS="150000")
@@ -104,7 +114,7 @@ class SpendGateTest(unittest.TestCase):
         self.assertEqual(self.run_hook(*self.HANDOFF_WRITE, **env)[0], "deny")
         d, reason, _ = self.run_hook("Write", {"file_path": "/w/NEXT.md"}, **env)
         self.assertEqual(d, "allow")
-        self.assertIn("Write to NEXT.md", self.run_hook(*self.BASH, **env)[1])
+        self.assertIn("Write of NEXT.md", self.run_hook(*self.BASH, **env)[1])
 
     def test_handoff_write_must_be_inside_the_cwd(self):
         for path in ("/etc/HANDOFF.md", "/root/.ssh/HANDOFF.md", "/w/../etc/HANDOFF.md",
@@ -128,6 +138,12 @@ class SpendGateTest(unittest.TestCase):
         self.assertEqual(self.run_hook(*self.BASH, SPEND_GATE_USD="20.46")[0], "allow")
         # context stays the main transcript's last call
         self.assertEqual(self.run_hook(*self.BASH, SPEND_GATE_TOKENS="150001")[0], "allow")
+        # a subagent's own tool call, naming its transcript, is judged on the
+        # whole session's spend
+        self.assertEqual(self.run_hook(*self.BASH, transcript=sub / "agent-a1.jsonl",
+                                       SPEND_GATE_USD="20.45")[0], "deny")
+        self.assertEqual(self.run_hook(*self.BASH, transcript=sub / "agent-a1.jsonl",
+                                       SPEND_GATE_USD="20.46")[0], "allow")
 
     def test_missing_transcript_allows_with_a_note(self):
         d, _, err = self.run_hook(*self.BASH, transcript="/nonexistent/t.jsonl",
@@ -203,6 +219,21 @@ class WrapperTest(unittest.TestCase):
                                           SPEND_GATE_USD="100"), "allow")
         self.assertEqual(self.run_wrapper("Write", {"file_path": "/w/NEXT.md"}, SPEND_GATE_USD="1",
                                           SPEND_GATE_HANDOFF="NEXT.md"), "allow")
+
+    def test_hook_missing_allows_the_handoff_read_too(self):
+        self.assertEqual(self.run_wrapper("Read", {"file_path": "/w/HANDOFF.md"},
+                                          SPEND_GATE_USD="1"), "allow")
+        self.assertEqual(self.run_wrapper("Read", {"file_path": "/w/a.py"},
+                                          SPEND_GATE_USD="1"), "deny")
+
+    def test_no_line_never_runs_the_hook(self):
+        # Every interactive tool call passes through this wrapper; with no line
+        # set it must not pay for a python start. A hook that would crash
+        # proves it was never run.
+        d = self.home / ".claude" / "hooks"
+        d.mkdir(parents=True)
+        (d / "spend-gate.py").write_text("raise SystemExit(1)\n")
+        self.assertEqual(self.run_wrapper("Bash", {"command": "ls"}), "allow")
 
     def test_hook_missing_handoff_write_must_be_inside_the_cwd(self):
         for path in ("/etc/HANDOFF.md", "/w/../etc/HANDOFF.md", "/wx/HANDOFF.md"):

@@ -16,15 +16,27 @@ sets one (grind sets it per worker at the item's soft cap):
     SPEND_GATE_TOKENS    context line in tokens, e.g. 600000
     SPEND_GATE_HANDOFF   the hand-off file's name (default HANDOFF.md)
 
-Past either line, a Write to a file named SPEND_GATE_HANDOFF inside the
-session's cwd is allowed and everything else is denied, Bash included. A line that is not a
-number is ignored, with a note on stderr.
+Past either line, a Read or a Write of a file named SPEND_GATE_HANDOFF inside
+the session's cwd is allowed and everything else is denied, Bash included. Read
+is open because the Write tool refuses to overwrite a file the session has not
+read, and a retried item starts with the last attempt's hand-off already on
+disk (grind snapshots untracked files); without Read the retry could neither
+read nor replace it. A line that is not a number is ignored, with a note on
+stderr.
+
+In an interactive session the gate is just as blunt: the line comes from the
+environment `claude` was launched from and cannot be lifted from inside (even
+AskUserQuestion is denied), so the only way past it is to restart without the
+line. A resumed session carries every earlier sitting's spend. A hand-off in
+an additional working directory, outside the session's cwd, is denied.
 
 The hook input carries no spend, so it is priced from the transcript:
 assistant events deduplicated by message id (a message's content blocks each
 arrive as an event carrying the same usage), each token class at the model's
-price, the session's subagent transcripts included. Context is the main
-transcript's last call: its input plus cache tokens.
+price, the session's subagent transcripts included. A subagent's own tool
+calls may name its transcript instead of the session's; that path is walked up
+to the session's, so the spend judged is always the whole session's. Context
+is the main transcript's last call: its input plus cache tokens.
 
 Two failures, two answers; neither locks the hand-off out:
   - The hook runs but cannot read the transcript: it allows, with a one-line
@@ -115,6 +127,15 @@ def price(msgs):
     return spend / 1e6
 
 
+def session_transcript(path):
+    """<session>/subagents/agent-<id>.jsonl, a subagent's own transcript, names
+    the session's <session>.jsonl when that exists; any other path is itself."""
+    head, sep, _ = path.partition(os.sep + "subagents" + os.sep)
+    if sep and head and os.path.exists(head + ".jsonl"):
+        return head + ".jsonl"
+    return path
+
+
 def measure(path):
     """(spend in USD, context tokens of the last call) for a session.
 
@@ -122,6 +143,7 @@ def measure(path):
     transcript to <session>/subagents/agent-<id>.jsonl beside <session>.jsonl.
     Context is the main transcript's last call only. Raises OSError if the
     main transcript cannot be read; an unreadable subagent one is skipped."""
+    path = session_transcript(path)
     msgs = {}
     read_usage(path, msgs)
     ctx = 0
@@ -151,7 +173,7 @@ def line_from_env(name):
 
 
 def is_handoff(file_path, cwd, handoff):
-    """The hand-off Write: named SPEND_GATE_HANDOFF and inside the session's
+    """The hand-off file: named SPEND_GATE_HANDOFF and inside the session's
     cwd, so a Write to /etc/HANDOFF.md or ~/.ssh/HANDOFF.md is still denied."""
     if not file_path or not cwd or os.path.basename(str(file_path)) != handoff:
         return False
@@ -187,16 +209,17 @@ def main():
     if not (past_usd or past_tok):
         return 0
     ti = inp.get("tool_input") or {}
-    if inp.get("tool_name") == "Write" and is_handoff(ti.get("file_path"), inp.get("cwd"), handoff):
+    if inp.get("tool_name") in ("Read", "Write") and is_handoff(ti.get("file_path"),
+                                                                 inp.get("cwd"), handoff):
         return 0
     where = []
     if usd_line is not None:
         where.append(f"${spend:.2f} of ${usd_line:.2f} (spend)")
     if tok_line is not None:
         where.append(f"{fmt_tokens(ctx)} of {fmt_tokens(tok_line)} tokens (context)")
-    reason = (f"Past the line: {' / '.join(where)}. Every tool is denied except one "
-              f"Write to {handoff}. Write the hand-off (what is done, what is next, "
-              f"how to resume) there and end the turn.")
+    reason = (f"Past the line: {' / '.join(where)}. Every tool is denied except a "
+              f"Read or Write of {handoff}. Write the hand-off (what is done, what is "
+              f"next, how to resume) there and end the turn.")
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
