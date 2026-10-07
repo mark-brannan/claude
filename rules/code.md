@@ -29,7 +29,7 @@ project-specific facts belong in that project's own CLAUDE.md.
   `git show <branch>:<path>`); to work it, fork your own worktree and check it
   out there. If git says the branch is checked out elsewhere, that is a live
   claim: report it and stop. Enforced by
-  `~/.claude/hooks/no-foreign-worktree.sh`.
+  the languette plugin's `guard-worktrees`.
 - **Branch-vs-main is the repo's call, then a rule.** If main requires a
   pull request (`gh api repos/<o>/<r>/rules/branches/main` lists
   `pull_request`), every change goes through a PR, however small; the

@@ -128,7 +128,7 @@ deliberately: every line lands in every cloud session.
 ```bash
 $EDITOR bin/cloud-session-setup.sh
 # the installer refuses on a real machine, so give the dry run a scratch HOME
-# that holds the two seeds (claude-seed and dotfiles-seed under .local/share)
+# that holds the seed (claude-seed under .local/share)
 HOME=$(mktemp -d) sh bin/cloud-session-setup.sh --dry-run
 ```
 
@@ -145,12 +145,11 @@ directories go in `OWNED_DIRS` — the script links them into `$HOME` as a
 single symlink to the staged release rather than mirroring them file by file;
 `OWNED_NEVER` lists the shared ones that must never be linked that way.
 
-**Every hook `settings.json` references must be in `INSTALL` or `GUARD_HOOKS`,
-and so must every library a hook loads (`lib-*.awk`).** `GUARD_HOOKS` is the four
-guards (`no-checkout-home`, `no-foreign-worktree`, `prose-budget-commit`,
-`public-issue-guard`) that dotfiles still tracks; the installer clones
-`mark-brannan/dotfiles` itself to stage them, so both repos must be sources on
-the environment, or the stage is incomplete and nothing is activated. A convenience hook wired in
+**Every hook `settings.json` references must be in `INSTALL`, and so must
+every library a hook loads (`lib-*.awk`).** The worktree, private-terms,
+GitHub-issue and prose-budget-commit guards are not hooks here: the languette
+plugin carries them (`guard-worktrees`, `guard-private-terms`,
+`guard-github-issues`, `prose-budget-commit`). A convenience hook wired in
 settings but missing from the seed is a silent no-op in every cloud session —
 its settings entry is `[ -f ]`-guarded and ends in `|| true`, so it looks
 identical to a hook that ran and found nothing to do. A gate hook
@@ -162,7 +161,7 @@ editing either file, diff the two lists (CI runs the same check):
 ```bash
 { grep -o 'hooks/[a-z-]*\.sh' settings.json
   grep -ho 'lib-[a-z-]*\.awk' hooks/*.sh | sed 's|^|hooks/|'; } | sort -u
-sed -n '/^\(INSTALL\|GUARD_HOOKS\)=/,/^"$/p' bin/cloud-session-setup.sh | grep -v '^[A-Z_]*="'|grep hooks/
+sed -n '/^INSTALL=/,/^"$/p' bin/cloud-session-setup.sh | grep -v '^[A-Z_]*="'|grep hooks/
 ```
 
 ## Refresh the MCP connector deny list
@@ -632,8 +631,8 @@ prints a warning naming the first at start-up; `/wrapup` the first and
 
 ## Waive the churn gate on a PR
 
-`churn-ok` is a human-applied label — `public-issue-guard.sh` blocks a
-session from adding it, so this is a step you run yourself, not Claude.
+`churn-ok` is a human-applied label — the languette plugin's
+`guard-bypass-labels` blocks a session from adding it, so this is a step you run yourself, not Claude.
 
 ```bash
 ~/dotfiles/.local/bin/mark-as-churn-ok.sh <PR#>
@@ -653,7 +652,8 @@ gh label create churn-ok --repo mark-brannan/dotfiles --color FBCA04 --descripti
 
 `mixed-loops-ok` lets a design document and the implementation it governs land
 in one PR (`.github/workflows/mixed-loops-guard.yml`). Human-applied:
-`public-issue-guard.sh` blocks a session from adding it by `gh` or MCP.
+the languette plugin's `guard-bypass-labels` blocks a session from adding it by
+`gh` or MCP.
 
 ```bash
 gh pr edit <PR#> --repo mark-brannan/dotfiles --add-label mixed-loops-ok
@@ -798,8 +798,7 @@ with no user-scope settings at all. What the seed buys is the *other* repos.
 
 ## A cloud session is running an old rule
 
-The seed checkouts at `~/.local/share/claude-seed` (and `dotfiles-seed`, for
-the four guard hooks) are real clones, so ask them:
+The seed checkouts at `~/.local/share/claude-seed` are a real clone, so ask them:
 
 ```bash
 git -C ~/.local/share/claude-seed log --oneline -1
