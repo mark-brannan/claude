@@ -975,8 +975,8 @@ handoff_field() {  # <item> <link|model|effort>: that body line's value, or ?
   _v=$(awk -v k="$2:" 'f && index($0, k) == 1 { sub(/^[^:]*:[ \t]*/, ""); print; exit } /^---$/ { f = 1 }' "$1")
   printf '%s' "${_v:-?}"
 }
-resume_ckpt() {
-  pickup_items | awk -F'\t' '$2 == "written" { print $1; f = 1; exit } END { exit !f }'
+resume_ckpt() {  # reads to the end: an early exit is EPIPE noise where SIGPIPE is ignored (CI)
+  pickup_items | awk -F'\t' '!f && $2 == "written" { print $1; f = 1 } END { exit !f }'
 }
 
 block_reason=""
