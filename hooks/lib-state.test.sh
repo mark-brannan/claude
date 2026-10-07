@@ -484,5 +484,34 @@ eq_ust 'shard: a file still at the flat path is used where it is' \
 eq_ust 'shard: an empty id goes under _, never the dir itself' \
   "$SH/_/x.json" "$(shp "$SH" x.json '')"
 
+# --- dirty_paths: the state repo's own state/ is the hooks' to commit ------
+SR="$SCRATCH/state-repo"; gitq "$SCRATCH" init -q -b main "$SR"
+mkdir -p "$SR/state/global/metrics"; : > "$SR/README"
+gitq "$SR" add README; gitq "$SR" commit -q -m init
+: > "$SR/state/global/metrics/live.json"
+dp() { CLAUDE_STATE_REPO="$SR" bash -c '. "$0/lib-state.sh"; dirty_paths "$1"' "$HOOKS" "$1"; }
+eq_ust 'dirty_paths: hook-written state/ in the state repo is not dirt' '' "$(dp "$SR")"
+: > "$SR/notes.txt"
+eq_ust 'dirty_paths: anything else in the state repo still is' '?? notes.txt' "$(dp "$SR")"
+mkdir -p "$WT/state"; : > "$WT/state/x"
+eq_ust 'dirty_paths: state/ in any other repo still is' '?? state/' "$(dp "$WT")"
+rm -rf "$WT/state"
+
+# --- verdict_explain names the dirty files when given the tree ---------------
+ve() { CLAUDE_STATE_REPO="$SR" bash -c '. "$0/lib-state.sh"; verdict_explain "$@"' "$HOOKS" "$@"; }
+: > "$WT/a"; : > "$WT/b"; : > "$WT/c"; : > "$WT/d"
+eq_ust 'verdict_explain: names three files and counts the rest' \
+  '→ worktree dirty: 4 uncommitted file(s) (a, b, c, +1 more). Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
+  "$(ve 'not archivable: worktree dirty' "$WT")"
+rm -f "$WT/a" "$WT/b" "$WT/c" "$WT/d"
+: > "$WT/my file"
+eq_ust 'verdict_explain: a name with a space prints unquoted' \
+  '→ worktree dirty: 1 uncommitted file(s) (my file). Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
+  "$(ve 'not archivable: worktree dirty' "$WT")"
+rm -f "$WT/my file"
+eq_ust 'verdict_explain: without the tree, no file list' \
+  '→ worktree dirty: uncommitted files in this worktree. Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
+  "$(ve 'not archivable: worktree dirty')"
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
