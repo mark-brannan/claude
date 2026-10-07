@@ -105,8 +105,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261007t093718z
 - Disable only the mergify-stack skill via a permissions.deny Skill(mergify:mergify-stack) rule, keep the plugin on Undo: remove the one deny line in settings.json ([#76](https://github.com/mark-brannan/claude/pull/76))
 
-### 20261007t104505z
-- Standing-orders guard line: prose names the remedy and points at the guard (editor's note on #70) Undo: revert 97aeb9e ([#70](https://github.com/mark-brannan/claude/pull/70))
 ### 20261007t094943z
 - curia: lint's uncarried-ledger-line check counts The problem and Vocabulary as carrying, exempts Superseded, and dates a line that cites no roll stamp by its date Undo: restore 'no Design section carries' in skills/curia/SKILL.md Opening step 3 ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: #64 keeps the opening lint, close-time synthesis in the sitting and the X-of-Y position that the 2026-10-07 pen rulings retire; #77 replaces them, so #64 flags them and lands only with #77 straight after Undo: port #77's opening, facets and Where-this-stands into #64 and rebase #77 ([#64](https://github.com/mark-brannan/claude/pull/64))
@@ -128,6 +126,9 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - curia: the status figure for context at first question comes from the spawning sitting's transcript, or the session's metrics row by hand Undo: drop the row from facets/status.md ([#77](https://github.com/mark-brannan/claude/pull/77))
 ### 20261007t104154z
 - curia: scoping's lock records decided.md, the file every ruling lands in, so a ruling landing only in the ledger mid-scoping trips the read-moved guard; skill text, not a bin/scoping-lock change Undo: say digest.md again in skills/scoping/SKILL.md §2 ([#64](https://github.com/mark-brannan/claude/pull/64))
+
+### 20261007t104505z
+- Standing-orders guard line: prose names the remedy and points at the guard (editor's note on #70) Undo: drop the line's last sentence and say 'hook' for 'guard' in CLAUDE.md's guard line ([#70](https://github.com/mark-brannan/claude/pull/70))
 
 ### 20261007t105037z
 - Branch-vs-main rule: 'GitHub can't answer' means an error or no token; an empty ruleset list is an answer Undo: revert 6c7669a ([#67](https://github.com/mark-brannan/claude/pull/67))
