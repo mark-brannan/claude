@@ -129,8 +129,12 @@ jobs:
       contents: read
     uses: mark-brannan/.github/.github/workflows/nonempty-diff.yml@main
 
+  pr-title:
+    permissions: {}
+    uses: mark-brannan/.github/.github/workflows/pr-title.yml@main
+
   ci-gate:
-    needs: [shellcheck, seeded, guard-tests, tool-tests, nonempty]
+    needs: [shellcheck, seeded, guard-tests, tool-tests, nonempty, pr-title]
     if: always()
     permissions: {}
     uses: mark-brannan/.github/.github/workflows/ci-gate.yml@main
