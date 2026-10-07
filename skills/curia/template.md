@@ -13,6 +13,7 @@
 - related: <ids of open curiae this one touches, comma-separated, or none; derived by lint>
 - model: Fable · effort: high
 - adr: <link to the ADR, once the curia is promoted, or none>
+- issue: <owner/repo#n of the curia's private [Epic] issue in the state repo, filed at opening>
 - status: open
 
 ## Where this stands
