@@ -81,3 +81,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261007t032620z
 - A ruling /sweep records privately goes to state/global/log/<date>-sweep-<project>.md, mirroring the agora sitting's log name Undo: rename the path in skills/agora/SKILL.md 'Where a ruling lands' ([#60](https://github.com/mark-brannan/claude/pull/60))
 - A public ruling keeps the old home: the project's primary repo's docs/decisions.md (project-<name> topic, else the card's repo), not the repo whose issue argued it Undo: say 'that repo's docs/decisions.md' in skills/agora/SKILL.md 'Where a ruling lands' ([#60](https://github.com/mark-brannan/claude/pull/60))
+
+### 20261007t044618z
+- grind's stop save points the wip ref at the stop's tip even when the worker already pushed it, and may rewrite that ref under a lease pinned to the sha this checkout last saw, so a rebased tip replaces the last snapshot Undo: drop --force-with-lease in save_attempt ([#57](https://github.com/mark-brannan/claude/pull/57))
