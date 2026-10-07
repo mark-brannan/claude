@@ -117,3 +117,11 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t105037z
 - Branch-vs-main rule: 'GitHub can't answer' means an error or no token; an empty ruleset list is an answer Undo: revert 6c7669a ([#67](https://github.com/mark-brannan/claude/pull/67))
+
+### 20261007t115240z
+- AGPL 'or later' rather than 'only' for the code Undo: change the SPDX id in README.md and CITATION.cff to AGPL-3.0-only ([#80](https://github.com/mark-brannan/claude/pull/80))
+
+### 20261007t115241z
+- Split by file type: every Markdown file is CC BY-SA 4.0, all other files are AGPL Undo: edit the README License section ([#80](https://github.com/mark-brannan/claude/pull/80))
+- Copyright holder 'Solace (Mark) Brannan' (the git identity); requested credit 'Solace Brannan' Undo: edit the README License section and CITATION.cff ([#80](https://github.com/mark-brannan/claude/pull/80))
+- Add CITATION.cff so GitHub shows 'Cite this repository' Undo: delete CITATION.cff ([#80](https://github.com/mark-brannan/claude/pull/80))
