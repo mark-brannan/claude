@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you borrow from this work, please credit it as below."
+title: "claude: a Claude Code layer of hooks, skills and conventions"
+authors:
+  - given-names: Solace
+    family-names: Brannan
+repository-code: "https://github.com/mark-brannan/claude"
+license:
+  - AGPL-3.0-or-later
+  - CC-BY-SA-4.0

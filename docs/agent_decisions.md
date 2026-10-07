@@ -26,6 +26,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - stop-continuity spec: Evidence is one column with three values (test / code / item N), not a Source and Test split Undo: a doc PR splitting the column (mark-brannan/claude#36)
 - stop-continuity spec: a Then may hold several assertions behind ';', and 'or' in a Given is two fixtures sharing the Then Undo: split the rows (mark-brannan/claude#36)
 - stop-continuity spec: sections 1 to 13 are facts about the bash until the Python replaces it; section 14 holds while its ruling does; a disagreement goes to the curia, never to the spec Undo: edit the preamble (mark-brannan/claude#36)
+
 ### 20261004t035750z
 - work-item create: a replay of one create (same id, same content) prints the same id and exits 0 instead of being refused; the pen line says a second write of the same id is refused, and a replay is read as the one write landing twice, not a second write Undo: delete replayed() in bin/work-item and refuse on every FileExistsError ([#37](https://github.com/mark-brannan/claude/pull/37))
 
@@ -42,6 +43,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - stop-item: a claimed item's home= is written only while it has none, so a card homed on an issue keeps it Undo: always write it ([#42](https://github.com/mark-brannan/claude/pull/42))
 - stop-item: a minted item's id is the session's start second plus its id8, so every Stop finds it without a pointer file Undo: a marker line instead ([#42](https://github.com/mark-brannan/claude/pull/42))
 - stop-item: a crash or refusal fails open: exit 0, and the pickup file and the state commit still land Undo: revert the merge ([#42](https://github.com/mark-brannan/claude/pull/42))
+
 ### 20261004t033255z
 - A grind item's hard cap, its worker's --max-budget-usd, is 3x its soft cap. Undo: change the 3 in grind's item_hard ([#47](https://github.com/mark-brannan/claude/pull/47))
 - grind's run hard budget defaults to 1.5x --session-budget ($30 at the $20 default). Undo: change the 1.5 where grind defaults session_hard_budget ([#47](https://github.com/mark-brannan/claude/pull/47))
@@ -66,6 +68,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261004t082051z
 - Keep the absolute /home/solace/.claude/bin/work-item rule beside the ~ one: a rule matches the command as typed, and agents sometimes type the expanded path; the private line does not treat a username as private. Undo: delete the absolute work-item line from settings.json ([#52](https://github.com/mark-brannan/claude/pull/52))
+
 ### 20261004t074915z
 - grind's stop snapshot commit skips git hooks: unfinished work, not a change for hooks to judge. Undo: drop --no-verify in save_attempt ([#51](https://github.com/mark-brannan/claude/pull/51))
 - A grind retry resumes from local tracking refs only and fetches nothing; other machines are out of scope for now. Undo: fetch the wip ref in resume_point ([#51](https://github.com/mark-brannan/claude/pull/51))
@@ -80,6 +83,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t005156z
 - Stop block notice also carries the » metrics block, not just crossings and the verdict Undo: revert the fall-through in metrics-live.sh's Stop branch ([#61](https://github.com/mark-brannan/claude/pull/61))
+
 ### 20261007t032620z
 - A ruling /sweep records privately goes to state/global/log/<date>-sweep-<project>.md, mirroring the agora sitting's log name Undo: rename the path in skills/agora/SKILL.md 'Where a ruling lands' ([#60](https://github.com/mark-brannan/claude/pull/60))
 - A public ruling keeps the old home: the project's primary repo's docs/decisions.md (project-<name> topic, else the card's repo), not the repo whose issue argued it Undo: say 'that repo's docs/decisions.md' in skills/agora/SKILL.md 'Where a ruling lands' ([#60](https://github.com/mark-brannan/claude/pull/60))
@@ -99,6 +103,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - curia: sidecar names are working-backwards.md, scenarios.md, mvp-and-narrative.md, success-metric.md; problem-then-solution adds no sidecar Undo: rename in forms/*.md and SKILL.md ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: the ledger's seed is forms/decided.md; a pre-split digest's Decided moves whole to decided.md in lint's patch at its next opening Undo: delete forms/decided.md; drop the lint migration clause ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: a promoted Design section leaves one line linking its ADR; Where this stands shows Position and Size in place of Next; a dropped form's sidecar leaves the folder, git keeps it Undo: revert those lines in SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+
 ### 20261007t071933z
 - Past the spend line the hand-off file may be Read as well as Written: the Write tool refuses to overwrite a file not yet read, and a retried item has the last hand-off on disk Undo: drop Read from the exemption in hooks/spend-gate.py and the settings.json fallback ([#71](https://github.com/mark-brannan/claude/pull/71))
 
@@ -124,15 +129,27 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - curia: the queue table's Superseded row joins the trial's Superseded group to the proposal's deleted: moves there, deleted at the next prune Undo: pick one in the SKILL.md queue table ([#77](https://github.com/mark-brannan/claude/pull/77))
 - curia: Working memory's cap is 750 words in place of 60 lines; facet prompts live under facets/, not forms/; Where this stands gains The one big thing in place of Position Undo: restore the line count, move the prompts, restore Position ([#77](https://github.com/mark-brannan/claude/pull/77))
 - curia: the status figure for context at first question comes from the spawning sitting's transcript, or the session's metrics row by hand Undo: drop the row from facets/status.md ([#77](https://github.com/mark-brannan/claude/pull/77))
+
 ### 20261007t104154z
 - curia: scoping's lock records decided.md, the file every ruling lands in, so a ruling landing only in the ledger mid-scoping trips the read-moved guard; skill text, not a bin/scoping-lock change Undo: say digest.md again in skills/scoping/SKILL.md §2 ([#64](https://github.com/mark-brannan/claude/pull/64))
 
 ### 20261007t105037z
 - Branch-vs-main rule: 'GitHub can't answer' means an error or no token; an empty ruleset list is an answer Undo: revert 6c7669a ([#67](https://github.com/mark-brannan/claude/pull/67))
 
+### 20261007t115240z
+- AGPL 'or later' rather than 'only' for the code Undo: change the SPDX id in README.md and CITATION.cff to AGPL-3.0-only ([#80](https://github.com/mark-brannan/claude/pull/80))
+
+### 20261007t115241z
+- Split by file type: every Markdown file is CC BY-SA 4.0, all other files are AGPL Undo: edit the README License section ([#80](https://github.com/mark-brannan/claude/pull/80))
+- Copyright holder 'Solace (Mark) Brannan' (the git identity); requested credit 'Solace Brannan' Undo: edit the README License section and CITATION.cff ([#80](https://github.com/mark-brannan/claude/pull/80))
+- Add CITATION.cff so GitHub shows 'Cite this repository' Undo: delete CITATION.cff ([#80](https://github.com/mark-brannan/claude/pull/80))
+
 ### 20261007t114607z
 - curia: a read-from: line of none, or none at all, means the file's first stamp; lint writes that stamp Undo: drop the none clause in facets/lint.md and SKILL.md Prune what agents load ([#77](https://github.com/mark-brannan/claude/pull/77))
 - curia: every facet commit and every sitting commit to the state repo ends with the Co-Authored-By: Claude trailer; an untrailered digest line not clearly the user's is a finding, not pen Undo: drop the trailer line from the three facets and SKILL.md During ([#77](https://github.com/mark-brannan/claude/pull/77))
+
+### 20261007t121138z
+- Drop date-released from CITATION.cff: the repo has no release, and the date was the first commit's Undo: re-add date-released once a release is tagged ([#80](https://github.com/mark-brannan/claude/pull/80))
 
 ### 20261007t104505z
 - Standing-orders guard line: prose names the remedy and points at the guard (editor's note on #70) Undo: drop the line's last sentence and say 'hook' for 'guard' in CLAUDE.md's guard line ([#70](https://github.com/mark-brannan/claude/pull/70))
