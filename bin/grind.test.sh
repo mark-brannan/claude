@@ -326,6 +326,7 @@ cat > "$S/bin/claude" <<GH
 #!/bin/sh
 [ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
+echo "\${SPEND_GATE_USD:-} \${SPEND_GATE_HANDOFF:-}" >> "$S/claude-env.log"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 f=\$(ls -t "$S/state/grind"/*.json 2>/dev/null | head -1); [ -z "\$f" ] || cp "\$f" "$S/session-mid.json"
@@ -469,14 +470,17 @@ eq 'a --pause-every that is not a count is a usage error' 2 "$RC"
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
 reply 2.00 "done" 1
 reply 5.00 "done" 2
-: > "$CLAUDE_LOG"
+: > "$CLAUDE_LOG"; : > "$S/claude-env.log"
 run --session-budget 6 --pause-every 10
+eq 'each worker gets its soft cap as the spend gate line, and the hand-off file (claude#69)' \
+  '5.00 HANDOFF.md|25.00 HANDOFF.md' "$(paste -sd'|' "$S/claude-env.log")"
 eq 'two workers ran: the opus item started with $4 of soft budget left' 2 "$(calls_claude)"
 eq 'each worker gets 3x its soft cap, the session notwithstanding ($15, then $75)' '15.00 75.00' \
   "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk '{print $2}' | paste -sd' ' -)"
 PROMPT=$(cat "$S/prompt.txt")
 prompt_has 'the worker is told its soft cap as the stop' 'stop and report at ~$25.00'
 prompt_has 'and its hard stop' 'Your hard stop is $75.00'
+prompt_has 'and that past its soft cap only the hand-off write is left' 'Past ~$25.00 a hook denies every tool but one Write'
 has 'dispatch stops once spend reaches the soft budget' '^pause: session budget reached \(\$7\.00 / \$6\.00\)\.'
 eq 'the session file says why it ended' 'pause-budget 0' "$(jq -r '"\(.ended.reason) \(.ended.exit)"' "$(latest_session)")"
 # --resume with cap flags applies them and records them

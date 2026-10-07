@@ -106,7 +106,10 @@
 # Budgets (Solace's rulings on claude#43 and #47: soft stops, not hard ones;
 # overshoot rather than kill good work -- "death by a thousand cuts"; more
 # cautious hard stops are for a later revisit). Every item has two caps:
-#   soft  the worker's stop, told in its prompt: the higher of the item's
+#   soft  the worker's stop, told in its prompt and enforced by
+#         hooks/spend-gate.py (SPEND_GATE_USD at dispatch): past it every
+#         tool but one Write to HANDOFF.md is denied, so the worker writes its
+#         hand-off and ends its turn (claude#69). The higher of the item's
 #         `budget:` and --item-budget scaled by its model's price against
 #         Sonnet's and its effort weight. At the $5 default:
 #           sonnet/low $2.50, sonnet/medium $5.00, opus/high $25.00
@@ -382,6 +385,10 @@ worklist_bin=${GRIND_WORKLIST:-$(command -v worklist 2>/dev/null || find_beside 
 # comment and push. Proposed, not ruled.
 pr_stop_usd=1
 pr_item_cap=$(awk -v s="$pr_stop_usd" 'BEGIN { printf "%g", s * 1.25 }')
+# The one file a worker past its soft cap may still write: hooks/spend-gate.py,
+# given SPEND_GATE_USD and SPEND_GATE_HANDOFF at dispatch, denies every other
+# tool call (claude#69).
+handoff_file=HANDOFF.md
 
 fixup_contract() {
   [ -n "$contract_file" ] || return 1
@@ -875,6 +882,7 @@ fi
 # write/read aren't looked up per model here -- they use Anthropic's
 # standard ratios off the base input price (1.25x for a cache write, 0.1x
 # for a cache read). Unrecognized names fall back to Sonnet pricing.
+# hooks/spend-gate.py carries the same base prices in Python -- change both.
 model_price_in() {
   case "$1" in
     *opus*) printf '5.00' ;;
@@ -1068,7 +1076,10 @@ build_pr_prompt() {
   resume_note
   printf 'The stop rule\047s $%s is yours to act on: grind does not stop you at it.\n' "$pr_stop_usd"
   printf 'Your hard stop is $%s: you are ended there, so the stop rule is\n' "$item_hard"
-  printf 'the whole of your budget -- label, comment and push at it, then end.\n\n'
+  printf 'the whole of your budget -- label, comment and push at it, then end.\n'
+  printf 'Past ~$%s a hook denies every tool but one Write to %s at the\n' "$item_cap" "$handoff_file"
+  printf 'worktree root: write the hand-off there (what is done, what is next,\n'
+  printf 'how to resume) and end the turn.\n\n'
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
   printf '  GRIND_STATUS: done     you finished. grind checks the PR for the\n'
   printf '                         awaiting-human label Mergify computes, or for a\n'
@@ -1095,10 +1106,13 @@ build_prompt() {
   printf 'You are alone in a fresh worktree on branch %s. Work the item to a\n' "$p_branch"
   printf 'mergeable PR: commit, push the branch, and open the PR yourself with gh.\n'
   printf 'Do not merge it. The worktree is deleted when you exit.\n\n'
-  printf 'Your budget for this item is ~$%s. grind does not stop you at it, so\n' "$item_cap"
+  printf 'Your budget for this item is ~$%s, so\n' "$item_cap"
   printf 'stop and report at ~$%s: commit and push what you have, then end with\n' "$item_cap"
   printf 'the status line that fits -- blocked, saying how far you got, if the\n'
-  printf 'work is not finished. Your hard stop is $%s: you are ended there.\n' "$item_hard"
+  printf 'work is not finished. Past ~$%s a hook denies every tool but one Write\n' "$item_cap"
+  printf 'to %s at the worktree root: write the hand-off there (what is done,\n' "$handoff_file"
+  printf 'what is next, how to resume) and end the turn with that status line.\n'
+  printf 'Your hard stop is $%s: you are ended there.\n' "$item_hard"
   printf 'grind then saves what you left, committed or not, and the next attempt\n'
   printf 'starts from it -- but a commit with its own message tells that attempt\n'
   printf 'far more than grind\047s snapshot does.\n\n'
@@ -1734,7 +1748,8 @@ while [ "$i" -lt "$count" ]; do
   worker_sid=""
   in_flight=1
   ( cd "$wt_path" || exit 1
-    printf '%s' "$prompt" | claude -p --output-format stream-json --verbose \
+    printf '%s' "$prompt" | SPEND_GATE_USD="$item_cap" SPEND_GATE_HANDOFF="$handoff_file" \
+      claude -p --output-format stream-json --verbose \
          --max-budget-usd "$item_hard" --model "$model" --effort "$effort" \
          --permission-mode "$permission_mode" &
     cpid=$!

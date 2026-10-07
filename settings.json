@@ -148,6 +148,15 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/spend-gate.py\"; { [ -f \"$h\" ] && python3 \"$h\"; } || [ -z \"${SPEND_GATE_USD:-}${SPEND_GATE_TOKENS:-}\" ] || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"spend-gate.py is missing from $HOME/.claude/hooks or crashed while a spend or context line is set, so the line could not be checked. This is a gate and fails closed while a line is set: run dotsync (or cloud-session-setup.sh) and retry, or unset SPEND_GATE_USD and SPEND_GATE_TOKENS.\"}}'"
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
