@@ -286,9 +286,10 @@ S() { plant stop1; payload "$TP3" stop1 "$REPO" Stop \
 
 o1=$(S)
 t   'the first Stop blocks'  block "$(printf '%s' "$o1" | jq -r '.decision // ""')"
-has 'pointing the model at /wrapup for what the body holds' \
-    '^Write the hand-off into this session.s pickup item per /wrapup' \
+has 'saying what the body holds' \
+    '^Write the hand-off: replace the body .* next step, then link:, model: and effort: lines' \
     "$(printf '%s' "$o1" | jq -r '.reason // ""')"
+hasnt 'without leaning on a skill' '/wrapup' "$(printf '%s' "$o1" | jq -r '.reason // ""')"
 hasnt 'and nothing about the session ending' 'last of the session' \
     "$(printf '%s' "$o1" | jq -r '.reason // ""')"
 
@@ -312,7 +313,7 @@ has 'the notice names the item, without its directory, as unwritten' \
     '^📄 2026-09-09T09-00-stopn\.md \(p\)$' "$(msg "$o")"
 has 'the notice still carries the metrics block' '^» ' "$(msg "$o")"
 has 'the reason gives the model the full path' \
-    ': `/.*/pickup/2026-09-09T09-00-stopn\.md`\. Then answer in one line' \
+    'Item: `/.*/pickup/2026-09-09T09-00-stopn\.md`\. Then answer in one line' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
 hasnt 'and no item lines in the reason' '📄' "$(printf '%s' "$o" | jq -r '.reason // ""')"
 has "and keeps the last word the user's" 'no summary, no question, nothing new\.$' \
