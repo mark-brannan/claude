@@ -1027,7 +1027,10 @@ if [ "$hook_name" = Stop ]; then
       # as consumed, so this reason is their only chance to be seen. They go
       # in front of the instruction rather than being dropped -- nags, then
       # the archival verdict, same order as the screen.
-      item_file=$(ls -t "$(state_dir)"/pickup/*-"${sid:0:8}".md 2>/dev/null | head -n1)
+      item_file=""
+      for _f in "$(state_dir)/pickup/"*"-${sid:0:8}.md"; do
+        [ -f "$_f" ] && { item_file=$_f; break; }
+      done
       reason="Write the hand-off: replace the body (below \`---\`) of this session's pickup item ${item_file:+$(basename "$item_file") }in $(state_dir)/pickup/ with the next step, then link, model and effort lines. Then answer in one line naming where it landed -- no summary, no question, nothing new."
       pre="$sys_lines"
       [ -z "$arch_lines" ] || pre="${pre:+$pre
