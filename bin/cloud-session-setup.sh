@@ -120,6 +120,7 @@ hooks/npm-publish-auth.sh
 hooks/no-prose-gate.sh
 hooks/no-unsigned-push.sh
 hooks/no-update-branch.sh
+hooks/spend-gate.py
 hooks/lib-shell-words.awk
 hooks/session-start-seed-refresh.sh
 hooks/guard-add-repo.sh
