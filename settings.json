@@ -152,7 +152,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/spend-gate.py\"; { [ -f \"$h\" ] && python3 \"$h\"; } || [ -z \"${SPEND_GATE_USD:-}${SPEND_GATE_TOKENS:-}\" ] || printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"spend-gate.py is missing from $HOME/.claude/hooks or crashed while a spend or context line is set, so the line could not be checked. This is a gate and fails closed while a line is set: run dotsync (or cloud-session-setup.sh) and retry, or unset SPEND_GATE_USD and SPEND_GATE_TOKENS.\"}}'"
+            "command": "h=\"$HOME/.claude/hooks/spend-gate.py\"; in=$(cat); { [ -f \"$h\" ] && printf '%s' \"$in\" | python3 \"$h\"; } && exit 0; [ -n \"${SPEND_GATE_USD:-}${SPEND_GATE_TOKENS:-}\" ] || exit 0; o=\"${SPEND_GATE_HANDOFF:-HANDOFF.md}\"; f=$(printf '%s' \"$in\" | tr -d '\\n' | sed -n 's/.*\"file_path\" *: *\"\\([^\"]*\\)\".*/\\1/p'); case \"$in\" in *'\"tool_name\":\"Write\"'*|*'\"tool_name\": \"Write\"'*) [ \"${f##*/}\" = \"$o\" ] && exit 0 ;; esac; printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"spend-gate.py is missing from $HOME/.claude/hooks or crashed while a spend or context line is set, so the line could not be checked. Every tool is denied except one Write to %s. Write the hand-off (what is done, what is next, how to resume) there and end the turn; the hook comes back with dotsync (or cloud-session-setup.sh).\"}}\\n' \"$o\""
           }
         ]
       },

@@ -132,5 +132,68 @@ class SpendGateTest(unittest.TestCase):
                              "allow", model)
 
 
+class WrapperTest(unittest.TestCase):
+    """settings.json's wrapper, run by sh against a HOME with and without the hook."""
+
+    @classmethod
+    def setUpClass(cls):
+        settings = json.loads((HOOK.parent.parent / "settings.json").read_text())
+        cls.cmd = next(h["command"] for e in settings["hooks"]["PreToolUse"]
+                       for h in e["hooks"] if "spend-gate.py" in h["command"])
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self.transcript = self.home / "t.jsonl"
+        self.transcript.write_text(json.dumps(assistant("m", out=1_000_000)) + "\n")  # $10
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_wrapper(self, tool, tool_input, **env):
+        e = {k: v for k, v in os.environ.items() if k not in ENV_KEYS}
+        e.update(env, HOME=str(self.home))
+        payload = {"transcript_path": str(self.transcript), "hook_event_name": "PreToolUse",
+                   "tool_name": tool, "tool_input": tool_input}
+        p = subprocess.run(["sh", "-c", self.cmd], input=json.dumps(payload),
+                           capture_output=True, text=True, env=e, timeout=10)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        if not p.stdout.strip():
+            return "allow"
+        return json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"]
+
+    def install_hook(self):
+        d = self.home / ".claude" / "hooks"
+        d.mkdir(parents=True)
+        (d / "spend-gate.py").write_text(HOOK.read_text())
+
+    def test_hook_missing_and_no_line_allows(self):
+        self.assertEqual(self.run_wrapper("Bash", {"command": "ls"}), "allow")
+
+    def test_hook_missing_with_a_line_denies_all_but_the_handoff_write(self):
+        self.assertEqual(self.run_wrapper("Bash", {"command": "ls"}, SPEND_GATE_USD="100"), "deny")
+        self.assertEqual(self.run_wrapper("Write", {"file_path": "/w/a.py"},
+                                          SPEND_GATE_TOKENS="5"), "deny")
+        self.assertEqual(self.run_wrapper("Write", {"file_path": "/w/HANDOFF.md", "content": "x"},
+                                          SPEND_GATE_USD="100"), "allow")
+        self.assertEqual(self.run_wrapper("Write", {"file_path": "/w/NEXT.md"}, SPEND_GATE_USD="1",
+                                          SPEND_GATE_HANDOFF="NEXT.md"), "allow")
+
+    def test_hook_crashing_with_a_line_denies_all_but_the_handoff_write(self):
+        d = self.home / ".claude" / "hooks"
+        d.mkdir(parents=True)
+        (d / "spend-gate.py").write_text("raise SystemExit(1)\n")
+        self.assertEqual(self.run_wrapper("Bash", {"command": "ls"}, SPEND_GATE_USD="100"), "deny")
+        self.assertEqual(self.run_wrapper("Write", {"file_path": "/w/HANDOFF.md"},
+                                          SPEND_GATE_USD="100"), "allow")
+
+    def test_hook_present_decides(self):
+        self.install_hook()
+        self.assertEqual(self.run_wrapper("Bash", {"command": "ls"}, SPEND_GATE_USD="20"), "allow")
+        self.assertEqual(self.run_wrapper("Bash", {"command": "ls"}, SPEND_GATE_USD="5"), "deny")
+        self.assertEqual(self.run_wrapper("Write", {"file_path": "/w/HANDOFF.md"},
+                                          SPEND_GATE_USD="5"), "allow")
+
+
 if __name__ == "__main__":
     unittest.main()

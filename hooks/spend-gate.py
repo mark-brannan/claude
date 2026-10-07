@@ -23,10 +23,18 @@ number is ignored, with a note on stderr.
 The hook input carries no spend, so it is priced from the transcript:
 assistant events deduplicated by message id (a message's content blocks each
 arrive as an event carrying the same usage), each token class at the model's
-price. Context is the last call's input plus cache tokens. A missing or
-unreadable transcript fails open, with a one-line note on stderr: the gate
-cannot judge what it cannot read, and a worker locked out by a bad path would
-lose its hand-off too.
+price. Context is the last call's input plus cache tokens.
+
+Two failures, two answers; neither locks the hand-off out:
+  - The hook runs but cannot read the transcript: it allows, with a one-line
+    note on stderr (claude#69 names this case). It has no figure to judge by,
+    and --max-budget-usd stays the backstop.
+  - The hook cannot run at all (file missing, python3 missing, a crash)
+    while a line is set: the settings.json wrapper denies every call but the
+    hand-off Write, the same exemption as here. The worker stops early with a
+    hand-off -- cheap, and loud, since every worker blocks at once -- rather
+    than running to its hard cap (3x the soft cap) unwatched, the claude#59
+    shape this gate exists to end. With no line set, the wrapper allows.
 """
 import json
 import os
