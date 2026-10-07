@@ -136,3 +136,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t104505z
 - Standing-orders guard line: prose names the remedy and points at the guard (editor's note on #70) Undo: drop the line's last sentence and say 'hook' for 'guard' in CLAUDE.md's guard line ([#70](https://github.com/mark-brannan/claude/pull/70))
+
+### 20261007t120710z
+- Standing-orders already-ruled line names no file, so it survives retirement (the user's altitude ruling on #70); keeps 'any exit' so omit is checked too Undo: restore 'the rules files, the repo's decisions file' in CLAUDE.md's already-ruled line ([#70](https://github.com/mark-brannan/claude/pull/70))
