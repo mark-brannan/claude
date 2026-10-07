@@ -77,3 +77,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261004t090521z
 - grind's held-back shapes match in any case and add .env*, .aws/, .docker/config.json, keystores (jks, keystore, ppk, p8), id_dsa*, .git-credentials, .pgpass, .htpasswd, kubeconfig, credentials files, *secret*.json, service-account*.json, *.tfvars, terraform.tfstate* Undo: drop those pathspecs or the icase magic in save_attempt ([#55](https://github.com/mark-brannan/claude/pull/55))
+
+### 20261007t005156z
+- Stop block notice also carries the » metrics block, not just crossings and the verdict Undo: revert the fall-through in metrics-live.sh's Stop branch ([#61](https://github.com/mark-brannan/claude/pull/61))
