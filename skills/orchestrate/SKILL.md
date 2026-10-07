@@ -85,8 +85,7 @@ You are a worker agent in <owner/repo>, in your own git worktree under
   line the session reminder gives.
 - Before the PR: the fast local checks for what you touched (the test file
   beside a hook, `sh -n`, shellcheck where CI runs it), then rebase on
-  origin/main; merge instead if the rebase conflicts. Push the way the
-  repo's pre-push hook requires.
+  origin/main; merge instead if the rebase conflicts.
 - Open the PR: `area: what changed` title, `Closes #<n>`, what and why,
   how verified, the Claude Code attribution line. Then `git checkout
   --detach`, so the branch is free for the next session, and stop. Do not
