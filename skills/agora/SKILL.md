@@ -103,12 +103,20 @@ Every item this skill touches gets, and keeps:
 The decision is as public as the question that drove it.
 
 - **The question was already public** (a public issue or PR argued it):
-  the decision is public, a line in that repo's `docs/decisions.md`
-  passing the private-terms check.
+  the decision is public, a dated line
+  `- YYYY-MM-DD — <short name>: <the answer> ([link])`, newest first, in
+  `docs/decisions.md` of the project's primary repo — the repo whose name
+  the `project-<name>` topic shares, else the repo the card links. The
+  line passes the private-terms check; failing it, the ruling is private.
 - **The driving force is non-public** (a card, a curia, a private
-  session): the decision stays private, in the state repo: the sitting's
-  log, `state/global/log/<date>-agora-<project>.md`, with the user's
-  words verbatim, or the curia's roll for a curia's sub-question.
+  session): the decision stays private, in the state repo, with the
+  user's words verbatim: the sitting's log,
+  `state/global/log/<date>-agora-<project>.md`; outside a sitting (a
+  `/sweep` Answered), `state/global/log/<date>-sweep-<project>.md`; the
+  curia's roll for a curia's sub-question.
+
+Either way, when the answer already landed as an ADR or a Q-nn, the line
+points there rather than repeating it.
 
 When in doubt, it stays private, and a private card
 (`owner=human-ruling`) asks whether to publish it. A sitting never opens

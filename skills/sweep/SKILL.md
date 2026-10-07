@@ -84,12 +84,10 @@ proof is the `churn-ok` line in `docs/decisions.md`.
 
 - **Retired:** retire the item (below); the proof is its `evidence=`.
 - **Answered:** record the answer where
-  [Where a ruling lands](../agora/SKILL.md#where-a-ruling-lands) says:
-  the state repo's log by default; a dated line
-  `- YYYY-MM-DD — <short name>: <the answer> ([link])` in the primary repo's
-  public `docs/decisions.md` only when that section admits it. When the
-  answer already landed as an ADR or a Q-nn, point there rather than
-  repeating it. Then retire the item.
+  [Where a ruling lands](../agora/SKILL.md#where-a-ruling-lands) says —
+  private by default, in the sweep's log there; the primary repo's public
+  `docs/decisions.md` only when that section admits it. Then retire the
+  item.
 - **Deferred:** write or rewrite `until:` per the rule above, in the brief
   (readers take `until:` from the brief's text). `brief` does not check the
   holder, so first read `work-item fold <id>`: a `holder=` that is set with
