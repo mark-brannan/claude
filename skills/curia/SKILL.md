@@ -100,7 +100,7 @@ error. A reference into another curia's roll takes the same form.
      minor edits for typos, readability, or to cut unnecessary sections
      of a long quote." It replaces "agents never quote" (#489). There is
      no pin: nothing in roll.md moves, and curation in the digest does
-     the pin's work (one-entry-point §8). No separate file lists what a curia
+     the pin's work. No separate file lists what a curia
      produced: each Decided line links its own, and the ADR link goes in
      digest.md's `adr:` header field at promotion. -->
 
@@ -119,8 +119,8 @@ are the agent's reading of the roll, the inputs and the code. A pencil
 stamp under **Rulings** is glossed with what it holds, so a reader knows
 which sentences may move. A section's heading is the record's own words
 for the mechanism, never a coined name.
-`state/global/curia/one-entry-point/inputs/2026-10-07-digest-narrative-sample.md`
-is the worked example of one Design section. Specs are not in the folder:
+The worked example of one Design section sits in a curia's own `inputs/`
+folder, reached from its ledger, never from here. Specs are not in the folder:
 a spec lives in the public repo beside the code it governs
 (`docs/work-item-lifecycle.md` in the claude repo is the precedent for
 the shape; its roll stamps predate the ruling), each row marked pen or
@@ -137,7 +137,7 @@ replicates `digest.md` alone.
      digest, the digest as an ADR-shaped narrative, forms as sidecar
      files, synthesis at close, lint's narrative-against-ledger check,
      specs in the public repo. The user's lean on the agent's proposal in
-     the one-entry-point curia's sitting of that day, not ruled; its
+     a curia sitting of that day, not ruled; its
      ledger holds the stamps. -->
 
 ## Opening a new curia: the gates
@@ -250,7 +250,6 @@ what not to re-ask. **Trace**: newest first, one entry per sitting, a few
 lines each, pruned by lint once an entry stops earning its place. Both
 point to roll stamps, inputs and commits, never copy them. Not here: the
 user's words (`roll.md`), rulings (`decided.md`), reports (`inputs/`).
-`state/global/curia/one-entry-point/agent-notes.md` is the worked example.
 
 If a session finds itself past gate 1 with a folder it created, the fix
 is not to delete it but to fold it into an open curia: its files into that
