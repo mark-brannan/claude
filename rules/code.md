@@ -45,8 +45,8 @@ project-specific facts belong in that project's own CLAUDE.md.
     **session >100k tokens**, or **session >30 min wall clock**.
 
   In a repo that allows it, everything else — small fixes, doc edits,
-  config tweaks — goes straight to main, no branch, no asking. Branching by default is the failure
-  mode here, not landing on main.
+  config tweaks — goes straight to main, no branch, no asking. Branching
+  by default is the failure mode here, not landing on main.
 
   When a branch *is* warranted: push it and open the PR yourself, as
   early as the work is worth looking at — local checks need not have
