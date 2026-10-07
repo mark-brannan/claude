@@ -200,12 +200,11 @@ do not paraphrase it into a second version that can drift from this one.
    nothing and costs the branch.
 
 5. **Push with `--force-with-lease`,** never a bare `--force`, from your own
-   checkout — unless the branch carries mergify-cli `Change-Id` trailers, in
-   which case its pre-push hook blocks any push from that checkout whatever
-   ref is being pushed. There, push from a detached throwaway worktree
-   instead, per `code.md`'s PR-ownership section: `git worktree add --detach
-   <tmp> <sha>`, push `--force-with-lease` from there, then remove it. A
-   refused lease is not an obstacle to retry past either way: it means
+   checkout. The branch tracks its own remote branch, never main; if
+   mergify's pre-push says it "is managed by Mergify stacks" and it is not in
+   `mergify stack list`, it tracks main: `git branch --unset-upstream`, then
+   `git push --force-with-lease -u origin HEAD` (per `code.md`'s
+   PR-ownership section). Never `--no-verify`. A refused lease is not an obstacle to retry past: it means
    someone else pushed to this branch while you worked. Stop, and say whose
    push you found.
 

@@ -21,6 +21,8 @@
 #     without ever calling gh, so a session working a PR only through it used
 #     to leave the record empty and the Stop gate silently found nothing.
 #     2026-09-08.
+#   - Bash: `git push` or `yadm push` -- a session that only pushes a PR
+#     branch never reads a source file, so code.md never loaded for it.
 #   - MCP:  any GitHub tool whose name mentions a pull request or a review
 # The section is read live from code.md, so there is one source of truth and
 # nothing here to keep in sync. If the file or the heading is missing, say so
@@ -69,7 +71,7 @@ case "$tool" in
   Bash)
     cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
     # Only what runs counts: lib-shell-words.awk keeps one line per segment
-    # whose command word is gh, gh-resolve-thread or mergify, from that word
+    # whose command word is gh, gh-resolve-thread, mergify, git or yadm, from that word
     # on. A heredoc, a quoted message or `echo gh pr` names the command
     # without running it, and used to arm the Stop gate. No library or awk:
     # fall back to the raw command (over-match, never silence).
@@ -78,13 +80,15 @@ case "$tool" in
       END { nt = texts_of(strip_heredocs(buf), texts, nested)
         for (x = 1; x <= nt; x++) { n = scan(texts[x], w, k, q); a = 1
           for (i = 1; i <= n + 1; i++) { if (i <= n && k[i] != ";") continue
-            g = cmd_index(w, k, a, i - 1, "(^|/)(gh|gh-resolve-thread|mergify)$", nested[x], "")
+            g = cmd_index(w, k, a, i - 1, "(^|/)(gh|gh-resolve-thread|mergify|git|yadm)$", nested[x], "")
             if (g) { s = w[g]; sub(/.*\//, "", s)
+              if (s ~ /^(git|yadm)$/ && (g + 1 >= i || w[g + 1] != "push")) g = 0 }
+            if (g) {
               for (j = g + 1; j < i; j++) s = s " " (k[j] == "q" ? q[j] : w[j])
               gsub(/\n/, " ", s); print s }
             a = i + 1 } } }') || cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')
     printf '%s' "$cmd" | grep -Eq \
-      '(^|[^A-Za-z0-9_./-])gh[[:space:]]+(pr([[:space:]]|$)|api[[:space:]].*(pulls|graphql|reviewThreads))|(^|[^A-Za-z0-9_./-])gh-resolve-thread([[:space:]]|$)|(^|[;&|(`])[[:space:]]*mergify[[:space:]]+(stack[[:space:]]+(push|checkout|sync)([[:space:]]|$)|(queue|merge)([[:space:]]|$))' \
+      '(^|[^A-Za-z0-9_./-])gh[[:space:]]+(pr([[:space:]]|$)|api[[:space:]].*(pulls|graphql|reviewThreads))|(^|[^A-Za-z0-9_./-])gh-resolve-thread([[:space:]]|$)|(^|[;&|(`])[[:space:]]*mergify[[:space:]]+(stack[[:space:]]+(push|checkout|sync)([[:space:]]|$)|(queue|merge)([[:space:]]|$))|(^|[;&|(`])[[:space:]]*(git|yadm)[[:space:]]+push([[:space:]]|$)' \
       || exit 0
     ;;
   mcp__*github*__*)
