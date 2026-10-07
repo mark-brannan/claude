@@ -149,13 +149,13 @@ I'm fine, drop it.
   before-state somewhere disposable.
 - **Give yourself a way to verify:** tests, diff, browser, second agent,
   formal methods where feasible, the cheapest that proves it.
-- **Write at the reader's altitude; don't anchor on today.** A doc says
-  what a thing is for; the code says what it does today; the decision
-  record says what was decided. Each stays true when the layer below it
-  changes. Test: would this line go false if the code or design changed
+- **Write at the reader's altitude; don't anchor on today.** Purpose sits
+  above design, design above code; each stays true when a layer below it
+  changes. Test: would this line go false if the design or code changed
   but the purpose didn't? Then it belongs a layer down, or as a pointer.
-  Vague about mechanism and right about purpose is correct. A design, a
-  guard or a fix solves the general need, not today's instance.
+  Vague about mechanism and right about purpose is correct. A decision
+  record is dated, so it may name today's mechanism. A design, a guard or
+  a fix solves the general need, not today's instance.
 - **Compute runs in minutes, never hours, in CI or on my machine.** Before
   adding a test, a matrix leg or a workflow, state its cost per push and the
   account-wide concurrent-job cap it draws on; before a local run, its wall
