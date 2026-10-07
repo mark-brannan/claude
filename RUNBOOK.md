@@ -632,8 +632,7 @@ prints a warning naming the first at start-up; `/wrapup` the first and
 ## Waive the churn gate on a PR
 
 `churn-ok` is a human-applied label — the languette plugin's
-`guard-github-issues` blocks a
-session from adding it, so this is a step you run yourself, not Claude.
+`guard-bypass-labels` blocks a session from adding it, so this is a step you run yourself, not Claude.
 
 ```bash
 ~/dotfiles/.local/bin/mark-as-churn-ok.sh <PR#>
@@ -653,7 +652,8 @@ gh label create churn-ok --repo mark-brannan/dotfiles --color FBCA04 --descripti
 
 `mixed-loops-ok` lets a design document and the implementation it governs land
 in one PR (`.github/workflows/mixed-loops-guard.yml`). Human-applied:
-the languette plugin's `guard-github-issues` blocks a session from adding it by `gh` or MCP.
+the languette plugin's `guard-bypass-labels` blocks a session from adding it by
+`gh` or MCP.
 
 ```bash
 gh pr edit <PR#> --repo mark-brannan/dotfiles --add-label mixed-loops-ok

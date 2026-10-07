@@ -593,8 +593,8 @@ done
 # Plugins — settings.json enables them, but nothing installs them: user
 # settings do not auto-install in `claude -p` or a cloud session. The
 # languette plugin carries the guards (worktrees, private terms, GitHub
-# issues, prose budget, rm, git-footguns, stacked-base). A plugin that never installed is a guard that
-# silently isn't there, so a failure here marks the install incomplete for
+# issues, prose budget, rm, git-footguns, stacked-base). A plugin that never
+# installed is a guard that silently isn't there, so a failure here marks the install incomplete for
 # the SessionStart brief. Refreshed and updated, not just installed: a VM
 # restored with an old plugin cache would otherwise keep running that build.
 # =========================================================================

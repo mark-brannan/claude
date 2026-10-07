@@ -208,8 +208,8 @@ buffered_state() {
 # Restores the short-circuit the pre-dotfiles#149 archivable() had.
 #
 # session live (dotfiles#167): git state alone is how a live session's
-# worktree got archived out from under it (PR #162, the scar
-# the languette plugin's guard-worktrees names). The signal is the claim stamp
+# worktree got archived out from under it (PR #162, the scar the languette
+# plugin's guard-worktrees names). The signal is the claim stamp
 # claim-stamp.sh already posts on the branch's card and refreshes on every
 # Stop (dotfiles#287); it, not this function, decides fresh vs stale
 # (CLAIM_STALE_SECS). <session-id> is the caller's own: its own stamp is

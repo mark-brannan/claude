@@ -2,12 +2,11 @@
 # Tests for cloud-session-setup.sh. Run: sh bin/cloud-session-setup.test.sh
 #
 # A cloud VM in a scratch $HOME: the claude seed is a local clone of this
-# repo's working tree, and
-# `claude` a stub so the plugin step never reaches the network. Covers the
-# cold install (every hook settings.json names resolves under ~/.claude, the
-# harness's own files untouched), the reuse path, the state repo turning up
-# later, and the three refusals. What it cannot cover is the platform: the setup-script field, the
-# GitHub proxy and the attached sources -- that takes one real cloud session.
+# repo's working tree, and `claude` a stub so the plugin step never reaches
+# the network. Covers the cold install (every hook settings.json names
+# resolves under ~/.claude, the harness's own files untouched), the reuse
+# path, the state repo turning up later, and the three refusals. What it
+# cannot cover is the platform: the setup-script field, the GitHub proxy and the attached sources -- that takes one real cloud session.
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
