@@ -37,6 +37,10 @@ For every card and every memo with a linked PR, issue, or ADR:
    the proof (the `state` line, or the date next to today's) in a one-line
    comment on the issue and in the reconcile commit message, if there is one. A `blocked` issue with
    no parseable `Blocked by` line is a finding to report, not a flip.
+6. **Epic issues and their label** — for every open issue titled `[Epic] …`
+   in the project's repos, check it carries `epic`; add it if not
+   (`gh issue edit <url> --add-label epic`). An `epic` label on an issue
+   without the `[Epic]` title, or on a PR, is a finding to report, not a flip.
 
 A reconcile finds a mismatch between what's written and what `gh` (or the
 linked file) says. It never decides which one is right when both could be —

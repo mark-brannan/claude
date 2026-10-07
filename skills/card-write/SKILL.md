@@ -73,8 +73,19 @@ no GitHub home. Take the first line that fits:
   that date unprompted, so write the date the wait is expected to end, not a
   hope.
 - **Deferred to after 1.0** → the `1.0` milestone.
-- **A launchable session** — prompt written, model and effort sized → the
-  epic file's session list; a `ready` issue when no epic owns it.
+- **An epic** is one of three things, and said bare means the first: a
+  GitHub issue titled `[Epic] <aim>` and labelled `epic`, both; a curia (a
+  design epic, which also has its own such issue 1:1, private, in the
+  state repo, see the curia skill); a parent card with many children. The issue associates
+  sub-issues (`gh issue edit <n> --add-sub-issue <m>`), the logical work,
+  where PRs attach; a PR goes on the epic itself only with the user's yes
+  for that PR. Its body carries the aim and a `- [ ] #m` sequence, ticked
+  as each lands, for public progress; that list replaces neither the
+  sub-issues nor the cards that hold the granular work. Name one by
+  `owner/repo#n`. Create or split one through `/scoping`.
+- **A launchable session** — prompt written, model and effort sized → a
+  sub-issue of its epic, or the private epic's file under
+  `state/global/epics/`; a `ready` issue when no epic owns it.
 - **Half-done agent work** → the log and the hand-off prompt, as bare links
   with no state adjectives. A pushed branch has a PR or is a finding.
 - **Click work only the user can do** → a `human-click` card, and only
@@ -217,10 +228,10 @@ After writing, `~/.claude/bin/work-item show <id>` prints the file, and
   endings below are the lifecycle doc's reading, still pencil.
 - **An answered ruling moves, it is not deleted.** `/agora` records the answer
   at once and retires the card as above; where `/sweep` finds one answered
-  elsewhere it appends one dated line with the answer to `docs/decisions.md`
-  in the project's primary repo (a pointer line when the ruling landed as an
-  ADR or a Q-nn) and retires it the same way. That file is where "I decided X
-  on the 24th" is found later.
+  elsewhere it records the answer where
+  [Where a ruling lands](../agora/SKILL.md#where-a-ruling-lands) says
+  (private by default; a pointer line when the ruling landed as an ADR or a
+  Q-nn) and retires it the same way.
 - No cap and no expiry: `/sweep` prunes what was ruled elsewhere or went
   stale. A card that blocks nothing and has no
   consequence is never shown; take its default and record it.

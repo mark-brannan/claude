@@ -154,6 +154,13 @@ gate 4 that touch it, ids only; lint keeps it derived from then on — and
 commit. That placeholder is the
 whole opening; the first sitting does the rest. Say the id in the opening
 session's record.
+Then file the curia's epic, 1:1: a private issue in
+`mark-brannan/claude_prompts_scratch`, titled `[Epic] <the question>`,
+labelled `epic`, body the whole `digest.md`
+(`gh issue create -R mark-brannan/claude_prompts_scratch --label epic --title ... --body-file digest.md`),
+and write it as `issue:` in the header. A trial (2026-10-06): for now the
+issue is a replica of the digest, for reading back; what it becomes is
+open indefinitely, and not an agent's to close.
 Also create `agent-notes.md` from the header in
 [forms/agent-notes.md](forms/agent-notes.md).
 
@@ -281,7 +288,10 @@ curia for it. It becomes a line under `## Open questions` here, or a
    sitting's closing count is the next one's opening. If the user has ruled the
    question itself settled, set `status: settled` in the header too —
    bare `/curia` lists
-   open curiae, and nothing else retires one.
+   open curiae, and nothing else retires one. Then refresh the epic:
+   `gh issue edit <n> -R mark-brannan/claude_prompts_scratch --body-file digest.md`;
+   past GitHub's 65,536-character body limit, cut from the end and say so
+   in the body's last line, with a link to the file.
 2. Say what is still open on this question, by concept.
 3. Print the paste-again prompt: `/curia <id>`, with the model and effort
    from the document's header. Nothing else to paste, nothing to hold in
