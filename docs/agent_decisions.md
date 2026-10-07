@@ -91,7 +91,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - curia: The decision is the only part of a Design section that must trace to a decided.md line; what hurt, the cost to change and open are the agent's reading Undo: restore 'every design sentence has a ledger line' in skills/curia/SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: close synthesizes every ruling landed since the last close, not only this sitting's; lint flags an uncarried ledger line only when it is older than the last words Where this stands cites Undo: revert the Closing step 1 and lint clauses in skills/curia/SKILL.md ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: close shows the diff of the rewritten Design sections for the user's redline; a section heading is the record's words, never a coined name; a pencil stamp under Rulings carries a gloss of what it holds Undo: delete the three clauses in skills/curia/SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
-- curia: whether a noun gets a spec row stays open in template.md's Vocabulary comment, per the one-entry-point curia's ledger line of 2026-10-07, rather than ruled no Undo: restore 'a noun gets no spec of its own' in template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: whether a noun gets a spec row stays open in template.md's Vocabulary comment, per a curia ledger line of 2026-10-07, rather than ruled no Undo: restore 'a noun gets no spec of its own' in template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: the three callers that read rulings from digest.md's Decided (scoping's curia row, settledness rubric row 9 and its read-set) point at decided.md in this PR, not a follow-up Undo: revert the three one-line edits in skills/scoping and skills/doc-settledness-check ([#64](https://github.com/mark-brannan/claude/pull/64))
 - curia: adr: in the digest header holds one link per promoted Design section Undo: restore the singular adr: field in template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
@@ -130,3 +129,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t105037z
 - Branch-vs-main rule: 'GitHub can't answer' means an error or no token; an empty ruleset list is an answer Undo: revert 6c7669a ([#67](https://github.com/mark-brannan/claude/pull/67))
+
+### 20261007t114607z
+- curia: a read-from: line of none, or none at all, means the file's first stamp; lint writes that stamp Undo: drop the none clause in facets/lint.md and SKILL.md Prune what agents load ([#77](https://github.com/mark-brannan/claude/pull/77))
+- curia: every facet commit and every sitting commit to the state repo ends with the Co-Authored-By: Claude trailer; an untrailered digest line not clearly the user's is a finding, not pen Undo: drop the trailer line from the three facets and SKILL.md During ([#77](https://github.com/mark-brannan/claude/pull/77))

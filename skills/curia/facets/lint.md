@@ -49,7 +49,8 @@ Find and fix, mechanically, in one commit of the derived files:
   other open curiae (`status: open` in each digest's header), ids only;
 - `read-from:` in the header: move each stamp forward to the last stamp
   of that file **Where this stands** cites; a file it cites nothing from
-  keeps its stamp; add the line if the header lacks it;
+  keeps its stamp; `none`, or no line, means the file's first stamp:
+  write that, so the next reader starts at the top;
 - the three sections a sitting reads at open: **Where this stands** over
   250 words, Working memory over 750, **Open questions** over 500 — trim
   what has stopped earning its place, moving a long open question's text

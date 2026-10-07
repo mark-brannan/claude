@@ -158,7 +158,7 @@ carries a `read-from:` line, one stamp per append-only file —
 `roll.md#<stamp> · agent_decisions.md#<stamp>` — and an agent reads each
 file from that stamp to its end, never from the top. Lint moves each
 stamp forward to the last one **Where this stands** cites; a file it
-cites nothing from keeps its stamp. A repo's public decisions log, once
+cites nothing from keeps its stamp, and `none` means the top. A repo's public decisions log, once
 one exists, gets its own read-from entry in the digest header, pointing
 at a line of its own; the log carries nothing back. For a settled ruling
 an agent reads the spec, whose row cites the decisions line, not the log
@@ -430,7 +430,8 @@ curia for it. It becomes a line under `## Open questions` here, or a
    for next time, the size line as `status` last wrote it — and **Working
    memory**, at most 750 words. If the user has ruled the question itself
    settled, set `status: settled` in the header too — bare `/curia` lists
-   open curiae, and nothing else retires one. Commit.
+   open curiae, and nothing else retires one. Commit, with the agent
+   trailer ([During](#during)).
 2. Spawn the runner in the background with all three facets, told they
    were started at close, with the curia id, the words read at open per
    section and the context at first question, both from this transcript;

@@ -1,6 +1,7 @@
 # Facet: status
 
-A sub-agent prompt. Run on Sonnet, low, with the curia id, no worktree, no
+A sub-agent prompt. Run by the facet runner (SKILL.md, Facets) after lint
+and edit, or alone on Sonnet, low, with the curia id, no worktree, no
 sub-agents of its own; it writes one line in `digest.md` and one row in
 `agent-notes.md`, and commits them. Started by the closing sitting in the
 background after lint and edit, with the words read at open per section
