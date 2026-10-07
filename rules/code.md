@@ -33,10 +33,11 @@ project-specific facts belong in that project's own CLAUDE.md.
 - **Branch-vs-main is the repo's call, then a rule.** If main requires a
   pull request (`gh api repos/<o>/<r>/rules/branches/main` lists
   `pull_request`), every change goes through a PR, however small; the
-  ruleset's bypass is mine, never yours. If GitHub can't answer and the
-  repo's own instructions don't say, ask me. Otherwise work on main by
-  default, without asking: commit straight to main in small, verified
-  commits, pushed early and often, unless one of these triggers:
+  ruleset's bypass is mine, never yours. If GitHub can't answer (an
+  error or no token; an empty list is an answer) and the repo's own
+  instructions don't say, ask me. Otherwise work on main by default,
+  without asking: commit straight to main in small, verified commits,
+  pushed early and often, unless one of these triggers:
   - **Explicit phrase** — I say "make this a feature," "make this a
     branch," or "this needs review." Skip the metric check; branch
     immediately.
