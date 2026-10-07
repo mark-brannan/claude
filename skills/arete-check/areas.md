@@ -25,9 +25,8 @@ its reasons. The user rules. Grades: `good`, `concern`, `harm`, `n/a`.
 8. **judgment kept** — which decisions it moves from a person to an
    agent, and whether it assists the doing that builds judgment or
    replaces it.
-9. **cost** — per run: tokens, energy, water and land behind them, and
-   the screen hours and fatigue in front of them; a read-set or a loop
-   with no ceiling is a cost with none.
+9. **cost** — tokens, water, and screen hours per run; a read-set or a
+   loop with no ceiling is a cost with none.
 10. **truth** — whether its claims can be verified and its sources are
    named; where it could state the plausible as the present.
 11. **elegance** — the smallest form that carries the whole meaning;
