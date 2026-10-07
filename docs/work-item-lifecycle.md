@@ -45,7 +45,7 @@ has a `docs/decisions.md`, a row cites its line there.
 | Rule | Code |
 |---|---|
 | Six statuses: open, ready, claimed, blocked, done, closed. One second attribute, the owner: human-ruling, human-click or agent. An item is created open, always | `work-item create` writes `status=open` |
-| Transitions: open → ready; ready → claimed; claimed → blocked, ready, done; blocked → claimed, ready; done → claimed or ready; done → closed by acceptance only, never on a clock; closed → claimed; never claimed from open | `work-item log` refuses any other step |
+| Transitions: open → ready; ready → claimed; claimed → blocked, ready, done; blocked → claimed, ready; done → claimed or ready; done → closed by acceptance only, never on a clock; closed → claimed; no claimed → open | `work-item log` refuses any other step |
 | Every work item is claimable, cards included: the claim extends to every home an item can have | `work-item claim` |
 | A claim is valid from ready, blocked, done or closed, never open, and never while another session holds it; the stale-claim rule is the agent's toil | `work-item claim` refuses a held item and any other source |
 | A claim lapses once the claiming session has been silent one hour since its last Stop; a new claim then takes over and logs the old session id; a resumed session re-claims. Measured over 137 session records: median 0.36 h, p90 1.07 h, none past two hours | `work-item claim`; the Stop hook writes a `stop` line on the held item |
