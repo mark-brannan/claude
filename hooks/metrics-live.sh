@@ -345,10 +345,12 @@ save_sitting() {
 ctx_line=0; ctx_rungs=0; ctx_stop_line=0; time_line=0; tl_sitting=0; fric_tripped=0
 since_nag=0; resume_ts=0; nag_pending=0; late_nagged=0
 m_ctx_at=0; m_sit_at=0; m_sit_said=0; m_ctx_tools=0
+handoff_sum=""  # checksum of the written hand-off bodies resume_ts was stamped for
 bed_warn_at=0; bed_past_at=0
 if [ -f "$NAGF" ]; then
   IFS=$'\t' read -r bed_warn_at bed_past_at \
     <<<"$(jq -r '[(.bed_warn_at // 0), (.bed_past_at // 0)] | @tsv' "$NAGF" 2>/dev/null)"
+  handoff_sum=$(jq -r '.handoff_sum // ""' "$NAGF" 2>/dev/null)
   [ -n "$bed_warn_at" ] || bed_warn_at=0
   [ -n "$bed_past_at" ] || bed_past_at=0
   IFS=$'\t' read -r ctx_line ctx_rungs ctx_stop_line time_line tl_sitting fric_tripped \
@@ -415,7 +417,8 @@ save_nag() {
         --argjson mss "$m_sit_said" \
         --argjson mct "$m_ctx_tools" \
         --argjson bw "$bed_warn_at" --argjson bp "$bed_past_at" \
-    '{context_line: $cl, context_rungs: $cr, context_stop_line: $cs,
+        --arg hs "$handoff_sum" \
+    '{handoff_sum: $hs, context_line: $cl, context_rungs: $cr, context_stop_line: $cs,
       time_line: $tl, time_line_sitting: $ts,
       friction_tripped: ($ft == 1),
       since_nag: ($sn == 1), resume_ts: $rt, nag_pending: ($np == 1),
@@ -998,10 +1001,15 @@ if [ "$hook_name" = Stop ]; then
   if [ -z "$items" ]; then
     add_arch "📄 no pickup item for ${sid:0:8}"
   else
-    # Written, the first Stop that sees the body stamps the time; the item
+    # The saved time is when the written body last changed: a checksum of
+    # the bodies is kept, and the time restamped when it differs. The item
     # file is rewritten every Stop, so its own mtime says nothing.
-    if printf '%s\n' "$items" | grep -q "$(printf '\twritten$')"; then
-      [ "$resume_ts" -gt 0 ] || resume_ts=$now_ts
+    _sum=$(printf '%s\n' "$items" | awk -F'\t' '$2 == "written" { print $1 }' \
+           | while IFS= read -r _f; do awk 'f { print } /^---$/ { f = 1 }' "$_f"; done \
+           | cksum | cut -d' ' -f1)
+    if printf '%s\n' "$items" | grep -q "$(printf '\twritten$')" \
+       && { [ "$resume_ts" -le 0 ] || [ "$_sum" != "$handoff_sum" ]; }; then
+      resume_ts=$now_ts; handoff_sum=$_sum
     fi
     while IFS="$(printf '\t')" read -r _f _st; do
       if [ "$_st" = written ]; then

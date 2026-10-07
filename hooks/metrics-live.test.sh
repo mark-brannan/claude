@@ -338,6 +338,17 @@ t     'the next Stop does not block either' '' "$(printf '%s' "$o" | jq -r '.dec
 hasnt 'and carries no age line' 'Hand-off .* old' "$(msg "$o")"
 t     'and the saved time does not move between Stops' \
       "$(msg "$o1s" | grep -o 'saved [0-9:]*')" "$(msg "$o" | grep -o 'saved [0-9:]*')"
+# The saved time follows the body: back-date the stamp, an unchanged body keeps
+# it, an edited body restamps it.
+NF0="$STATE/metrics/live/st/stop0.nag.json"
+jq '.resume_ts = 1000000000' "$NF0" > "$NF0.x" && mv "$NF0.x" "$NF0"
+o=$(S0)
+t     'an unchanged body keeps its saved time' 'yes' \
+      "$([ "$(nag_field stop0 .resume_ts)" = 1000000000 ] && echo yes || echo no)"
+printf 'later: edited\n' >> "$PK/2026-09-09T10-00-stop0.md"
+o=$(S0)
+t     'an edited body restamps its saved time' 'yes' \
+      "$([ "$(nag_field stop0 .resume_ts)" -gt 1000000000 ] && echo yes || echo no)"
 
 # The model answers the block by editing its pickup item's body. The hook
 # must find it on disk, not assume it from having asked.
