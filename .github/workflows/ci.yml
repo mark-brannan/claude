@@ -31,16 +31,15 @@ jobs:
           command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
           shellcheck --severity=warning hooks/*.sh cloud-setup.sh bin/*.sh
 
-  # Every hook settings.json references is seeded by cloud-session-setup.sh,
-  # from INSTALL (this repo) or GUARD_HOOKS (the four guards dotfiles still
-  # tracks). The check compares the lists, not the files on disk.
+  # Every hook settings.json references is seeded by cloud-session-setup.sh
+  # from INSTALL. The check compares the lists, not the files on disk.
   seeded:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Every settings.json hook is in INSTALL or GUARD_HOOKS
+      - name: Every settings.json hook is in INSTALL
         run: |
           set -euo pipefail
           { grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.sh' settings.json \
@@ -49,11 +48,9 @@ jobs:
               | sed 's|^|hooks/|'
             ls lib/*.py | grep -v '\.test\.py$'
           } | sort -u > /tmp/referenced
-          { sed -n '/^INSTALL="/,/^"/p' bin/cloud-session-setup.sh \
-              | grep -o '^\(hooks\|lib\)/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\|py\)'
-            sed -n '/^GUARD_HOOKS="/,/^"/p' bin/cloud-session-setup.sh \
-              | grep -o '^[A-Za-z0-9._-]*\.sh' | sed 's|^|hooks/|'
-          } | sort -u > /tmp/installed
+          sed -n '/^INSTALL="/,/^"/p' bin/cloud-session-setup.sh \
+            | grep -o '^\(hooks\|lib\)/[A-Za-z0-9._-]*\.\(sh\|awk\|jq\|py\)' \
+            | sort -u > /tmp/installed
           missing=$(comm -23 /tmp/referenced /tmp/installed)
           if [ -n "$missing" ]; then
             echo "::error::settings.json references hooks, or lib/ has files, that cloud-session-setup.sh never seeds:"
@@ -71,7 +68,7 @@ jobs:
           echo "ok: no \$CLAUDE_PROJECT_DIR hook fallbacks"
 
   # The suites on the shared awk tokenizer (lib-shell-words.awk), under all
-  # three awks in one job. The four coupled guards' suites stay in dotfiles.
+  # three awks in one job.
   guard-tests:
     runs-on: ubuntu-latest
     steps:
@@ -90,8 +87,7 @@ jobs:
           for impl in mawk gawk original-awk; do
             d=$(mktemp -d)
             ln -s "$(command -v "$impl")" "$d/awk"
-            for t in hooks/issue-door.test.sh \
-                     hooks/npm-publish-auth.test.sh \
+            for t in hooks/npm-publish-auth.test.sh \
                      hooks/pr-ownership-context.test.sh; do
               echo "::group::$t under $impl"
               if AWK_PATH=$d bash "$t"; then echo "ok"; else status=1; echo "::error::$t failed under $impl"; fi
@@ -114,7 +110,6 @@ jobs:
           set -euo pipefail
           printf '%s\n' hooks/*.test.sh bin/*.test.sh \
             | grep -vFf <(printf '%s\n' \
-                hooks/issue-door.test.sh \
                 hooks/npm-publish-auth.test.sh \
                 hooks/pr-ownership-context.test.sh) \
             | xargs -P 4 -I{} bash -c '

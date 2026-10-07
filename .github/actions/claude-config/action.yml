@@ -4,9 +4,8 @@ description: >-
   (CLAUDE.md, rules, hooks, skills) so a Claude Code run in this checkout is
   gated by the same fail-closed hooks a real session runs under, instead of
   either having no config at all or a bespoke per-repo fetch step. Checks
-  out this repo at `ref` and runs its own cloud-session-setup.sh installer,
-  which also fetches the four guard hooks dotfiles still tracks; it
-  does not re-implement the install logic, only invokes it, so
+  out this repo at `ref` and runs its own cloud-session-setup.sh installer;
+  it does not re-implement the install logic, only invokes it, so
   the two never drift.
 
   Design: https://github.com/mark-brannan/claude/blob/main/docs/config-sync-strategy.md#64-ci-in-other-repos
@@ -20,9 +19,7 @@ inputs:
       signed `claude-config/vN` release tag, reviewed and hardware-key
       signed before promotion) has not been built yet; once it lands, this
       default moves to the newest such tag instead of `main`. A caller that
-      wants a pin today can already pass a full commit SHA here. The pin
-      covers this repo only: the four guard hooks still come from
-      mark-brannan/dotfiles `main`, floating, whatever `ref` says.
+      wants a pin today can already pass a full commit SHA here.
     required: false
     default: main
 
