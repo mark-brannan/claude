@@ -276,9 +276,11 @@ the fold as a unilateral call.
    stale claims and orphan terms, and the narrative against the ledger —
    a sentence of **The decision** with no `decided.md` line behind it; a
    ledger line stamped before the last words **Where this stands** cites
-   that no Design section carries, since a newer one waits for this
-   sitting's close and a promoted section's lines are carried by its ADR
-   link line — and reports overlap with the other open
+   (by its date where it cites no roll stamp) that no section of the
+   digest carries — a Design section, **The problem** or **Vocabulary** —
+   since a newer one waits for this sitting's close, a promoted
+   section's lines are carried by its ADR link line, and a
+   **Superseded** line is carried by nothing — and reports overlap with the other open
    curiae from step 0 — a question this one shares with another — from
    which this session rewrites `related:`, ids only. A digest from before
    the trial that still carries `## Decided`: the patch moves it whole to
