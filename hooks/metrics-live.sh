@@ -997,6 +997,8 @@ if [ "$hook_name" = Stop ]; then
     why=$(verdict_explain "$archival_verdict" "$work_root")
     [ -z "$why" ] || add_arch "$why"
   fi
+  buf=$(buffered_state "$work_root")
+  [ -z "$buf" ] || add_arch "$buf"
   items=$(pickup_items)
   if [ -z "$items" ]; then
     add_arch "📄 no pickup item for ${sid:0:8}"
