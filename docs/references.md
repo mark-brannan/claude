@@ -3,8 +3,8 @@
 The sources behind the working loop in this repo: the skills and hooks under
 `.claude/`, the board, the guards, and the standing orders. Each entry gives
 the idea in one line and what it maps to here in one line. Every citation was
-checked against the web on 2026-09-29, the mechanisms section on 2026-10-07. An entry the web could not confirm is
-marked unverified, never dropped.
+checked against the web on 2026-09-29, the mechanisms section on 2026-10-07.
+An entry the web could not confirm is marked unverified, never dropped.
 
 ## Framing
 
