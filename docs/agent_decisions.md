@@ -104,3 +104,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t093718z
 - Disable only the mergify-stack skill via a permissions.deny Skill(mergify:mergify-stack) rule, keep the plugin on Undo: remove the one deny line in settings.json ([#76](https://github.com/mark-brannan/claude/pull/76))
+
+### 20261007t094943z
+- curia: lint's uncarried-ledger-line check counts The problem and Vocabulary as carrying, exempts Superseded, and dates a line that cites no roll stamp by its date Undo: restore 'no Design section carries' in skills/curia/SKILL.md Opening step 3 ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: #64 keeps the opening lint, close-time synthesis in the sitting and the X-of-Y position that the 2026-10-07 pen rulings retire; #77 replaces them, so #64 flags them and lands only with #77 straight after Undo: port #77's opening, facets and Where-this-stands into #64 and rebase #77 ([#64](https://github.com/mark-brannan/claude/pull/64))
