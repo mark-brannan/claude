@@ -982,7 +982,7 @@ if [ "$hook_name" = Stop ]; then
     add_arch "📦 archivable. (${archivable_tag})"
   else
     add_arch "📦 not archivable: ${archival_reasons}. (${archivable_tag})"
-    why=$(verdict_explain "$archival_verdict")
+    why=$(verdict_explain "$archival_verdict" "$work_root")
     [ -z "$why" ] || add_arch "$why"
   fi
 
