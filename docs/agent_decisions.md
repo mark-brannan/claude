@@ -140,3 +140,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261007t114607z
 - curia: a read-from: line of none, or none at all, means the file's first stamp; lint writes that stamp Undo: drop the none clause in facets/lint.md and SKILL.md Prune what agents load ([#77](https://github.com/mark-brannan/claude/pull/77))
 - curia: every facet commit and every sitting commit to the state repo ends with the Co-Authored-By: Claude trailer; an untrailered digest line not clearly the user's is a finding, not pen Undo: drop the trailer line from the three facets and SKILL.md During ([#77](https://github.com/mark-brannan/claude/pull/77))
+
+### 20261007t121138z
+- Drop date-released from CITATION.cff: the repo has no release, and the date was the first commit's Undo: re-add date-released once a release is tagged ([#80](https://github.com/mark-brannan/claude/pull/80))
