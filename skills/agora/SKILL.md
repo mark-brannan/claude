@@ -70,9 +70,8 @@ Every item this skill touches gets, and keeps:
   `until`, `risk`. Not "figure out X"; that is unscoped work, sent back
   to be scoped.
 - **Output** — exactly one of:
-  - **Ruling** — the user answers; the ruling is written at once to
-    `docs/decisions.md` in the primary repo, or the state repo's log if it
-    fails the private-terms check. The card retires in the same turn, per
+  - **Ruling** — the user answers; the ruling is written at once where
+    [Where a ruling lands](#where-a-ruling-lands) says. The card retires in the same turn, per
     [the lifecycle](../../docs/work-item-lifecycle.md): an `open` item
     gets `~/.claude/bin/work-item log <id> status=ready` first, then `~/.claude/bin/work-item claim
     <id>`, then `~/.claude/bin/work-item log <id> status=done 'evidence=<link>'`, the
@@ -98,6 +97,32 @@ Every item this skill touches gets, and keeps:
     it under that curia's `## Open questions` with its provenance, and
     the card retires as a ruling does. No folder is touched beyond that
     line.
+
+## Where a ruling lands
+
+The decision is as public as the question that drove it.
+
+- **The question was already public** (a public issue or PR argued it):
+  the decision is public, a dated line
+  `- YYYY-MM-DD — <short name>: <the answer> ([link])`, newest first, in
+  `docs/decisions.md` of the project's primary repo — the repo whose name
+  the `project-<name>` topic shares, else the repo the card links. The
+  line passes the private-terms check; failing it, the ruling is private.
+- **The driving force is non-public** (a card, a curia, a private
+  session): the decision stays private, in the state repo, with the
+  user's words verbatim where there are any: the sitting's log,
+  `state/global/log/<date>-agora-<project>.md`; outside a sitting (a
+  `/sweep` Answered), `state/global/log/<date>-sweep-<project>.md`. A
+  curia's sub-question is **Folded** into that curia instead, and a
+  ruling on one lands where [the curia skill](../curia/SKILL.md) keeps
+  its rulings; no agent writes its `roll.md`.
+
+Either way, when the answer already landed as an ADR or a Q-nn, the line
+points there rather than repeating it.
+
+When in doubt, it stays private, and a private card
+(`owner=human-ruling`) asks whether to publish it. A sitting never opens
+a PR or comments on an issue just to record a private ruling.
 
 ## Per item: the steps
 
