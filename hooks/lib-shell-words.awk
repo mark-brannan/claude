@@ -1,5 +1,5 @@
-# Shared shell-text scanner for the PreToolUse gate hooks (no-rm-tree.sh,
-# no-git-footguns.sh). Each hook loads it by concatenating this file in front
+# Shared shell-text scanner for the PreToolUse gate hooks (guard-recursive-delete.sh,
+# guard-git-work-loss.sh). Each hook loads it by concatenating this file in front
 # of its own awk program: awk "$(cat lib-shell-words.awk)"'<program>'.
 # Nothing here decides anything -- it turns the Bash tool's command string
 # into words the hook judges.
