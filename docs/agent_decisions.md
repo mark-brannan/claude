@@ -80,3 +80,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t005156z
 - Stop block notice also carries the » metrics block, not just crossings and the verdict Undo: revert the fall-through in metrics-live.sh's Stop branch ([#61](https://github.com/mark-brannan/claude/pull/61))
+### 20261007t032620z
+- A ruling /sweep records privately goes to state/global/log/<date>-sweep-<project>.md, mirroring the agora sitting's log name Undo: rename the path in skills/agora/SKILL.md 'Where a ruling lands' ([#60](https://github.com/mark-brannan/claude/pull/60))
+- A public ruling keeps the old home: the project's primary repo's docs/decisions.md (project-<name> topic, else the card's repo), not the repo whose issue argued it Undo: say 'that repo's docs/decisions.md' in skills/agora/SKILL.md 'Where a ruling lands' ([#60](https://github.com/mark-brannan/claude/pull/60))
