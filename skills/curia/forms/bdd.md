@@ -1,8 +1,8 @@
 # Form: BDD
 
 Ancestor: behaviour-driven development, given / when / then. Fits when
-behaviour is the contract. Sections added to `digest.md` after **Where this
-stands**.
+behaviour is the contract. Adds `scenarios.md` beside `digest.md`, from the
+sections below.
 
 ## Scenarios
 

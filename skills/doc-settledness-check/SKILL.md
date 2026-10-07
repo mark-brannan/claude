@@ -29,8 +29,8 @@ brief; neither verdict stands in for the other.
    - **curia id** — `~/claude_prompts_scratch/state/global/curia/<id>/digest.md`
      exists, or `thread.md` where the folder has no `digest.md` (a closed
      curia from before the split). Kind `curia`. Read-set: the folder
-     (`digest.md` or `thread.md`, `roll.md` if it has one, `inputs/`,
-     `agent-notes.md`).
+     (`digest.md` or `thread.md`, `decided.md` and any form sidecar if it
+     has them, `roll.md` if it has one, `inputs/`, `agent-notes.md`).
    - **path** — a file in any repo on this machine. Kind `adr` if it sits
      under an `adr/` directory or is named `*.adr.md`; otherwise `design`.
      Read-set: the file, its repo's ADR index if any, `git log` for it.
