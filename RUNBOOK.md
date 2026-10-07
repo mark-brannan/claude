@@ -496,13 +496,13 @@ all three, and it runs from any machine that has the signing key, never from
 the cloud session.
 
 **Never reach for GitHub's own "Update branch" instead** — neither the button
-nor `gh pr update-branch`, in either form. The `--rebase` form rewrites the
-commits and does not re-sign them, so a branch that verified before the call
-comes back with every commit unsigned; the merge form keeps signatures but
-adds a merge commit that `required_linear_history` rejects. On a repo carrying
-both rules there is no form that works, and the damage looks like a different
-problem: the PR simply swaps one silent block for another. The
-`no-update-branch` hook refuses the subcommand for this reason.
+nor `gh pr update-branch --rebase`. That form rewrites the commits and does
+not re-sign them, so a branch that verified before the call comes back with
+every commit unsigned, and the damage looks like a different problem: the PR
+simply swaps one silent block for another. The merge form is harmless to
+linear history, because `required_linear_history` constrains only `main` and
+a PR squash-merges to one commit. The `no-update-branch` hook stays, for the
+rebase-form reason.
 
 From any checkout of the repo; it works in a throwaway worktree, so the
 branch you have checked out and any uncommitted work are untouched:
