@@ -1,7 +1,8 @@
 # Form: success metric
 
 Ancestor: OKR key results; the North Star metric. Fits when the measure is
-the hard part. Sections added to `digest.md` after **Where this stands**.
+the hard part. Adds `success-metric.md` beside `digest.md`, from the
+sections below.
 
 ## The metric
 
