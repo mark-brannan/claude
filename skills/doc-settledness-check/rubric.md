@@ -43,7 +43,7 @@ query), `git` (history), or `read` (judgment on reading). A row measured by
    entry count is not the answer. Unclosed: a `LIVE` file, with its
    session and age. A curia with no `roll.md` yet → `not found`, mark
    `--`. Elsewhere `n/a`.
-9. **promoted so far** — *curia only*: each link a Decided line carries to what
+9. **promoted so far** — *curia only*: each link a `decided.md` line carries to what
    the curia produced, with its PR or issue state. Elsewhere `n/a`.
 10. **implementation** — whether loop one has an issue or PR against this
     design. Informational, never blocking; an ADR may precede its code.

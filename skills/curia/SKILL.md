@@ -54,7 +54,7 @@ One folder per curia in the state repo. Deliberation is private and stays
 there; only what a curia **produces** — an ADR, a spec, an issue, a card —
 goes to a public repo, and the `decided.md` line that produced it links it.
 When the curia, or one Design section of it, is promoted — written up as
-an ADR — the ADR's link also goes in the `adr:` field of `digest.md`'s
+an ADR — the ADR's link also joins the `adr:` field of `digest.md`'s
 header.
 
 ```
@@ -69,13 +69,13 @@ state/global/curia/<id>/
   inputs/     read-only side products: spikes, side-chat pastes, subagent reports
 ```
 
-Two files, two grains. **`roll.md` is append-only.** While a `LIVE` file
+Two grains, raw and derived. **`roll.md` is append-only.** While a `LIVE` file
 naming the session is in the folder, a hook appends each of the user's
 prompts verbatim under a stamp heading, `### 20261002t054107z` (UTC date and
 time to the second, no separators, lower-case `t` and `z`, nothing else);
 nothing edits an entry after. No agent writes `roll.md`; the roll stays
-raw. **`digest.md` is derived**: rewritten in place, and it carries the
-user's words as references, `<curia>/roll.md#<stamp>`, plus cleaned,
+raw. **`decided.md` and `digest.md` are derived**: rewritten in place, and
+they carry the user's words as references, `<curia>/roll.md#<stamp>`, plus cleaned,
 curated quotes, each with its reference. A quote may be edited lightly for
 typos or readability, or cut where a long passage runs past its point;
 never reworded into something the user didn't say. The stamp is the
@@ -110,8 +110,12 @@ the design, for a human reading cold, shaped like an ADR
 problem**, **The design** — one numbered section per mechanism, each in
 five parts: what hurt, the decision in prose, what it costs to change in
 IADA terms, what is open, the rulings by stamp, pen then pencil —
-**Vocabulary**, **Open questions**, **Notes and inputs**. Every design
-sentence has a ledger line behind it.
+**Vocabulary**, **Open questions**, **Notes and inputs**. **The decision**
+says only what the ledger holds, sentence by sentence; the other four parts
+are the agent's reading of the roll, the inputs and the code. A pencil
+stamp under **Rulings** is glossed with what it holds, so a reader knows
+which sentences may move. A section's heading is the record's own words
+for the mechanism, never a coined name.
 `state/global/curia/one-entry-point/inputs/2026-10-07-digest-narrative-sample.md`
 is the worked example of one Design section. Specs are not in the folder:
 a spec lives in the public repo beside the code it governs
@@ -126,7 +130,8 @@ replicates `digest.md` alone.
 <!-- pencil (2026-10-07): a trial, all of it — the ledger split out of the
      digest, the digest as an ADR-shaped narrative, forms as sidecar
      files, synthesis at close, lint's narrative-against-ledger check,
-     specs in the public repo. The user's lean, not ruled:
+     specs in the public repo. The user's lean on the agent's proposal in
+     that sitting, not ruled:
      one-entry-point/roll.md#20261007t021335z and #20261007t025200z. -->
 
 ## Opening a new curia: the gates
@@ -269,8 +274,11 @@ the fold as a unilateral call.
    one patch file (no worktree, no sub-agents of its own), checks the
    derived sections for contradictions,
    stale claims and orphan terms, and the narrative against the ledger —
-   a design sentence with no `decided.md` line behind it, a ledger line no
-   Design section carries — and reports overlap with the other open
+   a sentence of **The decision** with no `decided.md` line behind it; a
+   ledger line stamped before the last words **Where this stands** cites
+   that no Design section carries, since a newer one waits for this
+   sitting's close and a promoted section's lines are carried by its ADR
+   link line — and reports overlap with the other open
    curiae from step 0 — a question this one shares with another — from
    which this session rewrites `related:`, ids only. A digest from before
    the trial that still carries `## Decided`: the patch moves it whole to
@@ -322,8 +330,11 @@ curia for it. It becomes a line under `## Open questions` here, or a
 ## Closing (the user says when)
 
 1. Land every edit, then synthesize: rewrite each section of **The
-   design** the sitting's rulings touch, in its five parts, and **The
-   problem** or **Vocabulary** where a ruling touched them; then rewrite
+   design** that a ruling landed since the last close touches — this
+   sitting's, and any an earlier sitting left unsynthesized — in its five
+   parts, and **The problem** or **Vocabulary** where a ruling touched
+   them; show the diff of what was rewritten, as lint shows its own, for
+   the user's redline in the sitting or on the epic; then rewrite
    **Where this stands**, short — the last words by
    reference, `<id>/roll.md#<stamp>`, what is unsettled by pointer, the X of Y
    position for next time, and the size lines again, all three counts

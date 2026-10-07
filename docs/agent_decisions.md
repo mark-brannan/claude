@@ -84,3 +84,16 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t044618z
 - grind's stop save points the wip ref at the stop's tip even when the worker already pushed it, and may rewrite that ref under a lease pinned to the sha this checkout last saw, so a rebased tip replaces the last snapshot Undo: drop --force-with-lease in save_attempt ([#57](https://github.com/mark-brannan/claude/pull/57))
+
+### 20261007t051846z
+- curia: The decision is the only part of a Design section that must trace to a decided.md line; what hurt, the cost to change and open are the agent's reading Undo: restore 'every design sentence has a ledger line' in skills/curia/SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: close synthesizes every ruling landed since the last close, not only this sitting's; lint flags an uncarried ledger line only when it is older than the last words Where this stands cites Undo: revert the Closing step 1 and lint clauses in skills/curia/SKILL.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: close shows the diff of the rewritten Design sections for the user's redline; a section heading is the record's words, never a coined name; a pencil stamp under Rulings carries a gloss of what it holds Undo: delete the three clauses in skills/curia/SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: whether a noun gets a spec row stays open in template.md's Vocabulary comment, per roll 20261007t021335z, rather than ruled no Undo: restore 'a noun gets no spec of its own' in template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: the three callers that read rulings from digest.md's Decided (scoping's curia row, settledness rubric row 9 and its read-set) point at decided.md in this PR, not a follow-up Undo: revert the three one-line edits in skills/scoping and skills/doc-settledness-check ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: adr: in the digest header holds one link per promoted Design section Undo: restore the singular adr: field in template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+
+### 20261007t051847z
+- curia: sidecar names are working-backwards.md, scenarios.md, mvp-and-narrative.md, success-metric.md; problem-then-solution adds no sidecar Undo: rename in forms/*.md and SKILL.md ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: the ledger's seed is forms/decided.md; a pre-split digest's Decided moves whole to decided.md in lint's patch at its next opening Undo: delete forms/decided.md; drop the lint migration clause ([#64](https://github.com/mark-brannan/claude/pull/64))
+- curia: a promoted Design section leaves one line linking its ADR; Where this stands shows Position and Size in place of Next; a dropped form's sidecar leaves the folder, git keeps it Undo: revert those lines in SKILL.md and template.md ([#64](https://github.com/mark-brannan/claude/pull/64))
