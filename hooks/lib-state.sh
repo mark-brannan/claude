@@ -146,6 +146,22 @@ unpushed_state() {
   fi
 }
 
+# dirty_paths <work_root> -- `git status --porcelain` for the tree, less what
+# the hooks themselves own. In the state repo that is all of state/: the
+# hooks write metrics there on every event, this session's and every other
+# live one's, and stop-continuity.sh commits them with `git add state/`. A
+# session run from the state repo was "worktree dirty" on every Stop, 82 of
+# 82 recorded, over files no one but a hook could commit.
+dirty_paths() {
+  local root="$1" sr
+  sr=$(state_repo 2>/dev/null) || sr=""
+  if [ -n "$sr" ] && [ "$(cd "$root" 2>/dev/null && pwd -P)" = "$(cd "$sr" 2>/dev/null && pwd -P)" ]; then
+    git -C "$root" -c core.quotePath=off status --porcelain -- . ':(exclude)state/' 2>/dev/null
+  else
+    git -C "$root" -c core.quotePath=off status --porcelain 2>/dev/null
+  fi
+}
+
 # archivable_reasons <work_root> <work_branch> [<session-id>] -- the reasons
 # a session on this branch is not yet archivable, comma-joined; empty when
 # it is. Order: worktree dirty, unpushed commits, branch home, session live.
@@ -184,7 +200,7 @@ archivable_reasons() {
   local work_root="$1" work_branch="$2" self_sid="${3:-}" reasons="" home ust self8
   add_reason() { reasons="${reasons:+$reasons, }$1"; }
 
-  [ -z "$(git -C "$work_root" status --porcelain 2>/dev/null)" ] || add_reason "worktree dirty"
+  [ -z "$(dirty_paths "$work_root")" ] || add_reason "worktree dirty"
 
   ust=$(unpushed_state "$work_root" "$work_branch")
   case "$ust" in
@@ -226,17 +242,28 @@ archivable_reasons() {
   printf '%s' "$reasons"
 }
 
-# verdict_explain <verdict> -- one line per reason the verdict names: what is
-# at risk, then what to do. A bare "not archivable" sent the user back to the
-# session to ask what it meant, a turn spent on every reason here. Matched by
-# pattern, not split on commas: a reason's own text can hold one. A reason
-# with no line here is still printed in the verdict itself.
+# verdict_explain <verdict> [<work_root>] -- one line per reason the verdict
+# names: what is at risk, then what to do. A bare "not archivable" sent the
+# user back to the session to ask what it meant, a turn spent on every reason
+# here. Matched by pattern, not split on commas: a reason's own text can hold
+# one. A reason with no line here is still printed in the verdict itself.
+# Given <work_root>, the dirty line names the files: "edits are not on the
+# branch" alone still sent the user back to ask which, and whose move it was.
 verdict_explain() {
-  local v="$1"
+  local v="$1" root="${2:-}" paths n shown
   case "$v" in *"not a git repo"*)
     echo "→ not a git repo: the session ran outside any repo, so there was no branch to check." ;; esac
   case "$v" in *"worktree dirty"*)
-    echo "→ worktree dirty: edits in this worktree are not on the branch. Commit them, or discard them." ;; esac
+    paths=""
+    [ -z "$root" ] || paths=$(dirty_paths "$root" | cut -c4- | sed 's/.* -> //; s/^"\(.*\)"$/\1/')
+    n=$(printf '%s' "$paths" | grep -c .)
+    if [ "$n" -gt 0 ]; then
+      shown=$(printf '%s\n' "$paths" | head -3 | paste -sd, - | sed 's/,/, /g')
+      [ "$n" -le 3 ] || shown="$shown, +$((n - 3)) more"
+      echo "→ worktree dirty: $n uncommitted file(s) ($shown). Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
+    else
+      echo "→ worktree dirty: uncommitted files in this worktree. Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
+    fi ;; esac
   case "$v" in *" commit(s) unpushed"*)
     echo "→ commits unpushed: they exist on this machine only. Push the branch." ;; esac
   case "$v" in *"has no upstream (never pushed)"*)

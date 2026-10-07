@@ -1389,8 +1389,11 @@ keep_unpushed() {
 
 # save_attempt <wip branch> -- at the stop of an attempt that will be retried:
 # commit what the worker left uncommitted (unhooked -- a snapshot, not a
-# finished change), then push the tip as keep_unpushed does. Prints the
-# branch pushed, if any; returns 1 when either step failed.
+# finished change), then point the wip ref at the tip. Prints the branch
+# saved, if any; returns 1 when either step failed. Unlike keep_unpushed it
+# saves a tip the worker already pushed to its own branch -- the retry
+# resumes from the wip ref alone -- and it replaces the last snapshot even
+# when the worker rebased, under a lease on the ref this checkout last saw.
 # The push publishes, and on a public repo nobody chose these files, so a new
 # file of a secret's own shape (a key, an env or rc file, a secrets/ dir), in
 # any case, is held back: it stays in the worktree only until the retry
@@ -1422,21 +1425,35 @@ save_attempt() {
     git -C "$wt_path" commit -q --no-verify \
       -m "grind: snapshot of $ref at its stop ($status), for the retry to resume from" >/dev/null 2>&1 || return 1
   fi
-  keep_unpushed "$1"
+  tip=$(git -C "$wt_path" rev-parse -q --verify HEAD 2>/dev/null) || return 1
+  [ -n "$(git -C "$checkout" rev-list -n 1 "$tip" --not "$resume_base" 2>/dev/null)" ] || return 0
+  # The lease names the sha it expects rather than leaving git to find a
+  # tracking ref through a fetch refspec this checkout may not have; an empty
+  # one means the wip ref must not exist yet.
+  seen=$(git -C "$checkout" rev-parse -q --verify "refs/remotes/origin/$1" 2>/dev/null) || seen=""
+  if [ "$seen" != "$tip" ]; then
+    git -C "$checkout" push -q --force-with-lease="refs/heads/$1:$seen" origin "$tip:refs/heads/$1" >/dev/null 2>&1 || return 1
+    git -C "$checkout" update-ref "refs/remotes/origin/$1" "$tip" >/dev/null 2>&1 || true
+  fi
+  printf '%s' "$1"
 }
 
-# resume_point <wip branch or glob> <base> -- the commit the retry's branch is
-# cut from: a saved attempt's tip, when it holds work <base> does not. A pr's
-# snapshots are timestamped, so the newest is tried, and only one that
-# descends from the PR's head: a head that moved on since makes it stale, and
-# the worker pushes to that head. Prints "<branch> <sha>" or nothing. Local
-# refs only: the save set them.
+# resume_point <wip branch, or a pr's wip prefix ending in -> <base> -- the
+# commit the retry's branch is cut from: a saved attempt's tip, when it holds
+# work <base> does not. A pr's snapshots are <prefix><UTC stamp>, so the
+# newest is tried -- never another branch's that shares the prefix -- and
+# only one that descends from the PR's head: a head that moved on since makes
+# it stale, and the worker pushes to that head. Prints "<branch> <sha>" or
+# nothing. Local refs only: the save set them.
 resume_point() {
+  case $1 in *-) pat="$1*" ;; *) pat=$1 ;; esac
   git -C "$checkout" for-each-ref --sort=-refname --format='%(refname:strip=3) %(objectname)' \
-      "refs/remotes/origin/$1" 2>/dev/null | while read -r rname rtip; do
+      "refs/remotes/origin/$pat" 2>/dev/null | while read -r rname rtip; do
+    case $1 in *-)
+      case ${rname#"$1"} in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z) ;; *) continue ;; esac ;;
+    esac
     [ -n "$(git -C "$checkout" rev-list -n 1 "$rtip" --not "$2" 2>/dev/null)" ] || continue
-    case $1 in *'*')
-      case ${rname##*-} in [0-9]*T[0-9]*Z) ;; *) continue ;; esac
+    case $1 in *-)
       git -C "$checkout" merge-base --is-ancestor "$2" "$rtip" 2>/dev/null || continue ;;
     esac
     printf '%s %s\n' "$rname" "$rtip"; break
@@ -1628,7 +1645,7 @@ while [ "$i" -lt "$count" ]; do
     wt_err=$(git -C "$checkout" fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>&1) \
       || { warn "skipping $ref -- could not check out $branch: $wt_err"; skipped=$((skipped + 1)); continue; }
     resume_base="origin/$branch"
-    rp=$(resume_point "wip/$branch-*" "$resume_base"); resumed_from=${rp%% *}; resume_tip=${rp#* }
+    rp=$(resume_point "wip/$branch-" "$resume_base"); resumed_from=${rp%% *}; resume_tip=${rp#* }
     wt_err=$(git -C "$checkout" worktree add -q -B "$branch" "$wt_path" "${resume_tip:-origin/$branch}" 2>&1 >/dev/null) \
       || { warn "skipping $ref -- could not check out $branch: $wt_err"; skipped=$((skipped + 1)); continue; }
   elif ! { resume_base=$(git -C "$checkout" rev-parse HEAD 2>/dev/null)

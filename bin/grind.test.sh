@@ -1776,6 +1776,11 @@ GRIND_STATUS: done" sess-donecap
     echo tok > tokenizer.py      # and one that only sounds like it
     say "Committing." sess-noresult
     exit 1 ;;
+  pushedcap)
+    "$REAL_GIT" push -q origin "HEAD:refs/heads/\$b"   # as the contract asks, before the cap
+    mkdir -p .aws; echo k > .aws/credentials; echo k > Service-Account.json
+    say "Pushed." sess-pushedcap
+    exit 1 ;;
 esac
 GH
 chmod +x "$S/bin/claude"
@@ -1861,6 +1866,22 @@ eq 'and the earlier attempt is untouched' "$kept" "$(git -C "$TMPDIR/grind-workt
 run --resume "$(basename "$(latest_session)" .json)"
 has 'the retry pushes what the failed save could not' 'INFO  pushed the earlier attempt.s unpushed commits on o/alpha#79 to wip/grind-79'
 has 'and resumes from it' 'INFO  resuming o/alpha#79 from the stopped attempt saved on wip/grind-79'
+
+# a worker that pushed its own branch before the cap left nothing unpushed,
+# and the retry still resumes from its work rather than from scratch
+cat > "$S/ready.json" <<'JSON'
+[{"number": 80, "title": "Pushed item", "body": "b", "url": "https://github.com/o/alpha/issues/80", "labels": [{"name": "ready"}]}]
+JSON
+echo '[]' > "$S/pr-list.json"; echo pushedcap > "$S/claude-mode"
+rm -f "$S/state/grind"/*.json
+run --kind issue --session-budget 100 --pause-every 10
+pushed_tip=$(git --git-dir="$co" rev-parse origin/grind-80)
+has 'a pushed attempt is saved too' 'INFO  saved the stopped attempt on o/alpha#80 to wip/grind-80'
+eq 'at the tip the worker pushed' "$pushed_tip" "$(git --git-dir="$co" rev-parse origin/wip/grind-80)"
+has 'an .aws/ credentials file and a capitalised key are held back' 'WARN  not saving .aws/credentials Service-Account.json from o/alpha#80'
+echo donecap > "$S/claude-mode"
+run --resume "$(basename "$(latest_session)" .json)"
+has 'and the retry resumes from it' 'INFO  resuming o/alpha#80 from the stopped attempt saved on wip/grind-80'
 
 # --- a signal ends the run on the record, and lets the worker's claim go --------------
 cat > "$S/bin/claude" <<GH
