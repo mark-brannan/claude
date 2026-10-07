@@ -28,8 +28,7 @@ branches other sessions hold (`claim-stamp.sh read`, the worktree list).
 Then rule on each row yourself:
 
 - **Skip, with the proof:** an open PR carries it; it is closed or ruled
-  elsewhere; it is an epic with no acceptance criteria (its concrete
-  sub-items dispatch, the epic does not).
+  elsewhere; it is an epic (its sub-issues dispatch, the epic does not).
 - **`blocked` is checked, not trusted.** Most mean "after issue N" — an
   order inside a cluster, not a skip. Nothing from this pass goes to
   `## Needs ruling`; a genuine one becomes a card after wave 1 is out.
