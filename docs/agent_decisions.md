@@ -156,3 +156,7 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t120710z
 - Standing-orders already-ruled line names no file, so it survives retirement (the user's altitude ruling on #70); keeps 'any exit' so omit is checked too Undo: restore 'the rules files, the repo's decisions file' in CLAUDE.md's already-ruled line ([#70](https://github.com/mark-brannan/claude/pull/70))
+
+### 20261007t210740z
+- work-item: a claim is valid from ready, blocked, done or closed, the four sources the ruled transitions and ALLOWED name; the ruling's claim sentence names two, derived from the same list Undo: one row edit in docs/work-item-lifecycle.md and two ALLOWED edges removed ([#82](https://github.com/mark-brannan/claude/pull/82))
+- work-item: the one-hour claim lapse is measured on the holder's newest line on the item, not its metrics record, until the hook keeps that line fresh (card 1791375174218fc901) Undo: fold reads the holder's live metrics record ([#82](https://github.com/mark-brannan/claude/pull/82))
