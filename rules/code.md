@@ -112,14 +112,8 @@ in nobody's queue but this session's.
     linearize it: a rebase replays only single-parent commits, so every
     edit that lives only in the merge commit's tree is silently dropped
     (`resign-branch.sh` refuses this case for that reason). A PR branch
-    tracks its own remote branch, never main. If mergify's pre-push says
-    the branch "is managed by Mergify stacks" and it is not in `mergify
-    stack list`, it tracks main: `git branch --unset-upstream`, then `git
-    push -u origin HEAD`. Never `--no-verify`: skipping hooks is the
-    user's call, asked for, never taken. `mergify stack push` is only for
-    a branch whose commits map to PRs in `mergify stack list` — a
-    Change-Id trailer alone does not make a stack, and on a plain PR
-    branch it opens one new PR per commit;
+    tracks its own remote branch, never main. Never `--no-verify`: skipping
+    hooks is the user's call, asked for, never taken;
   - the merge state says so, not just the checks — `gh pr view --json
     mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
     conflicts with main, so green checks are not a mergeable PR;
