@@ -44,7 +44,8 @@
       "Bash(/home/solace/.claude/bin/work-item *)"
     ],
     "deny": [
-      "Bash(git reset --hard:*)"
+      "Bash(git reset --hard:*)",
+      "Skill(mergify:mergify-stack)"
     ],
     "additionalDirectories": [
       "~/claude_prompts_scratch"
