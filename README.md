@@ -29,3 +29,9 @@ and an advisory Claude review.
 ## Status
 
 Main is protected: changes land by pull request, never by direct push.
+
+## License
+
+Markdown files (skills, rules, docs) are [CC BY-SA 4.0](LICENSE-CC-BY-SA); everything else is
+[AGPL-3.0-or-later](LICENSE). Copyright 2026 Solace (Mark) Brannan.
+Credit "Solace Brannan" and link this repository.
