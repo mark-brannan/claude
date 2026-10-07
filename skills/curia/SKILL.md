@@ -112,7 +112,7 @@ error. A reference into another curia's roll takes the same form.
      minor edits for typos, readability, or to cut unnecessary sections
      of a long quote." It replaces "agents never quote" (#489). There is
      no pin: nothing in roll.md moves, and curation in the digest does
-     the pin's work (one-entry-point, its Design section on curation). No separate file lists what a curia
+     the pin's work (the curia's Design section on curation). No separate file lists what a curia
      produced: each Decided line links its own, and the ADR link goes in
      digest.md's `adr:` header field at promotion. -->
 
@@ -131,8 +131,8 @@ are the agent's reading of the roll, the inputs and the code. A pencil
 stamp under **Rulings** is glossed with what it holds, so a reader knows
 which sentences may move. A section's heading is the record's own words
 for the mechanism, never a coined name.
-`state/global/curia/one-entry-point/inputs/2026-10-07-digest-narrative-sample.md`
-is the worked example of one Design section. Specs are not in the folder:
+The worked example of one Design section sits in a curia's own `inputs/`
+folder, reached from its ledger, never from here. Specs are not in the folder:
 a spec lives in the public repo beside the code it governs
 (`docs/work-item-lifecycle.md` in the claude repo is the precedent for
 the shape; its roll stamps predate the ruling), each row marked pen or
@@ -149,7 +149,7 @@ replicates `digest.md` alone.
      digest, the digest as an ADR-shaped narrative, forms as sidecar
      files, synthesis by the edit facet, lint's narrative-against-ledger
      check, specs in the public repo. The user's lean on the agent's
-     proposal in the one-entry-point curia's sitting of that day, not
+     proposal in a curia sitting of that day, not
      ruled; its ledger holds the stamps. -->
 
 **Prune what agents load, never the record.** `roll.md` and
@@ -167,7 +167,7 @@ moving lines out ([The ledger as a queue](#the-ledger-as-a-queue)).
 
 <!-- pen (Solace, 2026-10-07): prune what agents load, never the record;
      a stored starting point per append-only file, read from there to
-     the end; the one-entry-point ledger holds the stamp. pencil: the
+     the end; the curia's ledger holds the stamp. pencil: the
      field's name and form, `read-from:`, that lint is what moves it, and
      that decided.md takes none, are the agent's default. -->
 
@@ -194,8 +194,8 @@ rewritten as a spec or a requirement. Settled rulings leave every curia;
 nothing accumulates here for its own sake.
 
 <!-- pencil (2026-10-07): the table is the agent's, from its proposal in
-     the one-entry-point sitting of that day, not yet ruled; the user's
-     lean, "I think they do", and the extra hop; the one-entry-point
+     a curia sitting of that day, not yet ruled; the user's
+     lean, "I think they do", and the extra hop; the curia's
      ledger holds the stamps. The Superseded row joins the trial's
      Superseded group to the proposal's "deleted"; the agent's
      reconciliation. Lint marks a line it promotes as its own, so a pen
@@ -317,7 +317,6 @@ entry per sitting, a few lines each, with `status`'s table row beneath;
 pruned by lint once an entry stops earning its place; never read at open.
 Both point to roll stamps, inputs and commits, never copy them. Not here:
 the user's words (`roll.md`), rulings (`decided.md`), reports (`inputs/`).
-`state/global/curia/one-entry-point/agent-notes.md` is the worked example.
 
 If a session finds itself past gate 1 with a folder it created, the fix
 is not to delete it but to fold it into an open curia: its files into that
@@ -357,7 +356,7 @@ the three sections 1,356 words that day; cost is context × turns.
 
 <!-- pen (Solace, 2026-10-07): facets lint, edit, status; the by-hand
      line; spawned at close, run by a routine, never only at close; the
-     caps and their basis; status not gauge; the one-entry-point ledger
+     caps and their basis; status not gauge; the curia's ledger
      holds the stamps. pencil: a facet commits its own fixes instead of
      handing a patch to a caller, since a background facet has no caller
      left to apply one; one runner in sequence instead of three parallel

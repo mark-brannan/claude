@@ -6,7 +6,7 @@
      every sentence of The decision here has one behind it. This file refers to one
      roll entry as
      `<curia>/roll.md#<stamp>`, the stamp being the entry's heading and so
-     its GitHub anchor, e.g. `one-entry-point/roll.md#20261002t054107z`.
+     its GitHub anchor.
      It may quote one too, cleaned and curated by lint, always with its
      reference. -->
 
@@ -63,8 +63,7 @@ as posed.
      identifier a mechanism uses, each with its own decided.md line; a word
      no mechanism uses earns no row and no line. An identifier's shape also
      gets a spec row, since code parses it; whether a noun does is open,
-     the user's to debate (2026-10-07; the one-entry-point ledger holds the
-     stamp). -->
+     the user's to debate (2026-10-07; the curia's ledger holds the stamp). -->
 
 | Noun or identifier | Meaning | Ancestor concept | Standing | Stamp |
 |---|---|---|---|---|
