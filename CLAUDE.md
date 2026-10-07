@@ -149,6 +149,8 @@ I'm fine, drop it.
   before-state somewhere disposable.
 - **Give yourself a way to verify:** tests, diff, browser, second agent,
   formal methods where feasible, the cheapest that proves it.
+- **Forbid a command with a guard, not prose.** A rule works only if it
+  loads; a hook fires on the action itself.
 - **Compute runs in minutes, never hours, in CI or on my machine.** Before
   adding a test, a matrix leg or a workflow, state its cost per push and the
   account-wide concurrent-job cap it draws on; before a local run, its wall
@@ -241,6 +243,10 @@ Hooks handle the mechanics unprompted.
 - **A judgment call has three exits,** preferred in this order: **omit**
   (it gates nothing, so say nothing and leave the question visibly open),
   **card** (it gates later work), **ask** (it gates this turn).
+- **Before any exit, check it isn't already ruled** — the rules files, the
+  repo's decisions file. An inherited card's options are its writer's
+  guess: one that crosses a written rule or a guard is a wrong card. Fix
+  it; don't relay it.
 - **Closing an option is a ruling.** In anything read later as settled,
   "rejected", "ruled out" or "we will not" stands only if I made that
   call; otherwise it goes. Provenance is a line in the repo's decisions
