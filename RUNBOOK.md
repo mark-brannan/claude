@@ -154,7 +154,7 @@ the environment, or the stage is incomplete and nothing is activated. A convenie
 settings but missing from the seed is a silent no-op in every cloud session —
 its settings entry is `[ -f ]`-guarded and ends in `|| true`, so it looks
 identical to a hook that ran and found nothing to do. A gate hook
-(`no-git-footguns`, `no-rm-tree`, `no-unsigned-push`) is
+(`guard-git-work-loss`, `guard-recursive-delete`, `no-unsigned-push`) is
 the opposite: its entry denies when the file is missing or crashes, so a
 seed gap there blocks every Bash call with a message naming the hook. After
 editing either file, diff the two lists (CI runs the same check):
@@ -228,7 +228,7 @@ root=$(claude plugin list --json \
   | jq -r '.[] | select(.id == "languette@languette" and .scope == "user" and .enabled) | .installPath')
 [ -n "$root" ] && echo "plugin loaded: $root" || echo "plugin ABSENT"
 jq -n '{tool_name:"Bash",tool_input:{command:"git add -A"},cwd:env.HOME}' \
-  | CLAUDE_PLUGIN_ROOT="$root" sh "$root/hooks/no-git-footguns.sh" \
+  | CLAUDE_PLUGIN_ROOT="$root" sh "$root/hooks/guard-git-work-loss.sh" \
   | jq -r .hookSpecificOutput.permissionDecisionReason
 ```
 
