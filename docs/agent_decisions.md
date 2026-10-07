@@ -86,3 +86,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261007t044618z
 - grind's stop save points the wip ref at the stop's tip even when the worker already pushed it, and may rewrite that ref under a lease pinned to the sha this checkout last saw, so a rebased tip replaces the last snapshot Undo: drop --force-with-lease in save_attempt ([#57](https://github.com/mark-brannan/claude/pull/57))
+
+### 20261007t071933z
+- Past the spend line the hand-off file may be Read as well as Written: the Write tool refuses to overwrite a file not yet read, and a retried item has the last hand-off on disk Undo: drop Read from the exemption in hooks/spend-gate.py and the settings.json fallback ([#71](https://github.com/mark-brannan/claude/pull/71))
