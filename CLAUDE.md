@@ -157,7 +157,8 @@ I'm fine, drop it.
   record is dated, so it may name today's mechanism. A design, a guard or
   a fix solves the general need, not today's instance.
 - **Forbid a command with a guard, not prose.** A rule works only if it
-  loads; a hook fires on the action itself.
+  loads; a guard fires on the action itself. Prose still names the remedy
+  and points at the guard, and stands alone only until the guard exists.
 - **Compute runs in minutes, never hours, in CI or on my machine.** Before
   adding a test, a matrix leg or a workflow, state its cost per push and the
   account-wide concurrent-job cap it draws on; before a local run, its wall
