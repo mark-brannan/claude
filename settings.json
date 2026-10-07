@@ -459,7 +459,13 @@
       "options": {
         "private_terms_file": "/home/solace/claude_prompts_scratch/state/global/private-terms.txt",
         "private_repos": "mark-brannan/claude_prompts_scratch",
-        "guard_worktrees": true
+        "guard_worktrees": true,
+        "guard_worktrees_checkout_home": true,
+        "guard_worktrees_foreign": true,
+        "guard_secrets": true,
+        "guard_protected_paths": true,
+        "guard_database": true,
+        "commit_check": true
       }
     }
   }
