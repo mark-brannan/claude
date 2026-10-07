@@ -495,14 +495,16 @@ from anything run with `-c commit.gpgsign=false`. The fix is the same for
 all three, and it runs from any machine that has the signing key, never from
 the cloud session.
 
-**Never reach for GitHub's own "Update branch" instead** — neither the button
-nor `gh pr update-branch --rebase`. That form rewrites the commits and does
-not re-sign them, so a branch that verified before the call comes back with
-every commit unsigned, and the damage looks like a different problem: the PR
-simply swaps one silent block for another. The merge form is harmless to
-linear history, because `required_linear_history` constrains only `main` and
-a PR squash-merges to one commit. The `no-update-branch` hook stays, for the
-rebase-form reason.
+**Never reach for GitHub's own "Update branch" instead.** The `--rebase`
+form (`gh pr update-branch --rebase`) rewrites the commits and does not
+re-sign them, so a branch that verified before the call comes back with every
+commit unsigned, and the damage looks like a different problem: the PR simply
+swaps one silent block for another. The merge form (the button's default, and
+plain `gh pr update-branch`) keeps signatures and is harmless to linear
+history, because `required_linear_history` constrains only `main` and a PR
+squash-merges to one commit; it is merely unneeded here. The `no-update-branch`
+hook blocks the subcommand in both forms, and its message still gives the
+older merge-commit rationale, which this section retracts.
 
 From any checkout of the repo; it works in a throwaway worktree, so the
 branch you have checked out and any uncommitted work are untouched:
