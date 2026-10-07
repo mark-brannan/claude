@@ -1430,7 +1430,7 @@ save_attempt() {
   # The lease names the sha it expects rather than leaving git to find a
   # tracking ref through a fetch refspec this checkout may not have; an empty
   # one means the wip ref must not exist yet.
-  seen=$(git -C "$checkout" rev-parse -q --verify "refs/remotes/origin/$1" 2>/dev/null)
+  seen=$(git -C "$checkout" rev-parse -q --verify "refs/remotes/origin/$1" 2>/dev/null) || seen=""
   if [ "$seen" != "$tip" ]; then
     git -C "$checkout" push -q --force-with-lease="refs/heads/$1:$seen" origin "$tip:refs/heads/$1" >/dev/null 2>&1 || return 1
     git -C "$checkout" update-ref "refs/remotes/origin/$1" "$tip" >/dev/null 2>&1 || true
