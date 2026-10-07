@@ -30,9 +30,13 @@ project-specific facts belong in that project's own CLAUDE.md.
   out there. If git says the branch is checked out elsewhere, that is a live
   claim: report it and stop. Enforced by
   `~/.claude/hooks/no-foreign-worktree.sh`.
-- **Work on main by default. Branch-vs-main is a rule, not a judgment
-  call — don't ask.** Commit straight to main in small, verified commits,
-  pushed early and often, unless one of these triggers:
+- **Branch-vs-main is the repo's call, then a rule.** If main requires a
+  pull request (`gh api repos/<o>/<r>/rules/branches/main` lists
+  `pull_request`), every change goes through a PR, however small; the
+  ruleset's bypass is mine, never yours. If GitHub can't answer and the
+  repo's own instructions don't say, ask me. Otherwise work on main by
+  default, without asking: commit straight to main in small, verified
+  commits, pushed early and often, unless one of these triggers:
   - **Explicit phrase** — I say "make this a feature," "make this a
     branch," or "this needs review." Skip the metric check; branch
     immediately.
@@ -40,8 +44,8 @@ project-specific facts belong in that project's own CLAUDE.md.
     of code changed** (excluding docs), **>200 lines of docs changed**,
     **session >100k tokens**, or **session >30 min wall clock**.
 
-  Everything else — small fixes, doc edits, config tweaks — goes straight
-  to main, no branch, no asking. Branching by default is the failure
+  In a repo that allows it, everything else — small fixes, doc edits,
+  config tweaks — goes straight to main, no branch, no asking. Branching by default is the failure
   mode here, not landing on main.
 
   When a branch *is* warranted: push it and open the PR yourself, as
