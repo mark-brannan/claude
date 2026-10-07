@@ -162,6 +162,27 @@ dirty_paths() {
   fi
 }
 
+# buffered_state <work_root> -- in the state repo only, one line naming what
+# dirty_paths left out: the uncommitted files under state/, which the Stop
+# hook commits and pushes. Leaving them out of the verdict is right; leaving
+# them unsaid is not: a hand-off or card still on disk is worth knowing
+# about. Metrics are counted, everything else is named. Empty elsewhere, and
+# when nothing is buffered.
+buffered_state() {
+  local root="$1" sr paths named nm
+  sr=$(state_repo 2>/dev/null) || return 0
+  [ "$(cd "$root" 2>/dev/null && pwd -P)" = "$(cd "$sr" 2>/dev/null && pwd -P)" ] || return 0
+  paths=$(git -C "$root" -c core.quotePath=off status --porcelain --untracked-files=all -- state/ 2>/dev/null \
+    | cut -c4- | sed 's/.* -> //; s/^"\(.*\)"$/\1/; s|^state/global/||; s|^state/||')
+  [ -n "$paths" ] || return 0
+  named=$(printf '%s\n' "$paths" | grep -v '^metrics/' | paste -sd, - | sed 's/,/, /g')
+  nm=$(printf '%s\n' "$paths" | grep -c '^metrics/')
+  if [ "$nm" -gt 0 ]; then
+    named="${named:+$named, }+ $nm metrics file$([ "$nm" -eq 1 ] || echo s)"
+  fi
+  echo "→ buffered in the state repo, not committed yet (the Stop hook commits and pushes it): $named"
+}
+
 # archivable_reasons <work_root> <work_branch> [<session-id>] -- the reasons
 # a session on this branch is not yet archivable, comma-joined; empty when
 # it is. Order: worktree dirty, unpushed commits, branch home, session live.
