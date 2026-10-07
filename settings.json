@@ -465,7 +465,21 @@
         "guard_secrets": true,
         "guard_protected_paths": true,
         "guard_database": true,
-        "commit_check": true
+        "commit_check": true,
+        "guard_commits": true,
+        "guard_commit_content": true,
+        "guard_denied_commands": true,
+        "guard_packages": true,
+        "guard_package_publish": true,
+        "guard_invalid_syntax": true,
+        "guard_git_working_tree": true,
+        "guard_git_stash": true,
+        "guard_git_staging": true,
+        "guard_git_history": true,
+        "guard_git_remote_history": true,
+        "guard_git_branches": true,
+        "guard_git_local_work": true,
+        "guard_git_shared_history": true
       }
     }
   }
