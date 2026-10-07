@@ -51,15 +51,18 @@ durable document is the point), Architecture Decision Records (ADR),
 ## Where a curia lives
 
 One folder per curia in the state repo. Deliberation is private and stays
-there; only what a curia **produces** — an ADR, an issue, a card — goes to
-a public repo, and the Decided line that produced it links it. When the
-curia is promoted — its ruling written up as an ADR — the ADR's link also
-goes in the `adr:` field of `digest.md`'s header.
+there; only what a curia **produces** — an ADR, a spec, an issue, a card —
+goes to a public repo, and the `decided.md` line that produced it links it.
+When the curia, or one Design section of it, is promoted — written up as
+an ADR — the ADR's link also goes in the `adr:` field of `digest.md`'s
+header.
 
 ```
 state/global/curia/<id>/
   roll.md     the user's words: append-only, one stamped entry per prompt, written by a hook
-  digest.md   the document: where it stands, decided, open questions
+  decided.md  the ledger: one line per ruling, pen or pencil, date, stamp, grouped by topic
+  digest.md   the design: a narrative a cold reader follows, ADR-shaped, from template.md
+  <form>.md   one sidecar per chosen form, beside the digest: working-backwards.md, scenarios.md, …
   LIVE        the last sitting's session id and ISO timestamp; closing leaves it
   agent-notes.md the agent's working memory and trace, for the next agent (see Agent notes)
   agent_decisions.md agents' pencil calls that touch this curia: append-only, stamped, written by `agent-decision`
@@ -97,6 +100,34 @@ error. A reference into another curia's roll takes the same form.
      the pin's work (one-entry-point §8). No separate file lists what a curia
      produced: each Decided line links its own, and the ADR link goes in
      digest.md's `adr:` header field at promotion. -->
+
+**Layers, each with its reader and home.** `roll.md` is the user's words,
+as above. `decided.md` is the ledger, for the agent and lint: one line per
+ruling — what was ruled, pen or pencil, the date, the stamp — by topic, a
+**Superseded** group last; a ruling lands there at once. `digest.md` is
+the design, for a human reading cold, shaped like an ADR
+([template.md](template.md)): the header, **Where this stands**, **The
+problem**, **The design** — one numbered section per mechanism, each in
+five parts: what hurt, the decision in prose, what it costs to change in
+IADA terms, what is open, the rulings by stamp, pen then pencil —
+**Vocabulary**, **Open questions**, **Notes and inputs**. Every design
+sentence has a ledger line behind it.
+`state/global/curia/one-entry-point/inputs/2026-10-07-digest-narrative-sample.md`
+is the worked example of one Design section. Specs are not in the folder:
+a spec lives in the public repo beside the code it governs
+(`docs/work-item-lifecycle.md` in the claude repo is the precedent), each
+row citing a digest section and a stamp, and takes three inputs: the
+rulings, the existing code, and the incidents in `inputs/`. One document
+per question; parallel files per layer and per form. A Design section
+leaves the digest only when it is promoted to an ADR in its public repo,
+and a line linking the ADR stays in its place. The epic issue below
+replicates `digest.md` alone.
+
+<!-- pencil (2026-10-07): a trial, all of it — the ledger split out of the
+     digest, the digest as an ADR-shaped narrative, forms as sidecar
+     files, synthesis at close, lint's narrative-against-ledger check,
+     specs in the public repo. The user's lean, not ruled:
+     one-entry-point/roll.md#20261007t021335z and #20261007t025200z. -->
 
 ## Opening a new curia: the gates
 
@@ -161,7 +192,8 @@ labelled `epic`, body the whole `digest.md`
 and write it as `issue:` in the header. A trial (2026-10-06): for now the
 issue is a replica of the digest, for reading back; what it becomes is
 open indefinitely, and not an agent's to close.
-Also create `agent-notes.md` from the header in
+Also create `decided.md` and `agent-notes.md` from the headers in
+[forms/decided.md](forms/decided.md) and
 [forms/agent-notes.md](forms/agent-notes.md).
 
 ## Form
@@ -172,7 +204,8 @@ skill can offer, and nothing else. **The user directs the early sittings.**
 The agent never forces a form: it proposes one only when the dialogue has
 taken a shape it is confident matches one, says which and why in one
 line, and waits for the word. A form, once the user chooses it, adds its
-sections to `digest.md` from its file under [forms/](forms/):
+own file beside `digest.md`, a sidecar, from its file under
+[forms/](forms/); the digest stays the one ADR-shaped document:
 
 | Form | Ancestor | Fits when |
 |---|---|---|
@@ -182,11 +215,13 @@ sections to `digest.md` from its file under [forms/](forms/):
 | mvp-and-narrative | lean startup's MVP, plus its story | the user wants to test by using |
 | success-metric | OKR / North Star metric | the measure is the hard part |
 
-A curia may mix forms, and may change them; the user says which. Each
-choice is a dated Decided line with its reference, and a change is a new
-line naming the one it replaces. A dropped form's sections leave
-`digest.md` with it; what they held that still earns its place moves to
-**Decided** or **Open questions**, and lint shows the move: a reversal is
+A curia may combine two or more forms, one sidecar each, and may change
+them; the user says which. problem-then-solution is the digest's own
+**The problem** and **The design**, so it adds no file. Each
+choice is a dated line in `decided.md` with its reference, and a change is a new
+line naming the one it replaces. A dropped form's sidecar leaves the
+folder with it; what it held that still earns its place moves to
+`decided.md` or **Open questions**, and lint shows the move: a reversal is
 a finding, not an error.
 
 A section's `<!-- -->` comment is a rule or a prompt. A rule says how the
@@ -203,7 +238,7 @@ before the first question: live traps, the user's leanings not yet ruled,
 what not to re-ask. **Trace**: newest first, one entry per sitting, a few
 lines each, pruned by lint once an entry stops earning its place. Both
 point to roll stamps, inputs and commits, never copy them. Not here: the
-user's words (`roll.md`), rulings (`digest.md`), reports (`inputs/`).
+user's words (`roll.md`), rulings (`decided.md`), reports (`inputs/`).
 `state/global/curia/one-entry-point/agent-notes.md` is the worked example.
 
 If a session finds itself past gate 1 with a folder it created, the fix
@@ -233,9 +268,13 @@ the fold as a unilateral call.
 3. **Lint by sub-agent, on Sonnet.** A sub-agent, read-only except for
    one patch file (no worktree, no sub-agents of its own), checks the
    derived sections for contradictions,
-   stale claims and orphan terms, and reports overlap with the other open
+   stale claims and orphan terms, and the narrative against the ledger —
+   a design sentence with no `decided.md` line behind it, a ledger line no
+   Design section carries — and reports overlap with the other open
    curiae from step 0 — a question this one shares with another — from
-   which this session rewrites `related:`. It reads every `roll.md`
+   which this session rewrites `related:`, ids only. A digest from before
+   the trial that still carries `## Decided`: the patch moves it whole to
+   `decided.md`. It reads every `roll.md`
    entry after the last words that **Where this stands** cites, and any
    input quoting the user verbatim, and proposes quotes to pull and
    prune under the rule above: a ruling, a lean, a correction or a
@@ -247,7 +286,7 @@ the fold as a unilateral call.
    diff is its record, and a patch left in
    `inputs/` would be read by the next lint as an input — and show the
    diff; beside it, size from `wc -lw`, one line per file —
-   the document step 1 read, and `agent-notes.md` — before
+   the document step 1 read, `decided.md` and `agent-notes.md` — before
    and after the fixes: `digest.md 2,242 → 2,198 lines · 33,516 → 32,870
    words`. Only a
    finding that touches a ruling or a name becomes a question in the
@@ -269,7 +308,10 @@ the fold as a unilateral call.
 ## During
 
 The hook records the user's words; the agent never writes `roll.md`.
-Keep `digest.md` current as you go, citing words by reference or by a
+A ruling lands in `decided.md` at once, one line under its topic, and a
+new open question as one line under the digest's **Open questions**; the
+narrative waits for the close, since synthesis is a step, not a hope.
+Cite words by reference or by a
 curated quote with its reference, and commit as you land — a sitting's record
 must survive the session dying mid-turn.
 
@@ -279,8 +321,11 @@ curia for it. It becomes a line under `## Open questions` here, or a
 
 ## Closing (the user says when)
 
-1. Land every edit; rewrite **Where this stands** — the last words by
-   reference, `<id>/roll.md#<stamp>`, what is unsettled, the X of Y
+1. Land every edit, then synthesize: rewrite each section of **The
+   design** the sitting's rulings touch, in its five parts, and **The
+   problem** or **Vocabulary** where a ruling touched them; then rewrite
+   **Where this stands**, short — the last words by
+   reference, `<id>/roll.md#<stamp>`, what is unsettled by pointer, the X of Y
    position for next time, and the size lines again, all three counts
    on one line — before lint, after lint, now: `digest.md 2,242 → 2,198
    → 2,310 lines · 33,516 → 32,870 → 34,020 words · context at first

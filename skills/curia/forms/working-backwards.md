@@ -1,9 +1,9 @@
 # Form: working backwards
 
 Ancestor: Amazon's PR/FAQ; Covey's "begin with the end in mind". Fits when
-the end state is felt but unwritten. Sections added to `digest.md` after
-**Where this stands**; the user's voice, the agent drafts from the roll and
-the user redlines.
+the end state is felt but unwritten. Adds `working-backwards.md` beside
+`digest.md`, from the sections below; the user's voice, the agent drafts
+from the roll and the user redlines.
 
 ## The day it is done
 
