@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Fail when settings.json sets a languette option that plugin.json no longer defines.
+
+A rename once turned the worktree guard off unnoticed: the plugin ignores an
+option key it does not define. This diffs the keys under
+pluginConfigs["languette@*"].options against plugin.json's userConfig.
+
+Usage: languette-options-check [--settings FILE] [--plugin-json FILE|URL]
+                               [--anticipated FILE]
+Defaults: ./settings.json, languette's plugin.json on main (one fetch), and
+lib/languette-anticipated-options.txt in this repo, if present.
+Anticipated keys (one per line, # comments) are names the hooks-guards curia
+holds that languette has not shipped; they pass until it does.
+Exit 0 ok, 1 stale keys, 2 could not read an input.
+"""
+import argparse
+import json
+import sys
+import urllib.request
+from pathlib import Path
+
+URL = "https://raw.githubusercontent.com/mark-brannan/languette/main/.claude-plugin/plugin.json"
+
+
+def load(src):
+    if src.startswith(("http://", "https://")):
+        with urllib.request.urlopen(src, timeout=20) as r:
+            return json.load(r)
+    return json.loads(Path(src).read_text())
+
+
+def used_keys(settings):
+    keys = set()
+    for name, cfg in (settings.get("pluginConfigs") or {}).items():
+        if name.split("@")[0] == "languette":
+            keys |= set((cfg.get("options") or {}))
+    return keys
+
+
+def anticipated(path):
+    p = Path(path)
+    if not p.is_file():
+        return set()
+    lines = (l.split("#")[0].strip() for l in p.read_text().splitlines())
+    return {l for l in lines if l}
+
+
+def main(argv=None):
+    root = Path(__file__).resolve().parent.parent
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--settings", default="settings.json")
+    ap.add_argument("--plugin-json", default=URL)
+    ap.add_argument("--anticipated", default=str(root / "lib/languette-anticipated-options.txt"))
+    a = ap.parse_args(argv)
+    try:
+        used = used_keys(load(a.settings))
+        defined = set(load(a.plugin_json).get("userConfig") or {})
+    except Exception as e:
+        print(f"languette-options-check: cannot read input: {e}", file=sys.stderr)
+        return 2
+    stale = sorted(used - defined - anticipated(a.anticipated))
+    if stale:
+        for k in stale:
+            print(f"::error::settings.json sets languette option '{k}', which plugin.json does not define; the plugin ignores it")
+        return 1
+    print(f"ok: {len(used)} languette option keys in settings.json, all defined by plugin.json")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -119,6 +119,18 @@ jobs:
                 echo "::endgroup::"
               ' _ {}
 
+  # settings.json must not set a languette option key plugin.json (on main)
+  # no longer defines: the plugin ignores it and the guard goes off silently.
+  # Cost per push: one ~3 KB raw.githubusercontent.com fetch, ~5s, one job.
+  languette-options:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Every languette option in settings.json is defined by the plugin
+        run: python3 bin/languette-options-check
+
   nonempty:
     permissions:
       contents: read
@@ -129,7 +141,7 @@ jobs:
     uses: mark-brannan/.github/.github/workflows/pr-title.yml@main
 
   ci-gate:
-    needs: [shellcheck, seeded, guard-tests, tool-tests, nonempty, pr-title]
+    needs: [shellcheck, seeded, guard-tests, tool-tests, languette-options, nonempty, pr-title]
     if: always()
     permissions: {}
     uses: mark-brannan/.github/.github/workflows/ci-gate.yml@main
