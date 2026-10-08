@@ -25,7 +25,7 @@
 #
 # Blocks at most once per session (a marker beside the notes file under
 # TMPDIR, the same convention pr-ownership-context.sh uses for its record --
-# NOT under the state dir, which stop-continuity.sh commits and pushes, so a
+# NOT under the state dir, which stop-continuity.py commits and pushes, so a
 # per-session marker there would be repo churn in every session). A gate that
 # can trap a session is worse than no gate.
 #
@@ -37,7 +37,7 @@
 #
 # Second entry point, read-only: answers "does this branch have a home" on
 # stdout and exits 0, without ever blocking and without touching the
-# once-per-session marker. stop-continuity.sh calls it for the archive verdict
+# once-per-session marker. stop-continuity.py calls it for the archive verdict
 # (dotfiles#110) so the verdict and the gate can never disagree about what a
 # home is -- one implementation, two callers. Prints exactly one line:
 #   home: <why>          a PR, a card or an issue names it; or nothing to strand

@@ -39,9 +39,9 @@ STATE="$HOME/.claude/state/global"
 # shellcheck source=lib-metrics-test-harness.sh
 . "$(dirname "$HOOK")/lib-metrics-test-harness.sh"
 
-# The 📦 verdict is stop-continuity.sh's, read back from the metrics record
+# The 📦 verdict is stop-continuity.py's, read back from the metrics record
 # (stop-sequence.py runs that hook first). Plant what its set_verdict would
-# have written; the git checks behind a verdict are stop-continuity.test.sh's.
+# have written; the git checks behind a verdict are stop-continuity.test.py's.
 plant() {  # plant <sid> [verdict] [verdict_at]
   # Flat, as a record written before the shard split: the reader must find it.
   mkdir -p "$STATE/metrics/sessions"
@@ -259,7 +259,7 @@ git -C "$REPO" init -q -b feat/nags
 git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 # A real upstream, pushed and clean -- these tests are about the sitting
 # clock and the Stop block, not about unpushed work. The verdict itself is
-# planted per session (plant, above), as stop-continuity.sh would write it.
+# planted per session (plant, above), as stop-continuity.py would write it.
 git init -q --bare "$SCRATCH/repo.git"
 git -C "$REPO" remote add origin "$SCRATCH/repo.git"
 git -C "$REPO" push -q -u origin feat/nags
@@ -865,9 +865,9 @@ has 'the sitting line carries the context' '^⏱ 1h0[0-9] · context 41k' "$(msg
 has 'and shows the dirty tree at its end'  '^⏱ 1h0[0-9] · context 41k ⎇ 1~$' "$(msg "$o7")"
 clock_clear
 
-# --- 8. the 📦 line is stop-continuity.sh's verdict, read back -------------
-# Whether a branch with no upstream is a hazard is stop-continuity.sh's call
-# now (stop-continuity.test.sh: "never pushed", "zero commits ahead"). What
+# --- 8. the 📦 line is stop-continuity.py's verdict, read back -------------
+# Whether a branch with no upstream is a hazard is stop-continuity.py's call
+# now (stop-continuity.test.py: "never pushed", "zero commits ahead"). What
 # is left here: the notice shows the planted reason, explains it, and refuses
 # a verdict older than this Stop sequence's start (STOP_VERDICT_SINCE).
 REPO8="$SCRATCH/repo8"; mkdir -p "$REPO8"
@@ -949,7 +949,7 @@ t 'dirty tree: turns line matches the jq it replaced' \
   "$(rendered_second "$(msg "$o9b")")"
 
 # --- 10. the block survives $OUT being deleted mid-run -----------------------
-# dotfiles#152: stop-continuity.sh's Stop hook deletes $OUT concurrently, and
+# dotfiles#152: stop-continuity.py's Stop hook deletes $OUT concurrently, and
 # metrics-live.sh spends real time in archivable()'s `gh pr list` between
 # writing $OUT and reaching the display check. If that delete lands in the
 # window, the display must still open with the block -- it comes from
