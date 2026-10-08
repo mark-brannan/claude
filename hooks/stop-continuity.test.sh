@@ -336,7 +336,7 @@ has 'a non-hex session id is skipped, and said' '^skipped: session id ' "$CKPT"
 
 # --- curia digests: a touched digest gets the floor ----------------------------
 # The transcript names a curia (`confer <id>` here); the Stop hook stamps a
-# floor block at the end of "Where this stands" -- model text above survives --
+# floor block at the end of the file -- model text above survives --
 # and nothing else. Idempotent across Stops. The user's words are not its to
 # write: roll.md is the curia-roll hook's, and the digest refers to it by stamp.
 CURD="$HOME/.claude/state/global/curia/test-question"
@@ -372,14 +372,16 @@ has 'the floor block is written' '^<!-- floor' "$TH"
 has 'the floor carries last-touched and the session' "^- last touched: .* session ${SID:0:8} " "$TH"
 has 'the floor carries the branch state' '^- branch: work claude/work \(0 ahead, clean\)' "$TH"
 has 'model text above the floor survives' '^Model text that must survive\.$' "$TH"
-assert 'the floor sits inside Where this stands' \
-  bash -c "awk '/^## Where this stands/{f=1} /^## Decided/{exit} f&&/^<!-- floor/{ok=1} END{exit !ok}' '$TH'"
+assert 'the floor is the last thing in the digest' \
+  bash -c "[ \"\$(tail -n1 '$TH')\" = '<!-- /floor -->' ]"
 assert 'the user'"'"'s words are not copied into the digest' \
   bash -c "! grep -q 'confer test-question please' '$TH' && ! grep -q '(hook)' '$TH'"
 
+BLANKS1=$(grep -c '^$' "$TH")
 # A second Stop rewrites, never duplicates.
 TP="$TP3" GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]' stop
 eq 'one floor block after two Stops' 1 "$(grep -c '^<!-- floor' "$TH")"
+eq 'the blank lines do not grow across Stops' "$BLANKS1" "$(grep -c '^$' "$TH")"
 
 # Reading a digest is not sitting on it: a session whose tool calls cat or ls
 # the digest file, with no prompt naming the curia, leaves it untouched. Once
