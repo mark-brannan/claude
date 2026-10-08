@@ -109,11 +109,12 @@ class WorkItemTest(unittest.TestCase):
                          "an id of the wrong shape is refused")
 
     def test_03_open_to_ready(self):
-        self.assertEqual(run(A, "claim", self.id).returncode, 1, "an open item cannot be claimed")
         self.assertEqual(run(A, "log", self.id, "status=done").returncode, 1,
                          "open -> done is not a transition")
-        ok(A, "log", self.id, "status=ready")
-        self.assertEqual(fact(self.id, "status"), "ready", "open -> ready")
+        ok(A, "claim", self.id)
+        self.assertEqual(fact(self.id, "status"), "claimed", "a claim is valid from open")
+        ok(A, "release", self.id)
+        self.assertEqual(fact(self.id, "status"), "ready", "release hands it back ready")
         n = len(self.lines())
         self.assertEqual(run("", "claim", self.id).returncode, 2, "a claim with no session id refuses")
         self.assertEqual(len(self.lines()), n, "the refused claim wrote no line")
@@ -164,7 +165,7 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(fact(self.id, "holder"), "077c62eb", "closed -> claimed")
 
     def test_07_stale_claim(self):
-        # A holder that wrote nothing on the item for two hours has let go.
+        # A holder that wrote nothing on the item for an hour has let go.
         # Its own id, far from the fixed ids the other tests use.
         old = ok(A, "create", "--id", "1700000000077c62eb", "--brief", LINK, "Stale one")
         ok(A, "log", old, "status=ready")
