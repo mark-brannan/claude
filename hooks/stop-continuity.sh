@@ -627,7 +627,7 @@ printf '\n## Session item\n\n%s\n' "${si_out:-failed: stop-item.py did not run}"
 # `/curia <id>` or `confer <id>` in the transcript -- leaves the machine
 # floor on that curia's digest.md, so a sitting that dies any way at all
 # still hands off. One write per Stop, under the pickup item's body-ownership
-# protocol: a floor block at the end of "Where this stands" (last touched,
+# protocol: a floor block at the end of the file (last touched,
 # branch, PR), hook-owned by its markers, model text above it untouched.
 # The user's words are not written here: curia-roll.py appends them to the
 # curia's roll.md, and digest.md refers to them by stamp.
@@ -647,16 +647,10 @@ curia_floor() {  # curia_floor <digest.md>
     drop { next }
     { lines[++n] = $0 }
     END {
-      ws = 0; ins = 0
-      for (i = 1; i <= n; i++) {
-        if (!ws) { if (lines[i] ~ /^## Where this stands/) ws = i }
-        else if (lines[i] ~ /^## /) { ins = i; break }
-      }
-      for (i = 1; i <= n; i++) {
-        if (ins && i == ins) { floor(); print "" }
-        print lines[i]
-      }
-      if (!ins) floor()
+      while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+      for (i = 1; i <= n; i++) print lines[i]
+      if (n) print ""
+      floor()
     }
   ' "$t" > "$tmp" 2>/dev/null && mv -f "$tmp" "$t" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 }
