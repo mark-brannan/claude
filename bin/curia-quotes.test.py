@@ -71,6 +71,7 @@ class QuoteCheckTest(unittest.TestCase):
         self.bad('(a/roll.md#20261003t030107z) "I want it private from the start" (#20261003t030107z) "I don\'t want it public"\n',
                  "private from", "don't want")
         self.bad('(a/roll.md#20261003t030107z) "in a later stage, hypothetically (optimistically), 2 products"\n', "2 products")
+        self.bad('(b/roll.md#20261004t010101z) "the other curia says yes" (a/roll.md#20261003t030503z) "together in ones place"\n', "ones place")
 
     def test_unmarked_cut_fails(self):
         self.bad('(a/roll.md#20261003t030503z) "I want all our claude stuff in one place"\n', "claude stuff in")

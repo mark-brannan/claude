@@ -9,11 +9,12 @@ with citations, each quoted span ("..." or curly quotes) of two words or more
 must match the text of one of the entries that line cites. Allowed, as the
 curia skill's digests do: `[...]` or an ellipsis for a cut, `[bracketed]` edits
 (each a wildcard), case and punctuation and whitespace differences, and a
-typo fix in any word (one edit, two in a word of seven letters or more).
-Segments match word for word, except where a bracket cuts into a word
-(`[T]he`, `use[d]`). A negation or a number must match exactly, so a fix
-never flips what was said. A cited stamp with no entry in the roll is a
-mismatch too. Straight quotes pair left to right, so one unbalanced `"` on a
+typo fix in any word of three letters or more (one edit, two in a word of
+seven or more); a shorter word must match, as `on`, `or` and `of` are one
+edit apart. Segments match word for word, except where a bracket cuts into a
+word (`[T]he`, `use[d]`). A negation or a number, in digits or words, must
+match exactly, so a fix never flips what was said. A cited stamp with no entry
+in the roll is a mismatch too. Straight quotes pair left to right, so one unbalanced `"` on a
 citing line misreads the quotes after it.
 
 Exits 1 and names each mismatch as `file:line: reason: "quote"`; 0 when all
@@ -37,7 +38,9 @@ QUOTE = re.compile(r'"([^"\n]+)"|“([^”\n]+)”')
 CUT = re.compile(r"\[[^\]]*\]|\.\.\.|…")
 NEGATIONS = set("""no not nor never none nothing nobody nowhere neither without
 cannot cant dont doesnt didnt wont wouldnt shouldnt couldnt isnt arent wasnt
-werent hasnt havent hadnt mustnt neednt aint""".split())
+werent hasnt havent hadnt mustnt neednt mightnt shant oughtnt aint unless except
+zero one two three four five six seven eight nine ten eleven twelve twenty
+hundred thousand million first second third half once twice""".split())
 
 
 def load_roll(path):
