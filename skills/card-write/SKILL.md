@@ -135,15 +135,21 @@ and a replay of the same create is a no-op that succeeds; a writer has to log
 
 ```sh
 id=$(~/.claude/bin/card-id new)
+title=$(cat <<'EOF'
+Short name
+EOF
+)
 ~/.claude/bin/work-item create --id "$id" --owner agent --repo owner/name \
-  --model sonnet --effort medium \
-  --brief 'action in the imperative ([link](https://...))' 'Short name'
+  --model sonnet --effort medium --brief - "$title" <<'EOF'
+action in the imperative ([link](https://...))
+EOF
 ~/.claude/bin/work-item log "$id" status=ready
 ```
 
 `create` needs `CLAUDE_CODE_SESSION_ID`, which a session has. Title is the
-short name (one line); the brief is everything else, `-` to read it from stdin
-when it holds quotes. A brief line may not start with `## `. `--repo`,
+short name (one line); the brief is everything else. Both go through quoted
+here-docs, as `/sweep` quotes a value, so a `'` in a link or a title is safe;
+never write either inside single quotes. A brief line may not start with `## `. `--repo`,
 `--model` (sonnet/opus/fable) and `--effort` (low/medium/high, as a hand-off
 names them) are facts on the item, so leave them out of the brief; readers
 append them to the card line. All are optional on an `agent` card. A dated
