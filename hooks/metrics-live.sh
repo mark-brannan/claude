@@ -147,6 +147,17 @@ IFS=$'\t' read -r tp sid cwd hook_name prompt_text <<<"$(printf '%s' "$input" | 
 [ -n "$tp" ] && [ -f "$tp" ] && [ -n "$sid" ] || exit 0
 [ -n "$cwd" ] || cwd=$PWD
 
+# Inside a sub-agent a tool hook carries agent_id (Claude Code hooks docs,
+# "Common input fields") yet still points transcript_path at the PARENT
+# session, so the block would report the parent's context to an agent that
+# cannot act on it (#40: a reviewer stopped early on "past 125k" at ~70k of
+# its own). Stay silent and leave the crossings for the parent to speak.
+# SubagentStop also carries agent_id but is the parent's own wiring: it passes.
+if [ "${hook_name:-}" = PostToolUse ] \
+   && [ -n "$(printf '%s' "$input" | jq -r '.agent_id // empty' 2>/dev/null)" ]; then
+  exit 0
+fi
+
 # Default EVENT to hook_event_name verbatim, lowercased, so a new hook
 # needs no matching entry here.
 if [ -n "$EVENT_ARG" ]; then

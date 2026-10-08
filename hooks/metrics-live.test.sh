@@ -78,6 +78,16 @@ out2=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
 t     'a crossing on a prompt says nothing at all' '' "$(msg "$out1")"
 has   'the block counts both rungs'          '^⛁⛁ ' "$(msg "$out2")"
 hasnt 'and never names the rung it crossed'  '/(100|150)k' "$(msg "$out2")"
+
+# A tool hook inside a sub-agent carries agent_id but reads the PARENT's
+# transcript: it must say nothing, and must not consume the parent's crossing.
+TPA="$SCRATCH/agent.jsonl"; turn "$TPA" 152000
+outa=$(payload "$TPA" agent1 "$SCRATCH" PostToolUse \
+  | jq -c '. + {agent_id:"a1b2c3", agent_type:"Explore"}' \
+  | bash "$HOOK" posttooluse 0 show 2>&1)
+t     'a tool hook inside a sub-agent is silent' '' "$outa"
+outp=$(payload "$TPA" agent1 "$SCRATCH" PostToolUse | bash "$HOOK" posttooluse 0 show 2>&1)
+has   'and the parent still gets its block afterwards' '^⛁⛁ ' "$(msg "$outp")"
 hasnt 'no threshold line rides in front of it' 'still room' "$(msg "$out2")"
 has   'the stop rung still reaches the verdict' '— 💸$' "$(msg "$out2")"
 hasnt 'and the tail carries no words'          'propose|stopping' "$(msg "$out2")"
