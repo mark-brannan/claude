@@ -181,3 +181,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261008t192058z
 - critical-review's summary opens with one line: what the PR does and whether it is ready, the sentence that stands in for reading the diff Undo: delete the opening-line sentence from the skill ([#100](https://github.com/mark-brannan/claude/pull/100))
+
+### 20261008t201514z
+- languette-options-check reads languette's plugin.json on main unpinned, so a languette option rename turns every PR here red until settings.json follows; chosen over a pinned ref because catching the rename is the point. Undo: pin URL to a languette tag or SHA in bin/languette-options-check ([#91](https://github.com/mark-brannan/claude/pull/91))
