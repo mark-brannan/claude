@@ -178,3 +178,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261008t191213z
 - Ruled by Solace 2026-10-08: churn-ok is never a Decide line and never discussed; the churn guard is the agent's toil, a red check means a smaller change. Bot threads walk the same exits; one at exit 4 stays open as the Decide line; one answered with a default is a Pencil line with the thread link Undo: reinstate the click line ([#100](https://github.com/mark-brannan/claude/pull/100))
+
+### 20261008t192058z
+- critical-review's summary opens with one line: what the PR does and whether it is ready, the sentence that stands in for reading the diff Undo: delete the opening-line sentence from the skill ([#100](https://github.com/mark-brannan/claude/pull/100))

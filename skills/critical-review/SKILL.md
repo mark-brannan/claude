@@ -9,8 +9,10 @@ You may ask questions or comment directly on the PR. Then, without
 waiting for answers, switch gears: fix any open issues and get the PR
 ready for my review.
 
-Then summarize under four headings, each shown even when empty. One line
-per item. Reading is my toil; deciding is dearer still.
+Then summarize. Open with one line, before any heading: what the PR does
+in your words and whether it is ready to merge. That sentence stands in
+for my reading the diff. Then four headings, each shown even when empty.
+One line per item. Reading is my toil; deciding is dearer still.
 
 **Fixed** — what you changed, with the commit.
 
@@ -19,8 +21,9 @@ machine couldn't settle it. Never a question; a question belongs under one
 of the two headings below.
 
 **Pencil** — the defaults you took that were judgment-shaped, mirrored
-from the PR body's `## Pencil:` list, kind first so I can scan:
-`**risk** · what you did · undo: <the reversal> · [thread](link)`. A bot
+from the PR body's `## Pencil:` list, kind first — values, risk,
+direction, legal, people — so I can scan:
+`**direction** · what you did · undo: <the reversal> · [thread](link)`. A bot
 thread you answered with a default is one of these, so I see it without
 deciding it. My silence keeps them. Toil — names, structure, order,
 tooling, wording — is yours and goes nowhere. So is the churn guard: a red
@@ -30,7 +33,7 @@ churn check means a smaller change, never a line to me.
 without. Kind first, then the ruling card's own line:
 
 ```
-- **risk** · the question? default: <what you did> · undo: <the reversal and its cost> · risk: <if the default is wrong> · [thread](link)
+- **direction** · the question? default: <what you did> · undo: <the reversal and its cost> · risk: <if the default is wrong> · [thread](link)
 ```
 
 Before a line goes under Decide, walk the exits in order and stop at the
@@ -47,10 +50,11 @@ first that fits:
    merge, named by link alone.
 3. **Card.** It fails the one-way-door test but this PR is right whichever
    way it goes: a `human-ruling` card through card-write, named nowhere in
-   the summary. A follow-up — "should a later PR…" — is this exit too, or an
+   the summary; its `until:` lies past this merge, so exit 2's exception
+   never applies to it. A follow-up — "should a later PR…" — is this exit too, or an
    issue under its bar.
 4. **Decide.** Nothing above fit, and you can name which of the five
-   kinds of judgment it is — values, risk, direction, legal, people. Post
+   kinds of judgment it is. Post
    it as a PR thread first; the thread is its home and stays open until I
    answer. A bot thread that lands here stays open the same way: it is
    the thread, and you do not resolve it.
