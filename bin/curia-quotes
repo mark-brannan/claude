@@ -167,7 +167,7 @@ def flips(roll, since=""):
             if "!" in sent:
                 continue
             hits = [w for w in sent.split() if any(guarded(n) for n in norm(w).split())]
-            if hits and not any(w.isupper() for w in hits):
+            if hits and not any(w.isupper() and re.search(r"[A-Z]{2}", w) for w in hits):
                 out.append((stamp, sent))
     return out
 

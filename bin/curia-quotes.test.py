@@ -125,7 +125,7 @@ class QuoteCheckTest(unittest.TestCase):
     def test_flips_lists_plain_sentences_with_a_negation_or_number_after_since(self):
         roll = (
             "\n### 20261001t000000z\n```\nI do not want it public.\n```\n"
-            "\n### 20261002t000000z\n```\nWe need two of them. It is fine, go on. NEVER do that! I don't mind it. Do NOT ship. Keep the ADR not public.\n```\n"
+            "\n### 20261002t000000z\n```\nWe need two of them. It is fine, go on. NEVER do that! I don't mind it. Do NOT ship. Keep the ADR not public. Q15 should hold.\n```\n"
         )
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "roll.md").write_text(roll)
@@ -137,6 +137,7 @@ class QuoteCheckTest(unittest.TestCase):
                 "20261002t000000z: We need two of them.",
                 "20261002t000000z: I don't mind it.",
                 "20261002t000000z: Keep the ADR not public.",
+                "20261002t000000z: Q15 should hold.",
             ])
             self.assertEqual(run("--since", "20261001t000000z").stdout.splitlines()[0], "20261002t000000z: We need two of them.")
             self.assertEqual(run("--since", "bogus").returncode, 2)
