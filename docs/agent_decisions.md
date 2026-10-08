@@ -190,3 +190,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261008t205715z
 - /scoping keeps one lock per named target and does not check the paired curia or repo lock; a duplicate plan costs a proposal to rule on, not a duplicate issue, so the overlap is stated as accepted Undo: add a paired-target lock check to skills/scoping/SKILL.md section 2 ([#105](https://github.com/mark-brannan/claude/pull/105))
+
+### 20261008t213606z
+- curia-quotes --flips drops a sentence as emphatic only when its negation or number is in capitals, not for any capitalised word, so acronyms such as ADR stay listed Undo: revert the flips filter to skip any sentence with a 3+ letter capitalised word ([#107](https://github.com/mark-brannan/claude/pull/107))

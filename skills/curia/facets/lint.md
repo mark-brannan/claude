@@ -56,6 +56,10 @@ Find and fix, mechanically, in one commit of the derived files:
   what has stopped earning its place, moving a long open question's text
   to a file under `inputs/` with a link; never cut a ruling or the user's
   words;
+- flip candidates: run `curia-quotes --flips <curia folder> --since
+  <the roll's read-from stamp>` and list its sentences in the findings
+  file under *Flip candidates*, for the next open's short list; a trial
+  (see the skill, During), so list them and fix nothing;
 - Trace entries that no longer earn their place.
 
 Then write the findings you could not fix as
