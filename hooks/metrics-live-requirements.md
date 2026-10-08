@@ -145,7 +145,9 @@ their values coincide is tuning. Both are adjusted in the same place as
 every other threshold.
 
 **The sitting clock is one per machine,** driven by prompts only, and
-restarts after a long gap.
+restarts after a long gap. The tail after the context figure varies with the
+hour; this sample is the sunset tail, and its minutes drift with the date and
+place, so read the shape, not the number.
 
 ```
 ⏱ 2h05 · context 42k · sun sets in 1h 52
