@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# SOFT SHOULD: id generation belongs in lib/ids.py, the one home for every
-# entity's id (card 17910884757abba648). This script still makes a roll-entry stamp itself;
-# move it there when convenient, no deadline.
 # agent-decision -- append an agent's pencil call to the decisions logs.
 #
 #   agent-decision [--repo <dir>] [--curia <id>]... [--undo <text>]
@@ -39,6 +36,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import gitrun  # noqa: E402
 import lib_state  # noqa: E402
 import lock  # noqa: E402
+import ids  # noqa: E402
 
 HEADER = """# Agent decisions
 
@@ -64,7 +62,7 @@ def line(call, undo, link):
 
 def append(path, bullet, now, header=""):
     """Append one bullet under this second's heading, under an exclusive lock."""
-    stamp = now.strftime("%Y%m%dt%H%M%Sz")
+    stamp = ids.get_roll_stamp(now)
     with lock.locked(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW) as fd:
         old = os.pread(fd, os.fstat(fd).st_size, 0)
         m = LAST.search(old)
