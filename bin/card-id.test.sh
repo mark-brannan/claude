@@ -18,6 +18,10 @@ ok 'no store is needed to make one' 18 "${#a}"
 sh "$CID" new "" >/dev/null 2>&1; ok 'no session id refuses' 2 $?
 sh "$CID" new zzzzzzzz >/dev/null 2>&1; ok 'a non-hex session refuses' 2 $?
 
+ok 'roll-stamp of a given second' 20261002t060107z "$(sh "$CID" roll-stamp 1790920867)"
+ok 'roll-stamp of now has the stamp shape' 1 "$(sh "$CID" roll-stamp | grep -cE '^[0-9]{8}t[0-9]{6}z$')"
+sh "$CID" roll-stamp abc >/dev/null 2>&1; ok 'a non-epoch roll-stamp argument refuses' 2 $?
+
 mkdir -p "$T/items"
 witem() { # id owner title brief
   printf '# %s\n\n## Brief\n%s\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=%s repo=o/global parent=- model=- effort=-\n2026-10-03T05:00:00Z 1d68120b status=ready\n' \
