@@ -1,0 +1,3 @@
+# Languette option keys settings.json may set before languette's plugin.json
+# defines them: names the hooks-guards curia holds in pen or pencil that
+# languette has not shipped. One key per line. Remove a line once it ships.
