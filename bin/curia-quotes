@@ -8,11 +8,13 @@ which means the curia last named on the line, else the digest's own. On a line
 with citations, each quoted span ("..." or curly quotes) of two words or more
 must match the text of one of the entries that line cites. Allowed, as the
 curia skill's digests do: `[...]` or an ellipsis for a cut, `[bracketed]` edits
-(each a wildcard), case and punctuation and whitespace differences, and small
-typo fixes (a segment need only be 90% similar). Segments match on word
-boundaries, except where a bracket cuts into a word (`[T]he`, `use[d]`). A cited
-stamp with no entry in the roll is a mismatch too. Straight quotes pair left to
-right, so one unbalanced `"` on a citing line misreads the quotes after it.
+(each a wildcard), case and punctuation and whitespace differences, and a
+typo fix in any word (one edit, two in a word of seven letters or more).
+Segments match word for word, except where a bracket cuts into a word
+(`[T]he`, `use[d]`). A negation or a number must match exactly, so a fix
+never flips what was said. A cited stamp with no entry in the roll is a
+mismatch too. Straight quotes pair left to right, so one unbalanced `"` on a
+citing line misreads the quotes after it.
 
 Exits 1 and names each mismatch as `file:line: reason: "quote"`; 0 when all
 match; 2 on a usage error.
@@ -20,7 +22,6 @@ match; 2 on a usage error.
 The stamp pattern and roll-entry parse are kept local: lib/ids.py and
 hooks/curia-roll.py own the stamp format and are being refactored.
 """
-import difflib
 import re
 import sys
 from pathlib import Path
@@ -34,7 +35,9 @@ REF = re.compile(rf"(?<![\w./-])(?:(\w[\w.-]*)/)?roll\.md#({STAMP})|(?<![\w./-])
 ENTRY = re.compile(rf"^### ({STAMP})\n(`{{3,}})\n(.*?)\n\2$", re.S | re.M)
 QUOTE = re.compile(r'"([^"\n]+)"|“([^”\n]+)”')
 CUT = re.compile(r"\[[^\]]*\]|\.\.\.|…")
-THRESHOLD = 0.9
+NEGATIONS = set("""no not nor never none nothing nobody nowhere neither without
+cannot cant dont doesnt didnt wont wouldnt shouldnt couldnt isnt arent wasnt
+werent hasnt havent hadnt mustnt neednt aint""".split())
 
 
 def load_roll(path):
@@ -46,43 +49,63 @@ def load_roll(path):
 
 
 def norm(s):
-    return " ".join(re.sub(r"[\W_]+", " ", s.casefold()).split())
+    """Casefolded words, punctuation dropped; an apostrophe joins (don't -> dont)."""
+    return " ".join(re.sub(r"[\W_]+", " ", re.sub(r"['’]", "", s.casefold())).split())
 
 
-def segment_end(seg, text, at, lopen, ropen):
-    """Offset in text just past seg's first match at or after at: exact, on word
-    boundaries save an open side, else the best fuzzy word window at THRESHOLD;
-    -1 if none. text is normalized and padded with a space at each end."""
-    needle = ("" if lopen else " ") + seg + ("" if ropen else " ")
-    i = text.find(needle, at)
-    if i >= 0:
-        return i + len(needle) - (not ropen)
-    spans = [m.span() for m in re.finditer(r"\S+", text[at:])]
-    n = len(seg.split(" "))
-    best, best_end = 0.0, -1
-    for k in range(len(spans)):
-        for w in {max(1, n - 1), n, n + 1}:
-            if k + w > len(spans):
-                continue
-            cand = text[at + spans[k][0]:at + spans[k + w - 1][1]]
-            r = difflib.SequenceMatcher(None, seg, cand, autojunk=False).ratio()
-            if r > best:
-                best, best_end = r, at + spans[k + w - 1][1]
-    return best_end if best >= THRESHOLD else -1
+def guarded(w):
+    return w in NEGATIONS or any(c.isdigit() for c in w)
+
+
+def edits(a, b):
+    """Damerau-Levenshtein distance (adjacent swaps count as one edit)."""
+    d = [[i + j if i * j == 0 else 0 for j in range(len(b) + 1)] for i in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                d[i][j] = min(d[i][j], d[i - 2][j - 2] + 1)
+    return d[-1][-1]
+
+
+def word_matches(q, t, lopen=False, ropen=False):
+    """q (quoted) stands for t (roll): equal, or a typo fix of one edit (two in
+    a word of seven letters or more) when neither is a negation or a number.
+    An open side matches a word the bracket cuts into."""
+    if lopen and ropen:
+        return q in t
+    if lopen or ropen:
+        return t.endswith(q) if lopen else t.startswith(q)
+    if q == t:
+        return True
+    if guarded(q) or guarded(t) or min(len(q), len(t)) < 3:
+        return False
+    return edits(q, t) <= (2 if min(len(q), len(t)) >= 7 else 1)
+
+
+def segment_end(seg, words, at, lopen, ropen):
+    """Index in words just past seg's first word-for-word match at or after
+    at, or -1. The first and last words may be open where a bracket cuts in."""
+    n = len(seg)
+    for k in range(at, len(words) - n + 1):
+        if all(word_matches(q, words[k + i], lopen and i == 0, ropen and i == n - 1)
+               for i, q in enumerate(seg)):
+            return k + n
+    return -1
 
 
 def quote_matches(quote, text):
     """Every segment of the quote, in order, somewhere in the entry."""
-    text, at = f" {norm(text)} ", 0
+    words, at = norm(text).split(), 0
     bounds = [0, *(x for m in CUT.finditer(quote) for x in m.span()), len(quote)]
     for j in range(0, len(bounds), 2):
         raw = quote[bounds[j]:bounds[j + 1]]
-        seg = norm(raw)
+        seg = norm(raw).split()
         if not seg:
             continue
         lopen = j > 0 and quote[bounds[j] - 1] == "]" and raw[:1].isalnum()
         ropen = bounds[j + 1] < len(quote) and quote[bounds[j + 1]] == "[" and raw[-1:].isalnum()
-        end = segment_end(seg, text, at, lopen, ropen)
+        end = segment_end(seg, words, at, lopen, ropen)
         if end < 0:
             return False
         at = end
