@@ -9,6 +9,12 @@
 # previous ⛁-marker hook logged nothing: a metric the measured party has to
 # self-report is the first one to go quiet.
 
+# An enqueue is the user's own prompt unless the harness queued it for them:
+# a sub-agent hand-back (<task-notification>, <agent-message>) or injected
+# system content (<system-reminder>). Those are not the user speaking, so they
+# are neither friction nor a human turn on the decision timeline.
+def user_prompt: ((.content // "") | test("^\\s*<(task-notification|agent-message|system-reminder)\\b") | not);
+
 def lastline: split("\n") | map(select(test("\\S"))) | last // "";
 
 # --- what counts as an ask ------------------------------------------------
@@ -98,7 +104,8 @@ to_entries as $E
 # opening prompt while still catching mid-turn interjections.
 | [ $E[] | select(.value.type == "queue-operation"
                   and .value.operation == "enqueue"
-                  and (.value.content // "") != "")
+                  and (.value.content // "") != ""
+                  and (.value | user_prompt))
     | .key ] as $humans
 
 # Persisted excerpts -- the friction excerpt and decisions[].question -- are
@@ -170,7 +177,8 @@ to_entries as $E
 
 # Text of every human enqueue, keyed by turn index -- same source as $humans.
 | ([ $E[] | select(.value.type == "queue-operation" and .value.operation == "enqueue"
-                   and (.value.content // "") != "")
+                   and (.value.content // "") != ""
+                   and (.value | user_prompt))
     | {i: .key, text: .value.content} ]) as $human_texts
 
 # Assistant text, one entry per assistant record that has any, keyed by index.

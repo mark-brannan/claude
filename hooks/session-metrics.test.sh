@@ -191,5 +191,22 @@ jq -nc '{type:"assistant", timestamp:"2026-09-09T12:00:00.000Z", requestId:"late
            usage:{input_tokens:1, output_tokens:1}}}' >> "$tp"
 eq "first prompt to last, not to the agent's last event" '4200' "$(span "$tp")"
 
+# Friction counts only the user's own prompts. Sub-agent hand-backs and
+# injected system content are enqueued like prompts but are not the user
+# speaking (card 17910117682e4cdfd8: 16 agora "rebukes" were all hand-backs).
+fq() { jq -nc --arg c "$1" '{type:"queue-operation", operation:"enqueue",
+  timestamp:"2026-09-22T00:00:01.000Z", content:$c}'; }
+fa() { jq -nc '{type:"assistant", uuid:"a", timestamp:"2026-09-22T00:00:00.000Z",
+  message:{model:"m", role:"assistant", content:[{type:"text", text:"Done."}]}}'; }
+fric() { # fric <enqueued content> -> friction total
+  { fq "please fix the thing"; fa; fq "$1"; fa; } \
+    | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n \
+        -f "$JQF" | jq -c '.session.friction.total'
+}
+eq "a real rebuke counts" '1' "$(fric "no, that's not what I asked for")"
+eq "a task-notification is not a rebuke" '0' "$(fric "<task-notification>no, that's not what I asked for</task-notification>")"
+eq "an agent-message is not a rebuke" '0' "$(fric "<agent-message from=x>no, that's not what I asked for</agent-message>")"
+eq "a system-reminder is not a rebuke" '0' "$(fric "<system-reminder>no, that's not what I asked for</system-reminder>")"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
