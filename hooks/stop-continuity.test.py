@@ -1152,6 +1152,42 @@ class StopContinuityTest(unittest.TestCase):
                 "salvage", "state_push", "state_signing", "state_items", "state_debounce", "live_lock",
                 "incident")
 
+    def test_term_stops_the_child_before_the_lock_comes_off(self):
+        # A child bounded() started runs in a session of its own, so a TERM
+        # to the hook never reaches it. Left running, a state-repo push or
+        # pull would outlive the push lock and race the next Stop's in the
+        # same clone; the hook's TERM handler stops its group first.
+        T = Path(self.tmp)
+        lock, pidf = T / "push.lock.d", T / "child.pid"
+        code = f"""
+import importlib.util, signal, sys, threading
+sys.path.insert(0, {str(HOOKS.parent / 'lib')!r})
+import state
+spec = importlib.util.spec_from_file_location("sc", {str(HOOK)!r})
+sc = importlib.util.module_from_spec(spec); spec.loader.exec_module(sc)
+signal.signal(signal.SIGTERM, sc._bye)
+state.state_lock({str(lock)!r})
+def note():
+    open({str(pidf)!r}, "w").write(str(sc._child.pid))
+threading.Timer(0.3, note).start()
+try:
+    sc.bounded(["sh", "-c", "sleep 60 & wait"], 120)
+finally:
+    state.state_unlock()
+"""
+        hook = subprocess.Popen([sys.executable, "-c", code])
+        deadline = time.time() + 10
+        while not pidf.exists() and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(pidf.exists(), "the child started")
+        child = int(pidf.read_text())
+        self.assertTrue(lock.is_dir(), "the lock is held while the child runs")
+        hook.terminate()
+        self.assertEqual(hook.wait(timeout=10), 0, "TERM still exits 0")
+        with self.assertRaises(ProcessLookupError, msg="the child's whole group is gone"):
+            os.killpg(child, 0)
+        self.assertFalse(lock.exists(), "and the lock is released")
+
     def test_sections(self):
         with concurrent.futures.ThreadPoolExecutor(len(self.SECTIONS)) as ex:
             futures = {name: ex.submit(getattr(self, name)) for name in self.SECTIONS}

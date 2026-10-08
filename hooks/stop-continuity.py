@@ -262,30 +262,53 @@ def quiet(argv, **kw):
         return 127
 
 
+# The child bounded() is waiting on, if any. It runs in a session of its
+# own, so a signal to this hook's group never reaches it: _bye must stop it
+# before the push lock comes off, or a `git push` or `pull --rebase` would
+# outlive the lock and race the next Stop's in the same clone.
+_child = None
+
+
+def stop_group(p, grace=5, collect=True):
+    """TERM p's whole process group, KILL it after grace seconds; its output
+    when collect. A signal handler passes collect=False: the communicate()
+    it interrupted still owns the pipes, so it only waits."""
+    out = b""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(p.pid, sig)
+        except OSError:
+            pass
+        try:
+            if collect:
+                out, _ = p.communicate(timeout=grace)
+            else:
+                p.wait(timeout=grace)
+            break
+        except subprocess.TimeoutExpired:
+            out = b""
+    return out
+
+
 def bounded(argv, secs, capture=False):
     """timeout <secs> argv, as timeout(1) runs it: its own process group,
     signalled whole on expiry, 124 then. (rc, stdout) -- stdout as $(...)
     keeps it, partial on a timeout, when capture."""
+    global _child
     try:
         p = subprocess.Popen(argv, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
     except OSError:
         return 127, ""
+    _child = p
     try:
         out, _ = p.communicate(timeout=secs)
         rc = p.returncode
     except subprocess.TimeoutExpired:
-        for sig in (signal.SIGTERM, signal.SIGKILL):
-            try:
-                os.killpg(p.pid, sig)
-            except OSError:
-                pass
-            try:
-                out, _ = p.communicate(timeout=5)
-                break
-            except subprocess.TimeoutExpired:
-                out = b""
+        out = stop_group(p)
         rc = 124
+    finally:
+        _child = None
     return rc, sub((out or b"").decode("utf-8", "surrogateescape"))
 
 
@@ -1137,6 +1160,12 @@ class Stop:
 
 
 def _bye(signum, frame):
+    # The child first, then the lock (main's finally): see _child.
+    if _child is not None:
+        try:
+            stop_group(_child, grace=2, collect=False)
+        except Exception:
+            pass
     raise SystemExit(0)
 
 
