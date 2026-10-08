@@ -14,6 +14,7 @@
 - opened: <date>, on the user's order: <reference to the words that ordered it>
 - origin: <link to the card that petitioned the agora, or the doc section that raised it>
 - related: <ids of open curiae this one touches, comma-separated, or none; ids only, derived by lint>
+- repo: <owner/repo this curia governs, or none; /scoping on either the curia or the repo reads both>
 - model: Fable · effort: high
 - adr: <links to the ADRs, one per promoted Design section or one for the whole, or none>
 - issue: <owner/repo#n of the curia's private [Epic] issue in the state repo, filed at opening>
