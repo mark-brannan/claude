@@ -43,8 +43,14 @@ unless a decisions file holds them. A line not yet true in the code is in
 scope when the commit that last set it changed no code (loop two). When
 that commit changed code too (loop one), the line may be a stale
 description: it goes under Ambiguity named, with both readings. The commit
-that last set a line is `git log -1 -w -S'<line text>' --format=%h -- README.md`
-(`-w` skips rewraps), and `git show --stat <sha>` says what else it changed.
+that last set a line is `git log -1 -S'<phrase>' --format=%h -- :/README.md`,
+and `git show --stat <sha>` says what else it changed. The phrase is a few
+words from one physical line of the file, never the whole sentence: `-S`
+matches within a line, so a phrase across a line break finds nothing, and a
+rewrap that leaves the phrase whole is skipped. `:/` roots the path at the
+repo top, so the command works from a subfolder. Empty output is a miss,
+not an answer: try another phrase, and never pass the empty sha on, since
+`git show` with no sha shows HEAD.
 
 A repo is wide. Read its issues and PRs by title and label first, then
 every open issue's body, since each is an item to plan; past a dozen
@@ -163,7 +169,8 @@ The yes scales with size. Pencil thresholds, the agent's default until
 ruled: up to 3 work items and 400 words in the work-items section, one
 word for the whole; above that, a tick per item, and an item over 150
 words is split before it is shown. Measure with `wc -w` from the
-work-items heading to the next heading, counted as
+work-items heading to the next heading of its level or higher, so an
+item's own `###` heading counts inside the section, not as its end; counted as
 [brief.md](../agora/brief.md) counts, and say the count.
 
 ## 6. On the yes
