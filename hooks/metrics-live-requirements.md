@@ -25,7 +25,7 @@ readout appear **less often**. Frequency, not line count. A four-rung jump
 renders one block with four ⛁ in it.
 
 ```
-⛁⛁⛁⛁ 46k/155k ⚖(x1) 🔧⛔(x2) ⏱1h33⏱️⏱️⏱️⏱️ — 💸 propose stopping.
+⛁⛁⛁⛁ 46k/155k ⚖(x1) 🔧⛔(x2) ⏱1h33⏱️⏱️⏱️⏱️ — 💸
 ⇢ 1 ⚙ 59
 ```
 
@@ -70,7 +70,7 @@ at the top rather than going quiet; the overflow count is the settled
 shape for that.
 
 ```
-⛁⛁⛁⛁⛁(x9) 10/350k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸 propose stopping.
+⛁⛁⛁⛁⛁(x9) 10/350k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸
 ```
 
 **Bias toward more information.** Adding a number or a line never needs a
@@ -92,7 +92,7 @@ output-tokens badge — settled after repeated attempts on
 re-propose them.
 
 ```
-⛁⛁⛁⛁ 20/152k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸 propose stopping.
+⛁⛁⛁⛁ 20/152k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸
 ```
 
 ## Stop output
@@ -148,7 +148,7 @@ every other threshold.
 restarts after a long gap.
 
 ```
-⏱ sitting 1h00 — context 41k: stand up.
+⏱ 2h05 · context 42k · sun sets in 1h 52
 ```
 
 ## Thresholds
