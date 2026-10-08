@@ -40,9 +40,16 @@ target, and why, in the first line.
 
 A curia and the repo it governs are one umbrella. A curia whose digest
 header carries `repo: <owner/repo>` also reads that repo's open issues and
-the cards whose `repo=` names it; a repo target also reads every open
+the cards whose `repo=` fact names it (set by `work-item create --repo`, in
+the header of `~/.claude/bin/work-item`; a card created without it reads
+`repo=-` and a digest without the line, or with `repo: none`, names no
+repo, so neither pairs with anything); a repo target also reads every open
 curia whose `repo:` names the repo. An item both sides carry is one item,
-deduped by its issue link. The lock folder stays the named target's.
+deduped by its issue link. The lock folder stays the named target's, so
+`/scoping <curia>` and `/scoping <repo>` hold different locks over the same
+umbrella and two sessions can plan the same issues. That is accepted: a
+scoping files nothing before the yes, so the cost of the overlap is a
+duplicate proposal to rule on, not a duplicate issue.
 
 A repo's README states aims, but both loops change it. Its lines are pencil
 unless a decisions file holds them. A line not yet true in the code is in
@@ -53,7 +60,9 @@ that last set a line is `git log -1 -S'<phrase>' --format=%h -- :/README.md`,
 and `git show --stat <sha>` says what else it changed. The phrase is a few
 words from one physical line of the file, never the whole sentence: `-S`
 matches within a line, so a phrase across a line break finds nothing, and a
-rewrap that leaves the phrase whole is skipped. `:/` roots the path at the
+rewrap that leaves the phrase whole is skipped. `-S` also fires only where the
+phrase's count in the file changes, so a phrase that occurs twice, or moves
+within a commit, can miss its commit or name another. `:/` roots the path at the
 repo top, so the command works from a subfolder. Empty output is a miss,
 not an answer: try another phrase, and never pass the empty sha on, since
 `git show` with no sha shows HEAD.
@@ -176,7 +185,7 @@ ruled: up to 3 work items and 400 words in the work-items section, one
 word for the whole; above that, a tick per item, and an item over 150
 words is split before it is shown. Measure with `wc -w` from the
 work-items heading to the next heading of its level or higher, so an
-item's own `###` heading counts inside the section, not as its end; counted as
+item's own `###` heading counts inside the section, not as its end. Count as
 [brief.md](../agora/brief.md) counts, and say the count.
 
 ## 6. On the yes

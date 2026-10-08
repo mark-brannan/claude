@@ -13,7 +13,12 @@
 # a sub-agent hand-back (<task-notification>, <agent-message>) or injected
 # system content (<system-reminder>). Those are not the user speaking, so they
 # are neither friction nor a human turn on the decision timeline.
-def user_prompt: ((.content // "") | test("^\\s*<(task-notification|agent-message|system-reminder)\\b") | not);
+# A non-string content is not a prompt, so `test` never sees one.
+def user_prompt:
+  ((.content // "")
+   | if type == "string"
+     then test("^\\s*<(task-notification|agent-message|system-reminder)\\b") | not
+     else false end);
 
 def lastline: split("\n") | map(select(test("\\S"))) | last // "";
 
