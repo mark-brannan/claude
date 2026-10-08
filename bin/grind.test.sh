@@ -575,7 +575,7 @@ rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$S/claude-bg.log"
 : > "$CLAUDE_LOG"
 run --session-budget 100 --pause-every 1
 has 'a backgrounded worker with no PR is named, not just unverified' \
-  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but worker ended while backgrounded work was pending'
+  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but worker used run_in_background'
 assert "every worker runs with background tasks disabled" grep -q "bg-disabled=1" "$S/claude-bg.log"
 
 # a PR left behind by an earlier attempt does not verify a fresh claim: the

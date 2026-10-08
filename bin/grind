@@ -1793,10 +1793,11 @@ while [ "$i" -lt "$count" ]; do
           # the pickup item at ..." -- which cost grind the status of two
           # blocked items on 2026-10-03 and paid for them twice.
           if [ -n "$(last_status "$ltext")" ]; then printf '%s\n' "$ltext" > "$status_text_file"; fi
-          # A tool call that went to the background: claude -p exits when the
-          # worker's turn ends, taking that work with it. The env var above
-          # should make this impossible; seeing one anyway is named below.
-          printf '%s' "$line" | jq -e '[.message.content[]? | select(.type == "tool_use" and (.input.run_in_background == true or .input.run_in_background == "true"))] | length > 0' >/dev/null 2>&1 && echo "${etype}" >> "$bg_file"
+          # A tool call that asked for the background: claude -p exits when
+          # the worker's turn ends, taking any such work with it. The env var
+          # above should keep the call in the foreground, so a sighting is a
+          # hint for the unverified line below, not proof work was stranded.
+          printf '%s' "$line" | jq -e '[.message.content[]? | select(.type == "tool_use" and (.input.run_in_background == true or .input.run_in_background == "true"))] | length > 0' >/dev/null 2>&1 && echo 1 >> "$bg_file"
           usage=$(printf '%s' "$line" | jq -c '.message.usage // empty' 2>/dev/null)
           [ -n "$usage" ] && [ "$usage" != "null" ] || continue
           # claude -p emits one assistant event per content block, each
@@ -1945,10 +1946,10 @@ while [ "$i" -lt "$count" ]; do
       fi
       ;;
   esac
-  # Name the stranded-work failure: the worker handed work to the background
-  # and its session ended with nothing to show for it.
+  # Name the likely stranded-work cause: the worker asked for the background
+  # and its claim did not check out.
   if [ "$status" = unverified ] && [ "$bg_work" -eq 1 ]; then
-    unverified_why="worker ended while backgrounded work was pending (run_in_background); nothing was committed -- $unverified_why"
+    unverified_why="worker used run_in_background (work may have been stranded when its session ended) -- $unverified_why"
   fi
   [ "$errored" -eq 1 ] && [ "$status" = unverified ] && status=failed
   # The worker's PR can exist without the .claude/ change it needed.
