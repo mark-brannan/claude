@@ -388,6 +388,7 @@
   "autoMode": {
     "allow": [
       "$defaults",
+      "Creating, editing or commenting on a GitHub issue in a mark-brannan repo (gh issue create/edit/comment, or the GitHub MCP issue tools) is allowed when the user, at any earlier point in this session, asked for an issue, agreed an issue was the right home for the work, or approved a drafted one, or when the issue is the one the session was started to work on. The go-ahead need not be the latest user turn and need not repeat \"file it\". Block it when nothing the user said in this session indicated an issue was wanted.",
       "Running ~/.claude/bin/resign-branch.sh <branch> [<remote>] is always allowed, including its rebase (-S resign) and force-push-with-lease. It is a reviewed, idempotent personal script for the one operational fix for unsigned-commit blocks on a ruleset-protected repo: it refuses to run against the default branch, refuses if the branch has local commits the remote lacks, and aborts without touching anything on a rebase conflict."
     ]
   },
