@@ -12,11 +12,11 @@ CHECK = Path(__file__).resolve().parent / "languette-options-check"
 PLUGIN = {"userConfig": {"guard_worktrees": {}, "private_repos": {}}}
 
 
-def run(options, anticipated=None, plugin=PLUGIN):
+def run(options, anticipated=None, plugin=PLUGIN, settings=None):
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         (d / "s.json").write_text(json.dumps(
-            {"pluginConfigs": {"languette@languette": {"options": options}}}))
+            settings or {"pluginConfigs": {"languette@languette": {"options": options}}}))
         (d / "p.json").write_text(json.dumps(plugin))
         (d / "a.txt").write_text(anticipated or "")
         return subprocess.run(
@@ -42,6 +42,12 @@ class T(unittest.TestCase):
         r = subprocess.run([sys.executable, str(CHECK), "--settings", "/nonexistent"],
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 2)
+
+    def test_non_object_entry_is_exit_2_and_named(self):
+        r = run(None, settings={"pluginConfigs": {"languette@languette": "on"}})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("languette@languette", r.stderr)
+        self.assertIn("not an object", r.stderr)
 
 
 if __name__ == "__main__":

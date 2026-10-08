@@ -139,11 +139,19 @@ NAG_BED_WARN_MIN="${METRICS_BED_WARN_MIN:-5}"
 # One jq for all three fields: the statusline reaches this code on every
 # render, and three spawns before the staleness check was most of its cost.
 input=$(cat 2>/dev/null || echo '{}')
-IFS=$'\t' read -r tp sid cwd hook_name prompt_text <<<"$(printf '%s' "$input" | jq -r \
-  '[(.transcript_path // ""), (.session_id // ""),
-    (.cwd // .workspace.current_dir // ""),
-    (.hook_event_name // ""),
+# agent_id rides this same call. A tab IFS collapses empty fields and would
+# shift every later field into the empty one's slot, so each field before the
+# last is "-" when empty and restored to empty after the read.
+IFS=$'\t' read -r tp sid cwd hook_name agent_id prompt_text <<<"$(printf '%s' "$input" | jq -r \
+  'def f: if . == "" then "-" else . end;
+   [((.transcript_path // "") | f), ((.session_id // "") | f),
+    ((.cwd // .workspace.current_dir // "") | f),
+    ((.hook_event_name // "") | f),
+    ((.agent_id // "") | f),
     (.prompt // "")] | @tsv')"
+for _v in tp sid cwd hook_name; do
+  [ "${!_v}" = - ] && printf -v "$_v" ''
+done
 [ -n "$tp" ] && [ -f "$tp" ] && [ -n "$sid" ] || exit 0
 [ -n "$cwd" ] || cwd=$PWD
 
@@ -153,8 +161,7 @@ IFS=$'\t' read -r tp sid cwd hook_name prompt_text <<<"$(printf '%s' "$input" | 
 # cannot act on it (#40: a reviewer stopped early on "past 125k" at ~70k of
 # its own). Stay silent and leave the crossings for the parent to speak.
 # SubagentStop also carries agent_id but is the parent's own wiring: it passes.
-if [ "${hook_name:-}" = PostToolUse ] \
-   && [ -n "$(printf '%s' "$input" | jq -r '.agent_id // empty' 2>/dev/null)" ]; then
+if [ "${hook_name:-}" = PostToolUse ] && [ "${agent_id:--}" != - ]; then
   exit 0
 fi
 

@@ -102,6 +102,13 @@ class QuoteCheckTest(unittest.TestCase):
     def test_stamp_anchor_on_another_file_is_no_citation(self):
         self.ok('(agent_decisions.md#20261009t000000z) "whatever it said"\n')
 
+    def test_path_prefixed_roll_is_no_citation(self):
+        # "../roll.md" must not read a roll outside the curia folders, nor fall back to own.
+        self.ok('(../roll.md#20261009t000000z) "whatever it said"\n')
+        self.ok('(x/y/roll.md#20261009t000000z) "whatever it said"\n')
+        # A stamp that exists in the own roll must not make it a citation either.
+        self.ok('(../roll.md#20261003t030107z) "words that are not in that entry"\n')
+
     def test_bad_path_exits_2(self):
         p = subprocess.run([sys.executable, str(TOOL), "/nonexistent/digest.md"], capture_output=True, text=True)
         self.assertEqual(p.returncode, 2)

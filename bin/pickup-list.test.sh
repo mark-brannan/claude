@@ -42,6 +42,8 @@ assert 'take of a missing id fails' bash -c "! sh '$PL' take nope 2>/dev/null"
 # Taking one hand-off takes every open item naming the same link -- the
 # body's link:, else the header's pr: -- so a second session cannot pick the
 # same work up (card 179093046079e60170). Others, and closed ones, stay put.
+# (The fixtures append `link:` after the header, so the first item's link is
+# read from the body; the second carries it in the header's pr: field only.)
 L=https://github.com/o/r/pull/7
 item 2026-09-04T10-00-11111111 2026-09-04T10:00:00Z open "link one"; printf 'link: %s\n' "$L" >> "$PICKUP/2026-09-04T10-00-11111111.md"
 item 2026-09-04T11-00-22222222 2026-09-04T11:00:00Z open "link two"; sed -i "s|^pr: none|pr: $L|" "$PICKUP/2026-09-04T11-00-22222222.md"

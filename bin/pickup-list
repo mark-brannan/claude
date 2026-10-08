@@ -37,7 +37,8 @@
 # work to two.
 set -u
 
-usage() { sed -n '15,26p' "$0" | sed 's/^#   \{0,1\}//'; }
+# The usage block: from the first "#   pickup-list" line to the bare "#" after it.
+usage() { sed -n '/^#   pickup-list/,/^#$/p' "$0" | sed '$d' | sed 's/^#   \{0,1\}//'; }
 
 self=$0
 case $self in */*) ;; *) self=$(command -v "$self" 2>/dev/null || printf '%s' "$self") ;; esac
