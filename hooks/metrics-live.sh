@@ -139,14 +139,19 @@ NAG_BED_WARN_MIN="${METRICS_BED_WARN_MIN:-5}"
 # One jq for all three fields: the statusline reaches this code on every
 # render, and three spawns before the staleness check was most of its cost.
 input=$(cat 2>/dev/null || echo '{}')
-# agent_id rides this same call; "-" stands in for absent because a tab IFS
-# collapses empty fields and would shift the prompt into its slot.
+# agent_id rides this same call. A tab IFS collapses empty fields and would
+# shift every later field into the empty one's slot, so each field before the
+# last is "-" when empty and restored to empty after the read.
 IFS=$'\t' read -r tp sid cwd hook_name agent_id prompt_text <<<"$(printf '%s' "$input" | jq -r \
-  '[(.transcript_path // ""), (.session_id // ""),
-    (.cwd // .workspace.current_dir // ""),
-    (.hook_event_name // ""),
-    ((.agent_id // "") | if . == "" then "-" else . end),
+  'def f: if . == "" then "-" else . end;
+   [((.transcript_path // "") | f), ((.session_id // "") | f),
+    ((.cwd // .workspace.current_dir // "") | f),
+    ((.hook_event_name // "") | f),
+    ((.agent_id // "") | f),
     (.prompt // "")] | @tsv')"
+for _v in tp sid cwd hook_name; do
+  [ "${!_v}" = - ] && printf -v "$_v" ''
+done
 [ -n "$tp" ] && [ -f "$tp" ] && [ -n "$sid" ] || exit 0
 [ -n "$cwd" ] || cwd=$PWD
 

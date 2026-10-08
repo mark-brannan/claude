@@ -28,9 +28,9 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 
 STAMP = r"\d{8}t\d{6}z"
-# A curia name starts with a word character, so ".." never names a folder
-# outside the curia folders.
-REF = re.compile(rf"(?<![\w.-])(?:(\w[\w.-]*)/)?roll\.md#({STAMP})|(?<![\w./-])#({STAMP})")
+# A curia name starts with a word character and a path prefix before it is no
+# citation, so "../roll.md#<stamp>" never reads a roll outside the curia folders.
+REF = re.compile(rf"(?<![\w./-])(?:(\w[\w.-]*)/)?roll\.md#({STAMP})|(?<![\w./-])#({STAMP})")
 ENTRY = re.compile(rf"^### ({STAMP})\n(`{{3,}})\n(.*?)\n\2$", re.S | re.M)
 QUOTE = re.compile(r'"([^"\n]+)"|“([^”\n]+)”')
 CUT = re.compile(r"\[[^\]]*\]|\.\.\.|…")
