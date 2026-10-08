@@ -46,7 +46,7 @@ BACKUP="$HOME/.claude-replaced"
 # see "Stage" and "Flip" below. Overridable, but on its own it is NOT a test
 # harness: the Link step still writes symlinks under the real $HOME, and
 # STATUS_FILE is still under it. Isolating a run means overriding $HOME.
-CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-config}"
+CONFIG_DIR="${CLAUDE_SEED_RELEASES_DIR:-$HOME/.claude-config}"
 STATUS_FILE="$CLAUDE_HOME/.sync-status.json"
 STATUS_TMP="$STATUS_FILE.$$"
 DRY_RUN=no
