@@ -47,12 +47,14 @@ item 2026-09-04T10-00-11111111 2026-09-04T10:00:00Z open "link one"; printf 'lin
 item 2026-09-04T11-00-22222222 2026-09-04T11:00:00Z open "link two"; sed -i "s|^pr: none|pr: $L|" "$PICKUP/2026-09-04T11-00-22222222.md"
 item 2026-09-04T12-00-33333333 2026-09-04T12:00:00Z "done" "link done"; printf 'link: %s\n' "$L" >> "$PICKUP/2026-09-04T12-00-33333333.md"
 item 2026-09-04T13-00-44444444 2026-09-04T13:00:00Z open "other link"; printf 'link: %s0\n' "$L" >> "$PICKUP/2026-09-04T13-00-44444444.md"
-out=$(sh "$PL" take 2026-09-04T10-00-11111111)
+item 2026-09-04T14-00-55555555 2026-09-04T14:00:00Z open "my own"; printf 'link: %s\n' "$L" >> "$PICKUP/2026-09-04T14-00-55555555.md"
+out=$(CLAUDE_CODE_SESSION_ID=55555555-0000 sh "$PL" take 2026-09-04T10-00-11111111)
 assert 'take names the same-link item it also took' bash -c "printf '%s' '$out' | grep -qx 'taken 2026-09-04T11-00-22222222 (same link)'"
 st() { sed -n 's/^status: //p' "$PICKUP/$1.md"; }
 eq 'the same-link item (via pr:) is taken' taken "$(st 2026-09-04T11-00-22222222)"
 eq 'a done same-link item stays done' "done" "$(st 2026-09-04T12-00-33333333)"
 eq 'a different link is untouched' open "$(st 2026-09-04T13-00-44444444)"
+eq "the taker's own same-link item stays open" open "$(st 2026-09-04T14-00-55555555)"
 eq 'an item with no link takes only itself' 'taken 2026-09-01T10-00-aaaaaaaa' "$(sh "$PL" take 2026-09-01T10-00-aaaaaaaa)"
 eq 'and its linkless neighbours stay open' open "$(st 2026-09-03T10-00-deadbeef)"
 eq 'open releases only the one item' 'open 2026-09-04T10-00-11111111' "$(sh "$PL" open 2026-09-04T10-00-11111111)"

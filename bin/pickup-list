@@ -138,15 +138,17 @@ case "$cmd" in
     [ "$cmd" = take ] || exit 0
     # Taking one hand-off takes the work, and the work is the link: a second
     # open item naming the same PR or link would hand it to a second session
-    # (card 179093046079e60170). Same link, open, and not this file.
+    # (card 179093046079e60170). Same link, open, and not this file -- nor
+    # the taker's own item (id ends in its sid8), which is its live hand-off.
     # shellcheck disable=SC2034 # read by work_records; pickup items carry no claims
     WORK_CLAIMS=""
     sep=$(printf '\037')
     link=$(work_record "$f" | cut -d "$sep" -f8)
     [ -n "$link" ] || exit 0
+    own=$(printf '%.8s' "${CLAUDE_CODE_SESSION_ID:-}")
     set -- "$PICKUP"/*.md
-    work_records "$@" | awk -F "$sep" -v l="$link" -v me="$(basename "$f" .md)" \
-      '$8 == l && $3 == "open" && $9 != me { print $9 }' \
+    work_records "$@" | awk -F "$sep" -v l="$link" -v me="$(basename "$f" .md)" -v own="$own" \
+      '$8 == l && $3 == "open" && $9 != me && (own == "" || substr($9, length($9) - 8) != "-" own) { print $9 }' \
       | while IFS= read -r o; do
           set_field "$PICKUP/$o.md" status taken || { printf 'pickup-list take: write failed for %s\n' "$o" >&2; exit 1; }
           printf 'taken %s (same link)\n' "$o"
