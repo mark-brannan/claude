@@ -20,16 +20,17 @@ of the two headings below.
 
 **Pencil** — the defaults you took that were judgment-shaped, mirrored
 from the PR body's `## Pencil:` list, kind first so I can scan:
-`**risk** · what you did · undo: <the reversal>`. My silence keeps them.
-Toil — names, structure, order, tooling, wording — is yours and goes
-nowhere.
+`**risk** · what you did · undo: <the reversal> · [thread](link)`. A bot
+thread you answered with a default is one of these, so I see it without
+deciding it. My silence keeps them. Toil — names, structure, order,
+tooling, wording — is yours and goes nowhere. So is the churn guard: a red
+churn check means a smaller change, never a line to me.
 
 **Decide** — a question only I can answer, that this PR cannot merge
 without. Kind first, then the ruling card's own line:
 
 ```
 - **risk** · the question? default: <what you did> · undo: <the reversal and its cost> · risk: <if the default is wrong> · [thread](link)
-- **click** · `churn-ok` on this PR: +N prose lines, <what they are>
 ```
 
 Before a line goes under Decide, walk the exits in order and stop at the
@@ -51,8 +52,8 @@ first that fits:
 4. **Decide.** Nothing above fit, and you can name which of the five
    kinds of judgment it is — values, risk, direction, legal, people. Post
    it as a PR thread first; the thread is its home and stays open until I
-   answer. A click only I can make (`churn-ok`) is a `click` line, with no
-   default, undo or risk.
+   answer. A bot thread that lands here stays open the same way: it is
+   the thread, and you do not resolve it.
 
 Empty is the usual Decide. A question whose answer would be obvious to me
 is the dearest thing a review can produce.
