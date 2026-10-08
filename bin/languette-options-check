@@ -7,26 +7,35 @@ pluginConfigs["languette@*"].options against plugin.json's userConfig.
 
 Usage: languette-options-check [--settings FILE] [--plugin-json FILE|URL]
                                [--anticipated FILE]
-Defaults: ./settings.json, languette's plugin.json on main (one fetch), and
+Defaults: this repo's settings.json, languette's plugin.json on main (one fetch), and
 lib/languette-anticipated-options.txt in this repo, if present.
 Anticipated keys (one per line, # comments) are names the hooks-guards curia
 holds that languette has not shipped; they pass until it does.
+It reads languette's main unpinned, so a rename there reddens this repo's CI
+until settings.json follows: list the new key as anticipated before it ships.
 Exit 0 ok, 1 stale keys, 2 could not read an input.
 """
 import argparse
 import json
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
 URL = "https://raw.githubusercontent.com/mark-brannan/languette/main/.claude-plugin/plugin.json"
 
 
-def load(src):
-    if src.startswith(("http://", "https://")):
-        with urllib.request.urlopen(src, timeout=20) as r:
-            return json.load(r)
-    return json.loads(Path(src).read_text())
+def load(src, attempts=3):
+    if not src.startswith(("http://", "https://")):
+        return json.loads(Path(src).read_text())
+    for i in range(attempts):
+        try:
+            with urllib.request.urlopen(src, timeout=20) as r:
+                return json.load(r)
+        except OSError:
+            if i == attempts - 1:
+                raise
+            time.sleep(2 ** i)
 
 
 def used_keys(settings):
@@ -48,7 +57,7 @@ def anticipated(path):
 def main(argv=None):
     root = Path(__file__).resolve().parent.parent
     ap = argparse.ArgumentParser()
-    ap.add_argument("--settings", default="settings.json")
+    ap.add_argument("--settings", default=str(root / "settings.json"))
     ap.add_argument("--plugin-json", default=URL)
     ap.add_argument("--anticipated", default=str(root / "lib/languette-anticipated-options.txt"))
     a = ap.parse_args(argv)
