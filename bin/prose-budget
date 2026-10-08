@@ -15,7 +15,7 @@
 #
 # Usage: prose-budget [--config PATH] [--tree | --staged | --base REF]
 #                     [--file PATH ...] [--warn-only] [--json]
-#                     [--require-config] [--version]
+#                     [--require-config]
 #
 # Exit 1 on any finding, 2 on a bad config or usage, 0 otherwise. A missing
 # config is a no-op (exit 0) unless --require-config. Findings go to stdout,
@@ -41,7 +41,6 @@ except ImportError:
     print("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
     sys.exit(2)
 
-VERSION = "1.2.0"
 CONFIG_NAMES = ("docs/budgets.json", ".prose-budgets.json")
 CUT = "Cut the prose. If a limit is wrong, changing {} is its own PR that says why."
 
@@ -930,7 +929,6 @@ def main(argv=None):
     ap.add_argument("--warn-only", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--require-config", action="store_true")
-    ap.add_argument("--version", action="version", version=f"prose-budget {VERSION}")
     try:
         args = ap.parse_args(argv)
     except SystemExit as e:

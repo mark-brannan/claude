@@ -174,9 +174,6 @@ class CliTest(RepoCase):
         self.config({"unique_ids": [{"file": "README.md", "pattern": "(unclosed"}]})
         self.assertEqual(self.cli("--tree")[0], 2)
 
-    def test_version(self):
-        self.assertEqual(self.cli("--version")[1].strip(), f"prose-budget {pb.VERSION}")
-
     def test_findings_end_with_the_cut_line_and_name_the_config(self):
         self.config({"lines": {"README.md": 1}}, path="docs/budgets.json")
         self.write("README.md", "a\nb\nc\n")
@@ -799,7 +796,7 @@ class MissingLibTest(unittest.TestCase):
             (Path(t) / "bin").mkdir()
             shutil.copy(ENGINE, Path(t) / "bin" / "prose-budget")
             env = dict(os.environ, HOME=t)
-            r = subprocess.run([sys.executable, str(Path(t) / "bin" / "prose-budget"), "--version"],
+            r = subprocess.run([sys.executable, str(Path(t) / "bin" / "prose-budget"), "--tree"],
                                capture_output=True, text=True, env=env)
             self.assertEqual(r.returncode, 2)
             self.assertIn("lib/gitrun.py not found", r.stderr)
