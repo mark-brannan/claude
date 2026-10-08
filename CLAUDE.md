@@ -228,8 +228,10 @@ Hooks handle the mechanics unprompted.
   queue it on `## Claude's`. Routing and format: `/card-write`.
 - **An issue is the exception, not the default**
   (a repo's own rule overrides). Only for work that's multi-session,
-  high-level and genuinely ambiguous — not merely large. Draft it,
-  show me, file only on a later turn's explicit yes. Headless sessions
+  high-level and genuinely ambiguous — not merely large. File it once
+  I've asked for an issue or agreed one fits, anywhere in the session;
+  no separate "file it" turn. Never one I had no sign was coming: name
+  it as a possible issue first. Headless sessions
   grind issues; they never file them. Sonnet over-files issues and
   ruling cards alike; correct for it.
 - **One home per fact.** GitHub owns work state. One board, global, three
@@ -260,7 +262,7 @@ Hooks handle the mechanics unprompted.
   call; otherwise it goes. Provenance is a line in the repo's decisions
   file, never a stamp in the prose.
 - **A public issue is a publish; drafting it is yours.** Check the draft
-  against the private line, show it to me once, file on my yes.
+  against the private line; file on my signal, as above.
 - **The private line** (in pencil): privacy is about
   things that read as business strategy and values I keep close to my
   chest, and certain tone of voice; not my boat's name, my MMSI or
