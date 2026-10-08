@@ -20,7 +20,8 @@ citing line misreads the quotes after it.
 
 --flips lists flip candidates instead: each sentence of a roll entry after
 STAMP (all entries without it) that holds a negation or a number and reads
-non-emphatic (no "!", no word in capitals), as `stamp: sentence`. It is the
+non-emphatic (no "!", and that word not in capitals, so an acronym such as
+ADR leaves it listed), as `stamp: sentence`. It is the
 lint facet's list for the next open; it always exits 0.
 
 Exits 1 and names each mismatch as `file:line: reason: "quote"`; 0 when all
@@ -163,9 +164,10 @@ def flips(roll, since=""):
             continue
         for sent in re.split(r"(?<=[.?!])\s+|\n+", text):
             sent = " ".join(sent.split())
-            if "!" in sent or re.search(r"\b[A-Z]{3,}\b", sent):
+            if "!" in sent:
                 continue
-            if any(guarded(w) for w in norm(sent).split()):
+            hits = [w for w in sent.split() if any(guarded(n) for n in norm(w).split())]
+            if hits and not any(w.isupper() for w in hits):
                 out.append((stamp, sent))
     return out
 
@@ -174,7 +176,10 @@ def main_flips(args):
     since = ""
     if "--since" in args:
         i = args.index("--since")
-        since, args = "".join(args[i + 1:i + 2]), args[:i] + args[i + 2:]
+        if i + 1 == len(args):
+            args = []
+        else:
+            since, args = args[i + 1], args[:i] + args[i + 2:]
     p = Path(args[0]) if len(args) == 1 else None
     p = p / "roll.md" if p and p.is_dir() else p
     if not p or not p.is_file() or since and not re.fullmatch(STAMP, since):

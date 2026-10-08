@@ -425,10 +425,7 @@ questions or the plan. Never the whole turn: a reply that is only the
 read-back is wrong. A ruling read off such a sentence lands in
 `decided.md` as pencil, whatever else would make it pen.
 
-<!-- pencil (2026-10-08): a trial, all of it, reviewed 2026-10-22; the
-     agent's narrow trigger (ledger-bound, one-token flip, unresolved by
-     context) is not ruled. See the curia-loop ledger, "Flip-words in
-     the roll". -->
+<!-- A trial; see the curia-loop ledger, "Flip-words in the roll". -->
 
 A sitting that uncovers a second hard question does not open a second
 curia for it. It becomes a line under `## Open questions` here, or a
