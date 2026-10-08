@@ -189,4 +189,4 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - languette-options-check reads languette's plugin.json on main unpinned, so a languette option rename turns every PR here red until settings.json follows; chosen over a pinned ref because catching the rename is the point. Undo: pin URL to a languette tag or SHA in bin/languette-options-check ([#91](https://github.com/mark-brannan/claude/pull/91))
 
 ### 20261008t205715z
-- /scoping keeps one lock per named target and does not check the paired curia or repo lock; a duplicate plan costs a proposal to rule on, not a duplicate issue, so the overlap is stated as accepted Undo: add a paired-target lock check to skills/scoping/SKILL.md section 2 (TBD)
+- /scoping keeps one lock per named target and does not check the paired curia or repo lock; a duplicate plan costs a proposal to rule on, not a duplicate issue, so the overlap is stated as accepted Undo: add a paired-target lock check to skills/scoping/SKILL.md section 2 ([#105](https://github.com/mark-brannan/claude/pull/105))
