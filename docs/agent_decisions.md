@@ -197,3 +197,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - stop-continuity.test.py runs its sections in threads, each on its own fixture, under one test method with a subTest per section, to stay under ten seconds Undo: split hooks/stop-continuity.test.py into sequential test methods ([#108](https://github.com/mark-brannan/claude/pull/108))
 - lib-state.test.sh keeps the state_lock trap and age-file cases and the ARCHIVABLE_HOME_FILE case: they test mechanics only the shell has Undo: move or drop the three cases in hooks/lib-state.test.sh ([#108](https://github.com/mark-brannan/claude/pull/108))
 - comments naming stop-continuity.sh were renamed in every code file, not only the ones the brief listed; lib-state.sh and the governing docs left as they were Undo: revert the comment lines ([#108](https://github.com/mark-brannan/claude/pull/108))
+
+### 20261008t213606z
+- curia-quotes --flips drops a sentence as emphatic only when its negation or number is in capitals, not for any capitalised word, so acronyms such as ADR stay listed Undo: revert the flips filter to skip any sentence with a 3+ letter capitalised word ([#107](https://github.com/mark-brannan/claude/pull/107))

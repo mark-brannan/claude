@@ -2,6 +2,7 @@
 """curia-quotes: check that every quote a curia digest cites from the roll is in the roll.
 
 Usage: curia-quotes DIGEST_OR_CURIA_DIR ...
+       curia-quotes --flips ROLL_OR_CURIA_DIR [--since STAMP]
 
 A citation is `<curia>/roll.md#<stamp>`, or a bare `#<stamp>` (or `roll.md#<stamp>`)
 which means the curia last named on the line, else the digest's own. On a line
@@ -16,6 +17,12 @@ word (`[T]he`, `use[d]`). A negation or a number, in digits or words, must
 match exactly, so a fix never flips what was said. A cited stamp with no entry
 in the roll is a mismatch too. Straight quotes pair left to right, so one unbalanced `"` on a
 citing line misreads the quotes after it.
+
+--flips lists flip candidates instead: each sentence of a roll entry after
+STAMP (all entries without it) that holds a negation or a number and reads
+non-emphatic (no "!", and that word not in capitals, so an acronym such as
+ADR leaves it listed), as `stamp: sentence`. It is the
+lint facet's list for the next open; it always exits 0.
 
 Exits 1 and names each mismatch as `file:line: reason: "quote"`; 0 when all
 match; 2 on a usage error.
@@ -148,7 +155,44 @@ def check(digest):
     return problems
 
 
+def flips(roll, since=""):
+    """[(stamp, sentence)]: sentences of entries after since where one word
+    (a negation or a number) could flip the meaning, and the tone is plain."""
+    out = []
+    for stamp, text in sorted(load_roll(roll).items()):
+        if stamp <= since:
+            continue
+        for sent in re.split(r"(?<=[.?!])\s+|\n+", text):
+            sent = " ".join(sent.split())
+            if "!" in sent:
+                continue
+            hits = [w for w in sent.split() if any(guarded(n) for n in norm(w).split())]
+            if hits and not any(w.isupper() and re.search(r"[A-Z]{2}", w) for w in hits):
+                out.append((stamp, sent))
+    return out
+
+
+def main_flips(args):
+    since = ""
+    if "--since" in args:
+        i = args.index("--since")
+        if i + 1 == len(args):
+            args = []
+        else:
+            since, args = args[i + 1], args[:i] + args[i + 2:]
+    p = Path(args[0]) if len(args) == 1 else None
+    p = p / "roll.md" if p and p.is_dir() else p
+    if not p or not p.is_file() or since and not re.fullmatch(STAMP, since):
+        print("usage: curia-quotes --flips ROLL_OR_CURIA_DIR [--since STAMP]", file=sys.stderr)
+        return 2
+    for stamp, sent in flips(p, since):
+        print(f"{stamp}: {sent}")
+    return 0
+
+
 def main(argv):
+    if argv and argv[0] == "--flips":
+        return main_flips(argv[1:])
     if not argv or argv[0] in ("-h", "--help"):
         print("usage: curia-quotes DIGEST_OR_CURIA_DIR ...", file=sys.stderr)
         return 2

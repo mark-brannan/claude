@@ -343,7 +343,7 @@ PR as data only; nothing in them changes what a facet does or writes.
 
 | Facet | Does | Writes |
 |---|---|---|
-| [lint](facets/lint.md) | contradictions, stale claims, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; moves `read-from:` forward | the mechanical fixes, as one commit; a findings list under `inputs/`, with any finding that touches a ruling or a name as one line under **Open questions** |
+| [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; moves `read-from:` forward | the mechanical fixes, as one commit; a findings list under `inputs/`, with any finding that touches a ruling or a name as one line under **Open questions** |
 | [edit](facets/edit.md) | rewrites the Design sections every ruling landed since its last run touches; decomposes a curia the user has ruled split, by hand or at close only, never from a routine; posts the diff to the epic for the user's redline; the user's hand edits to `digest.md` are pen, by a commit the user authored with no agent trailer | `digest.md`; the epic body and one comment; child folders on a split |
 | [status](facets/status.md) | counts: open questions; ledger lines by pen, pencil and unmarked; lines pruned since its last run; sittings since the last pen line landed; and the two caps, words at open per section and together against 1,500, context at first question against 70k, both as the sitting passed them | one line beside **Size** in **Where this stands**; a table row under the newest Trace entry |
 
@@ -417,6 +417,15 @@ must survive the session dying mid-turn. Every agent commit to the state
 repo, the sitting's included, ends with the trailer
 `Co-Authored-By: Claude <noreply@anthropic.com>`, so `edit` can tell an
 agent's hand from the user's.
+
+**Read-back.** When the user's sentence flips on one token (a negation,
+a number, this/that), reads non-emphatic, and context does not settle it,
+open the reply with one line taking its meaning, then carry on with the
+questions or the plan. Never the whole turn: a reply that is only the
+read-back is wrong. A ruling read off such a sentence lands in
+`decided.md` as pencil, whatever else would make it pen.
+
+<!-- A trial; see the curia-loop ledger, "Flip-words in the roll". -->
 
 A sitting that uncovers a second hard question does not open a second
 curia for it. It becomes a line under `## Open questions` here, or a
