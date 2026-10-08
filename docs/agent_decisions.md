@@ -167,3 +167,17 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261007t210740z
 - work-item: a claim is valid from any status, open included (the user's ruling) Undo: one row edit in docs/work-item-lifecycle.md and the open -> claimed edge removed from ALLOWED ([#82](https://github.com/mark-brannan/claude/pull/82))
 - work-item: the one-hour claim lapse is measured on the holder's newest line on the item, not its metrics record, until the hook keeps that line fresh (card 1791375174218fc901) Undo: fold reads the holder's live metrics record ([#82](https://github.com/mark-brannan/claude/pull/82))
+
+### 20261008t190245z
+- critical-review's summary mirrors the PR body's Pencil list under its own heading, kind first, kept by silence Undo: delete the Pencil heading from the skill; the PR body's list stays the only home
+
+### 20261008t190246z
+- the churn-ok label is a click line under Decide, with no default, undo or risk Undo: drop the click line; the red churn check says it
+- a Decide line is posted as a PR thread first; the thread is its home Undo: let a Decide line stand on the summary alone
+- a Look at item never carries a question Undo: revert the sentence
+
+### 20261008t191213z
+- Ruled by Solace 2026-10-08: churn-ok is never a Decide line and never discussed; the churn guard is the agent's toil, a red check means a smaller change. Bot threads walk the same exits; one at exit 4 stays open as the Decide line; one answered with a default is a Pencil line with the thread link Undo: reinstate the click line ([#100](https://github.com/mark-brannan/claude/pull/100))
+
+### 20261008t192058z
+- critical-review's summary opens with one line: what the PR does and whether it is ready, the sentence that stands in for reading the diff Undo: delete the opening-line sentence from the skill ([#100](https://github.com/mark-brannan/claude/pull/100))
