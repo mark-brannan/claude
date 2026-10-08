@@ -14,19 +14,33 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 FEATURES = sorted((ROOT / "features").glob("*.feature"))
-ROW = re.compile(r"^\| (\d+\.\d+) \|(?: [^|]*\|){3} ([^|]*)\|\s*$")
+ID = re.compile(r"\d+\.\d+")
 STRUCK = re.compile(r"^\| ~~")
 TITLE = re.compile(r"^\s*Scenario(?: Outline)?: row (\d+\.\d+)\b")
 
 
+def cells(line):
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
 def table(hook):
-    rows = {}
+    """The acceptance table as {row id: evidence}, read by its header row so
+    a column added or removed is loud, not a silently shorter table."""
+    header, rows = None, {}
     for line in (ROOT / "hooks" / f"{hook}-requirements.md").read_text().splitlines():
-        if STRUCK.match(line):
+        if not line.startswith("|") or STRUCK.match(line):
             continue
-        m = ROW.match(line)
-        if m:
-            rows[m.group(1)] = m.group(2).strip()
+        row = cells(line)
+        if header is None:
+            if row[0] == "#":
+                header = row
+            continue
+        if all(re.fullmatch(r"-*", c) for c in row):
+            continue
+        assert len(row) == len(header), f"{len(row)} cells under a {len(header)}-column header: {line}"
+        if ID.fullmatch(row[0]):
+            rows[row[0]] = row[header.index("Evidence")]
+    assert header and "Evidence" in header, f"no acceptance table with an Evidence column for {hook}"
     return rows
 
 
