@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# SOFT SHOULD: id generation belongs in lib/ids.py, the one home for every
-# entity's id (card 17910884757abba648). This script still makes a roll-entry stamp itself;
-# move it there when convenient, no deadline.
 """UserPromptSubmit, PostToolUse(AskUserQuestion): append the user's words, verbatim, to the roll of the
 curia this session is sitting in.
 
@@ -57,9 +54,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
 import lib_state  # noqa: E402
 try:
+    import ids  # noqa: E402
     import lock  # noqa: E402
-except ImportError:  # a lib/ without lock.py: main() writes nothing and exits 0
-    lock = None
+except ImportError:  # a lib/ without lock.py or ids.py: main() writes nothing and exits 0
+    ids = lock = None
 
 
 AGENT_TEXT = ("<task-notification>", "<agent-message", "Another Claude session sent a message:")
@@ -86,7 +84,7 @@ def strip_harness(text):
 def entry(prompt, now):
     longest = max((len(r) for r in re.findall(r"`+", prompt)), default=0)
     fence = "`" * max(3, longest + 1)
-    stamp = now.strftime("%Y%m%dt%H%M%Sz")
+    stamp = ids.get_roll_stamp(now)
     return f"\n### {stamp}\n{fence}\n{prompt}\n{fence}\n"
 
 
