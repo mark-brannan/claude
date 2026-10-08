@@ -1697,6 +1697,7 @@ while [ "$i" -lt "$count" ]; do
   last_text_file="$state_root/${session_id}.lasttext"
   status_text_file="$state_root/${session_id}.statustext"
   pr_urls_file="$state_root/${session_id}.prurls"
+  bg_file="$state_root/${session_id}.bgwork"
   sid_file="$state_root/${session_id}.sid"
   printf '0 0 0 0 - 0 0 0 0\n' > "$live_file"
   : > "$result_file"
@@ -1704,6 +1705,7 @@ while [ "$i" -lt "$count" ]; do
   : > "$last_text_file"
   : > "$status_text_file"
   : > "$pr_urls_file"
+  : > "$bg_file"
   : > "$sid_file"
 
   hb_pid=""
@@ -1750,6 +1752,7 @@ while [ "$i" -lt "$count" ]; do
   in_flight=1
   ( cd "$wt_path" || exit 1
     printf '%s' "$prompt" | SPEND_GATE_USD="$item_cap" SPEND_GATE_HANDOFF="$handoff_file" \
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 \
       claude -p --output-format stream-json --verbose \
          --max-budget-usd "$item_hard" --model "$model" --effort "$effort" \
          --permission-mode "$permission_mode" &
@@ -1790,6 +1793,11 @@ while [ "$i" -lt "$count" ]; do
           # the pickup item at ..." -- which cost grind the status of two
           # blocked items on 2026-10-03 and paid for them twice.
           if [ -n "$(last_status "$ltext")" ]; then printf '%s\n' "$ltext" > "$status_text_file"; fi
+          # A tool call that asked for the background: claude -p exits when
+          # the worker's turn ends, taking any such work with it. The env var
+          # above should keep the call in the foreground, so a sighting is a
+          # hint for the unverified line below, not proof work was stranded.
+          printf '%s' "$line" | jq -e '[.message.content[]? | select(.type == "tool_use" and (.input.run_in_background == true or .input.run_in_background == "true"))] | length > 0' >/dev/null 2>&1 && echo 1 >> "$bg_file"
           usage=$(printf '%s' "$line" | jq -c '.message.usage // empty' 2>/dev/null)
           [ -n "$usage" ] && [ "$usage" != "null" ] || continue
           # claude -p emits one assistant event per content block, each
@@ -1828,9 +1836,10 @@ while [ "$i" -lt "$count" ]; do
   last_text=$(cat "$last_text_file" 2>/dev/null || echo "")
   status_text=$(cat "$status_text_file" 2>/dev/null || echo "")
   pr_urls=$(sort -u "$pr_urls_file" 2>/dev/null | head -n 20 || true)
+  bg_work=0; [ -s "$bg_file" ] && bg_work=1
   worker_sid=$(cat "$sid_file" 2>/dev/null || echo "")
   live_now=$(cat "$live_file" 2>/dev/null || echo "0 0 0 0")
-  rm -f "$live_file" "$result_file" "$rc_file" "$last_text_file" "$status_text_file" "$pr_urls_file" "$sid_file"
+  rm -f "$live_file" "$result_file" "$rc_file" "$last_text_file" "$status_text_file" "$pr_urls_file" "$bg_file" "$sid_file"
 
   # `kill` here is bare under `set -e`: if the heartbeat already exited on
   # its own -- it does, whenever its `wait` was interrupted -- the failed
@@ -1937,6 +1946,11 @@ while [ "$i" -lt "$count" ]; do
       fi
       ;;
   esac
+  # Name the likely stranded-work cause: the worker asked for the background
+  # and its claim did not check out.
+  if [ "$status" = unverified ] && [ "$bg_work" -eq 1 ]; then
+    unverified_why="worker used run_in_background (work may have been stranded when its session ended) -- $unverified_why"
+  fi
   [ "$errored" -eq 1 ] && [ "$status" = unverified ] && status=failed
   # The worker's PR can exist without the .claude/ change it needed.
   if [ "$status" = "done" ] && [ "$stage_rc" -eq 1 ]; then
