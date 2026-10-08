@@ -10,6 +10,12 @@ Record vs. reality. The board is one item file per card under
 `show <id>` for one) and written only with `work-item`. Every board card,
 decision memo and "Pending:" tail is a claim about GitHub or repo state; this
 skill checks the claim, not the decision behind it. Sonnet-shaped: many cheap `gh` calls, no open questions.
+
+**The read is capped.** `list --all` returns every live item, hundreds of
+them. A run checks at most 50 cards: only those whose line carries a link
+`gh` can check, skipping any whose brief already starts `Done/Ruled`, oldest
+first. The output says how many it left, so the next run picks them up.
+
 `/sweep` prunes and reranks `## Needs ruling` / `## Human's`; reconcile
 corrects stale *facts* anywhere in the board or the memos, including
 `## Claude's`. Run one after the other, not instead of.
@@ -66,7 +72,7 @@ that's a `/agora` card.
 
 ## Output
 
-Under 15 lines: what was checked (counts, not a list), what was corrected
+Under 15 lines: what was checked (counts, not a list) and how many the cap left, what was corrected
 and its proof link, what's left as a `/agora` candidate. A card a live session
 holds (the holder column of `work-item list --all`) is reported, not edited:
 `brief` does not check the holder, so you do. Board corrections are item files the Stop

@@ -181,3 +181,5 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261008t192058z
 - critical-review's summary opens with one line: what the PR does and whether it is ready, the sentence that stands in for reading the diff Undo: delete the opening-line sentence from the skill ([#100](https://github.com/mark-brannan/claude/pull/100))
+### 20261008t031812z
+- reconcile checks at most 50 linked cards per run, oldest first, skipping briefs already prefixed Done/Ruled Undo: change or drop the cap paragraph in skills/reconcile/SKILL.md ([#536](https://github.com/mark-brannan/dotfiles/pull/536))
