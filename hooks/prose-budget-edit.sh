@@ -2,7 +2,7 @@
 # PostToolUse Edit|Write|MultiEdit: after a markdown or JSON file is written
 # inside a repo that has a prose-budget config, run the tree rules on that
 # one file and hand any findings back as additionalContext. Advisory only:
-# it never blocks, and the commit hook and CI are the gates.
+# it never blocks, and CI is the gate.
 #
 # Silent on the quiet path (no jq, no engine, no config, other file types,
 # clean file under 2/3 of its cap): every line printed here is charged to the session.

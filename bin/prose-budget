@@ -645,7 +645,9 @@ class Checker:
                              "or list it under lines.pending")
                 continue
             n = line_count(text)
-            self.info.append(f"lines: {file} {n}/{max_}")
+            if self.only is not None:
+                # The edit hook reads this count; a full run would print one per budgeted file.
+                self.info.append(f"lines: {file} {n}/{max_}")
             if n <= max_:
                 continue
             # Under --base the cap is a ceiling for the PR that grows the file,

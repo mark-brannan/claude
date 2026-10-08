@@ -254,7 +254,8 @@ class LinesTest(RepoCase):
     def test_count_against_the_cap_is_reported(self):
         self.config({"lines": {"README.md": 400}})
         self.write("README.md", "a\n" * 398)
-        self.assertIn("lines: README.md 398/400", self.cli("--tree")[2])
+        self.assertIn("lines: README.md 398/400", self.cli("--tree", "--file", "README.md")[2])
+        self.assertNotIn("398/400", self.cli("--tree")[2], "a full run prints no per-file count")
 
 
 class LinesBaseTest(RepoCase):
