@@ -166,8 +166,8 @@ in nobody's queue but this session's.
   do, independent of check status. Two exits: a bot thread only the user
   can answer stays open and is listed under Decide; one answered with a
   default is resolved and listed under Pencil with its thread link (the
-  critical-review summary's headings). Scar: 2026-08-27, ampacity#3 — confirmed a
-  flagged link was live, never replied or resolved the thread, merge failed
+  critical-review summary's headings). Scar: 2026-08-27, ampacity#3 — confirmed
+  a flagged link was live, never replied or resolved the thread, merge failed
   on branch policy.
 - **Resolve threads one at a time, by id, after reading and responding to each one.** Never
   loop over "all unresolved threads" — a review bot can post between your
