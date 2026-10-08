@@ -13,8 +13,10 @@ skill checks the claim, not the decision behind it. Sonnet-shaped: many cheap `g
 
 **The read is capped.** `list --all` returns every live item, hundreds of
 them. A run checks at most 50 cards: only those whose line carries a link
-`gh` can check, skipping any whose brief already starts `Done/Ruled`, oldest
-first. The output says how many it left, so the next run picks them up.
+`gh` can check, skipping any whose brief already starts `Done/Ruled`, drawn
+at random (`shuf -n 50`). A card checked and still correct carries no mark,
+so a fixed order would re-check the same 50 every run; a random draw lets
+repeated runs reach the whole board. The output says how many it left.
 
 `/sweep` prunes and reranks `## Needs ruling` / `## Human's`; reconcile
 corrects stale *facts* anywhere in the board or the memos, including
