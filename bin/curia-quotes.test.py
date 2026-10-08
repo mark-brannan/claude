@@ -89,6 +89,19 @@ class QuoteCheckTest(unittest.TestCase):
     def test_lines_without_a_citation_and_one_word_quotes_ignored(self):
         self.ok('He said "this is nowhere in any roll".\n(a/roll.md#20261003t030503z) the "claude" word\n')
 
+    def test_segments_match_whole_words(self):
+        self.bad('(a/roll.md#20261003t030107z) "a prod"\n', "a prod")
+        self.bad('(a/roll.md#20261003t030503z) "I want [...] the"\n', "I want")
+
+    def test_bracket_may_cut_into_a_word(self):
+        self.ok('(a/roll.md#20261003t030503z) "[A]s a reference implementation, I want[ed] all our claude stuff"\n')
+
+    def test_typo_fix_right_after_a_cut(self):
+        self.ok('(a/roll.md#20261003t030107z) "Initially [...] in a latr stage"\n')
+
+    def test_stamp_anchor_on_another_file_is_no_citation(self):
+        self.ok('(agent_decisions.md#20261009t000000z) "whatever it said"\n')
+
     def test_bad_path_exits_2(self):
         p = subprocess.run([sys.executable, str(TOOL), "/nonexistent/digest.md"], capture_output=True, text=True)
         self.assertEqual(p.returncode, 2)

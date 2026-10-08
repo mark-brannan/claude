@@ -9,8 +9,10 @@ with citations, each quoted span ("..." or curly quotes) of two words or more
 must match the text of one of the entries that line cites. Allowed, as the
 curia skill's digests do: `[...]` or an ellipsis for a cut, `[bracketed]` edits
 (each a wildcard), case and punctuation and whitespace differences, and small
-typo fixes (a segment need only be 90% similar). A cited stamp with no entry in
-the roll is a mismatch too.
+typo fixes (a segment need only be 90% similar). Segments match on word
+boundaries, except where a bracket cuts into a word (`[T]he`, `use[d]`). A cited
+stamp with no entry in the roll is a mismatch too. Straight quotes pair left to
+right, so one unbalanced `"` on a citing line misreads the quotes after it.
 
 Exits 1 and names each mismatch as `file:line: reason: "quote"`; 0 when all
 match; 2 on a usage error.
@@ -26,7 +28,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 
 STAMP = r"\d{8}t\d{6}z"
-REF = re.compile(rf"(?:([\w.-]+)/)?(?:roll\.md)?#({STAMP})")
+REF = re.compile(rf"(?<![\w.-])(?:([\w.-]+)/)?roll\.md#({STAMP})|(?<![\w./-])#({STAMP})")
 ENTRY = re.compile(rf"^### ({STAMP})\n(`{{3,}})\n(.*?)\n\2$", re.S | re.M)
 QUOTE = re.compile(r'"([^"\n]+)"|“([^”\n]+)”')
 CUT = re.compile(r"\[[^\]]*\]|\.\.\.|…")
@@ -45,32 +47,43 @@ def norm(s):
     return " ".join(re.sub(r"[\W_]+", " ", s.casefold()).split())
 
 
-def segment_end(seg, text):
-    """Offset just past the first match of seg in text (exact, else the best
-    fuzzy window at THRESHOLD), or -1."""
-    i = text.find(seg)
+def segment_end(seg, text, at, lopen, ropen):
+    """Offset in text just past seg's first match at or after at: exact, on word
+    boundaries save an open side, else the best fuzzy word window at THRESHOLD;
+    -1 if none. text is normalized and padded with a space at each end."""
+    needle = ("" if lopen else " ") + seg + ("" if ropen else " ")
+    i = text.find(needle, at)
     if i >= 0:
-        return i + len(seg)
-    words, n = text.split(" "), len(seg.split(" "))
-    best, best_end, pos = 0.0, -1, 0
-    for k in range(len(words)):
+        return i + len(needle) - (not ropen)
+    spans = [m.span() for m in re.finditer(r"\S+", text[at:])]
+    n = len(seg.split(" "))
+    best, best_end = 0.0, -1
+    for k in range(len(spans)):
         for w in {max(1, n - 1), n, n + 1}:
-            cand = " ".join(words[k:k + w])
+            if k + w > len(spans):
+                continue
+            cand = text[at + spans[k][0]:at + spans[k + w - 1][1]]
             r = difflib.SequenceMatcher(None, seg, cand, autojunk=False).ratio()
             if r > best:
-                best, best_end = r, pos + len(cand)
-        pos += len(words[k]) + 1
+                best, best_end = r, at + spans[k + w - 1][1]
     return best_end if best >= THRESHOLD else -1
 
 
 def quote_matches(quote, text):
     """Every segment of the quote, in order, somewhere in the entry."""
-    text, at = norm(text), 0
-    for seg in filter(None, (norm(s) for s in CUT.split(quote))):
-        end = segment_end(seg, text[at:])
+    text, at = f" {norm(text)} ", 0
+    bounds = [0, *(x for m in CUT.finditer(quote) for x in m.span()), len(quote)]
+    for j in range(0, len(bounds), 2):
+        raw = quote[bounds[j]:bounds[j + 1]]
+        seg = norm(raw)
+        if not seg:
+            continue
+        lopen = j > 0 and quote[bounds[j] - 1] == "]" and raw[:1].isalnum()
+        ropen = bounds[j + 1] < len(quote) and quote[bounds[j + 1]] == "[" and raw[-1:].isalnum()
+        end = segment_end(seg, text, at, lopen, ropen)
         if end < 0:
             return False
-        at += end
+        at = end
     return True
 
 
@@ -88,7 +101,7 @@ def check(digest):
         cited, curia = [], own
         for m in REF.finditer(line):
             curia = m.group(1) or curia
-            cited.append((curia, m.group(2)))
+            cited.append((curia, m.group(2) or m.group(3)))
         texts = []
         for c, stamp in cited:
             roll = roll_of(c)
