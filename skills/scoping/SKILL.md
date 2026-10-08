@@ -38,6 +38,12 @@ target, and why, in the first line.
 | parent card `<id>` | its brief and log; its open child items | `state/global/scoping/card-<id>` |
 | repo | its open issues; its decisions files, ADRs and README for what they decide | `state/global/scoping/repo-<owner>-<repo>` |
 
+A curia and the repo it governs are one umbrella. A curia whose digest
+header carries `repo: <owner/repo>` also reads that repo's open issues and
+the cards whose `repo=` names it; a repo target also reads every open
+curia whose `repo:` names the repo. An item both sides carry is one item,
+deduped by its issue link. The lock folder stays the named target's.
+
 A repo's README states aims, but both loops change it. Its lines are pencil
 unless a decisions file holds them. A line not yet true in the code is in
 scope when the commit that last set it changed no code (loop two). When
