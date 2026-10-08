@@ -11,6 +11,8 @@
 #   card-id new [<session-id>]    print a fresh id (session from
 #                                 $CLAUDE_CODE_SESSION_ID when not given)
 #   card-id show <id>             the item: `<section>\t<group>\t<card>`
+#   card-id roll-stamp [<epoch>]  print the curia roll's stamp for now (or for
+#                                 <epoch> seconds), e.g. 20261002t054107z
 #
 # Fire and forget: no lock, no ledger, no check against
 # the store. Two sessions never share a hex, and one session minting twice in
@@ -41,5 +43,12 @@ case "${1:-}" in
   show)
     is_card_id "${2:-}" || die "not a card id: ${2:-<id>}"
     board_card "$2" || { printf 'card-id: no item %s in %s\n' "$2" "$(items_dir)" >&2; exit 1; } ;;
-  *) sed -n '9,11p' "$0" | sed 's/^#   //' >&2; exit 2 ;;
+  roll-stamp)
+    epoch=${2:-$(date -u +%s)}
+    case $epoch in ''|*[!0-9]*) die "not epoch seconds: $epoch" ;; esac
+    ids_dir=$self_dir/../lib
+    [ -f "$ids_dir/ids.py" ] || ids_dir=$HOME/.claude/lib
+    python3 -c 'import datetime, sys; sys.path.insert(0, sys.argv[1]); import ids
+print(ids.get_roll_stamp(datetime.datetime.fromtimestamp(int(sys.argv[2]), datetime.timezone.utc)))' "$ids_dir" "$epoch" ;;
+  *) sed -n '11,15p' "$0" | sed 's/^#   //' >&2; exit 2 ;;
 esac
