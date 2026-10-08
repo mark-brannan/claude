@@ -327,6 +327,7 @@ cat > "$S/bin/claude" <<GH
 [ "\$1" = auth ] && { echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; }
 cat > "$S/prompt.txt"
 echo "\${SPEND_GATE_USD:-} \${SPEND_GATE_HANDOFF:-}" >> "$S/claude-env.log"
+echo "bg-disabled=\${CLAUDE_CODE_DISABLE_BACKGROUND_TASKS:-}" >> "$S/claude-bg.log"
 n=\$(cat "$S/claude-next" 2>/dev/null || echo 1)
 echo "\$n \$*" >> "$CLAUDE_LOG"
 f=\$(ls -t "$S/state/grind"/*.json 2>/dev/null | head -1); [ -z "\$f" ] || cp "\$f" "$S/session-mid.json"
@@ -562,6 +563,20 @@ assert 'and it really is still on disk' test -d "$TMPDIR/grind-worktrees/alpha/5
 sess=$(latest_session)
 eq 'recorded as unverified' unverified "$(jq -r '.items[0].status' "$sess")"
 eq 'its cost is still counted' 0.50 "$(jq -r '.items[0].cost' "$sess")"
+
+# The worker handed its work to a background tool call and ended its turn
+# (2026-10-04, public-issue-guard, $6.13): the item is unverified, and says so.
+cat > "$S/pr-list.json" <<'JSON'
+[]
+JSON
+rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$S/claude-bg.log"
+{ jq -nc '{type:"assistant", message:{content:[{type:"tool_use",name:"Agent",input:{description:"port",prompt:"x",run_in_background:true}}],usage:{input_tokens:100,output_tokens:50,cache_read_input_tokens:0,cache_creation_input_tokens:0}}}'
+  jq -nc '{type:"result", total_cost_usd:0.5, usage:{input_tokens:100,output_tokens:50,cache_read_input_tokens:0,cache_creation_input_tokens:0}, result:"It is running now.\nGRIND_STATUS: done"}'; } > "$S/claude-replies/1.json"
+: > "$CLAUDE_LOG"
+run --session-budget 100 --pause-every 1
+has 'a backgrounded worker with no PR is named, not just unverified' \
+  '^UNVERIFIED: o/alpha#5 -- First item -- worker claimed success but worker ended while backgrounded work was pending'
+assert "every worker runs with background tasks disabled" grep -q "bg-disabled=1" "$S/claude-bg.log"
 
 # a PR left behind by an earlier attempt does not verify a fresh claim: the
 # branch name is deterministic, so a stale PR is always sitting there on a
