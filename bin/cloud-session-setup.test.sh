@@ -14,7 +14,7 @@ pass=0; fail=0
 S=$(mktemp -d); trap 'rm -rf "$S"' EXIT
 export HOME="$S/home"; mkdir -p "$HOME"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-unset CLAUDE_STATE_REPO CLAUDE_CONFIG_DIR CLAUDE_SEED YADM_DIR CLAUDE_CODE_REMOTE XDG_DATA_HOME
+unset CLAUDE_STATE_REPO CLAUDE_SEED_RELEASES_DIR CLAUDE_SEED YADM_DIR CLAUDE_CODE_REMOTE XDG_DATA_HOME
 mkdir -p "$S/bin"; printf '#!/bin/sh\nexit 0\n' >"$S/bin/claude"; chmod +x "$S/bin/claude"
 export PATH="$S/bin:$PATH"
 
