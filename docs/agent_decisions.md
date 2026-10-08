@@ -157,12 +157,13 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261007t120710z
 - Standing-orders already-ruled line names no file, so it survives retirement (the user's altitude ruling on #70); keeps 'any exit' so omit is checked too Undo: restore 'the rules files, the repo's decisions file' in CLAUDE.md's already-ruled line ([#70](https://github.com/mark-brannan/claude/pull/70))
 
-### 20261007t210740z
-- work-item: a claim is valid from ready, blocked, done or closed, the four sources the ruled transitions and ALLOWED name; the ruling's claim sentence names two, derived from the same list Undo: one row edit in docs/work-item-lifecycle.md and two ALLOWED edges removed ([#82](https://github.com/mark-brannan/claude/pull/82))
-- work-item: the one-hour claim lapse is measured on the holder's newest line on the item, not its metrics record, until the hook keeps that line fresh (card 1791375174218fc901) Undo: fold reads the holder's live metrics record ([#82](https://github.com/mark-brannan/claude/pull/82))
 ### 20261007t202646z
 - references.md: mechanisms get their own section, not entries under The order Undo: move the four entries under The order ([#84](https://github.com/mark-brannan/claude/pull/84))
 
 ### 20261007t222710z
 - A cloud-session release is named <claude sha>-<checksum> and .sync-status.json drops guards_sha, now that dotfiles no longer feeds the release Undo: restore GUARDS_REV in REV and the guards_sha field in cloud-session-setup.sh ([#83](https://github.com/mark-brannan/claude/pull/83))
 - With the five guard copies gone, a machine without the languette plugin runs none of those gates; the copies' fail-closed fallback is not replaced Undo: add a settings.json PreToolUse tripwire that denies when the languette plugin is not installed ([#83](https://github.com/mark-brannan/claude/pull/83))
+
+### 20261007t210740z
+- work-item: a claim is valid from any status, open included (the user's ruling) Undo: one row edit in docs/work-item-lifecycle.md and the open -> claimed edge removed from ALLOWED ([#82](https://github.com/mark-brannan/claude/pull/82))
+- work-item: the one-hour claim lapse is measured on the holder's newest line on the item, not its metrics record, until the hook keeps that line fresh (card 1791375174218fc901) Undo: fold reads the holder's live metrics record ([#82](https://github.com/mark-brannan/claude/pull/82))
