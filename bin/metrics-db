@@ -21,20 +21,26 @@
 #                5000/hour limit). Without it the table is left as it was.
 #   --no-typing  skip the transcript scan (the one slow source on first run).
 #   --rescan-typing  rescan every transcript (after changing what counts as typed).
-# Exit 0 on success, 2 on usage, 3 when the state repo cannot be found.
+# Exit 0 on success, 2 on usage, 3 when the state repo cannot be found, 4 when
+# the database path is inside a git checkout and not gitignored (it is private).
 # Python 3 stdlib only.
 import argparse, glob, json, os, re, sqlite3, subprocess, sys, time
 
 def state_dir():
-    for d in [os.environ.get("CLAUDE_STATE_REPO", ""),
-              "/home/user/claude_prompts_scratch", "/workspace/claude_prompts_scratch",
-              os.path.expanduser("~/claude_prompts_scratch"),
-              os.path.expanduser("~/src/claude_prompts_scratch"),
-              os.path.expanduser("~/Projects/claude_prompts_scratch"),
-              os.path.expanduser("~/code/claude_prompts_scratch")]:
-        if d and os.path.isdir(os.path.join(d, ".git")):
-            return os.path.join(d, "state", "global")
-    return None
+    """<state repo>/state/global, found by lib/state.py's state_repo (the one
+    search path: CLAUDE_STATE_REPO, cloud checkouts, then the usual clones);
+    None when it is not here. lib/ sits beside this checkout or in ~/.claude."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.path.join(here, "..", "lib"), os.path.expanduser("~/.claude/lib")):
+        if os.path.isfile(os.path.join(d, "state.py")):
+            sys.path.insert(0, d)
+            break
+    else:
+        return None
+    sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
+    import state
+    repo = state.state_repo()
+    return os.path.join(repo, "state", "global") if repo else None
 
 SCHEMA = """
 create table if not exists sessions(
@@ -59,7 +65,7 @@ create table if not exists crossings(ts text, session_id text, kind text, at int
 create table if not exists commits(ts text, session_id text, repo text, branch text, commit_sha text);
 create table if not exists item_events(item_id text, ts text, session8 text, status text, owner text,
   repo text, parent text, model text, effort text, home text, title text);
-create table if not exists typing(session_id text primary key, path text, mtime real, size int,
+create table if not exists typing(path text primary key, session_id text, mtime real, size int,
   cwd text, first_ts text, last_ts text, prompts int, chars int, words int, pasted_chars int);
 create table if not exists gh_repos(repo text primary key, topics text, archived int, private int);
 create table if not exists gh_items(repo text, number int, kind text, created_at text, closed_at text,
@@ -67,6 +73,18 @@ create table if not exists gh_items(repo text, number int, kind text, created_at
   primary key(repo, number, kind));
 create table if not exists meta(key text primary key, value text);
 """
+
+def ignored_by_git(path):
+    """False when path sits in a git working tree and git does not ignore it.
+    The database holds private issue and PR titles and blocked-command text,
+    and the Stop hook runs `git add state/`: an unignored file there is
+    committed and pushed. Outside any checkout there is nothing to leak."""
+    d = os.path.dirname(os.path.abspath(path))
+    probe = subprocess.run(["git", "-C", d, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
+    if probe.returncode != 0 or probe.stdout.strip() != "true":
+        return True
+    return subprocess.run(["git", "-C", d, "check-ignore", "-q", os.path.abspath(path)],
+                          capture_output=True).returncode == 0
 
 def load_json(path):
     try:
@@ -191,6 +209,8 @@ PASTED = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
 def load_typing(cx, projects):
     known = {r[0]: (r[1], r[2]) for r in cx.execute("select path, mtime, size from typing")}
     paths = glob.glob(os.path.join(projects, "*", "*.jsonl"))
+    # A deleted transcript takes its row with it.
+    cx.executemany("delete from typing where path = ?", [(p,) for p in known if p not in set(paths)])
     scanned = 0
     for p in paths:
         try:
@@ -234,7 +254,7 @@ def load_typing(cx, projects):
         scanned += 1
         sid = sid or os.path.basename(p)[:-6]
         cx.execute("insert or replace into typing values (?,?,?,?,?,?,?,?,?,?,?)",
-                   (sid, p, st.st_mtime, st.st_size, cwd, first, last, prompts, chars, words, pasted))
+                   (p, sid, st.st_mtime, st.st_size, cwd, first, last, prompts, chars, words, pasted))
     return scanned, len(paths)
 
 GQL = """query($owner:String!,$name:String!,$ia:String,$pa:String,$doI:Boolean!,$doP:Boolean!){
@@ -307,7 +327,16 @@ def main():
         return 3
     db = a.db or os.path.join(sd, "metrics", "dashboard", "metrics.db")
     os.makedirs(os.path.dirname(db), exist_ok=True)
+    if not ignored_by_git(db):
+        print(f"metrics-db: {db} is inside a git checkout and not gitignored; the Stop hook would commit it "
+              "(private issue titles, blocked-command text). Add its directory to that repo's .gitignore "
+              "or .git/info/exclude (and untrack it with `git rm --cached` if already tracked), or pass --db elsewhere.", file=sys.stderr)
+        return 4
     cx = sqlite3.connect(db)
+    # typing was once keyed by session id; it is only a cache, so rebuild it
+    # rather than migrate it.
+    if {r[1] for r in cx.execute("pragma table_info(typing)") if r[5]} == {"session_id"}:
+        cx.execute("drop table typing")
     cx.executescript(SCHEMA)
     t0 = time.time()
     report = {"sessions": load_sessions(cx, sd), **load_streams(cx, sd), "item_events": load_items(cx, sd)}

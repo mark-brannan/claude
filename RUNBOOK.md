@@ -379,7 +379,9 @@ tail -3 ~/.local/state/prune-worktrees/timer.log
 One page of charts from the state repo's metrics, the GitHub issue and PR
 timestamps and the local transcripts. `metrics-db` builds one SQLite file;
 `metrics-dashboard` renders it. Both write under the state repo's
-`state/global/metrics/dashboard/`, which is gitignored: derived, per machine.
+`state/global/metrics/dashboard/`, which must be gitignored in that repo (the
+file holds private issue titles and blocked-command text, and the Stop hook
+commits `state/`); `metrics-db` refuses to write otherwise and exits 4.
 
 ```bash
 metrics-db --quiet && metrics-dashboard    # warm: seconds; prints the page path

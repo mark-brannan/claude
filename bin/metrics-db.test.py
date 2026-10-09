@@ -305,6 +305,70 @@ class TypingTest(FixtureTest):
         self.assertEqual(self.fx.q("select count(*) from typing"), [(0,)])
 
 
+class TypingCacheTest(FixtureTest):
+    """The cache is keyed by transcript path: two files can carry one session id."""
+
+    def test_two_transcripts_of_one_session_are_two_rows_and_both_stay_cached(self):
+        t = self.fx.projects / "-fixture-cwd"
+        (t / "resumed.jsonl").write_text(transcript_line("a resumed prompt", "2026-10-03T10:00:00Z") + "\n")
+        self.assertIn("3 of 3", self.build().stdout)
+        self.assertEqual(self.fx.q("select count(*), count(distinct session_id) from typing"), [(3, 2)])
+        self.assertEqual(self.fx.q("select sum(prompts) from typing where session_id='sess-typed-1'"), [(5,)])
+        self.assertIn("0 of 3", self.build().stdout)
+
+    def test_a_deleted_transcript_takes_its_row_with_it(self):
+        self.build("--quiet")
+        (self.fx.projects / "-fixture-cwd" / "sess-headless-2.jsonl").unlink()
+        self.build("--quiet")
+        self.assertEqual(self.fx.q("select session_id from typing"), [("sess-typed-1",)])
+
+    def test_a_cache_keyed_by_session_id_is_rebuilt(self):
+        self.fx.db.parent.mkdir(parents=True)
+        cx = sqlite3.connect(self.fx.db)
+        cx.execute("create table typing(session_id text primary key, path text, mtime real, size int, cwd text, "
+                   "first_ts text, last_ts text, prompts int, chars int, words int, pasted_chars int)")
+        cx.execute("insert into typing values ('old','/gone',0,0,null,null,null,1,1,1,0)")
+        cx.commit()
+        cx.close()
+        self.assertIn("2 of 2", self.build().stdout)
+        self.assertEqual(self.fx.q("select count(*) from typing where session_id='old'"), [(0,)])
+        self.assertEqual(self.fx.q("select name from pragma_table_info('typing') where pk=1"), [("path",)])
+
+
+class PrivacyGuardTest(FixtureTest):
+    """The database holds private titles; the Stop hook commits state/ wholesale."""
+
+    def checkout(self, ignore=None, exclude=None):
+        repo = Path(self.fx.tmp.name) / "tracked"
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        if ignore:
+            (repo / ".gitignore").write_text(ignore)
+        if exclude:
+            (repo / ".git" / "info").mkdir(exist_ok=True)
+            (repo / ".git" / "info" / "exclude").write_text(exclude)
+        self.fx.db = repo / "state" / "dashboard" / "metrics.db"
+
+    def test_refuses_to_write_where_git_would_track_it(self):
+        self.checkout()
+        r = self.fx.run("--quiet")
+        self.assertEqual(r.returncode, 4)
+        self.assertIn("not gitignored", r.stderr)
+        self.assertFalse(self.fx.db.exists())
+
+    def test_writes_where_gitignore_covers_it(self):
+        self.checkout(ignore="state/dashboard/\n")
+        self.build("--quiet")
+        self.assertTrue(self.fx.db.exists())
+
+    def test_writes_where_the_local_exclude_covers_it(self):
+        self.checkout(exclude="state/dashboard/\n")
+        self.build("--quiet")
+        self.assertTrue(self.fx.db.exists())
+
+    def test_no_check_outside_a_checkout(self):
+        self.assertTrue(mdb.ignored_by_git(str(self.fx.db)))
+
+
 class GithubTest(FixtureTest):
     def test_github_flag_loads_repos_issues_and_prs(self):
         r = self.build("--github")

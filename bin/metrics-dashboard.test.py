@@ -53,20 +53,26 @@ class DashboardFixture(unittest.TestCase):
         (sd / "metrics" / "sessions").mkdir(parents=True)
         # Three sessions inside the last 7 days (one headless), one in the 7 before.
         for sid, ago, kw in (("typed-a", 1, {}), ("typed-b", 3, {}), ("headless-c", 2, {"user_turns": 0}),
-                             ("typed-prior", 9, {})):
+                             ("typed-prior", 9, {}),
+                             # outside both windows; no prompt count anywhere, so its typed count is NULL
+                             ("unknown-d", 20, {"user_turns": None})):
             (sd / "metrics" / "sessions" / f"{sid}.json").write_text(json.dumps(session(sid, ago, **kw)))
-        (sd / "commits.jsonl").write_text(json.dumps(
+        (sd / "commits.jsonl").write_text("".join(json.dumps(c) + "\n" for c in (
             {"ts": day(1), "session_id": "typed-a", "repo": "acme/widgets", "branch": "claude/fixture",
-             "commit": "deadbeef"}) + "\n")
+             "commit": "deadbeef"},
+            {"ts": day(20), "session_id": "unknown-d", "repo": "acme/widgets", "branch": "claude/nulls",
+             "commit": "cafef00d"})))
         (sd / "items").mkdir()
         (sd / "items" / "card-one.md").write_text(
             f"# Fixture card\n\n## Log\n{day(5)} abcd1234 status=open owner=human-ruling\n")
         projects = root / "projects" / "-fixture"
         projects.mkdir(parents=True)
-        for sid, ago, text in (("typed-a", 1, "one two three"), ("typed-b", 3, "four five")):
+        # typed-a was resumed: a second transcript carries the same session id.
+        for name, sid, ago, text in (("typed-a", "typed-a", 1, "one two three"), ("typed-b", "typed-b", 3, "four five"),
+                                     ("typed-a-resumed", "typed-a", 1, "six seven")):
             rec = {"type": "user", "isSidechain": False, "sessionId": sid, "cwd": "/fixture", "timestamp": day(ago),
                    "message": {"role": "user", "content": text}}
-            (projects / f"{sid}.jsonl").write_text(json.dumps(rec, separators=(",", ":")) + "\n")
+            (projects / f"{name}.jsonl").write_text(json.dumps(rec, separators=(",", ":")) + "\n")
         cls.env = {**os.environ, "CLAUDE_STATE_REPO": str(repo), "HOME": str(root)}
         cls.db = root / "out" / "metrics.db"
         cls.out = root / "out" / "index.html"
@@ -76,6 +82,12 @@ class DashboardFixture(unittest.TestCase):
         # GitHub rows go in directly: the repo's topic carries markup, to prove it is escaped.
         cx = sqlite3.connect(cls.db)
         cx.execute("insert into gh_repos values ('acme/widgets', 'project-<b>alpha', 0, 0)")
+        cx.execute("insert into gh_repos values ('acme/other', '', 0, 0)")
+        # Same branch name in another repo: the session committed in acme/widgets, not here.
+        cx.execute("insert into gh_items values ('acme/other', 3, 'pr', ?, ?, ?, 'MERGED', 0, 'claude/fixture', 'someone', 'x')",
+                   (day(4), day(2), day(2)))
+        cx.execute("insert into gh_items values ('acme/widgets', 4, 'pr', ?, ?, ?, 'MERGED', 0, 'claude/nulls', 'someone', 'x')",
+                   (day(4), day(2), day(2)))
         cx.executemany("insert into gh_items values ('acme/widgets', ?, ?, ?, ?, ?, ?, 0, ?, 'someone', 'x')", [
             (1, "issue", day(10), None, None, "OPEN", None),
             (2, "pr", day(4), day(2), day(2), "MERGED", "claude/fixture")])
@@ -113,10 +125,27 @@ class RenderTest(DashboardFixture):
     def test_tiles_count_the_last_seven_days_and_headless_sessions_count(self):
         self.assertEqual(self.tile("sessions, 7d"), "3")
         self.assertEqual(self.tile("of them headless, 7d"), "1")
-        self.assertEqual(self.tile("prompts typed, 7d"), "2")
-        self.assertEqual(self.tile("words typed, 7d"), "5")
+        self.assertEqual(self.tile("prompts typed, 7d"), "3")
+        self.assertEqual(self.tile("words typed, 7d"), "7")
         self.assertEqual(self.tile("friction events, 7d"), "6")
         self.assertEqual(self.tile("open issues"), "1")
+
+    def test_a_session_with_two_transcripts_is_counted_once(self):
+        # typed-a has two transcript files; the sessions tile (3) is unchanged.
+        self.assertEqual(self.tile("sessions, 7d"), "3")
+
+    def test_pr_touch_buckets_match_on_repo_and_keep_unknown_counts_out_of_no_session(self):
+        # PR 2 (acme/widgets): typed-a, 2 prompts over two transcripts -> 2-5.
+        # PR 3 (acme/other, same branch name): no session committed there.
+        # PR 4: a session whose prompt count is unknown -> 0-1, not "no session".
+        self.assertRegex(self.page, r"0–1 prompts: 1\n2–5 prompts: 1\n6\+ prompts: 0\nno session: 1\ntotal: 3")
+
+    def test_days_under_the_tile_windows_do_not_crash(self):
+        r = subprocess.run([sys.executable, str(DASH), "--db", str(self.db),
+                            "--out", str(self.out.with_name("short.html")), "--days", "3"],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('id="open"', self.out.with_name("short.html").read_text())
 
     def test_tile_deltas_compare_with_the_prior_seven_days(self):
         # 3 sessions now against 1 in the week before: +200%, and up is the good direction.

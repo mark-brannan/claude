@@ -12,19 +12,24 @@
 #   --days   the daily window (default 56); weekly series cover the whole span.
 # Writes <state>/metrics/dashboard/index.html by default and prints its path.
 # Python 3 stdlib only.
-import argparse, datetime as dt, html, json, os, sqlite3, sys
+import argparse, datetime as dt, html, os, sqlite3, sys
 from collections import defaultdict
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 def state_dir():
-    for d in [os.environ.get("CLAUDE_STATE_REPO", ""),
-              "/home/user/claude_prompts_scratch", "/workspace/claude_prompts_scratch",
-              os.path.expanduser("~/claude_prompts_scratch"), os.path.expanduser("~/src/claude_prompts_scratch"),
-              os.path.expanduser("~/Projects/claude_prompts_scratch"), os.path.expanduser("~/code/claude_prompts_scratch")]:
-        if d and os.path.isdir(os.path.join(d, ".git")):
-            return os.path.join(d, "state", "global")
-    return None
+    """<state repo>/state/global, found by lib/state.py's state_repo (the one
+    search path: CLAUDE_STATE_REPO, cloud checkouts, then the usual clones);
+    None when it is not here. lib/ sits beside this checkout or in ~/.claude."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.path.join(here, "..", "lib"), os.path.expanduser("~/.claude/lib")):
+        if os.path.isfile(os.path.join(d, "state.py")):
+            sys.path.insert(0, d)
+            break
+    else:
+        return None
+    sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
+    import state
+    repo = state.state_repo()
+    return os.path.join(repo, "state", "global") if repo else None
 
 # --- SVG ---------------------------------------------------------------------
 # Categorical slots in fixed order (the dataviz reference palette, validated):
@@ -136,6 +141,7 @@ def mondays(first, end):
 def build(db, out, ndays):
     cx = sqlite3.connect(db); cx.row_factory = sqlite3.Row
     q = lambda sql, *a: cx.execute(sql, a).fetchall()
+    ndays = max(ndays, 14)  # the tiles compare two fixed 7-day windows
     today = dt.date.today(); dkeys = days(ndays, today); start = dkeys[0]
     first = q("select min(substr(started_at,1,10)) f from sessions")[0]["f"] or start
     wkeys = mondays(dt.date.fromisoformat(first), today)
@@ -181,8 +187,10 @@ def build(db, out, ndays):
     agent_cards = [("agent queue", {d: cards_open(d, "agent") for d in ckeys})]
 
     # sessions --------------------------------------------------------------
-    cx.execute("create temp view sv as select s.*, coalesce(t.prompts, s.user_turns) typed from sessions s left join typing t on t.session_id = s.session_id")
-    daily = q("select substr(started_at,1,10) d, count(*) n, sum(typed=0) headless, sum(human_seconds)/3600.0 hh, sum(agent_seconds)/3600.0 ah, "
+    cx.execute("create temp view tv as select session_id, sum(prompts) prompts from typing group by session_id")
+    cx.execute("create temp view sv as select s.*, coalesce(t.prompts, s.user_turns) typed from sessions s left join tv t on t.session_id = s.session_id")
+    cx.execute("create temp view rn as select repo, substr(repo, instr(repo, '/') + 1) name from gh_repos")
+    daily = q("select substr(started_at,1,10) d, count(*) n, coalesce(sum(typed=0), 0) headless, sum(human_seconds)/3600.0 hh, sum(agent_seconds)/3600.0 ah, "
               "sum(fr_correction) c, sum(fr_override) o, sum(fr_rebuke) r, sum(fr_pushback) p, "
               "sum(dec_scoping) ds, sum(dec_inline) di, sum(dec_gate) dg, sum(blk_total) b, sum(typed) ut, sum(tool_calls) tc, sum(commits) cm "
               "from sv where started_at >= ? group by d", start)
@@ -194,8 +202,14 @@ def build(db, out, ndays):
 
     # merged PRs by how many prompts the user typed into the sessions on that branch
     touches = {}
-    for r in q("select g.repo||'#'||g.number pr, " + wk("g.merged_at") + " w, coalesce(sum(s.typed), -1) t from gh_items g "
-               "left join (select distinct branch, session_id from commits) c on c.branch = g.head_ref "
+    # commits.repo is the checkout's label: a repo's own name for a primary
+    # checkout (then it must be this PR's repo), a worktree label otherwise
+    # (then only the branch name can match).
+    for r in q("select g.repo||'#'||g.number pr, " + wk("g.merged_at") + " w, "
+               "case when count(s.session_id) = 0 then -1 else coalesce(sum(s.typed), 0) end t from gh_items g "
+               "left join (select distinct repo, branch, session_id from commits) c on c.branch = g.head_ref "
+               "and (c.repo in (g.repo, substr(g.repo, instr(g.repo, '/') + 1)) "
+               "or c.repo not in (select name from rn union select repo from rn)) "
                "left join sv s on s.session_id = c.session_id where g.kind='pr' and g.merged_at is not null group by g.repo, g.number"):
         b = "no session" if r["t"] < 0 else "0–1 prompts" if r["t"] <= 1 else "2–5 prompts" if r["t"] <= 5 else "6+ prompts"
         touches.setdefault(b, defaultdict(int))[r["w"]] += 1
@@ -238,8 +252,8 @@ def build(db, out, ndays):
             lines("Decisions per keyboard hour, weekly", wkeys, [("decisions/h", {r["w"]: round(r["dec"] / r["hh"], 2) for r in weekly if r["hh"]})], every=4),
         ],
         "typing": [
-            bars("Prompts typed per day", dkeys, [("prompts", series(typing_d, "d", "p"))]),
-            bars("Words typed per day", dkeys, [("words", series(typing_d, "d", "w"))]),
+            bars("Prompts typed per day (by first-prompt day)", dkeys, [("prompts", series(typing_d, "d", "p"))]),
+            bars("Words typed per day (by first-prompt day)", dkeys, [("words", series(typing_d, "d", "w"))]),
             lines("Words per prompt, weekly mean", wkeys, [("words/prompt", {r["w"]: round(r["wd"] / r["p"], 1) for r in typing_w if r["p"]})], every=4),
             lines("Characters per prompt, daily mean", dkeys, [("chars/prompt", {r["d"]: round(r["c"] / r["p"]) for r in typing_d if r["p"]})]),
         ],
@@ -253,7 +267,7 @@ def build(db, out, ndays):
     }
     sections = [("open", "Open work", "Issues and PRs are reconstructed from GitHub timestamps, so the history is complete; board cards start when the item store did."),
                 ("sessions", "Sessions and friction", f"Daily series cover the last {ndays} days; weekly series the whole record."),
-                ("typing", "Typing", "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing."),
+                ("typing", "Typing", "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing. Each transcript is counted on the day its first prompt was typed, so a session that runs past midnight or is resumed later keeps all its prompts on that first day."),
                 ("agent", "Agent work vs touches", "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch.")]
     body = "".join(f'<h2 id="{k}">{html.escape(t)}</h2><p class="note">{html.escape(n)}</p><div class="grid">{"".join(figs[k])}</div>' for k, t, n in sections)
     page = PAGE.format(tiles="".join(tiles), body=body,
