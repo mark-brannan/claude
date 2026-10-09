@@ -27,8 +27,10 @@ project-specific facts belong in that project's own CLAUDE.md.
   owning session may still be running and may be archived out from under you
   mid-turn. Read another branch from where you stand (`git log/show <branch>`,
   `git show <branch>:<path>`); to work it, fork your own worktree and check it
-  out there. If git says the branch is checked out elsewhere, that is a live
-  claim: report it and stop. Enforced by
+  out there. If git says the branch is checked out elsewhere, that is a
+  claim only while its holder lives — a fresh claim stamp or a process in
+  that worktree: report it and stop. An idle holder is not a claim; the
+  pickup skill says how to take the branch without touching it. Enforced by
   the languette plugin's `guard-worktrees`.
 - **Branch-vs-main is the repo's call, then a rule.** If main requires a
   pull request (`gh api repos/<o>/<r>/rules/branches/main` lists
