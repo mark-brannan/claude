@@ -295,3 +295,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t065901z
 - agent-decision's provenance check also reads the undo text, not only the call Undo: match the call alone ([#129](https://github.com/mark-brannan/claude/pull/129))
+
+### 20261009t065905z
+- agent-decision --ruling takes one http(s) URL and exits 2 otherwise; the provenance rule is documented in the script's usage header, not docs/agent_decisions.md, which is frozen Undo: drop the URL check; add a docs section ([#129](https://github.com/mark-brannan/claude/pull/129))
