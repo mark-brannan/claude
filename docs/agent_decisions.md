@@ -211,3 +211,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t010700z
 - A new decisions branch is seeded from origin/main's log with entries kept and the header replaced by the branch's own, so it does not call itself frozen. Undo: delete the decisions branch and reseed with the header from main. ([#118](https://github.com/mark-brannan/claude/pull/118))
+
+### 20261009t010711z
+- list shows an entry whose PR is not in the gh result (older than the 1000 newest) as 'unknown' by default, not hidden. Undo: drop the unknown label and filter those rows in list_entries. ([#118](https://github.com/mark-brannan/claude/pull/118))
