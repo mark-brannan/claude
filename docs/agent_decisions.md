@@ -253,3 +253,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t013030z
 - pickup: take an idle holder's branch with --ignore-other-worktrees, leaving its worktree untouched Undo: use the guard's own-branch ff-and-push route instead ([#117](https://github.com/mark-brannan/claude/pull/117))
+
+### 20261009t013129z
+- pickup: a holder is idle when it has no claim stamp under two hours and no process cwd in its worktree Undo: revert the pickup section-3 liveness test ([#117](https://github.com/mark-brannan/claude/pull/117))
