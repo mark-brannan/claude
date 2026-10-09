@@ -274,3 +274,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t015601z
 - a PR with an armed auto-merge is handed off by prt, not worked Undo: drop the autoMergeRequest hand-off in prt's facts ([#120](https://github.com/mark-brannan/claude/pull/120))
+
+### 20261009t051120z
+- complexity job stays out of ci-gate's needs: it measures, it does not gate Undo: add it to a caller's needs ([#126](https://github.com/mark-brannan/claude/pull/126))
