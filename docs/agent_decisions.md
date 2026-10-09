@@ -283,3 +283,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t064701z
 - agent-decision's judge is claude-sonnet-5-5 at low effort, capped at 0.25 USD, run with no settings, tools or session Undo: edit the JUDGE list ([#128](https://github.com/mark-brannan/claude/pull/128))
+
+### 20261009t064704z
+- agent-decision refuses the entry when the judge cannot run; a PR with no linked issue and no governing path touched is not judged Undo: one line each in main() ([#128](https://github.com/mark-brannan/claude/pull/128))
