@@ -271,3 +271,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t015558z
 - bringing a triaged branch up to date is the fixer agent's job under pickup section 6, not a prt step Undo: put an update step back in prt's launch ([#120](https://github.com/mark-brannan/claude/pull/120))
+
+### 20261009t015601z
+- a PR with an armed auto-merge is handed off by prt, not worked Undo: drop the autoMergeRequest hand-off in prt's facts ([#120](https://github.com/mark-brannan/claude/pull/120))
