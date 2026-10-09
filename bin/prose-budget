@@ -30,11 +30,8 @@ import sys
 
 NAME = "prose-budget"
 sys.dont_write_bytecode = True
-for _d in (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
-           os.path.expanduser("~/.claude/lib")):
-    if os.path.isfile(os.path.join(_d, "gitrun.py")):
-        sys.path.insert(0, _d)
-        break
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import gitrun  # noqa: E402
 except ImportError:

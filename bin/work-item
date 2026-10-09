@@ -48,6 +48,10 @@ import sys
 import time
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+
 STATUSES = ("open", "ready", "claimed", "blocked", "done", "closed")
 OWNERS = ("agent", "human-ruling", "human-click")
 POINTS = ("1", "2", "3", "5", "8", "13")
@@ -75,23 +79,13 @@ def refuse(msg):
     raise Exit(1, msg)
 
 
-def use_lib():
-    """Put lib/ on sys.path: in this checkout beside the tool, else the seeded copy."""
-    here = Path(__file__).resolve().parent
-    for d in (here.parent / "lib", Path.home() / ".claude" / "lib"):
-        if (d / "state.py").is_file():
-            sys.path.insert(0, str(d))
-            break
-    else:
-        die("lib/state.py not found")
-    sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
-
-
 def state_dir():
     """lib/state.py's state_dir, so the search path for the state repo has
     one home."""
-    use_lib()
-    import state
+    try:
+        import state
+    except ImportError:
+        die("lib/state.py not found (looked beside the tool and in ~/.claude/lib)")
     d = state.state_dir()
     if not d:
         die("lib/state.py could not name the state dir")
@@ -246,7 +240,6 @@ class Item:
             self.lockf = open(p, "a")
         except OSError:
             refuse(f"could not open the lock {p}")
-        use_lib()
         try:
             import lock as filelock
         except ImportError:
