@@ -20,10 +20,11 @@ check() {
 }
 
 REPO=$(mktemp -d); git -C "$REPO" init -q -b main
-printf '{"lines": {"README.md": 2}, "voice": {"scope": "tree"}}\n' > "$REPO/.prose-budgets.json"
+printf '{"lines": {"README.md": 2, "docs/near.md": 9, "docs/far.md": 9}, "voice": {"scope": "tree"}}\n' > "$REPO/.prose-budgets.json"
 printf 'a\nb\nc\n' > "$REPO/README.md"
 printf 'a\n' > "$REPO/CLAUDE.md"
 mkdir -p "$REPO/docs"; printf 'a seamless flow\n' > "$REPO/docs/x.md"
+printf 'a\n%.0s' 1 2 3 4 5 6 7 > "$REPO/docs/near.md"; printf 'a\n%.0s' 1 2 3 4 5 6 > "$REPO/docs/far.md"
 printf 'print(1)\n' > "$REPO/x.py"
 printf '{"note": "a robust note"}\n' > "$REPO/data.json"
 NOCONF=$(mktemp -d); printf 'a robust line\n' > "$NOCONF/README.md"
@@ -31,8 +32,13 @@ trap 'rm -rf "$REPO" "$NOCONF"' EXIT
 
 check context 'file over its line budget'         "$REPO/README.md"
 grep -q 'README.md:3: lines' <<<"$LAST" || { fail=$((fail + 1)); echo 'FAIL: context lacks the finding'; }
+grep -q '(3/2 lines)' <<<"$LAST" || { fail=$((fail + 1)); echo 'FAIL: context lacks the count'; }
+grep -q 'at least 10' <<<"$LAST" || { fail=$((fail + 1)); echo 'FAIL: context lacks the cap to write'; }
 check context 'voice word in a docs file'         "$REPO/docs/x.md"
 check silent  'clean file'                        "$REPO/CLAUDE.md"
+check context 'budgeted file past 2/3 of its cap'  "$REPO/docs/near.md"
+grep -q 'docs/near.md 7/9 lines' <<<"$LAST" || { fail=$((fail + 1)); echo 'FAIL: notice lacks the count'; }
+check silent  'budgeted file under 2/3 of its cap' "$REPO/docs/far.md"
 check silent  'json outside any json_prose target' "$REPO/data.json"
 check silent  'not markdown or json'              "$REPO/x.py"
 check silent  'no config in the repo'             "$NOCONF/README.md"

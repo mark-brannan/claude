@@ -15,7 +15,7 @@
 #
 # Usage: prose-budget [--config PATH] [--tree | --staged | --base REF]
 #                     [--file PATH ...] [--warn-only] [--json]
-#                     [--require-config] [--version]
+#                     [--require-config]
 #
 # Exit 1 on any finding, 2 on a bad config or usage, 0 otherwise. A missing
 # config is a no-op (exit 0) unless --require-config. Findings go to stdout,
@@ -41,7 +41,6 @@ except ImportError:
     print("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
     sys.exit(2)
 
-VERSION = "1.1.0"
 CONFIG_NAMES = ("docs/budgets.json", ".prose-budgets.json")
 CUT = "Cut the prose. If a limit is wrong, changing {} is its own PR that says why."
 
@@ -58,6 +57,10 @@ RELAX_COVER = ["lines.must_budget", "voice.words", "json_prose.keys", "sections.
                "json_prose.targets", "narration.targets", "voice.targets", "headers.targets",
                "land_alone.targets", "unique_ids"]
 LINES_META = ("required", "must_budget", "pending")
+# A new or raised line cap leaves this much room above the file, rounded up to
+# the next 10; a file shorter than MUST_BUDGET_FROM needs no cap at all.
+HEADROOM_PCT = 20
+MUST_BUDGET_FROM = 200
 
 NARRATION = {
     "pr": r"\bPR ?#?\d+\b",
@@ -107,6 +110,11 @@ def line_count(text):
     if not text:
         return 0
     return text.count("\n") + (0 if text.endswith("\n") else 1)
+
+
+def headroom_cap(n):
+    """The least cap a new or raised line budget may set for an n-line file."""
+    return -(-n * (100 + HEADROOM_PCT) // 1000) * 10
 
 
 def hash12(s):
@@ -390,17 +398,9 @@ def parse_config(cfg):
                       "must_budget": list(lines.get("must_budget", [])), "pending": list(lines.get("pending", []))}
     r["sections"] = _rule(cfg, "sections", {"targets": RUNBOOK_TARGETS, "max_words": 140,
                                              "exempt": ["Where things are"]}, True)
-    budgeted = set(r["lines"]["files"]) if r["lines"] else set()
     r["delta"] = _rule(cfg, "delta", {"targets": None, "max_words": 40}, True)
-    if r["delta"]:
-        if r["delta"]["targets"] is None:
-            r["delta"]["targets"] = MD_TARGETS
-        # A file with its own line budget is governed by that budget, not by
-        # the per-change word delta, and naming targets is about *which* files
-        # the delta watches -- not about revoking the budget exemption. Tying
-        # the two together meant a config that excluded one directory silently
-        # put every budgeted document under a 40-word-per-change cap.
-        r["delta"]["exclude"] = budgeted
+    if r["delta"] and r["delta"]["targets"] is None:
+        r["delta"]["targets"] = MD_TARGETS
     r["json_prose"] = _rule(cfg, "json_prose", {"targets": [], "keys": PROSE_KEYS, "max_chars": 450,
                                                  "grandfathered": []}, False)
     r["narration"] = _rule(cfg, "narration", {"targets": MD_TARGETS, "patterns": {}, "disable": [],
@@ -644,11 +644,28 @@ class Checker:
                              "or list it under lines.pending")
                 continue
             n = line_count(text)
-            if n > max_:
-                self.add("lines", file, f"{n} lines, budget {max_}", line=n)
+            if self.only is not None:
+                # The edit hook reads this count; a full run would print one per budgeted file.
+                self.info.append(f"lines: {file} {n}/{max_}")
+            if n <= max_:
+                continue
+            # Under --base the cap is a ceiling for the PR that grows the file,
+            # not a toll on the next PR to touch a file already over it.
+            if self.mode == "base" and self.only is None:
+                grown = n - line_count(self.repo.show(self.before_ref, file) or "")
+                if grown <= 0:
+                    self.info.append(f"lines: {file} {n} lines, budget {max_}; over, but not grown here ({grown:+d})")
+                    continue
+                self.add("lines", file, f"{n} lines, budget {max_} (+{grown} in this change); cut it, "
+                         f"or raise the cap to at least {headroom_cap(n)} in its own PR", line=n)
+            else:
+                self.add("lines", file, f"{n} lines, budget {max_}; cut it, or raise the cap to at least "
+                         f"{headroom_cap(n)} in its own PR", line=n)
         for f in self.targets(cfg["must_budget"]):
             if f not in cfg["files"]:
-                self.add("lines", f, "no line budget; add one")
+                n = line_count(self.read(f) or "")
+                if n >= MUST_BUDGET_FROM:
+                    self.add("lines", f, f"{n} lines and no line budget; add one of at least {headroom_cap(n)}")
 
     def check_sections(self, cfg):
         for f in self.targets(cfg["targets"]):
@@ -812,7 +829,7 @@ class Checker:
 
     def check_delta(self, cfg):
         exempt = tuple(self.rules["sections"]["exempt"]) if self.rules["sections"] else ("Where things are",)
-        paths = [p for p in self.changed if matches(cfg["targets"], p) and p not in cfg["exclude"]]
+        paths = [p for p in self.changed if matches(cfg["targets"], p)]
         added = removed = 0
         for p in paths:
             before = self.repo.show(self.before_ref, p)
@@ -848,17 +865,17 @@ class Checker:
         before = self.repo.show(self.before_ref, self.config_rel)
         after = (self.repo.show(self.after_ref, self.config_rel) if self.mode == "staged"
                  else self.repo.read_disk(self.config_rel))
-        if before is None or after is None:
+        if after is None:
             return
         try:
-            old, new = json.loads(before), json.loads(after)
-        except ValueError:
-            return
-        try:
+            old, new = json.loads(before) if before is not None else {}, json.loads(after)
             was = parse_config(old).get("config")
-        except ConfigError:
+        except (ValueError, ConfigError):
             return
         if not was or not was["enforce"]:
+            return
+        self.check_headroom(old, new)
+        if before is None:
             return
         relaxed = relaxations(old, new)
         if not relaxed:
@@ -872,6 +889,23 @@ class Checker:
                  "in its own change with the reason in the body, so it can be reviewed and rejected on its "
                  "own -- tightening needs no ceremony. Also changed: "
                  + ", ".join(strays[:5]) + (", ..." if len(strays) > 5 else ""))
+
+    def check_headroom(self, old, new):
+        """A cap that is new or raised leaves HEADROOM_PCT above the file, so
+        the next small edit is not a second budget PR."""
+        a, b = _dig(old, "lines") or {}, _dig(new, "lines") or {}
+        if not isinstance(a, dict) or not isinstance(b, dict):
+            return
+        for f, cap in b.items():
+            if f in LINES_META or not isinstance(cap, int) or (isinstance(a.get(f), int) and cap <= a[f]):
+                continue
+            text = self.read(f) if self.mode != "base" else self.repo.show(self.after_ref, f)
+            if text is None:
+                continue
+            need = headroom_cap(line_count(text))
+            if cap < need:
+                self.add("config", self.config_rel, f"lines.{f}: {cap} leaves under {HEADROOM_PCT}% headroom "
+                         f"over {line_count(text)} lines; write at least {need}")
 
 # --- CLI -------------------------------------------------------------------------
 
@@ -895,7 +929,6 @@ def main(argv=None):
     ap.add_argument("--warn-only", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--require-config", action="store_true")
-    ap.add_argument("--version", action="version", version=f"prose-budget {VERSION}")
     try:
         args = ap.parse_args(argv)
     except SystemExit as e:

@@ -200,3 +200,8 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261008t213606z
 - curia-quotes --flips drops a sentence as emphatic only when its negation or number is in capitals, not for any capitalised word, so acronyms such as ADR stay listed Undo: revert the flips filter to skip any sentence with a 3+ letter capitalised word ([#107](https://github.com/mark-brannan/claude/pull/107))
+
+### 20261008t224348z
+- edit hook prints a clean budgeted file's count only past 2/3 of its cap Undo: drop the threshold test in prose-budget-edit.sh ([#109](https://github.com/mark-brannan/claude/pull/109))
+- lines 'grown in this change' is judged only under --base; --staged still reds any over-cap file Undo: drop the mode test in check_lines ([#109](https://github.com/mark-brannan/claude/pull/109))
+- 20% headroom and the 200-line must_budget floor are engine constants, not config keys Undo: move them into the lines config ([#109](https://github.com/mark-brannan/claude/pull/109))
