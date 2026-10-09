@@ -17,6 +17,7 @@ printf 'GITHUB_PERSONAL_ACCESS_TOKEN="ghp_abc123"\n' > "$F"; ok 'double-quoted v
 printf "GITHUB_PERSONAL_ACCESS_TOKEN='ghp_abc123'\n" > "$F"; ok 'single-quoted value' "$want" "$(run)"
 printf 'export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_abc123\n' > "$F"; ok 'export prefix' "$want" "$(run)"
 printf 'GITHUB_PERSONAL_ACCESS_TOKEN=ghp_abc123\r\n' > "$F"; ok 'CRLF line ending' "$want" "$(run)"
+printf 'OTHER=x\r\nGITHUB_PERSONAL_ACCESS_TOKEN=ghp_abc123\r\n' > "$F"; ok 'CRLF on a line before the token line' "$want" "$(run)"
 printf 'OTHER=x\nGITHUB_PERSONAL_ACCESS_TOKEN=ghp_abc123\nGITHUB_PERSONAL_ACCESS_TOKEN=ghp_second\n' > "$F"
 ok 'two matching lines give the first, on one line' "$want" "$(run)"
 ok 'the output is one line' 1 "$(HOME="$T" bash "$H" 2>/dev/null | wc -l)"

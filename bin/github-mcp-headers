@@ -7,9 +7,9 @@
 set -euo pipefail
 f="$HOME/.config/secrets/github-token.env"
 [ -r "$f" ] || { echo "no readable $f" >&2; exit 1; }
-tok=$(sed -n -e 's/\r$//' \
+tok=$(tr -d '\r' < "$f" | sed -n \
   -e 's/^\(export[[:space:]]\{1,\}\)\{0,1\}GITHUB_PERSONAL_ACCESS_TOKEN=//' \
   -e 't found' -e 'd' \
-  -e ': found' -e "s/^\"\(.*\)\"\$/\1/" -e "s/^'\(.*\)'\$/\1/" -e 'p' -e 'q' "$f")
+  -e ': found' -e "s/^\"\(.*\)\"\$/\1/" -e "s/^'\(.*\)'\$/\1/" -e 'p' -e 'q')
 [ -n "$tok" ] || { echo "no token in $f" >&2; exit 1; }
 printf '{"Authorization":"Bearer %s"}\n' "$tok"
