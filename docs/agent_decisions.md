@@ -262,3 +262,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t015551z
 - prt's lock is a per-PR claim stamp taken at launch under a sid unique to the PR and run; there is no run-level lock Undo: drop the card-claim call in prt's launch and take a run-level lock instead ([#120](https://github.com/mark-brannan/claude/pull/120))
+
+### 20261009t015554z
+- prt's default scope is the checkout repo's project topic, else that repo alone Undo: make the checkout's repo the default scope in prt's resolve_scope ([#120](https://github.com/mark-brannan/claude/pull/120))
