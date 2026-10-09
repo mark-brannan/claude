@@ -312,7 +312,7 @@ on them.
 
 ## Acceptance cases
 
-Evidence: **test**, an assertion in `stop-continuity.test.sh`; **feature**, a
+Evidence: **test**, an assertion in `stop-continuity.test.py`; **feature**, a
 scenario in `features/stop-continuity.feature` titled `row <id>`, which a
 test joins to this table both ways; **code**, the code does it and no test
 asserts it; **item N** or a card id, not built, and what builds it. Ids are
