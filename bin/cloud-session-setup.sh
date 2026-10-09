@@ -91,6 +91,7 @@ lib/state.py
 lib/ids.py
 lib/lock.py
 lib/gitrun.py
+lib/critical_review.py
 hooks/curia-roll.py
 hooks/session-metrics.jq
 hooks/lib-metrics-fmt.jq
