@@ -48,6 +48,7 @@ else:
 
 def node(n, paths=("bin/x",), labels=(), threads=(), body="", mergeable="MERGEABLE", ci="SUCCESS",
          lines=10):
+    """Build a GraphQL pull-request fixture with configurable triage signals."""
     return {"number": n, "title": f"pr {n}", "url": f"https://github.com/{REPO}/pull/{n}",
             "body": body, "isDraft": False, "isCrossRepository": False, "mergeable": mergeable,
             "baseRefName": "main", "headRefName": f"b{n}", "headRefOid": f"{n:040d}",
@@ -76,6 +77,7 @@ PRS = [
 class PrtTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        """Create an isolated work-item store and a gh stub serving PR fixtures."""
         cls.tmp = tempfile.TemporaryDirectory()
         T = cls.T = Path(cls.tmp.name)
         for d in ("bin", "home", "items", "stub", "tmp"):
@@ -94,22 +96,27 @@ class PrtTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        """Remove the temporary fixtures and work items shared by the suite."""
         cls.tmp.cleanup()
 
     def prt(self, *args, stdin=None, code=0):
+        """Run prt in the test environment, check its exit code, and return stdout."""
         p = subprocess.run([sys.executable, str(PRT), *args], env=self.env, input=stdin,
                            capture_output=True, text=True)
         self.assertEqual(p.returncode, code, p.stdout + p.stderr)
         return p.stdout
 
     def plan(self, *args):
+        """Return the fixture repository's JSON plan indexed by PR number."""
         return {f["number"]: f for f in json.loads(self.prt("--repo", REPO, "--json", *args))["prs"]}
 
     def writes(self):
+        """Return logged gh calls that post comments or use an explicit HTTP method."""
         calls = (self.T / "stub" / "calls").read_text() if (self.T / "stub" / "calls").exists() else ""
         return [c for c in calls.splitlines() if c.startswith("pr comment") or " -X " in f" {c} "]
 
     def test_1_dry_run_plans_and_writes_nothing(self):
+        """Check triage routing and that a dry run creates no items or GitHub writes."""
         p = self.plan("--dry-run")
         self.assertEqual(p[3]["handoff"], "labelled blocked")
         self.assertIn("non-bot", p[4]["handoff"])
@@ -122,11 +129,13 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(self.writes(), [])
 
     def test_2_cap_holds_smallest_first(self):
+        """Verify the cap keeps the smallest eligible PR and defers larger ones."""
         p = self.plan("--dry-run", "--cap", "1")
         self.assertEqual([n for n, f in p.items() if not f["handoff"]], [1])
         self.assertIn("over the cap", p[2]["handoff"])
 
     def test_3_run_creates_one_item_per_pr_and_logs_estimates(self):
+        """Verify repeated runs reuse each PR's work item and log each estimate."""
         self.plan()
         self.plan()
         items = sorted((self.T / "items").glob("*.md"))
@@ -138,6 +147,7 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(self.writes(), [])
 
     def test_4_decide_makes_one_ruling_card(self):
+        """Check ruling-card fields, deduplication, and rejection of unknown kinds."""
         line = (f"- **direction** · Ship it? default: yes · undo: a revert · risk: none much · "
                 f"[thread](https://github.com/{REPO}/pull/6#discussion_r1)\n")
         first = self.prt("decide", f"{REPO}#6", "-", stdin=line).strip()
@@ -152,6 +162,7 @@ class PrtTest(unittest.TestCase):
                  code=1)
 
     def test_5_queue_prints_unless_merge_and_refuses_the_desk(self):
+        """Require --merge to post and reject PRs with Pencil lines or desk paths."""
         out = self.prt("queue", f"{REPO}#1")
         self.assertIn("@mergifyio queue", out)
         self.assertEqual(self.writes(), [])
@@ -163,6 +174,7 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(self.writes(), [f"pr comment 1 --repo {REPO} --body @mergifyio queue"])
 
     def test_6_spent_logs_the_transcript_price(self):
+        """Verify transcript pricing, spend logging, and refusal without a work item."""
         d = self.T / "home" / ".claude" / "projects" / "p" / SID / "subagents"
         d.mkdir(parents=True)
         usage = {"input_tokens": 1000000, "output_tokens": 0, "cache_read_input_tokens": 0,
