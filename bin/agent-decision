@@ -2,33 +2,46 @@
 # agent-decision -- append an agent's pencil call to the decisions logs.
 #
 #   agent-decision [--repo <dir>] [--curia <id>]... [--undo <text>]
-#                  [--link <url>] <the call>
+#                  [--pr <n>] [--link <url>] <the call>
+#   agent-decision [--repo <dir>] list [--all]
+#   agent-decision [--repo <dir>] read-from <stamp>
 #
-# One entry, appended to <repo>/docs/agent_decisions.md (the repo is the git
-# checkout holding the cwd unless --repo names one) and, for each --curia, to
-# that curia's agent_decisions.md in the state repo:
+# One entry, appended to docs/agent_decisions.md on the `decisions` branch of
+# the repo's origin and, for each --curia, to that curia's agent_decisions.md
+# in the state repo:
 #
 #   ### 20261003t232843z
 #   - Points on the brief are 1 2 3 5 8 13. Undo: revert the scale line. ([#511](https://...))
 #
-# The heading is the curia roll's stamp, UTC to the second, so an entry's
-# anchor is `#<stamp>` (work item 179098332512f38edd).
-# Both files are append-only: nothing edits an entry after it is written.
-# Two calls in the same second share one heading, as roll.md's words do. The
-# curia copy never goes in roll.md, which holds the user's words alone.
+# The branch is pushed directly and never merged into main, so parallel PRs
+# no longer conflict on one file's tail. The commit is built with git
+# plumbing and a temporary index: the caller's working tree, index and HEAD
+# stay untouched. A missing branch is created as an orphan seeded from
+# origin/main's log. A rejected push is refetched and the append re-applied
+# on the new tip, a bounded number of times, then fails loudly.
 #
-# The repo file and its header are created on the first entry; a curia must
-# already have its folder. The repo's .gitattributes gets
-# `docs/agent_decisions.md merge=union` if it lacks it, so two PRs that each
-# append an entry rebase without a conflict; commit it with the entry.
-# A bare GitHub PR or issue URL in --link is written as [#<n>](<url>).
+# Every entry carries its PR: --pr <n>, else a /pull/ URL in --link, else the
+# current branch's PR from `gh`, else `(no PR, branch <name>)`.
+# The heading is the curia roll's stamp, UTC to the second, so an entry's
+# anchor is `#<stamp>` (work item 179098332512f38edd). Append-only: nothing
+# edits an entry once written. Two calls in the same second share a heading.
+# The curia copy never goes in roll.md, which holds the user's words alone;
+# a curia must already have its folder.
+#
+# `list` prints entries after the last `- read-from ` line, each with its PR's
+# state: open is pending, merged is in force, closed unmerged is void. It
+# shows in-force and pending; --all shows every entry. `read-from <stamp>`
+# appends the `- read-from <stamp>` line that retires what came before.
 # Exits 0 on success, 1 when a target is refused, 2 on usage. Python 3
 # stdlib only.
 import argparse
 import datetime
+import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks"))
@@ -44,20 +57,35 @@ Append-only. Each entry is a call an agent made in pencil: a default it took
 under the one-way-door test, with its undo. Written by `agent-decision`; the
 heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 """
+BRANCH = "decisions"
+LOG = "docs/agent_decisions.md"
+TIP = "refs/agent-decision/tip"
+TRIES = 5
 LAST = re.compile(rb"\n### (\d{8}t\d{6}z)\n(?:- [^\n]*\n)+\Z")
-UNION = "docs/agent_decisions.md merge=union"
 GH_URL = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/(?:pull|issues)/(\d+)\S*")
+PR_URL = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/(\d+)\S*")
+PR_REF = re.compile(r"\[#(\d+)\]\(\S*?/pull/\d+\)")
+STAMP = re.compile(r"\d{8}t\d{6}z")
 
 
-def line(call, undo, link):
+def line(call, undo, link, pr):
+    """One bullet: the call, its undo, any extra link, and the PR tag."""
     text = " ".join(call.split())
     if undo:
         text += " Undo: " + " ".join(undo.split())
     if link:
         link = " ".join(link.split())
         m = GH_URL.fullmatch(link)
-        text += f" ([#{m.group(1)}]({link}))" if m else f" ({link})"
-    return f"- {text}\n"
+        if not PR_URL.fullmatch(link):
+            text += f" ([#{m.group(1)}]({link}))" if m else f" ({link})"
+    return f"- {text} {pr}\n"
+
+
+def with_entry(old, bullet, stamp, header=""):
+    """The log bytes after one bullet joins this second's heading."""
+    m = LAST.search(old)
+    same = m and m.group(1).decode() == stamp
+    return old + (b"" if old else header.encode()) + (b"" if same else f"\n### {stamp}\n".encode()) + bullet.encode()
 
 
 def append(path, bullet, now, header=""):
@@ -65,33 +93,129 @@ def append(path, bullet, now, header=""):
     stamp = ids.get_roll_stamp(now)
     with lock.locked(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW) as fd:
         old = os.pread(fd, os.fstat(fd).st_size, 0)
-        m = LAST.search(old)
-        same = m and m.group(1).decode() == stamp
-        text = ("" if old else header) + ("" if same else f"\n### {stamp}\n") + bullet
-        os.write(fd, text.encode("utf-8"))
-
-
-def ensure_union(root):
-    """Add the union-merge line to the repo's .gitattributes; True if added."""
-    path = os.path.join(root, ".gitattributes")
-    try:
-        with open(path, encoding="utf-8") as f:
-            old = f.read()
-    except FileNotFoundError:
-        old = ""
-    if UNION in old.splitlines():
-        return False
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o644)
-    try:
-        os.write(fd, (("\n" if old and not old.endswith("\n") else "") + UNION + "\n").encode())
-    finally:
-        os.close(fd)
-    return True
+        os.write(fd, with_entry(old, bullet, stamp, header)[len(old):])
 
 
 def repo_root(given):
     out = gitrun.run("-C", given or ".", "rev-parse", "--show-toplevel")
     return os.path.realpath(out.stdout.strip()) if out.returncode == 0 else None
+
+
+def gh(root, *args):
+    """gh's parsed JSON output, or None when gh is missing or fails."""
+    try:
+        p = subprocess.run(["gh", *args], cwd=root, capture_output=True, text=True, timeout=60)
+        return json.loads(p.stdout) if p.returncode == 0 else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def pr_tag(root, pr, link):
+    """The PR reference every bullet carries."""
+    m = PR_URL.fullmatch(" ".join((link or "").split()))
+    if m:
+        return f"([#{m.group(1)}]({m.group(0)}))"
+    view = gh(root, "pr", "view", *([str(pr)] if pr else []), "--json", "number,url")
+    if isinstance(view, dict) and view.get("number") and view.get("url"):
+        return f"([#{view['number']}]({view['url']}))"
+    branch = gitrun.out("-C", root, "branch", "--show-current") or "detached"
+    return f"(no PR, branch {branch})"
+
+
+def fetch_tip(root):
+    """Fetch origin's decisions branch to TIP; its sha, or None when origin
+    has none. Any other failure raises, so a network error never creates one."""
+    r = gitrun.run("-C", root, "fetch", "-q", "origin", f"+refs/heads/{BRANCH}:{TIP}")
+    if r.returncode == 0:
+        return gitrun.out("-C", root, "rev-parse", TIP)
+    if gitrun.run("-C", root, "ls-remote", "--exit-code", "--heads", "origin", BRANCH).returncode == 2:
+        return None
+    raise OSError(r.stderr.strip() or "cannot reach origin")
+
+
+def seed(root):
+    """A new branch's first log: main's, under the branch's own header."""
+    old = b""
+    if gitrun.run("-C", root, "fetch", "-q", "origin", "main").returncode == 0:
+        r = subprocess.run(["git", "-C", root, "show", f"FETCH_HEAD:{LOG}"], capture_output=True)
+        old = r.stdout if r.returncode == 0 else b""
+    cut = old.find(b"\n### ")
+    return HEADER.encode() + (old[cut:] if cut >= 0 else b"")
+
+
+def commit_log(root, tip, entries, msg):
+    """A commit on tip (or a root commit) whose log is edited by entries(old)."""
+    if tip:
+        r = subprocess.run(["git", "-C", root, "show", f"{tip}:{LOG}"], capture_output=True)
+        old = r.stdout if r.returncode == 0 else b""
+    else:
+        old = seed(root)
+    blob = gitrun.out("-C", root, "hash-object", "-w", "--stdin", input=entries(old).decode("utf-8", "surrogateescape"),
+                      errors="surrogateescape")
+    with tempfile.TemporaryDirectory() as d:
+        env = {**os.environ, "GIT_INDEX_FILE": os.path.join(d, "index")}
+        if tip:
+            gitrun.run("-C", root, "read-tree", tip, env=env, check=True)
+        gitrun.run("-C", root, "update-index", "--add", "--cacheinfo", f"100644,{blob},{LOG}", env=env, check=True)
+        tree = gitrun.run("-C", root, "write-tree", env=env, check=True).stdout.strip()
+    args = ["-C", root, "commit-tree", tree, "-m", msg] + (["-p", tip] if tip else [])
+    sign = gitrun.out("-C", root, "config", "--type=bool", "commit.gpgsign") == "true"
+    r = gitrun.run(*args, *(["-S"] if sign else []))
+    if r.returncode and sign:  # no key here: an unsigned log commit beats none
+        r = gitrun.run(*args)
+    if r.returncode:
+        raise OSError(r.stderr.strip())
+    return r.stdout.strip()
+
+
+def push_entry(root, bullet, now, msg):
+    """Add the bullet on origin's decisions branch, re-applying it on a moved tip."""
+    stamp = ids.get_roll_stamp(now)
+    tip = fetch_tip(root)
+    for _ in range(TRIES):
+        new = commit_log(root, tip, lambda old: with_entry(old, bullet, stamp), msg)
+        r = gitrun.run("-C", root, "push", "-q", "origin", f"{new}:refs/heads/{BRANCH}")
+        if r.returncode == 0:
+            return
+        moved = fetch_tip(root)
+        if moved == tip:  # not a race: auth, hook or network
+            raise OSError(r.stderr.strip() or "push failed")
+        tip = moved
+    raise OSError(f"{BRANCH} kept moving; gave up after {TRIES} pushes")
+
+
+def read_log(root):
+    tip = fetch_tip(root)
+    if not tip:
+        return ""
+    r = subprocess.run(["git", "-C", root, "show", f"{tip}:{LOG}"], capture_output=True)
+    return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else ""
+
+
+def entries_after_read_from(text):
+    """(stamp, bullet, after_read_from) for every non-read-from bullet."""
+    out, stamp = [], ""
+    for ln in text.splitlines():
+        if ln.startswith("### "):
+            stamp = ln[4:].strip()
+        elif ln.startswith("- read-from "):
+            out = [(s, b, False) for s, b, _ in out]
+        elif ln.startswith("- "):
+            out.append((stamp, ln, True))
+    return out
+
+
+def list_entries(root, show_all):
+    entries = entries_after_read_from(read_log(root))
+    nums = sorted({int(n) for _, b, _ in entries for n in PR_REF.findall(b)})
+    prs = gh(root, "pr", "list", "--state", "all", "--limit", "1000", "--json", "number,state") if nums else []
+    state = {p["number"]: p["state"] for p in prs or []}
+    label = {"OPEN": "pending", "MERGED": "in force", "CLOSED": "void"}
+    for stamp, bullet, fresh in entries:
+        m = PR_REF.search(bullet)
+        st = label.get(state.get(int(m.group(1))), "unknown") if m else "no PR"
+        if show_all or (fresh and st != "void"):
+            print(f"{stamp}  {st:<8}  {bullet[2:]}")
 
 
 def main(argv):
@@ -100,40 +224,50 @@ def main(argv):
     p.add_argument("--curia", action="append", default=[])
     p.add_argument("--undo")
     p.add_argument("--link")
+    p.add_argument("--pr", type=int)
+    p.add_argument("--all", action="store_true")
     p.add_argument("call", nargs="+")
     a = p.parse_args(argv)
     call = " ".join(" ".join(a.call).split())
     if not call:
         print("agent-decision: the call is empty", file=sys.stderr)
         return 2
-    bullet = line(call, a.undo, a.link)
     root = repo_root(a.repo)
     if not root or not os.path.isdir(root):
         print("agent-decision: not in a git checkout; pass --repo", file=sys.stderr)
         return 1
-    targets = [(os.path.join(root, "docs", "agent_decisions.md"), HEADER)]
-    if a.curia:
-        state = lib_state.state_dir()
-        for cid in a.curia:
-            folder = os.path.join(state or "", "curia", cid)
-            if not state or not re.fullmatch(r"[A-Za-z0-9][\w.-]*", cid) or not os.path.isdir(folder):
-                print(f"agent-decision: no curia folder for {cid!r}", file=sys.stderr)
-                return 1
-            targets.append((os.path.join(folder, "agent_decisions.md"), HEADER))
-    docs = os.path.join(root, "docs")
-    if os.path.realpath(docs) != docs:  # O_NOFOLLOW guards only the last component
-        print(f"agent-decision: {docs} is a symlink", file=sys.stderr)
-        return 1
     now = datetime.datetime.now(datetime.timezone.utc)
-    os.makedirs(docs, exist_ok=True)
     try:
-        if ensure_union(root):
-            print(os.path.join(root, ".gitattributes"))
-        for path, header in targets:
-            append(path, bullet, now, header)
+        if call == "list":
+            list_entries(root, a.all)
+            return 0
+        if call.startswith("read-from ") or call == "read-from":
+            stamp = call[10:]
+            if not STAMP.fullmatch(stamp):
+                print("agent-decision: read-from takes a stamp like 20261003t232843z", file=sys.stderr)
+                return 2
+            push_entry(root, f"- read-from {stamp}\n", now, f"read-from {stamp}")
+            return 0
+        bullet = line(call, a.undo, a.link, pr_tag(root, a.pr, a.link))
+        curias = []
+        if a.curia:
+            state = lib_state.state_dir()
+            for cid in a.curia:
+                folder = os.path.join(state or "", "curia", cid)
+                if not state or not re.fullmatch(r"[A-Za-z0-9][\w.-]*", cid) or not os.path.isdir(folder):
+                    print(f"agent-decision: no curia folder for {cid!r}", file=sys.stderr)
+                    return 1
+                curias.append(os.path.join(folder, "agent_decisions.md"))
+        push_entry(root, bullet, now, "agent-decision: " + call[:60])
+        print(f"origin/{BRANCH}:{LOG}")
+        for path in curias:
+            append(path, bullet, now, HEADER)
             print(path)
-    except OSError as e:  # ELOOP: a symlink in the target's place
-        print(f"agent-decision: {e.filename}: {e.strerror}", file=sys.stderr)
+    except OSError as e:  # push or fetch failed, or ELOOP: a symlink in a curia copy's place
+        print(f"agent-decision: {e.filename + ': ' if e.filename else ''}{e.strerror or e}", file=sys.stderr)
+        return 1
+    except subprocess.CalledProcessError as e:
+        print(f"agent-decision: git failed: {(e.stderr or '').strip()}", file=sys.stderr)
         return 1
     return 0
 
