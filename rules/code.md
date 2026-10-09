@@ -383,6 +383,14 @@ public" section.
   duplication before proceeding.
 - Watch for parallel implementations, repeated state machines, repeated
   validation flows, and copy-paste feature development. Those are the smell.
+- **A gate reads only.** A hook that can deny a call is a function of that
+  call and the facts it declares: it writes nothing, runs no program a
+  setting or an env var names, and reads no other workflow's state. What
+  it cannot learn that way stays out of the deny text. Who holds a branch,
+  whether they live and who cleans up belong to what takes or releases a
+  branch, never to a gate. Guard: languette's purity test, not yet built;
+  this line stands alone until it is. Scar: languette#107, a gate that had
+  grown a `claim-stamp.sh` read and a per-session record.
 
 ## Screenshots and Playwright
 
