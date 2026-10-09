@@ -74,8 +74,6 @@ done
 sj() { jq -r "$1" "$HOME/.claude/settings.json" 2>/dev/null; }
 check "cold: PROSE_BUDGET localised and runnable" \
   '[ "$(sj .env.PROSE_BUDGET)" = "$HOME/.claude/bin/prose-budget" ] && [ -x "$(sj .env.PROSE_BUDGET)" ]'
-check "cold: CLAIM_STAMP_BIN localised and runnable" \
-  '[ "$(sj .env.CLAIM_STAMP_BIN)" = "$HOME/.claude/hooks/claim-stamp.sh" ] && [ -x "$(sj .env.CLAIM_STAMP_BIN)" ]'
 # Expected is computed by lib-state.sh's own search, not hard-coded: a host
 # with the state repo at /home/user/claude_prompts_scratch finds it there.
 exp_state=$(bash -c '. "$1" && state_repo' _ "$REPO/hooks/lib-state.sh" 2>/dev/null)

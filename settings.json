@@ -3,8 +3,7 @@
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
     "showThinkingSummaries": true,
     "FORCE_AUTOUPDATE_PLUGINS": "1",
-    "PROSE_BUDGET": "/home/solace/.claude/bin/prose-budget",
-    "CLAIM_STAMP_BIN": "/home/solace/.claude/hooks/claim-stamp.sh"
+    "PROSE_BUDGET": "/home/solace/.claude/bin/prose-budget"
   },
   "permissions": {
     "allow": [
