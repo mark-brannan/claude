@@ -292,3 +292,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t065852z
 - agent-decision's provenance match is wide: the verbs chose, ruled, ordered, decided, asked, requested, directed, instructed, approved, picked after the user, Solace or the owner; a false refusal is a reword Undo: trim VERB in bin/agent-decision ([#129](https://github.com/mark-brannan/claude/pull/129))
+
+### 20261009t065901z
+- agent-decision's provenance check also reads the undo text, not only the call Undo: match the call alone ([#129](https://github.com/mark-brannan/claude/pull/129))
