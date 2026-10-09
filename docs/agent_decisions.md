@@ -268,3 +268,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t015556z
 - docs/agent_decisions.md never counts as a prt desk path, and the decisions desk pattern is the curia's decided.md only Undo: restore the generic decisions pattern in prt's DESK and drop NOT_DESK ([#120](https://github.com/mark-brannan/claude/pull/120))
+
+### 20261009t015558z
+- bringing a triaged branch up to date is the fixer agent's job under pickup section 6, not a prt step Undo: put an update step back in prt's launch ([#120](https://github.com/mark-brannan/claude/pull/120))
