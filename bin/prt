@@ -1,0 +1,823 @@
+#!/usr/bin/env python3
+# prt -- PR triage, the mechanical half. Reads every open pull request in
+# scope and prints the plan, grouped by repo: per PR its state, score,
+# intended action, model and estimate, then the batch. The judgment half --
+# one critical review per PR, its fixes worked to the fixup contract -- is
+# the prt skill's agents.
+#
+#   prt [<scope>] [--cap N] [--dry-run] [--json]
+#       the plan. Without --dry-run it also claims each worked PR, then finds
+#       or creates its work item and logs the estimate on it; a PR that is
+#       claimed already is handed off instead. --dry-run writes nothing.
+#   <scope>: --repo o/r (repeatable) | --project <name> | --all, [--owner <login>]
+#       --project is the owner's repos with topic project-<name>, read the
+#       way worklist reads it; --all is every source, non-archived repo of the
+#       owner with an open PR. With no scope flag: the checkout's project,
+#       else the checkout's repo alone.
+#   prt clean [<scope>] [--dry-run]       remove each prt-* worktree whose PR
+#                                         no live claim holds, then prune
+#   prt release <o/r#n> <sid>             drop the claim of an agent that
+#                                         never ran
+#   prt cost <agent-id|transcript>        an agent's measured spend
+#   prt spent <o/r#n> <agent-id|transcript> --run <id>
+#       log that spend on the PR's work item, the store's own cost line
+#   prt decide <o/r#n> -                  a review's Decide line on stdin
+#                                         becomes a Needs-ruling card
+#   prt queue <o/r#n> [--merge]           print the `@mergifyio queue` line;
+#                                         post it only with --merge
+#
+# The lock is per PR. Before anything else is written for a worked PR, prt
+# claims it (claim-stamp.sh card-claim) under a sid made for that PR in this
+# run, and the PR's agent releases it. A sid shared across runs would let a
+# second run patch the first one's stamp as its own; a fresh one makes the
+# second run's claim fail, so two runs over one repo split its PRs between
+# them. There is no run-level lock: it would also stop two runs over
+# disjoint repos, and buys nothing the per-PR claim does not.
+#
+# prt makes no worktrees: the guard-worktrees hook lets an agent use only a
+# worktree it made itself. It names each repo's clone; the agent makes its
+# own worktree there, and `prt clean` removes it once nothing claims the PR.
+#
+# Never `gh pr merge`, never the awaiting-human label: Mergify computes that
+# label and owns it. Exit 1 refused, 2 usage. Python 3 stdlib only.
+import glob
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+CAP = 15
+# Guesses until three runs are measured; then the mean of the logged spend.
+REVIEW_USD = 0.75
+FIX_USD = 1.00  # the fixup contract's stop rule: one honest attempt or ~$1
+KINDS = ("values", "risk", "direction", "legal", "people")
+# A PR touching one of these goes to the user's desk whatever its review says.
+DESK = (
+    ("CLAUDE.md", r"(^|/)CLAUDE\.md$"),
+    ("rules/", r"(^|/)rules/"),
+    ("docs/", r"(^|/)docs/"),
+    ("curia", r"(^|/)curiae?/"),
+    ("decided.md", r"(^|/)decided\.md$"),
+    ("hooks/", r"(^|/)hooks/"),
+    ("settings", r"(^|/)settings(\.local)?\.json$"),
+)
+# The agents' own pencil log, frozen on main since claude#118: never the desk,
+# though docs/ is.
+NOT_DESK = r"(^|/)agent_decisions\.md$"
+SAFETY = r"(^|/)hooks/|(^|/)settings(\.local)?\.json$|permission"
+
+
+class Exit(Exception):
+    def __init__(self, code, msg):
+        super().__init__(msg)
+        self.code = code
+
+
+def die(msg):
+    raise Exit(2, msg)
+
+
+def refuse(msg):
+    raise Exit(1, msg)
+
+
+def tool(rel):
+    """A sibling tool: this checkout's copy beside prt, else the seeded one."""
+    for base in (HERE.parent, Path.home() / ".claude"):
+        if (base / rel).is_file():
+            return base / rel
+    refuse(f"{rel} not found beside prt or in ~/.claude")
+
+
+def sh(args, stdin=None, check=True):
+    p = subprocess.run([str(a) for a in args], input=stdin, capture_output=True, text=True)
+    if check and p.returncode != 0:
+        tail = ((p.stderr or p.stdout).strip().splitlines() or ["failed"])[-1]
+        refuse(f"{Path(str(args[0])).name} {' '.join(map(str, args[1:3]))}: {tail}")
+    return p
+
+
+def gh_json(*args):
+    return json.loads(sh(["gh", *args]).stdout or "null")
+
+
+def spend_gate():
+    """hooks/spend-gate.py, the one home of the price table and the transcript reader."""
+    spec = importlib.util.spec_from_file_location("spend_gate", tool("hooks/spend-gate.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def parse_ref(ref):
+    m = re.fullmatch(r"([\w.-]+)/([\w.-]+)#(\d+)", ref or "")
+    if not m:
+        die(f"not owner/repo#n: {ref}")
+    return m[1], m[2], int(m[3])
+
+
+def cwd_repo():
+    p = sh(["gh", "repo", "view", "--json", "nameWithOwner"], check=False)
+    try:
+        return json.loads(p.stdout)["nameWithOwner"] if p.returncode == 0 else ""
+    except (ValueError, KeyError, TypeError):
+        return ""
+
+
+# ------------------------------------------------------------------ the scope
+def project_of(repo):
+    """The project a repo belongs to: its project-<name> topic, else ''."""
+    p = sh(["gh", "repo", "view", repo, "--json", "repositoryTopics"], check=False)
+    try:
+        topics = json.loads(p.stdout).get("repositoryTopics") or [] if p.returncode == 0 else []
+    except (ValueError, AttributeError):
+        topics = []
+    for t in topics:
+        if (t.get("name") or "").startswith("project-"):
+            return t["name"][len("project-"):]
+    return ""
+
+
+def project_repos(owner, project):
+    """The owner's repos carrying topic project-<name>, as worklist reads them."""
+    rows = gh_json("repo", "list", owner, "--topic", f"project-{project}", "--limit", "100",
+                   "--json", "name") or []
+    return [f"{owner}/{r['name']}" for r in rows]
+
+
+def all_repos(owner):
+    """Every source, non-archived repo of the owner with an open PR."""
+    hits = gh_json("search", "prs", "--owner", owner, "--state", "open", "--limit", "1000",
+                   "--json", "repository") or []
+    open_in = {h["repository"]["nameWithOwner"] for h in hits}
+    mine = gh_json("repo", "list", owner, "--source", "--no-archived", "--limit", "1000",
+                   "--json", "nameWithOwner") or []
+    return sorted(r["nameWithOwner"] for r in mine if r["nameWithOwner"] in open_in)
+
+
+def parse_scope(args, flags=()):
+    o = {"repos": [], "project": "", "all": False, "owner": "", "cap": CAP, "dry": False,
+         "json": False}
+    while args:
+        a = args.pop(0)
+        if a == "--repo" and args:
+            o["repos"].append(args.pop(0))
+        elif a == "--project" and args:
+            o["project"] = args.pop(0)
+        elif a == "--all":
+            o["all"] = True
+        elif a == "--owner" and args:
+            o["owner"] = args.pop(0)
+        elif a == "--dry-run":
+            o["dry"] = True
+        elif a == "--cap" and "cap" in flags and args and args[0].isdigit():
+            o["cap"] = int(args.pop(0))
+        elif a == "--json" and "json" in flags:
+            o["json"] = True
+        else:
+            die(f"unknown argument {a}")
+    for r in o["repos"]:
+        if not re.fullmatch(r"[\w.-]+/[\w.-]+", r) or re.search(r"(^|/)\.+(/|$)", r):
+            die(f"not owner/repo: {r}")
+    return o
+
+
+def resolve_scope(o):
+    """(label, repos): the repos in scope, in order, and how to name them."""
+    here = cwd_repo()
+    owner = (o["owner"] or (o["repos"][0].split("/")[0] if o["repos"] else "")
+             or here.split("/")[0])
+    if not owner and (o["project"] or o["all"]):
+        owner = sh(["gh", "api", "user", "--jq", ".login"]).stdout.strip()
+    repos, label = list(o["repos"]), []
+    if o["repos"]:
+        label.append(", ".join(o["repos"]))
+    if o["project"]:
+        found = project_repos(owner, o["project"])
+        if not found:
+            refuse(f"no repo of {owner} carries topic project-{o['project']}")
+        repos += found
+        label.append(f"project {o['project']}")
+    if o["all"]:
+        repos += all_repos(owner)
+        label.append(f"every repo of {owner}")
+    if not (o["repos"] or o["project"] or o["all"]):
+        # The default is the checkout's project, not the checkout: a session
+        # in one repo of a project triages the project.
+        if not here:
+            die("no scope: pass --repo, --project or --all, or run from a checkout")
+        project = project_of(here)
+        repos = (project_repos(owner, project) if project else []) or [here]
+        label.append(f"project {project}" if project and repos != [here] else here)
+    repos = list(dict.fromkeys(repos))
+    if not repos:
+        refuse("nothing in scope: no repo has an open PR")
+    return " + ".join(label), repos
+
+
+# ------------------------------------------------------------------ the clones
+def norm_url(u):
+    """host/owner/repo from any git remote URL, as resign-branch.sh's norm_url."""
+    u = u.strip().rstrip("/")
+    u = u[:-4] if u.endswith(".git") else u
+    if "://" in u:
+        u = u.split("://", 1)[1]
+        u = u.split("@", 1)[1] if "@" in u.split("/", 1)[0] else u
+    elif "@" in u and ":" in u:
+        u = u.split("@", 1)[1].replace(":", "/", 1)
+    elif ":" in u:
+        u = u.replace(":", "/", 1)
+    return u.lower()
+
+
+def clone_of(repo):
+    """(path, present): ~/<name> when it is a clone of repo, else prt's cache."""
+    home = Path.home() / repo.split("/")[1]
+    if (home / ".git").is_dir():
+        p = sh(["git", f"--git-dir={home}/.git", "config", "--get", "remote.origin.url"], check=False)
+        if norm_url(p.stdout) == f"github.com/{repo}".lower():
+            return home, True
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "prt" / repo
+    return cache, (cache / ".git").is_dir()
+
+
+def ensure_clone(repo):
+    """The clone's path, cloning into the cache when there is none; '' on failure."""
+    path, present = clone_of(repo)
+    if present:
+        return str(path), ""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    p = sh(["gh", "repo", "clone", repo, path], check=False)
+    if p.returncode != 0 or not (path / ".git").is_dir():
+        return "", ((p.stderr or p.stdout).strip().splitlines() or ["failed"])[-1]
+    return str(path), ""
+
+
+# ------------------------------------------------------------------ the facts
+QUERY = """query($owner: String!, $name: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number title url body isDraft isCrossRepository mergeable
+        autoMergeRequest { enabledBy { login } }
+        baseRefName headRefName headRefOid additions deletions
+        author { login __typename }
+        files(first: 100) { totalCount nodes { path } }
+        labels(first: 30) { nodes { name } }
+        reviewThreads(first: 100) { totalCount nodes { isResolved
+          comments(first: 1) { nodes { url author { login __typename } } } } }
+        latestOpinionatedReviews(first: 20) { nodes { state author { login __typename } } }
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
+    }
+  }
+}"""
+
+
+def is_bot(author):
+    a = author or {}
+    return a.get("__typename") == "Bot" or (a.get("login") or "").endswith("[bot]")
+
+
+def open_prs(repo):
+    owner, name = repo.split("/", 1)
+    out, after = [], None
+    while True:
+        args = ["api", "graphql", "-f", f"query={QUERY}", "-F", f"owner={owner}", "-F", f"name={name}"]
+        if after:
+            args += ["-F", f"after={after}"]
+        page = gh_json(*args)["data"]["repository"]["pullRequests"]
+        out += page["nodes"]
+        if not page["pageInfo"]["hasNextPage"]:
+            return out
+        after = page["pageInfo"]["endCursor"]
+
+
+def pencil_lines(body):
+    """The `## Pencil:` list critical-review keeps in the PR body."""
+    out, on = [], False
+    for line in (body or "").splitlines():
+        if re.match(r"^#{1,6}\s*Pencil:?\s*$", line, re.I):
+            on = True
+        elif on and (re.match(r"^#{1,6}\s", line) or (not line.strip() and out)):
+            break
+        elif on and re.match(r"^\s*[-*]\s+\S", line):
+            out.append(line.strip()[2:].strip())
+    return out
+
+
+def claim_stamp(*args):
+    return sh(["sh", tool("hooks/claim-stamp.sh"), *args], check=False)
+
+
+def claims(url):
+    """Live or unverified claim stamps on the PR, read by claim-stamp.sh.
+    Fails closed: a healthy read always prints a line, so silence or a
+    non-zero exit is an unread claim, and that hands the PR off."""
+    p = claim_stamp("read", url)
+    if p.returncode != 0 or not p.stdout.strip():
+        return ["unverified: claim-stamp gave no answer"]
+    held = []
+    for line in p.stdout.splitlines():
+        f = line.split("\t")
+        if line.startswith("unverified"):
+            held.append(line)
+        elif f[0] == "live" and len(f) >= 4:
+            held.append(f"claimed by {f[1]} {f[3]} ago")
+    return held
+
+
+def ledger_claims(url):
+    """Live card claims on url in this machine's ledger (claim-stamp.sh card-claims)."""
+    return [l for l in claim_stamp("card-claims", url).stdout.splitlines() if l.startswith("live\t")]
+
+
+def behind_by(repo, f):
+    p = sh(["gh", "api", f"repos/{repo}/compare/{f['base']}...{f['head_oid']}",
+            "--jq", ".behind_by"], check=False)
+    return int(p.stdout.strip()) if p.returncode == 0 and p.stdout.strip().isdigit() else None
+
+
+def facts(repo, pr):
+    """One PR's facts, score and hand-off reason; no judgment past the signals."""
+    paths = [n["path"] for n in pr["files"]["nodes"]]
+    labels = {n["name"] for n in pr["labels"]["nodes"]}
+    threads = [t for t in pr["reviewThreads"]["nodes"] if not t["isResolved"]]
+    human = [t for t in threads if not is_bot((t["comments"]["nodes"] or [{}])[0].get("author"))]
+    asks = [r for r in pr["latestOpinionatedReviews"]["nodes"]
+            if r["state"] == "CHANGES_REQUESTED" and not is_bot(r["author"])]
+    rollup = ((pr["commits"]["nodes"] or [{}])[0].get("commit") or {}).get("statusCheckRollup") or {}
+    ci = {"SUCCESS": "green", "FAILURE": "red", "ERROR": "red", "PENDING": "pending",
+          "EXPECTED": "pending"}.get(rollup.get("state"), "no checks")
+    pencils = pencil_lines(pr["body"])
+    depends = re.findall(r"(?mi)^Depends-On:\s*(\S+)", pr["body"] or "")
+    desk_paths = [p for p in paths if not re.search(NOT_DESK, p)]
+    desk = [name for name, rx in DESK if any(re.search(rx, p) for p in desk_paths)]
+    if pr["files"]["totalCount"] > len(paths):
+        desk.append("files unread")
+    f = {"ref": f"{repo}#{pr['number']}", "repo": repo, "number": pr["number"], "url": pr["url"],
+         "title": pr["title"], "head": pr["headRefName"], "base": pr["baseRefName"],
+         "head_oid": pr["headRefOid"], "start_sha": pr["headRefOid"], "sid": None,
+         "lines": pr["additions"] + pr["deletions"], "files": len(paths),
+         "conflicting": pr["mergeable"] == "CONFLICTING", "ci": ci,
+         "bot_threads": len(threads) - len(human), "human_threads": len(human),
+         "pencils": len(pencils), "depends_on": depends, "desk": desk,
+         "labels": sorted(labels), "behind": None}
+    f["score"] = (min(3, f["lines"] // 150) + (f["files"] > 5)
+                  + 2 * any(re.search(SAFETY, p) for p in paths)
+                  + (f["bot_threads"] > 0) + min(2, f["pencils"]) + bool(depends)
+                  + f["conflicting"] + (ci == "red") + 2 * ("fixup-hard" in labels))
+    f["rating"] = "low" if f["score"] <= 2 else "medium" if f["score"] <= 5 else "high"
+    f["model"] = "opus" if f["rating"] == "high" else "sonnet"
+    why = ""
+    if pr["isDraft"]:
+        why = "draft"
+    elif is_bot(pr["author"]):
+        why = "bot-authored: it regenerates its own branch"
+    elif pr["isCrossRepository"]:
+        why = "head is in a fork"
+    elif "blocked" in labels:
+        why = "labelled blocked"
+    elif pr.get("autoMergeRequest"):
+        by = ((pr["autoMergeRequest"].get("enabledBy") or {}).get("login") or "")
+        why = "auto-merge armed" + (f" by {by}" if by else "")
+    elif "fixup-hard" in labels:
+        why = "labelled fixup-hard: a fixer already gave up"
+    elif pr["reviewThreads"]["totalCount"] > len(pr["reviewThreads"]["nodes"]):
+        why = f"threads unread: {pr['reviewThreads']['totalCount']}, read only the first 100"
+    elif human:
+        why = f"{len(human)} unresolved thread(s) from a non-bot account"
+    elif asks:
+        why = "changes requested"
+    else:
+        held = claims(pr["url"])
+        why = "; ".join(held)
+    f["handoff"] = why
+    return f
+
+
+def state_of(f):
+    parts = ["conflicting" if f["conflicting"] else
+             "current" if f["behind"] == 0 else
+             f"behind {f['behind']}" if f["behind"] else "behind ?",
+             f["ci"]]
+    if f["bot_threads"]:
+        parts.append(f"{f['bot_threads']} bot thread(s)")
+    if f["pencils"]:
+        parts.append(f"{f['pencils']} pencil")
+    if f["depends_on"]:
+        parts.append("depends on " + ",".join(f["depends_on"]))
+    return ", ".join(parts)
+
+
+# ------------------------------------------------------------- the estimate
+def measured_mean():
+    """The mean of every `cost ... by=prt` line in the store, with its count."""
+    d = items_dir()
+    usd = []
+    for p in glob.glob(str(d / "*.md")):
+        try:
+            text = Path(p).read_text()
+        except OSError:
+            continue
+        for m in re.finditer(r"(?m)^\S+ \S+ cost (?=.*\bby=prt\b).*\busd=([0-9.]+)", text):
+            usd.append(float(m[1]))
+    return (sum(usd) / len(usd), len(usd)) if usd else (0.0, 0)
+
+
+def estimate(f, mean, n, factor):
+    scale = factor if f["model"] == "opus" else 1.0
+    if n >= 3:
+        return round(mean * scale, 2)
+    fix = f["conflicting"] or f["ci"] == "red" or f["bot_threads"] > 0
+    return round((REVIEW_USD + (FIX_USD if fix else 0)) * scale, 2)
+
+
+# --------------------------------------------------------------- the store
+def work_item(*args, stdin=None):
+    return sh([sys.executable, tool("bin/work-item"), *args], stdin=stdin).stdout.strip()
+
+
+def items_dir():
+    if os.environ.get("WORK_ITEM_DIR"):
+        return Path(os.environ["WORK_ITEM_DIR"])
+    return Path(work_item("dir"))
+
+
+_last_id = [""]
+
+
+def new_id():
+    """card-id new, stepping past this process's own same-second id."""
+    while True:
+        i = sh(["sh", tool("bin/card-id"), "new"]).stdout.strip()
+        if i != _last_id[0]:
+            _last_id[0] = i
+            return i
+        time.sleep(1)
+
+
+def home_item(ref):
+    """The newest work item whose home= is ref, or ''."""
+    best, when = "", ""
+    pat = re.compile(r"\shome=" + re.escape(ref) + r"(\s|$)", re.M)
+    for p in glob.glob(str(items_dir() / "*.md")):
+        try:
+            if not pat.search(Path(p).read_text()):
+                continue
+        except OSError:
+            continue
+        i = Path(p).name[:-3]
+        fold = dict(l.split("=", 1) for l in work_item("fold", i).splitlines() if "=" in l)
+        if fold.get("home") == ref and fold.get("updated", "") >= when:
+            best, when = i, fold.get("updated", "")
+    return best
+
+
+def ensure_item(f, repo):
+    i = home_item(f["ref"])
+    if i:
+        return i, "found"
+    i = new_id()
+    work_item("create", "--id", i, "--owner", "agent", "--repo", repo, "--brief", "-", f["title"],
+              stdin=f"Triage {f['url']}: one critical review, fixes to the fixup contract.\n")
+    work_item("log", i, f"home={f['ref']}")
+    return i, "created"
+
+
+# ------------------------------------------------------------------ commands
+def plan(args):
+    o = parse_scope(args, ("cap", "json"))
+    label, repos = resolve_scope(o)
+    cap, dry = o["cap"], o["dry"]
+    run = "prt-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    # One claim read per PR and one compare per worked PR, each a network
+    # call: read them side by side.
+    pool = ThreadPoolExecutor(8)
+    prs = list(pool.map(lambda rp: facts(*rp), [(r, pr) for r in repos for pr in open_prs(r)]))
+    work = [f for f in prs if not f["handoff"]]
+    work.sort(key=lambda f: (bool(f["depends_on"]), f["lines"], f["number"], f["repo"]))
+    for k, f in enumerate(work):
+        if k >= cap:
+            f["handoff"] = f"over the cap of {cap}"
+    work = work[:cap]
+    clones = {r: clone_of(r) for r in repos}
+    for f in prs:
+        f["clone"] = str(clones[f["repo"]][0])
+    sg = spend_gate()
+    factor = sg.price_of("opus")[1] / sg.SONNET[1]
+    mean, n = measured_mean()
+    for f, behind in zip(work, pool.map(lambda f: behind_by(f["repo"], f), work)):
+        f["behind"] = behind
+        f["actions"] = (["update"] if f["behind"] and not f["conflicting"] else []) + \
+            (["resolve conflicts"] if f["conflicting"] else []) + \
+            (["fix checks"] if f["ci"] == "red" else []) + \
+            (["answer bot threads"] if f["bot_threads"] else []) + ["review"]
+        f["est_usd"] = estimate(f, mean, n, factor)
+    if not dry:
+        work = launch(run, work, pool)
+    total = round(sum(f["est_usd"] for f in work), 2)
+    source = (f"measured: mean of {n} logged prt spends" if n >= 3
+              else f"guess: ${REVIEW_USD:.2f} a review, ${FIX_USD:.2f} a fix, opus x{factor:g}")
+    order = {id(f): k for k, f in enumerate(work)}
+    groups = []
+    for r in repos:
+        mine = [f for f in prs if f["repo"] == r]
+        mine.sort(key=lambda f: (id(f) not in order, order.get(id(f), 0), f["number"]))
+        groups.append({"repo": r, "clone": str(clones[r][0]),
+                       "cloned": (Path(clones[r][0]) / ".git").is_dir(), "prs": mine})
+    out = {"scope": label, "run": run, "cap": cap, "dry_run": dry, "repos": groups,
+           "batch": {"worked": len(work), "est_usd": total, "source": source}}
+    if o["json"]:
+        print(json.dumps(out, indent=1))
+    else:
+        render(out, work)
+    return 0
+
+
+def launch(run, work, pool):
+    """The writes, per worked PR: its repo's clone, then the claim, then the
+    work item and its estimate line. A PR that cannot be claimed is handed
+    off and nothing is written for it. Returns the PRs still worked."""
+    cloned = {r: ensure_clone(r) for r in dict.fromkeys(f["repo"] for f in work)}
+    for f in work:
+        path, err = cloned[f["repo"]]
+        if path:
+            f["clone"] = path
+        else:
+            f["handoff"] = f"no clone of {f['repo']}: {err}"
+
+    def claim(f):
+        sid = uuid.uuid4().hex
+        p = claim_stamp("card-claim", f["url"], sid)
+        if p.returncode == 0:
+            f["sid"] = sid
+        else:
+            tail = ((p.stderr or p.stdout).strip().splitlines() or ["card-claim failed"])[-1]
+            f["handoff"] = "claimed: " + tail
+    list(pool.map(claim, [f for f in work if not f["handoff"]]))
+    for f in work:
+        if f["handoff"]:
+            continue
+        try:
+            f["item"], f["item_was"] = ensure_item(f, f["repo"])
+            work_item("log", f["item"], "prt", "estimate", f"usd={f['est_usd']:.2f}",
+                      f"score={f['score']}", f"run={run}")
+        except Exception as e:
+            # A store error must not leave the claim held for 2h: release it
+            # and hand this PR off; the others go on.
+            claim_stamp("card-release", f["url"], f["sid"])
+            f["sid"] = None
+            f["handoff"] = f"store write failed, claim released: {e}"
+    return [f for f in work if not f["handoff"]]
+
+
+def render(out, work):
+    groups = out["repos"]
+    many = len(groups) > 1
+    n_open = sum(len(g["prs"]) for g in groups)
+    print(f"prt {out['run']} · {out['scope']} · {n_open} open"
+          + (f" in {len(groups)} repos" if many else "") + f", cap {out['cap']}"
+          + (" · dry run: nothing written, nothing pushed" if out["dry_run"] else ""))
+    print()
+
+    def pr(f):
+        return (f["repo"].split("/")[1] if many else "") + f"#{f['number']}"
+
+    rows = [("PR", "state", "score", "action", "model", "est")]
+    heads = {}
+    for g in groups:
+        if not g["prs"]:
+            continue
+        heads[len(rows)] = f"{g['repo']} · clone {g['clone']}" + ("" if g["cloned"] else " (cloned at launch)")
+        for f in g["prs"]:
+            if f["handoff"]:
+                act = ("next run: " if f["handoff"].startswith("over the cap") else "hand off: ")
+                rows.append((pr(f), "-", f"{f['score']} {f['rating']}", act + f["handoff"], "-", "-"))
+            else:
+                act = ", ".join(f["actions"]) + (" · desk: " + " ".join(f["desk"]) if f["desk"] else "")
+                rows.append((pr(f), state_of(f), f"{f['score']} {f['rating']}", act,
+                             f["model"], f"${f['est_usd']:.2f}"))
+    w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    for k, r in enumerate(rows):
+        if k in heads:
+            print(("" if k == 1 else "\n") + "  " + heads[k])
+        print("  " + "  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip())
+    print()
+    idle = [g["repo"] for g in groups if not g["prs"]]
+    if idle:
+        print("no open PRs: " + ", ".join(idle))
+    b = out["batch"]
+    print(f"batch: {b['worked']} reviews, est ${b['est_usd']:.2f} ({b['source']})")
+    desk = [pr(f) for f in work if f["desk"]]
+    if desk:
+        print("desk whatever the review says: " + " ".join(desk))
+    if not out["dry_run"] and work:
+        print()
+        for f in work:
+            print(f"{f['ref']}: item {f['item']} ({f['item_was']}), estimate logged · sid {f['sid']}"
+                  f" · branch {f['head']} · start {f['start_sha']} · clone {f['clone']}")
+
+
+def clean(args):
+    """Remove the prt-* worktrees in each clone in scope whose PR no live
+    claim holds -- the agents leave theirs, since the guard-worktrees hook
+    refuses a worktree's removal to the agent that made it. prt runs in the
+    orchestrating session's own call, so the guard sees `prt clean`."""
+    o = parse_scope(args)
+    _, repos = resolve_scope(o)
+    for repo in repos:
+        path, present = clone_of(repo)
+        if not present:
+            continue
+        gd = f"--git-dir={path}/.git"
+        listing = sh(["git", gd, "worktree", "list", "--porcelain"]).stdout
+        for wt in (l[len("worktree "):] for l in listing.splitlines() if l.startswith("worktree ")):
+            m = re.fullmatch(r"prt-.+-(\d+)", Path(wt).name)
+            if not m:
+                continue
+            url = f"https://github.com/{repo}/pull/{m[1]}"
+            held = [h for h in claims(url) if h] + ledger_claims(url)
+            # An agent that hit its budget pushed what it had; if the lease
+            # refused it, the work is only here. Nothing with uncommitted files
+            # or commits no remote has is removed.
+            if not held and sh(["git", "-C", wt, "status", "--porcelain"], check=False).stdout.strip():
+                held = ["uncommitted files"]
+            if not held and not sh(["git", "-C", wt, "branch", "-r", "--contains", "HEAD"],
+                                   check=False).stdout.strip():
+                held = ["commits no remote branch has"]
+            if held:
+                print(f"kept {wt}: {held[0].strip()}")
+            elif o["dry"]:
+                print(f"would remove {wt}")
+            else:
+                p = sh(["git", gd, "worktree", "remove", "--force", wt], check=False)
+                print(f"removed {wt}" if p.returncode == 0 else
+                      f"could not remove {wt}: {(p.stderr.strip().splitlines() or ['failed'])[-1]}")
+        if not o["dry"]:
+            sh(["git", gd, "worktree", "prune"])
+    return 0
+
+
+def release(args):
+    if len(args) != 2:
+        die("release takes <o/r#n> <sid>")
+    owner, name, n = parse_ref(args[0])
+    p = claim_stamp("card-release", f"https://github.com/{owner}/{name}/pull/{n}", args[1])
+    if p.returncode != 0:
+        refuse(f"card-release: {(p.stderr.strip().splitlines() or ['failed'])[-1]}")
+    print(f"released {args[0]} ({args[1][:8]})")
+    return 0
+
+
+def cost(args):
+    if len(args) != 1:
+        die("cost takes one agent id or transcript path")
+    sg = spend_gate()
+    path = args[0]
+    if not Path(path).is_file():
+        sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+        if not sid:
+            die("no session id: pass the transcript path")
+        hits = glob.glob(str(Path.home() / ".claude" / "projects" / "*" / sid / "subagents" / "**"
+                             / f"agent-{path}.jsonl"), recursive=True)
+        if not hits:
+            refuse(f"no transcript for agent {path} under this session")
+        path = hits[0]
+    msgs = {}
+    sg.read_usage(path, msgs)
+    tokens = sum(u["input_tokens"] + u["output_tokens"] + u["cache_read_input_tokens"]
+                 + u["cache_creation_input_tokens"] for u in msgs.values())
+    return round(sg.price(msgs), 4), tokens
+
+
+def spent(args):
+    run = ""
+    if "--run" in args:
+        k = args.index("--run")
+        run = args[k + 1] if k + 1 < len(args) else ""
+        args = args[:k] + args[k + 2:]
+    if len(args) != 2 or not run:
+        die("spent takes <o/r#n> <agent-id|transcript> --run <id>")
+    parse_ref(args[0])
+    usd, tokens = cost(args[1:])
+    i = home_item(args[0])
+    if not i:
+        refuse(f"no work item has home={args[0]}; run prt without --dry-run first")
+    work_item("log", i, "cost", f"tokens={tokens}", f"usd={usd}", "by=prt", f"run={run}")
+    print(f"{args[0]}: ${usd:.2f}, {tokens} tokens, logged on item {i}")
+    return 0
+
+
+def links(url, text):
+    """url appears in text as itself: .../pull/1 is not .../pull/12."""
+    return re.search(re.escape(url) + r"(?!\d)", text) is not None
+
+
+def decide(args):
+    if len(args) != 2 or args[1] != "-":
+        die("decide takes <o/r#n> - and the Decide line on stdin")
+    owner, name, n = parse_ref(args[0])
+    line = sys.stdin.read().strip()
+    m = re.match(r"^[-*]?\s*\*\*(\w+)\*\*\s*·\s*(.+)$", line)
+    if not m or m[1].lower() not in KINDS:
+        refuse("a Decide line opens with its kind, one of " + ", ".join(KINDS))
+    kind, rest = m[1].lower(), m[2]
+    link = re.search(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", rest)
+    pr_url = f"https://github.com/{owner}/{name}/pull/{n}"
+    label, url = (link[1], link[2]) if link else ("PR", pr_url)
+    field = {}
+    for k in ("default", "undo", "risk"):
+        v = re.search(rf"\b{k}:\s*(.+?)\s*(?:·|$)", rest)
+        if not v:
+            refuse(f"the Decide line has no {k}:")
+        field[k] = v[1]
+    q = rest.split(" default:")[0].strip(" ·")
+    for row in work_item("list").splitlines():
+        c = row.split("\t")
+        if len(c) >= 7 and c[1] == "human-ruling" and links(url, c[6]) and (link or q in c[6]):
+            print(f"{c[0]} (exists)")
+            return 0
+    brief = (f"{q} ([{label}]({url})) default: {field['default']} undo: {field['undo']} "
+             f"until: {args[0]} merges risk: {field['risk']} judgment: {kind}\n")
+    i = new_id()
+    work_item("create", "--id", i, "--owner", "human-ruling", "--repo", f"{owner}/{name}",
+              "--brief", "-", f"{args[0]}: {q[:70]}", stdin=brief)
+    work_item("log", i, "status=ready")
+    print(i)
+    return 0
+
+
+def queue(args):
+    merge = "--merge" in args
+    args = [a for a in args if a != "--merge"]
+    if len(args) != 1:
+        die("queue takes <o/r#n> [--merge]")
+    owner, name, n = parse_ref(args[0])
+    repo = f"{owner}/{name}"
+    pr = next((p for p in open_prs(repo) if p["number"] == n), None)
+    if not pr:
+        refuse(f"{args[0]} is not an open pull request")
+    f = facts(repo, pr)
+    no = []
+    if f["handoff"]:
+        no.append(f["handoff"])
+    if f["desk"]:
+        no.append("desk path: " + " ".join(f["desk"]))
+    if f["bot_threads"]:
+        no.append(f"{f['bot_threads']} unresolved bot thread(s)")
+    if f["pencils"]:
+        no.append(f"{f['pencils']} Pencil line(s) stand on the user's silence")
+    if f["ci"] != "green" or f["conflicting"]:
+        no.append("not green and mergeable")
+    if any(r.split("\t")[1:2] == ["human-ruling"] and links(pr["url"], r) for r in work_item("list").splitlines()):
+        no.append("a Needs-ruling card waits on it")
+    line = f"{pr['url']}  @mergifyio queue"
+    if not merge:
+        print(line + ("  (would be refused: " + "; ".join(no) + ")" if no else ""))
+        return 0
+    if no:
+        refuse("not queued: " + "; ".join(no))
+    sh(["gh", "pr", "comment", str(n), "--repo", repo, "--body", "@mergifyio queue"])
+    print(f"queued {args[0]}")
+    return 0
+
+
+def main(argv):
+    cmd = argv[0] if argv else ""
+    if cmd in ("--help", "-h"):
+        lines = Path(__file__).read_text().splitlines()[1:]
+        head = lines[:next(k for k, l in enumerate(lines) if not l.startswith("#"))]
+        sys.stderr.write("".join(l[2:] + "\n" for l in head))
+        return 2
+    if cmd == "cost":
+        usd, tokens = cost(argv[1:])
+        print(f"${usd:.4f} {tokens} tokens")
+        return 0
+    if cmd == "spent":
+        return spent(argv[1:])
+    if cmd == "decide":
+        return decide(argv[1:])
+    if cmd == "queue":
+        return queue(argv[1:])
+    if cmd == "clean":
+        return clean(argv[1:])
+    if cmd == "release":
+        return release(argv[1:])
+    return plan(argv)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exit as e:
+        sys.stderr.write(f"prt: {e}\n")
+        sys.exit(e.code)

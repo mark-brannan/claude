@@ -37,9 +37,11 @@
 #   claim-stamp.sh refresh [-C <dir>] <session-id>   bump this session's stamp
 #   claim-stamp.sh release [-C <dir>] [--scan] <session-id>
 #                                                    delete this session's stamp
-#   claim-stamp.sh read    [-C <dir>]                print every stamp on the card:
+#   claim-stamp.sh read    [-C <dir>] [<url>]        print every stamp on the card,
+#                                                    the branch's or <url>'s:
 #       live|stale <sid8> <machine> <age>m <url>, one tab-separated line each;
-#       `no card`; or `unverified: <why>` when the stamps could not be read
+#       `free <url>` when the card has none; `no card`; or
+#       `unverified: <why>` when the stamps could not be read
 #   claim-stamp.sh session-start                     SessionStart hook; JSON on stdin
 #   claim-stamp.sh card-claim <url> <session-id>     claim a board card by its link;
 #       refuses, exit 1, while another session's claim on it is live
@@ -329,15 +331,21 @@ do_release() {  # do_release <dir> <sid>
 
 # A lookup that failed must not read as "zero stamps": consumers deciding
 # whether a worktree is free map `unverified` to unknown, an empty list to free.
-do_read() {  # do_read <dir>
+# A <url> names the card outright, for a reader with no checkout of the
+# branch: prt reads every open PR's stamps this way.
+do_read() {  # do_read <dir> [<url>]
   usable || return 0
-  card=$(card_of "$1")
-  case "$card" in
-    pr\ *|issue\ *) url=${card#* } ;;
-    none) printf 'no card\n'; return 0 ;;
-    unverified*) printf '%s\n' "$card"; return 0 ;;
-    *) printf 'unverified: card lookup failed\n'; return 0 ;;
-  esac
+  if [ -n "${2:-}" ]; then
+    url=$2
+  else
+    card=$(card_of "$1")
+    case "$card" in
+      pr\ *|issue\ *) url=${card#* } ;;
+      none) printf 'no card\n'; return 0 ;;
+      unverified*) printf '%s\n' "$card"; return 0 ;;
+      *) printf 'unverified: card lookup failed\n'; return 0 ;;
+    esac
+  fi
   card_parts "$url" || { printf 'unverified: bad card url %s\n' "$url"; return 0; }
   stamps=$(read_stamps "$owner" "$repo" "$number") \
     || { printf 'unverified: could not read the stamps on %s\n' "$url"; return 0; }
@@ -348,6 +356,9 @@ do_read() {  # do_read <dir>
     if [ "$age" -ge "$STALE_SECS" ]; then state=stale; else state=live; fi
     printf '%s\t%s\t%s\t%dm\t%s\n' "$state" "$s" "$m" "$((age / 60))" "$url"
   done
+  # A card with no stamp says so, so a reader can tell "nobody holds it"
+  # from a read that printed nothing because it never ran.
+  [ -n "$(printf '%s' "$stamps" | tr -d '[:space:]')" ] || printf 'free\t%s\n' "$url"
 }
 
 # -------------------------------------------------------------- card claims
@@ -486,7 +497,7 @@ case "$cmd" in
   card-claims)  card_ledger "${1:-}"; exit 0 ;;
   release) [ $# -ge 1 ] || exit 0; [ "$SCAN" = 1 ] && release_cards "$1"
            do_release "$dir" "$1"; exit 0 ;;
-  read)    do_read "$dir"; exit 0 ;;
+  read)    do_read "$dir" "${1:-}"; exit 0 ;;
   session-start)
     payload=$(cat 2>/dev/null) || exit 0
     command -v jq >/dev/null 2>&1 || exit 0
