@@ -30,13 +30,15 @@
 # The curia copy never goes in roll.md, which holds the user's words alone;
 # a curia must already have its folder.
 #
-# The log is for pencil calls: defaults an agent took. A call or undo that
-# says the user (Solace, the owner) chose, ruled, ordered, decided or asked
-# for it ("Solace chose", "per the user", "on the owner's order", "as
-# ordered", "ruled by") claims provenance, and is refused with exit 2: a
-# ruling is recorded where the user's words are. --ruling <url> points at
-# those words and is written as `(ruling: <url>)`; or reword the call as the
-# default taken. The match is deliberately wide: a false refusal is a reword.
+# The log is for pencil calls: defaults an agent took. An entry that says
+# the user (Solace, the owner) chose, ruled, ordered, decided or asked for it
+# ("Solace chose", "per the user", "the owner's order", "as ordered", "ruled
+# by Solace", "Ruling (Solace)") claims provenance, and is refused with exit
+# 2: a ruling is recorded where the user's words are. --ruling <url> points at
+# those words, a github.com URL, and is written as `(ruling: <url>)`; the
+# script checks its shape, not what it says. Or reword the call as the default
+# taken. The whole entry is matched, wide on purpose: a false refusal is a
+# reword.
 #
 # `list` prints entries after the last `- read-from ` line, each with its PR's
 # state: open is pending, merged is in force, closed unmerged is void. It
@@ -77,18 +79,21 @@ PR_URL = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/(\d+)\S*")
 PR_REF = re.compile(r"\[#\d+\]\((https://github\.com/[^/\s]+/[^/\s]+)/pull/(\d+)[^)\s]*\)")
 SLUG = re.compile(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
 STAMP = re.compile(r"\d{8}t\d{6}z")
+APOS = "['\u2019]"
 WHO = r"(?:solace|the\s+user|the\s+owner)"
-VERB = (r"(?:chose|chosen|chooses|choose|ruled|rules|ordered|orders|decided|decides|asked|requested|"
-        r"directed|instructed|approved|picked)")
+VERB = (r"(?:chose|chosen|ruled|ordered|decided|asked|requested|directed|instructed|approved|picked|wanted|"
+        r"said|told|preferred|agreed|confirmed)")
+NOUN = r"(?:order|orders|ruling|request|instruction|instructions|direction|choice|decision)"
 CLAIM = re.compile(
-    rf"\b{WHO}(?:'s)?\s+(?:has\s+|had\s+|also\s+|then\s+)?{VERB}\b"
+    rf"\b{WHO}(?:{APOS}s)?\s+(?:(?:has|had|have|also|then|already|just|\w+ly)\s+){{0,2}}{VERB}\b"
     rf"|\bper\s+{WHO}\b"
-    rf"|\b(?:on|at|by)\s+{WHO}'?s?\s+(?:order|orders|ruling|request|instruction|instructions|direction|choice|decision)\b"
-    rf"|\b{WHO}'s\s+(?:order|orders|ruling|request|instruction|instructions|direction|choice|decision)\b"
-    r"|\bas\s+ordered\b"
-    r"|\b(?:ruled|ordered|chosen|decided|requested|directed)\s+by\b",
+    rf"|\b{WHO}{APOS}s\s+{NOUN}\b"
+    rf"|\b(?:on|at|by)\s+{WHO}\s+{NOUN}\b"
+    r"|\bas\s+(?:ordered|ruled|instructed|directed|requested)\b(?!\s+by\b)"
+    rf"|\b(?:ruled|ordered|chosen|decided|requested|directed|instructed|approved|picked)\s+by\s+{WHO}\b"
+    rf"|\bruling\s*\(\s*{WHO}\s*\)",
     re.IGNORECASE)
-URL = re.compile(r"https?://\S+")
+RULING = re.compile(r"https://github\.com/[^\s()\[\]<>]+")
 
 
 def line(call, undo, link, pr, ruling=None):
@@ -284,16 +289,16 @@ def main(argv):
                 return 2
             push_entry(root, f"- read-from {stamp}\n", now, f"read-from {stamp}")
             return 0
-        if a.ruling is not None and not URL.fullmatch(a.ruling):
-            print("agent-decision: --ruling takes one http(s) URL", file=sys.stderr)
+        if a.ruling is not None and not RULING.fullmatch(a.ruling):
+            print("agent-decision: --ruling takes one https://github.com/ URL", file=sys.stderr)
             return 2
-        if not a.ruling and CLAIM.search(f"{call} {a.undo or ''}"):
+        bullet = line(call, a.undo, a.link, pr_tag(root, a.pr, a.link), a.ruling)
+        if not a.ruling and CLAIM.search(bullet):
             print("agent-decision: this entry says the user chose, ruled, ordered, decided or asked for it. "
                   "A ruling is recorded where the user's words are (a thread, the sitting's log, a decisions "
                   "line), not as a pencil call. Add --ruling <url> pointing at those words, or reword the "
                   "call as the default you took.", file=sys.stderr)
             return 2
-        bullet = line(call, a.undo, a.link, pr_tag(root, a.pr, a.link), a.ruling)
         curias = []
         if a.curia:
             state = lib_state.state_dir()

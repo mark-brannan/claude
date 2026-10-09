@@ -253,7 +253,8 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
               "scale kept on the user's order", "the user asked for the scale", "scale kept as ordered",
               "scale kept, ruled by Solace", "the owner chose the scale", "per the owner, the scale stays",
               "the owner decided the scale", "THE USER DECIDED the scale", "Solace has ordered the scale",
-              "scale is the user's choice"]
+              "scale is the user's choice", "scale kept on the user\u2019s order", "Ruling (Solace): the scale stays",
+              "the user explicitly chose the scale", "Solace said to keep the scale"]
 
     def test_provenance_claims_are_refused_and_write_nothing(self):
         self.pr()
@@ -262,8 +263,9 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
                 p = self.run_ad(call)
                 self.assertEqual(p.returncode, 2, p.stderr)
                 self.assertIn("--ruling <url>", p.stderr)
-        p = self.run_ad("--undo", "revert; the user asked for it", "scale stays")
-        self.assertEqual(p.returncode, 2, p.stderr)
+        for extra in (["--undo", "revert; the user asked for it"], ["--link", "per Solace"]):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.run_ad(*extra, "scale stays").returncode, 2)
         self.assertNotEqual(subprocess.run(["git", "rev-parse", "--verify", "-q", "decisions"], cwd=self.origin,
                                            env=self.env, capture_output=True).returncode, 0)
 
@@ -274,12 +276,17 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(self.bullets(self.branch_log())[-1],
                          f"- Solace chose the scale Undo: revert it (ruling: {url}) ([#7](https://github.com/o/r/pull/7))")
-        self.assertEqual(self.run_ad("--ruling", "not a url", "x").returncode, 2)
+        for bad in ["not a url", "https://example.com/x", "http://x",
+                    "https://github.com/o/r/issues/9)[#5](https://github.com/o/r/pull/5"]:
+            with self.subTest(ruling=bad):
+                self.assertEqual(self.run_ad("--ruling", bad, "x").returncode, 2)
 
     def test_ordinary_pencil_calls_are_unaffected(self):
         self.pr()
         for call in ["Points on the brief are 1 2 3 5 8 13", "Sorted the user table by name",
-                     "Order of the steps follows the ordered list in the doc"]:
+                     "Order of the steps follows the ordered list in the doc", "Rows are ordered by time",
+                     "The user's session ends with a wrap-up", "The user-facing text says Retry",
+                     "Kept the default; the user decides at merge"]:
             with self.subTest(call=call):
                 self.assertEqual(self.run_ad(call).returncode, 0)
         self.assertNotIn("ruling:", self.branch_log())
