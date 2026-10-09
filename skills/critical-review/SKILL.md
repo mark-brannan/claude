@@ -9,6 +9,11 @@ You may ask questions or comment directly on the PR. Then, without
 waiting for answers, switch gears: fix any open issues and get the PR
 ready for my review.
 
+Before the summary may call the PR ready to merge, run
+`~/.claude/bin/pr-blockers <PR>`. Any line it prints is fixed (an unsigned
+commit by `~/.claude/bin/resign-branch.sh`) or reported, never assumed:
+"awaiting approval" is a guess until it has said nothing else blocks.
+
 Then summarize. Open with one line, before any heading: what the PR does
 in your words and whether it is ready to merge. That sentence stands in
 for my reading the diff. Then four headings, each shown even when empty.
