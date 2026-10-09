@@ -79,11 +79,11 @@ Show the plan; under a bare `/prt` nothing gates the launch.
 The same plan and flags, and now it writes. For each worked PR, first the
 claim: `claim-stamp.sh card-claim` under a sid made for that PR in this
 run. A PR already claimed is handed off `claimed: …` and nothing else is
-written for it. Then its work item (the one whose `home=` is the PR, else a new one)
-and one `prt estimate` line on it. A repo with no clone at `~/<repo>` is
-cloned into prt's cache. Nothing is pushed: bringing a branch up to date
-is its agent's job, under pickup §6. The last lines carry, per PR, what
-the prompt below needs:
+written for it. Then its work item (the one whose `home=` is the PR, else
+a new one) and one `prt estimate` line on it. A repo with no clone at
+`~/<repo>` is cloned into prt's cache. Nothing is pushed: bringing a
+branch up to date is its agent's job, under pickup §6. The last lines
+carry, per PR, what the prompt below needs:
 
 ```
 mark-brannan/claude#121: item 1791512345e2e6fa4a (found), estimate logged · sid 3f9c… · branch claude/x · start 8aa7d35… · clone ~/claude
