@@ -80,8 +80,8 @@ class AgentDecisionTest(unittest.TestCase):
         git("checkout", "-q", "-B", "main", cwd=d, env=self.env)
         return d
 
-    def pr(self, n=7, issues=(), files=()):
-        view = {"number": n, "url": f"https://github.com/o/r/pull/{n}", "baseRefName": "main",
+    def pr(self, n=7, issues=(), files=(), body=""):
+        view = {"number": n, "url": f"https://github.com/o/r/pull/{n}", "baseRefName": "main", "body": body,
                 "closingIssuesReferences": [{"number": i} for i in issues], "files": [{"path": f} for f in files]}
         (self.stub / "pr_view.json").write_text(json.dumps(view))
 
@@ -155,19 +155,20 @@ class AgentDecisionTest(unittest.TestCase):
         self.assertEqual(got[1], f"- by link ([#12]({url}))")
         self.assertEqual(got[2], "- plus issue ([#3](https://github.com/o/r/issues/3)) ([#9](https://github.com/o/r/pull/9))")
 
-    def test_pr_flag_beats_link_and_survives_gh_down(self):
+    def test_pr_flag_beats_link_and_gh_down_refuses(self):
         self.pr(9)
         url = "https://github.com/o/r/pull/12"
         self.assertEqual(self.run_ad("--pr", "9", "--link", url, "both").returncode, 0)
         self.assertEqual(self.bullets(self.branch_log())[-1],
                          f"- both ([#12]({url})) ([#9](https://github.com/o/r/pull/9))")
         (self.stub / "pr_view.json").unlink()
-        self.run_ad("--pr", "4", "gh down")
-        self.assertEqual(self.bullets(self.branch_log())[-1], "- gh down (PR #4)")
+        p = self.run_ad("--pr", "4", "gh down")
+        self.assertEqual((p.returncode, "cannot read PR #4" in p.stderr), (1, True), p.stderr)
         git("config", "remote.origin.url", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
         git("config", "url." + str(self.origin) + ".insteadOf", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
-        self.assertEqual(self.run_ad("--pr", "4", "from origin").returncode, 0)
-        self.assertEqual(self.bullets(self.branch_log())[-1], "- from origin ([#4](https://github.com/o/r/pull/4))")
+        p = self.run_ad("--pr", "4", "from origin")
+        self.assertEqual((p.returncode, "cannot read" in p.stderr), (1, True), p.stderr)
+        self.assertEqual(self.bullets(self.branch_log())[-1][:8], "- both (", "gh down logged an unjudged entry")
 
     def test_list_looks_up_prs_past_the_list(self):
         self.pr(2000)
@@ -313,7 +314,7 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.assertIn("Call: Solace chose the awk rung", shown)
         self.assertIn("deny it outright", shown)
         self.assertIn("Go with the awk rung.", shown)
-        self.assertLess(shown.index("deny it outright"), shown.index("Go with the awk rung."))
+        self.assertLess(shown.index("Go with the awk rung."), shown.index("deny it outright"), "the user's words first")
 
     def test_contradiction_is_refused_with_the_record_quoted(self):
         (self.repo / "docs/design").mkdir()
@@ -346,6 +347,25 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.pr()
         self.assertEqual(self.run_ad("a call with no record").returncode, 0)
         self.assertEqual(self.seen.read_text().count("Call:"), 1, "the judge ran again with nothing to read")
+
+    def test_part_of_issues_are_read_and_a_record_that_cannot_be_read_refuses(self):
+        self.pr(body="Part of #3, after #4 (a PR). Closes nothing.")
+        self.said("repos/o/r/issues/3", body="the issue's rule")
+        (self.stub / "api_repos_o_r_issues_4.json").write_text('{"body":"a PR body","pull_request":{}}')
+        self.verdict('{"verdict":"consistent"}')
+        self.assertEqual(self.run_ad("a call").returncode, 0)
+        shown = self.seen.read_text()
+        self.assertIn("the issue's rule", shown)
+        self.assertNotIn("a PR body", shown)
+        (self.stub / "api_repos_o_r_issues_3.json").unlink()
+        p = self.run_ad("another call")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("issue #3", p.stderr)
+        (self.stub / "pr_view.json").unlink()
+        p = self.run_ad("--pr", "7", "a third call")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("cannot read", p.stderr)
+        self.assertEqual(len(self.bullets(self.branch_log())), 2)
 
 
 if __name__ == "__main__":
