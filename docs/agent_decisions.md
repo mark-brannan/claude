@@ -313,3 +313,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t072917z
 - direction: gh-agent builds the GitHub App route for agent identity, option 1 of the research under card 17915273125a74df74, ahead of a ruling on which option. Undo: delete bin/gh-agent and its test; never register the App. ([#130](https://github.com/mark-brannan/claude/pull/130))
+
+### 20261009t072938z
+- gh-agent reuses a cached token only for the same App id, installation and API host Undo: drop the key field from the cache line in token(). ([#130](https://github.com/mark-brannan/claude/pull/130))
