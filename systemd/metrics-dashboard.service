@@ -1,0 +1,20 @@
+# Rebuild the metrics database and the dashboard page every four hours (see
+# the timer): metrics-db reads the state repo, GitHub and the local
+# transcripts into one SQLite file, metrics-dashboard renders it as one page.
+# A timer and not a hook because the GitHub pull is the slow part and a
+# session ending is not when the numbers are wanted. The dashboard only runs
+# after a clean database build, so a failed GitHub pull keeps the last good page.
+
+[Unit]
+Description=Rebuild the metrics database and dashboard page
+
+[Service]
+Type=oneshot
+# A user unit does not inherit a login shell's PATH, and metrics-db needs gh.
+Environment=PATH=%h/.claude/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/sh -c '%h/.claude/bin/metrics-db --github --quiet && %h/.claude/bin/metrics-dashboard'
+StateDirectory=metrics-dashboard
+StandardOutput=append:%S/metrics-dashboard/timer.log
+StandardError=append:%S/metrics-dashboard/timer.log
+# Measured 55 s from a cold database with --github, 3.5 s warm.
+TimeoutStartSec=2m
