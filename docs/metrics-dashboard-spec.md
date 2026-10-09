@@ -14,7 +14,7 @@ READMEs say where things are and how to view them; they do not define.
 
 | Term | Definition today |
 |---|---|
-| Typed prompt | A user transcript record whose content is a string no machine wrote: not an injected tag (`<system-reminder>`, `<task-notification>`), not a relayed hook or session message, not a headless run's fixed opening prompt. A typed slash command counts, as the command name. Sidechain (subagent) records are excluded. |
+| Typed prompt | A human-typed user record: no injected tag, relayed message or headless opening. Slash commands count. Subagents excluded. |
 | Pasted | Text inside `<pasted_content>` blocks. Counted apart; pasting is not typing. |
 | Touch | One typed prompt. |
 | Headless session | A session with zero typed prompts. |
@@ -24,6 +24,7 @@ READMEs say where things are and how to view them; they do not define.
 | Day of a typed prompt | The date of the first typed prompt in its transcript; a transcript is never split across days. |
 | Week | Monday to Sunday, from the date part of the timestamp. |
 | Project | The repo's `project-*` GitHub topic with the prefix removed; `other` if none. |
+| Open card | A board card whose latest status is not `done` or `closed`. |
 
 ## Windows
 
@@ -47,7 +48,7 @@ Delta colour: green when the change moves in the wanted direction.
 | gate decisions, 7d | sum `dec_gate` | down | How often am I pulled mid-flight? |
 | open issues | issues created on or before the day and not closed by it | down | Is the backlog shrinking? |
 | open PRs | same, for pull requests | down | Is review keeping up? |
-| rulings waiting | board cards owned `human-ruling` whose latest status is not `done` or `closed` | down | Is my decision queue draining? |
+| rulings waiting | open cards owned `human-ruling` | down | Is my decision queue draining? |
 
 ## Sections and charts
 
@@ -61,8 +62,8 @@ history is complete. Board cards start when the item store did.
 | Open issues, by project | open issues per day, grouped by project | Where is the backlog? |
 | Open pull requests | open PRs per day, all repos | Is review keeping up? |
 | PRs merged per week | merged PRs by week, split `claude/*` head branch vs other | How much lands from agent branches? |
-| Board cards waiting on the user | cards per day owned `human-ruling` and `human-click`, latest status not `done`/`closed` | What do I owe the board? |
-| Board cards in the agent's queue | same, owner `agent` | What is queued for the agent? |
+| Board cards waiting on the user | open cards per day owned `human-ruling` and `human-click` | What do I owe the board? |
+| Board cards in the agent's queue | open cards per day owned `agent` | What is queued for the agent? |
 
 ### Sessions and friction
 
@@ -80,18 +81,18 @@ history is complete. Board cards start when the item store did.
 | Chart | Formula | Question |
 |---|---|---|
 | Prompts per day | typed prompts by first-prompt day | How much do I type? |
-| Words per day | typed words by first-prompt day | same |
+| Words per day | typed words by first-prompt day | Is the volume of my speech growing? |
 | Words per prompt, weekly | words / prompts | Am I saying more per touch? |
-| Characters per prompt, daily | chars / prompts, rounded | same, finer |
+| Characters per prompt, daily | chars / prompts, rounded | How long is a single touch? |
 
 ### Agent work vs touches
 
 | Chart | Formula | Question |
 |---|---|---|
 | Sessions per week, by prompts typed | buckets 0, 1, 2-5, 6+ | Do sessions need fewer touches? |
-| Merged PRs per week, by prompts typed on the branch | prompts typed into every session that committed on the PR's head branch; buckets 0-1, 2-5, 6+, no session | How few touches does landed work take? |
+| Merged PRs per week, by prompts on the branch | typed prompts summed over sessions that committed to the head branch; buckets 0-1, 2-5, 6+, none | How few touches does landed work take? |
 | Tool calls per prompt, weekly | tool calls / typed prompts | How much does one touch buy? |
-| Agent hours per keyboard hour, weekly | agent hours / keyboard hours | Leverage |
+| Agent hours per keyboard hour, weekly | agent hours / keyboard hours | Does agent time grow faster than my time? |
 | Commits per prompt, weekly | commits / typed prompts | How much lands per touch? |
 
 ## Open for ruling
