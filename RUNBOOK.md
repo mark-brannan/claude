@@ -25,6 +25,7 @@ Procedures only. The hook designs and the scars behind them are in
 - [Check a repo's prose budgets](#check-a-repos-prose-budgets)
 - [Prune stale Stop-hook salvage refs](#prune-stale-stop-hook-salvage-refs)
 - [Prune stale worktrees](#prune-stale-worktrees)
+- [Open the metrics dashboard](#open-the-metrics-dashboard)
 - [Read the pickup items](#read-the-pickup-items)
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
 
@@ -371,6 +372,41 @@ Verify: the log ends in `removed N worktree(s), kept M (...)` dated today.
 
 ```bash
 tail -3 ~/.local/state/prune-worktrees/timer.log
+```
+
+## Open the metrics dashboard
+
+One page of charts from the state repo's metrics, the GitHub issue and PR
+timestamps and the local transcripts. `metrics-db` builds one SQLite file;
+`metrics-dashboard` renders it. Both write under the state repo's
+`state/global/metrics/dashboard/`, which must be gitignored in that repo (the
+file holds private issue titles and blocked-command text, and the Stop hook
+commits `state/`); `metrics-db` refuses to write otherwise and exits 4.
+
+```bash
+metrics-db --quiet && metrics-dashboard    # warm: seconds; prints the page path
+```
+
+`--github` also re-pulls issues and PRs (about a minute cold, a few dozen API
+calls). `--rescan-typing` rereads every transcript, after changing what counts
+as a typed prompt in `metrics-db`. A typed slash command counts as a touch;
+headless sessions count in the sessions tile and are listed apart.
+
+A timer rebuilds both every four hours. Install once:
+
+```bash
+systemctl --user link ~/.claude/systemd/metrics-dashboard.service ~/.claude/systemd/metrics-dashboard.timer
+```
+
+```bash
+systemctl --user enable --now metrics-dashboard.timer
+```
+
+Verify: the page's header shows a `built` time within the last four hours,
+and the log's last lines are the page path with no error.
+
+```bash
+tail -3 ~/.local/state/metrics-dashboard/timer.log
 ```
 
 ## Read the pickup items
