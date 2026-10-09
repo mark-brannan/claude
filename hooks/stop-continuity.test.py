@@ -207,8 +207,13 @@ def body(item):
     return "\n".join(lines[lines.index("---") + 1:]).rstrip("\n")
 
 
+CLOUD = ("/home/user/claude_prompts_scratch", "/workspace/claude_prompts_scratch")
+
+
 class StopContinuityTest(unittest.TestCase):
     def setUp(self):
+        if any(os.path.isdir(d + "/.git") for d in CLOUD):
+            self.skipTest("a cloud path holds a state repo here; the hook would commit to it")
         self.tmp = tempfile.mkdtemp()
 
     def tearDown(self):
