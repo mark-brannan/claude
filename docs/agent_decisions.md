@@ -247,3 +247,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t013010z
 - release-subagent-branch: detach only, never remove the worktree Undo: add git worktree remove ([#116](https://github.com/mark-brannan/claude/pull/116))
+
+### 20261009t013026z
+- pickup: a holder is idle when it has no claim stamp under two hours and no process cwd in its worktree Undo: revert the pickup section-3 liveness test ([#117](https://github.com/mark-brannan/claude/pull/117))
