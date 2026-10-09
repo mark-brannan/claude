@@ -92,6 +92,7 @@ lib/ids.py
 lib/lock.py
 lib/gitrun.py
 lib/libpath.py
+lib/critical_review.py
 hooks/curia-roll.py
 hooks/session-metrics.jq
 hooks/lib-metrics-fmt.jq
@@ -103,6 +104,7 @@ hooks/stop-item.py
 hooks/measure-git-events.sh
 hooks/no-persistent-polling.sh
 hooks/no-late-pr-subscribe.sh
+hooks/release-subagent-branch.sh
 hooks/pr-ownership-context.sh
 hooks/pr-threads-gate.sh
 hooks/npm-publish-auth.sh
@@ -346,8 +348,8 @@ done
 # =========================================================================
 # Localise — settings.json's absolute paths, rewritten for this VM.
 # =========================================================================
-# settings.json names three paths for the languette plugin: env.PROSE_BUDGET,
-# env.CLAIM_STAMP_BIN and its private_terms_file option. Claude Code expands
+# settings.json names two paths for the languette plugin: env.PROSE_BUDGET
+# and its private_terms_file option. Claude Code expands
 # neither ~ nor ${HOME} in env or pluginConfigs values (probed: the hook saw
 # the literal string), so the repo holds a real machine's absolute paths, and
 # here they would name a HOME that doesn't exist. A terms file that is set but
@@ -361,7 +363,6 @@ if [ "$DRY_RUN" = yes ]; then
 elif [ -f "$STAGE_TMP/settings.json" ]; then
   if jq --arg home "$HOME" --arg terms "$STATE_REPO/state/global/private-terms.txt" '
        .env.PROSE_BUDGET = ($home + "/.claude/bin/prose-budget")
-       | .env.CLAIM_STAMP_BIN = ($home + "/.claude/hooks/claim-stamp.sh")
        | .pluginConfigs["languette@languette"].options.private_terms_file = $terms' \
        "$STAGE_TMP/settings.json" >"$STAGE_TMP/settings.json.tmp" 2>/dev/null &&
      mv -f "$STAGE_TMP/settings.json.tmp" "$STAGE_TMP/settings.json"; then

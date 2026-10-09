@@ -7,7 +7,7 @@ only fires when someone says "wrap up" loses every session that ends any
 other way, which on an ephemeral cloud container is most of them. So this
 runs unconditionally on Stop and needs nothing from the conversation.
 
-It writes seven things, all derived from the transcript and from git:
+It writes eight things, all derived from the transcript and from git:
 (each <dir>/<id>.* below sits in <dir>/<first two of id>/; lib/state.py
 state_shard_path)
   metrics/sessions/<id>.json    cost and shape of the session
@@ -16,6 +16,8 @@ state_shard_path)
                                  claude_prompts_scratch/state/global/log/
                                  2026-08-21-friction-metric-spec.md
   metrics/blocked/<id>.jsonl    each tool call the permission layer refused
+  metrics/critical-review/<id>.jsonl  each /critical-review typed, its cost
+                                 and outcome, via lib/critical_review.py
   log/auto/<date>-<repo>-<id>.md  a resumable checkpoint the next session reads
   pickup/<start>-<id>.md        this session's pickup item, which /pickup reads
   items/<id>.md                 this session's work item, via stop-item.py
@@ -407,6 +409,13 @@ class Stop:
                 write(path, "".join(jq_c(x) + "\n" for x in each(get(metrics, key))))
             except OSError:
                 pass
+        # One row per /critical-review the user typed, to
+        # metrics/critical-review/<id>.jsonl; a failure there never costs the rest.
+        try:
+            import critical_review
+            critical_review.record_session(sid, self.tp, cwd)
+        except Exception:
+            pass
 
         # The live snapshot has served its purpose; the finished session file
         # supersedes it, so drop it rather than leaving two records of one

@@ -16,6 +16,7 @@
 # holds the two equal.
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -178,18 +179,27 @@ class Parity(unittest.TestCase):
         out.append(("not a repo", self.T / "home", ""))
         return out
 
-    def gate(self, hooks, home, stamp):
-        """The fake hook dir: branch-home-gate.sh prints home; claim-stamp.sh
-        reads out stamp, or is absent for None."""
+    def gate(self, hooks, home, items):
+        """The fake hook dir: branch-home-gate.sh prints home, and the card
+        for --card; the item store holds one item per (status, holder, age,
+        brief) in items, or is absent for None."""
         g = hooks / "branch-home-gate.sh"
-        g.write_text(f"#!/bin/sh\nprintf '%s\\n' '{home}'\n")
+        g.write_text("#!/bin/sh\nif [ \"$1\" = --card ]; then echo 'pr https://github.com/o/r/pull/1'; "
+                     f"else printf '%s\\n' '{home}'; fi\n")
         g.chmod(0o755)
-        cs = hooks / "claim-stamp.sh"
-        if stamp is None:
-            cs.unlink(missing_ok=True)
-        else:
-            cs.write_text(f"#!/bin/sh\n[ \"$1\" = read ] || exit 0\nprintf '%s\\n' '{stamp}'\n")
-            cs.chmod(0o755)
+        sl = self.T / "items"
+        shutil.rmtree(sl, ignore_errors=True)
+        os.environ["WORK_ITEM_DIR"] = str(sl)
+        os.environ["WORK_ITEM_BIN"] = str(LIB.parent / "bin" / "work-item")
+        if items is None:
+            return
+        sl.mkdir()
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        for n, (status, holder, stale, brief) in enumerate(items):
+            t = "2026-09-01T00:00:00Z" if stale else now
+            (sl / f"179083687{n}aaaaaaaa.md").write_text(
+                f"# T\n\n## Brief\n{brief}\n\n## Log\n{t} 1d68120b status=open owner=agent repo=- parent=- model=- effort=-\n"
+                f"{t} {holder} status={status}\n")
 
     def archivable_same(self, hooks, root, branch, sid, label):
         os.environ["HOOK_DIR"] = str(hooks)  # the shell function's input
@@ -220,18 +230,27 @@ class Parity(unittest.TestCase):
 
     def test_home_and_live_answers(self):
         # Over the one clean, pushed fixture, where reasons are empty until
-        # the home and live checks: every home line and claim-stamp reading.
+        # the home and live checks: every home line and item-store reading.
         hooks = self.T / "hooks-live"
         hooks.mkdir()
         root = self.fixtures("live-")[0][1]
+        card = "Fix it. https://github.com/o/r/pull/1"
         for home in ("home: pr https://github.com/o/r/pull/1", "unverified: gh failed (exit 1)",
                      "unverified:x", "no home", ""):
-            for stamp in (None, "", "live\tdeadbeef\thost\t2m\thttps://x", "stale\tdeadbeef\thost\t180m\thttps://x",
-                          "live\tabcd1234\thost\t1m\thttps://x\nlive\tdeadbeef\thost\t2m\thttps://y", "live"):
-                self.gate(hooks, home, stamp)
+            for items in (None, [], [("claimed", "deadbeef", False, card)],
+                          [("claimed", "deadbeef", True, card)], [("ready", "deadbeef", False, card)],
+                          [("claimed", "deadbeef", False, "See o/r#1.")],
+                          [("claimed", "deadbeef", False, "Other. https://github.com/o/r/pull/12")],
+                          [("claimed", "deadbeef", False, "Other. o/r#12, o/r#100")],
+                          [("claimed", "deadbeef", False, "Other. o/r#12, then o/r#1.")],
+                          [("claimed", "abcd1234", False, card), ("claimed", "deadbeef", False, card)],
+                          [("claimed", "abcd1234", False, card)]):
+                self.gate(hooks, home, items)
                 for sid in ("abcd1234-0000", "deadbeef-1111", ""):
-                    with self.subTest(home=home, stamp=stamp, sid=sid):
+                    with self.subTest(home=home, items=items, sid=sid):
                         self.archivable_same(hooks, root, "claude/work", sid, "archivable_reasons")
+        os.environ.pop("WORK_ITEM_DIR", None)
+        os.environ.pop("WORK_ITEM_BIN", None)
 
     # --- decision_rate -----------------------------------------------------------
     def test_decision_rate(self):

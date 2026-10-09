@@ -27,9 +27,12 @@ project-specific facts belong in that project's own CLAUDE.md.
   owning session may still be running and may be archived out from under you
   mid-turn. Read another branch from where you stand (`git log/show <branch>`,
   `git show <branch>:<path>`); to work it, fork your own worktree and check it
-  out there. If git says the branch is checked out elsewhere, that is a live
-  claim: report it and stop. Enforced by
-  the languette plugin's `guard-worktrees`.
+  out there. If git says the branch is checked out elsewhere, that is a
+  claim only while its holder lives — a fresh claim stamp or a process in
+  that worktree: report it and stop. An idle holder is not a claim; the
+  pickup skill judges liveness and says how to take the branch without
+  touching it. The languette plugin's `guard-worktrees` keeps you out of
+  another session's worktree; it never judges liveness.
 - **Branch-vs-main is the repo's call, then a rule.** If main requires a
   pull request (`gh api repos/<o>/<r>/rules/branches/main` lists
   `pull_request`), every change goes through a PR, however small; the
@@ -131,7 +134,12 @@ in nobody's queue but this session's.
     taken under the one-way-door test, in the body's `## Pencil:` list and
     appended with `~/.claude/bin/agent-decision "<call>" --undo "<undo>" --link <PR>`
     (add `--curia <id>` when the work came from a curia), committed in this
-    PR. None taken: say `## Pencil: none`.
+    PR. None taken: say `## Pencil: none`. **A reversal is never a pencil
+    call** (ruled 2026-10-09, claude#127): a default that contradicts the
+    linked issue, a design doc, a decisions line or a thread the user
+    wrote is not yours however cheap the revert; the instruction stands
+    and the conflict goes under the critical-review summary's Reversed
+    heading, as a Decide line if the PR cannot be right without it.
 - **A PR handed to the user needs a judgment pass, not a "did this even build"
   pass.** His read is for the call I can't make — is this the right change,
   does it fit the design. Anything a machine could have caught should
@@ -168,7 +176,32 @@ in nobody's queue but this session's.
   default is resolved and listed under Pencil with its thread link (the
   critical-review summary's headings). Scar: 2026-08-27, ampacity#3 — confirmed
   a flagged link was live, never replied or resolved the thread, merge failed
-  on branch policy.
+  on branch policy. A third exit, taken first: a bot thread that asks to
+  undo an instruction — a governing document, the linked issue's words, a
+  thread the user wrote — is a reversal, never a fix and never a pencil.
+  The instruction stands, the thread stays open, and the summary's
+  Reversed heading carries the line in the record's own words. Scars:
+  2026-10-09, languette#110 — a design rule's allowlist and a decision's
+  reasons cut on a bot's rubric nit, merged, then restored; languette#116 —
+  the bot flagged "the issue says adds, the code replaces", the agent
+  replied "Replacement is the intent", resolved it, and filed the reversal as
+  pencil.
+- **Every comment, review or thread reply you post is signed as an
+  agent's.** It goes out under the user's login, and a bot or the next
+  session reads an unsigned reply as the user's ruling (languette#116:
+  "Replacement is the intent" was an agent's line, taken as the user's).
+  The body opens with `🤖 ` and closes with one signature line:
+
+  ```
+  🤖 claude-fable-5-1 · high · 5a74df74
+  ```
+
+  The model as this session reports it, the effort as the pickup item
+  names it (`-` when unknown), the session's first eight hex. A PR body's
+  `🤖 Generated with Claude Code` line gains the same model and effort.
+  A languette guard refuses the unsigned post (card 17915273135a74df74);
+  until it lands this line stands alone. An identity of the agents' own
+  is under research (card 17915273125a74df74).
 - **Resolve threads one at a time, by id, after reading and responding to each one.** Never
   loop over "all unresolved threads" — a review bot can post between your
   listing and your resolve, and the loop closes findings nobody read. Scar:
@@ -381,6 +414,12 @@ public" section.
   duplication before proceeding.
 - Watch for parallel implementations, repeated state machines, repeated
   validation flows, and copy-paste feature development. Those are the smell.
+- **A gate reads only.** A hook that can deny a call is a function of that
+  call and the facts it declares: it writes nothing, runs no program a
+  setting or an env var names, and reads no other workflow's state. Who
+  holds a branch, whether they live and who cleans up belong to what takes
+  or releases a branch, never to a gate. Guard: languette's purity test.
+  Scar: languette#107.
 
 ## Screenshots and Playwright
 

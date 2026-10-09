@@ -6,7 +6,12 @@
 # created as an orphan seeded from main's log; a push that loses a race is
 # re-applied on the new tip; every bullet carries its PR; `list` filters by
 # the last read-from and by PR state. A curia copy still gets the same
-# stamped entry, never roll.md. `gh` is a stub reading JSON from $GH_STUB.
+# stamped entry, never roll.md. A call that says the user ruled needs --said,
+# and only the user's own words pass; the judge refuses a call that
+# contradicts the record, and refuses when it cannot run. `gh` is a stub
+# reading JSON from $GH_STUB; `claude` is a stub whose verdict is $CLAUDE_STUB
+# and which keeps what it was shown in $CLAUDE_SEEN.
+import json
 import os
 import re
 import stat
@@ -19,8 +24,13 @@ from pathlib import Path
 AD = Path(__file__).resolve().parent / "agent-decision"
 STAMP = re.compile(r"^### \d{8}t\d{6}z$")
 GH = """#!/bin/sh
-f="$GH_STUB/$1_$2.json"
+f="$GH_STUB/$(printf '%s_%s' "$1" "$2" | tr '/' '_').json"
 [ -f "$f" ] && cat "$f" || exit 1
+"""
+CLAUDE = """#!/bin/sh
+cat > "$CLAUDE_SEEN"
+[ -f "$CLAUDE_STUB" ] || { echo "judge down" >&2; exit 1; }
+printf '{"result": %s}' "$(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$CLAUDE_STUB")"
 """
 OLD = "# Agent decisions\n\nmain's old header\n\n### 20261001t000000z\n- seeded call ([#5](https://github.com/o/r/pull/5))\n"
 
@@ -39,10 +49,14 @@ class AgentDecisionTest(unittest.TestCase):
         self.bin.mkdir()
         (self.bin / "gh").write_text(GH)
         (self.bin / "gh").chmod(0o755 | stat.S_IXUSR)
+        (self.bin / "claude").write_text(CLAUDE)
+        (self.bin / "claude").chmod(0o755 | stat.S_IXUSR)
+        self.seen = t / "seen"
         self.env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
                     "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
                     "GIT_COMMITTER_EMAIL": "t@t", "PATH": f"{self.bin}:{os.environ['PATH']}",
-                    "GH_STUB": str(self.stub), "CLAUDE_STATE_REPO": str(self.state)}
+                    "GH_STUB": str(self.stub), "CLAUDE_STATE_REPO": str(self.state),
+                    "CLAUDE_STUB": str(t / "verdict"), "CLAUDE_SEEN": str(self.seen)}
         for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
             self.env.pop(k, None)
         git("init", "-q", "--bare", "-b", "main", str(self.origin), env=self.env)
@@ -66,8 +80,21 @@ class AgentDecisionTest(unittest.TestCase):
         git("checkout", "-q", "-B", "main", cwd=d, env=self.env)
         return d
 
-    def pr(self, n=7):
-        (self.stub / "pr_view.json").write_text(f'{{"number":{n},"url":"https://github.com/o/r/pull/{n}"}}')
+    def pr(self, n=7, issues=(), files=(), body=""):
+        view = {"number": n, "url": f"https://github.com/o/r/pull/{n}", "baseRefName": "main", "body": body,
+                "closingIssuesReferences": [{"number": i} for i in issues], "files": [{"path": f} for f in files]}
+        (self.stub / "pr_view.json").write_text(json.dumps(view))
+
+    def said(self, path, login="t", body="use the awk rung"):
+        (self.stub / "api_user.json").write_text('{"login":"t"}')
+        (self.stub / f"api_{path.replace('/', '_')}.json").write_text(json.dumps({"user": {"login": login}, "body": body}))
+
+    def verdict(self, text):
+        Path(self.env["CLAUDE_STUB"]).write_text(text)
+
+    def no_decisions_branch(self):
+        self.assertNotEqual(subprocess.run(["git", "rev-parse", "--verify", "-q", "decisions"], cwd=self.origin,
+                                           env=self.env, capture_output=True).returncode, 0)
 
     def run_ad(self, *args, repo=None):
         return subprocess.run([sys.executable, str(AD), "--repo", str(repo or self.repo), *args],
@@ -128,19 +155,20 @@ class AgentDecisionTest(unittest.TestCase):
         self.assertEqual(got[1], f"- by link ([#12]({url}))")
         self.assertEqual(got[2], "- plus issue ([#3](https://github.com/o/r/issues/3)) ([#9](https://github.com/o/r/pull/9))")
 
-    def test_pr_flag_beats_link_and_survives_gh_down(self):
+    def test_pr_flag_beats_link_and_gh_down_refuses(self):
         self.pr(9)
         url = "https://github.com/o/r/pull/12"
         self.assertEqual(self.run_ad("--pr", "9", "--link", url, "both").returncode, 0)
         self.assertEqual(self.bullets(self.branch_log())[-1],
                          f"- both ([#12]({url})) ([#9](https://github.com/o/r/pull/9))")
         (self.stub / "pr_view.json").unlink()
-        self.run_ad("--pr", "4", "gh down")
-        self.assertEqual(self.bullets(self.branch_log())[-1], "- gh down (PR #4)")
+        p = self.run_ad("--pr", "4", "gh down")
+        self.assertEqual((p.returncode, "cannot read PR #4" in p.stderr), (1, True), p.stderr)
         git("config", "remote.origin.url", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
         git("config", "url." + str(self.origin) + ".insteadOf", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
-        self.assertEqual(self.run_ad("--pr", "4", "from origin").returncode, 0)
-        self.assertEqual(self.bullets(self.branch_log())[-1], "- from origin ([#4](https://github.com/o/r/pull/4))")
+        p = self.run_ad("--pr", "4", "from origin")
+        self.assertEqual((p.returncode, "cannot read" in p.stderr), (1, True), p.stderr)
+        self.assertEqual(self.bullets(self.branch_log())[-1][:8], "- both (", "gh down logged an unjudged entry")
 
     def test_list_looks_up_prs_past_the_list(self):
         self.pr(2000)
@@ -246,8 +274,126 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.pr()
         p = self.run_ad("--curia", "no-such", "a call")
         self.assertEqual(p.returncode, 1)
-        self.assertNotEqual(subprocess.run(["git", "rev-parse", "--verify", "-q", "decisions"], cwd=self.origin,
-                                           env=self.env, capture_output=True).returncode, 0)
+        self.no_decisions_branch()
+
+    def test_user_ruled_needs_said_and_a_pr_body_is_not_it(self):
+        self.pr()
+        for call in ("Solace chose the awk rung", "kept, as the user asked", "Ruling (Solace): keep it"):
+            p = self.run_ad(call)
+            self.assertEqual(p.returncode, 1, call)
+            self.assertIn("--said", p.stderr)
+        p = self.run_ad("--said", "https://github.com/o/r/pull/7", "Solace chose the awk rung")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("never a PR body", p.stderr)
+        self.no_decisions_branch()
+        self.assertFalse(self.seen.exists(), "the judge ran before the said check")
+
+    def test_said_by_a_bot_or_signed_by_an_agent_is_refused(self):
+        self.pr()
+        self.said("repos/o/r/issues/comments/11", login="coderabbitai[bot]")
+        p = self.run_ad("--said", "https://github.com/o/r/pull/7#issuecomment-11", "the user asked for it")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("coderabbitai[bot]", p.stderr)
+        self.said("repos/o/r/pulls/comments/12", body="  🤖 Replacement is the intent.")
+        p = self.run_ad("--said", "https://github.com/o/r/pull/7#discussion_r12", "the user asked for it")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("🤖", p.stderr)
+        self.no_decisions_branch()
+
+    def test_said_user_words_are_logged_and_shown_to_the_judge(self):
+        self.pr(issues=[3])
+        self.said("repos/o/r/issues/3", body="the issue says: deny it outright")
+        self.said("repos/o/r/pulls/comments/12", body="Go with the awk rung.")
+        self.verdict('{"verdict":"consistent","source":"","quote":""}')
+        url = "https://github.com/o/r/pull/7#discussion_r12"
+        p = self.run_ad("--said", url, "--undo", "deny instead", "Solace chose the awk rung")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.bullets(self.branch_log())[-1],
+                         f"- Solace chose the awk rung Undo: deny instead Said: {url} ([#7](https://github.com/o/r/pull/7))")
+        shown = self.seen.read_text()
+        self.assertIn("Call: Solace chose the awk rung", shown)
+        self.assertIn("deny it outright", shown)
+        self.assertIn("Go with the awk rung.", shown)
+        self.assertLess(shown.index("Go with the awk rung."), shown.index("deny it outright"), "the user's words first")
+
+    def test_contradiction_is_refused_with_the_record_quoted(self):
+        (self.repo / "docs/design").mkdir()
+        (self.repo / "docs/design/guard.md").write_text("The setting adds to the built-in list and never replaces it.\n")
+        git("add", "docs/design/guard.md", cwd=self.repo, env=self.env)
+        git("commit", "-q", "-m", "design", cwd=self.repo, env=self.env)
+        git("push", "-q", "origin", "main", cwd=self.repo, env=self.env)
+        (self.repo / "docs/design/guard.md").write_text("A set list replaces the defaults.\n")
+        self.pr(issues=[3], files=["docs/design/guard.md", "guards/x.py"])
+        self.said("repos/o/r/issues/3", body="adds, never replaces")
+        self.verdict('```json\n{"verdict":"contradicts","source":"issue #3","quote":"adds, never replaces"}\n```')
+        p = self.run_ad("--undo", "add instead", "A set list replaces the defaults; ssh moves into it")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('contradicts issue #3: "adds, never replaces"', p.stderr)
+        self.assertIn("Reversed", p.stderr)
+        shown = self.seen.read_text()
+        self.assertIn("never replaces it.", shown, "the doc as main has it, not the branch's edit")
+        self.assertNotIn("A set list replaces the defaults.\n", shown)
+        self.assertNotIn("guards/x.py", shown)
+        self.no_decisions_branch()
+
+    def test_judge_down_refuses_and_no_record_skips_it(self):
+        self.pr(issues=[3])
+        self.said("repos/o/r/issues/3")
+        Path(self.env["CLAUDE_STUB"]).unlink(missing_ok=True)
+        p = self.run_ad("a call with a record")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("judge down", p.stderr)
+        self.no_decisions_branch()
+        self.pr()
+        self.assertEqual(self.run_ad("a call with no record").returncode, 0)
+        self.assertEqual(self.seen.read_text().count("Call:"), 1, "the judge ran again with nothing to read")
+
+    def test_part_of_issues_are_read_and_a_record_that_cannot_be_read_refuses(self):
+        self.pr(body="Part of #3, after #4 (a PR). Closes nothing.")
+        self.said("repos/o/r/issues/3", body="the issue's rule")
+        (self.stub / "api_repos_o_r_issues_4.json").write_text('{"body":"a PR body","pull_request":{}}')
+        self.verdict('{"verdict":"consistent"}')
+        self.assertEqual(self.run_ad("a call").returncode, 0)
+        shown = self.seen.read_text()
+        self.assertIn("the issue's rule", shown)
+        self.assertNotIn("a PR body", shown)
+        (self.stub / "api_repos_o_r_issues_3.json").unlink()
+        p = self.run_ad("another call")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("issue #3", p.stderr)
+        (self.stub / "pr_view.json").unlink()
+        p = self.run_ad("--pr", "7", "a third call")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("cannot read", p.stderr)
+        self.assertEqual(len(self.bullets(self.branch_log())), 2)
+
+    CLAIMS = ["Solace chose the scale", "Solace ruled the scale", "the user ruled the scale", "scale set per Solace",
+              "scale kept on the user's order", "the user asked for the scale", "scale kept as ordered",
+              "scale kept, ruled by Solace", "the owner chose the scale", "per the owner, the scale stays",
+              "the owner decided the scale", "THE USER DECIDED the scale", "Solace has ordered the scale",
+              "scale is the user's choice", "scale kept on the user\u2019s order", "Ruling (Solace): the scale stays",
+              "the user explicitly chose the scale", "Solace said to keep the scale", "the human chose it"]
+
+    def test_provenance_claims_are_refused_and_write_nothing(self):
+        self.pr()
+        for call in self.CLAIMS:
+            with self.subTest(call=call):
+                p = self.run_ad(call)
+                self.assertEqual(p.returncode, 1, p.stderr)
+                self.assertIn("--said <url>", p.stderr)
+        for extra in (["--undo", "revert; the user asked for it"], ["--link", "per Solace"]):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.run_ad(*extra, "scale stays").returncode, 1)
+        self.no_decisions_branch()
+
+    def test_ordinary_pencil_calls_are_unaffected(self):
+        self.pr()
+        for call in ["Points on the brief are 1 2 3 5 8 13", "Sorted the user table by name",
+                     "Order of the steps follows the ordered list in the doc", "Rows are ordered by time",
+                     "The user's session ends with a wrap-up", "The user-facing text says Retry",
+                     "Kept the default; the user decides at merge", "the user wants X at merge"]:
+            with self.subTest(call=call):
+                self.assertEqual(self.run_ad(call).returncode, 0)
 
 
 if __name__ == "__main__":

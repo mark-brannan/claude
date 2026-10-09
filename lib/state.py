@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 
 import gitrun
@@ -153,6 +154,48 @@ def dirty_paths(root):
     return _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain")[1]
 
 
+def card_names(url):
+    """The card's two spellings in an item's line: its URL, and the
+    owner/repo#n a home= fact is drawn as."""
+    names = [url]
+    m = re.match(r"^https?://[^/]+/([^/]+/[^/]+)/(pull|issues)/([0-9]+)", url)
+    if m:
+        names.append(f"{m.group(1)}#{m.group(3)}")
+    return names
+
+
+def _names(line, t):
+    """line names t, and t does not run on into more digits: pull/1 must not
+    match pull/12."""
+    return re.search(re.escape(t) + r"(?![0-9])", line) is not None
+
+
+def _item_rows(hook_dir):
+    """work-item list's rows for the store (`id owner status holder updated
+    repo line`, split on tabs); [] when there is no items/ or it cannot be
+    read, as lib-state.sh's item_rows."""
+    d = os.environ.get("WORK_ITEM_DIR") or f"{state_dir()}/items"
+    if not os.path.isdir(d):
+        return []
+    for wi in (os.environ.get("WORK_ITEM_BIN", ""), f"{hook_dir}/../bin/work-item",
+               f"{os.environ.get('HOME', '')}/.claude/bin/work-item"):
+        if wi and os.path.isfile(wi):
+            break
+    else:
+        return []
+    out = _cap([sys.executable, wi, "list"], env=dict(os.environ, WORK_ITEM_DIR=d))
+    return [ln.split("\t") for ln in out.split("\n") if ln]
+
+
+def _live_claim_names(names, self8, hook_dir):
+    """Another session holds a live claim on an item whose line names the
+    card. work-item decides live vs stale; an unclaimed item has no holder."""
+    for f in _item_rows(hook_dir):
+        if len(f) > 6 and f[3] and f[3] != self8 and any(_names(f[6], t) for t in names):
+            return True
+    return False
+
+
 # archivable_reasons -- the reasons a session on this branch is not yet
 # archivable, comma-joined; empty when it is. Order: worktree dirty,
 # unpushed commits, branch home, session live.
@@ -164,24 +207,25 @@ def dirty_paths(root):
 # inline and never looked for a pointer issue, the one branch-home-gate.sh
 # already finds.
 #
-# branch-home-gate.sh and claim-stamp.sh live in hook_dir and are shelled
-# out to, not sourced, so their own state (branch-home-gate.sh's
-# once-per-session gate, claim-stamp.sh's per-session record) never leaks
-# into this read-only check.
+# branch-home-gate.sh lives in hook_dir and is shelled out to, not sourced,
+# so its own state (the once-per-session gate) never leaks into this
+# read-only check.
 #
 # Home is checked before session-live, and both only when dirty/unpushed are
 # already clean: both can shell out to `gh` (branch-home-gate.sh up to two
-# 30s calls, claim-stamp.sh one), so a dirty mid-work tree -- the common
+# 30s calls per mode, and session-live asks for its --card after the home
+# check has), so a dirty mid-work tree -- the common
 # case, and the one Stop fires on every turn -- never pays that cost.
 #
 # session live (dotfiles#167): git state alone is how a live session's
 # worktree got archived out from under it (PR #162, the scar the languette
-# plugin's guard-worktrees names). The signal is the claim stamp
-# claim-stamp.sh already posts on the branch's card and refreshes on every
-# Stop (dotfiles#287); it, not this function, decides fresh vs stale
-# (CLAIM_STALE_SECS). self_sid is the caller's own: its own stamp is never a
-# reason, or a session could never become archivable by watching its own
-# refresh. Omit it (a sweep, a human) and every fresh stamp counts.
+# plugin's guard-worktrees names). The signal is the item store's claim: a
+# live claim by another session on an item that names the branch's card
+# (its URL, or the owner/repo#n it is drawn as). work-item decides live vs
+# stale (WORK_ITEM_STALE_SECS). self_sid is the caller's own: its own
+# claim is never a reason, or a session could never become archivable by
+# watching its own claim. Omit it (a sweep, a human) and every live claim
+# on the card counts.
 #
 # Not this function's job: "not a git repo" (there is no branch here to
 # judge) and anything that only becomes true after a push is attempted --
@@ -219,14 +263,13 @@ def archivable(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
         else:
             reasons.append(f"no PR and no pointer for `{work_branch}`")
 
-    cs = f"{hook_dir}/claim-stamp.sh"
-    if not reasons and os.access(cs, os.X_OK):
-        self8 = self_sid[:8]
-        for line in _cap(["sh", cs, "read", "-C", work_root]).split("\n"):
-            f = line.split("\t")
-            if f[0] == "live" and (f[1] if len(f) > 1 else "") != self8:
+    gate = f"{hook_dir}/branch-home-gate.sh"
+    if not reasons and os.access(gate, os.X_OK):
+        card = _cap(["sh", gate, "--card", work_root])
+        if card.startswith(("pr ", "issue ")):
+            url = card.split(" ", 1)[1]
+            if _live_claim_names(card_names(url), self_sid[:8], hook_dir):
                 reasons.append("session live")
-                break
 
     return ", ".join(reasons), home
 

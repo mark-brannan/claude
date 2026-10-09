@@ -312,9 +312,11 @@ on them.
 
 ## Acceptance cases
 
-Evidence: **test**, an assertion in `stop-continuity.test.sh`; **code**, the
-code does it and no test asserts it; **item N** or a card id, not built, and
-what builds it. Ids are the job's number and a counter, appended, never
+Evidence: **test**, an assertion in `stop-continuity.test.py`; **feature**, a
+scenario in `features/stop-continuity.feature` titled `row <id>`, which a
+test joins to this table both ways; **code**, the code does it and no test
+asserts it; **item N** or a card id, not built, and what builds it. Ids are
+the job's number and a counter, appended, never
 renumbered or reused; a retired row is struck through with a pointer. When
 the Python lands the column goes: every id must then appear in a test name,
 checked by a lint.
@@ -324,16 +326,16 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 
 | # | Given | When | Then | Evidence |
 |---|---|---|---|---|
-| 0.1 | any input, including none | Stop | exit 0 | code |
+| 0.1 | any input, including none | Stop | exit 0 | feature |
 | 0.2 | a Stop killed past 290 s after the checkpoint write, before job 6 | the checkpoint is read before the next Stop | its verdict line reads `the Stop hook did not finish` | code |
 | 0.3 | a push lock left by a hook killed past 290 s | the next Stop | it takes the lock | code |
-| 1.1 | an event with no `transcript_path`, or one that does not exist | Stop | nothing written under the state dir | code |
-| 1.2 | an event with no `session_id` | Stop | nothing written | code |
+| 1.1 | an event with no `transcript_path`, or one that does not exist | Stop | nothing written under the state dir | feature |
+| 1.2 | an event with no `session_id` | Stop | nothing written | feature |
 | 1.3 | a transcript `jq -s` cannot parse | Stop | exit 0 | code |
 | 2.1 | a session with commits since its start | Stop | `sessions/<id>.json` has `commits` = `git rev-list --count --since=<start> HEAD` | code |
 | 2.2 | a transcript whose text contains `git commit` but no commit was made | Stop | `commits` is 0 | code |
 | 2.3 | an earlier Stop wrote `decisions/<id>.jsonl` | Stop again | the file holds this transcript's events only, not the earlier ones appended | code |
-| 3.1 | `metrics/live/<id>.json` exists | Stop | it is gone | code |
+| 3.1 | `metrics/live/<id>.json` exists | Stop | it is gone | feature |
 | 3.2 | `metrics-live.sh` holds the session's lock | Stop | the Stop completes inside 10 s and writes the checkpoint | test |
 | 4.1 | a fresh session | Stop | the checkpoint's `**Verdict:**` line is the verdict | test |
 | 4.2 | a checkpoint with a `## Resume` block and a `- consumed:` line | Stop | both survive verbatim, and the section after the block is still there | test |
@@ -347,7 +349,7 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 6.6 | a detached `HEAD` whose commit lives on no remote branch | Stop | a reason; the same `HEAD` on a remote branch is not | test |
 | 6.7 | `@{u}` is `main` and the commits are on a pushed `stack/` branch | Stop | not unpushed | test |
 | 6.8 | the home check cannot reach GitHub | Stop | not archivable, `branch home unverified` | test |
-| 6.9 | `cwd` outside any repo | Stop | `not archivable: not a git repo` | test |
+| 6.9 | `cwd` outside any repo | Stop | `not archivable: not a git repo` | feature |
 | 6.10 | a clean, pushed branch | Stop | `branch-home-gate.sh --check` runs once | test |
 | 6.11 | another session's fresh claim stamp on the branch's card | Stop | not archivable; the session's own stamp alone is not a reason | code |
 | 7.1 | a dirty Claude-made worktree, level with origin | Stop | a signed commit on `wip/<id>`, pushed; branch `HEAD` and `@{u}` unchanged; files still dirty | test |

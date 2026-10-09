@@ -1088,6 +1088,27 @@ class StopContinuityTest(unittest.TestCase):
         self.assertTrue(w.ckpt(SID), "the checkpoint is still written when the lock is held")
         shutil.rmtree(lock)
 
+    # ------------------------------- a /critical-review becomes one metrics row
+    def critical_review(self):
+        w = self.world("review")
+        _, WORK = w.make_work()
+        cmd = json.dumps({"type": "user", "uuid": "cmd-1", "timestamp": "2026-08-01T10:01:00.000Z",
+                          "origin": {"kind": "human"}, "message": {"role": "user", "content":
+                          "<command-name>/critical-review</command-name>\n<command-args>o/r#7</command-args>"}})
+        done = json.dumps({"type": "assistant", "timestamp": "2026-08-01T10:02:00.000Z", "message": {
+            "id": "m-r", "model": "claude-opus-5-5", "content": [{"type": "text", "text":
+                "**Fixed**\n- a `abc`\n\n**Look at**\n- None.\n\n**Pencil**\n\n**Decide**\n"}],
+            "usage": {"input_tokens": 1, "output_tokens": 2}}})
+        tp = w.transcript("review.jsonl", cmd, done)
+        w.run_hook(SID, WORK, tp=tp)
+        w.run_hook(SID, WORK, tp=tp)
+        rows = read(w.GS / "metrics" / "critical-review" / SID[:2] / f"{SID}.jsonl").splitlines()
+        self.assertEqual(len(rows), 1, "two Stops, one review, one row")
+        row = json.loads(rows[0])
+        self.assertEqual((row["pr"], row["by"], row["fixed"], row["look_at"]), ("o/r#7", "user", 1, 0))
+        w.run_hook("noreview-1111-2222-3333", WORK)
+        self.assertFalse(glob.glob(f"{w.GS}/metrics/critical-review/no/*"), "no review, no file")
+
     # -------------------- the incident: the checkpoint and the 📦 notice answer once
     def incident(self):
         # Two Stop hooks ran in parallel: the notice counted every session's
@@ -1155,7 +1176,7 @@ class StopContinuityTest(unittest.TestCase):
 
     SECTIONS = ("verdict_basics", "verdict_branches", "resume_and_pickup", "session_item", "curia_digests",
                 "salvage", "state_push", "state_signing", "state_items", "state_debounce", "live_lock",
-                "incident")
+                "incident", "critical_review")
 
     def test_term_stops_the_child_before_the_lock_comes_off(self):
         # A child bounded() started runs in a session of its own, so a TERM

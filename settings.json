@@ -3,8 +3,7 @@
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
     "showThinkingSummaries": true,
     "FORCE_AUTOUPDATE_PLUGINS": "1",
-    "PROSE_BUDGET": "/home/solace/.claude/bin/prose-budget",
-    "CLAIM_STAMP_BIN": "/home/solace/.claude/hooks/claim-stamp.sh"
+    "PROSE_BUDGET": "/home/solace/.claude/bin/prose-budget"
   },
   "permissions": {
     "allow": [
@@ -314,6 +313,11 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" subagentstop 0 show 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/release-subagent-branch.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
+            "timeout": 10
           }
         ]
       }
