@@ -220,3 +220,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t010718z
 - A decisions commit is signed when commit.gpgsign is true, and falls back to unsigned when no key is available. Undo: drop the -S branch in commit_log. ([#118](https://github.com/mark-brannan/claude/pull/118))
+
+### 20261009t010722z
+- list and read-from are words of agent-decision itself, so a call that is exactly 'list' collides; no sibling script. Undo: split list and read-from into a sibling script. ([#118](https://github.com/mark-brannan/claude/pull/118))
