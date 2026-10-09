@@ -96,10 +96,33 @@ git fetch origin
 git checkout <the branch the item names>
 ```
 
-If git refuses because the branch is checked out in another worktree, that is
-a live claim by a session that has not released it. Say so — name the branch
-and the worktree git named — and stop. Don't take it away from them, and
-don't work anywhere else on the same branch.
+If git refuses because the branch is checked out in another worktree, that
+worktree holds it — but a holder is not always alive. A sub-agent that
+committed keeps its worktree, and the branch, after it has finished. Ask
+whether the holder lives, without entering its worktree (`<name>` is the
+last part of the path git named):
+
+```
+~/.claude/hooks/claim-stamp.sh read -C .
+for p in /proc/[0-9]*; do case $(readlink "$p/cwd" 2>/dev/null) in */<name> | */<name>/*) echo "live: pid ${p#/proc/}" ;; esac; done
+```
+
+**Live** — another session's claim stamp younger than two hours, or any
+process in that worktree: say so, naming the branch and the worktree, and
+stop. Don't take it away from them, and don't work anywhere else on the
+same branch.
+
+**Idle** — neither: the holder is gone. Leave its worktree alone and take
+the branch alongside it, then say in one line which worktree held it and
+that it was idle:
+
+```
+git checkout --ignore-other-worktrees <the branch>
+git merge --ff-only origin/<the branch>
+```
+
+If `--ff-only` fails, the idle worktree holds commits the remote lacks:
+report that and stop.
 
 Then claim it on the card, so a session on *another machine* — which git
 cannot see — knows too:
@@ -131,7 +154,7 @@ git fetch origin wip/<session-id> && git diff <branch>..FETCH_HEAD
 ```
 
 For a **PR fixup** the branch is the PR's head branch, and the same three
-rules hold — your own worktree, fetch first, refuse a branch another worktree
+rules hold — your own worktree, fetch first, refuse a branch a live worktree
 holds:
 
 ```
