@@ -1,8 +1,8 @@
 # Agent decisions
 
-Append-only. Each entry is a call an agent made in pencil: a default it took
-under the one-way-door test, with its undo. Written by `agent-decision`; the
-heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
+Frozen. The log now lives on the `decisions` branch:
+https://github.com/mark-brannan/claude/blob/decisions/docs/agent_decisions.md
+`agent-decision list` reads it with each entry's PR state.
 
 ### 20261004t002454z
 - Each repo keeps its own docs/agent_decisions.md, written in the PR that makes the call; the claude repo's starts here. Undo: move the entries to one repo. ([#33](https://github.com/mark-brannan/claude/pull/33))
@@ -209,3 +209,5 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261009t005258z
 - pickup: a holder is idle when it has no claim stamp under two hours and no process cwd in its worktree Undo: revert the pickup section-3 liveness test ([#117](https://github.com/mark-brannan/claude/pull/117))
 - pickup: take an idle holder's branch with --ignore-other-worktrees, leaving its worktree untouched Undo: use the guard's own-branch ff-and-push route instead ([#117](https://github.com/mark-brannan/claude/pull/117))
+### 20261009t003941z
+- pytest-bdd (pinned in requirements-dev.txt) is the runner for acceptance-table scenarios, and its features job is a required input to ci-gate Undo: revert #111: drops features/, tests/, requirements-dev.txt and the features job ([#111](https://github.com/mark-brannan/claude/pull/111))

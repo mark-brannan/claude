@@ -15,6 +15,11 @@ a=$(sh "$CID" new 077c62eb-2979-4277-b798-0d0fd9e9bb8d); ok 'epoch seconds then 
 b=$(sh "$CID" new 077C62EB); ok 'the hex is lowercased' 077c62eb "${b#??????????}"
 c=$(CLAUDE_CODE_SESSION_ID=d654192b-0000 sh "$CID" new); ok 'the session comes from the environment' d654192b "${c#??????????}"
 ok 'no store is needed to make one' 18 "${#a}"
+mkdir -p "$T/items"
+t=$(date -u +%s)
+: > "$T/items/${t}077c62eb.md"; : > "$T/items/$((t + 1))077c62eb.md"
+d=$(sh "$CID" new 077c62eb); ok 'new steps past ids already filed' 1 "$(printf '%s' "$d" | grep -cE "^($((t + 2))|$((t + 3)))077c62eb$")"
+rm -rf "$T/items"
 sh "$CID" new "" >/dev/null 2>&1; ok 'no session id refuses' 2 $?
 sh "$CID" new zzzzzzzz >/dev/null 2>&1; ok 'a non-hex session refuses' 2 $?
 

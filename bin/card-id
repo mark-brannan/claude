@@ -14,10 +14,10 @@
 #   card-id roll-stamp [<epoch>]  print the curia roll's stamp for now (or for
 #                                 <epoch> seconds), e.g. 20261002t054107z
 #
-# Fire and forget: no lock, no ledger, no check against
-# the store. Two sessions never share a hex, and one session minting twice in
-# the same second is the only collision left; the odds carry it, the way a
-# UUID's do.
+# No lock, no ledger. Two sessions never share a hex; one session minting
+# twice in the same second is the only collision, and `new` steps to the next
+# second past any id already filed in the store. Two calls before the first
+# item is written can still match; file the item between calls.
 set -u
 
 self=$0
@@ -39,7 +39,12 @@ case "${1:-}" in
     hex=$(printf '%s' "$sid" | tr -d '-' | cut -c1-8 | tr 'A-F' 'a-f')
     case $hex in ????????) ;; *) die "no session id (pass one, or run inside a session)" ;; esac
     case $hex in *[!0-9a-f]*) die "session id $sid does not start with eight hex" ;; esac
-    printf '%s%s\n' "$(date -u +%s)" "$hex" ;;
+    # Step past an item already in the store: the same second, same session
+    # is the one collision left, so take the next second until the id is free.
+    dir=$(items_dir)
+    t=$(date -u +%s)
+    while [ -e "$dir/$t$hex.md" ]; do t=$((t + 1)); done
+    printf '%s%s\n' "$t" "$hex" ;;
   show)
     is_card_id "${2:-}" || die "not a card id: ${2:-<id>}"
     board_card "$2" || { printf 'card-id: no item %s in %s\n' "$2" "$(items_dir)" >&2; exit 1; } ;;
