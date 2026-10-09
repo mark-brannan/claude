@@ -2,7 +2,7 @@
 # agent-decision -- append an agent's pencil call to the decisions logs.
 #
 #   agent-decision [--repo <dir>] [--curia <id>]... [--undo <text>]
-#                  [--pr <n>] [--link <url>] <the call>
+#                  [--pr <n>] [--link <url>] [--ruling <url>] <the call>
 #   agent-decision [--repo <dir>] list [--all]
 #   agent-decision [--repo <dir>] read-from <stamp>
 #
@@ -29,6 +29,14 @@
 # edits an entry once written. Two calls in the same second share a heading.
 # The curia copy never goes in roll.md, which holds the user's words alone;
 # a curia must already have its folder.
+#
+# The log is for pencil calls: defaults an agent took. A call or undo that
+# says the user (Solace, the owner) chose, ruled, ordered, decided or asked
+# for it ("Solace chose", "per the user", "on the owner's order", "as
+# ordered", "ruled by") claims provenance, and is refused with exit 2: a
+# ruling is recorded where the user's words are. --ruling <url> points at
+# those words and is written as `(ruling: <url>)`; or reword the call as the
+# default taken. The match is deliberately wide: a false refusal is a reword.
 #
 # `list` prints entries after the last `- read-from ` line, each with its PR's
 # state: open is pending, merged is in force, closed unmerged is void. It
@@ -69,13 +77,27 @@ PR_URL = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/(\d+)\S*")
 PR_REF = re.compile(r"\[#\d+\]\((https://github\.com/[^/\s]+/[^/\s]+)/pull/(\d+)[^)\s]*\)")
 SLUG = re.compile(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
 STAMP = re.compile(r"\d{8}t\d{6}z")
+WHO = r"(?:solace|the\s+user|the\s+owner)"
+VERB = (r"(?:chose|chosen|chooses|choose|ruled|rules|ordered|orders|decided|decides|asked|requested|"
+        r"directed|instructed|approved|picked)")
+CLAIM = re.compile(
+    rf"\b{WHO}(?:'s)?\s+(?:has\s+|had\s+|also\s+|then\s+)?{VERB}\b"
+    rf"|\bper\s+{WHO}\b"
+    rf"|\b(?:on|at|by)\s+{WHO}'?s?\s+(?:order|orders|ruling|request|instruction|instructions|direction|choice|decision)\b"
+    rf"|\b{WHO}'s\s+(?:order|orders|ruling|request|instruction|instructions|direction|choice|decision)\b"
+    r"|\bas\s+ordered\b"
+    r"|\b(?:ruled|ordered|chosen|decided|requested|directed)\s+by\b",
+    re.IGNORECASE)
+URL = re.compile(r"https?://\S+")
 
 
-def line(call, undo, link, pr):
-    """One bullet: the call, its undo, any extra link, and the PR tag."""
+def line(call, undo, link, pr, ruling=None):
+    """One bullet: the call, its undo, any ruling link, any extra link, and the PR tag."""
     text = " ".join(call.split())
     if undo:
         text += " Undo: " + " ".join(undo.split())
+    if ruling:
+        text += f" (ruling: {ruling})"
     if link:
         link = " ".join(link.split())
         m = GH_URL.fullmatch(link)
@@ -238,6 +260,7 @@ def main(argv):
     p.add_argument("--undo")
     p.add_argument("--link")
     p.add_argument("--pr", type=int)
+    p.add_argument("--ruling")
     p.add_argument("--all", action="store_true")
     p.add_argument("call", nargs="+")
     a = p.parse_args(argv)
@@ -261,7 +284,16 @@ def main(argv):
                 return 2
             push_entry(root, f"- read-from {stamp}\n", now, f"read-from {stamp}")
             return 0
-        bullet = line(call, a.undo, a.link, pr_tag(root, a.pr, a.link))
+        if a.ruling is not None and not URL.fullmatch(a.ruling):
+            print("agent-decision: --ruling takes one http(s) URL", file=sys.stderr)
+            return 2
+        if not a.ruling and CLAIM.search(f"{call} {a.undo or ''}"):
+            print("agent-decision: this entry says the user chose, ruled, ordered, decided or asked for it. "
+                  "A ruling is recorded where the user's words are (a thread, the sitting's log, a decisions "
+                  "line), not as a pencil call. Add --ruling <url> pointing at those words, or reword the "
+                  "call as the default you took.", file=sys.stderr)
+            return 2
+        bullet = line(call, a.undo, a.link, pr_tag(root, a.pr, a.link), a.ruling)
         curias = []
         if a.curia:
             state = lib_state.state_dir()

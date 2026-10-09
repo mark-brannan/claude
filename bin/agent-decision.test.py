@@ -249,6 +249,41 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.assertNotEqual(subprocess.run(["git", "rev-parse", "--verify", "-q", "decisions"], cwd=self.origin,
                                            env=self.env, capture_output=True).returncode, 0)
 
+    CLAIMS = ["Solace chose the scale", "Solace ruled the scale", "the user ruled the scale", "scale set per Solace",
+              "scale kept on the user's order", "the user asked for the scale", "scale kept as ordered",
+              "scale kept, ruled by Solace", "the owner chose the scale", "per the owner, the scale stays",
+              "the owner decided the scale", "THE USER DECIDED the scale", "Solace has ordered the scale",
+              "scale is the user's choice"]
+
+    def test_provenance_claims_are_refused_and_write_nothing(self):
+        self.pr()
+        for call in self.CLAIMS:
+            with self.subTest(call=call):
+                p = self.run_ad(call)
+                self.assertEqual(p.returncode, 2, p.stderr)
+                self.assertIn("--ruling <url>", p.stderr)
+        p = self.run_ad("--undo", "revert; the user asked for it", "scale stays")
+        self.assertEqual(p.returncode, 2, p.stderr)
+        self.assertNotEqual(subprocess.run(["git", "rev-parse", "--verify", "-q", "decisions"], cwd=self.origin,
+                                           env=self.env, capture_output=True).returncode, 0)
+
+    def test_ruling_link_is_written_and_lets_a_claim_through(self):
+        self.pr()
+        url = "https://github.com/o/r/issues/9#issuecomment-1"
+        p = self.run_ad("--ruling", url, "--undo", "revert it", "Solace chose the scale")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.bullets(self.branch_log())[-1],
+                         f"- Solace chose the scale Undo: revert it (ruling: {url}) ([#7](https://github.com/o/r/pull/7))")
+        self.assertEqual(self.run_ad("--ruling", "not a url", "x").returncode, 2)
+
+    def test_ordinary_pencil_calls_are_unaffected(self):
+        self.pr()
+        for call in ["Points on the brief are 1 2 3 5 8 13", "Sorted the user table by name",
+                     "Order of the steps follows the ordered list in the doc"]:
+            with self.subTest(call=call):
+                self.assertEqual(self.run_ad(call).returncode, 0)
+        self.assertNotIn("ruling:", self.branch_log())
+
 
 if __name__ == "__main__":
     unittest.main()
