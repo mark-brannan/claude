@@ -4,9 +4,10 @@ A shim: the state-dir lookup lives in lib/state.py, its one home
 (dotfiles#517), and is re-exported here so the hooks that import lib_state
 keep working unchanged. lib/ is found the way lib/libpath.py says.
 
-Fails open: if lib/ is missing (a seed whose INSTALL lacks it) the import
-fails, state_repo and state_dir return None, and a hook reads that as "no
-state here" and exits 0 rather than breaking. One line on stderr says why.
+Fails open: if lib/ is missing from both places (a seed whose INSTALL
+lacks it) the import fails, state_repo and state_dir return None, and a
+hook reads that as "no state here" and exits 0 rather than breaking. One
+line on stderr says why.
 """
 import json
 import os
