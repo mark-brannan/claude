@@ -315,7 +315,8 @@ on them.
 Evidence: **test**, an assertion in `stop-continuity.test.sh`; **feature**, a
 scenario in `features/stop-continuity.feature` titled `row <id>`, which a
 test joins to this table both ways; **code**, the code does it and no test
-asserts it; **item N** or a card id, not built, and what builds it. Ids are the job's number and a counter, appended, never
+asserts it; **item N** or a card id, not built, and what builds it. Ids are
+the job's number and a counter, appended, never
 renumbered or reused; a retired row is struck through with a pointer. When
 the Python lands the column goes: every id must then appear in a test name,
 checked by a lint.
