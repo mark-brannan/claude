@@ -2,8 +2,7 @@
 
 A shim: the state-dir lookup lives in lib/state.py, its one home
 (dotfiles#517), and is re-exported here so the hooks that import lib_state
-keep working unchanged. lib/ sits beside hooks/ in a checkout and under
-~/.claude alike.
+keep working unchanged. lib/ is found the way lib/libpath.py says.
 
 Fails open: if lib/ is missing (a seed whose INSTALL lacks it) the import
 fails, state_repo and state_dir return None, and a hook reads that as "no
@@ -13,8 +12,8 @@ import json
 import os
 import sys
 
-HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HOOK_DIR), "lib"))
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 
 try:
     from state import state_dir, state_repo  # noqa: F401  (re-exported)
