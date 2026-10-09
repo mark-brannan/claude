@@ -1,8 +1,8 @@
 # Agent decisions
 
-Append-only. Each entry is a call an agent made in pencil: a default it took
-under the one-way-door test, with its undo. Written by `agent-decision`; the
-heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
+Frozen. The log now lives on the `decisions` branch:
+https://github.com/mark-brannan/claude/blob/decisions/docs/agent_decisions.md
+`agent-decision list` reads it with each entry's PR state.
 
 ### 20261004t002454z
 - Each repo keeps its own docs/agent_decisions.md, written in the PR that makes the call; the claude repo's starts here. Undo: move the entries to one repo. ([#33](https://github.com/mark-brannan/claude/pull/33))
