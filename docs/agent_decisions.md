@@ -307,3 +307,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t072611z
 - gh-agent: a cached token is reused only for the same App id, installation and API host Undo: drop the key field from the cache line in token() ([#130](https://github.com/mark-brannan/claude/pull/130))
+
+### 20261009t072620z
+- gh-agent: the usage flag is --agent-help, since --help belongs to gh Undo: rename the flag in usage and main ([#130](https://github.com/mark-brannan/claude/pull/130))
