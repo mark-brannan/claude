@@ -30,7 +30,7 @@ find "$M/live" -name '*.json' -mtime +14 -delete 2>/dev/null
 find "$M/live" -name '*.json.*' -mtime +1 -delete 2>/dev/null
 # Globbing, not `ls`: with an unmatched pattern `ls` exits 2, and the old
 # `|| exit 0` then aborted the rollup even when the other glob had matched.
-# That is the normal case -- stop-continuity.sh deletes this session's live
+# That is the normal case -- stop-continuity.py deletes this session's live
 # file immediately before calling here, so `live/` is usually empty and
 # metrics.json was simply never regenerated.
 shopt -s nullglob

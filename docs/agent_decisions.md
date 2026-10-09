@@ -191,6 +191,13 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 ### 20261008t205715z
 - /scoping keeps one lock per named target and does not check the paired curia or repo lock; a duplicate plan costs a proposal to rule on, not a duplicate issue, so the overlap is stated as accepted Undo: add a paired-target lock check to skills/scoping/SKILL.md section 2 ([#105](https://github.com/mark-brannan/claude/pull/105))
 
+### 20261008t213105z
+- stop-continuity.py reads STOP_PUSH_BACKOFF_SECS (default 3, the old pause) so its suite need not sleep 3 s + 6 s after the pushes it fails on purpose Undo: drop the knob from hooks/stop-continuity.py and let the suite wait out the pauses ([#108](https://github.com/mark-brannan/claude/pull/108))
+- gitrun gained binary= and exact() for byte-exact git output, in the shared helper rather than private to the Stop hook Undo: revert binary= and exact() in lib/gitrun.py and read git through subprocess in the hook ([#108](https://github.com/mark-brannan/claude/pull/108))
+- stop-continuity.test.py runs its sections in threads, each on its own fixture, under one test method with a subTest per section, to stay under ten seconds Undo: split hooks/stop-continuity.test.py into sequential test methods ([#108](https://github.com/mark-brannan/claude/pull/108))
+- lib-state.test.sh keeps the state_lock trap and age-file cases and the ARCHIVABLE_HOME_FILE case: they test mechanics only the shell has Undo: move or drop the three cases in hooks/lib-state.test.sh ([#108](https://github.com/mark-brannan/claude/pull/108))
+- comments naming stop-continuity.sh were renamed in every code file, not only the ones the brief listed; lib-state.sh and the governing docs left as they were Undo: revert the comment lines ([#108](https://github.com/mark-brannan/claude/pull/108))
+
 ### 20261008t213606z
 - curia-quotes --flips drops a sentence as emphatic only when its negation or number is in capitals, not for any capitalised word, so acronyms such as ADR stay listed Undo: revert the flips filter to skip any sentence with a 3+ letter capitalised word ([#107](https://github.com/mark-brannan/claude/pull/107))
 
@@ -198,3 +205,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - edit hook prints a clean budgeted file's count only past 2/3 of its cap Undo: drop the threshold test in prose-budget-edit.sh ([#109](https://github.com/mark-brannan/claude/pull/109))
 - lines 'grown in this change' is judged only under --base; --staged still reds any over-cap file Undo: drop the mode test in check_lines ([#109](https://github.com/mark-brannan/claude/pull/109))
 - 20% headroom and the 200-line must_budget floor are engine constants, not config keys Undo: move them into the lines config ([#109](https://github.com/mark-brannan/claude/pull/109))
+
+### 20261009t003941z
+- pytest-bdd (pinned in requirements-dev.txt) is the runner for acceptance-table scenarios, and its features job is a required input to ci-gate Undo: revert #111: drops features/, tests/, requirements-dev.txt and the features job ([#111](https://github.com/mark-brannan/claude/pull/111))

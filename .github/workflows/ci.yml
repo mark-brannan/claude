@@ -119,6 +119,20 @@ jobs:
                 echo "::endgroup::"
               ' _ {}
 
+  # Gherkin scenarios on pytest-bdd: features/<hook>.feature, each scenario a
+  # row of hooks/<hook>-requirements.md's acceptance table, driven by
+  # tests/conftest.py; tests/test_acceptance_ids.py checks the join.
+  # Cost per push: one job, a pip install and under two seconds of pytest.
+  features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update -q && sudo apt-get install -y -q jq
+      - run: python3 -m pip install -q -r requirements-dev.txt
+      - run: python3 -m pytest tests -q -p no:cacheprovider
+
   # settings.json must not set a languette option key plugin.json (on main)
   # no longer defines: the plugin ignores it and the guard goes off silently.
   # Cost per push: one ~3 KB raw.githubusercontent.com fetch, ~5s, one job.
@@ -141,7 +155,7 @@ jobs:
     uses: mark-brannan/.github/.github/workflows/pr-title.yml@main
 
   ci-gate:
-    needs: [shellcheck, seeded, guard-tests, tool-tests, languette-options, nonempty, pr-title]
+    needs: [shellcheck, seeded, guard-tests, tool-tests, features, languette-options, nonempty, pr-title]
     if: always()
     permissions: {}
     uses: mark-brannan/.github/.github/workflows/ci-gate.yml@main

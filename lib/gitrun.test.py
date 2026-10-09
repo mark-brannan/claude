@@ -77,6 +77,21 @@ class GitrunTest(unittest.TestCase):
         exact = gitrun.out("ls-files", "-z", cwd=self.T, errors="surrogateescape")
         self.assertEqual(os.fsencode(exact.rstrip("\0")), name)
 
+    def test_exact_keeps_every_byte(self):
+        fake = Path(self.T) / "git"
+        fake.write_text("#!/bin/sh\nprintf 'a\\r\\nb\\rcaf\\351\\n'\n")
+        fake.chmod(0o755)
+        os.environ["PATH"] = self.T + os.pathsep + self.path
+        self.assertEqual(gitrun.out("log"), "a\nb\ncaf�", "text mode translates newlines")
+        got = gitrun.exact("log").stdout
+        self.assertEqual(got.encode("utf-8", "surrogateescape"), b"a\r\nb\rcaf\xe9\n")
+        self.assertEqual(gitrun.run("log", binary=True).stdout, b"a\r\nb\rcaf\xe9\n")
+
+    def test_exact_timeout_and_missing(self):
+        os.environ["PATH"] = self.T
+        p = gitrun.exact("status")
+        self.assertEqual((p.returncode, p.stdout), (gitrun.MISSING, ""))
+
 
 if __name__ == "__main__":
     unittest.main()

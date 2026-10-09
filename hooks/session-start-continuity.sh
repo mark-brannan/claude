@@ -68,7 +68,7 @@ if ! SR=$(state_repo); then
 ## Continuity: state repo NOT available
 
 `claude_prompts_scratch` is not checked out here, so the board, the prior
-checkpoints and the metrics are all missing, and `stop-continuity.sh` will
+checkpoints and the metrics are all missing, and `stop-continuity.py` will
 write to `~/.claude/state/global` (local, unpushed, lost when this container
 is reclaimed).
 

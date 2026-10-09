@@ -95,7 +95,7 @@ machine_id() {
 
 # Per-session record: the card this session claimed, the comment it owns and
 # when it last refreshed. Under TMPDIR, never under the state dir --
-# stop-continuity.sh commits and pushes that, so a per-session file there
+# stop-continuity.py commits and pushes that, so a per-session file there
 # would be repo churn in every session (the convention branch-home-gate.sh
 # and pr-ownership-context.sh already use).
 record_path() {

@@ -123,7 +123,7 @@ def sync():
 
 
 def push():
-    """Mirrors stop-continuity.sh: two tries, never leave a rebase wedged."""
+    """Mirrors stop-continuity.py: two tries, never leave a rebase wedged."""
     for attempt in (1, 2):
         sync()
         if git("push", "-q", "origin", "HEAD", timeout=120):
