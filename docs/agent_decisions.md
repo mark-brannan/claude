@@ -244,3 +244,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t013007z
 - release-subagent-branch: pushed means reachable from any remote-tracking ref, no fetch Undo: fetch first or require the upstream ([#116](https://github.com/mark-brannan/claude/pull/116))
+
+### 20261009t013010z
+- release-subagent-branch: detach only, never remove the worktree Undo: add git worktree remove ([#116](https://github.com/mark-brannan/claude/pull/116))
