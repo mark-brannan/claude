@@ -154,6 +154,12 @@ jobs:
     permissions: {}
     uses: mark-brannan/.github/.github/workflows/pr-title.yml@main
 
+  # A measurement, not a gate, so it stays out of ci-gate's needs.
+  complexity:
+    permissions:
+      contents: read
+    uses: mark-brannan/.github/.github/workflows/complexity.yml@main
+
   ci-gate:
     needs: [shellcheck, seeded, guard-tests, tool-tests, features, languette-options, nonempty, pr-title]
     if: always()
