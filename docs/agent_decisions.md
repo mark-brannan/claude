@@ -289,3 +289,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t064707z
 - agent-decision's record is docs/, rules/ and CLAUDE.md on the base branch, capped at 60k chars Undo: edit RECORD_PATHS ([#128](https://github.com/mark-brannan/claude/pull/128))
+
+### 20261009t065852z
+- agent-decision's provenance match is wide: the verbs chose, ruled, ordered, decided, asked, requested, directed, instructed, approved, picked after the user, Solace or the owner; a false refusal is a reword Undo: trim VERB in bin/agent-decision ([#129](https://github.com/mark-brannan/claude/pull/129))
