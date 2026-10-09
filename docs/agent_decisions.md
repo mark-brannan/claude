@@ -226,3 +226,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t010726z
 - .gitattributes is deleted outright, as its only line was the union rule. Undo: restore the file with the one merge=union line. ([#118](https://github.com/mark-brannan/claude/pull/118))
+
+### 20261009t011240z
+- The decisions branch takes unsigned commits from keyless sessions; the signed-commits ruleset stays on the default branch only. Undo: drop the unsigned fallback in commit_log so a keyless session fails instead ([#118](https://github.com/mark-brannan/claude/pull/118))
