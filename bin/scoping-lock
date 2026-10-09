@@ -49,20 +49,21 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+
 
 def state_repo():
     """lib/state.py's state_repo, the one search path for the state repo
     (cloud checkouts included): in this checkout beside the tool, else the
     seeded copy. None when it cannot be found or named."""
-    here = Path(__file__).resolve().parent
-    for d in (here.parent / "lib", Path.home() / ".claude" / "lib"):
-        if (d / "state.py").is_file():
-            sys.path.insert(0, str(d))
-            break
-    else:
+    try:
+        import state
+    except ModuleNotFoundError as e:
+        if e.name != "state":
+            raise  # state.py is here but broken (a partial lib/): say so
         return None
-    sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
-    import state
     r = state.state_repo()
     return Path(r) if r else None
 

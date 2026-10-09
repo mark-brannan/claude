@@ -26,19 +26,20 @@
 # Python 3 stdlib only.
 import argparse, glob, json, os, re, sqlite3, subprocess, sys, time
 
+sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+
 def state_dir():
     """<state repo>/state/global, found by lib/state.py's state_repo (the one
     search path: CLAUDE_STATE_REPO, cloud checkouts, then the usual clones);
     None when it is not here. lib/ sits beside this checkout or in ~/.claude."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    for d in (os.path.join(here, "..", "lib"), os.path.expanduser("~/.claude/lib")):
-        if os.path.isfile(os.path.join(d, "state.py")):
-            sys.path.insert(0, d)
-            break
-    else:
+    try:
+        import state
+    except ModuleNotFoundError as e:
+        if e.name != "state":
+            raise  # state.py is here but broken (a partial lib/): say so
         return None
-    sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
-    import state
     repo = state.state_repo()
     return os.path.join(repo, "state", "global") if repo else None
 

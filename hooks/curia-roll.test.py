@@ -283,7 +283,8 @@ class CuriaRollTest(unittest.TestCase):
         shutil.copy(HOOK.parent.parent / "lib" / "state.py", tree / "lib")
         shutil.copy(HOOK.parent.parent / "lib" / "gitrun.py", tree / "lib")  # state.py imports it
         self.sitting("one-entry-point", f"{SID} 2026-10-02T05:00:00Z\n")
-        env = dict(os.environ, CLAUDE_STATE_REPO=str(self.repo))
+        # HOME away from ~/.claude/lib, the search's fallback, which has lock.py.
+        env = dict(os.environ, CLAUDE_STATE_REPO=str(self.repo), HOME=self.tmp.name)
         r = subprocess.run([sys.executable, str(tree / "hooks" / "curia-roll.py")],
                            input=json.dumps({"session_id": SID, "prompt": "x"}),
                            capture_output=True, text=True, env=env)

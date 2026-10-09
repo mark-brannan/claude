@@ -33,7 +33,7 @@ class ShimTest(unittest.TestCase):
             hooks.mkdir()
             for f in ("lib_state.py", "lib-state.sh", "curia-roll.py"):
                 shutil.copy(HOOKS / f, hooks / f)
-            env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+            env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "HOME": t, "CLAUDE_STATE_REPO": ""}
             p = subprocess.run([sys.executable, "-c",
                                 "import lib_state; print(lib_state.state_dir(), lib_state.state_repo())"],
                                cwd=hooks, env=env, capture_output=True, text=True)
