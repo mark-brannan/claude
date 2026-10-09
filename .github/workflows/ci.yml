@@ -158,7 +158,9 @@ jobs:
   complexity:
     permissions:
       contents: read
-    uses: mark-brannan/.github/.github/workflows/complexity.yml@main
+    uses: mark-brannan/.github/.github/workflows/complexity.yml@claude/complexity-workflow
+    with:
+      claude-ref: claude/cyclomatic-complexity-ci-558eeb  # TRIAL: revert before merge
 
   ci-gate:
     needs: [shellcheck, seeded, guard-tests, tool-tests, features, languette-options, nonempty, pr-title]
