@@ -298,3 +298,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t065905z
 - agent-decision --ruling takes one http(s) URL and exits 2 otherwise; the provenance rule is documented in the script's usage header, not docs/agent_decisions.md, which is frozen Undo: drop the URL check; add a docs section ([#129](https://github.com/mark-brannan/claude/pull/129))
+
+### 20261009t070455z
+- agent-decision --ruling takes only a github.com URL with no whitespace, parentheses, brackets or angle brackets, replacing any http(s) URL Undo: widen RULING in bin/agent-decision back to any http(s) URL without brackets ([#129](https://github.com/mark-brannan/claude/pull/129))
