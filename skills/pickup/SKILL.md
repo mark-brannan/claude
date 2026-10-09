@@ -14,7 +14,9 @@ mid-work left one.
 A session opened this way starts **from the item, not from `worklist`**.
 Don't run `worklist`, don't survey the project, don't re-derive what to do:
 the previous session already decided, and re-deciding is the cost this exists
-to avoid.
+to avoid. That trusts the plan, not every option on the card: one that crosses
+a ruling or a guard is fixed, not relayed — the standing orders'
+already-ruled check.
 
 ## 0. Which form was it
 
