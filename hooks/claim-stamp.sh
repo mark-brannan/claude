@@ -40,7 +40,8 @@
 #   claim-stamp.sh read    [-C <dir>] [<url>]        print every stamp on the card,
 #                                                    the branch's or <url>'s:
 #       live|stale <sid8> <machine> <age>m <url>, one tab-separated line each;
-#       `no card`; or `unverified: <why>` when the stamps could not be read
+#       `free <url>` when the card has none; `no card`; or
+#       `unverified: <why>` when the stamps could not be read
 #   claim-stamp.sh session-start                     SessionStart hook; JSON on stdin
 #   claim-stamp.sh card-claim <url> <session-id>     claim a board card by its link;
 #       refuses, exit 1, while another session's claim on it is live
@@ -355,6 +356,9 @@ do_read() {  # do_read <dir> [<url>]
     if [ "$age" -ge "$STALE_SECS" ]; then state=stale; else state=live; fi
     printf '%s\t%s\t%s\t%dm\t%s\n' "$state" "$s" "$m" "$((age / 60))" "$url"
   done
+  # A card with no stamp says so, so a reader can tell "nobody holds it"
+  # from a read that printed nothing because it never ran.
+  [ -n "$(printf '%s' "$stamps" | tr -d '[:space:]')" ] || printf 'free\t%s\n' "$url"
 }
 
 # -------------------------------------------------------------- card claims

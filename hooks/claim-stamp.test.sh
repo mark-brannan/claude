@@ -280,6 +280,8 @@ has 'a failed card lookup says unverified' "$out" '^unverified'
 out=$(sh "$CS" read https://github.com/o/r/pull/7)
 has 'read <url> needs no checkout'        "$out" 'live.*66666666.*pull/7$'
 has 'and reports the stale one too'       "$out" 'stale.*deadbeef'
+reset_store
+eq  'an unstamped card reads free'          "$(sh "$CS" read https://github.com/o/r/pull/7)" "$(printf 'free\thttps://github.com/o/r/pull/7')"
 setup_repo main
 eq  'a branch with no card says so'       "$(sh "$CS" read -C "$WORK")" 'no card'
 
