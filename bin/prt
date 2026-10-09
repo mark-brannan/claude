@@ -799,7 +799,7 @@ def queue(args):
     blocked = sh([sys.executable, tool("bin/pr-blockers"), args[0]], check=False)
     if blocked.returncode == 0:
         pass
-    elif blocked.returncode == 1:
+    elif blocked.returncode == 1 and blocked.stdout.strip():
         no.extend(blocked.stdout.strip().splitlines())
     else:
         no.append("pr-blockers could not read the PR: " + ((blocked.stderr.strip().splitlines() or ["failed"])[-1]))

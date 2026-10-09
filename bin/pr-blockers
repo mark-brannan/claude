@@ -3,7 +3,8 @@
 #
 # One line per thing that keeps the pull request from merging, each naming its
 # cause and its remedy. Exit 0 when there are none, 1 when there are, 2 when
-# the PR cannot be read. Read-only: it calls gh only to read.
+# the PR cannot be read, for any reason, including a malformed reply or a
+# missing gh, never as an exit 1 with nothing on stdout. Read-only: it calls gh only to read.
 #
 # Reads GitHub's view of the PR, which a local checkout cannot see: commits
 # without a verified signature (the ruleset refuses them), a merge conflict, a
@@ -87,7 +88,12 @@ def main(argv):
     if len(argv) != 1 or argv[0] in ("-h", "--help"):
         sys.stderr.write("usage: pr-blockers <owner/repo#n | PR URL>\n")
         return 2
-    lines = blockers(*parse(argv[0]))
+    ref = parse(argv[0])
+    try:
+        lines = blockers(*ref)
+    except Exception as e:  # exit 1 means "blockers"; an unreadable PR must never look like that
+        sys.stderr.write(f"pr-blockers: could not read the PR: {type(e).__name__}: {e}\n")
+        return 2
     for line in lines:
         print(line)
     return 1 if lines else 0

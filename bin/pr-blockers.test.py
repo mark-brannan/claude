@@ -97,6 +97,17 @@ class Test(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("not yet computed", out)
 
+    def test_unreadable_reply_exits_two_never_one(self):
+        for bad in ("not json", '[{"sha": "a"}]'):  # JSONDecodeError; KeyError on a missing commit
+            code, out = self.run_tool(view(), bad)
+            self.assertEqual((code, out), (2, ""), bad)
+
+    def test_missing_gh_exits_two(self):
+        with tempfile.TemporaryDirectory() as empty:
+            env = {**self.env, "PATH": empty}  # no gh on it
+            p = subprocess.run([sys.executable, str(TOOL), "o/r#5"], capture_output=True, text=True, env=env)
+        self.assertEqual((p.returncode, p.stdout), (2, ""))
+
     def test_bad_ref_exits_two(self):
         self.assertEqual(self.run_tool(view(), "[]", ref="nonsense")[0], 2)
 

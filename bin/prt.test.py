@@ -304,6 +304,15 @@ class PrtTest(unittest.TestCase):
             stub.unlink()
         self.assertNotIn("unsigned", self.prt("queue", f"{REPO}#1"))
 
+    def test_08c_queue_refuses_when_pr_blockers_cannot_read_the_pr(self):
+        stub = self.T / "stub" / "commits-pr-1.json"
+        stub.write_text("not json")  # pr-blockers dies on it; that must not read as "no blockers"
+        try:
+            self.assertIn("pr-blockers could not read the PR", self.prt("queue", f"{REPO}#1"))
+            self.prt("queue", f"{REPO}#1", "--merge", code=1)
+        finally:
+            stub.unlink()
+
     def test_09_spent_logs_the_transcript_price(self):
         d = self.T / "home" / ".claude" / "projects" / "p" / SID / "subagents"
         d.mkdir(parents=True)
