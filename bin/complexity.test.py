@@ -21,11 +21,21 @@ TOOL = Path(__file__).resolve().parent / "complexity"
 
 LIZARD = r'''#!/usr/bin/env python3
 import os, sys
-files = [a for a in sys.argv[1:] if a != "--csv"]
+files = [a for a in sys.argv[1:] if not a.startswith("-")]
 open(os.environ["STUB_LOG"], "a").write("lizard " + " ".join(files) + "\n")
 for f in files:
     n = 1 + open(f).read().count("if ")
-    print('1,%d,1,0,1,"f@1-1@%s","%s","f","f()",1,1' % (n, f, f))
+    print('1,%d,7,2,1,"f@1-1@%s","%s","f","f()",1,1,%d' % (n, f, f, n - 1))
+'''
+
+RCA = r'''#!/usr/bin/env python3
+import json, os, sys
+f = sys.argv[-1]
+open(os.environ["STUB_LOG"], "a").write("rca " + f + "\n")
+n = 1 + open(f).read().count("if ")
+m = {"cognitive": {"sum": 10.0 * n}, "mi": {"mi_original": 90.0},
+     "halstead": {k: 1.0 for k in ("n1", "N1", "n2", "N2", "length", "vocabulary", "volume", "difficulty", "effort", "bugs")}}
+print(json.dumps({"kind": "unit", "start_line": 1, "spaces": [{"kind": "function", "name": "f", "start_line": 1, "metrics": m, "spaces": []}]}))
 '''
 
 SHELLMETRICS = r'''#!/usr/bin/env python3
@@ -50,7 +60,7 @@ class Complexity(unittest.TestCase):
         t = Path(self.tmp.name)
         self.repo, self.bin, self.log = t / "repo", t / "bin", t / "log"
         self.bin.mkdir()
-        for name, body in (("lizard", LIZARD), ("shellmetrics", SHELLMETRICS)):
+        for name, body in (("lizard", LIZARD), ("shellmetrics", SHELLMETRICS), ("rca", RCA)):
             (self.bin / name).write_text(body)
             (self.bin / name).chmod(0o755)
         r = self.repo
@@ -82,8 +92,8 @@ class Complexity(unittest.TestCase):
         for name, body in files.items():
             (self.repo / name).write_text(body)
 
-    def run_tool(self, *args, tools=("lizard", "shellmetrics")):
-        env = {k: v for k, v in os.environ.items() if k not in ("LIZARD", "SHELLMETRICS")}
+    def run_tool(self, *args, tools=("lizard", "shellmetrics", "rca")):
+        env = {k: v for k, v in os.environ.items() if k not in ("LIZARD", "SHELLMETRICS", "RCA")}
         env["STUB_LOG"] = str(self.log)
         env["PATH"] = "/usr/bin:/bin"
         for name in tools:
@@ -107,6 +117,22 @@ class Complexity(unittest.TestCase):
         })
         self.assertEqual(report["delta"], 2 + 2 - 2 + 1 + 1)
 
+    def test_every_metric_is_logged_but_the_table_shows_two(self):
+        p, report = self.run_tool()
+        row = next(r for r in report["functions"] if r["path"] == "a.py")
+        self.assertEqual(row["cognitive"], {"before": 20, "after": 40})
+        after = row["metrics"]["after"]
+        self.assertEqual((after["nloc"], after["tokens"], after["params"], after["length"], after["nesting"]),
+                         (1, 7, 2, 1, 3))
+        self.assertEqual(after["mi"]["mi_original"], 90.0)
+        self.assertIn("volume", after["halstead"])
+        self.assertIn("| Cognitive |", p.stdout)
+        head, _, rest = p.stdout.partition("<details>")
+        self.assertNotIn("halstead", head.lower())
+        self.assertIn("<summary>All metrics</summary>", rest)
+        self.assertIn("| `a.py` · `f` | halstead.volume | 1.0 | 1.0 |", rest)
+        self.assertIn("| `new.ts` · `f` | nesting | — | 1 |", rest)
+
     def test_each_file_reaches_its_tool(self):
         self.run_tool()
         sent = {}
@@ -127,7 +153,7 @@ class Complexity(unittest.TestCase):
     def test_a_missing_tool_is_reported(self):
         p, report = self.run_tool(tools=("lizard",))
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(report["unmeasured"], {"shellmetrics": 2})
+        self.assertEqual(report["unmeasured"], {"shellmetrics": 2, "rust-code-analysis": 4})
         p, _ = self.run_tool("--require-tools", tools=("lizard",))
         self.assertEqual(p.returncode, 2)
 
