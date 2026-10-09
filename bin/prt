@@ -567,9 +567,16 @@ def launch(run, work, pool):
     for f in work:
         if f["handoff"]:
             continue
-        f["item"], f["item_was"] = ensure_item(f, f["repo"])
-        work_item("log", f["item"], "prt", "estimate", f"usd={f['est_usd']:.2f}",
-                  f"score={f['score']}", f"run={run}")
+        try:
+            f["item"], f["item_was"] = ensure_item(f, f["repo"])
+            work_item("log", f["item"], "prt", "estimate", f"usd={f['est_usd']:.2f}",
+                      f"score={f['score']}", f"run={run}")
+        except Exit as e:
+            # A store error must not leave the claim held for 2h: release it
+            # and hand this PR off; the others go on.
+            claim_stamp("card-release", f["url"], f["sid"])
+            f["sid"] = None
+            f["handoff"] = f"store write failed, claim released: {e}"
     return [f for f in work if not f["handoff"]]
 
 
@@ -639,6 +646,14 @@ def clean(args):
                 continue
             url = f"https://github.com/{repo}/pull/{m[1]}"
             held = [h for h in claims(url) if h] + ledger_claims(url)
+            # An agent that hit its budget pushed what it had; if the lease
+            # refused it, the work is only here. Nothing with uncommitted files
+            # or commits no remote has is removed.
+            if not held and sh(["git", "-C", wt, "status", "--porcelain"], check=False).stdout.strip():
+                held = ["uncommitted files"]
+            if not held and not sh(["git", "-C", wt, "branch", "-r", "--contains", "HEAD"],
+                                   check=False).stdout.strip():
+                held = ["commits no remote branch has"]
             if held:
                 print(f"kept {wt}: {held[0].strip()}")
             elif o["dry"]:

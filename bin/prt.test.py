@@ -230,6 +230,18 @@ class PrtTest(unittest.TestCase):
             self.assertEqual(f.read_text().count("prt estimate usd="), 1)
         self.prt("release", f"{REPO}#2", first[2]["sid"])
         self.assertEqual(self.plan("--repo", REPO, "--dry-run")[2]["handoff"], "")
+        # A store error releases the claim just taken instead of holding it for 2h.
+        frozen = [self.T / "items", *(self.T / "items").glob("*.md")]
+        for f in frozen:
+            f.chmod(0o500 if f.is_dir() else 0o400)
+        try:
+            third = self.plan("--repo", REPO)
+        finally:
+            for f in frozen:
+                f.chmod(0o700 if f.is_dir() else 0o600)
+        self.assertTrue(third[2]["handoff"].startswith("store write failed, claim released"), third[2]["handoff"])
+        self.assertIsNone(third[2]["sid"])
+        self.assertEqual(self.plan("--repo", REPO, "--dry-run")[2]["handoff"], "")
 
     def test_06_decide_makes_one_ruling_card(self):
         line = (f"- **direction** · Ship it? default: yes · undo: a revert · risk: none much · "
@@ -298,15 +310,19 @@ class PrtTest(unittest.TestCase):
         git("init", "-q", "-b", "main")
         git("remote", "add", "origin", "git@github.com:o/c.git")
         git("commit", "-q", "--allow-empty", "-m", "x")
-        for name in ("prt-c-1", "prt-c-5", "other-1"):
+        git("update-ref", "refs/remotes/origin/main", "HEAD")
+        for name in ("prt-c-1", "prt-c-5", "prt-c-7", "prt-c-8", "other-1"):
             git("worktree", "add", "-q", "--detach", str(wt / name))
+        git("-C", str(wt / "prt-c-7"), "commit", "-q", "--allow-empty", "-m", "unpushed")
+        (wt / "prt-c-8" / "untracked").write_text("x")
         names = lambda: sorted(Path(l[9:]).name for l in git("worktree", "list", "--porcelain").splitlines()
                                if l.startswith("worktree ") and Path(l[9:]) != clone)
         self.assertIn(f"would remove {wt / 'prt-c-1'}", self.prt("clean", "--repo", "o/c", "--dry-run"))
-        self.assertEqual(names(), ["other-1", "prt-c-1", "prt-c-5"])
+        self.assertEqual(names(), ["other-1", "prt-c-1", "prt-c-5", "prt-c-7", "prt-c-8"])
         out = self.prt("clean", "--repo", "o/c")
-        self.assertIn("kept", out)
-        self.assertEqual(names(), ["other-1", "prt-c-5"])
+        self.assertIn(f"kept {wt / 'prt-c-7'}: commits no remote branch has", out)
+        self.assertIn(f"kept {wt / 'prt-c-8'}: uncommitted files", out)
+        self.assertEqual(names(), ["other-1", "prt-c-5", "prt-c-7", "prt-c-8"])
 
 
 if __name__ == "__main__":
