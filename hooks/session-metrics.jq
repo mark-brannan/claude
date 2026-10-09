@@ -578,7 +578,7 @@ def price:
                            | if length > 1 then (max - min) else 0 end),
       model:      ([ $E[].value | select(.type=="assistant")
                      | .message.model | select(. != null) ] | last),
-      # The pickup item's floor (stop-continuity.sh): the first line of the
+      # The pickup item's floor (stop-continuity.py): the first line of the
       # last thing the user said, cleaned and redacted like every other
       # excerpt here; and every curia id the user named in a prompt, in
       # first-named order -- a `state/global/curia/<id>` path, `/curia <id>`

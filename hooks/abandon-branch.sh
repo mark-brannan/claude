@@ -44,7 +44,7 @@ if [ "$work_root" = "$HOME" ]; then
   exit 1
 fi
 
-# Same lock stop-continuity.sh takes before it commits and pushes, so the
+# Same lock stop-continuity.py takes before it commits and pushes, so the
 # two never interleave and a salvage push cannot resurrect the branch we are
 # deleting. Best effort: a lock not taken in 90s proceeds unlocked.
 trap state_unlock EXIT

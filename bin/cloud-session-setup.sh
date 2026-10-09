@@ -96,7 +96,7 @@ hooks/session-metrics.jq
 hooks/lib-metrics-fmt.jq
 hooks/lib-metrics-test-harness.sh
 hooks/session-start-continuity.sh
-hooks/stop-continuity.sh
+hooks/stop-continuity.py
 hooks/stop-sequence.py
 hooks/stop-item.py
 hooks/measure-git-events.sh
