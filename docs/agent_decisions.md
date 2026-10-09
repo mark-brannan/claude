@@ -217,3 +217,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t010715z
 - A lost push race is retried up to 5 pushes; a push that fails with the remote tip unmoved (auth, hook) fails at once. Undo: change TRIES in bin/agent-decision. ([#118](https://github.com/mark-brannan/claude/pull/118))
+
+### 20261009t010718z
+- A decisions commit is signed when commit.gpgsign is true, and falls back to unsigned when no key is available. Undo: drop the -S branch in commit_log. ([#118](https://github.com/mark-brannan/claude/pull/118))
