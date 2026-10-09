@@ -45,23 +45,17 @@ batch: 4 reviews, est $2.87 (measured: mean of 11 logged prt spends)
 desk whatever the review says: claude#121
 ```
 
-- **Score** is mechanical, never a reading of the diff: size, safety
-  paths, open bot threads, Pencil lines, Depends-On, a conflict, red
-  checks, `fixup-hard`; the weights live in `prt`. A PR rated high gets
-  Opus. Each run logs the score beside its estimate, so the weights can
-  be checked against what the user wanted to see.
-- **Hand off**, no agent: a draft, a bot's PR, a fork, `blocked`, an
-  armed auto-merge (a queued PR is not ours to push to), `fixup-hard`,
-  changes requested, more review threads than one read returns, a live
-  claim stamp or one that could not be read, or an unresolved thread from
-  a non-bot account. A Decide thread an earlier review posted is that
-  last kind: it waits on the user either way.
-- **Desk paths:** `CLAUDE.md`, `rules/`, `docs/`, a curia folder, the
-  curia's `decided.md`, `hooks/`, settings. `docs/agent_decisions.md` is
-  the agents' own pencil log and never counts. The list lives in `prt`.
-- **The cap** is 15 worked PRs per run, across every repo in scope,
-  smallest first, stacked ones last; `--cap N` lifts it. The rest wait
-  for the next run.
+- **Score** is mechanical, never a reading of the diff; the signals and
+  weights live in `prt`. A PR rated high gets Opus. Each run logs the
+  score beside its estimate, so the weights can be checked later.
+- **Hand off**, no agent: anything a human, a bot or another session
+  holds; the full list lives in `prt`. A Decide thread an earlier review
+  posted is one of these: it waits on the user either way.
+- **Desk paths:** governing files and safety mechanics; the list lives in
+  `prt`. `docs/agent_decisions.md` is the agents' own pencil log and never
+  counts.
+- **The cap** is 15 worked PRs per run across every repo in scope,
+  smallest first, stacked ones last; `--cap N` lifts it.
 - **The estimate** is a guess until three spends are logged, then their
   mean; the batch line says which.
 
