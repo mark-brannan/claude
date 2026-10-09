@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+# pr-blockers <owner/repo#n | PR URL>
+#
+# One line per thing that keeps the pull request from merging, each naming its
+# cause and its remedy. Exit 0 when there are none, 1 when there are, 2 when
+# the PR cannot be read. Read-only: it calls gh only to read.
+#
+# Reads GitHub's view of the PR, which a local checkout cannot see: commits
+# without a verified signature (the ruleset refuses them), a merge conflict, a
+# branch behind its base, failing or pending checks. A PR GitHub calls BLOCKED
+# for a reason none of those names gets a line saying so; it never prints
+# nothing for an unexplained BLOCKED.
+import json
+import re
+import subprocess
+import sys
+
+FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+PENDING = {"PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"}
+
+
+def gh(*args):
+    p = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if p.returncode != 0:
+        tail = ((p.stderr or p.stdout).strip().splitlines() or ["failed"])[-1]
+        sys.stderr.write(f"pr-blockers: gh {' '.join(args[:2])}: {tail}\n")
+        sys.exit(2)
+    return p.stdout
+
+
+def parse(ref):
+    m = (re.fullmatch(r"([\w.-]+)/([\w.-]+)#(\d+)", ref)
+         or re.fullmatch(r"https://github\.com/([\w.-]+)/([\w.-]+)/pull/(\d+)/?(?:[#?].*)?", ref))
+    if not m:
+        sys.stderr.write("usage: pr-blockers <owner/repo#n | PR URL>\n")
+        sys.exit(2)
+    return m[1], m[2], m[3]
+
+
+def pages(text):
+    """gh api --paginate joins JSON arrays back to back; read them all."""
+    dec, i, out = json.JSONDecoder(), 0, []
+    text = text.strip()
+    while i < len(text):
+        val, i = dec.raw_decode(text, i)
+        out += val
+        while i < len(text) and text[i].isspace():
+            i += 1
+    return out
+
+
+def blockers(owner, repo, n):
+    pr = json.loads(gh("pr", "view", n, "--repo", f"{owner}/{repo}", "--json",
+                       "mergeStateStatus,mergeable,statusCheckRollup,headRefName"))
+    commits = pages(gh("api", "--paginate", f"repos/{owner}/{repo}/pulls/{n}/commits"))
+    head, state = pr["headRefName"], pr["mergeStateStatus"]
+    out = []
+    for c in commits:
+        v = c["commit"].get("verification") or {}
+        if not v.get("verified"):
+            who = (c.get("author") or {}).get("login") or c["commit"]["author"]["name"]
+            out.append(f"unsigned commit {c['sha'][:7]} by {who} (reason: {v.get('reason', 'unknown')}); "
+                       f"the ruleset requires verified signatures; fix: ~/.claude/bin/resign-branch.sh {head}")
+    if pr["mergeable"] == "CONFLICTING" or state == "DIRTY":
+        out.append("merge conflict with the base; fix: rebase or merge the base into the branch")
+    elif state == "BEHIND":
+        out.append("branch is behind its base and the base requires it up to date; "
+                   f"fix: update {head} from the base")
+    if state == "DRAFT":
+        out.append("the PR is a draft; fix: mark it ready for review")
+    for r in pr.get("statusCheckRollup") or []:
+        name = r.get("name") or r.get("context") or "?"
+        done = r.get("conclusion") or r.get("state") or ""
+        if r.get("status") not in (None, "COMPLETED") or done in PENDING:
+            out.append(f"check pending: {name}; fix: wait for it, or read why it hangs")
+        elif done in FAILED:
+            out.append(f"check failing: {name} ({done.lower()}); fix: read its log and repair the cause")
+    if state == "BLOCKED" and not out:
+        out.append("BLOCKED, cause not named by pr-blockers: likely review approval or a ruleset rule")
+    return out
+
+
+def main(argv):
+    if len(argv) != 1 or argv[0] in ("-h", "--help"):
+        sys.stderr.write("usage: pr-blockers <owner/repo#n | PR URL>\n")
+        return 2
+    lines = blockers(*parse(argv[0]))
+    for line in lines:
+        print(line)
+    return 1 if lines else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
