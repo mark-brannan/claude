@@ -280,3 +280,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t051122z
 - complexity.yml runs on pull_request only; third-party tools pinned (lizard version, shellmetrics commit + sha256) Undo: compare a push to github.event.before; bump the env values ([#59](https://github.com/mark-brannan/.github/pull/59))
+
+### 20261009t064701z
+- agent-decision's judge is claude-sonnet-5-5 at low effort, capped at 0.25 USD, run with no settings, tools or session Undo: edit the JUDGE list ([#128](https://github.com/mark-brannan/claude/pull/128))
