@@ -3,7 +3,7 @@
 # file, so any front end (a static page, Datasette, Grafana's SQLite source,
 # a terminal) reads the same tables instead of re-parsing the JSON.
 #
-# Sources, all in the state repo (`lib-state.sh`'s state_dir) unless noted:
+# Sources, all in the state repo (lib/state.py's state_repo) unless noted:
 #   metrics/sessions/*.json       one row per finished session        -> sessions
 #   metrics/{decisions,friction,blocked,git-events,crossings}/*.jsonl -> one table each
 #   commits.jsonl                 commits by session and branch        -> commits
@@ -209,8 +209,9 @@ PASTED = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
 def load_typing(cx, projects):
     known = {r[0]: (r[1], r[2]) for r in cx.execute("select path, mtime, size from typing")}
     paths = glob.glob(os.path.join(projects, "*", "*.jsonl"))
+    present = set(paths)
     # A deleted transcript takes its row with it.
-    cx.executemany("delete from typing where path = ?", [(p,) for p in known if p not in set(paths)])
+    cx.executemany("delete from typing where path = ?", [(p,) for p in known if p not in present])
     scanned = 0
     for p in paths:
         try:
