@@ -60,7 +60,9 @@ def state_repo():
     seeded copy. None when it cannot be found or named."""
     try:
         import state
-    except ImportError:
+    except ModuleNotFoundError as e:
+        if e.name != "state":
+            raise  # state.py is here but broken (a partial lib/): say so
         return None
     r = state.state_repo()
     return Path(r) if r else None

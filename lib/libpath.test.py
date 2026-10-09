@@ -50,7 +50,8 @@ class OneHomeTest(unittest.TestCase):
                 strays.append(name)
         self.assertEqual(strays, [], "find lib/ with lib/libpath.py's BOOTSTRAP, verbatim")
         for t in ("bin/work-item", "bin/scoping-lock", "bin/github-limits", "bin/prose-budget",
-                  "bin/agent-decision", "hooks/curia-roll.py", "bin/prune-worktrees"):
+                  "bin/agent-decision", "hooks/curia-roll.py", "bin/prune-worktrees",
+                  "bin/metrics-db", "bin/metrics-dashboard"):
             self.assertIn(t, users)
 
     def test_beside_first_then_seeded(self):
@@ -72,6 +73,29 @@ class OneHomeTest(unittest.TestCase):
             r = subprocess.run([sys.executable, str(t / "tree/bin/tool")], capture_output=True, text=True,
                                env={**os.environ, "HOME": str(t / "home")})
             self.assertIn("No module named 'b'", r.stderr, "no lib/ anywhere is an ImportError")
+
+    def test_broken_state_is_not_a_missing_one(self):
+        # A tool that treats "no state.py" as "no state repo" must not treat a
+        # state.py that fails its own import (gitrun absent from a partial
+        # lib/) the same way: that surfaces, naming the missing module.
+        runs = {"bin/scoping-lock": [], "bin/work-item": ["dir"],
+                "bin/metrics-db": [], "bin/metrics-dashboard": []}
+        for name, args in runs.items():
+            with tempfile.TemporaryDirectory() as t, self.subTest(name):
+                t = Path(t)
+                (t / "bin").mkdir()
+                (t / "home").mkdir()
+                shutil.copy(ROOT / name, t / name)
+                env = {k: v for k, v in os.environ.items() if k != "WORK_ITEM_DIR"}
+                env.update(HOME=str(t / "home"), PYTHONDONTWRITEBYTECODE="1")
+                cmd = [sys.executable, str(t / name), *args]
+                r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+                self.assertNotIn("Traceback", r.stderr, "no state.py is handled, not a crash")
+                (t / "lib").mkdir()
+                shutil.copy(LIB / "state.py", t / "lib")  # without the gitrun.py it imports
+                r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+                self.assertIn("No module named 'gitrun'", r.stderr)
+                self.assertNotEqual(r.returncode, 0)
 
 
 if __name__ == "__main__":
