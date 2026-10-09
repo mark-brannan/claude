@@ -229,3 +229,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t011240z
 - The decisions branch takes unsigned commits from keyless sessions; the signed-commits ruleset stays on the default branch only. Undo: drop the unsigned fallback in commit_log so a keyless session fails instead ([#118](https://github.com/mark-brannan/claude/pull/118))
+
+### 20261009t012940z
+- release-subagent-branch: untracked files count as dirty, so the worktree keeps its branch Undo: pass -uno to the status check ([#116](https://github.com/mark-brannan/claude/pull/116))
