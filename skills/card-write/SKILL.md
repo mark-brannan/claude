@@ -150,7 +150,7 @@ EOF
 short name (one line); the brief is everything else. Both go through quoted
 here-docs, as `/sweep` quotes a value, so a `'` in a link or a title is safe;
 never write either inside single quotes. A brief line may not start with `## `. `--repo`,
-`--model` (sonnet/opus/fable) and `--effort` (low/medium/high, as a hand-off
+`--model` (haiku/sonnet/opus/fable) and `--effort` (low/medium/high, as a hand-off
 names them) are facts on the item, so leave them out of the brief; readers
 append them to the card line. All are optional on an `agent` card. A dated
 `until` is one word, logged after create, on any card:

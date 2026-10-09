@@ -18,7 +18,7 @@ measured there.
 
 ## 1. Facts before judgment
 
-Gather with one Sonnet subagent, not your own reads — the 2026-09-22
+Gather with one Haiku subagent, not your own reads — the 2026-09-22
 orchestrator had spent 105k of context before its first dispatch. Ask for a
 table, one row per open issue: number, labels, the files the body names,
 any open PR or branch already carrying it, what it says blocks it. Plus
