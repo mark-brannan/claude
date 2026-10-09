@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# headersHelper for the user-scope `github-pat` MCP server: prints the
+# Authorization header as JSON, reading the token from the sops-decrypted
+# file so it never sits in a tracked or MCP config file.
+set -euo pipefail
+f="$HOME/.config/secrets/github-token.env"
+tok=$(sed -n 's/^GITHUB_PERSONAL_ACCESS_TOKEN=//p' "$f")
+[ -n "$tok" ] || { echo "no token in $f" >&2; exit 1; }
+printf '{"Authorization":"Bearer %s"}\n' "$tok"
