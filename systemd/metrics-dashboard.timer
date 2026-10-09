@@ -1,0 +1,14 @@
+# Pairs with metrics-dashboard.service. Install from the ~/.claude checkout:
+#   systemctl --user link ~/.claude/systemd/metrics-dashboard.service ~/.claude/systemd/metrics-dashboard.timer
+#   systemctl --user enable --now metrics-dashboard.timer
+
+[Unit]
+Description=Rebuild the metrics dashboard every four hours
+
+[Timer]
+OnCalendar=*-*-* 00/4:15:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

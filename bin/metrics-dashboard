@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+# metrics-dashboard -- render the metrics SQLite file (see metrics-db) as one
+# self-contained HTML page: inline SVG, no scripts, no network, so it opens
+# from file://, survives being mailed to a phone, and reads the same in the
+# dark. Four sections, one per question the page exists to answer:
+#   open work      issues, PRs and board cards over time
+#   sessions       hours at the keyboard vs agent hours, friction, decisions
+#   typing         prompts and words the user typed, per day
+#   agent work     how much lands with how few touches
+#
+# Usage: metrics-dashboard [--db FILE] [--out FILE] [--days N]
+#   --days   the daily window (default 56); weekly series cover the whole span.
+# Writes <state>/metrics/dashboard/index.html by default and prints its path.
+# Python 3 stdlib only.
+import argparse, datetime as dt, html, json, os, sqlite3, sys
+from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+def state_dir():
+    for d in [os.environ.get("CLAUDE_STATE_REPO", ""),
+              "/home/user/claude_prompts_scratch", "/workspace/claude_prompts_scratch",
+              os.path.expanduser("~/claude_prompts_scratch"), os.path.expanduser("~/src/claude_prompts_scratch"),
+              os.path.expanduser("~/Projects/claude_prompts_scratch"), os.path.expanduser("~/code/claude_prompts_scratch")]:
+        if d and os.path.isdir(os.path.join(d, ".git")):
+            return os.path.join(d, "state", "global")
+    return None
+
+# --- SVG ---------------------------------------------------------------------
+# Categorical slots in fixed order (the dataviz reference palette, validated):
+# blue, orange, aqua, yellow. Colors are CSS variables so the dark theme is a
+# stylesheet, not a second render. Text never wears a series color.
+W, H, ML, MR, MT, MB = 560, 170, 44, 12, 10, 26
+
+def fmt(v):
+    if v is None: return "–"
+    if isinstance(v, float) and not v.is_integer(): return f"{v:,.1f}"
+    v = int(v)
+    return f"{v/1000:.1f}k" if abs(v) >= 10000 else f"{v:,}"
+
+def ticks(vmax):
+    if vmax <= 0: return [0, 1]
+    import math
+    step = 10 ** math.floor(math.log10(vmax))
+    for m in (1, 2, 5, 10):
+        if vmax / (step * m) <= 5:
+            step *= m; break
+    n = math.ceil(vmax / step)
+    return [i * step for i in range(n + 1)]
+
+def x_labels(keys, every):
+    out = []
+    for i, k in enumerate(keys):
+        if i % every == 0 or i == len(keys) - 1 and len(keys) > 2 and (len(keys) - 1) % every >= every // 2:
+            out.append((i, k[5:] if len(k) == 10 else k))
+    return out
+
+def frame(keys, vmax, every):
+    tk = ticks(vmax); top = tk[-1] or 1
+    pw, ph = W - ML - MR, H - MT - MB
+    y = lambda v: MT + ph - ph * v / top
+    g = []
+    for t in tk:
+        g.append(f'<line class="grid" x1="{ML}" x2="{W-MR}" y1="{y(t):.1f}" y2="{y(t):.1f}"/>'
+                 f'<text class="ax" x="{ML-6}" y="{y(t)+3.5:.1f}" text-anchor="end">{fmt(t)}</text>')
+    for i, lab in x_labels(keys, every):
+        xx = ML + pw * (i + 0.5) / max(len(keys), 1)
+        g.append(f'<text class="ax" x="{xx:.1f}" y="{H-8}" text-anchor="middle">{lab}</text>')
+    g.append(f'<line class="base" x1="{ML}" x2="{W-MR}" y1="{y(0):.1f}" y2="{y(0):.1f}"/>')
+    return "".join(g), y, pw, ph, top
+
+def lines(title, keys, series, every=7, unit=""):
+    """series: [(name, {key: value})]; one y axis, same unit for every series."""
+    vmax = max([v for _, s in series for v in s.values() if v is not None] or [0])
+    g, y, pw, ph, top = frame(keys, vmax, every)
+    n = max(len(keys), 1); xs = lambda i: ML + pw * (i + 0.5) / n
+    body = [g]
+    for si, (name, s) in enumerate(series):
+        pts = [(xs(i), y(s[k])) for i, k in enumerate(keys) if s.get(k) is not None]
+        if not pts: continue
+        d = "M" + " L".join(f"{px:.1f},{py:.1f}" for px, py in pts)
+        body.append(f'<path class="s{si+1} ln" d="{d}"/>')
+        if 1 < len(series) <= 3:  # direct label at the line's end
+            body.append(f'<text class="lbl" x="{pts[-1][0]+4:.1f}" y="{pts[-1][1]+3.5:.1f}">{html.escape(name)}</text>')
+    for i, k in enumerate(keys):  # hover layer: one hit target per step
+        tip = k + "".join(f"\n{name}: {fmt(s.get(k))}{unit}" for name, s in series)
+        body.append(f'<rect class="hit" x="{xs(i)-pw/n/2:.1f}" y="{MT}" width="{pw/n:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
+    return card(title, "".join(body), [n for n, _ in series] if len(series) > 1 else [])
+
+def bars(title, keys, series, every=7, unit=""):
+    """Stacked bars. series: [(name, {key: value})]; segments keep a 2px gap."""
+    tot = {k: sum((s.get(k) or 0) for _, s in series) for k in keys}
+    g, y, pw, ph, top = frame(keys, max(tot.values() or [0]), every)
+    n = max(len(keys), 1); bw = pw / n
+    body = [g]
+    for i, k in enumerate(keys):
+        acc = 0; x0 = ML + bw * i + max(bw * 0.12, 1)
+        for si, (name, s) in enumerate(series):
+            v = s.get(k) or 0
+            if v <= 0: continue
+            y1, y0 = y(acc + v), y(acc)
+            hgt = max(y0 - y1 - (2 if acc else 0), 0.5)
+            body.append(f'<rect class="s{si+1}" x="{x0:.1f}" y="{y1:.1f}" width="{max(bw-2*max(bw*0.12,1),1):.1f}" height="{hgt:.1f}" rx="1"/>')
+            acc += v
+        tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + (f"\ntotal: {fmt(tot[k])}{unit}" if len(series) > 1 else "")
+        body.append(f'<rect class="hit" x="{ML+bw*i:.1f}" y="{MT}" width="{bw:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
+    return card(title, "".join(body), [n for n, _ in series] if len(series) > 1 else [])
+
+def card(title, svg_body, legend):
+    leg = "".join(f'<span><i class="s{i+1}"></i>{html.escape(n)}</span>' for i, n in enumerate(legend))
+    return (f'<figure><figcaption>{html.escape(title)}</figcaption>'
+            f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{html.escape(title)}">{svg_body}</svg>'
+            f'{"<div class=leg>" + leg + "</div>" if leg else ""}</figure>')
+
+def tile(label, now, prev=None, unit="", good="down"):
+    delta = ""
+    if prev not in (None, 0) and now is not None:
+        pct = (now - prev) / prev * 100
+        cls = "good" if (pct > 0) == (good == "up") else "bad"
+        if abs(pct) < 1: cls = "flat"
+        delta = f'<small class="{cls}">{"+" if pct >= 0 else ""}{pct:.0f}% vs prior</small>'
+    elif prev is not None:
+        delta = '<small class="flat">prior: ' + fmt(prev) + '</small>'
+    return f'<div class="tile"><b>{fmt(now)}{unit}</b><span>{html.escape(label)}</span>{delta}</div>'
+
+# --- data ----------------------------------------------------------------------
+def days(n, end):
+    return [(end - dt.timedelta(days=i)).isoformat() for i in range(n - 1, -1, -1)]
+
+def mondays(first, end):
+    d = first - dt.timedelta(days=first.weekday()); out = []
+    while d <= end:
+        out.append(d.isoformat()); d += dt.timedelta(days=7)
+    return out
+
+def build(db, out, ndays):
+    cx = sqlite3.connect(db); cx.row_factory = sqlite3.Row
+    q = lambda sql, *a: cx.execute(sql, a).fetchall()
+    today = dt.date.today(); dkeys = days(ndays, today); start = dkeys[0]
+    first = q("select min(substr(started_at,1,10)) f from sessions")[0]["f"] or start
+    wkeys = mondays(dt.date.fromisoformat(first), today)
+    WEEK = "date(substr(%s,1,10), '-' || ((strftime('%%w', substr(%s,1,10)) + 6) %% 7) || ' days')"
+    def wk(col): return WEEK % (col, col)
+    def series(rows, kcol, vcol): return {r[kcol]: r[vcol] for r in rows}
+    meta = dict((r["key"], r["value"]) for r in q("select * from meta"))
+
+    # open work ------------------------------------------------------------
+    gh = q("select repo, kind, substr(created_at,1,10) c, substr(coalesce(closed_at,'9999'),1,10) x, head_ref from gh_items")
+    def open_on(kind, day, repo=None):
+        return sum(1 for r in gh if r["kind"] == kind and r["c"] <= day and r["x"] > day and (repo is None or r["repo"] == repo))
+    project = {}
+    for r in q("select repo, topics from gh_repos"):
+        p = [t for t in (r["topics"] or "").split(",") if t.startswith("project-")]
+        project[r["repo"]] = p[0][8:] if p else "other"
+    def open_by_project(kind, day):
+        out = defaultdict(int)
+        for r in gh:
+            if r["kind"] == kind and r["c"] <= day and r["x"] > day:
+                out[project.get(r["repo"], "other")] += 1
+        return out
+    daily_issues = {d: open_by_project("issue", d) for d in dkeys}
+    projects = sorted({p for v in daily_issues.values() for p in v}, key=lambda p: (p == "other", -daily_issues[dkeys[-1]].get(p, 0)))
+    issue_series = [(p, {d: daily_issues[d].get(p, 0) for d in dkeys}) for p in projects]
+    pr_open = ("open PRs", {d: open_on("pr", d) for d in dkeys})
+    merged = q(f"select {wk('merged_at')} w, sum(head_ref like 'claude/%') agent, sum(head_ref not like 'claude/%') other from gh_items where kind='pr' and merged_at is not null group by w")
+    ev = q("select item_id, ts, status, owner from item_events order by item_id, ts")
+    owner_of, hist = {}, defaultdict(list)
+    for r in ev:
+        if r["owner"] and r["item_id"] not in owner_of: owner_of[r["item_id"]] = r["owner"]
+        hist[r["item_id"]].append((r["ts"][:10], r["status"]))
+    def cards_open(day, owner):
+        n = 0
+        for it, h in hist.items():
+            if owner_of.get(it) != owner: continue
+            st = [s for d, s in h if d <= day]
+            if st and st[-1] not in ("done", "closed"): n += 1
+        return n
+    card_first = min((r["ts"][:10] for r in ev), default=start)
+    ckeys = [d for d in dkeys if d >= card_first]
+    user_cards = [(o, {d: cards_open(d, o) for d in ckeys}) for o in ("human-ruling", "human-click")]
+    agent_cards = [("agent queue", {d: cards_open(d, "agent") for d in ckeys})]
+
+    # sessions --------------------------------------------------------------
+    cx.execute("create temp view sv as select s.*, coalesce(t.prompts, s.user_turns) typed from sessions s left join typing t on t.session_id = s.session_id")
+    daily = q("select substr(started_at,1,10) d, count(*) n, sum(typed=0) headless, sum(human_seconds)/3600.0 hh, sum(agent_seconds)/3600.0 ah, "
+              "sum(fr_correction) c, sum(fr_override) o, sum(fr_rebuke) r, sum(fr_pushback) p, "
+              "sum(dec_scoping) ds, sum(dec_inline) di, sum(dec_gate) dg, sum(blk_total) b, sum(typed) ut, sum(tool_calls) tc, sum(commits) cm "
+              "from sv where started_at >= ? group by d", start)
+    weekly = q(f"select {wk('started_at')} w, count(*) n, sum(typed) ut, sum(tool_calls) tc, sum(commits) cm, sum(fr_total) fr, sum(dec_total) dec, "
+               "sum(human_seconds)/3600.0 hh, sum(agent_seconds)/3600.0 ah, "
+               "sum(typed=0) t0, sum(typed=1) t1, sum(typed between 2 and 5) t2, sum(typed>=6) t3 from sv group by w")
+    typing_d = q("select substr(first_ts,1,10) d, sum(prompts) p, sum(words) w, sum(chars) c from typing where first_ts >= ? group by d", start)
+    typing_w = q(f"select {wk('first_ts')} w, sum(prompts) p, sum(words) wd from typing group by w")
+
+    # merged PRs by how many prompts the user typed into the sessions on that branch
+    touches = {}
+    for r in q("select g.repo||'#'||g.number pr, " + wk("g.merged_at") + " w, coalesce(sum(s.typed), -1) t from gh_items g "
+               "left join (select distinct branch, session_id from commits) c on c.branch = g.head_ref "
+               "left join sv s on s.session_id = c.session_id where g.kind='pr' and g.merged_at is not null group by g.repo, g.number"):
+        b = "no session" if r["t"] < 0 else "0–1 prompts" if r["t"] <= 1 else "2–5 prompts" if r["t"] <= 5 else "6+ prompts"
+        touches.setdefault(b, defaultdict(int))[r["w"]] += 1
+    touch_order = ["0–1 prompts", "2–5 prompts", "6+ prompts", "no session"]
+
+    # tiles: last 7 days vs the 7 before ---------------------------------------
+    def win(sql, a, b):
+        return q(sql, dkeys[a], dkeys[b])[0][0] or 0
+    S7 = "select %s from sv where substr(started_at,1,10) between ? and ?"
+    T7 = "select %s from typing where substr(first_ts,1,10) between ? and ?"
+    a7, b7, a14, b14 = -7, -1, -14, -8
+    tiles = [
+        tile("sessions, 7d", win(S7 % "count(*)", a7, b7), win(S7 % "count(*)", a14, b14), good="up"),
+        tile("of them headless, 7d", win(S7 % "sum(typed=0)", a7, b7), win(S7 % "sum(typed=0)", a14, b14), good="up"),
+        tile("hours at the keyboard, 7d", round(win(S7 % "sum(human_seconds)/3600.0", a7, b7), 1), round(win(S7 % "sum(human_seconds)/3600.0", a14, b14), 1), good="down"),
+        tile("agent hours, 7d", round(win(S7 % "sum(agent_seconds)/3600.0", a7, b7), 1), round(win(S7 % "sum(agent_seconds)/3600.0", a14, b14), 1), good="up"),
+        tile("prompts typed, 7d", win(T7 % "sum(prompts)", a7, b7), win(T7 % "sum(prompts)", a14, b14), good="down"),
+        tile("words typed, 7d", win(T7 % "sum(words)", a7, b7), win(T7 % "sum(words)", a14, b14), good="down"),
+        tile("friction events, 7d", win(S7 % "sum(fr_total)", a7, b7), win(S7 % "sum(fr_total)", a14, b14), good="down"),
+        tile("gate decisions, 7d", win(S7 % "sum(dec_gate)", a7, b7), win(S7 % "sum(dec_gate)", a14, b14), good="down"),
+        tile("open issues", open_on("issue", dkeys[-1]), open_on("issue", dkeys[-8]), good="down"),
+        tile("open PRs", open_on("pr", dkeys[-1]), open_on("pr", dkeys[-8]), good="down"),
+        tile("rulings waiting", cards_open(dkeys[-1], "human-ruling"), cards_open(dkeys[-8], "human-ruling") if dkeys[-8] >= card_first else None, good="down"),
+    ]
+
+    figs = {
+        "open": [
+            lines("Open issues, by project", dkeys, issue_series),
+            lines("Open pull requests, all repos", dkeys, [pr_open]),
+            bars("PRs merged per week: agent branch vs other", wkeys, [("claude/* branch", series(merged, "w", "agent")), ("other", series(merged, "w", "other"))], every=4),
+            lines("Board cards waiting on the user, by section", ckeys, user_cards, every=max(len(ckeys) // 8, 1)),
+            lines("Board cards in the agent's queue", ckeys, agent_cards, every=max(len(ckeys) // 8, 1)),
+        ],
+        "sessions": [
+            lines("Hours per day: at the keyboard vs agent", dkeys, [("keyboard", series(daily, "d", "hh")), ("agent", series(daily, "d", "ah"))], unit="h"),
+            bars("Sessions per day: headless vs interactive", dkeys, [("headless (nothing typed)", series(daily, "d", "headless")), ("interactive", {r["d"]: r["n"] - r["headless"] for r in daily})]),
+            bars("Friction events per day, by type", dkeys, [("correction", series(daily, "d", "c")), ("override", series(daily, "d", "o")), ("rebuke", series(daily, "d", "r")), ("pushback", series(daily, "d", "p"))]),
+            bars("Decisions pushed per day, by type", dkeys, [("scoping", series(daily, "d", "ds")), ("inline", series(daily, "d", "di")), ("gate", series(daily, "d", "dg"))]),
+            lines("Friction per 100 prompts, weekly", wkeys, [("friction/100", {r["w"]: round(100.0 * r["fr"] / r["ut"], 1) for r in weekly if r["ut"]})], every=4),
+            lines("Decisions per keyboard hour, weekly", wkeys, [("decisions/h", {r["w"]: round(r["dec"] / r["hh"], 2) for r in weekly if r["hh"]})], every=4),
+        ],
+        "typing": [
+            bars("Prompts typed per day", dkeys, [("prompts", series(typing_d, "d", "p"))]),
+            bars("Words typed per day", dkeys, [("words", series(typing_d, "d", "w"))]),
+            lines("Words per prompt, weekly mean", wkeys, [("words/prompt", {r["w"]: round(r["wd"] / r["p"], 1) for r in typing_w if r["p"]})], every=4),
+            lines("Characters per prompt, daily mean", dkeys, [("chars/prompt", {r["d"]: round(r["c"] / r["p"]) for r in typing_d if r["p"]})]),
+        ],
+        "agent": [
+            bars("Sessions per week, by prompts typed", wkeys, [("0 (headless)", series(weekly, "w", "t0")), ("1", series(weekly, "w", "t1")), ("2–5", series(weekly, "w", "t2")), ("6+", series(weekly, "w", "t3"))], every=4),
+            bars("Merged PRs per week, by prompts typed on the branch", wkeys, [(b, touches.get(b, {})) for b in touch_order], every=4),
+            lines("Tool calls per prompt, weekly", wkeys, [("tool calls/prompt", {r["w"]: round(r["tc"] / r["ut"], 1) for r in weekly if r["ut"]})], every=4),
+            lines("Agent hours per keyboard hour, weekly", wkeys, [("agent h / keyboard h", {r["w"]: round(r["ah"] / r["hh"], 2) for r in weekly if r["hh"]})], every=4),
+            lines("Commits per prompt, weekly", wkeys, [("commits/prompt", {r["w"]: round(r["cm"] / r["ut"], 2) for r in weekly if r["ut"]})], every=4),
+        ],
+    }
+    sections = [("open", "Open work", "Issues and PRs are reconstructed from GitHub timestamps, so the history is complete; board cards start when the item store did."),
+                ("sessions", "Sessions and friction", f"Daily series cover the last {ndays} days; weekly series the whole record."),
+                ("typing", "Typing", "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing."),
+                ("agent", "Agent work vs touches", "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch.")]
+    body = "".join(f'<h2 id="{k}">{html.escape(t)}</h2><p class="note">{html.escape(n)}</p><div class="grid">{"".join(figs[k])}</div>' for k, t, n in sections)
+    page = PAGE.format(tiles="".join(tiles), body=body,
+                       built=html.escape(meta.get("built_at", "?")), gh=html.escape(meta.get("gh_refreshed_at", "never")),
+                       nav=" · ".join(f'<a href="#{k}">{html.escape(t)}</a>' for k, t, _ in sections))
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(page)
+    return out
+
+PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Metrics</title>
+<style>
+:root {{ --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781; --grid:#e1e0d9; --base:#c3c2b7;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --good:#006300; --bad:#d03b3b; }}
+@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#898781; --grid:#2c2c2a; --base:#383835;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --good:#0ca30c; --bad:#e66767; }} }}
+:root[data-theme="dark"] {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --grid:#2c2c2a; --base:#383835; --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --good:#0ca30c; --bad:#e66767; }}
+* {{ box-sizing:border-box }} body {{ margin:0; padding:16px; background:var(--page); color:var(--ink); font:14px/1.4 system-ui,sans-serif }}
+header {{ display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; margin-bottom:12px }} h1 {{ font-size:20px; margin:0 }} header small, .note {{ color:var(--ink2) }}
+nav a {{ color:var(--ink2); text-decoration:none }} nav a:hover {{ color:var(--ink) }}
+.tiles {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; margin:8px 0 20px }}
+.tile {{ background:var(--surface); border:1px solid var(--grid); border-radius:6px; padding:10px 12px; display:flex; flex-direction:column }}
+.tile b {{ font-size:22px; font-weight:600 }} .tile span {{ color:var(--ink2); font-size:12px }} .tile small {{ font-size:11px; color:var(--muted) }}
+.tile .good {{ color:var(--good) }} .tile .bad {{ color:var(--bad) }}
+h2 {{ font-size:16px; margin:24px 0 2px }} .note {{ margin:0 0 10px; font-size:12px }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px }}
+figure {{ margin:0; background:var(--surface); border:1px solid var(--grid); border-radius:6px; padding:10px 12px 8px }}
+figcaption {{ font-size:13px; color:var(--ink2); margin-bottom:4px }} svg {{ width:100%; height:auto; display:block; overflow:visible }}
+.grid line {{ stroke:var(--grid); stroke-width:1 }} line.base {{ stroke:var(--base) }} .ax {{ fill:var(--muted); font-size:10px }} .lbl {{ fill:var(--ink2); font-size:10px }}
+.ln {{ fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round }}
+path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }}
+rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--s3) }} rect.s4 {{ fill:var(--s4) }} rect.s5 {{ fill:var(--muted) }}
+.hit {{ fill:transparent }} .hit:hover {{ fill:var(--ink); fill-opacity:.06 }}
+.leg {{ display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--ink2); margin-top:6px }} .leg i {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px }}
+.leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }}
+footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}
+</style></head><body>
+<header><h1>Metrics</h1><small>built {built} · GitHub refreshed {gh}</small><nav>{nav}</nav></header>
+<div class="tiles">{tiles}</div>
+{body}
+<footer>Rendered by metrics-dashboard from metrics.db (metrics-db). Hover any step for its values. Green deltas move in the wanted direction.</footer>
+</body></html>"""
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--db"); ap.add_argument("--out"); ap.add_argument("--days", type=int, default=56)
+    a = ap.parse_args()
+    sd = state_dir()
+    if not sd and not (a.db and a.out):
+        print("metrics-dashboard: state repo not found; pass --db and --out", file=sys.stderr); return 3
+    db = a.db or os.path.join(sd, "metrics", "dashboard", "metrics.db")
+    out = a.out or os.path.join(sd, "metrics", "dashboard", "index.html")
+    if not os.path.exists(db):
+        print(f"metrics-dashboard: {db} missing; run metrics-db first", file=sys.stderr); return 1
+    print(build(db, out, a.days))
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

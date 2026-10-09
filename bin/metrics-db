@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+# metrics-db -- load every metric the hooks already record into one SQLite
+# file, so any front end (a static page, Datasette, Grafana's SQLite source,
+# a terminal) reads the same tables instead of re-parsing the JSON.
+#
+# Sources, all in the state repo (`lib-state.sh`'s state_dir) unless noted:
+#   metrics/sessions/*.json       one row per finished session        -> sessions
+#   metrics/{decisions,friction,blocked,git-events,crossings}/*.jsonl -> one table each
+#   commits.jsonl                 commits by session and branch        -> commits
+#   items/*.md                    the board: one row per status line   -> item_events
+#   ~/.claude/projects/**/*.jsonl the user's own typed prompts         -> typing
+#                                 (local transcripts; incremental by mtime+size)
+#   GitHub (--github)             issues and PRs of every repo the user owns -> gh_items
+#
+# The file is derived and per-machine, like metrics.json: it lives under
+# metrics/dashboard/ in the state repo and is gitignored, never committed.
+#
+# Usage: metrics-db [--db FILE] [--github] [--no-typing] [--quiet]
+#   --github     refresh gh_items (about one GraphQL call per 100 items per
+#                repo; ~70 calls for the current account, well inside the
+#                5000/hour limit). Without it the table is left as it was.
+#   --no-typing  skip the transcript scan (the one slow source on first run).
+#   --rescan-typing  rescan every transcript (after changing what counts as typed).
+# Exit 0 on success, 2 on usage, 3 when the state repo cannot be found.
+# Python 3 stdlib only.
+import argparse, glob, json, os, re, sqlite3, subprocess, sys, time
+
+def state_dir():
+    for d in [os.environ.get("CLAUDE_STATE_REPO", ""),
+              "/home/user/claude_prompts_scratch", "/workspace/claude_prompts_scratch",
+              os.path.expanduser("~/claude_prompts_scratch"),
+              os.path.expanduser("~/src/claude_prompts_scratch"),
+              os.path.expanduser("~/Projects/claude_prompts_scratch"),
+              os.path.expanduser("~/code/claude_prompts_scratch")]:
+        if d and os.path.isdir(os.path.join(d, ".git")):
+            return os.path.join(d, "state", "global")
+    return None
+
+SCHEMA = """
+create table if not exists sessions(
+  session_id text primary key, ts text, started_at text, ended_at text, repo text, branch text,
+  model text, version text, elapsed_seconds int, active_seconds int, human_seconds int,
+  agent_seconds int, idle_seconds int, user_turns int, assistant_turns int, tool_calls int,
+  output_tokens int, input_tokens int, cache_creation_tokens int, cache_read_tokens int,
+  cost_usd real, context_peak int, files_written int, commits int, work_started int,
+  dec_total int, dec_scoping int, dec_inline int, dec_gate int,
+  blk_total int, blk_classifier int, blk_rule int, blk_user int,
+  fr_total int, fr_correction int, fr_override int, fr_rebuke int, fr_repeat int, fr_pushback int,
+  verdict text, tools_json text);
+create table if not exists decisions(ts text, session_id text, repo text, seq int, turn_index int,
+  mechanism text, questions int, before_first_write int, type text, question text);
+create table if not exists friction(ts text, session_id text, repo text, seq int, turn_index int,
+  type text, tags text, retracted int, repeat int);
+create table if not exists blocked(session_id text, i int, kind text, raw text, tool text);
+create table if not exists git_events(ts text, session_id text, kind text, repo text, branch text,
+  created_branch text, draft int);
+create table if not exists crossings(ts text, session_id text, kind text, at int, min int, stay int,
+  overrun int);
+create table if not exists commits(ts text, session_id text, repo text, branch text, commit_sha text);
+create table if not exists item_events(item_id text, ts text, session8 text, status text, owner text,
+  repo text, parent text, model text, effort text, home text, title text);
+create table if not exists typing(session_id text primary key, path text, mtime real, size int,
+  cwd text, first_ts text, last_ts text, prompts int, chars int, words int, pasted_chars int);
+create table if not exists gh_repos(repo text primary key, topics text, archived int, private int);
+create table if not exists gh_items(repo text, number int, kind text, created_at text, closed_at text,
+  merged_at text, state text, draft int, head_ref text, author text, title text,
+  primary key(repo, number, kind));
+create table if not exists meta(key text primary key, value text);
+"""
+
+def load_json(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+def jsonl(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except ValueError:
+                    continue
+    except OSError:
+        return
+
+def load_sessions(cx, sd):
+    rows = []
+    for p in glob.glob(os.path.join(sd, "metrics", "sessions", "*.json")) + \
+             glob.glob(os.path.join(sd, "metrics", "sessions", "*", "*.json")):
+        d = load_json(p)
+        if not d or not d.get("session_id"):
+            continue
+        dec, blk, fr = d.get("decisions") or {}, d.get("blocked") or {}, d.get("friction") or {}
+        rows.append((d["session_id"], d.get("ts"), d.get("started_at"), d.get("ended_at"), d.get("repo"),
+            d.get("branch"), d.get("model"), d.get("version"), d.get("elapsed_seconds"),
+            d.get("active_seconds"), d.get("human_seconds"), d.get("agent_seconds"), d.get("idle_seconds"),
+            d.get("user_turns"), d.get("assistant_turns"), d.get("tool_calls"), d.get("output_tokens"),
+            d.get("input_tokens"), d.get("cache_creation_tokens"), d.get("cache_read_tokens"),
+            d.get("cost_usd"), d.get("context_peak"), d.get("files_written"), d.get("commits"),
+            1 if d.get("work_started") else 0,
+            dec.get("total"), dec.get("scoping"), dec.get("inline"), dec.get("gate"),
+            blk.get("total"), blk.get("classifier"), blk.get("rule"), blk.get("user"),
+            fr.get("total"), fr.get("correction"), fr.get("override"), fr.get("rebuke"), fr.get("repeat"),
+            fr.get("pushback"), d.get("verdict"), json.dumps(d.get("tools") or {})))
+    cx.execute("delete from sessions")
+    cx.executemany("insert or replace into sessions values (" + ",".join("?" * 41) + ")", rows)
+    return len(rows)
+
+def load_stream(cx, sd, sub, table, pick):
+    rows = []
+    for p in glob.glob(os.path.join(sd, "metrics", sub, "*.jsonl")):
+        sid = os.path.basename(p)[:-6]
+        for d in jsonl(p):
+            rows.append(pick(sid, d))
+    cx.execute(f"delete from {table}")
+    if rows:
+        cx.executemany(f"insert into {table} values ({','.join('?' * len(rows[0]))})", rows)
+    return len(rows)
+
+def load_streams(cx, sd):
+    n = {}
+    n["decisions"] = load_stream(cx, sd, "decisions", "decisions", lambda s, d: (d.get("ts"),
+        d.get("session_id", s), d.get("repo"), d.get("seq"), d.get("turn_index"), d.get("mechanism"),
+        d.get("questions"), 1 if d.get("before_first_write") else 0, d.get("type"), d.get("question")))
+    n["friction"] = load_stream(cx, sd, "friction", "friction", lambda s, d: (d.get("ts"),
+        d.get("session_id", s), d.get("repo"), d.get("seq"), d.get("turn_index"), d.get("type"),
+        ",".join(d.get("tags") or []), 1 if d.get("retracted") else 0, 1 if d.get("repeat") else 0))
+    n["blocked"] = load_stream(cx, sd, "blocked", "blocked", lambda s, d: (s, d.get("i"), d.get("kind"),
+        d.get("raw"), d.get("tool")))
+    n["git_events"] = load_stream(cx, sd, "git-events", "git_events", lambda s, d: (d.get("ts"),
+        d.get("session_id", s), d.get("kind"), d.get("repo"), d.get("branch"), d.get("created_branch"),
+        1 if d.get("draft") else 0))
+    n["crossings"] = load_stream(cx, sd, "crossings", "crossings", lambda s, d: (d.get("ts"),
+        d.get("session_id", s), d.get("kind"), d.get("at"), d.get("min"),
+        None if d.get("stay") is None else (1 if d.get("stay") else 0), d.get("overrun")))
+    rows = [(d.get("ts"), d.get("session_id"), d.get("repo"), d.get("branch"), d.get("commit"))
+            for d in jsonl(os.path.join(sd, "commits.jsonl"))]
+    cx.execute("delete from commits")
+    cx.executemany("insert into commits values (?,?,?,?,?)", rows)
+    n["commits"] = len(rows)
+    return n
+
+LOG_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T[\d:]+Z)\s+(\S+)\s+(.*)$")
+
+def load_items(cx, sd):
+    rows = []
+    for p in glob.glob(os.path.join(sd, "items", "*.md")):
+        item_id = os.path.basename(p)[:-3]
+        try:
+            text = open(p, encoding="utf-8").read()
+        except OSError:
+            continue
+        title = next((l[2:].strip() for l in text.splitlines() if l.startswith("# ")), "")
+        in_log = False
+        for line in text.splitlines():
+            if line.startswith("## "):
+                in_log = line.strip() == "## Log"
+                continue
+            m = LOG_RE.match(line) if in_log else None
+            if not m:
+                continue
+            kv = dict(kv.split("=", 1) for kv in m.group(3).split() if "=" in kv)
+            if "status" not in kv:
+                continue
+            rows.append((item_id, m.group(1), m.group(2), kv.get("status", "").strip("`,"),
+                kv.get("owner"), kv.get("repo"), kv.get("parent"), kv.get("model"), kv.get("effort"),
+                kv.get("home"), title))
+    cx.execute("delete from item_events")
+    cx.executemany("insert into item_events values (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    return len(rows)
+
+# A typed prompt is a user record whose content is a string that no machine
+# wrote: not a tag the harness injects (<system-reminder>, <task-notification>,
+# a slash-command wrapper...), not a relayed hook or session message, not the
+# fixed opening prompt of a headless review run. The list is a heuristic and
+# grows as new machine prefixes show up in the length distribution. Pasted
+# blocks are counted apart: pasting is not typing.
+USER_LINE = '"role":"user","content":"'
+INJECTED = re.compile(r"^\s*(<|Another Claude session sent a message|Stop hook feedback:|"
+                      r"Review this change for security vulnerabilities|"
+                      r"You previously flagged these candidate vulnerabilities)")
+COMMAND = re.compile(r"^\s*<command-name>([^<]*)</command-name>")
+PASTED = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
+
+def load_typing(cx, projects):
+    known = {r[0]: (r[1], r[2]) for r in cx.execute("select path, mtime, size from typing")}
+    paths = glob.glob(os.path.join(projects, "*", "*.jsonl"))
+    scanned = 0
+    for p in paths:
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if known.get(p) == (st.st_mtime, st.st_size):
+            continue
+        prompts = chars = words = pasted = 0
+        first = last = cwd = sid = None
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if USER_LINE not in line or '"isSidechain":true' in line:
+                        continue
+                    try:
+                        d = json.loads(line)
+                    except ValueError:
+                        continue
+                    c = (d.get("message") or {}).get("content")
+                    if not isinstance(c, str):
+                        continue
+                    cmd = COMMAND.match(c)
+                    if cmd:
+                        c = cmd.group(1)
+                    elif INJECTED.match(c):
+                        continue
+                    sid = sid or d.get("sessionId") or os.path.basename(p)[:-6]
+                    cwd = cwd or d.get("cwd")
+                    ts = d.get("timestamp")
+                    first = first or ts
+                    last = ts or last
+                    pasted_len = sum(len(m) for m in PASTED.findall(c))
+                    typed = PASTED.sub("", c)
+                    prompts += 1
+                    chars += len(typed)
+                    words += len(typed.split())
+                    pasted += pasted_len
+        except OSError:
+            continue
+        scanned += 1
+        sid = sid or os.path.basename(p)[:-6]
+        cx.execute("insert or replace into typing values (?,?,?,?,?,?,?,?,?,?,?)",
+                   (sid, p, st.st_mtime, st.st_size, cwd, first, last, prompts, chars, words, pasted))
+    return scanned, len(paths)
+
+GQL = """query($owner:String!,$name:String!,$ia:String,$pa:String,$doI:Boolean!,$doP:Boolean!){
+  repository(owner:$owner,name:$name){
+    issues(first:100,after:$ia,orderBy:{field:CREATED_AT,direction:ASC}) @include(if:$doI){
+      pageInfo{hasNextPage endCursor}
+      nodes{number title createdAt closedAt state author{login}}}
+    pullRequests(first:100,after:$pa,orderBy:{field:CREATED_AT,direction:ASC}) @include(if:$doP){
+      pageInfo{hasNextPage endCursor}
+      nodes{number title createdAt closedAt mergedAt state isDraft headRefName author{login}}}}}"""
+
+def gh(args):
+    r = subprocess.run(["gh"] + args, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr.strip()[:200])
+    return json.loads(r.stdout)
+
+def load_github(cx):
+    repos = gh(["repo", "list", "--limit", "200", "--json", "nameWithOwner,isArchived,isPrivate,repositoryTopics"])
+    cx.execute("delete from gh_repos")
+    cx.executemany("insert into gh_repos values (?,?,?,?)", [(r["nameWithOwner"],
+        ",".join(t["name"] for t in (r.get("repositoryTopics") or [])), 1 if r["isArchived"] else 0,
+        1 if r["isPrivate"] else 0) for r in repos])
+    rows, calls = [], 0
+    for r in repos:
+        owner, name = r["nameWithOwner"].split("/", 1)
+        ia = pa = None
+        do_i = do_p = True
+        while do_i or do_p:
+            v = {"owner": owner, "name": name, "ia": ia, "pa": pa, "doI": do_i, "doP": do_p}
+            args = ["api", "graphql", "-f", "query=" + GQL]
+            for k, val in v.items():
+                if isinstance(val, bool):
+                    args += ["-F", f"{k}={'true' if val else 'false'}"]
+                elif val is not None:
+                    args += ["-f", f"{k}={val}"]
+            data = gh(args)["data"]["repository"]
+            calls += 1
+            for kind, key, flag in (("issue", "issues", "doI"), ("pr", "pullRequests", "doP")):
+                conn = data.get(key)
+                if conn is None:
+                    continue
+                for n in conn["nodes"]:
+                    rows.append((r["nameWithOwner"], n["number"], kind, n["createdAt"], n["closedAt"],
+                        n.get("mergedAt"), n["state"], 1 if n.get("isDraft") else 0, n.get("headRefName"),
+                        (n.get("author") or {}).get("login"), n.get("title")))
+                more = conn["pageInfo"]["hasNextPage"]
+                if kind == "issue":
+                    do_i, ia = more, conn["pageInfo"]["endCursor"]
+                else:
+                    do_p, pa = more, conn["pageInfo"]["endCursor"]
+    cx.execute("delete from gh_items")
+    cx.executemany("insert or replace into gh_items values (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    cx.execute("insert or replace into meta values ('gh_refreshed_at', ?)",
+               (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),))
+    return len(rows), calls, len(repos)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--db")
+    ap.add_argument("--github", action="store_true")
+    ap.add_argument("--no-typing", action="store_true")
+    ap.add_argument("--rescan-typing", action="store_true", help="forget the per-transcript cache first")
+    ap.add_argument("--projects", default=os.path.expanduser("~/.claude/projects"))
+    ap.add_argument("--quiet", action="store_true")
+    a = ap.parse_args()
+    sd = state_dir()
+    if not sd:
+        print("metrics-db: state repo not found", file=sys.stderr)
+        return 3
+    db = a.db or os.path.join(sd, "metrics", "dashboard", "metrics.db")
+    os.makedirs(os.path.dirname(db), exist_ok=True)
+    cx = sqlite3.connect(db)
+    cx.executescript(SCHEMA)
+    t0 = time.time()
+    report = {"sessions": load_sessions(cx, sd), **load_streams(cx, sd), "item_events": load_items(cx, sd)}
+    cx.commit()
+    if not a.no_typing:
+        if a.rescan_typing:
+            cx.execute("delete from typing")
+        scanned, total = load_typing(cx, a.projects)
+        cx.commit()
+        report["typing"] = f"{scanned} of {total} transcripts rescanned"
+    if a.github:
+        n, calls, repos = load_github(cx)
+        cx.commit()
+        report["gh_items"] = f"{n} from {repos} repos in {calls} calls"
+    cx.execute("insert or replace into meta values ('built_at', ?)",
+               (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),))
+    cx.commit()
+    if not a.quiet:
+        print(f"{db}  ({time.time() - t0:.1f}s)")
+        for k, v in report.items():
+            print(f"  {k:12} {v}")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
