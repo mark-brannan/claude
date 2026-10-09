@@ -367,6 +367,34 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.assertIn("cannot read", p.stderr)
         self.assertEqual(len(self.bullets(self.branch_log())), 2)
 
+    CLAIMS = ["Solace chose the scale", "Solace ruled the scale", "the user ruled the scale", "scale set per Solace",
+              "scale kept on the user's order", "the user asked for the scale", "scale kept as ordered",
+              "scale kept, ruled by Solace", "the owner chose the scale", "per the owner, the scale stays",
+              "the owner decided the scale", "THE USER DECIDED the scale", "Solace has ordered the scale",
+              "scale is the user's choice", "scale kept on the user\u2019s order", "Ruling (Solace): the scale stays",
+              "the user explicitly chose the scale", "Solace said to keep the scale", "the human chose it"]
+
+    def test_provenance_claims_are_refused_and_write_nothing(self):
+        self.pr()
+        for call in self.CLAIMS:
+            with self.subTest(call=call):
+                p = self.run_ad(call)
+                self.assertEqual(p.returncode, 1, p.stderr)
+                self.assertIn("--said <url>", p.stderr)
+        for extra in (["--undo", "revert; the user asked for it"], ["--link", "per Solace"]):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.run_ad(*extra, "scale stays").returncode, 1)
+        self.no_decisions_branch()
+
+    def test_ordinary_pencil_calls_are_unaffected(self):
+        self.pr()
+        for call in ["Points on the brief are 1 2 3 5 8 13", "Sorted the user table by name",
+                     "Order of the steps follows the ordered list in the doc", "Rows are ordered by time",
+                     "The user's session ends with a wrap-up", "The user-facing text says Retry",
+                     "Kept the default; the user decides at merge", "the user wants X at merge"]:
+            with self.subTest(call=call):
+                self.assertEqual(self.run_ad(call).returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
