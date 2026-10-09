@@ -196,25 +196,25 @@ buffered_state() {
 # inline and never looked for a pointer issue, the one branch-home-gate.sh
 # already finds.
 #
-# Requires $HOOK_DIR set by the caller: branch-home-gate.sh and
-# claim-stamp.sh live beside this file and are shelled out to, not sourced,
-# so their own state (branch-home-gate.sh's once-per-session gate,
-# claim-stamp.sh's per-session record) never leaks into this read-only check.
+# Requires $HOOK_DIR set by the caller: branch-home-gate.sh lives beside
+# this file and is shelled out to, not sourced, so its own state (the
+# once-per-session gate) never leaks into this read-only check.
 #
 # Home is checked before session-live, and both only when dirty/unpushed are
 # already clean: both can shell out to `gh` (branch-home-gate.sh up to two
-# 30s calls, claim-stamp.sh one), so a dirty mid-work tree -- the common
+# 30s calls, twice over), so a dirty mid-work tree -- the common
 # case, and the one Stop fires on every turn -- never pays that cost.
 # Restores the short-circuit the pre-dotfiles#149 archivable() had.
 #
 # session live (dotfiles#167): git state alone is how a live session's
 # worktree got archived out from under it (PR #162, the scar the languette
-# plugin's guard-worktrees names). The signal is the claim stamp
-# claim-stamp.sh already posts on the branch's card and refreshes on every
-# Stop (dotfiles#287); it, not this function, decides fresh vs stale
-# (CLAIM_STALE_SECS). <session-id> is the caller's own: its own stamp is
-# never a reason, or a session could never become archivable by watching
-# its own refresh. Omit it (a sweep, a human) and every fresh stamp counts.
+# plugin's guard-worktrees names). The signal is the item store's claim: a
+# live claim by another session on an item that names the branch's card
+# (its URL, or the owner/repo#n it is drawn as). work-item decides live vs
+# stale (WORK_ITEM_STALE_SECS). <session-id> is the caller's own: its own
+# claim is never a reason, or a session could never become archivable by
+# watching its own claim. Omit it (a sweep, a human) and every live claim
+# on the card counts.
 #
 # Not this function's job: "not a git repo" (there is no branch here to
 # judge) and anything that only becomes true after a push is attempted --
@@ -254,12 +254,23 @@ archivable_reasons() {
     esac
   fi
 
-  if [ -z "$reasons" ] && [ -x "$HOOK_DIR/claim-stamp.sh" ]; then
+  if [ -z "$reasons" ] && [ -x "$HOOK_DIR/branch-home-gate.sh" ]; then
+    local card url slug
     self8=$(printf '%s' "$self_sid" | cut -c1-8)
-    if sh "$HOOK_DIR/claim-stamp.sh" read -C "$work_root" 2>/dev/null \
-         | awk -F'\t' -v s="$self8" '$1 == "live" && $2 != s { found = 1 } END { exit !found }'; then
-      add_reason "session live"
-    fi
+    card=$(sh "$HOOK_DIR/branch-home-gate.sh" --card "$work_root" 2>/dev/null)
+    url=${card#* }
+    case "$card" in
+      "pr "*|"issue "*)
+        # The card's two spellings in an item's line: its URL, and the
+        # owner/repo#n a home= fact is drawn as.
+        slug=$(printf '%s' "$url" | sed -nE 's@^https?://[^/]+/([^/]+/[^/]+)/(pull|issues)/([0-9]+).*@\1#\3@p')
+        item_rows >/dev/null
+        if printf '%s\n' "$ITEM_ROWS" | awk -F '\t' -v s="$self8" -v u="$url" -v g="$slug" '
+             $4 != "" && $4 != s && (index($7, u) || (g != "" && index($7, g))) { found = 1 }
+             END { exit !found }'; then
+          add_reason "session live"
+        fi ;;
+    esac
   fi
 
   printf '%s' "$reasons"

@@ -5,7 +5,7 @@
 #
 # The dirty/unpushed/home checks predate this file and are exercised
 # end-to-end by stop-continuity.test.sh and metrics-live.test.sh already;
-# what's new and untested elsewhere is the claim-stamp liveness gate, so
+# what's new and untested elsewhere is the item-store liveness gate, so
 # that's what this covers. Every case below starts from a worktree that is
 # clean, pushed and homed -- reasons empty before the live check runs at
 # all -- so a pass here isolates the new behavior from the old.
@@ -31,28 +31,24 @@ gitq "$WT" commit -q -m init
 gitq "$WT" remote add origin "$ORIGIN"
 gitq "$WT" push -q -u origin feature
 
-# --- a fake HOOK_DIR: branch-home-gate.sh always says "home", claim-stamp.sh
-# is swapped per case ------------------------------------------------------
+# --- a fake HOOK_DIR: branch-home-gate.sh says "home" and names the branch's
+# card; the claims come from an items/ store, as work-item reads them ----------
 FAKE="$SCRATCH/hooks"; mkdir -p "$FAKE"
 cat > "$FAKE/branch-home-gate.sh" <<'EOF'
 #!/bin/sh
-echo "home: pr https://github.com/o/r/pull/1"
+if [ "$1" = --card ]; then echo "pr https://github.com/o/r/pull/1"; else echo "home: pr https://github.com/o/r/pull/1"; fi
 EOF
 chmod +x "$FAKE/branch-home-gate.sh"
-
-set_claim_stamp() {  # set_claim_stamp <read-output>
-  cat > "$FAKE/claim-stamp.sh" <<EOF
-#!/bin/sh
-[ "\$1" = read ] || exit 0
-cat <<'STAMPS'
-$1
-STAMPS
-EOF
-  chmod +x "$FAKE/claim-stamp.sh"
+SL="$SCRATCH/sl-items"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+slitem() {  # slitem <id> <status> <holder> <log-time> <brief>
+  mkdir -p "$SL"
+  printf '# T\n\n## Brief\n%s\n\n## Log\n%s 1d68120b status=open owner=agent repo=- parent=- model=- effort=-\n%s %s status=%s\n' \
+    "$5" "$4" "$4" "$3" "$2" > "$SL/$1.md"
 }
 
 run_reasons() {  # run_reasons <self-sid>
-  HOOK_DIR="$FAKE" bash -c '
+  WORK_ITEM_DIR="$SL" WORK_ITEM_BIN="$HOOKS/../bin/work-item" HOOK_DIR="$FAKE" bash -c '
     . "'"$HOOKS"'/lib-state.sh"
     archivable_reasons "'"$WT"'" feature "'"$1"'"
   '
@@ -70,29 +66,36 @@ check() {  # check <name> <self-sid> <want-contains|empty>
   esac
 }
 
-# no claim-stamp.sh at all: behaves exactly as before this change (empty)
-rm -f "$FAKE/claim-stamp.sh"
-check "no claim-stamp.sh -> archivable" abcd1234 ""
+# no items/ at all: archivable
+rm -rf "$SL"
+check "no item store -> archivable" abcd1234 ""
 
-# a live stamp belonging to someone else: blocks
-set_claim_stamp "$(printf 'live\tdeadbeef\thost-aa1\t2m\thttps://github.com/o/r/pull/1')"
-check "other session's fresh stamp -> session live" abcd1234 "session live"
+# another session's live claim on an item naming the branch's card: blocks
+slitem 1790836870aaaaaaaa claimed deadbeef "$NOW" 'Fix it. https://github.com/o/r/pull/1'
+check "other session's live claim -> session live" abcd1234 "session live"
 
-# the caller's own stamp, fresh: does not block its own archival
-check "own fresh stamp is excluded" deadbeef ""
+# the card named as owner/repo#n (a home= fact's drawing) blocks too
+slitem 1790836870aaaaaaaa claimed deadbeef "$NOW" 'Fix it. See o/r#1.'
+check "claim naming o/r#1 -> session live" abcd1234 "session live"
 
-# a stale stamp: does not block
-set_claim_stamp "$(printf 'stale\tdeadbeef\thost-aa1\t180m\thttps://github.com/o/r/pull/1')"
-check "stale stamp -> archivable" abcd1234 ""
+# the caller's own claim does not block its own archival
+check "own live claim is excluded" deadbeef ""
 
-# no card / no stamps at all (claim-stamp prints nothing): does not block
-set_claim_stamp ""
-check "no stamps -> archivable" abcd1234 ""
+# a claim on an item that names some other card: does not block
+slitem 1790836870aaaaaaaa claimed deadbeef "$NOW" 'Other. https://github.com/o/r/pull/2'
+check "claim on another card -> archivable" abcd1234 ""
 
-# no session id given (a sweep, not a session): a fresh stamp from anyone,
-# including one that happens to share no sid, still blocks
-set_claim_stamp "$(printf 'live\tdeadbeef\thost-aa1\t2m\thttps://github.com/o/r/pull/1')"
-check "no self sid, fresh stamp -> session live" "" "session live"
+# a stale claim (the holder's newest line is old): does not block
+slitem 1790836870aaaaaaaa claimed deadbeef 2026-09-01T00:00:00Z 'Fix it. https://github.com/o/r/pull/1'
+check "stale claim -> archivable" abcd1234 ""
+
+# an item named for the card but not claimed: does not block
+slitem 1790836870aaaaaaaa ready deadbeef "$NOW" 'Fix it. https://github.com/o/r/pull/1'
+check "unclaimed item -> archivable" abcd1234 ""
+
+# no session id given (a sweep, not a session): a live claim from anyone blocks
+slitem 1790836870aaaaaaaa claimed deadbeef "$NOW" 'Fix it. https://github.com/o/r/pull/1'
+check "no self sid, live claim -> session live" "" "session live"
 
 
 # --- state_lock / state_unlock ------------------------------------------------
