@@ -223,3 +223,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t010722z
 - list and read-from are words of agent-decision itself, so a call that is exactly 'list' collides; no sibling script. Undo: split list and read-from into a sibling script. ([#118](https://github.com/mark-brannan/claude/pull/118))
+
+### 20261009t010726z
+- .gitattributes is deleted outright, as its only line was the union rule. Undo: restore the file with the one merge=union line. ([#118](https://github.com/mark-brannan/claude/pull/118))
