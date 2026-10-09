@@ -277,3 +277,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t051120z
 - complexity job stays out of ci-gate's needs: it measures, it does not gate Undo: add it to a caller's needs ([#126](https://github.com/mark-brannan/claude/pull/126))
+
+### 20261009t051122z
+- complexity.yml runs on pull_request only; third-party tools pinned (lizard version, shellmetrics commit + sha256) Undo: compare a push to github.event.before; bump the env values ([#59](https://github.com/mark-brannan/.github/pull/59))
