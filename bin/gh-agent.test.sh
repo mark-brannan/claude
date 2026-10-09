@@ -154,6 +154,11 @@ case $(head -1 "$T/curl.auth") in "Authorization: Bearer "*.*.*) ok ;; *) bad "i
 jwt=$(head -1 "$T/curl.auth" | sed 's/^Authorization: Bearer //')
 grep -q -F -e Bearer -e "$jwt" "$T/curl.argv" && bad "the JWT is never on curl's command line" || ok
 
+echo '[]' > "$T/installations.json"
+out=$(mint_token 2>&1); rc=$?
+eq "$rc" 1 "an App with no installation fails"
+case $out in *"0 installations"*AGENT_BOT_INSTALLATION_ID*) ok ;; *) bad "no installation says so: $out" ;; esac
+
 echo '[{"id":1},{"id":2}]' > "$T/installations.json"
 out=$(mint_token 2>&1); rc=$?
 eq "$rc" 1 "two installations without a pick fails"

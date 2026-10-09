@@ -99,7 +99,7 @@ installation_id() {
   resp=$(api GET /app/installations "$1") || die "installation lookup failed"
   read -ra ids < <(python3 -c 'import json,sys; print(*[int(i["id"]) for i in json.load(sys.stdin)])' <<<"$resp" 2>/dev/null) \
     || die "installation lookup returned something unreadable"
-  [ "${#ids[@]}" -eq 1 ] || die "the app has ${#ids[@]} installations (${ids[*]}); set AGENT_BOT_INSTALLATION_ID to pick one"
+  [ "${#ids[@]}" -eq 1 ] || die "the app has ${#ids[@]} installations (${ids[*]:-}); set AGENT_BOT_INSTALLATION_ID to pick one"
   printf '%s' "${ids[0]}"
 }
 
