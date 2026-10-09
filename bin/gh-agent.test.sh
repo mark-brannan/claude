@@ -89,12 +89,45 @@ case $tok in ghs_old) bad "300s left is re-minted" ;; *) ok ;; esac
 eq "$(cut -d' ' -f2 "$AGENT_BOT_CACHE")" "$tok" "re-minted token replaces the cache entry"
 printf 'garbage\n' > "$AGENT_BOT_CACHE"
 case $(token) in ghs_*) ok ;; *) bad "unreadable cache falls back to a mint" ;; esac
+
+# --- cache trust: content is data, file and directory must be ours -----------
+rm -f "$T/pwned"
+printf 'a[$(touch %s/pwned)] ghs_evil\n' "$T" > "$AGENT_BOT_CACHE"; chmod 600 "$AGENT_BOT_CACHE"
+tok=$(token)
+[ ! -e "$T/pwned" ] && ok || bad "a non-numeric expiry is never evaluated"
+[ "$tok" != ghs_evil ] && ok || bad "a non-numeric expiry is not trusted"
+printf '%s ghs_loose\n' $((AGENT_BOT_NOW + 3600)) > "$AGENT_BOT_CACHE"; chmod 644 "$AGENT_BOT_CACHE"
+[ "$(token)" != ghs_loose ] && ok || bad "a cache that is not mode 600 is ignored"
+eq "$(stat -c %a "$AGENT_BOT_CACHE")" 600 "the re-mint rewrites it as mode 600"
+chmod 755 "$T/run/agent-bot"; rm -f "$AGENT_BOT_CACHE"
+out=$(token 2>&1)
+case $out in *"not caching"*ghs_*) ok ;; *) bad "an open cache directory is reported and not used: $out" ;; esac
+[ ! -e "$AGENT_BOT_CACHE" ] && ok || bad "nothing is written into an open cache directory"
+chmod 700 "$T/run/agent-bot"
+eq "$(unset AGENT_BOT_CACHE XDG_RUNTIME_DIR; cache_file)" "$T/conf/token" "without XDG_RUNTIME_DIR the cache sits under AGENT_BOT_DIR, not /tmp"
+eq "$(unset AGENT_BOT_CACHE; XDG_RUNTIME_DIR=/run/user/1 cache_file)" "/run/user/1/agent-bot/token" "XDG_RUNTIME_DIR is used when set"
+
+# --- env that builds URLs is checked first -----------------------------------
+: > "$T/curl.log"
+for bad_api in http://api.github.com https://api.github.com/x https://a.com@evil.example "https://a.com?x=" "https://host:8080" ""; do
+  [ -z "$bad_api" ] && continue
+  (AGENT_BOT_API=$bad_api api GET /app/installations jwt) >/dev/null 2>&1
+  [ "$?" -ne 0 ] && ok || bad "AGENT_BOT_API '$bad_api' is refused"
+done
+for bad_id in '1/../x' '1;2' ' 7' 'x'; do
+  (AGENT_BOT_INSTALLATION_ID=$bad_id installation_id jwt) >/dev/null 2>&1
+  [ "$?" -ne 0 ] && ok || bad "AGENT_BOT_INSTALLATION_ID '$bad_id' is refused"
+done
+[ ! -s "$T/curl.log" ] && ok || bad "a refused value never reaches curl"
+(AGENT_BOT_API=https://api.example.com api GET /x jwt) >/dev/null 2>&1
+grep -q "https://api.example.com/x" "$T/curl.log" 2>/dev/null; eq "$?" 0 "a well-formed AGENT_BOT_API is used"
+
 # shellcheck source=gh-agent
 . "$SCRIPT"; set +e   # re-source restores the real mint_token
 
 # --- real mint against the stub API ------------------------------------------
 echo '[{"id":777}]' > "$T/installations.json"
-rm -rf "$T/run"; : > "$T/curl.log"
+rm -rf "$T/run"; : > "$T/curl.log"; : > "$T/curl.auth"
 eq "$(mint_token)" "$(( $(python3 -c 'import calendar,time;print(calendar.timegm(time.strptime("2027-01-15T08:00:00Z","%Y-%m-%dT%H:%M:%SZ")))') )) ghs_minted" "mint returns expiry and token"
 eq "$(sed 's|https://[^/]*||' "$T/curl.log" | tr '\n' ' ')" "GET /app/installations POST /app/installations/777/access_tokens " "single installation is used"
 case $(head -1 "$T/curl.auth") in "Authorization: Bearer "*.*.*) ok ;; *) bad "installation lookup sends the JWT as bearer" ;; esac

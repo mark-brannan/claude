@@ -11,10 +11,12 @@
 # ~/.config/agent-bot):
 #   key.pem   the App's RS256 private key, PEM
 #   app-id    the numeric App ID
-# Env: AGENT_BOT_INSTALLATION_ID picks the installation when the App has more
-# than one; AGENT_BOT_API overrides https://api.github.com.
-# Cache: ${XDG_RUNTIME_DIR:-/tmp}/agent-bot/token (mode 600), reused while more
-# than five minutes remain.
+# Env: AGENT_BOT_INSTALLATION_ID (digits) picks the installation when the App
+# has more than one; AGENT_BOT_API (https://host, no path) overrides
+# https://api.github.com.
+# Cache: $XDG_RUNTIME_DIR/agent-bot/token, else $AGENT_BOT_DIR/token; owned by
+# you, mode 600, in a mode 700 directory; reused while more than five minutes
+# remain. A cache that fails those checks is ignored and re-minted.
 #
 # gh-agent --agent-help   prints this text.
 #
@@ -29,7 +31,15 @@ die() { echo "gh-agent: $*" >&2; exit 1; }
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
 conf_dir() { printf '%s' "${AGENT_BOT_DIR:-$HOME/.config/agent-bot}"; }
-cache_file() { printf '%s' "${AGENT_BOT_CACHE:-${XDG_RUNTIME_DIR:-/tmp}/agent-bot/token}"; }
+cache_file() {
+  if [ -n "${AGENT_BOT_CACHE:-}" ]; then printf '%s' "$AGENT_BOT_CACHE"
+  elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then printf '%s' "$XDG_RUNTIME_DIR/agent-bot/token"
+  else printf '%s' "$(conf_dir)/token"
+  fi
+}
+
+# owned_mode <path> <mode> -> true when the path is ours, with exactly that mode
+owned_mode() { [ "$(stat -c '%u %a' "$1" 2>/dev/null)" = "$(id -u) $2" ]; }
 now() { printf '%s' "${AGENT_BOT_NOW:-$(date +%s)}"; }
 
 require_files() {
@@ -50,17 +60,22 @@ build_jwt() {
 }
 
 api() { # api <method> <path> <jwt>
+  local base=${AGENT_BOT_API:-https://api.github.com}
+  [[ $base =~ ^https://[A-Za-z0-9.-]+$ ]] || die "AGENT_BOT_API must look like https://host, got '$base'"
   curl -fsS -X "$1" \
     -H "Authorization: Bearer $3" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "${AGENT_BOT_API:-https://api.github.com}$2"
+    "$base$2"
 }
 
 # installation_id <jwt> -> AGENT_BOT_INSTALLATION_ID, else the App's only installation
 installation_id() {
   local ids n
-  if [ -n "${AGENT_BOT_INSTALLATION_ID:-}" ]; then printf '%s' "$AGENT_BOT_INSTALLATION_ID"; return; fi
+  if [ -n "${AGENT_BOT_INSTALLATION_ID:-}" ]; then
+    case $AGENT_BOT_INSTALLATION_ID in *[!0-9]*) die "AGENT_BOT_INSTALLATION_ID must be digits, got '$AGENT_BOT_INSTALLATION_ID'" ;; esac
+    printf '%s' "$AGENT_BOT_INSTALLATION_ID"; return
+  fi
   ids=$(api GET /app/installations "$1" | python3 -c 'import json,sys; print(*[str(i["id"]) for i in json.load(sys.stdin)])')
   n=$(wc -w <<<"$ids")
   [ "$n" -eq 1 ] || die "the app has $n installations ($ids); set AGENT_BOT_INSTALLATION_ID to pick one"
@@ -80,13 +95,19 @@ print(calendar.timegm(time.strptime(r["expires_at"], "%Y-%m-%dT%H:%M:%SZ")), r["
 
 # token -> a token with more than five minutes left, from the cache or a mint
 token() {
-  local f exp tok line
-  f=$(cache_file)
-  if [ -r "$f" ] && read -r exp tok <"$f" && [ -n "${tok:-}" ] && [ $((exp - $(now))) -gt 300 ]; then
-    printf '%s' "$tok"; return
+  local f d exp tok line tmp
+  f=$(cache_file); d=$(dirname "$f")
+  if [ -f "$f" ] && owned_mode "$f" 600 && read -r exp tok <"$f"; then
+    case ${exp:-} in ''|*[!0-9]*) exp=0 ;; esac
+    if [ -n "${tok:-}" ] && [ $((exp - $(now))) -gt 300 ]; then printf '%s' "$tok"; return; fi
   fi
   line=$(mint_token) || return 1
-  (umask 077; mkdir -p "$(dirname "$f")"; printf '%s\n' "$line" >"$f.$$" && mv "$f.$$" "$f")
+  # shellcheck disable=SC2174  # only the leaf is ours to mode; owned_mode checks it
+  if mkdir -p -m 700 "$d" 2>/dev/null && owned_mode "$d" 700 && tmp=$(umask 077 && mktemp "$f.XXXXXX"); then
+    printf '%s\n' "$line" >"$tmp" && mv "$tmp" "$f" || rm -f "$tmp"
+  else
+    echo "gh-agent: cache directory $d is not yours with mode 700; not caching" >&2
+  fi
   printf '%s' "${line#* }"
 }
 
