@@ -214,3 +214,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t010711z
 - list shows an entry whose PR is not in the gh result (older than the 1000 newest) as 'unknown' by default, not hidden. Undo: drop the unknown label and filter those rows in list_entries. ([#118](https://github.com/mark-brannan/claude/pull/118))
+
+### 20261009t010715z
+- A lost push race is retried up to 5 pushes; a push that fails with the remote tip unmoved (auth, hook) fails at once. Undo: change TRIES in bin/agent-decision. ([#118](https://github.com/mark-brannan/claude/pull/118))
