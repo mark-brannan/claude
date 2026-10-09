@@ -796,6 +796,13 @@ def queue(args):
         no.append(f"{f['pencils']} Pencil line(s) stand on the user's silence")
     if f["ci"] != "green" or f["conflicting"]:
         no.append("not green and mergeable")
+    blocked = sh([sys.executable, tool("bin/pr-blockers"), args[0]], check=False)
+    if blocked.returncode == 0:
+        pass
+    elif blocked.returncode == 1 and blocked.stdout.strip():
+        no.extend(blocked.stdout.strip().splitlines())
+    else:
+        no.append("pr-blockers could not read the PR: " + ((blocked.stderr.strip().splitlines() or ["failed"])[-1]))
     if any(r.split("\t")[1:2] == ["human-ruling"] and links(pr["url"], r) for r in work_item("list").splitlines()):
         no.append("a Needs-ruling card waits on it")
     line = f"{pr['url']}  @mergifyio queue"
