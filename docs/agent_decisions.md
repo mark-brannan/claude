@@ -241,3 +241,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t013004z
 - release-subagent-branch: untracked files count as dirty, so the worktree keeps its branch Undo: pass -uno to the status check ([#116](https://github.com/mark-brannan/claude/pull/116))
+
+### 20261009t013007z
+- release-subagent-branch: pushed means reachable from any remote-tracking ref, no fetch Undo: fetch first or require the upstream ([#116](https://github.com/mark-brannan/claude/pull/116))
