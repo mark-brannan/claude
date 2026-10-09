@@ -71,6 +71,10 @@ elif a[0] == "api" and a[1].endswith("/comments"):
     emit(fixture("comments-" + a[1].split("/")[-2] + ".json", "[]"))
 elif a[:2] == ["pr", "comment"]:
     pass
+elif a[:2] == ["pr", "view"]:
+    print(fixture("view-" + a[2] + ".json", '{"mergeStateStatus": "CLEAN", "mergeable": "MERGEABLE", "headRefName": "b", "statusCheckRollup": []}'))
+elif a[0] == "api" and a[-1].endswith("/commits"):
+    print(fixture("commits-pr-" + a[-1].split("/")[-2] + ".json", "[]"))
 else:
     sys.exit(1)
 '''
@@ -287,6 +291,27 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(self.writes()[before:], [])
         self.prt("queue", f"{REPO}#9", "--merge")
         self.assertEqual(self.writes()[before:], [f"pr comment 9 --repo {REPO} --body @mergifyio queue"])
+
+    def test_08b_queue_names_what_pr_blockers_finds(self):
+        stub = self.T / "stub" / "commits-pr-1.json"
+        stub.write_text(json.dumps([{"sha": "d" * 40, "author": {"login": "coderabbitai[bot]"}, "commit": {
+            "author": {"name": "x"}, "verification": {"verified": False, "reason": "unsigned"}}}]))
+        try:
+            out = self.prt("queue", f"{REPO}#1")
+            self.assertIn("unsigned commit ddddddd by coderabbitai[bot]", out)
+            self.assertIn("resign-branch.sh b", out)
+        finally:
+            stub.unlink()
+        self.assertNotIn("unsigned", self.prt("queue", f"{REPO}#1"))
+
+    def test_08c_queue_refuses_when_pr_blockers_cannot_read_the_pr(self):
+        stub = self.T / "stub" / "commits-pr-1.json"
+        stub.write_text("not json")  # pr-blockers dies on it; that must not read as "no blockers"
+        try:
+            self.assertIn("pr-blockers could not read the PR", self.prt("queue", f"{REPO}#1"))
+            self.prt("queue", f"{REPO}#1", "--merge", code=1)
+        finally:
+            stub.unlink()
 
     def test_09_spent_logs_the_transcript_price(self):
         d = self.T / "home" / ".claude" / "projects" / "p" / SID / "subagents"
