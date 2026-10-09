@@ -24,7 +24,7 @@ Feature: stop-continuity.py, the Stop hook
     Given a Stop event for a session in a worked repo
     And the event <lacks>
     When the Stop hook runs
-    Then nothing is written under the state dir
+    Then nothing is written
 
     Examples:
       | lacks                                 |
@@ -35,7 +35,7 @@ Feature: stop-continuity.py, the Stop hook
     Given a Stop event for a session in a worked repo
     And the event has no session_id
     When the Stop hook runs
-    Then nothing is written under the state dir
+    Then nothing is written
 
   Scenario: row 3.1 metrics/live/<id>.json exists
     Given a Stop event for a session in a worked repo

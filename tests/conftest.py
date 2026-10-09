@@ -45,16 +45,24 @@ class Stop:
         self.event = {"transcript_path": world_transcript(), "session_id": SID, "cwd": ""}
         self.stdin = None
         self.rc = None
+        self.before = None
 
     @property
     def sid(self):
         return self.event.get("session_id", SID)
 
     def run(self):
+        self.before = self.world_files()
         data = self.stdin if self.stdin is not None else json.dumps(self.event).encode()
         p = subprocess.run([sys.executable, str(HOOK)], input=data, env=self.world.env(),
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
         self.rc = p.returncode
+
+    def world_files(self):
+        """Every file in the scratch world (HOME, TMPDIR, the worked repo),
+        with its size and mtime, so a write anywhere in it shows."""
+        return {str(p): (st.st_size, st.st_mtime_ns)
+                for p in self.world.S.rglob("*") if p.is_file() and (st := p.stat())}
 
     def live_file(self):
         return self.world.GS / "metrics" / "live" / f"{self.sid}.json"
@@ -134,10 +142,13 @@ def exits_zero(stop):
     assert stop.rc == 0
 
 
-@then("nothing is written under the state dir")
-def nothing_written(world):
-    written = [str(p) for p in world.GS.rglob("*") if p.is_file()] if world.GS.exists() else []
-    assert written == []
+@then("nothing is written")
+def nothing_written(stop):
+    # The spec's job 1 says "it writes nothing", unqualified: the whole
+    # scratch world, not only the state dir, is as the hook found it.
+    after = stop.world_files()
+    assert {p for p in after if stop.before.get(p) != after[p]} == set()
+    assert set(stop.before) - set(after) == set()
 
 
 @then("the session's metrics/live/<id>.json is gone")
