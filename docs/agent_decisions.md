@@ -1,8 +1,8 @@
 # Agent decisions
 
-Append-only. Each entry is a call an agent made in pencil: a default it took
-under the one-way-door test, with its undo. Written by `agent-decision`; the
-heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
+Frozen. The log now lives on the `decisions` branch:
+https://github.com/mark-brannan/claude/blob/decisions/docs/agent_decisions.md
+`agent-decision list` reads it with each entry's PR state.
 
 ### 20261004t002454z
 - Each repo keeps its own docs/agent_decisions.md, written in the PR that makes the call; the claude repo's starts here. Undo: move the entries to one repo. ([#33](https://github.com/mark-brannan/claude/pull/33))
@@ -210,3 +210,5 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 - release-subagent-branch: untracked files count as dirty, so the worktree keeps its branch Undo: pass -uno to the status check ([#116](https://github.com/mark-brannan/claude/pull/116))
 - release-subagent-branch: pushed means reachable from any remote-tracking ref, no fetch Undo: fetch first or require the upstream ([#116](https://github.com/mark-brannan/claude/pull/116))
 - release-subagent-branch: detach only, never remove the worktree Undo: add git worktree remove ([#116](https://github.com/mark-brannan/claude/pull/116))
+### 20261009t003941z
+- pytest-bdd (pinned in requirements-dev.txt) is the runner for acceptance-table scenarios, and its features job is a required input to ci-gate Undo: revert #111: drops features/, tests/, requirements-dev.txt and the features job ([#111](https://github.com/mark-brannan/claude/pull/111))
