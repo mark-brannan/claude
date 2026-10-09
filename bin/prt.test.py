@@ -9,9 +9,11 @@
 # run finds the first one's PRs claimed; the scope is a repo, a project, or
 # the checkout's project by default; a Decide line becomes one Needs-ruling
 # card, and pull/1 is not pull/12; spend is priced from the agent's
-# transcript; the queue line is only printed unless --merge, and --merge
+# transcript and recorded as one critical-review row; the queue line is only printed unless --merge, and --merge
 # refuses a desk PR; clean removes only the prt-* worktrees nothing claims.
 # `gh` is a stub serving fixtures; every call it gets is logged.
+import importlib.machinery
+import importlib.util
 import json
 import os
 import subprocess
@@ -307,13 +309,40 @@ class PrtTest(unittest.TestCase):
         d.mkdir(parents=True)
         usage = {"input_tokens": 1000000, "output_tokens": 0, "cache_read_input_tokens": 0,
                  "cache_creation_input_tokens": 0}
-        (d / "agent-a1.jsonl").write_text(json.dumps({"type": "assistant", "message": {
-            "id": "m1", "model": "claude-sonnet", "usage": usage}}) + "\n")
+        (d / "agent-a1.jsonl").write_text(json.dumps({"type": "assistant", "effort": "high", "message": {
+            "id": "m1", "model": "claude-sonnet", "usage": usage, "content": [
+                {"type": "text", "text": "**Fixed**\n- one `abc`\n\n**Look at**\n- None.\n\n"
+                                         "**Pencil**\n- **risk** · a\n- **direction** · b\n\n**Decide**\n"}]}})
+            + "\n")
         self.assertEqual(self.prt("cost", "a1").split()[0], "$2.0000")
         self.prt("spent", f"{REPO}#2", "a1", "--run", "prt-x")
+        self.prt("spent", f"{REPO}#2", "a1", "--run", "prt-x")
         text = "".join(f.read_text() for f in (self.T / "items").glob("*.md"))
-        self.assertIn("cost tokens=1000000 usd=2.0 by=prt run=prt-x", text)
+        self.assertIn("cost tokens=1000000 usd=2.0 by=prt run=prt-x model=claude-sonnet effort=high", text)
         self.prt("spent", f"{REPO}#4", "a1", "--run", "prt-x", code=1)
+        rows = (self.T / "home" / ".claude" / "state" / "global" / "metrics" / "critical-review"
+                / SID[:2] / f"{SID}.jsonl").read_text().splitlines()
+        self.assertEqual(len(rows), 1, "a second spent for one agent replaces its row")
+        row = json.loads(rows[0])
+        self.assertEqual({k: row[k] for k in ("session_id", "review_id", "pr", "pr_guessed", "by", "run",
+                                               "model", "effort", "input_tokens", "usd", "turns")},
+                         {"session_id": SID, "review_id": "agent-a1", "pr": f"{REPO}#2", "pr_guessed": False,
+                          "by": "prt", "run": "prt-x", "model": "claude-sonnet", "effort": "high",
+                          "input_tokens": 1000000, "usd": 2.0, "turns": 1})
+        self.assertEqual([row[k] for k in ("fixed", "look_at", "pencil", "decide")], [1, 0, 2, 0])
+        # The estimate still reads the cost line with model= and effort= on it.
+        spec = importlib.util.spec_from_loader("prt", importlib.machinery.SourceFileLoader("prt", str(PRT)))
+        prt = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(prt)
+        old = os.environ.get("WORK_ITEM_DIR")
+        os.environ["WORK_ITEM_DIR"] = self.env["WORK_ITEM_DIR"]
+        try:
+            self.assertEqual(prt.measured_mean(), (2.0, 2))
+        finally:
+            if old is None:
+                os.environ.pop("WORK_ITEM_DIR")
+            else:
+                os.environ["WORK_ITEM_DIR"] = old
 
     def test_10_clean_removes_only_unclaimed_prt_worktrees(self):
         clone, wt = self.T / "home" / "c", self.T / "wt"

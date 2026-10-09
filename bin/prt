@@ -20,7 +20,8 @@
 #                                         never ran
 #   prt cost <agent-id|transcript>        an agent's measured spend
 #   prt spent <o/r#n> <agent-id|transcript> --run <id>
-#       log that spend on the PR's work item, the store's own cost line
+#       log that spend on the PR's work item, the store's own cost line, and
+#       the review's row in metrics/critical-review/ (lib/critical_review.py)
 #   prt decide <o/r#n> -                  a review's Decide line on stdin
 #                                         becomes a Needs-ruling card
 #   prt queue <o/r#n> [--merge]           print the `@mergifyio queue` line;
@@ -678,11 +679,15 @@ def release(args):
     return 0
 
 
-def cost(args):
-    if len(args) != 1:
-        die("cost takes one agent id or transcript path")
-    sg = spend_gate()
-    path = args[0]
+def critical_review():
+    """lib/critical_review.py, the one home of the per-review metrics row."""
+    spec = importlib.util.spec_from_file_location("critical_review", tool("lib/critical_review.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def agent_transcript(path):
     if not Path(path).is_file():
         sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
         if not sid:
@@ -692,6 +697,14 @@ def cost(args):
         if not hits:
             refuse(f"no transcript for agent {path} under this session")
         path = hits[0]
+    return path
+
+
+def cost(args):
+    if len(args) != 1:
+        die("cost takes one agent id or transcript path")
+    sg = spend_gate()
+    path = agent_transcript(args[0])
     msgs = {}
     sg.read_usage(path, msgs)
     tokens = sum(u["input_tokens"] + u["output_tokens"] + u["cache_read_input_tokens"]
@@ -712,8 +725,13 @@ def spent(args):
     i = home_item(args[0])
     if not i:
         refuse(f"no work item has home={args[0]}; run prt without --dry-run first")
-    work_item("log", i, "cost", f"tokens={tokens}", f"usd={usd}", "by=prt", f"run={run}")
-    print(f"{args[0]}: ${usd:.2f}, {tokens} tokens, logged on item {i}")
+    cr = critical_review()
+    row = cr.agent_row(agent_transcript(args[1]), args[0], run)
+    known = [f"{k}={row[k]}" for k in ("model", "effort") if row[k]]
+    # The row first: it replaces itself on a retry, the cost line does not.
+    cr.save_agent(row)
+    work_item("log", i, "cost", f"tokens={tokens}", f"usd={usd}", "by=prt", f"run={run}", *known)
+    print(f"{args[0]}: ${usd:.2f}, {tokens} tokens, logged on item {i} and {cr.path_for(row['session_id'])}")
     return 0
 
 
