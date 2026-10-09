@@ -206,8 +206,5 @@ https://github.com/mark-brannan/claude/blob/decisions/docs/agent_decisions.md
 - lines 'grown in this change' is judged only under --base; --staged still reds any over-cap file Undo: drop the mode test in check_lines ([#109](https://github.com/mark-brannan/claude/pull/109))
 - 20% headroom and the 200-line must_budget floor are engine constants, not config keys Undo: move them into the lines config ([#109](https://github.com/mark-brannan/claude/pull/109))
 
-### 20261009t005258z
-- pickup: a holder is idle when it has no claim stamp under two hours and no process cwd in its worktree Undo: revert the pickup section-3 liveness test ([#117](https://github.com/mark-brannan/claude/pull/117))
-- pickup: take an idle holder's branch with --ignore-other-worktrees, leaving its worktree untouched Undo: use the guard's own-branch ff-and-push route instead ([#117](https://github.com/mark-brannan/claude/pull/117))
 ### 20261009t003941z
 - pytest-bdd (pinned in requirements-dev.txt) is the runner for acceptance-table scenarios, and its features job is a required input to ci-gate Undo: revert #111: drops features/, tests/, requirements-dev.txt and the features job ([#111](https://github.com/mark-brannan/claude/pull/111))

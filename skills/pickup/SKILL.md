@@ -100,10 +100,11 @@ If git refuses because the branch is checked out in another worktree, that
 worktree holds it — but a holder is not always alive. A sub-agent that
 committed keeps its worktree, and the branch, after it has finished. Ask
 whether the holder lives, without entering its worktree (`<name>` is the
-last part of the path git named):
+last part of the path git named; the stamp is read off the card by its link,
+since `read -C .` would read your own fork's branch, which has no card):
 
 ```
-~/.claude/hooks/claim-stamp.sh read -C .
+~/.claude/hooks/claim-stamp.sh card-claims <the PR or issue link the item names>
 for p in /proc/[0-9]*; do case $(readlink "$p/cwd" 2>/dev/null) in */<name> | */<name>/*) echo "live: pid ${p#/proc/}" ;; esac; done
 ```
 
