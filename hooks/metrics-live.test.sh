@@ -295,6 +295,13 @@ t 'the two-hour crossing does' block "$(printf '%s' "$o" | jq -r '.decision // "
 S() { plant stop1; payload "$TP3" stop1 "$REPO" Stop \
       | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
 
+# A headless session (claude -p reports entrypoint sdk-cli) is never asked for
+# a hand-off; the same Stop in an interactive entrypoint still is.
+o=$(plant stop1h; payload "$TP3" stop1h "$REPO" Stop \
+    | CLAUDE_CODE_ENTRYPOINT=sdk-cli METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
+t 'a headless Stop is not asked for a hand-off' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
+
+export CLAUDE_CODE_ENTRYPOINT=cli
 o1=$(S)
 t   'the first Stop blocks'  block "$(printf '%s' "$o1" | jq -r '.decision // ""')"
 has 'saying what the body holds' \
