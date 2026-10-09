@@ -32,6 +32,12 @@ before the first question, show the count on every question, and say once
 how many ruling items it left out as blocked or held. <!-- When
 worklist awake/asleep lands, filter to awake only. -->
 
+**The opening list.** Before the first question, print the docket as a
+numbered list capped at 12, each line the card's own one-line question (the
+card line, last column) so the user can think before the first ruling. If
+the docket is longer, end with "+N more". It is a preview: no dialog, no
+subagent, no brief read.
+
 **Admission** (pencil, the agent's proposal in the one-entry-point
 curia's §6, "The agora petition"; not ruled). Each candidate passes one
 test: could the user rule on it from the card alone, with no prior
