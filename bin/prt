@@ -728,8 +728,9 @@ def spent(args):
     cr = critical_review()
     row = cr.agent_row(agent_transcript(args[1]), args[0], run)
     known = [f"{k}={row[k]}" for k in ("model", "effort") if row[k]]
-    work_item("log", i, "cost", f"tokens={tokens}", f"usd={usd}", "by=prt", f"run={run}", *known)
+    # The row first: it replaces itself on a retry, the cost line does not.
     cr.save_agent(row)
+    work_item("log", i, "cost", f"tokens={tokens}", f"usd={usd}", "by=prt", f"run={run}", *known)
     print(f"{args[0]}: ${usd:.2f}, {tokens} tokens, logged on item {i} and {cr.path_for(row['session_id'])}")
     return 0
 

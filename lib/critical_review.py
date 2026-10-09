@@ -7,7 +7,8 @@ Two writers, one row shape, one home:
   - `prt spent` writes one for each review prt dispatched to a sub-agent,
     priced from that agent's transcript.
 
-Rows land in <state>/metrics/critical-review/<session_id>.jsonl. The Stop
+Rows land in <state>/metrics/critical-review/<xx>/<session_id>.jsonl,
+sharded like sessions/ (lib/state.py state_shard_path). The Stop
 hook recomputes its rows (by=user) from the transcript every time it fires;
 prt's rows are keyed by agent id. Either rewrite replaces its own rows and
 keeps the other's, under a lock on the file. Imported, never run directly;
