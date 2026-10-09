@@ -1051,7 +1051,7 @@ EOF_ITEMS
     nag_pending=0; since_nag=0
     save_nag
   elif case "${CLAUDE_CODE_ENTRYPOINT:-}" in sdk-*) false ;; *) true ;; esac && archivable; then
-    # Headless (claude -p, the SDK) is skipped above: nobody reads a pickup
+    # Headless (claude -p, the SDK) is skipped by this case: nobody reads a pickup
     # item there, and the demanded turn only buries the worker's final status.
     local_hour=$(date +%H); local_hour=${local_hour#0}
     late=0

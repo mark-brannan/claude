@@ -22,6 +22,9 @@
 # The transcripts are built here rather than committed: each one exists to hold
 # a single usage number, and a fixture file would say less than the generator.
 set -uo pipefail
+# Pin an interactive entrypoint: a grind worker runs this suite under claude -p,
+# and its inherited sdk-cli would skip every blocking-Stop case.
+export CLAUDE_CODE_ENTRYPOINT=cli
 
 HOOK="$(cd "$(dirname "$0")" && pwd)/metrics-live.sh"
 pass=0; fail=0
@@ -301,7 +304,6 @@ o=$(plant stop1h; payload "$TP3" stop1h "$REPO" Stop \
     | CLAUDE_CODE_ENTRYPOINT=sdk-cli METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
 t 'a headless Stop is not asked for a hand-off' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
 
-export CLAUDE_CODE_ENTRYPOINT=cli
 o1=$(S)
 t   'the first Stop blocks'  block "$(printf '%s' "$o1" | jq -r '.decision // ""')"
 has 'saying what the body holds' \
