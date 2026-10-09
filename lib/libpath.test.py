@@ -22,9 +22,6 @@ from libpath import BOOTSTRAP  # noqa: E402
 # A line that searches for lib/ any other way: a "lib" path joined onto
 # sys.path, or ~/.claude/lib named outside BOOTSTRAP.
 OTHER = re.compile(r'sys\.path\.insert\([^\n]*"lib"|~/\.claude/lib"|for \w+ in \([^\n]*"lib"')
-# Hooks that find lib/ beside them only, through HOOK_DIR; not yet moved
-# onto BOOTSTRAP.
-BESIDE_ONLY = {"hooks/lib_state.py", "hooks/stop-continuity.py"}
 
 
 def tools():
@@ -46,12 +43,13 @@ class OneHomeTest(unittest.TestCase):
             if BOOTSTRAP in text:
                 users.append(name)
                 text = text.replace(BOOTSTRAP, "")
-            if OTHER.search(text) and name not in BESIDE_ONLY:
+            if OTHER.search(text):
                 strays.append(name)
         self.assertEqual(strays, [], "find lib/ with lib/libpath.py's BOOTSTRAP, verbatim")
         for t in ("bin/work-item", "bin/scoping-lock", "bin/github-limits", "bin/prose-budget",
                   "bin/agent-decision", "hooks/curia-roll.py", "bin/prune-worktrees",
-                  "bin/metrics-db", "bin/metrics-dashboard"):
+                  "bin/metrics-db", "bin/metrics-dashboard", "hooks/lib_state.py",
+                  "hooks/stop-continuity.py"):
             self.assertIn(t, users)
 
     def test_beside_first_then_seeded(self):

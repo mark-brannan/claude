@@ -47,7 +47,8 @@ import sys
 import time
 
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HOOK_DIR), "lib"))
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 
 # The whitespace [[:space:]] matches under gawk and GNU grep in a UTF-8
 # locale (glibc's iswspace), and the ASCII subset tr's byte-wise class takes.
