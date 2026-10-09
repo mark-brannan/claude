@@ -304,3 +304,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t070501z
 - agent-decision's provenance match reads the whole rendered entry, drops present-tense verbs so a deferral sentence passes, and refuses a past-participle-by form only when the agent is the user Undo: restore chooses, choose, rules, orders, decides in VERB ([#129](https://github.com/mark-brannan/claude/pull/129))
+
+### 20261009t072611z
+- gh-agent: a cached token is reused only for the same App id, installation and API host Undo: drop the key field from the cache line in token() ([#130](https://github.com/mark-brannan/claude/pull/130))
