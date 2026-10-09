@@ -259,3 +259,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t013135z
 - pickup: take an idle holder's branch with --ignore-other-worktrees, leaving its worktree untouched Undo: use the guard's own-branch ff-and-push route instead ([#117](https://github.com/mark-brannan/claude/pull/117))
+
+### 20261009t015551z
+- prt's lock is a per-PR claim stamp taken at launch under a sid unique to the PR and run; there is no run-level lock Undo: drop the card-claim call in prt's launch and take a run-level lock instead ([#120](https://github.com/mark-brannan/claude/pull/120))
