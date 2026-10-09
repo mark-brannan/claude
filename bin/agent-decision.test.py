@@ -128,6 +128,27 @@ class AgentDecisionTest(unittest.TestCase):
         self.assertEqual(got[1], f"- by link ([#12]({url}))")
         self.assertEqual(got[2], "- plus issue ([#3](https://github.com/o/r/issues/3)) ([#9](https://github.com/o/r/pull/9))")
 
+    def test_pr_flag_beats_link_and_survives_gh_down(self):
+        self.pr(9)
+        url = "https://github.com/o/r/pull/12"
+        self.assertEqual(self.run_ad("--pr", "9", "--link", url, "both").returncode, 0)
+        self.assertEqual(self.bullets(self.branch_log())[-1],
+                         f"- both ([#12]({url})) ([#9](https://github.com/o/r/pull/9))")
+        (self.stub / "pr_view.json").unlink()
+        self.run_ad("--pr", "4", "gh down")
+        self.assertEqual(self.bullets(self.branch_log())[-1], "- gh down (PR #4)")
+        git("config", "remote.origin.url", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
+        git("config", "url." + str(self.origin) + ".insteadOf", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
+        self.assertEqual(self.run_ad("--pr", "4", "from origin").returncode, 0)
+        self.assertEqual(self.bullets(self.branch_log())[-1], "- from origin ([#4](https://github.com/o/r/pull/4))")
+
+    def test_list_looks_up_prs_past_the_list(self):
+        self.pr(2000)
+        self.run_ad("old call")
+        (self.stub / "pr_list.json").write_text("[]")
+        (self.stub / "pr_view.json").write_text('{"state":"MERGED"}')
+        self.assertRegex(self.run_ad("list").stdout, r"in force\s+old call")
+
     def test_race_is_reapplied_on_the_new_tip(self):
         self.pr()
         self.run_ad("one")
@@ -176,7 +197,8 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
             self.assertEqual(self.run_ad(call).returncode, 0)
         self.run_ad("--link", "https://github.com/o/r/pull/9", "unknown pr call")
         (self.stub / "pr_list.json").write_text(
-            '[{"number":1,"state":"OPEN"},{"number":2,"state":"MERGED"},{"number":3,"state":"CLOSED"},{"number":5,"state":"MERGED"}]')
+            "[" + ",".join(f'{{"url":"https://github.com/o/r/pull/{n}","state":"{st}"}}'
+                           for n, st in [(1, "OPEN"), (2, "MERGED"), (3, "CLOSED"), (5, "MERGED")]) + "]")
         out = self.run_ad("list").stdout
         self.assertRegex(out, r"pending\s+pending call")
         self.assertRegex(out, r"in force\s+merged call")

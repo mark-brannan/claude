@@ -18,7 +18,9 @@
 # plumbing and a temporary index: the caller's working tree, index and HEAD
 # stay untouched. A missing branch is created as an orphan seeded from
 # origin/main's log. A rejected push is refetched and the append re-applied
-# on the new tip, a bounded number of times, then fails loudly.
+# on the new tip, a bounded number of times, then fails loudly. A session with
+# no signing key pushes an unsigned commit: the signed-commits ruleset covers
+# the default branch only, and an unsigned log entry beats none.
 #
 # Every entry carries its PR: --pr <n>, else a /pull/ URL in --link, else the
 # current branch's PR from `gh`, else `(no PR, branch <name>)`.
@@ -64,7 +66,8 @@ TRIES = 5
 LAST = re.compile(rb"\n### (\d{8}t\d{6}z)\n(?:- [^\n]*\n)+\Z")
 GH_URL = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/(?:pull|issues)/(\d+)\S*")
 PR_URL = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/(\d+)\S*")
-PR_REF = re.compile(r"\[#(\d+)\]\(\S*?/pull/\d+\)")
+PR_REF = re.compile(r"\[#\d+\]\((https://github\.com/[^/\s]+/[^/\s]+)/pull/(\d+)[^)\s]*\)")
+SLUG = re.compile(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
 STAMP = re.compile(r"\d{8}t\d{6}z")
 
 
@@ -76,7 +79,7 @@ def line(call, undo, link, pr):
     if link:
         link = " ".join(link.split())
         m = GH_URL.fullmatch(link)
-        if not PR_URL.fullmatch(link):
+        if f"({link})" not in pr:
             text += f" ([#{m.group(1)}]({link}))" if m else f" ({link})"
     return f"- {text} {pr}\n"
 
@@ -111,13 +114,16 @@ def gh(root, *args):
 
 
 def pr_tag(root, pr, link):
-    """The PR reference every bullet carries."""
+    """The PR reference every bullet carries: --pr, a PR link, or the branch's PR."""
     m = PR_URL.fullmatch(" ".join((link or "").split()))
-    if m:
+    if m and not pr:
         return f"([#{m.group(1)}]({m.group(0)}))"
     view = gh(root, "pr", "view", *([str(pr)] if pr else []), "--json", "number,url")
     if isinstance(view, dict) and view.get("number") and view.get("url"):
         return f"([#{view['number']}]({view['url']}))"
+    if pr:  # the caller named it; gh is down, so build the URL from origin
+        slug = SLUG.search(gitrun.out("-C", root, "config", "--get", "remote.origin.url") or "")
+        return f"([#{pr}](https://github.com/{slug.group(1)}/pull/{pr}))" if slug else f"(PR #{pr})"
     branch = gitrun.out("-C", root, "branch", "--show-current") or "detached"
     return f"(no PR, branch {branch})"
 
@@ -207,13 +213,20 @@ def entries_after_read_from(text):
 
 def list_entries(root, show_all):
     entries = entries_after_read_from(read_log(root))
-    nums = sorted({int(n) for _, b, _ in entries for n in PR_REF.findall(b)})
-    prs = gh(root, "pr", "list", "--state", "all", "--limit", "1000", "--json", "number,state") if nums else []
-    state = {p["number"]: p["state"] for p in prs or []}
+    refs = {(base.lower(), int(n)) for _, b, _ in entries for base, n in PR_REF.findall(b)}
+    prs = gh(root, "pr", "list", "--state", "all", "--limit", "1000", "--json", "url,state") if refs else []
+    state = {}
+    for p in prs or []:
+        base, _, n = p.get("url", "").rpartition("/pull/")
+        if n.isdigit():
+            state[(base.lower(), int(n))] = p.get("state")
+    for base, n in refs - state.keys():  # past the limit, or another repo's PR
+        view = gh(root, "pr", "view", f"{base}/pull/{n}", "--json", "state")
+        state[(base, n)] = view.get("state") if isinstance(view, dict) else None
     label = {"OPEN": "pending", "MERGED": "in force", "CLOSED": "void"}
     for stamp, bullet, fresh in entries:
         m = PR_REF.search(bullet)
-        st = label.get(state.get(int(m.group(1))), "unknown") if m else "no PR"
+        st = label.get(state.get((m.group(1).lower(), int(m.group(2)))), "unknown") if m else "no PR"
         if show_all or (fresh and st != "void"):
             print(f"{stamp}  {st:<8}  {bullet[2:]}")
 
@@ -257,11 +270,19 @@ def main(argv):
                 if not state or not re.fullmatch(r"[A-Za-z0-9][\w.-]*", cid) or not os.path.isdir(folder):
                     print(f"agent-decision: no curia folder for {cid!r}", file=sys.stderr)
                     return 1
-                curias.append(os.path.join(folder, "agent_decisions.md"))
+                path = os.path.join(folder, "agent_decisions.md")
+                if os.path.islink(path):  # refuse before the push, which can't be taken back
+                    print(f"agent-decision: {path} is a symlink", file=sys.stderr)
+                    return 1
+                curias.append(path)
         push_entry(root, bullet, now, "agent-decision: " + call[:60])
         print(f"origin/{BRANCH}:{LOG}")
         for path in curias:
-            append(path, bullet, now, HEADER)
+            try:
+                append(path, bullet, now, HEADER)
+            except OSError as e:
+                e.strerror = f"{e.strerror}; the {BRANCH} entry is already pushed, so rerunning would log it twice"
+                raise
             print(path)
     except OSError as e:  # push or fetch failed, or ELOOP: a symlink in a curia copy's place
         print(f"agent-decision: {e.filename + ': ' if e.filename else ''}{e.strerror or e}", file=sys.stderr)
