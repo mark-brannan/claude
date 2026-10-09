@@ -1,6 +1,6 @@
 ---
 name: prt
-description: PR triage — walk every open pull request in a repo, a project or all of the user's repos, give each one critical review with its fixes worked to the fixup contract, send what only the user can settle to the agora as Needs-ruling cards, and print a terminal summary. Use on "/prt", "/prt --dry-run", "/prt --project <name>", "triage the PRs", "drain the PR queue". Not for one PR (/critical-review, /pickup) and not for issues (/orchestrate). Merging is off. Fable or Opus; fixers Sonnet, Opus for a PR rated high.
+description: PR triage — walk every open pull request in a repo, a project or all of the user's repos, give each one critical review with its fixes worked to the fixup contract, send what only the user can settle to the agora as Needs-ruling cards, and print a terminal summary. Use on "/prt", "/prt --dry-run", "/prt --project <name>", "triage the PRs", "drain the PR queue". Args that name PRs or repos are the whole job. Not for one PR (/critical-review, /pickup) and not for issues (/orchestrate). Merging is off. Fable or Opus; fixers Sonnet, Opus for a PR rated high.
 ---
 
 # PR triage
@@ -27,6 +27,14 @@ way `worklist` reads it), else that repo alone. `--project <name>`,
 `--repo owner/repo` (repeatable) and `--all` (every repo of the owner
 with an open PR) name it outright. Pass the same flags to every `prt`
 call in the run.
+
+**Args that name PRs or repos are the scope.** That default is for a bare
+`/prt`; with named args it never runs. Pass `--repo` for each named repo,
+or for the repo of each named PR, and work only the named PRs: a PR the
+args leave out gets no agent, and one they say to leave alone is left
+alone. `prt` filters by repo only, so release the claim on any other PR
+the launch took. If the named PRs are all handed off, report their state
+and stop. A plan that reaches past the args waits for the user's yes.
 
 ```
 prt prt-20261009T015357Z · project dotfiles · 13 open in 3 repos, cap 15 · dry run: nothing written, nothing pushed
@@ -59,17 +67,17 @@ desk whatever the review says: claude#121
 - **The estimate** is a guess until three spends are logged, then their
   mean; the batch line says which.
 
-Show the plan; nothing gates the launch.
+Show the plan; under a bare `/prt` nothing gates the launch.
 
 ## 2. Launch
 
 ```
-~/.claude/bin/prt
+~/.claude/bin/prt <the same flags>
 ```
 
-The same plan, and now it writes. For each worked PR, first the claim:
-`claim-stamp.sh card-claim` under a sid made for that PR in this run. A PR
-already claimed is handed off `claimed: …` and nothing else is written for
+The same plan and flags, and now it writes. For each worked PR, first the
+claim: `claim-stamp.sh card-claim` under a sid made for that PR in this
+run. A PR already claimed is handed off `claimed: …` and nothing else is written for
 it. Then its work item (the one whose `home=` is the PR, else a new one)
 and one `prt estimate` line on it. A repo with no clone at `~/<repo>` is
 cloned into prt's cache. Nothing is pushed: bringing a branch up to date
