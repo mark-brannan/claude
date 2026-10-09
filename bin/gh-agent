@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# gh-agent <gh args...> -- run `gh` as the agent's GitHub App installation, so
+# what an agent posts reads as <app>[bot], not as the user's login.
+#
+# It mints a one-hour installation token from the App's private key, caches it,
+# and runs `GH_TOKEN=<token> gh "$@"`. GH_TOKEN outranks stored credentials, so
+# the user's own `gh` login is never touched. Give the App Pull requests and
+# Issues write only; the token then cannot push code.
+#
+# Files (the user creates both by hand; the directory is $AGENT_BOT_DIR, default
+# ~/.config/agent-bot):
+#   key.pem   the App's RS256 private key, PEM
+#   app-id    the numeric App ID
+# Env: AGENT_BOT_INSTALLATION_ID picks the installation when the App has more
+# than one; AGENT_BOT_API overrides https://api.github.com.
+# Cache: ${XDG_RUNTIME_DIR:-/tmp}/agent-bot/token (mode 600), reused while more
+# than five minutes remain.
+#
+# gh-agent --agent-help   prints this text.
+#
+# Undo: uninstall the App at github.com/settings/installations, delete it at
+# github.com/settings/apps, delete $AGENT_BOT_DIR/key.pem and the cache file.
+set -euo pipefail
+
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
+
+die() { echo "gh-agent: $*" >&2; exit 1; }
+
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+conf_dir() { printf '%s' "${AGENT_BOT_DIR:-$HOME/.config/agent-bot}"; }
+cache_file() { printf '%s' "${AGENT_BOT_CACHE:-${XDG_RUNTIME_DIR:-/tmp}/agent-bot/token}"; }
+now() { printf '%s' "${AGENT_BOT_NOW:-$(date +%s)}"; }
+
+require_files() {
+  local f
+  for f in key.pem app-id; do
+    [ -r "$(conf_dir)/$f" ] || die "missing $(conf_dir)/$f; register the app first; see the gh-agent usage text (gh-agent --agent-help)"
+  done
+}
+
+# build_jwt <app-id> <key.pem> -> header.claims.signature on stdout
+build_jwt() {
+  local app_id=$1 key=$2 t h c sig
+  t=$(now)
+  h=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+  c=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((t - 60)) $((t + 540)) "$app_id" | b64url)
+  sig=$(printf '%s.%s' "$h" "$c" | openssl dgst -sha256 -sign "$key" -binary | b64url)
+  printf '%s.%s.%s' "$h" "$c" "$sig"
+}
+
+api() { # api <method> <path> <jwt>
+  curl -fsS -X "$1" \
+    -H "Authorization: Bearer $3" \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "${AGENT_BOT_API:-https://api.github.com}$2"
+}
+
+# installation_id <jwt> -> AGENT_BOT_INSTALLATION_ID, else the App's only installation
+installation_id() {
+  local ids n
+  if [ -n "${AGENT_BOT_INSTALLATION_ID:-}" ]; then printf '%s' "$AGENT_BOT_INSTALLATION_ID"; return; fi
+  ids=$(api GET /app/installations "$1" | python3 -c 'import json,sys; print(*[str(i["id"]) for i in json.load(sys.stdin)])')
+  n=$(wc -w <<<"$ids")
+  [ "$n" -eq 1 ] || die "the app has $n installations ($ids); set AGENT_BOT_INSTALLATION_ID to pick one"
+  printf '%s' "$ids"
+}
+
+# mint_token -> "<expiry epoch> <token>" on stdout
+mint_token() {
+  local jwt id
+  jwt=$(build_jwt "$(tr -d '[:space:]' <"$(conf_dir)/app-id")" "$(conf_dir)/key.pem")
+  id=$(installation_id "$jwt") || return 1
+  api POST "/app/installations/$id/access_tokens" "$jwt" | python3 -c '
+import calendar, json, sys, time
+r = json.load(sys.stdin)
+print(calendar.timegm(time.strptime(r["expires_at"], "%Y-%m-%dT%H:%M:%SZ")), r["token"])'
+}
+
+# token -> a token with more than five minutes left, from the cache or a mint
+token() {
+  local f exp tok line
+  f=$(cache_file)
+  if [ -r "$f" ] && read -r exp tok <"$f" && [ -n "${tok:-}" ] && [ $((exp - $(now))) -gt 300 ]; then
+    printf '%s' "$tok"; return
+  fi
+  line=$(mint_token) || return 1
+  (umask 077; mkdir -p "$(dirname "$f")"; printf '%s\n' "$line" >"$f.$$" && mv "$f.$$" "$f")
+  printf '%s' "${line#* }"
+}
+
+main() {
+  case "${1:-}" in
+    --agent-help) usage; exit 0 ;;
+    "") usage >&2; exit 2 ;;
+  esac
+  require_files
+  GH_TOKEN=$(token) || exit 1
+  export GH_TOKEN
+  exec gh "$@"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi
