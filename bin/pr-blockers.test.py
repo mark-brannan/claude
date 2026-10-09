@@ -4,8 +4,8 @@
 # What matters: a clean PR prints nothing and exits 0; an unsigned commit by a
 # bot is named with its sha, author, reason and the resign remedy; a conflict,
 # a failing check and a pending check each get a line; a BLOCKED PR nothing
-# else explains gets the plain "cause not named" line; commit pages beyond the
-# first are read. `gh` is a stub serving fixtures.
+# else explains gets the plain "cause not named" line; an UNKNOWN merge state
+# is never clean; commit pages beyond the first are read. `gh` is a stub serving fixtures.
 import json
 import os
 import subprocess
@@ -91,6 +91,11 @@ class Test(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("behind its base", out)
         self.assertIn("ccccccc", out)
+
+    def test_unknown_mergeability_is_not_clean(self):
+        code, out = self.run_tool(view("UNKNOWN", "UNKNOWN"), json.dumps([commit("a")]))
+        self.assertEqual(code, 1)
+        self.assertIn("not yet computed", out)
 
     def test_bad_ref_exits_two(self):
         self.assertEqual(self.run_tool(view(), "[]", ref="nonsense")[0], 2)

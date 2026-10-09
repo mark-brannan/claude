@@ -9,7 +9,8 @@
 # without a verified signature (the ruleset refuses them), a merge conflict, a
 # branch behind its base, failing or pending checks. A PR GitHub calls BLOCKED
 # for a reason none of those names gets a line saying so; it never prints
-# nothing for an unexplained BLOCKED.
+# nothing for an unexplained BLOCKED. GitHub computes mergeability lazily, so
+# a fresh push can read UNKNOWN; that is a line too, never a clean exit.
 import json
 import re
 import subprocess
@@ -75,6 +76,8 @@ def blockers(owner, repo, n):
             out.append(f"check pending: {name}; fix: wait for it, or read why it hangs")
         elif done in FAILED:
             out.append(f"check failing: {name} ({done.lower()}); fix: read its log and repair the cause")
+    if state == "UNKNOWN" or pr["mergeable"] == "UNKNOWN":
+        out.append("GitHub has not yet computed whether the PR can merge; fix: run pr-blockers again in a minute")
     if state == "BLOCKED" and not out:
         out.append("BLOCKED, cause not named by pr-blockers: likely review approval or a ruleset rule")
     return out
