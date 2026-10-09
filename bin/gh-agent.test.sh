@@ -128,7 +128,7 @@ grep -q "https://api.example.com/x" "$T/curl.log" 2>/dev/null; eq "$?" 0 "a well
 # --- real mint against the stub API ------------------------------------------
 echo '[{"id":777}]' > "$T/installations.json"
 rm -rf "$T/run"; : > "$T/curl.log"; : > "$T/curl.auth"
-eq "$(mint_token)" "$(( $(python3 -c 'import calendar,time;print(calendar.timegm(time.strptime("2027-01-15T08:00:00Z","%Y-%m-%dT%H:%M:%SZ")))') )) ghs_minted" "mint returns expiry and token"
+eq "$(mint_token)" "1800000000 ghs_minted" "mint returns the expiry epoch of 2027-01-15T08:00:00Z and the token"
 eq "$(sed 's|https://[^/]*||' "$T/curl.log" | tr '\n' ' ')" "GET /app/installations POST /app/installations/777/access_tokens " "single installation is used"
 case $(head -1 "$T/curl.auth") in "Authorization: Bearer "*.*.*) ok ;; *) bad "installation lookup sends the JWT as bearer" ;; esac
 
@@ -140,6 +140,13 @@ case $out in *AGENT_BOT_INSTALLATION_ID*) ok ;; *) bad "two installations says h
 AGENT_BOT_INSTALLATION_ID=2 mint_token >/dev/null
 eq "$(grep -c access_tokens "$T/curl.log")" 1 "picked installation mints"
 case $(cat "$T/curl.log") in *"/app/installations/2/access_tokens"*) ok ;; *) bad "picked installation id is used" ;; esac
+
+mv "$T/installations.json" "$T/installations.away"
+out=$(mint_token 2>&1); rc=$?
+eq "$rc" 1 "a failed installation lookup fails"
+case $out in *"installation lookup failed"*) ok ;; *) bad "a failed lookup says so: $out" ;; esac
+case $out in *Traceback*|*"0 installations"*) bad "a failed lookup does not fall through to the parser: $out" ;; *) ok ;; esac
+mv "$T/installations.away" "$T/installations.json"
 
 # --- end to end: gh runs with GH_TOKEN, args untouched -----------------------
 echo '[{"id":777}]' > "$T/installations.json"; rm -rf "$T/run"

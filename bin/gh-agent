@@ -14,6 +14,8 @@
 # Env: AGENT_BOT_INSTALLATION_ID (digits) picks the installation when the App
 # has more than one; AGENT_BOT_API (https://host, no path) overrides
 # https://api.github.com.
+# Test hooks, not for use: AGENT_BOT_NOW (epoch seconds) and AGENT_BOT_CACHE
+# (the cache file path).
 # Cache: $XDG_RUNTIME_DIR/agent-bot/token, else $AGENT_BOT_DIR/token; owned by
 # you, mode 600, in a mode 700 directory; reused while more than five minutes
 # remain. A cache that fails those checks is ignored and re-minted.
@@ -71,12 +73,13 @@ api() { # api <method> <path> <jwt>
 
 # installation_id <jwt> -> AGENT_BOT_INSTALLATION_ID, else the App's only installation
 installation_id() {
-  local ids n
+  local resp ids n
   if [ -n "${AGENT_BOT_INSTALLATION_ID:-}" ]; then
     case $AGENT_BOT_INSTALLATION_ID in *[!0-9]*) die "AGENT_BOT_INSTALLATION_ID must be digits, got '$AGENT_BOT_INSTALLATION_ID'" ;; esac
     printf '%s' "$AGENT_BOT_INSTALLATION_ID"; return
   fi
-  ids=$(api GET /app/installations "$1" | python3 -c 'import json,sys; print(*[str(i["id"]) for i in json.load(sys.stdin)])')
+  resp=$(api GET /app/installations "$1") || die "installation lookup failed"
+  ids=$(python3 -c 'import json,sys; print(*[str(i["id"]) for i in json.load(sys.stdin)])' <<<"$resp") || die "installation lookup returned something unreadable"
   n=$(wc -w <<<"$ids")
   [ "$n" -eq 1 ] || die "the app has $n installations ($ids); set AGENT_BOT_INSTALLATION_ID to pick one"
   printf '%s' "$ids"
