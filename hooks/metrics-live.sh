@@ -233,7 +233,7 @@ dirty=0; unpushed=0; no_upstream=0; ncommits=0; start_sha=""
 if [ -n "$work_root" ]; then
   dirty=$(dirty_paths "$work_root" | wc -l | tr -d ' ')
   # Whether this branch holds work that exists nowhere else. lib-state.sh
-  # owns the answer, carve-outs and all, so this hook and stop-continuity.sh
+  # owns the answer, carve-outs and all, so this hook and stop-continuity.py
   # cannot disagree about it (#149).
   ust=$(unpushed_state "$work_root" "$work_branch")
   case "$ust" in
@@ -278,7 +278,7 @@ fi
 
 # =========================================================== crossing engine
 # Edge-triggered. State lives in one small file per session next to the cache;
-# it is NOT the cache, because stop-continuity.sh deletes the cache at the end
+# it is NOT the cache, because stop-continuity.py deletes the cache at the end
 # of a session and the crossings have to outlive it.
 NAGF=$(state_shard_path "$LIVE" "$sid.nag.json" "$sid")
 CROSSD="$(state_dir)/metrics/crossings"
@@ -949,7 +949,7 @@ fi
 # preview or a test harness asking for the `stop` readout never blocks a turn.
 #
 # "archivable" is the verdict that the chat can be closed without losing
-# anything. stop-continuity.sh computes it -- after its salvage, after its
+# anything. stop-continuity.py computes it -- after its salvage, after its
 # state commit -- and stop-sequence.py runs this only once that hook is done,
 # so this reads the verdict back instead of computing a second one. Two
 # computations, run in parallel against a state repo mid-commit, are how a
@@ -972,7 +972,7 @@ archivable() {
   [ -z "$archival_reasons" ]
 }
 
-# The hand-off is the pickup item's body (stop-continuity.sh writes one
+# The hand-off is the pickup item's body (stop-continuity.py writes one
 # item per session under state/global/pickup/; a model writes the hand-off
 # over the hook's default, which is the last prompt line, and the hook
 # keeps the edit). Never assume it was written because it was asked for:
@@ -1001,7 +1001,7 @@ block_reason=""
 if [ "$hook_name" = Stop ]; then
   archivable > /dev/null
   # Worktree slug is the leaf dir name only when work_root is actually a
-  # `~/.claude/worktrees/<name>` checkout (stop-continuity.sh:269's test) --
+  # `~/.claude/worktrees/<name>` checkout (stop-continuity.py sc_salvage's test) --
   # in the main checkout there's no separate slug worth repeating.
   case "$work_root" in
     */.claude/worktrees/*) worktree_slug=$(basename "$work_root") ;;

@@ -280,8 +280,8 @@ class CuriaRollTest(unittest.TestCase):
         (tree / "lib").mkdir()
         shutil.copy(HOOK, tree / "hooks")
         shutil.copy(HOOK.parent / "lib_state.py", tree / "hooks")
-        shutil.copy(HOOK.parent / "lib-state.sh", tree / "hooks")  # state.py asks it for the state dir
         shutil.copy(HOOK.parent.parent / "lib" / "state.py", tree / "lib")
+        shutil.copy(HOOK.parent.parent / "lib" / "gitrun.py", tree / "lib")  # state.py imports it
         self.sitting("one-entry-point", f"{SID} 2026-10-02T05:00:00Z\n")
         env = dict(os.environ, CLAUDE_STATE_REPO=str(self.repo))
         r = subprocess.run([sys.executable, str(tree / "hooks" / "curia-roll.py")],

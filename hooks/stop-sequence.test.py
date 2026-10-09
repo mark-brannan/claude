@@ -3,7 +3,7 @@
 #
 # Cost per push: about three seconds (one deliberate 2s timeout), a step in
 # CI's existing tool-tests job, so no new job and nothing drawn from the
-# account's concurrent-job cap. stop-continuity.test.sh runs the sequence
+# account's concurrent-job cap. stop-continuity.test.py runs the sequence
 # against the real hooks; these cases stub both hooks to pin the sequencing
 # itself: order, the STOP_VERDICT_SINCE handoff, whose stdout passes, and
 # fail-open on a hung first hook.
@@ -32,6 +32,9 @@ class StopSequenceTest(unittest.TestCase):
     def stub(self, name, body):
         (self.dir / name).write_text("#!/bin/bash\n" + body + "\n")
 
+    def stub_py(self, name, body):
+        (self.dir / name).write_text("import os, subprocess, sys\n" + body + "\n")
+
     def run_seq(self, **env):
         e = dict(os.environ, LOG=str(self.log), **env)
         return subprocess.run(
@@ -40,8 +43,9 @@ class StopSequenceTest(unittest.TestCase):
         )
 
     def test_order_payload_and_stdout(self):
-        self.stub("stop-continuity.sh",
-                  'echo "continuity $(cat)" >> "$LOG"; echo noise')
+        self.stub_py("stop-continuity.py",
+                     'open(os.environ["LOG"], "a").write("continuity " + sys.stdin.read() + "\\n")\n'
+                     'print("noise")')
         self.stub("metrics-live.sh",
                   'echo "readout $* since=$STOP_VERDICT_SINCE $(cat)" >> "$LOG"; '
                   'echo \'{"systemMessage":"📦"}\'')
@@ -58,8 +62,10 @@ class StopSequenceTest(unittest.TestCase):
 
     def test_hung_continuity_is_killed_whole_and_readout_still_runs(self):
         pidfile = self.dir / "child.pid"
-        self.stub("stop-continuity.sh",
-                  f'sleep 60 & echo $! > "{pidfile}"; wait')
+        self.stub_py("stop-continuity.py",
+                     'p = subprocess.Popen(["sleep", "60"])\n'
+                     f'open({str(pidfile)!r}, "w").write(str(p.pid))\n'
+                     'p.wait()')
         self.stub("metrics-live.sh", 'echo readout >> "$LOG"; echo out')
         t0 = time.time()
         r = self.run_seq(STOP_CONTINUITY_SECS="2")
@@ -71,6 +77,28 @@ class StopSequenceTest(unittest.TestCase):
         time.sleep(0.2)
         with self.assertRaises(ProcessLookupError):
             os.kill(child, 0)
+
+    def test_timeout_sends_sigterm_first_so_a_separate_session_child_is_stopped(self):
+        pidfile = self.dir / "child.pid"
+        self.stub_py("stop-continuity.py",
+                     'import signal, time\n'
+                     'p = subprocess.Popen(["sleep", "60"], start_new_session=True)\n'
+                     f'open({str(pidfile)!r}, "w").write(str(p.pid))\n'
+                     'def bye(*a):\n'
+                     '    p.kill(); os._exit(0)\n'
+                     'signal.signal(signal.SIGTERM, bye)\n'
+                     'time.sleep(60)')
+        self.stub("metrics-live.sh", 'echo out')
+        r = self.run_seq(STOP_CONTINUITY_SECS="2")
+        self.assertEqual(r.returncode, 0)
+        child = int(pidfile.read_text())
+        time.sleep(0.2)
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            return
+        os.kill(child, 9)
+        self.fail("the separate-session child outlived the timeout")
 
     def test_missing_hooks_fail_open(self):
         r = self.run_seq()
