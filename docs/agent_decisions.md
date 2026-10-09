@@ -316,3 +316,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t072938z
 - gh-agent reuses a cached token only for the same App id, installation and API host Undo: drop the key field from the cache line in token(). ([#130](https://github.com/mark-brannan/claude/pull/130))
+
+### 20261009t192141z
+- metrics spec file is docs/metrics-dashboard-spec.md Undo: rename the file ([#141](https://github.com/mark-brannan/claude/pull/141))
