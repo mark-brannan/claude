@@ -30,8 +30,9 @@ project-specific facts belong in that project's own CLAUDE.md.
   out there. If git says the branch is checked out elsewhere, that is a
   claim only while its holder lives — a fresh claim stamp or a process in
   that worktree: report it and stop. An idle holder is not a claim; the
-  pickup skill says how to take the branch without touching it. Enforced by
-  the languette plugin's `guard-worktrees`.
+  pickup skill judges liveness and says how to take the branch without
+  touching it. The languette plugin's `guard-worktrees` keeps you out of
+  another session's worktree; it never judges liveness.
 - **Branch-vs-main is the repo's call, then a rule.** If main requires a
   pull request (`gh api repos/<o>/<r>/rules/branches/main` lists
   `pull_request`), every change goes through a PR, however small; the
@@ -383,6 +384,12 @@ public" section.
   duplication before proceeding.
 - Watch for parallel implementations, repeated state machines, repeated
   validation flows, and copy-paste feature development. Those are the smell.
+- **A gate reads only.** A hook that can deny a call is a function of that
+  call and the facts it declares: it writes nothing, runs no program a
+  setting or an env var names, and reads no other workflow's state. Who
+  holds a branch, whether they live and who cleans up belong to what takes
+  or releases a branch, never to a gate. Guard: languette's purity test.
+  Scar: languette#107.
 
 ## Screenshots and Playwright
 
