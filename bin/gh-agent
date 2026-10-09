@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# gh-agent <gh args...> -- run `gh` as the agent's GitHub App installation, so
+# what an agent posts reads as <app>[bot], not as the user's login.
+#
+# It mints a one-hour installation token from the App's private key, caches it,
+# and runs `GH_TOKEN=<token> gh "$@"`. GH_TOKEN outranks stored credentials, so
+# the user's own `gh` login is never touched.
+#
+# Setup, once, by hand ($AGENT_BOT_DIR defaults to ~/.config/agent-bot):
+#   1. Register a private App at https://github.com/settings/apps/new: webhook
+#      off; repository permissions Pull requests and Issues read and write,
+#      nothing else, so its token cannot push code.
+#   2. On the App's page, save its App ID to $AGENT_BOT_DIR/app-id, then
+#      generate a private key and save it as $AGENT_BOT_DIR/key.pem, mode 600.
+#   3. Install the App (its Install App tab) on the repos agents work in.
+#
+# Undo: uninstall the App at https://github.com/settings/installations, delete
+# it at https://github.com/settings/apps, delete $AGENT_BOT_DIR and the cache.
+#
+# Env: AGENT_BOT_INSTALLATION_ID (digits) picks the installation when the App
+# has more than one; AGENT_BOT_API (https://host, no path) overrides
+# https://api.github.com.
+# Test hooks, not for use: AGENT_BOT_NOW (epoch seconds) and AGENT_BOT_CACHE
+# (the cache file path).
+# Cache: $XDG_RUNTIME_DIR/agent-bot/token, else $AGENT_BOT_DIR/cache/token;
+# owned by you, mode 600, in a mode 700 directory; reused for the same App,
+# installation and API host while more than five minutes remain. A cache that
+# fails those checks is ignored and re-minted.
+#
+# gh-agent --agent-help   prints this text.
+set -euo pipefail
+set +x # the JWT and the token must never reach a trace
+
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
+
+die() { echo "gh-agent: $*" >&2; exit 1; }
+
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+conf_dir() { printf '%s' "${AGENT_BOT_DIR:-$HOME/.config/agent-bot}"; }
+api_base() { printf '%s' "${AGENT_BOT_API:-https://api.github.com}"; }
+cache_file() {
+  if [ -n "${AGENT_BOT_CACHE:-}" ]; then printf '%s' "$AGENT_BOT_CACHE"
+  elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then printf '%s' "$XDG_RUNTIME_DIR/agent-bot/token"
+  else printf '%s' "$(conf_dir)/cache/token"
+  fi
+}
+
+# owned_mode <path> <mode> -> true when the path is ours, with exactly that mode
+owned_mode() {
+  local got # GNU stat first, then BSD; neither follows a symlink
+  got=$(stat -c '%u %a' "$1" 2>/dev/null || stat -f '%u %Lp' "$1" 2>/dev/null) || return 1
+  [ "$got" = "$(id -u) $2" ]
+}
+now() { printf '%s' "${AGENT_BOT_NOW:-$(date +%s)}"; }
+
+require_files() {
+  local f
+  for f in key.pem app-id; do
+    [ -r "$(conf_dir)/$f" ] || die "missing $(conf_dir)/$f; register the app first; see the gh-agent usage text (gh-agent --agent-help)"
+  done
+}
+
+app_id() {
+  local id
+  id=$(tr -d '[:space:]' <"$(conf_dir)/app-id")
+  case $id in ''|*[!0-9]*) die "$(conf_dir)/app-id must hold the numeric App ID, got '$id'" ;; esac
+  printf '%s' "$id"
+}
+
+# build_jwt <app-id> <key.pem> -> header.claims.signature on stdout
+build_jwt() {
+  local app_id=$1 key=$2 t h c sig
+  t=$(now)
+  h=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+  c=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((t - 60)) $((t + 540)) "$app_id" | b64url)
+  sig=$(printf '%s.%s' "$h" "$c" | openssl dgst -sha256 -sign "$key" -binary | b64url) && [ -n "$sig" ] \
+    || die "could not sign with $key"
+  printf '%s.%s.%s' "$h" "$c" "$sig"
+}
+
+api() { # api <method> <path> <jwt>; the JWT goes in on stdin, never on curl's argv
+  local base
+  base=$(api_base)
+  [[ $base =~ ^https://[A-Za-z0-9.-]+$ ]] || die "AGENT_BOT_API must look like https://host, got '$base'"
+  printf 'Authorization: Bearer %s\n' "$3" | curl -fsS -X "$1" -H @- \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "$base$2"
+}
+
+# installation_id <jwt> -> AGENT_BOT_INSTALLATION_ID, else the App's only installation
+installation_id() {
+  local resp ids
+  if [ -n "${AGENT_BOT_INSTALLATION_ID:-}" ]; then
+    case $AGENT_BOT_INSTALLATION_ID in *[!0-9]*) die "AGENT_BOT_INSTALLATION_ID must be digits, got '$AGENT_BOT_INSTALLATION_ID'" ;; esac
+    printf '%s' "$AGENT_BOT_INSTALLATION_ID"; return
+  fi
+  resp=$(api GET /app/installations "$1") || die "installation lookup failed"
+  read -ra ids < <(python3 -c 'import json,sys; print(*[int(i["id"]) for i in json.load(sys.stdin)])' <<<"$resp" 2>/dev/null) \
+    || die "installation lookup returned something unreadable"
+  [ "${#ids[@]}" -eq 1 ] || die "the app has ${#ids[@]} installations (${ids[*]:-}); set AGENT_BOT_INSTALLATION_ID to pick one"
+  printf '%s' "${ids[0]}"
+}
+
+# mint_token -> "<expiry epoch> <token>" on stdout
+mint_token() {
+  local jwt id resp
+  jwt=$(build_jwt "$(app_id)" "$(conf_dir)/key.pem") || return 1
+  id=$(installation_id "$jwt") || return 1
+  resp=$(api POST "/app/installations/$id/access_tokens" "$jwt") || die "token mint failed for installation $id"
+  python3 -c '
+import calendar, json, re, sys, time
+r = json.load(sys.stdin)
+assert re.fullmatch(r"[A-Za-z0-9_]+", r["token"])
+print(calendar.timegm(time.strptime(r["expires_at"], "%Y-%m-%dT%H:%M:%SZ")), r["token"])' <<<"$resp" 2>/dev/null \
+    || die "token mint for installation $id returned something unreadable"
+}
+
+# token -> a token with more than five minutes left, from the cache or a mint.
+# The cache line is "<expiry> <app>/<installation>/<api host> <token>".
+token() {
+  local f d key exp k tok line tmp
+  f=$(cache_file); d=$(dirname "$f")
+  key=$(app_id) || return 1
+  key="$key/${AGENT_BOT_INSTALLATION_ID:-only}/$(api_base)"
+  if [ -f "$f" ] && owned_mode "$d" 700 && owned_mode "$f" 600 && read -r exp k tok <"$f"; then
+    case ${exp:-} in ''|*[!0-9]*) exp=0 ;; esac
+    if [ "$k" = "$key" ] && [ -n "${tok:-}" ] && [ $((exp - $(now))) -gt 300 ]; then printf '%s' "$tok"; return; fi
+  fi
+  line=$(mint_token) || return 1
+  # shellcheck disable=SC2174  # only the leaf is ours to mode; owned_mode checks it
+  if mkdir -p -m 700 "$d" 2>/dev/null && owned_mode "$d" 700 && tmp=$(umask 077 && mktemp "$f.XXXXXX"); then
+    printf '%s %s %s\n' "${line%% *}" "$key" "${line#* }" >"$tmp" && mv "$tmp" "$f" || rm -f "$tmp"
+  else
+    echo "gh-agent: cache directory $d is not yours with mode 700; not caching" >&2
+  fi
+  printf '%s' "${line#* }"
+}
+
+main() {
+  case "${1:-}" in
+    --agent-help) usage; exit 0 ;;
+    "") usage >&2; exit 2 ;;
+  esac
+  require_files
+  GH_TOKEN=$(token) || exit 1
+  export GH_TOKEN
+  exec gh "$@"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi

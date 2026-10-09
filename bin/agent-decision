@@ -30,10 +30,16 @@
 # The curia copy never goes in roll.md, which holds the user's words alone;
 # a curia must already have its folder.
 #
+# The log is for pencil calls: defaults an agent took. An entry that says the
+# user (Solace, the owner, the human) chose, decided, ordered or asked for it
+# ("Solace chose", "per the user", "the owner's order", "as ordered", "ruled by
+# the human") claims provenance, and CLAIM matches it anywhere in the rendered
+# entry. It is wide on purpose: a false refusal is a reword.
+#
 # A reversal is never a pencil call (ruled 2026-10-09, claude#127), and the
 # guard sits on the write, before anything is pushed:
 #
-#   - A call that says the user ruled ("Solace chose", "the user asked") is
+#   - A call that says the user chose it ("Solace chose", "the user asked") is
 #     refused without --said <url>: the issue, issue comment, review thread
 #     comment or review where they said it. A PR body is never that (an agent
 #     wrote it), nor a comment opening with the agents' 🤖 signature, nor one
@@ -89,10 +95,20 @@ PR_URL = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/(\d+)\S*")
 PR_REF = re.compile(r"\[#\d+\]\((https://github\.com/[^/\s]+/[^/\s]+)/pull/(\d+)[^)\s]*\)")
 SLUG = re.compile(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
 STAMP = re.compile(r"\d{8}t\d{6}z")
-# A call that attributes the choice to the user: a name and a ruling verb.
-NAMED = re.compile(r"\b(?:solace|the user|user's|the human)\b", re.I)
-RULED = re.compile(r"\b(?:ch(?:o|oo)se|chosen|choice|order(?:ed|s)?|rul(?:ed|es|ing)|decided|decision"
-                   r"|asked|said|says|wants?|wanted|approved|agreed|told|confirmed)\b", re.I)
+APOS = "['\u2019]"
+WHO = r"(?:solace|the\s+user|the\s+owner|the\s+human)"
+VERB = (r"(?:chose|chosen|ruled|ordered|decided|asked|requested|directed|instructed|approved|picked|wanted|"
+        r"said|told|preferred|agreed|confirmed)")
+NOUN = r"(?:order|orders|ruling|request|instruction|instructions|direction|choice|decision)"
+CLAIM = re.compile(
+    rf"\b{WHO}(?:{APOS}s)?\s+(?:(?:has|had|have|also|then|already|just|\w+ly)\s+){{0,2}}{VERB}\b"
+    rf"|\bper\s+{WHO}\b"
+    rf"|\b{WHO}{APOS}s\s+{NOUN}\b"
+    rf"|\b(?:on|at|by)\s+{WHO}\s+{NOUN}\b"
+    r"|\bas\s+(?:ordered|ruled|instructed|directed|requested)\b(?!\s+by\b)"
+    rf"|\b(?:ruled|ordered|chosen|decided|requested|directed|instructed|approved|picked)\s+by\s+{WHO}\b"
+    rf"|\bruling\s*\(\s*{WHO}\s*\)",
+    re.IGNORECASE)
 # Where the user's words can live: an issue, an issue or review-thread comment, a review.
 SAID = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/(?:issues/(\d+)(?:#issuecomment-(\d+))?"
                   r"|pull/(\d+)#(?:issuecomment-(\d+)|discussion_r(\d+)|pullrequestreview-(\d+)))")
@@ -384,10 +400,13 @@ def main(argv):
                 return 2
             push_entry(root, f"- read-from {stamp}\n", now, f"read-from {stamp}")
             return 0
-        claimed = " ".join([call, a.undo or ""])
-        if NAMED.search(claimed) and RULED.search(claimed) and not a.said:
-            print("agent-decision: refused: the call says the user ruled; pass --said <url> to the issue or "
-                  "comment where they said so, never a PR body", file=sys.stderr)
+        tag = pr_tag(root, a.pr, a.link)
+        bullet = line(call, a.undo, a.link, tag, a.said)
+        if not a.said and CLAIM.search(bullet):
+            print("agent-decision: refused: this entry says the user chose, decided, ordered or asked for it. "
+                  "The user's decisions live where their words are, not in a pencil call. Add --said <url> "
+                  "pointing at an issue, comment or review with those words, or reword the call as the "
+                  "default you took.", file=sys.stderr)
             return 1
         record = []
         if a.said:
@@ -396,8 +415,6 @@ def main(argv):
                 print(f"agent-decision: refused: {refusal}", file=sys.stderr)
                 return 1
             record.append(words)
-        tag = pr_tag(root, a.pr, a.link)
-        bullet = line(call, a.undo, a.link, tag, a.said)
         record += pr_record(root, tag)
         refusal = judged(call, a.undo, record) if record else None
         if refusal:
