@@ -112,9 +112,17 @@ class Complexity(unittest.TestCase):
         sent = {}
         for line in self.log.read_text().splitlines():
             name, *files = line.split()
-            sent.setdefault(name, set()).update(files)
+            sent.setdefault(name, set()).update(f.removeprefix("./") for f in files)
         self.assertEqual(sent["lizard"], {"a.py", "same.py", "new.ts", "tool.py"})
         self.assertEqual(sent["shellmetrics"], {"gone.sh", "run.sh"})
+
+    def test_a_dash_named_file_is_a_path_not_an_option(self):
+        self.write({"-o.py": "if a:\n"})
+        git(self.repo, "add", "--", "-o.py")
+        git(self.repo, "commit", "-qm", "dash")
+        p, report = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(("-o.py", 2), {(r["path"], r["after"]) for r in report["functions"]})
 
     def test_a_missing_tool_is_reported(self):
         p, report = self.run_tool(tools=("lizard",))

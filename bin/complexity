@@ -136,7 +136,8 @@ def materialize(root, rev, paths, dest):
         os.makedirs(os.path.join(dest, os.path.dirname(tmp)), exist_ok=True)
         with open(os.path.join(dest, tmp), "wb") as f:
             f.write(blob)
-        files[tmp] = path
+        # "./" keeps a path that starts with "-" from reading as a tool option.
+        files["./" + tmp] = path
     return files
 
 
@@ -158,9 +159,11 @@ def markdown(report):
     if rs:
         lines += ["| Function | Before | After | Δ |", "|---|---:|---:|---:|"]
         dash = lambda v: "—" if v is None else str(v)
+        # Paths and names come from the PR, so nothing in them may close the cell.
+        cell = lambda v: "".join(c for c in v if c not in "`|<>\r\n")[:120]
         for r in rs[:ROWS]:
             lines.append("| `%s` · `%s` (line %d) | %s | %s | %+d |" % (
-                r["path"], r["function"], r["line"], dash(r["before"]), dash(r["after"]), r["delta"]))
+                cell(r["path"]), cell(r["function"]), r["line"], dash(r["before"]), dash(r["after"]), r["delta"]))
         if n > ROWS:
             lines.append("| …and %d more, smaller changes | | | |" % (n - ROWS))
     else:
