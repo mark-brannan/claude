@@ -187,6 +187,32 @@ class PrtTest(unittest.TestCase):
         self.assertIn("cost tokens=1000000 usd=2.0 by=prt run=prt-x", text)
         self.prt("spent", f"{REPO}#4", "a1", "--run", "prt-x", code=1)
 
+    def test_7_ruling_cards_match_complete_urls(self):
+        line = "- **direction** · Ship it? default: yes · undo: a revert · risk: none much"
+        created = []
+        try:
+            longer_pr = self.prt("decide", f"{REPO}#10", "-", stdin=line).strip()
+            created.append(longer_pr)
+            self.assertNotIn("Needs-ruling", self.prt("queue", f"{REPO}#1"))
+            shorter_pr = self.prt("decide", f"{REPO}#1", "-", stdin=line).strip()
+            created.append(shorter_pr)
+            self.assertNotEqual(shorter_pr, f"{longer_pr} (exists)")
+            self.assertEqual(self.prt("decide", f"{REPO}#1", "-", stdin=line).strip(),
+                             f"{shorter_pr} (exists)")
+            self.prt("queue", f"{REPO}#1", "--merge", code=1)
+            (self.T / "items" / f"{shorter_pr}.md").unlink()
+            for thread in (10, 1):
+                linked = line + f" · [thread](https://github.com/{REPO}/pull/1#discussion_r{thread})"
+                card = self.prt("decide", f"{REPO}#1", "-", stdin=linked).strip()
+                self.assertNotIn("(exists)", card)
+                created.append(card)
+                self.assertEqual(self.prt("decide", f"{REPO}#1", "-", stdin=linked).strip(),
+                                 f"{card} (exists)")
+                self.prt("queue", f"{REPO}#1", "--merge", code=1)
+        finally:
+            for card in created:
+                (self.T / "items" / f"{card}.md").unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

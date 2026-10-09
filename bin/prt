@@ -446,6 +446,10 @@ def spent(args):
     return 0
 
 
+def urls(text):
+    return re.findall(r"https?://[^\s)]+", text)
+
+
 def decide(args):
     if len(args) != 2 or args[1] != "-":
         die("decide takes <o/r#n> - and the Decide line on stdin")
@@ -467,7 +471,7 @@ def decide(args):
     q = rest.split(" default:")[0].strip(" ·")
     for row in work_item("list").splitlines():
         c = row.split("\t")
-        if len(c) >= 7 and c[1] == "human-ruling" and url in c[6] and (link or q in c[6]):
+        if len(c) >= 7 and c[1] == "human-ruling" and url in urls(c[6]) and (link or q in c[6]):
             print(f"{c[0]} (exists)")
             return 0
     brief = (f"{q} ([{label}]({url})) default: {field['default']} undo: {field['undo']} "
@@ -502,7 +506,9 @@ def queue(args):
         no.append(f"{f['pencils']} Pencil line(s) stand on the user's silence")
     if f["ci"] != "green" or f["conflicting"]:
         no.append("not green and mergeable")
-    if any(r.split("\t")[1:2] == ["human-ruling"] and pr["url"] in r for r in work_item("list").splitlines()):
+    if any(r.split("\t")[1:2] == ["human-ruling"] and
+           pr["url"] in (u.split("#", 1)[0] for u in urls(r))
+           for r in work_item("list").splitlines()):
         no.append("a Needs-ruling card waits on it")
     line = f"{pr['url']}  @mergifyio queue"
     if not merge:
