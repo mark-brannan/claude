@@ -78,6 +78,9 @@ class HelpersTest(unittest.TestCase):
     def test_glob_negation_alone_matches_nothing(self):
         self.assertFalse(pb.matches(["!docs/proposals/**"], "docs/a.md"))
 
+    def test_headroom_cap_is_20_percent_up_to_the_next_10(self):
+        self.assertEqual([pb.headroom_cap(n) for n in (418, 400, 50, 1, 0)], [510, 480, 60, 10, 0])
+
     def test_line_count(self):
         self.assertEqual(pb.line_count(""), 0)
         self.assertEqual(pb.line_count("a\nb\n"), 2)
@@ -171,15 +174,12 @@ class CliTest(RepoCase):
         self.config({"unique_ids": [{"file": "README.md", "pattern": "(unclosed"}]})
         self.assertEqual(self.cli("--tree")[0], 2)
 
-    def test_version(self):
-        self.assertEqual(self.cli("--version")[1].strip(), f"prose-budget {pb.VERSION}")
-
     def test_findings_end_with_the_cut_line_and_name_the_config(self):
         self.config({"lines": {"README.md": 1}}, path="docs/budgets.json")
         self.write("README.md", "a\nb\nc\n")
         code, out, _ = self.cli("--tree")
         self.assertEqual(code, 1)
-        self.assertEqual(out.splitlines()[0], "README.md:3: lines: 3 lines, budget 1")
+        self.assertTrue(out.splitlines()[0].startswith("README.md:3: lines: 3 lines, budget 1"))
         self.assertEqual(out.splitlines()[-1], pb.CUT.format("docs/budgets.json"))
 
     def test_warn_only_exits_zero(self):
@@ -232,13 +232,70 @@ class LinesTest(RepoCase):
         self.config({"lines": {"gone.md": 2, "required": True, "pending": ["gone.md"]}})
         self.assertEqual(self.findings("--tree"), [])
 
-    def test_must_budget(self):
+    def test_must_budget_fires_at_200_lines_and_names_the_cap(self):
         self.config({"lines": {"README.md": 5, "must_budget": ["docs/**/*.md"]}})
         self.write("README.md", "a\n")
-        self.write("docs/x.md", "a\n")
-        self.assertEqual([f["file"] for f in self.findings("--tree")], ["docs/x.md"])
-        self.config({"lines": {"README.md": 5, "docs/x.md": 5, "must_budget": ["docs/**/*.md"]}})
+        self.write("docs/x.md", "a\n" * 200)
+        self.write("docs/small.md", "a\n" * 199)
+        f = self.findings("--tree")
+        self.assertEqual([x["file"] for x in f], ["docs/x.md"])
+        self.assertIn("at least 240", f[0]["message"])
+        self.config({"lines": {"README.md": 5, "docs/x.md": 240, "must_budget": ["docs/**/*.md"]}})
         self.assertEqual(self.findings("--tree"), [])
+
+    def test_over_cap_names_the_cap_to_write(self):
+        self.config({"lines": {"README.md": 400}})
+        self.write("README.md", "a\n" * 418)
+        self.assertIn("at least 510", self.findings("--tree")[0]["message"])
+
+    def test_count_against_the_cap_is_reported(self):
+        self.config({"lines": {"README.md": 400}})
+        self.write("README.md", "a\n" * 398)
+        self.assertIn("lines: README.md 398/400", self.cli("--tree", "--file", "README.md")[2])
+        self.assertNotIn("398/400", self.cli("--tree")[2], "a full run prints no per-file count")
+
+
+class LinesBaseTest(RepoCase):
+    """Under --base a cap fails only the change that grew the file past it."""
+
+    def start(self, n, cap=400):
+        self.config({"lines": {"README.md": cap}, "delta": False})
+        self.write("README.md", "a\n" * n)
+        self.commit("README.md", ".prose-budgets.json")
+        self.git("checkout", "-qb", "feature")
+
+    def grow(self, n):
+        self.write("README.md", "a\n" * n)
+        self.commit("README.md")
+
+    def test_growing_past_the_cap_fails_with_the_count(self):
+        self.start(398)
+        self.grow(402)
+        f = self.findings("--base", "main")
+        self.assertEqual([x["rule"] for x in f], ["lines"])
+        self.assertIn("+4 in this change", f[0]["message"])
+
+    def test_growing_a_file_already_over_fails(self):
+        self.start(418)
+        self.grow(420)
+        self.assertEqual(self.rules("--base", "main"), ["lines"])
+
+    def test_over_and_not_grown_is_a_notice(self):
+        self.start(418)
+        self.grow(416)
+        code, out, err = self.cli("--base", "main")
+        self.assertEqual(code, 0, out)
+        self.assertIn("over, but not grown here (-2)", err)
+
+    def test_untouched_file_over_its_cap_does_not_fail_the_pr(self):
+        self.start(418)
+        self.write("docs/a.md", "x\n")
+        self.commit("docs/a.md")
+        self.assertEqual(self.findings("--base", "main"), [])
+
+    def test_tree_still_fails_a_file_over_its_cap(self):
+        self.start(418)
+        self.assertEqual(self.rules("--tree"), ["lines"])
 
 
 class SectionsTest(RepoCase):
@@ -305,33 +362,24 @@ class DeltaTest(RepoCase):
         self.git("mv", "runbooks/a.md", "runbooks/b.md")
         self.assertEqual(self.findings("--staged"), [])
 
-    def test_preset_delta_skips_files_with_a_line_budget_and_runs_under_base(self):
+    def test_delta_covers_files_with_a_line_budget_and_runs_under_base(self):
         self.config({"lines": {"README.md": 500}})
         self.write("README.md", "seed\n")
-        self.write("docs/a.md", "seed\n")
-        self.commit("README.md", "docs/a.md", ".prose-budgets.json")
+        self.commit("README.md", ".prose-budgets.json")
         self.git("checkout", "-qb", "feature")
         self.write("README.md", "## A\n\n" + ("word " * 100) + "\n")
         self.commit("README.md")
-        self.assertEqual(self.findings("--base", "main"), [])
-        self.write("docs/a.md", "## A\n\n" + ("word " * 100) + "\n")
-        self.commit("docs/a.md")
         self.assertEqual(self.rules("--base", "main"), ["delta"])
         self.assertEqual(self.findings("--tree"), [], "delta never runs on the tree")
 
-    def test_explicit_targets_still_skip_files_with_a_line_budget(self):
+    def test_delta_under_named_targets_covers_a_budgeted_file(self):
         self.config({"lines": {"docs/big.md": 500},
                      "delta": {"targets": ["docs/**/*.md", "!docs/drafts/**"]}})
         self.write("docs/big.md", "seed\n")
-        self.write("docs/small.md", "seed\n")
-        self.commit("docs/big.md", "docs/small.md", ".prose-budgets.json")
+        self.commit("docs/big.md", ".prose-budgets.json")
         self.git("checkout", "-qb", "feature")
         self.write("docs/big.md", "## A\n\n" + ("word " * 100) + "\n")
         self.commit("docs/big.md")
-        self.assertEqual(self.findings("--base", "main"), [],
-                         "a budgeted file stays exempt when targets are named")
-        self.write("docs/small.md", "## A\n\n" + ("word " * 100) + "\n")
-        self.commit("docs/small.md")
         self.assertEqual(self.rules("--base", "main"), ["delta"])
 
     def test_excluded_directory_is_out_of_the_delta(self):
@@ -494,6 +542,35 @@ class ConfigRelaxTest(RepoCase):
         self.stage_config({"lines": {"README.md": 10}, "sections": {"max_words": 5000}}, "docs/x.md")
         f = self.config_findings("--staged")
         self.assertIn("sections.max_words: 140 -> 5000", f[0]["message"])
+
+    def test_a_raised_cap_without_headroom_fails_even_alone(self):
+        self.start({"lines": {"README.md": 10}})
+        self.write("README.md", "a\n" * 418)
+        self.commit("README.md")
+        self.stage_config({"lines": {"README.md": 420}})
+        f = self.config_findings("--staged")
+        self.assertEqual(len(f), 1)
+        self.assertIn("write at least 510", f[0]["message"])
+        self.stage_config({"lines": {"README.md": 510}})
+        self.assertEqual(self.config_findings("--staged"), [])
+
+    def test_a_new_cap_without_headroom_fails(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 10, "docs/x.md": 1}}, "docs/x.md")
+        self.assertIn("write at least 10", self.config_findings("--staged")[0]["message"])
+
+    def test_a_lowered_cap_needs_no_headroom(self):
+        self.start({"lines": {"README.md": 10}})
+        self.stage_config({"lines": {"README.md": 1}})
+        self.assertEqual(self.config_findings("--staged"), [])
+
+    def test_headroom_is_checked_under_base_against_head(self):
+        self.start({"lines": {"README.md": 10}})
+        self.git("checkout", "-qb", "work")
+        self.write("README.md", "a\n" * 418)
+        self.config({"lines": {"README.md": 420}})
+        self.commit("README.md", ".prose-budgets.json")
+        self.assertIn("write at least 510", self.config_findings("--base", "main")[0]["message"])
 
     def test_narrowing_default_coverage_with_an_explicit_list_is_a_relaxation(self):
         self.start({"lines": {"README.md": 10}})
@@ -719,7 +796,7 @@ class MissingLibTest(unittest.TestCase):
             (Path(t) / "bin").mkdir()
             shutil.copy(ENGINE, Path(t) / "bin" / "prose-budget")
             env = dict(os.environ, HOME=t)
-            r = subprocess.run([sys.executable, str(Path(t) / "bin" / "prose-budget"), "--version"],
+            r = subprocess.run([sys.executable, str(Path(t) / "bin" / "prose-budget"), "--tree"],
                                capture_output=True, text=True, env=env)
             self.assertEqual(r.returncode, 2)
             self.assertIn("lib/gitrun.py not found", r.stderr)

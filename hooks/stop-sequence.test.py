@@ -78,6 +78,28 @@ class StopSequenceTest(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.kill(child, 0)
 
+    def test_timeout_sends_sigterm_first_so_a_separate_session_child_is_stopped(self):
+        pidfile = self.dir / "child.pid"
+        self.stub_py("stop-continuity.py",
+                     'import signal, time\n'
+                     'p = subprocess.Popen(["sleep", "60"], start_new_session=True)\n'
+                     f'open({str(pidfile)!r}, "w").write(str(p.pid))\n'
+                     'def bye(*a):\n'
+                     '    p.kill(); os._exit(0)\n'
+                     'signal.signal(signal.SIGTERM, bye)\n'
+                     'time.sleep(60)')
+        self.stub("metrics-live.sh", 'echo out')
+        r = self.run_seq(STOP_CONTINUITY_SECS="2")
+        self.assertEqual(r.returncode, 0)
+        child = int(pidfile.read_text())
+        time.sleep(0.2)
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            return
+        os.kill(child, 9)
+        self.fail("the separate-session child outlived the timeout")
+
     def test_missing_hooks_fail_open(self):
         r = self.run_seq()
         self.assertEqual(r.returncode, 0)

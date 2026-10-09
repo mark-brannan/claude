@@ -41,11 +41,18 @@ def run(argv, payload, timeout, env=None, keep_stdout=False):
         out, _ = proc.communicate(payload, timeout=timeout)
         return out or b""
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            pass
-        proc.communicate()
+        # SIGTERM first so the hook's handler can stop its timed children, which
+        # run in sessions of their own and which a group SIGKILL does not reach.
+        for sig, grace in ((signal.SIGTERM, 5), (signal.SIGKILL, None)):
+            try:
+                os.killpg(proc.pid, sig)
+            except OSError:
+                pass
+            try:
+                proc.communicate(timeout=grace)
+                break
+            except subprocess.TimeoutExpired:
+                continue
         return b""
 
 
