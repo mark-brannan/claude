@@ -184,7 +184,7 @@ def parse_scope(args, flags=()):
         else:
             die(f"unknown argument {a}")
     for r in o["repos"]:
-        if not re.fullmatch(r"[\w.-]+/[\w.-]+", r):
+        if not re.fullmatch(r"[\w.-]+/[\w.-]+", r) or re.search(r"(^|/)\.+(/|$)", r):
             die(f"not owner/repo: {r}")
     return o
 
@@ -571,7 +571,7 @@ def launch(run, work, pool):
             f["item"], f["item_was"] = ensure_item(f, f["repo"])
             work_item("log", f["item"], "prt", "estimate", f"usd={f['est_usd']:.2f}",
                       f"score={f['score']}", f"run={run}")
-        except Exit as e:
+        except Exception as e:
             # A store error must not leave the claim held for 2h: release it
             # and hand this PR off; the others go on.
             claim_stamp("card-release", f["url"], f["sid"])
