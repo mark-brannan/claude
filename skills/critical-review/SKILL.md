@@ -11,7 +11,7 @@ ready for my review.
 
 Then summarize. Open with one line, before any heading: what the PR does
 in your words and whether it is ready to merge. That sentence stands in
-for my reading the diff. Then four headings, each shown even when empty.
+for my reading the diff. Then five headings, each shown even when empty.
 One line per item. Reading is my toil; deciding is dearer still.
 
 **Fixed** — what you changed, with the commit.
@@ -19,6 +19,21 @@ One line per item. Reading is my toil; deciding is dearer still.
 **Look at** — a diff a human must read: where (file and lines), and why a
 machine couldn't settle it. Never a question; a question belongs under one
 of the two headings below.
+
+**Reversed** — every bot thread that asked to change a governing document
+(a design doc, a decisions file, an ADR, a curia, a rules file, CLAUDE.md),
+whether you changed it or not. The bot read the text; it never read the
+sitting that wrote it, so its ask can be a reversal of a ruling in plain
+clothes. Before you touch the document, find what the text records (the
+decisions file, the PR body, the curia) and write the line in those words:
+
+```
+- <file> · the doc said: <the rule> · the bot wanted: <the change, and why> · you did: kept | changed to <what> · [thread](link)
+```
+
+Plain words, no shorthand: I read this cold to see whether we reversed a
+decision on a bot's say-so. It is never a Pencil line, and a change you
+made goes under Look at as well.
 
 **Pencil** — the defaults you took that were judgment-shaped, mirrored
 from the PR body's `## Pencil:` list, kind first — values, risk,

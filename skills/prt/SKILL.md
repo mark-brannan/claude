@@ -145,6 +145,8 @@ pushed: <shas, or none>
 threads_resolved: <thread ids, or none>
 decide:
 - <each Decide line exactly as in the summary, or: none>
+reversed:
+- <each Reversed line exactly as in the summary, or: none>
 ```
 ````
 
@@ -164,9 +166,11 @@ decide:
 
   It prints the card id, or the existing one when the thread is already
   carded. `/agora` lists it with the rest.
+- **Each Reversed line** goes in the summary's Reversed block, as the
+  agent wrote it. No card: the user reads it there before the merge.
 - **Pencils** stay in the PR body's `## Pencil:` list, where
   critical-review keeps them. No card, no item line.
-- **Would merge** — ready, Decide empty, no desk path:
+- **Would merge** — ready, Decide and Reversed empty, no desk path:
   `~/.claude/bin/prt queue <ref>` prints the `@mergifyio queue` line, with
   any reason it would be refused.
 - **An agent that died** before its step 7 still holds its claim:
@@ -194,6 +198,9 @@ Decide → agora (2 cards)
   claude#116     direction · Release the branch on SubagentStop or on Stop?  card 1791…
   languette#105  risk · Count untracked files as dirty?                       card 1791…
 
+Reversed: a bot asked to change a governing document, read before you merge
+  languette#110  guard-pipeline.md · the doc said: a Need reads only the call's payload, the filesystem, git, GitHub and the plugin's own records · the bot wanted: the allowlist narrowed, since "the plugin's own records" admits the record that leaked in #107 · you did: cut the allowlist · thread
+
 Desk: governing paths, merge is yours
   claude#112  hooks/  ready · 1 pencil
 
@@ -213,7 +220,8 @@ left, naming model and effort.
 ## Merging is off
 
 `prt queue <ref> --merge` posts `@mergifyio queue`, and only after the
-same checks: no hand-off, no desk path, no open thread, no Pencil line,
+same checks: no hand-off, no desk path, no open thread, no Pencil line, no
+Reversed line,
 green and mergeable, no Needs-ruling card on the PR. Pass `--merge` only on the
 user's word in the current turn. Never `gh pr merge`; the queue re-checks
 against real main, and dequeue is the undo.

@@ -195,6 +195,10 @@ call can be a standing order applied correctly.
   state they aim at, and may run ahead of their supporting code; we
   strive to bring the code into sync. Don't hedge a doc back to what
   exists today — the gap is loop one's work, not the doc's error.
+- **A bot reads the text, never the sitting that wrote it.** Its comment
+  on a governing document is evidence, never a ruling. A fix made on it is
+  a reversal, shown as one where critical-review keeps reversals, in the
+  document's own words.
 - **Not in the same PR, and normally not the same session.** ADRs,
   curia docs, standing orders and design docs change in isolation from
   implementation. Breaking either norm needs my approval, asked before

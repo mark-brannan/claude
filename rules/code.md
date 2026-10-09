@@ -171,7 +171,12 @@ in nobody's queue but this session's.
   default is resolved and listed under Pencil with its thread link (the
   critical-review summary's headings). Scar: 2026-08-27, ampacity#3 — confirmed
   a flagged link was live, never replied or resolved the thread, merge failed
-  on branch policy.
+  on branch policy. On a governing document a third thing happens whichever
+  exit you take: the thread gets a line under the summary's Reversed
+  heading, in the document's own words, so a ruling undone on a bot's
+  reading is seen rather than slipped. Scar: 2026-10-09, languette#110 — a
+  design rule's allowlist and a decision's reasons cut on a bot's rubric
+  nit, merged, then restored.
 - **Resolve threads one at a time, by id, after reading and responding to each one.** Never
   loop over "all unresolved threads" — a review bot can post between your
   listing and your resolve, and the loop closes findings nobody read. Scar:
