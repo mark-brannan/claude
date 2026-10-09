@@ -265,3 +265,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t015554z
 - prt's default scope is the checkout repo's project topic, else that repo alone Undo: make the checkout's repo the default scope in prt's resolve_scope ([#120](https://github.com/mark-brannan/claude/pull/120))
+
+### 20261009t015556z
+- docs/agent_decisions.md never counts as a prt desk path, and the decisions desk pattern is the curia's decided.md only Undo: restore the generic decisions pattern in prt's DESK and drop NOT_DESK ([#120](https://github.com/mark-brannan/claude/pull/120))
