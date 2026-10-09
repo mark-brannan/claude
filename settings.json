@@ -313,6 +313,11 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" subagentstop 0 show 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/release-subagent-branch.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
+            "timeout": 10
           }
         ]
       }
