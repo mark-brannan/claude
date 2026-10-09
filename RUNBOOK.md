@@ -616,6 +616,7 @@ One line per claim: `live` or `stale`, the session, the machine, the age, the
 card. `live` means assume the other session is still working — don't push to
 the branch. `stale` means the session died without releasing it; the next
 `claim` on that card deletes it, so there is nothing to clean up by hand.
+`free` means the card carries no claim at all.
 `no card` means the branch has no PR and no pointer issue, so there is nowhere
 to stamp: `branch-home-gate.sh` will say the same thing at the end of the
 session.
