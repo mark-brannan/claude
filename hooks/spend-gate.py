@@ -91,27 +91,32 @@ def read_usage(path, msgs):
                 e = json.loads(line)
             except ValueError:
                 continue
-            if e.get("type") != "assistant":
-                continue
-            m = e.get("message") or {}
-            u = m.get("usage") or {}
-            mid = m.get("id") or e.get("uuid")
-            cur = msgs.get(mid)
-            if cur is None:
-                cur = msgs[mid] = dict.fromkeys(FIELDS, 0)
-                cur["model"] = m.get("model") or ""
-            split = u.get("cache_creation") or {}
-            vals = {
-                "input_tokens": u.get("input_tokens"),
-                "output_tokens": u.get("output_tokens"),
-                "cache_read_input_tokens": u.get("cache_read_input_tokens"),
-                "cache_creation_input_tokens": u.get("cache_creation_input_tokens"),
-                "cache_5m": split.get("ephemeral_5m_input_tokens"),
-                "cache_1h": split.get("ephemeral_1h_input_tokens"),
-            }
-            for k, v in vals.items():
-                if isinstance(v, (int, float)) and v > cur[k]:
-                    cur[k] = v
+            add_usage(e, msgs)
+
+
+def add_usage(e, msgs):
+    """Fold one transcript event's assistant usage into msgs, keyed by message id."""
+    if not isinstance(e, dict) or e.get("type") != "assistant":
+        return
+    m = e.get("message") or {}
+    u = m.get("usage") or {}
+    mid = m.get("id") or e.get("uuid")
+    cur = msgs.get(mid)
+    if cur is None:
+        cur = msgs[mid] = dict.fromkeys(FIELDS, 0)
+        cur["model"] = m.get("model") or ""
+    split = u.get("cache_creation") or {}
+    vals = {
+        "input_tokens": u.get("input_tokens"),
+        "output_tokens": u.get("output_tokens"),
+        "cache_read_input_tokens": u.get("cache_read_input_tokens"),
+        "cache_creation_input_tokens": u.get("cache_creation_input_tokens"),
+        "cache_5m": split.get("ephemeral_5m_input_tokens"),
+        "cache_1h": split.get("ephemeral_1h_input_tokens"),
+    }
+    for k, v in vals.items():
+        if isinstance(v, (int, float)) and v > cur[k]:
+            cur[k] = v
 
 
 def price(msgs):
