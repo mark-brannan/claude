@@ -301,3 +301,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t070455z
 - agent-decision --ruling takes only a github.com URL with no whitespace, parentheses, brackets or angle brackets, replacing any http(s) URL Undo: widen RULING in bin/agent-decision back to any http(s) URL without brackets ([#129](https://github.com/mark-brannan/claude/pull/129))
+
+### 20261009t070501z
+- agent-decision's provenance match reads the whole rendered entry, drops present-tense verbs so a deferral sentence passes, and refuses a past-participle-by form only when the agent is the user Undo: restore chooses, choose, rules, orders, decides in VERB ([#129](https://github.com/mark-brannan/claude/pull/129))
