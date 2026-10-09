@@ -103,6 +103,7 @@ hooks/stop-item.py
 hooks/measure-git-events.sh
 hooks/no-persistent-polling.sh
 hooks/no-late-pr-subscribe.sh
+hooks/release-subagent-branch.sh
 hooks/pr-ownership-context.sh
 hooks/pr-threads-gate.sh
 hooks/npm-publish-auth.sh

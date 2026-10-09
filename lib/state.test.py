@@ -136,40 +136,60 @@ class ArchivableTest(Base):
         gitq(self.WT, "remote", "add", "origin", str(origin))
         gitq(self.WT, "push", "-q", "-u", "origin", "feature")
         self.origin = origin
-        # A fake hook dir: branch-home-gate.sh always says "home",
-        # claim-stamp.sh is swapped per case.
+        # A fake hook dir: branch-home-gate.sh says "home" and names the
+        # branch's card; the claims come from an items/ store, as work-item
+        # reads them.
         self.FAKE = self.T / "hooks"
         self.FAKE.mkdir()
         gate = self.FAKE / "branch-home-gate.sh"
-        gate.write_text('#!/bin/sh\necho "home: pr https://github.com/o/r/pull/1"\n')
+        gate.write_text('#!/bin/sh\nif [ "$1" = --card ]; then echo "pr https://github.com/o/r/pull/1"; '
+                        'else echo "home: pr https://github.com/o/r/pull/1"; fi\n')
         gate.chmod(0o755)
+        self.SL = self.T / "sl-items"
+        os.environ["WORK_ITEM_DIR"] = str(self.SL)
+        os.environ["WORK_ITEM_BIN"] = str(Path(__file__).resolve().parent.parent / "bin" / "work-item")
+        self.NOW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-    def claim_stamp(self, out):
-        cs = self.FAKE / "claim-stamp.sh"
-        cs.write_text(f"#!/bin/sh\n[ \"$1\" = read ] || exit 0\ncat <<'STAMPS'\n{out}\nSTAMPS\n")
-        cs.chmod(0o755)
+    def slitem(self, id_, status, holder, log_time, brief):
+        self.SL.mkdir(exist_ok=True)
+        (self.SL / f"{id_}.md").write_text(
+            f"# T\n\n## Brief\n{brief}\n\n## Log\n{log_time} 1d68120b status=open owner=agent repo=- parent=- model=- effort=-\n"
+            f"{log_time} {holder} status={status}\n")
 
     def reasons(self, sid):
         return self.state.archivable_reasons(str(self.WT), "feature", sid, str(self.FAKE))
 
     def test_session_live(self):
-        # no claim-stamp.sh at all: behaves exactly as before the check (empty)
-        self.assertEqual(self.reasons("abcd1234"), "", "no claim-stamp.sh -> archivable")
-        # a live stamp belonging to someone else: blocks
-        self.claim_stamp("live\tdeadbeef\thost-aa1\t2m\thttps://github.com/o/r/pull/1")
-        self.assertIn("session live", self.reasons("abcd1234"), "other session's fresh stamp -> session live")
-        # the caller's own stamp, fresh: does not block its own archival
-        self.assertEqual(self.reasons("deadbeef"), "", "own fresh stamp is excluded")
-        # a stale stamp: does not block
-        self.claim_stamp("stale\tdeadbeef\thost-aa1\t180m\thttps://github.com/o/r/pull/1")
-        self.assertEqual(self.reasons("abcd1234"), "", "stale stamp -> archivable")
-        # no card / no stamps at all (claim-stamp prints nothing): does not block
-        self.claim_stamp("")
-        self.assertEqual(self.reasons("abcd1234"), "", "no stamps -> archivable")
-        # no session id given (a sweep, not a session): a fresh stamp from
-        # anyone still blocks
-        self.claim_stamp("live\tdeadbeef\thost-aa1\t2m\thttps://github.com/o/r/pull/1")
-        self.assertIn("session live", self.reasons(""), "no self sid, fresh stamp -> session live")
+        item = "1790836870aaaaaaaa"
+        # no items/ at all: archivable
+        self.assertEqual(self.reasons("abcd1234"), "", "no item store -> archivable")
+        # another session's live claim on an item naming the branch's card: blocks
+        self.slitem(item, "claimed", "deadbeef", self.NOW, "Fix it. https://github.com/o/r/pull/1")
+        self.assertIn("session live", self.reasons("abcd1234"), "other session's live claim -> session live")
+        # the card named as owner/repo#n (a home= fact's drawing) blocks too
+        self.slitem(item, "claimed", "deadbeef", self.NOW, "Fix it. See o/r#1.")
+        self.assertIn("session live", self.reasons("abcd1234"), "claim naming o/r#1 -> session live")
+        # the caller's own claim does not block its own archival
+        self.assertEqual(self.reasons("deadbeef"), "", "own live claim is excluded")
+        # a claim on an item that names some other card: does not block
+        self.slitem(item, "claimed", "deadbeef", self.NOW, "Other. https://github.com/o/r/pull/2")
+        self.assertEqual(self.reasons("abcd1234"), "", "claim on another card -> archivable")
+        # card 1 is not card 12 or 100, by URL or by o/r#n
+        for brief in ("Other. https://github.com/o/r/pull/12", "Other. o/r#12", "Other. o/r#100 and o/r#1000"):
+            self.slitem(item, "claimed", "deadbeef", self.NOW, brief)
+            self.assertEqual(self.reasons("abcd1234"), "", f"{brief!r} does not name card 1")
+        # ...but a later, exact mention still does
+        self.slitem(item, "claimed", "deadbeef", self.NOW, "Other. o/r#12, then o/r#1.")
+        self.assertIn("session live", self.reasons("abcd1234"), "a second mention that is exact blocks")
+        # a stale claim (the holder's newest line is old): does not block
+        self.slitem(item, "claimed", "deadbeef", "2026-09-01T00:00:00Z", "Fix it. https://github.com/o/r/pull/1")
+        self.assertEqual(self.reasons("abcd1234"), "", "stale claim -> archivable")
+        # an item named for the card but not claimed: does not block
+        self.slitem(item, "ready", "deadbeef", self.NOW, "Fix it. https://github.com/o/r/pull/1")
+        self.assertEqual(self.reasons("abcd1234"), "", "unclaimed item -> archivable")
+        # no session id given (a sweep, not a session): a live claim from anyone blocks
+        self.slitem(item, "claimed", "deadbeef", self.NOW, "Fix it. https://github.com/o/r/pull/1")
+        self.assertIn("session live", self.reasons(""), "no self sid, live claim -> session live")
 
     def test_home_line_comes_back(self):
         # The Stop hook's pickup item reuses the verdict's gh answer instead
