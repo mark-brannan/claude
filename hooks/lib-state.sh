@@ -202,7 +202,8 @@ buffered_state() {
 #
 # Home is checked before session-live, and both only when dirty/unpushed are
 # already clean: both can shell out to `gh` (branch-home-gate.sh up to two
-# 30s calls, twice over), so a dirty mid-work tree -- the common
+# 30s calls per mode, and session-live asks for its --card after the home
+# check has), so a dirty mid-work tree -- the common
 # case, and the one Stop fires on every turn -- never pays that cost.
 # Restores the short-circuit the pre-dotfiles#149 archivable() had.
 #
@@ -265,8 +266,19 @@ archivable_reasons() {
         # owner/repo#n a home= fact is drawn as.
         slug=$(printf '%s' "$url" | sed -nE 's@^https?://[^/]+/([^/]+/[^/]+)/(pull|issues)/([0-9]+).*@\1#\3@p')
         item_rows >/dev/null
+        # names() is a match that does not run on into more digits: pull/1
+        # must not match pull/12.
         if printf '%s\n' "$ITEM_ROWS" | awk -F '\t' -v s="$self8" -v u="$url" -v g="$slug" '
-             $4 != "" && $4 != s && (index($7, u) || (g != "" && index($7, g))) { found = 1 }
+             function names(l, t,   i, c) {
+               i = index(l, t)
+               while (i) {
+                 c = substr(l, i + length(t), 1)
+                 if (c !~ /[0-9]/) return 1
+                 l = substr(l, i + 1); i = index(l, t)
+               }
+               return 0
+             }
+             $4 != "" && $4 != s && (names($7, u) || (g != "" && names($7, g))) { found = 1 }
              END { exit !found }'; then
           add_reason "session live"
         fi ;;

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Stop hook: run stop-continuity.sh, then metrics-live.sh's Stop readout.
+"""Stop hook: run stop-continuity.py, then metrics-live.sh's Stop readout.
 
 Claude Code runs every matching hook in parallel. Run as two entries, the
-📦 notice computed its own "archivable" while stop-continuity.sh was still
+📦 notice computed its own "archivable" while stop-continuity.py was still
 salvaging and committing, so the checkpoint and the notice could answer the
 same question two ways in one Stop. In sequence there is one verdict:
-stop-continuity.sh writes it to the metrics record, and metrics-live.sh reads
+stop-continuity.py writes it to the metrics record, and metrics-live.sh reads
 it back, refusing one older than STOP_VERDICT_SINCE, the moment this started.
 
 Fails open, like both hooks it runs: a timeout or crash in the first still
@@ -27,7 +27,7 @@ READOUT_SECS = int(os.environ.get("STOP_READOUT_SECS", "30"))
 
 def run(argv, payload, timeout, env=None, keep_stdout=False):
     # Its own process group, killed whole on timeout: subprocess.run kills only
-    # bash, and a git push under it would outlive this hook holding the state
+    # the hook, and a git push under it would outlive this hook holding the state
     # lock while the readout reports on a Stop still in flight.
     try:
         proc = subprocess.Popen(
@@ -41,18 +41,25 @@ def run(argv, payload, timeout, env=None, keep_stdout=False):
         out, _ = proc.communicate(payload, timeout=timeout)
         return out or b""
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            pass
-        proc.communicate()
+        # SIGTERM first so the hook's handler can stop its timed children, which
+        # run in sessions of their own and which a group SIGKILL does not reach.
+        for sig, grace in ((signal.SIGTERM, 5), (signal.SIGKILL, None)):
+            try:
+                os.killpg(proc.pid, sig)
+            except OSError:
+                pass
+            try:
+                proc.communicate(timeout=grace)
+                break
+            except subprocess.TimeoutExpired:
+                continue
         return b""
 
 
 def main():
     payload = sys.stdin.buffer.read()
     since = str(int(time.time()))
-    run(["bash", os.path.join(HOOK_DIR, "stop-continuity.sh")], payload, CONTINUITY_SECS)
+    run(["python3", os.path.join(HOOK_DIR, "stop-continuity.py")], payload, CONTINUITY_SECS)
     env = dict(os.environ, STOP_VERDICT_SINCE=since)
     out = run(["bash", os.path.join(HOOK_DIR, "metrics-live.sh"), "stop", "0", "show"],
               payload, READOUT_SECS, env=env, keep_stdout=True)

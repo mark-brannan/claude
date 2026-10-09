@@ -4,7 +4,7 @@
 #
 # Why: a hand-off that lives in a chat, a prose prompt or a block a model
 # had to remember to write is lost the moment the session ends any other
-# way. The Stop hook (stop-continuity.sh) writes one pickup item per
+# way. The Stop hook (stop-continuity.py) writes one pickup item per
 # session under state/global/pickup/, every Stop, from the transcript and
 # git alone; the body is the hand-off a model may write over the hook's
 # default, and an edited body survives every rewrite. This is the view

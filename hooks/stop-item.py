@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stop hook step: write the session's work item (stop-continuity-requirements.md, 14).
 
-Called by stop-continuity.sh after the pickup item is written and before the
+Called by stop-continuity.py after the pickup item is written and before the
 state commit, so the same Stop commits what this writes. Every write goes
 through bin/work-item; this step only decides which item and what changed.
 

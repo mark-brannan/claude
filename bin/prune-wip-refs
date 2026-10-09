@@ -65,8 +65,9 @@ if [ "$n_repo_args" -eq 0 ]; then
   fi
 fi
 
-# Where the Stop hook's checkpoints live -- same lookup stop-continuity.sh
-# uses, sourced rather than re-guessed so the two never drift apart.
+# Where the Stop hook's checkpoints live -- the same lookup it uses (lib/state.py,
+# held equal to this lib-state.sh), sourced rather than re-guessed so the two
+# never drift apart.
 lib_state="$(cd "$(dirname "$0")/../hooks" 2>/dev/null && pwd)/lib-state.sh"
 ckpt_dir=""
 if [ -f "$lib_state" ]; then

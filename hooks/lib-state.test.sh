@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Tests for lib-state.sh's archivable_reasons(), focused on the session-live
-# check (dotfiles#167), for state_lock/state_unlock (dotfiles#161), and for
-# day_decisions (dotfiles#301).
+# Tests for the lib-state.sh functions that have no Python twin: day_decisions
+# (dotfiles#301), work_record and the work-item store, ruling_readiness,
+# buffered_state and verdict_explain -- plus the shell-only mechanics of the
+# functions that do: state_lock arming no trap of its own and leaking no
+# age-reference file, and archivable_reasons handing its home line back
+# through ARCHIVABLE_HOME_FILE.
 #
-# The dirty/unpushed/home checks predate this file and are exercised
-# end-to-end by stop-continuity.test.sh and metrics-live.test.sh already;
-# what's new and untested elsewhere is the item-store liveness gate, so
-# that's what this covers. Every case below starts from a worktree that is
-# clean, pushed and homed -- reasons empty before the live check runs at
-# all -- so a pass here isolates the new behavior from the old.
+# The ported functions' cases (state_repo, state_dir, state_shard_path, the
+# locks, unpushed_state, dirty_paths, archivable_reasons, decision_rate) are
+# lib/state.test.py's, and lib/state-parity.test.py holds this file's
+# versions of them equal to lib/state.py's.
 #
 # Set AWK_PATH to a directory whose `awk` is another implementation (mawk,
-# gawk, busybox) to check state_lock's meta parsing under it.
+# gawk, busybox) to run the awk-heavy readers under it.
 [ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 set -uo pipefail
 
@@ -31,74 +32,18 @@ gitq "$WT" commit -q -m init
 gitq "$WT" remote add origin "$ORIGIN"
 gitq "$WT" push -q -u origin feature
 
-# --- a fake HOOK_DIR: branch-home-gate.sh says "home" and names the branch's
-# card; the claims come from an items/ store, as work-item reads them ----------
+# --- a fake HOOK_DIR: branch-home-gate.sh always says "home" -----------------
 FAKE="$SCRATCH/hooks"; mkdir -p "$FAKE"
 cat > "$FAKE/branch-home-gate.sh" <<'EOF'
 #!/bin/sh
-if [ "$1" = --card ]; then echo "pr https://github.com/o/r/pull/1"; else echo "home: pr https://github.com/o/r/pull/1"; fi
+echo "home: pr https://github.com/o/r/pull/1"
 EOF
 chmod +x "$FAKE/branch-home-gate.sh"
-SL="$SCRATCH/sl-items"
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-slitem() {  # slitem <id> <status> <holder> <log-time> <brief>
-  mkdir -p "$SL"
-  printf '# T\n\n## Brief\n%s\n\n## Log\n%s 1d68120b status=open owner=agent repo=- parent=- model=- effort=-\n%s %s status=%s\n' \
-    "$5" "$4" "$4" "$3" "$2" > "$SL/$1.md"
-}
 
-run_reasons() {  # run_reasons <self-sid>
-  WORK_ITEM_DIR="$SL" WORK_ITEM_BIN="$HOOKS/../bin/work-item" HOOK_DIR="$FAKE" bash -c '
-    . "'"$HOOKS"'/lib-state.sh"
-    archivable_reasons "'"$WT"'" feature "'"$1"'"
-  '
-}
-
-check() {  # check <name> <self-sid> <want-contains|empty>
-  name=$1; sid=$2; want=$3
-  got=$(run_reasons "$sid")
-  case "$want" in
-    '') if [ -z "$got" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $name: want empty, got [$got]"; fi ;;
-    *)  case "$got" in
-          *"$want"*) pass=$((pass+1)) ;;
-          *) fail=$((fail+1)); echo "FAIL $name: want to contain [$want], got [$got]" ;;
-        esac ;;
-  esac
-}
-
-# no items/ at all: archivable
-rm -rf "$SL"
-check "no item store -> archivable" abcd1234 ""
-
-# another session's live claim on an item naming the branch's card: blocks
-slitem 1790836870aaaaaaaa claimed deadbeef "$NOW" 'Fix it. https://github.com/o/r/pull/1'
-check "other session's live claim -> session live" abcd1234 "session live"
-
-# the card named as owner/repo#n (a home= fact's drawing) blocks too
-slitem 1790836870aaaaaaaa claimed deadbeef "$NOW" 'Fix it. See o/r#1.'
-check "claim naming o/r#1 -> session live" abcd1234 "session live"
-
-# the caller's own claim does not block its own archival
-check "own live claim is excluded" deadbeef ""
-
-# a claim on an item that names some other card: does not block
-slitem 1790836870aaaaaaaa claimed deadbeef "$NOW" 'Other. https://github.com/o/r/pull/2'
-check "claim on another card -> archivable" abcd1234 ""
-
-# a stale claim (the holder's newest line is old): does not block
-slitem 1790836870aaaaaaaa claimed deadbeef 2026-09-01T00:00:00Z 'Fix it. https://github.com/o/r/pull/1'
-check "stale claim -> archivable" abcd1234 ""
-
-# an item named for the card but not claimed: does not block
-slitem 1790836870aaaaaaaa ready deadbeef "$NOW" 'Fix it. https://github.com/o/r/pull/1'
-check "unclaimed item -> archivable" abcd1234 ""
-
-# no session id given (a sweep, not a session): a live claim from anyone blocks
-slitem 1790836870aaaaaaaa claimed deadbeef "$NOW" 'Fix it. https://github.com/o/r/pull/1'
-check "no self sid, live claim -> session live" "" "session live"
+eq_ust() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $1: expected [$2], got [$3]"; fi; }
 
 
-# --- state_lock / state_unlock ------------------------------------------------
+# --- state_lock: the shell-only mechanics --------------------------------------
 LOCKDIR="$SCRATCH/x.lock"
 CASE="$SCRATCH/case.sh"
 
@@ -109,29 +54,6 @@ lock_check() {  # lock_check <name> <script-body-file-already-written> <want-exi
     fail=$((fail+1)); echo "FAIL $name: want exit $want, got $got"
   fi
 }
-
-cat > "$CASE" <<EOF
-. "$HOOKS/lib-state.sh"
-state_lock "$LOCKDIR"
-EOF
-lock_check "plain acquire succeeds" 0
-rm -rf "$LOCKDIR"
-
-cat > "$CASE" <<EOF
-. "$HOOKS/lib-state.sh"
-state_lock "$LOCKDIR" && state_unlock && [ ! -d "$LOCKDIR" ]
-EOF
-lock_check "unlock releases (dir gone after)" 0
-rm -rf "$LOCKDIR"
-
-mkdir -p "$LOCKDIR"
-printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$LOCKDIR/meta"
-cat > "$CASE" <<EOF
-. "$HOOKS/lib-state.sh"
-state_lock "$LOCKDIR"
-EOF
-lock_check "contended acquire (live pid) fails" 1
-rm -rf "$LOCKDIR"
 
 # state_lock installs no trap of its own (trap overwrites, doesn't chain --
 # see the PR #361 review thread): a caller's pre-existing EXIT trap must
@@ -148,56 +70,6 @@ if [ -f "$MARKER" ]; then pass=$((pass+1)); else
   fail=$((fail+1)); echo "FAIL caller's own EXIT trap still fires after state_lock: marker missing"
 fi
 rm -rf "$LOCKDIR" "$MARKER"
-
-# state_lock_wait is the portable `flock -w`: it gives up on a live holder
-# after its budget, and takes a lock freed while it waits.
-mkdir -p "$LOCKDIR"
-printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$LOCKDIR/meta"
-cat > "$CASE" <<EOF
-. "$HOOKS/lib-state.sh"
-state_lock_wait "$LOCKDIR" 1
-EOF
-lock_check "state_lock_wait: live holder past the budget fails" 1
-( sleep 1; rm -rf "$LOCKDIR" ) &
-cat > "$CASE" <<EOF
-. "$HOOKS/lib-state.sh"
-state_lock_wait "$LOCKDIR" 5 && grep -q "^pid=\$\$" "$LOCKDIR/meta"
-EOF
-lock_check "state_lock_wait: a lock freed mid-wait is taken" 0
-wait; rm -rf "$LOCKDIR"
-
-mkdir -p "$LOCKDIR"
-printf 'pid=999999999\nhostname=%s\n' "$(uname -n)" > "$LOCKDIR/meta"
-cat > "$CASE" <<EOF
-. "$HOOKS/lib-state.sh"
-state_lock "$LOCKDIR" && grep -q "^pid=\$\$" "$LOCKDIR/meta"
-EOF
-lock_check "stale lock (dead pid, same host) is reclaimed" 0
-rm -rf "$LOCKDIR"
-
-# dotfiles#161: a kill between mkdir and the meta write leaves a lock dir
-# with no meta at all -- no pid to check stale-reclaim's usual way. Age of
-# the dir itself is the only signal left, so one older than
-# STATE_LOCK_STALE_SECS must reclaim, and a dir that just appeared (another
-# state_lock plausibly still mid-acquire) must not.
-mkdir -p "$LOCKDIR"
-AGE_CUTOFF=$(( $(date +%s) - 30 ))
-AGE_TS=$(date -d "@$AGE_CUTOFF" +%Y%m%d%H%M.%S 2>/dev/null || date -r "$AGE_CUTOFF" +%Y%m%d%H%M.%S)
-touch -t "$AGE_TS" "$LOCKDIR"
-cat > "$CASE" <<EOF
-. "$HOOKS/lib-state.sh"
-state_lock "$LOCKDIR" && grep -q "^pid=\$\$" "$LOCKDIR/meta"
-EOF
-lock_check "meta-less lock dir aged past threshold is reclaimed" 0
-rm -rf "$LOCKDIR"
-
-mkdir -p "$LOCKDIR"
-cat > "$CASE" <<EOF
-. "$HOOKS/lib-state.sh"
-state_lock "$LOCKDIR"
-EOF
-lock_check "fresh meta-less lock dir is not reclaimed" 1
-rm -rf "$LOCKDIR"
 
 # PR #379 review thread: if `: > "$ref"` succeeds but `touch -t` fails, the
 # meta-less-reclaim path must not leak the "$dir.age.$$" reference file.
@@ -318,9 +190,9 @@ unset CLAUDE_STATE_REPO
 
 # --- the home line comes back through a file, from inside $(...) ----------------
 # Every caller captures archivable_reasons with $(...), so a variable it sets
-# is lost; ARCHIVABLE_HOME_FILE is how stop-continuity.sh's pickup item reuses
-# the gh answer instead of asking again (PR #388, design pass).
-rm -f "$FAKE/claim-stamp.sh"
+# is lost; ARCHIVABLE_HOME_FILE is how a shell caller reuses the gh answer
+# instead of asking again (PR #388, design pass). stop-continuity.py takes it
+# from lib/state.py's archivable() return instead.
 HF="$SCRATCH/home-line"
 got=$(HOOK_DIR="$FAKE" ARCHIVABLE_HOME_FILE="$HF" bash -c '
   . "'"$HOOKS"'/lib-state.sh"
@@ -328,31 +200,6 @@ got=$(HOOK_DIR="$FAKE" ARCHIVABLE_HOME_FILE="$HF" bash -c '
   printf "%s|%s" "$r" "$(cat "$ARCHIVABLE_HOME_FILE" 2>/dev/null)"')
 if [ "$got" = "|home: pr https://github.com/o/r/pull/1" ]; then pass=$((pass+1))
 else fail=$((fail+1)); echo "FAIL home line through file: got [$got]"; fi
-
-# --- unpushed_state: a commit on a differently-named remote branch ------------
-# `mergify stack push` leaves @{u} at origin/main and pushes to stack/<name>;
-# counting @{u}..HEAD called that pushed commit unpushed.
-STK="$SCRATCH/stack"; git clone -q "$ORIGIN" "$STK" >/dev/null 2>&1
-gitq "$STK" checkout -q -b main origin/feature
-gitq "$STK" push -q -u origin main
-gitq "$STK" checkout -q -b local-stack
-gitq "$STK" branch -q -u origin/main
-printf 'y\n' > "$STK/g"; gitq "$STK" add g; gitq "$STK" commit -q -m stacked
-ust() { bash -c '. "'"$HOOKS"'/lib-state.sh"; unpushed_state "$1" "$2"' _ "$@"; }
-eq_ust() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $1: expected [$2], got [$3]"; fi; }
-eq_ust "commit on no remote branch, @{u}=main: ahead 1" 'ahead 1' "$(ust "$STK" local-stack)"
-gitq "$STK" push -q origin local-stack:refs/heads/wip/sid
-eq_ust "same commit only on a wip/ salvage ref: still ahead 1" 'ahead 1' "$(ust "$STK" local-stack)"
-gitq "$STK" push -q origin local-stack:refs/heads/stack/x
-eq_ust "same commit on stack/x, @{u} still main: ahead 0" 'ahead 0' "$(ust "$STK" local-stack)"
-gitq "$STK" branch -q --unset-upstream
-eq_ust "no upstream, commit on a remote branch: safe" 'safe' "$(ust "$STK" local-stack)"
-
-# --- decision_rate -----------------------------------------------------------
-dr() { bash -c '. "'"$HOOKS"'/lib-state.sh"; decision_rate "$@"' _ "$@"; }
-eq_ust "decision_rate: 3 in 1h10"      '3 decisions in 1h10 (2.6/h)' "$(dr 3 4200)"
-eq_ust "decision_rate: singular"       '1 decision in 0h30 (2.0/h)'  "$(dr 1 1800)"
-eq_ust "decision_rate: no clock, no line" ''                          "$(dr 3 0)"
 
 # --- work_record: a pickup item and a card read into one record shape -------
 # Fields: kind title status until claim model effort link id updated.
@@ -474,35 +321,13 @@ for sh_ in bash sh; do
   rm -f "$RR"/state.*
 done
 
-# --- state_shard_path: per-session files split by the id's first two chars ---
-SH="$SCRATCH/shard"; mkdir -p "$SH"
-shp() { bash -c '. "$0/lib-state.sh"; state_shard_path "$@"' "$HOOKS" "$@"; }
-eq_ust 'shard: a new file goes under the first two chars of the id' \
-  "$SH/3f/3fa9-01.json" "$(shp "$SH" 3fa9-01.json 3fa9-01)"
-eq_ust 'shard: the name need not start with the id' \
-  "$SH/3f/2026-01-02-repo-3fa9.md" "$(shp "$SH" 2026-01-02-repo-3fa9.md 3fa9-01)"
-: > "$SH/3fa9-01.json"
-eq_ust 'shard: a file still at the flat path is used where it is' \
-  "$SH/3fa9-01.json" "$(shp "$SH" 3fa9-01.json 3fa9-01)"
-eq_ust 'shard: an empty id goes under _, never the dir itself' \
-  "$SH/_/x.json" "$(shp "$SH" x.json '')"
-
-# --- dirty_paths: the state repo's own state/ is the hooks' to commit ------
+# --- buffered_state names what the state repo has not committed yet ----------
+# A state repo whose state/ holds one hook-written metrics file, uncommitted.
 SR="$SCRATCH/state-repo"; gitq "$SCRATCH" init -q -b main "$SR"
 mkdir -p "$SR/state/global/metrics"; : > "$SR/README"
 gitq "$SR" add README; gitq "$SR" commit -q -m init
 : > "$SR/state/global/metrics/live.json"
-dp() { CLAUDE_STATE_REPO="$SR" bash -c '. "$0/lib-state.sh"; dirty_paths "$1"' "$HOOKS" "$1"; }
-eq_ust 'dirty_paths: hook-written state/ in the state repo is not dirt' '' "$(dp "$SR")"
-: > "$SR/notes.txt"
-eq_ust 'dirty_paths: anything else in the state repo still is' '?? notes.txt' "$(dp "$SR")"
-mkdir -p "$WT/state"; : > "$WT/state/x"
-eq_ust 'dirty_paths: state/ in any other repo still is' '?? state/' "$(dp "$WT")"
-rm -rf "$WT/state"
-
-# --- buffered_state names what the state repo has not committed yet ----------
 bs() { CLAUDE_STATE_REPO="$SR" bash -c '. "$0/lib-state.sh"; buffered_state "$1"' "$HOOKS" "$1"; }
-rm -f "$SR/notes.txt"
 mkdir -p "$SR/state/global/pickup"; : > "$SR/state/global/pickup/h.md"
 eq_ust 'buffered_state: names the hand-off, counts the metrics' \
   '→ buffered in the state repo, not committed yet (the next Stop commits it): pickup/h.md, + 1 metrics file' \

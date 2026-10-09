@@ -63,7 +63,7 @@ push_wip() {
 ckpt_dir="$HOME/claude_prompts_scratch/state/global/log/auto"
 mkdir -p "$ckpt_dir"
 git init -q -b main "$HOME/claude_prompts_scratch" >/dev/null 2>&1
-# Fixture shape matches a real stop-continuity.sh checkpoint's ## Resume
+# Fixture shape matches a real stop-continuity.py checkpoint's ## Resume
 # block: a markdown list, `- link: <url>`, not `**link:**` (dotfiles#357
 # review: the old fixture matched the code's old, wrong regex instead of a
 # real checkpoint).
