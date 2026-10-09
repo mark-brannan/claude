@@ -167,7 +167,8 @@ reversed:
   It prints the card id, or the existing one when the thread is already
   carded. `/agora` lists it with the rest.
 - **Each Reversed line** goes in the summary's Reversed block, as the
-  agent wrote it. No card: the user reads it there before the merge.
+  agent wrote it. No card: the thread it names stays open, so the PR
+  waits for the user there.
 - **Pencils** stay in the PR body's `## Pencil:` list, where
   critical-review keeps them. No card, no item line.
 - **Would merge** — ready, Decide and Reversed empty, no desk path:
@@ -199,7 +200,7 @@ Decide → agora (2 cards)
   languette#105  risk · Count untracked files as dirty?                       card 1791…
 
 Reversed: a bot asked to change a governing document, read before you merge
-  languette#110  guard-pipeline.md · the doc said: a Need reads only the call's payload, the filesystem, git, GitHub and the plugin's own records · the bot wanted: the allowlist narrowed, since "the plugin's own records" admits the record that leaked in #107 · you did: cut the allowlist · thread
+  languette#110  guard-pipeline.md · the doc said: a Need reads only the call's payload, the filesystem, git, GitHub and the plugin's own records · the bot wanted: the allowlist narrowed, since "the plugin's own records" admits the record that leaked in #107 · you did: kept, thread open · thread
 
 Desk: governing paths, merge is yours
   claude#112  hooks/  ready · 1 pencil

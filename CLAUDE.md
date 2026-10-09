@@ -196,9 +196,9 @@ call can be a standing order applied correctly.
   strive to bring the code into sync. Don't hedge a doc back to what
   exists today — the gap is loop one's work, not the doc's error.
 - **A bot reads the text, never the sitting that wrote it.** Its comment
-  on a governing document is evidence, never a ruling. A fix made on it is
-  a reversal, shown as one where critical-review keeps reversals, in the
-  document's own words.
+  on a governing document, or against an instruction I gave, is evidence,
+  never a ruling. No fix is made on it; the ask is shown as a reversal
+  where critical-review keeps reversals, in the record's own words.
 - **Not in the same PR, and normally not the same session.** ADRs,
   curia docs, standing orders and design docs change in isolation from
   implementation. Breaking either norm needs my approval, asked before
@@ -243,7 +243,10 @@ Hooks handle the mechanics unprompted.
   prunes with my tick, nothing else edits.
 - **The one-way-door test:** name the default and its undo; if there is a
   default, and the undo is a revert in a repo you control before anyone
-  else has seen or built on the choice, take the default. Only a failure
+  else has seen or built on the choice, take the default. A choice I have
+  made — in an issue, a design doc, a decisions line, a thread — is one I
+  have seen: undoing it is a reversal, never a default, however cheap the
+  revert. Only a failure
   earns a `## Needs ruling` card, and the card carries your evaluation —
   default, undo, until, risk — so my answer is one word.
 - **Sort decisions by kind, not size.** *Toil* — how to do the thing:

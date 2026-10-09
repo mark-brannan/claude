@@ -134,7 +134,12 @@ in nobody's queue but this session's.
     taken under the one-way-door test, in the body's `## Pencil:` list and
     appended with `~/.claude/bin/agent-decision "<call>" --undo "<undo>" --link <PR>`
     (add `--curia <id>` when the work came from a curia), committed in this
-    PR. None taken: say `## Pencil: none`.
+    PR. None taken: say `## Pencil: none`. **A reversal is never a pencil
+    call** (ruled 2026-10-09, claude#127): a default that contradicts the
+    linked issue, a design doc, a decisions line or a thread the user
+    wrote is not yours however cheap the revert; the instruction stands
+    and the conflict goes under the critical-review summary's Reversed
+    heading, as a Decide line if the PR cannot be right without it.
 - **A PR handed to the user needs a judgment pass, not a "did this even build"
   pass.** His read is for the call I can't make — is this the right change,
   does it fit the design. Anything a machine could have caught should
@@ -171,12 +176,32 @@ in nobody's queue but this session's.
   default is resolved and listed under Pencil with its thread link (the
   critical-review summary's headings). Scar: 2026-08-27, ampacity#3 — confirmed
   a flagged link was live, never replied or resolved the thread, merge failed
-  on branch policy. On a governing document a third thing happens whichever
-  exit you take: the thread gets a line under the summary's Reversed
-  heading, in the document's own words, so a ruling undone on a bot's
-  reading is seen rather than slipped. Scar: 2026-10-09, languette#110 — a
-  design rule's allowlist and a decision's reasons cut on a bot's rubric
-  nit, merged, then restored.
+  on branch policy. A third exit, taken first: a bot thread that asks to
+  undo an instruction — a governing document, the linked issue's words, a
+  thread the user wrote — is a reversal, never a fix and never a pencil.
+  The instruction stands, the thread stays open, and the summary's
+  Reversed heading carries the line in the record's own words. Scars:
+  2026-10-09, languette#110 — a design rule's allowlist and a decision's
+  reasons cut on a bot's rubric nit, merged, then restored; languette#116 —
+  the bot flagged "the issue says adds, the code replaces", the agent
+  replied "Replacement is the intent", resolved it, and filed the reversal as
+  pencil.
+- **Every comment, review or thread reply you post is signed as an
+  agent's.** It goes out under the user's login, and a bot or the next
+  session reads an unsigned reply as the user's ruling (languette#116:
+  "Replacement is the intent" was an agent's line, taken as the user's).
+  The body opens with `🤖 ` and closes with one signature line:
+
+  ```
+  🤖 claude-fable-5-1 · high · 5a74df74
+  ```
+
+  The model as this session reports it, the effort as the pickup item
+  names it (`-` when unknown), the session's first eight hex. A PR body's
+  `🤖 Generated with Claude Code` line gains the same model and effort.
+  A languette guard refuses the unsigned post (card 17915273135a74df74);
+  until it lands this line stands alone. An identity of the agents' own
+  is under research (card 17915273125a74df74).
 - **Resolve threads one at a time, by id, after reading and responding to each one.** Never
   loop over "all unresolved threads" — a review bot can post between your
   listing and your resolve, and the loop closes findings nobody read. Scar:
