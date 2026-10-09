@@ -286,3 +286,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t064704z
 - agent-decision refuses the entry when the judge cannot run; a PR with no linked issue and no governing path touched is not judged Undo: one line each in main() ([#128](https://github.com/mark-brannan/claude/pull/128))
+
+### 20261009t064707z
+- agent-decision's record is docs/, rules/ and CLAUDE.md on the base branch, capped at 60k chars Undo: edit RECORD_PATHS ([#128](https://github.com/mark-brannan/claude/pull/128))
