@@ -109,6 +109,13 @@ class LogGhWritesTest(unittest.TestCase):
         r = self.one("gh pr comment 1 -b 'done; merged | ok && x'")
         self.assertEqual((r["verb"], r["target"]), ("pr comment", "1"))
 
+    def test_quoted_empty_or_operator_argument_does_not_split(self):
+        for cmd in ('gh pr merge --body "" 5 -R o/r', "gh pr comment -b ';' 5 -R o/r",
+                    'gh pr comment -b "&&" 5 -R o/r'):
+            self.log.unlink(missing_ok=True)
+            r = self.one(cmd)
+            self.assertEqual((r["target"], r["repo"]), ("5", "o/r"), cmd)
+
     def test_dollar_quoted_body(self):
         self.assertEqual(self.one("gh pr comment 2 --body $'a\\nb'")["target"], "2")
 
