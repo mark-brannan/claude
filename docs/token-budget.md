@@ -129,8 +129,8 @@ the 13.8 KB is no longer the lever #74 took it for.
 
 ### Follow-up
 
-The rows worth switching, largest first: skills listing (4.5k, 17.9 KB over
-~25 skills), user CLAUDE.md (4.3k), SessionStart hook context (1.4k to 2.8k),
+The rows worth switching, largest first: skills listing (4.5k, 17.9 KB),
+user CLAUDE.md (4.3k), SessionStart hook context (1.4k to 2.8k),
 and plugin skills. Tool schemas and the system prompt (rows 3 and 10, over
 36k together) are the bulk and not configurable. Re-measure the unattributed
 ~10k with one `/context` run on the current version.
