@@ -407,5 +407,14 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(of("o/r", paths=("docs/agent_decisions.md",))["score"], 0)
 
 
+    def test_11_fixer_prompt_turns_a_bot_finding_on_a_governing_doc_into_a_decide(self):
+        root = Path(__file__).resolve().parent.parent / "skills"
+        for name in ("prt", "critical-review"):
+            text = " ".join((root / name / "SKILL.md").read_text().split())
+            self.assertIn("governing document", text, name)
+            self.assertIn("never an edit", text, name)
+            self.assertIn("Decide line", text, name)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
