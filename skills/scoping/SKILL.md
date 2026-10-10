@@ -202,7 +202,10 @@ each yes'd item exactly as proposed:
   `~/.claude/bin/work-item log <id> status=ready` so it is claimable;
 - at most one GitHub issue this session, never a batch (Solace,
   2026-10-01, pen); further issue-homed items stay in the proposal, marked
-  unfiled, and the hand-off names them.
+  unfiled, and the hand-off names them. A tick is not a yes to an issue
+  whose text Solace has not seen (2026-10-10): show the draft and ask
+  before filing. A small item stays a line in the parent's body, never a
+  sub-issue.
 
 An item that rests on pencil says which, in the record's words, on its
 card or issue. Record what was filed in the proposal file (each card by its
