@@ -258,6 +258,12 @@ session-start "Decision load, last 7 days" block and the Stop checkpoint's
 Verify: `grep -c 'decision rate' ~/claude_prompts_scratch/state/global/log/auto/*/*.md | tail -3`
 after a session with two or more prompts.
 
+A decision is tagged `junk` in the session record when a non-retracted human
+friction record lands within 30 transcript entries after it
+(`session-metrics.jq`; self-reports do not count). `metrics-rollup.sh` reports
+`totals.junk`, `totals.junk_rate` and `totals.junk_by_day` (by session start
+date). Test: `bash hooks/metrics-junk.test.sh`.
+
 Fields are `env`, `cost`, `time`, `dec`, `turns`, `work` (plus `split`, unused).
 Layouts are `row` and `block`. Both draw from one `fields` list, so field order
 cannot drift between them.
