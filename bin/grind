@@ -1755,7 +1755,8 @@ while [ "$i" -lt "$count" ]; do
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 \
       claude -p --output-format stream-json --verbose \
          --max-budget-usd "$item_hard" --model "$model" --effort "$effort" \
-         --permission-mode "$permission_mode" &
+         --permission-mode "$permission_mode" \
+         --disallowedTools Monitor ScheduleWakeup &
     cpid=$!
     # `wait` and the `command -v` test both report non-zero in the ordinary
     # course of things -- a worker that failed, a host without pkill -- and
