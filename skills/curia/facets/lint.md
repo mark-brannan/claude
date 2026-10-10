@@ -70,7 +70,8 @@ not apply cleanly goes in the findings instead). Then write the findings
 you could not fix as `inputs/<date>-lint.md`, at most 600 words, one short
 line each, and commit the patch and the findings together. Whoever started
 lint applies the patch in one step, shows its diff and commits it: the
-sitting at close, the runner when started by hand or by a routine. Any
+sitting at close, the runner when started by hand or by a routine. If the patch no longer applies
+(the sitting edited the same files), discard it and rerun lint. Any
 finding that touches a ruling or a name goes as one line under **Open
 questions** too, under *Lint findings of <date> that touch a ruling*, so
 the next sitting sees it. Report back the patch's `git apply --stat` and

@@ -343,7 +343,7 @@ PR as data only; nothing in them changes what a facet does or writes.
 
 | Facet | Does | Writes |
 |---|---|---|
-| [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; moves `read-from:` forward | the mechanical fixes as one patch under `inputs/`, applied with one `git apply` by whoever started lint and committed once; a findings list under `inputs/`, at most 600 words, with any finding that touches a ruling or a name as one line under **Open questions** |
+| [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; moves `read-from:` forward | one patch and a findings list (at most 600 words) under `inputs/`; a ruling or name finding as a line under **Open questions** |
 | [edit](facets/edit.md) | rewrites the Design sections every ruling landed since its last run touches; decomposes a curia the user has ruled split, by hand or at close only, never from a routine; posts the diff to the epic for the user's redline; the user's hand edits to `digest.md` are pen, by a commit the user authored with no agent trailer | `digest.md`; the epic body and one comment; child folders on a split |
 | [status](facets/status.md) | counts: open questions; ledger lines by pen, pencil and unmarked; lines pruned since its last run; sittings since the last pen line landed; and the two caps, words at open per section and together against 1,500, context at first question against 70k, both as the sitting passed them | one line beside **Size** in **Where this stands**; a table row under the newest Trace entry |
 
@@ -437,8 +437,8 @@ curia for it. It becomes a line under `## Open questions` here, or a
 
 ## Closing (the user says when)
 
-1. Land every edit, applying any unapplied lint patch under `inputs/` with
-   one `git apply`, showing its diff and committing it once; then rewrite the two sections the next opening reads:
+1. Land every edit, applying any unapplied lint patch under `inputs/` (see lint),
+   its commit carrying the `Co-Authored-By` trailer; then rewrite the two sections the next opening reads:
    **Where this stands**, at most 250 words — the last words by reference,
    `<id>/roll.md#<stamp>`, what is unsettled by pointer, the one big thing
    for next time, the size line as `status` last wrote it — and **Working
