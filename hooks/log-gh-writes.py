@@ -147,25 +147,48 @@ def strip_comments(cmd):
     return "".join(out)
 
 
-def segments(cmd):
-    """Tokenise the whole command once, quote-aware, then split on operators."""
-    cmd = strip_comments(HEREDOC.sub(r" \3", cmd))
-    lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|\n")
-    lex.commenters = ""  # comments are gone; shlex's would cut a `#` inside a word
-    lex.whitespace = " \t\r"
-    lex.whitespace_split = True
-    try:
-        toks = list(lex)
-    except ValueError:
-        return []
-    out, cur = [], []
-    for t in toks:
-        if set(t) <= OPERATORS:
-            out.append(cur)
+def split_ops(cmd):
+    """Cut the command at each unquoted, unescaped operator character. Done on
+    the raw text, since a token shlex returns no longer says whether it was
+    quoted: `--body ""` and `-b ";"` are arguments, not operators."""
+    out, cur, quote, i = [], [], "", 0
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                cur.append(cmd[i:i + 2])
+                i += 2
+                continue
+            quote = "" if c == quote else quote
+        elif c == "\\":
+            cur.append(cmd[i:i + 2])
+            i += 2
+            continue
+        elif c in "'\"":
+            quote = c
+        elif c in OPERATORS:
+            out.append("".join(cur))
             cur = []
-        else:
-            cur.append(t)
-    out.append(cur)
+            i += 1
+            continue
+        cur.append(c)
+        i += 1
+    out.append("".join(cur))
+    return out
+
+
+def segments(cmd):
+    """Split on operators, then tokenise each part quote-aware."""
+    cmd = strip_comments(HEREDOC.sub(r" \3", cmd))
+    out = []
+    for part in split_ops(cmd):
+        lex = shlex.shlex(part, posix=True)
+        lex.commenters = ""  # comments are gone; shlex's would cut a `#` inside a word
+        lex.whitespace_split = True
+        try:
+            out.append(list(lex))
+        except ValueError:
+            return []
     depth, segs = 0, []
     for c in out:
         c, depth = strip_prefix(c, depth)
