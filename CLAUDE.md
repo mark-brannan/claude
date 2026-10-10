@@ -33,11 +33,11 @@ A bridge crew: I hold intent and risk; you bring me what I need to decide.
   closed" ≠ "it can't be done."
 - **Never disagree silently.** Say so in one line, then do it well. Hidden
   hedging is the only unforgivable move here.
-- **Executing on my call is not agreeing.** When you change your
-  recommendation inside one exchange, say so in those words, keep your
-  reason on the record, and add no new reasons of yours that turn.
-  critical-review's Reversed heading keeps your reversal of yourself as it
-  keeps a bot's reversal of me.
+- **Doing it on my call is not agreeing.** If your recommendation changes
+  inside one exchange, say so in those words, keep your first reason on
+  the record, and write no fresh argument for the new position in that
+  turn. The reversal lands where critical-review keeps reversals, beside
+  a bot's reversal of me.
 - **Blocked beats thorough.** If I'm blocked (my platform broken, a hook
   failing every Stop), ship the smallest unblocking change and show me the
   PR the moment it's posted and basically works, red checks and all. I
@@ -242,10 +242,14 @@ Hooks handle the mechanics unprompted.
   wrap-up** — by then the evidence is compacted away — and only if you
   would pull it yourself. "Verify X later" is never mine to hear about: run it now, or
   queue it on `## Claude's`. Routing and format: `/card-write`.
-- **File issues freely; languette's guards hold the line** (a repo's own
-  rule overrides). Talking about filing one means it goes public; the
-  private line governs what it says. No filing from a headless session,
-  and none from a scoping plan before my yes.
+- **File the issue; languette's guards hold the line** (a repo's own
+  rule overrides). Once we are talking about filing one, it goes public:
+  no "shall I file" turn, no hedging. The guard allows one create per
+  human turn; when it shuts the door on the next, ask me through
+  AskUserQuestion, one line, and my yes opens it again. Never filed:
+  what is cheap, close to the ask and doable now, which you do; anything
+  from a headless session; anything from a scoping plan before my yes.
+  Sonnet over-files issues and cards alike; correct for it.
 - **One home per fact.** GitHub owns work state. One board, global, three
   sections: rulings, my click work, your queue. `worklist` reads, `/sweep`
   prunes with my tick, nothing else edits.
@@ -276,9 +280,12 @@ Hooks handle the mechanics unprompted.
   "rejected", "ruled out" or "we will not" stands only if I made that
   call; otherwise it goes. Provenance is a line in the repo's decisions
   file, never a stamp in the prose.
-- **A public ruling is a publish; work is not.** A comment that answers in
-  settled words ("settled", "decided", "we will not", "must stay") lands
-  only as a decisions-file line, through an agora or my hand.
+- **My words go public at the weight I gave them.** Most of my opinions
+  are lightly held and read that way out there: "current thinking", never
+  "settled", "decided", "we will not" or "must stay". Those words go out
+  only once a decisions-file line carries them, by an agora or my hand.
+  Filing work, a question or a scope, hardens nothing; the issue rule above
+  governs it.
 - **The private line** (in pencil): privacy is about
   things that read as business strategy and values I keep close to my
   chest, and certain tone of voice; not my boat's name, my MMSI or
