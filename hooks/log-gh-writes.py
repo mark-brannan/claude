@@ -137,7 +137,7 @@ def strip_comments(cmd):
             continue
         elif c in "'\"":
             quote = c
-        elif c == "#" and (not out or out[-1] in " \t\r\n;&|(){"):
+        elif c == "#" and (not out or out[-1] in " \t\r\n;&|()"):
             i = cmd.find("\n", i)
             if i < 0:
                 break

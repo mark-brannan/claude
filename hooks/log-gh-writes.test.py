@@ -153,7 +153,8 @@ class LogGhWritesTest(unittest.TestCase):
     def test_hash_inside_a_word_is_not_a_comment(self):
         for cmd, verb in (("echo build#12 && gh pr merge 5", "pr merge"),
                           ("gh pr create --title fix#12; gh issue close 3", "pr create"),
-                          ("gh issue comment https://github.com/o/r/issues/5#issuecomment-1 -b x", "issue comment")):
+                          ("gh issue comment https://github.com/o/r/issues/5#issuecomment-1 -b x", "issue comment"),
+                          ("n=${#a[@]}; gh pr merge 5", "pr merge")):
             self.assertIn(verb, [r["verb"] for r in self.run_hook(cmd)], cmd)
             self.log.unlink()
         self.assertEqual(self.one("echo a#b && gh pr merge 5")["target"], "5")
