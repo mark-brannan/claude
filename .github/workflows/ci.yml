@@ -75,10 +75,19 @@ jobs:
           persist-credentials: false
       - run: sudo apt-get update -q && sudo apt-get install -y -q jq
       # npm-publish-auth and pr-ownership-context read commands through the
-      # languette plugin's scanner; their suites run it from languette's main.
-      # Cost per push: one shallow clone, a few seconds.
+      # languette plugin's scanner; their suites run it from a pinned languette
+      # release (v0.0.2, the first with `scan`), bumped with the plugin, so a
+      # push to languette's main never runs here unreviewed.
+      # Cost per push: one single-commit fetch, a few seconds.
       - name: Check out languette
-        run: git clone -q --depth 1 https://github.com/mark-brannan/languette "$RUNNER_TEMP/languette"
+        env:
+          LANGUETTE_SHA: 58ae556736afaacf0b0ea65dabc86384d5e17b74
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/languette"
+          git init -q "$d"
+          git -C "$d" fetch -q --depth 1 https://github.com/mark-brannan/languette "$LANGUETTE_SHA"
+          git -C "$d" checkout -q FETCH_HEAD
       - name: Python test suites
         run: for t in bin/*.test.py hooks/*.test.py lib/*.test.py; do echo "== $t"; python3 "$t"; done
       - name: Run every other test suite in parallel
