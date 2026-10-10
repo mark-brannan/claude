@@ -53,6 +53,20 @@ jq -s '
        tool_calls:   (map(.tool_calls // 0) | add),
        decisions:    (map(.decisions.total // 0) | add),
        gates:        (map(.decisions.gate // 0) | add),
+       junk:         (map(.decisions.junk // 0) | add),
+       junk_rate:    ((map(.decisions.total // 0) | add) as $n
+                      | if $n > 0 then ((map(.decisions.junk // 0) | add) / $n * 100 | round) else null end),
+       # Junk decisions per day (a decision followed by non-retracted friction
+       # within 30 index units; see session-metrics.jq). Day is the session
+       # start date; rate is junk as a percent of the decisions that day.
+       junk_by_day: (map(select(.started_at != null))
+                     | group_by(.started_at[0:10])
+                     | map({day: .[0].started_at[0:10],
+                            decisions: (map(.decisions.total // 0) | add),
+                            junk: (map(.decisions.junk // 0) | add)}
+                           | . + {junk_rate: (if .decisions > 0
+                                              then (.junk / .decisions * 100 | round)
+                                              else null end)})),
        cache_churn_pct_avg: ([.[] | .cache_churn_pct | select(. != null)]
                               | if length > 0 then (add / length | round) else null end)
      }}' "${files[@]}" > "$M/metrics.json.$$" 2>/dev/null \
