@@ -110,9 +110,11 @@ them with the proof, per `/card-write`.
 A worker starts at ~45k context from the system prompt and the repo's
 standing orders, so "100k" is 55k of work. Finished workers ran 59k–147k.
 One `Monitor` over the sub-agent transcripts, each threshold crossed once
-per worker; an issue rated hard on Opus gets every row +40k, which the
-script applies from the `HARD` list, so keep that list current as you
-dispatch.
+per worker; an issue rated hard on Opus gets every row +40k. The script
+reads that offset from the dispatch plan, a file you append one line to at
+each dispatch, the moment the agent id comes back: `agent-<id> <issue>
+<offset>`, offset 0 or 40000. A worker with no line when it
+reaches 95k is reported once as `NOPLAN` and held to the base rows.
 
 | context | action |
 |---|---|
@@ -122,14 +124,19 @@ dispatch.
 
 ```sh
 D=<project dir>/<session-id>/subagents; seen=""
-HARD="agent-<id> agent-<id>"   # workers on an issue rated hard: +40k per row
+PLAN=$D/dispatch-plan   # one line per dispatch: agent-<id> <issue> <offset>
+# at each dispatch: echo "agent-<id> <issue> 40000" >> <project dir>/<session-id>/subagents/dispatch-plan
 while true; do
   for f in "$D"/agent-*.jsonl; do
     [ -f "$f" ] || continue; n=$(basename "$f" .jsonl)
-    case " $HARD " in *" $n "*) off=40000;; *) off=0;; esac
+    off=$(awk -v n="$n" '$1==n {print $3; exit}' "$PLAN" 2>/dev/null)
     p=$(jq -rs '[.[] | select(.type=="assistant") | .message.usage
         | (.input_tokens//0)+(.cache_read_input_tokens//0)+(.cache_creation_input_tokens//0)]
         | max // 0' "$f")
+    if [ -z "$off" ]; then off=0
+      [ "$p" -ge 95000 ] && ! echo "$seen" | grep -qF "$n:noplan" \
+        && { seen="$seen $n:noplan"; echo "NOPLAN $n has no line in $PLAN"; }
+    fi
     for base in 95000 110000 140000; do
       t=$((base + off))
       [ "$p" -ge "$t" ] && ! echo "$seen" | grep -qF "$n:$base" \
