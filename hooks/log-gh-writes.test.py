@@ -4,6 +4,8 @@
 # Cost per push: well under a second, a step in CI's existing tool-tests job.
 # Each case runs the hook as Claude Code does, a subprocess fed PostToolUse
 # JSON on stdin, with CLAUDE_STATE_REPO and HOME pointed at a throwaway dir.
+import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -11,9 +13,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.dont_write_bytecode = True
 HOOK = Path(__file__).resolve().parent / "log-gh-writes.py"
+sys.path.insert(0, str(HOOK.parent))
 
 
 class LogGhWritesTest(unittest.TestCase):
@@ -28,8 +32,15 @@ class LogGhWritesTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_hook(self, cmd, tool="Bash", stdout="", sid="abc123"):
-        ev = {"tool_name": tool, "session_id": sid, "cwd": str(self.home),
+    def git_repo(self, name, origin):
+        d = self.home / name
+        d.mkdir()
+        for args in (["init", "-q", "-b", "main"], ["remote", "add", "origin", origin]):
+            subprocess.run(["git", "-C", str(d), *args], check=True, capture_output=True)
+        return d
+
+    def run_hook(self, cmd, tool="Bash", stdout="", sid="abc123", cwd=None):
+        ev = {"tool_name": tool, "session_id": sid, "cwd": str(cwd or self.home),
               "tool_input": {"command": cmd}, "tool_response": {"stdout": stdout}}
         r = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(ev),
                            capture_output=True, text=True, env=self.env)
@@ -127,6 +138,81 @@ class LogGhWritesTest(unittest.TestCase):
 
     def test_unbalanced_quote_fails_open(self):
         self.assertEqual(self.run_hook("gh pr comment 1 --body 'oops"), [])
+
+    def test_heredoc_opener_line_keeps_the_command(self):
+        for cmd, verb, target in (
+                ("cat <<'EOF' | gh pr comment 1 -F -\nbody\nEOF", "pr comment", "1"),
+                ("cat <<'EOF' | gh issue comment 5 -F -\ngh pr merge 9\nEOF", "issue comment", "5"),
+                ("cat <<EOF && gh pr merge 3\nbody\nEOF", "pr merge", "3"),
+                ("gh issue create --body-file - <<'EOF'\nbody\nEOF", "issue create", "")):
+            r = self.one(cmd)
+            self.assertEqual((r["verb"], r["target"]), (verb, target), cmd)
+            self.log.unlink()
+
+    def test_short_flag_is_boolean_on_one_verb_and_a_value_on_another(self):
+        self.assertEqual(self.one("gh pr merge -r 42")["target"], "42")
+        self.log.unlink()
+        self.assertEqual(self.one("gh pr review -r -b x 42")["target"], "42")
+        self.log.unlink()
+        self.assertEqual(self.one("gh pr review -a -c 42")["target"], "42")
+        self.log.unlink()
+        r = self.one("gh pr create -r alice -m v1 --title t", stdout="https://github.com/o/r/pull/9\n")
+        self.assertEqual(r["target"], "https://github.com/o/r/pull/9")
+
+    def test_repo_flag_before_the_verb(self):
+        self.assertEqual(self.one("gh pr -R o/r merge 8")["repo"], "o/r")
+
+    def test_push_that_writes_nothing_not_logged(self):
+        for cmd in ("git push --dry-run origin b", "git push -n origin b", "git push -fn origin b",
+                    "git push --help", "git -C . push --dry-run"):
+            self.assertEqual(self.run_hook(cmd), [], cmd)
+        self.assertEqual(self.one("git push -u -o ci.skip origin b")["target"], "origin b")
+
+    def test_push_repo_comes_from_the_directory_it_runs_in(self):
+        other = self.git_repo("other", "git@github.com:o/other.git")
+        self.git_repo("here", "https://github.com/o/here.git")
+        for cmd in (f"git -C {other} push origin b", f"cd {other} && git push origin b",
+                    f"cd {other}; gh pr merge 1", f"(cd {other} && git push origin b)"):
+            r = self.one(cmd, cwd=self.home / "here")
+            self.assertEqual(r["repo"], "o/other", cmd)
+            self.assertNotIn(")", r["target"], cmd)
+            self.log.unlink()
+        self.assertEqual(self.one("git push origin b", cwd=self.home / "here")["repo"], "o/here")
+
+    def test_more_write_verbs(self):
+        for cmd, verb in (("gh pr update-branch 3", "pr update-branch"), ("gh pr lock 3 -r spam", "pr lock"),
+                          ("gh issue transfer 3 o/other", "issue transfer"), ("gh issue pin 3", "issue pin"),
+                          ("gh release create v1 --notes x", "release create"),
+                          ("gh release upload v1 a.zip", "release upload"),
+                          ("gh workflow run ci.yml -f x=1", "workflow run"), ("gh run rerun 9", "run rerun"),
+                          ("gh run cancel 9", "run cancel"), ("gh repo archive o/r --yes", "repo archive"),
+                          ("gh repo edit o/r --visibility private", "repo edit"),
+                          ("gh label clone o/r", "label clone")):
+            self.assertEqual(self.one(cmd)["verb"], verb, cmd)
+            self.log.unlink()
+        for cmd in ("gh release list", "gh run view 9", "gh workflow list", "gh repo view o/r"):
+            self.assertEqual(self.run_hook(cmd), [], cmd)
+
+    def test_command_wrapped_in_shell_syntax(self):
+        for cmd, target in (("if true; then gh pr merge 1; fi", "1"), ("! gh pr merge 2", "2"),
+                            ("(gh pr merge 3)", "3"), ("sudo gh pr merge 4", "4"),
+                            ("while true; do gh pr merge 5; done", "5"),
+                            ("echo 6 | xargs -I{} gh pr merge {}", "{}"), ("{ gh pr merge 7; }", "7")):
+            self.assertEqual(self.one(cmd)["target"], target, cmd)
+            self.log.unlink()
+        r = self.one("url=$(gh pr create --title t)", stdout="https://github.com/o/r/pull/9\n")
+        self.assertEqual(r["target"], "https://github.com/o/r/pull/9")
+
+    def test_no_state_dir_returns_without_raising(self):
+        spec = importlib.util.spec_from_file_location("log_gh_writes", HOOK)
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        import lib_state
+        ev = {"tool_name": "Bash", "session_id": "abc123", "tool_input": {"command": "gh pr merge 1"}}
+        with mock.patch.object(lib_state, "state_dir", return_value=None), \
+                mock.patch.object(sys, "stdin", io.StringIO(json.dumps(ev))):
+            hook.main()  # main() itself, not the wrapper that would swallow a TypeError
+        self.assertFalse(self.log.exists())
 
 
 if __name__ == "__main__":
