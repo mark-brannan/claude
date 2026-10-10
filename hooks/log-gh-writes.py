@@ -16,7 +16,9 @@ One line per write, in the state dir's metrics/gh-writes/<session>.jsonl:
      "verb": "pr merge", "target": "42"}
 target is the PR/issue number or URL as typed, the API path, or the pushed
 refspec; for a create it is read from the URL gh prints. PostToolUse fires
-only for a call that succeeded, so a failed write is not logged.
+only for a Bash call that succeeded, so the log is per call, not per command:
+`gh pr merge 1 || true` logs a merge that failed, and in `a && b` where b
+fails the successful `a` is dropped.
 
 Not covered: commands the human runs outside Claude; a write made by a
 script the command only names (`bash release.sh`). Fails open: any error
@@ -38,26 +40,49 @@ VERBS = {
     "issue": {"create", "close", "reopen", "edit", "comment", "delete"},
     "label": {"create", "edit", "delete"},
 }
-SPLIT = re.compile(r"&&|\|\||[;|\n]")
+OPERATORS = set(";&|\n")
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(?:.*?\n)?[ \t]*\2[ \t]*(?=\n|$)", re.S)
+CRED = re.compile(r"(?<=://)[^/@\s]+@")
 FIELD_FLAGS = {"-f", "-F", "--field", "--raw-field", "--input"}
 # Flags that take a value, so the value is not mistaken for the target.
 VALUE_FLAGS = {"-R", "--repo", "-b", "--body", "-t", "--title", "-F", "--body-file",
                "-m", "--merge-method", "-l", "--label", "-a", "--assignee", "-B",
                "--base", "-H", "--head", "-X", "--method", "-f", "--field", "-q",
                "--jq", "-t", "--template", "--add-label", "--remove-label",
-               "-r", "--reviewer", "--subject", "--match-head-commit", "-d",
+               "-r", "--reviewer", "--subject", "--match-head-commit",
                "--description", "-c", "--color", "--add-assignee", "-M",
                "--milestone", "--repo-url", "-H", "--header", "--hostname",
                "--input", "--raw-field", "--cache", "-p", "--preview"}
 
 
-def words(segment):
+# git push has few value flags; gh's -f and -d would swallow the remote.
+GIT_PUSH_VALUE_FLAGS = {"-o", "--push-option", "--repo", "--receive-pack", "--exec"}
+
+
+def segments(cmd):
+    """Tokenise the whole command once, quote-aware, then split on operators."""
+    cmd = HEREDOC.sub("", cmd)
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|\n")
+    lex.whitespace = " \t\r"
+    lex.whitespace_split = True
     try:
-        toks = shlex.split(segment, comments=False)
+        toks = list(lex)
     except ValueError:
         return []
+    out, cur = [], []
+    for t in toks:
+        if set(t) <= OPERATORS:
+            out.append(cur)
+            cur = []
+        else:
+            cur.append(t)
+    out.append(cur)
+    return [strip_prefix(c) for c in out if c]
+
+
+def strip_prefix(toks):
     while toks and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", toks[0]) or toks[0] in ("env", "command", "time")):
-        toks.pop(0)
+        toks = toks[1:]
     return toks
 
 
@@ -71,13 +96,13 @@ def flag_value(args, names):
     return ""
 
 
-def positionals(args):
+def positionals(args, value_flags=VALUE_FLAGS):
     out, skip = [], False
     for a in args:
         if skip:
             skip = False
         elif a.startswith("-"):
-            skip = a in VALUE_FLAGS
+            skip = a in value_flags
         else:
             out.append(a)
     return out
@@ -92,7 +117,7 @@ def classify(toks):
         while i < len(toks) and toks[i].startswith("-"):  # git -C dir push: skip option and its value
             i += 2 if toks[i] in ("-C", "-c") else 1
         if i < len(toks) and toks[i] == "push":
-            pos = positionals(toks[i + 1:])
+            pos = positionals(toks[i + 1:], GIT_PUSH_VALUE_FLAGS)
             return "git push", " ".join(pos), ""
         return None
     if toks[0] != "gh" or len(toks) < 2:
@@ -104,12 +129,15 @@ def classify(toks):
         return None
     if pos[0] == "api":
         method = flag_value(args, ["-X", "--method"]).upper()
+        if not method:
+            method = next((a[2:].upper() for a in args if a.startswith("-X") and len(a) > 2), "")
         has_fields = any(a in FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
-        if method in ("", "GET") and not has_fields:
-            return None
-        if method == "GET":
+        if method == "GET" or (not method and not has_fields):
             return None
         path = pos[1] if len(pos) > 1 else ""
+        if path == "graphql" and not method and not any(
+                re.match(r"\s*mutation\b", a.split("=", 1)[-1]) for a in args if a.startswith("query=")):
+            return None
         m = re.match(r"^/?repos/([^/]+/[^/]+)", path)
         return f"api {method or 'POST'}", path, repo or (m.group(1) if m else "")
     if len(pos) >= 2 and pos[0] in VERBS and pos[1] in VERBS[pos[0]]:
@@ -147,8 +175,8 @@ def printed_url_target(resp):
 
 def writes(cmd, cwd, resp):
     out = []
-    for seg in SPLIT.split(cmd):
-        hit = classify(words(seg))
+    for toks in segments(cmd):
+        hit = classify(toks)
         if not hit:
             continue
         verb, target, repo = hit
@@ -156,6 +184,7 @@ def writes(cmd, cwd, resp):
             target = printed_url_target(resp)
         if verb == "git push" and not target:
             target = pushed_ref(cwd)
+        target = CRED.sub("", target)
         m = re.match(r"https://github\.com/([^/]+/[^/]+)/", target)
         out.append({"verb": verb, "target": target, "repo": repo or (m.group(1) if m else "") or repo_of(cwd)})
     return out
