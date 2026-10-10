@@ -1,8 +1,9 @@
 # Facet: lint
 
 A sub-agent prompt. Run on Sonnet, medium, with the curia id, no worktree,
-no sub-agents of its own; it writes only the curia's derived files and one
-report, and commits each the moment it exists. Started by the closing
+no sub-agents of its own; it changes no tracked file. It writes its
+mechanical fixes as one patch and its findings as one short report, both
+under `inputs/`, and commits those two the moment they exist. Started by the closing
 sitting in the background, by `/curia <id> lint`, or by a routine.
 
 ---
@@ -62,9 +63,16 @@ Find and fix, mechanically, in one commit of the derived files:
   (see the skill, During), so list them and fix nothing;
 - Trace entries that no longer earn their place.
 
-Then write the findings you could not fix as
-`inputs/<date>-lint.md`, at most 600 words, and commit it. Any finding
-that touches a ruling or a name goes as one line under **Open questions**
-too, under *Lint findings of <date> that touch a ruling*, so the next
-sitting sees it. Report back one line per file changed with `wc -lw`
-before and after, and the findings list.
+Make no edit in place. Write every fix above as one patch,
+`inputs/<date>-lint.patch`, that applies with a single `git apply` from
+the state repo's root (check it with `git apply --check`; a fix that does
+not apply cleanly goes in the findings instead). Then write the findings
+you could not fix as `inputs/<date>-lint.md`, at most 600 words, one short
+line each, and commit the patch and the findings together. Whoever started
+lint applies the patch in one step, shows its diff and commits it: the
+sitting at close, the runner when started by hand or by a routine. If the patch no longer applies
+(the sitting edited the same files), discard it and rerun lint. Any
+finding that touches a ruling or a name goes as one line under **Open
+questions** too, under *Lint findings of <date> that touch a ruling*, so
+the next sitting sees it. Report back the patch's `git apply --stat` and
+the findings list, no more.
