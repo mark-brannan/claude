@@ -405,7 +405,8 @@
       "options": {
         "private_terms_file": "/home/solace/claude_prompts_scratch/state/global/private-terms.txt",
         "private_repos": "mark-brannan/claude_prompts_scratch",
-        "guard_worktrees": true
+        "guard_worktrees": true,
+        "record_decisions": true
       }
     }
   }
