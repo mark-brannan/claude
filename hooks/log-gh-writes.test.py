@@ -136,6 +136,27 @@ class LogGhWritesTest(unittest.TestCase):
         self.assertEqual(self.run_hook("gh api graphql -f query='query{viewer{login}}'"), [])
         self.assertEqual(self.one("gh api graphql -f query='mutation{x}'")["verb"], "api POST")
 
+    def test_graphql_mutation_in_every_field_spelling(self):
+        for cmd in ("gh api graphql -fquery='mutation{x}'", "gh api graphql --raw-field=query='mutation{x}'",
+                    "gh api graphql -F query=@m.graphql"):
+            self.assertEqual(self.one(cmd)["verb"], "api POST", cmd)
+            self.log.unlink()
+        self.assertEqual(self.run_hook("gh api graphql -fquery='query{viewer{login}}'"), [])
+
+    def test_hash_inside_a_word_is_not_a_comment(self):
+        for cmd, verb in (("echo build#12 && gh pr merge 5", "pr merge"),
+                          ("gh pr create --title fix#12; gh issue close 3", "pr create"),
+                          ("gh issue comment https://github.com/o/r/issues/5#issuecomment-1 -b x", "issue comment")):
+            self.assertIn(verb, [r["verb"] for r in self.run_hook(cmd)], cmd)
+            self.log.unlink()
+        self.assertEqual(self.one("echo a#b && gh pr merge 5")["target"], "5")
+
+    def test_a_real_comment_hides_what_follows_it(self):
+        self.assertEqual(self.run_hook("echo hi # gh pr merge 5"), [])
+        self.assertEqual(self.one("gh pr merge 5 # gh pr close 6\n")["target"], "5")
+        self.log.unlink()
+        self.assertEqual(self.one("gh pr comment 7 --body '#8 is fixed' -R o/r")["repo"], "o/r")
+
     def test_unbalanced_quote_fails_open(self):
         self.assertEqual(self.run_hook("gh pr comment 1 --body 'oops"), [])
 

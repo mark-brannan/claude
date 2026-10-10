@@ -118,10 +118,40 @@ ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 OPENER = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_]*=)?(?:\$\(|`|\()+")
 
 
+def strip_comments(cmd):
+    """Drop each shell comment: an unquoted `#` that starts a word, to the end
+    of its line. A `#` inside a word (`build#12`, `.../5#issuecomment-1`) or a
+    quote is text, as in a real shell."""
+    out, quote, i = [], "", 0
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                out.append(cmd[i:i + 2])
+                i += 2
+                continue
+            quote = "" if c == quote else quote
+        elif c == "\\":
+            out.append(cmd[i:i + 2])
+            i += 2
+            continue
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and (not out or out[-1] in " \t\r\n;&|(){"):
+            i = cmd.find("\n", i)
+            if i < 0:
+                break
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def segments(cmd):
     """Tokenise the whole command once, quote-aware, then split on operators."""
-    cmd = HEREDOC.sub(r" \3", cmd)
+    cmd = strip_comments(HEREDOC.sub(r" \3", cmd))
     lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|\n")
+    lex.commenters = ""  # comments are gone; shlex's would cut a `#` inside a word
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
     try:
@@ -232,12 +262,11 @@ def classify(toks):
         method = flag_value(args, ["-X", "--method"]).upper()
         if not method:
             method = next((a[2:].upper() for a in args if a.startswith("-X") and len(a) > 2), "")
-        has_fields = any(a in FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
+        has_fields = any(a in FIELD_FLAGS or re.match(r"-[fF].", a) or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
         if method == "GET" or (not method and not has_fields):
             return None
         path = pos[1] if len(pos) > 1 else ""
-        if path == "graphql" and not method and not any(
-                re.match(r"\s*mutation\b", a.split("=", 1)[-1]) for a in args if a.startswith("query=")):
+        if path == "graphql" and not method and not any(is_mutation(a) for a in args):
             return None
         m = re.match(r"^/?repos/([^/]+/[^/]+)", path)
         return f"api {method or 'POST'}", path, repo or (m.group(1) if m else ""), []
@@ -245,6 +274,16 @@ def classify(toks):
         pos = positionals(args, GH_WRITES[tuple(head[:2])])
         return f"{pos[0]} {pos[1]}", (pos[2] if len(pos) > 2 else ""), repo, []
     return None
+
+
+QUERY_FIELD = re.compile(r"^(?:-[fF]|--(?:raw-)?field=)?query=(.*)$", re.S)
+
+
+def is_mutation(arg):
+    """A graphql `query=` field, in any spelling, that is a mutation. A value
+    read from a file (`query=@f.graphql`) cannot be seen, so it counts as one."""
+    m = QUERY_FIELD.match(arg)
+    return bool(m) and bool(re.match(r"\s*(?:mutation\b|@)", m.group(1)))
 
 
 def repo_of(cwd):
