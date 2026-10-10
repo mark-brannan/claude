@@ -67,35 +67,6 @@ jobs:
           fi
           echo "ok: no \$CLAUDE_PROJECT_DIR hook fallbacks"
 
-  # The suites on the shared awk tokenizer (lib-shell-words.awk), under all
-  # three awks in one job.
-  guard-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Install mawk, gawk and original-awk
-        run: |
-          set -euo pipefail
-          sudo apt-get update -q
-          sudo apt-get install -y -q mawk gawk original-awk jq
-      - name: Run the lib-shell-words suites under each awk
-        run: |
-          set -euo pipefail
-          status=0
-          for impl in mawk gawk original-awk; do
-            d=$(mktemp -d)
-            ln -s "$(command -v "$impl")" "$d/awk"
-            for t in hooks/npm-publish-auth.test.sh \
-                     hooks/pr-ownership-context.test.sh; do
-              echo "::group::$t under $impl"
-              if AWK_PATH=$d bash "$t"; then echo "ok"; else status=1; echo "::error::$t failed under $impl"; fi
-              echo "::endgroup::"
-            done
-          done
-          exit $status
-
   tool-tests:
     runs-on: ubuntu-latest
     steps:
@@ -103,15 +74,28 @@ jobs:
         with:
           persist-credentials: false
       - run: sudo apt-get update -q && sudo apt-get install -y -q jq
+      # npm-publish-auth and pr-ownership-context read commands through the
+      # languette plugin's scanner; their suites run it from a pinned languette
+      # release (v0.0.2, the first with `scan`), bumped with the plugin, so a
+      # push to languette's main never runs here unreviewed.
+      # Cost per push: one single-commit fetch, a few seconds.
+      - name: Check out languette
+        env:
+          LANGUETTE_SHA: 58ae556736afaacf0b0ea65dabc86384d5e17b74
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/languette"
+          git init -q "$d"
+          git -C "$d" fetch -q --depth 1 https://github.com/mark-brannan/languette "$LANGUETTE_SHA"
+          git -C "$d" checkout -q FETCH_HEAD
       - name: Python test suites
         run: for t in bin/*.test.py hooks/*.test.py lib/*.test.py; do echo "== $t"; python3 "$t"; done
       - name: Run every other test suite in parallel
+        env:
+          LANGUETTE_ROOT: ${{ runner.temp }}/languette
         run: |
           set -euo pipefail
           printf '%s\n' hooks/*.test.sh bin/*.test.sh \
-            | grep -vFf <(printf '%s\n' \
-                hooks/npm-publish-auth.test.sh \
-                hooks/pr-ownership-context.test.sh) \
             | xargs -P 4 -I{} bash -c '
                 t="$1"
                 echo "::group::$t"
@@ -162,7 +146,7 @@ jobs:
     uses: mark-brannan/.github/.github/workflows/complexity.yml@main
 
   ci-gate:
-    needs: [shellcheck, seeded, guard-tests, tool-tests, features, languette-options, nonempty, pr-title]
+    needs: [shellcheck, seeded, tool-tests, features, languette-options, nonempty, pr-title]
     if: always()
     permissions: {}
     uses: mark-brannan/.github/.github/workflows/ci-gate.yml@main

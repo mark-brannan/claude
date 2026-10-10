@@ -4,15 +4,30 @@
 # The hook only decides -- nothing here runs npm -- so every case is a
 # payload in and a decision out.
 #
-# AWK_PATH, as in the other lib-shell-words suites, is a directory whose
-# `awk` is the implementation to test; ci.yml runs this under all three.
+# The hook reads commands through the languette plugin's scanner. LANGUETTE_ROOT
+# is the languette checkout to test against (ci.yml clones it); unset, the
+# user-scope plugin install this machine has. Each case runs under a scratch
+# HOME whose installed_plugins.json points there.
 set -uo pipefail
-[ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$HERE/npm-publish-auth.sh"
 pass=0
 fail=0
+
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+REAL_PLUGINS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
+unset CLAUDE_CONFIG_DIR
+export HOME="$TMP/home"; mkdir -p "$HOME/.claude/plugins"
+ROOT=${LANGUETTE_ROOT:-$(jq -r '[.plugins | to_entries[] | select(.key | startswith("languette@")) | .value[]
+                                 | select(.scope == "user") | .installPath][0] // empty' "$REAL_PLUGINS" 2>/dev/null)}
+printf 'x' | python3 -I "$ROOT/languette/__main__.py" scan >/dev/null 2>&1 ||
+  { echo "FAIL: no languette with \`scan\` at '$ROOT' (set LANGUETTE_ROOT to a languette checkout)"; exit 1; }
+plugins() {  # plugins <install path>: the scratch HOME's languette install
+  jq -n --arg p "$1" '{version:2,plugins:{"languette@languette":[{scope:"user",installPath:$p}]}}' \
+    > "$HOME/.claude/plugins/installed_plugins.json"
+}
+plugins "$ROOT"
 
 payload() {  # payload <command>
   jq -n --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}'
@@ -73,12 +88,21 @@ d=$(decide '{"tool_name":"Read","tool_input":{"file_path":"npm publish"}}')
 if [ "$d" = allow ]; then pass=$((pass + 1))
 else fail=$((fail + 1)); printf 'FAIL: non-Bash tool should be ignored, got %s\n' "$d"; fi
 
-# --- fails open when the shared scanner is missing -------------------------
-TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-cp "$HOOK" "$TMP/"
-d=$(decide "$(payload 'npm publish')" "$TMP/npm-publish-auth.sh")
-if [ "$d" = allow ]; then pass=$((pass + 1))
-else fail=$((fail + 1)); printf 'FAIL: a missing lib-shell-words.awk must fail open, got %s\n' "$d"; fi
+# --- fails open when languette's scanner is missing or can't say ----------
+fails_open() {  # fails_open <desc>: under whatever plugins() set last
+  local d; d=$(decide "$(payload 'npm publish')")
+  if [ "$d" = allow ]; then pass=$((pass + 1))
+  else fail=$((fail + 1)); printf 'FAIL: %s must fail open, got %s\n' "$1" "$d"; fi
+}
+rm "$HOME/.claude/plugins/installed_plugins.json"
+fails_open "no installed_plugins.json"
+plugins "$TMP/nowhere"
+fails_open "an install path that is gone"
+mkdir -p "$TMP/old/languette"
+printf 'import sys\nsys.exit(2)\n' > "$TMP/old/languette/__main__.py"
+plugins "$TMP/old"
+fails_open "a languette with no scan subcommand"
+plugins "$ROOT"
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
