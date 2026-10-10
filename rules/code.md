@@ -466,8 +466,9 @@ public" section.
 ## Cost
 
 - **One action per Bash call; never chain what a gate might refuse.** A
-  permission rule matches a whole command, and the `lib-shell-words.awk`
-  gates judge every segment of a chain with ambiguity resolving toward deny.
+  permission rule matches a whole command, and the gates that read it through
+  languette's `scan` judge every segment of a chain with ambiguity resolving
+  toward deny.
   So one refused segment kills the whole call, and the retry re-emits every
   other segment with it. `git fetch && git rebase && git diff` is one block
   plus a full re-send; as three calls it is three allowlist hits. Reads are
