@@ -14,7 +14,7 @@ READMEs say where things are and how to view them; they do not define.
 
 | Term | Definition today |
 |---|---|
-| Typed prompt | A human-typed user record: no injected tag, relayed message or headless opening. Slash commands count. Subagents excluded. |
+| Typed prompt | A user record a human typed, not a tag, relay or headless opening. Slash commands count. |
 | Pasted | Text inside `<pasted_content>` blocks. Counted apart; pasting is not typing. |
 | Touch | One typed prompt. |
 | Headless session | A session with zero typed prompts. |
@@ -70,7 +70,7 @@ history is complete. Board cards start when the item store did.
 | Chart | Formula | Question |
 |---|---|---|
 | Hours per day | keyboard hours and agent hours | Where does the time go? |
-| Sessions per day | headless vs interactive | Mix of unattended and attended work |
+| Sessions per day | headless vs interactive | What is the mix of unattended and attended work? |
 | Friction per day, by type | correction, override, rebuke, pushback counts | What kind of friction? |
 | Decisions pushed per day, by type | scoping, inline, gate counts | Which decisions reach me, and when? |
 | Friction per 100 prompts, weekly | 100 x friction events / typed prompts | Is friction falling relative to effort? |
@@ -90,10 +90,12 @@ history is complete. Board cards start when the item store did.
 | Chart | Formula | Question |
 |---|---|---|
 | Sessions per week, by prompts typed | buckets 0, 1, 2-5, 6+ | Do sessions need fewer touches? |
-| Merged PRs per week, by prompts on the branch | typed prompts summed over sessions that committed to the head branch; buckets 0-1, 2-5, 6+, none | How few touches does landed work take? |
+| Merged PRs per week, by prompts on the branch | typed prompts on the head branch's sessions; buckets 0-1, 2-5, 6+, none | How few touches does landed work take? |
 | Tool calls per prompt, weekly | tool calls / typed prompts | How much does one touch buy? |
 | Agent hours per keyboard hour, weekly | agent hours / keyboard hours | Does agent time grow faster than my time? |
 | Commits per prompt, weekly | commits / typed prompts | How much lands per touch? |
+
+A session counts toward a branch when it committed on the head branch.
 
 ## Open for ruling
 
