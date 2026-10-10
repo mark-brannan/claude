@@ -60,24 +60,24 @@ REVIEW_USD = 0.75
 FIX_USD = 1.00  # the fixup contract's stop rule: one honest attempt or ~$1
 KINDS = ("values", "risk", "direction", "legal", "people")
 # A PR touching one of these goes to the user's desk whatever its review says.
+# The third field marks a loop-2 governing document; the rest are safety paths.
 DESK = (
-    ("CLAUDE.md", r"(^|/)CLAUDE\.md$"),
-    ("rules/", r"(^|/)rules/"),
-    ("docs/", r"(^|/)docs/"),
-    ("curia", r"(^|/)curiae?/"),
-    ("decided.md", r"(^|/)decided\.md$"),
-    ("hooks/", r"(^|/)hooks/"),
-    ("settings", r"(^|/)settings(\.local)?\.json$"),
+    ("CLAUDE.md", r"(^|/)CLAUDE\.md$", True),
+    ("rules/", r"(^|/)rules/", True),
+    ("docs/", r"(^|/)docs/", True),
+    ("curia", r"(^|/)curiae?/", True),
+    ("decided.md", r"(^|/)decided\.md$", True),
+    ("hooks/", r"(^|/)hooks/", False),
+    ("settings", r"(^|/)settings(\.local)?\.json$", False),
 )
+GOVERNING = {name for name, _, governing in DESK if governing}
 # The agents' own pencil log, frozen on main since claude#118: never the desk,
 # though docs/ is.
 NOT_DESK = r"(^|/)agent_decisions\.md$"
 SAFETY = r"(^|/)hooks/|(^|/)settings(\.local)?\.json$|permission"
 # Safety paths a repo adds, keyed by its name: the code whose slip lets a
 # dangerous thing through.
-SAFETY_BY_REPO = {"languette": r"(^|/)guards/|(^|/)(scan|run)\.py$"}
-# DESK names that are safety, not governing; the rest are loop-2 documents.
-NOT_GOVERNING = ("hooks/", "settings", "files unread")
+SAFETY_BY_REPO = {"languette": r"^languette/(guards/|(scan|run)\.py$)"}
 
 
 class Exit(Exception):
@@ -366,7 +366,7 @@ def facts(repo, pr):
     pencils = pencil_lines(pr["body"])
     depends = re.findall(r"(?mi)^Depends-On:\s*(\S+)", pr["body"] or "")
     desk_paths = [p for p in paths if not re.search(NOT_DESK, p)]
-    desk = [name for name, rx in DESK if any(re.search(rx, p) for p in desk_paths)]
+    desk = [name for name, rx, _ in DESK if any(re.search(rx, p) for p in desk_paths)]
     if pr["files"]["totalCount"] > len(paths):
         desk.append("files unread")
     f = {"ref": f"{repo}#{pr['number']}", "repo": repo, "number": pr["number"], "url": pr["url"],
@@ -379,11 +379,13 @@ def facts(repo, pr):
          "labels": sorted(labels), "behind": None}
     # The review score: how much a reviewer's eyes are worth here. Conflict
     # and red CI are not in it; they put the PR in the fixer-first band.
-    safety = SAFETY + ("|" + SAFETY_BY_REPO[repo.split("/")[-1]]
-                       if repo.split("/")[-1] in SAFETY_BY_REPO else "")
+    safety = SAFETY
+    extra = SAFETY_BY_REPO.get(repo.split("/")[-1])
+    if extra:
+        safety += "|" + extra
     f["fix_first"] = f["conflicting"] or ci == "red"
     f["score"] = (min(3, f["lines"] // 150) + (f["files"] > 5)
-                  + 3 * any(n not in NOT_GOVERNING for n in desk)
+                  + 3 * any(n in GOVERNING for n in desk)
                   + 2 * any(re.search(safety, p) for p in paths)
                   + (f["bot_threads"] > 0) + min(2, f["pencils"]) + bool(depends))
     f["rating"] = "low" if f["score"] <= 2 else "medium" if f["score"] <= 5 else "high"

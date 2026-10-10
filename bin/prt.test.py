@@ -401,6 +401,7 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(of("o/languette", paths=guards)["score"], 2)
         self.assertEqual(of("o/r", paths=guards)["score"], 0)
         self.assertEqual(of("o/languette", paths=("languette/scan.py",))["score"], 2)
+        self.assertEqual(of("o/languette", paths=("tools/scan.py", "run.py"))["score"], 0)
         self.assertEqual(of("o/r", paths=("hooks/a.sh",))["score"], 2)
         self.assertEqual(of("o/r", paths=("docs/adr.md",))["score"], 3)
         self.assertEqual(of("o/r", paths=("docs/agent_decisions.md",))["score"], 0)
