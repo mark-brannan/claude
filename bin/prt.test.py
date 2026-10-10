@@ -378,6 +378,34 @@ class PrtTest(unittest.TestCase):
         self.assertIn(f"kept {wt / 'prt-c-8'}: uncommitted files", out)
         self.assertEqual(names(), ["other-1", "prt-c-5", "prt-c-7", "prt-c-8"])
 
+    def test_11_score_bands(self):
+        """Conflict and red CI make a PR fix-first, not higher scored; paths weigh by kind."""
+        loader = importlib.machinery.SourceFileLoader("prt_mod", str(PRT))
+        mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("prt_mod", loader))
+        loader.exec_module(mod)
+        mod.claims = lambda url: []
+
+        def of(repo, **kw):
+            pr = node(1, repo=repo, **kw)
+            pr.update(commits=pr["commits"], mergeable=kw.get("mergeable", "MERGEABLE"))
+            pr["files"]["nodes"] = [{"path": p} for p in kw.get("paths", ("bin/x",))]
+            return mod.facts(repo, pr)
+
+        plain = of("o/r")
+        self.assertEqual((plain["score"], plain["fix_first"]), (0, False))
+        red = of("o/r", ci="FAILURE", mergeable="CONFLICTING")
+        self.assertEqual((red["score"], red["fix_first"]), (0, True))
+        hard = of("o/r", labels=("fixup-hard",))
+        self.assertEqual(hard["score"], 0)
+        guards = ("languette/guards/x.py",)
+        self.assertEqual(of("o/languette", paths=guards)["score"], 2)
+        self.assertEqual(of("o/r", paths=guards)["score"], 0)
+        self.assertEqual(of("o/languette", paths=("languette/scan.py",))["score"], 2)
+        self.assertEqual(of("o/languette", paths=("tools/scan.py", "run.py"))["score"], 0)
+        self.assertEqual(of("o/r", paths=("hooks/a.sh",))["score"], 2)
+        self.assertEqual(of("o/r", paths=("docs/adr.md",))["score"], 3)
+        self.assertEqual(of("o/r", paths=("docs/agent_decisions.md",))["score"], 0)
+
 
     def test_11_fixer_prompt_turns_a_bot_finding_on_a_governing_doc_into_a_decide(self):
         root = Path(__file__).resolve().parent.parent / "skills"
