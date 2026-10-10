@@ -94,6 +94,36 @@ class LogGhWritesTest(unittest.TestCase):
                            capture_output=True, text=True, env=self.env)
         self.assertEqual(r.returncode, 0)
 
+    def test_quoted_separators_and_newlines_are_one_write(self):
+        r = self.one("gh pr comment 1 -b 'done; merged | ok && x'")
+        self.assertEqual((r["verb"], r["target"]), ("pr comment", "1"))
+        r = self.one("gh pr comment 2 --body $'a\\nb'")
+        self.assertEqual(r["target"], "2")
+
+    def test_multiline_body_one_row(self):
+        self.assertEqual(len(self.run_hook('gh pr create --title t --body "line1\nline2"')), 1)
+
+    def test_heredoc_body_not_a_command(self):
+        rows = self.run_hook("cat <<'EOF'\ngh pr merge 1\nEOF\ngh pr merge 2")
+        self.assertEqual([r["target"] for r in rows], ["2"])
+
+    def test_git_push_force_keeps_remote(self):
+        self.assertEqual(self.one("git push -f origin b")["target"], "origin b")
+
+    def test_gh_short_d_flag_is_boolean(self):
+        self.assertEqual(self.one("gh pr merge -d 42")["target"], "42")
+
+    def test_credential_stripped_from_target(self):
+        r = self.one("git push https://user:TOKEN@github.com/o/r.git b")
+        self.assertNotIn("TOKEN", r["target"])
+
+    def test_api_attached_method(self):
+        self.assertEqual(self.one("gh api -XPOST repos/o/r/issues")["verb"], "api POST")
+
+    def test_graphql_read_not_logged_mutation_is(self):
+        self.assertEqual(self.run_hook("gh api graphql -f query='query{viewer{login}}'"), [])
+        self.assertEqual(self.one("gh api graphql -f query='mutation{x}'")["verb"], "api POST")
+
     def test_unbalanced_quote_fails_open(self):
         self.assertEqual(self.run_hook("gh pr comment 1 --body 'oops"), [])
 
