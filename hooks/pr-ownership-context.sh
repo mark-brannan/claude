@@ -86,9 +86,9 @@ case "$tool" in
     if [ -n "$root" ] && [ -f "$root/languette/__main__.py" ] && command -v python3 >/dev/null 2>&1 &&
        segs=$(printf '%s' "$cmd" | python3 -I "$root/languette/__main__.py" scan \
                 --command '(^|/)(gh|gh-resolve-thread|mergify|git|yadm)$' 2>/dev/null) &&
-       cmd=$(printf '%s' "$segs" | jq -r '.words | (.[0][2:] | sub(".*/"; "")) as $c
-               | select(($c | test("^(git|yadm)$") | not) or .[1] == "w:push")
-               | [$c, (.[1:][] | .[2:])] | join(" ") | gsub("\n"; " ")' 2>/dev/null); then :
+       cmd=$(printf '%s' "$segs" | jq -r '.segments[] | .words | (.[0].text | sub(".*/"; "")) as $c
+               | select(($c | test("^(git|yadm)$") | not) or (.[1] | . != null and (.quoted | not) and .text == "push"))
+               | [$c, (.[1:][] | .text)] | join(" ") | gsub("\n"; " ")' 2>/dev/null); then :
     else cmd=$raw; fi
     printf '%s' "$cmd" | grep -Eq \
       '(^|[^A-Za-z0-9_./-])gh[[:space:]]+(pr([[:space:]]|$)|api[[:space:]].*(pulls|graphql|reviewThreads))|(^|[^A-Za-z0-9_./-])gh-resolve-thread([[:space:]]|$)|(^|[;&|(`])[[:space:]]*mergify[[:space:]]+(stack[[:space:]]+(push|checkout|sync)([[:space:]]|$)|(queue|merge)([[:space:]]|$))|(^|[;&|(`])[[:space:]]*(git|yadm)[[:space:]]+push([[:space:]]|$)' \

@@ -42,6 +42,10 @@ input=$(cat) || exit 0
 
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 [ -n "$cmd" ] || exit 0
+# Cheap pre-filter: nearly every Bash call never says "publish", and the
+# scanner below costs a Python start (~50 ms). A publish spelled by quote
+# splicing (npm pu""blish) slips past; this hook is a convenience, not a gate.
+case "$cmd" in *publish*) ;; *) exit 0 ;; esac
 
 # Structural match, not a substring test: a segment -- top level, or nested
 # inside a quoted `sh -c`/`eval` body -- whose command word is npm and whose
@@ -60,13 +64,16 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 # registry's auth, so there is no URL to lose, and /npm-first-publish has the
 # agent run it as a precondition.
 #
-# Each line from the scanner is one npm segment, its words from npm on:
-# {"nested":false,"words":["w:npm","w:publish","w:--tag","w:next"]}, where
-# "q:" marks a quoted word holding whitespace.
+# The scanner prints one JSON document; each segment is one npm segment,
+# its words from npm on:
+# {"segments":[{"nested":false,"words":[{"text":"npm","quoted":false},
+#   {"text":"publish","quoted":false}]}]}
+# A quoted word (one holding whitespace) is never a flag or the subcommand.
 segs=$(printf '%s' "$cmd" | python3 -I "$SCAN" scan --command '(^|/)npm$' 2>/dev/null) || exit 0
-match=$(printf '%s' "$segs" | jq -rs 'any(.[]; .words[1:] as $a
-  | ([$a[] | select(startswith("w:-") | not)][0] == "w:publish")
-    and (any($a[]; . == "w:--dry-run" or . == "w:--dry-run=true") | not))
+match=$(printf '%s' "$segs" | jq -r 'any(.segments[]; .words[1:] as $a
+  | ([$a[] | select(.quoted or (.text | startswith("-") | not))][0]
+     | . != null and (.quoted | not) and .text == "publish")
+    and (any($a[]; (.quoted | not) and (.text == "--dry-run" or .text == "--dry-run=true")) | not))
   | if . then "MATCH" else empty end' 2>/dev/null)
 [ "$match" = MATCH ] || exit 0
 

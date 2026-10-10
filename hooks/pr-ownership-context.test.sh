@@ -227,6 +227,17 @@ mv "$HOME/.claude/plugins/installed_plugins.json" "$SCRATCH/plugins.json"
 check inject 'no plugin: echo gh pr over-matches' "$(bash_input nf1 'echo gh pr view 5')"
 check inject 'no plugin: a real call still fires' "$(bash_input nf2 'gh pr comment 7 -R o/r --body ok')"
 t 'no plugin: the record still names the PR' "$(printf 'repo\to/r\t7\twork')" "$(rec_last nf2)"
+plugin_at() {  # plugin_at <install path>: the scratch HOME's languette install
+  jq -n --arg p "$1" '{version:2,plugins:{"languette@languette":[{scope:"user",installPath:$p}]}}' \
+    > "$HOME/.claude/plugins/installed_plugins.json"
+}
+plugin_at "$SCRATCH/nowhere"
+check inject 'gone install path: echo gh pr over-matches' "$(bash_input nf3 'echo gh pr view 5')"
+mkdir -p "$SCRATCH/old/languette"
+printf 'import sys\nsys.exit(2)\n' > "$SCRATCH/old/languette/__main__.py"
+plugin_at "$SCRATCH/old"
+check inject 'plugin without scan: echo gh pr over-matches' "$(bash_input nf4 'echo gh pr view 5')"
+rm "$HOME/.claude/plugins/installed_plugins.json"
 mv "$SCRATCH/plugins.json" "$HOME/.claude/plugins/installed_plugins.json"
 
 # --- once per session ----------------------------------------------------------
