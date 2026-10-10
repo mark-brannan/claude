@@ -20,16 +20,22 @@
 # the tool's. Denying and letting the model re-issue one command through the
 # normal Bash path keeps both properties.
 #
-# Convenience, not a gate: missing jq/awk/the shared scanner, or a payload
-# that won't parse, exits 0 and the publish proceeds exactly as before.
+# Convenience, not a gate: missing jq, python3 or the languette plugin, a
+# languette too old to have `scan`, a command its scanner refuses, or a
+# payload that won't parse, exits 0 and the publish proceeds exactly as
+# before.
 set -uo pipefail
 
-HERE=$(cd "$(dirname "$0")" && pwd)
-LIB="$HERE/lib-shell-words.awk"
-
-command -v jq  >/dev/null 2>&1 || exit 0
-command -v awk >/dev/null 2>&1 || exit 0
-[ -r "$LIB" ] || exit 0
+command -v jq      >/dev/null 2>&1 || exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
+# The languette plugin's scanner, at the user-scope install Claude Code
+# records in installed_plugins.json (a hook in settings.json gets no
+# CLAUDE_PLUGIN_ROOT; that is set only for the plugin's own hooks).
+ROOT=$(jq -r '[.plugins | to_entries[] | select(.key | startswith("languette@")) | .value[]
+               | select(.scope == "user") | .installPath][0] // empty' \
+       "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json" 2>/dev/null)
+SCAN="$ROOT/languette/__main__.py"
+[ -n "$ROOT" ] && [ -r "$SCAN" ] || exit 0
 
 input=$(cat) || exit 0
 [ "$(printf '%s' "$input" | jq -r '.tool_name // ""' 2>/dev/null)" = Bash ] || exit 0
@@ -39,10 +45,10 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 
 # Structural match, not a substring test: a segment -- top level, or nested
 # inside a quoted `sh -c`/`eval` body -- whose command word is npm and whose
-# first non-flag argument is `publish`. The shared scanner is the one whose
-# false positives the no-*.sh family already fixed, so a commit message or
-# PR body that merely *mentions* "npm publish" does not match. `npm-publish-bg`
-# is a different command word and never matches either.
+# first non-flag argument is `publish`. languette's scanner is the one the
+# plugin's guards read commands with, so a commit message or PR body that
+# merely *mentions* "npm publish" does not match. `npm-publish-bg` is a
+# different command word and never matches either.
 #
 # `publish` is looked for as the first non-flag argument, so a global option
 # that takes a separate value first (`npm --loglevel warn publish`) is not
@@ -53,38 +59,15 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 # `--dry-run` is let through: it packs and reports without contacting the
 # registry's auth, so there is no URL to lose, and /npm-first-publish has the
 # agent run it as a precondition.
-match=$(printf '%s\n' "$cmd" | awk "$(cat "$LIB")"'
-function is_publish(a, b,   i) {
-  for (i = a; i <= b; i++) {
-    if (k[i] != "w") return 0
-    if (w[i] ~ /^-/) continue
-    return w[i] == "publish"
-  }
-  return 0
-}
-function dry_run(a, b,   i) {
-  for (i = a; i <= b; i++)
-    if (k[i] == "w" && (w[i] == "--dry-run" || w[i] == "--dry-run=true")) return 1
-  return 0
-}
-function segment(a, b, nested,   c) {
-  c = cmd_index(w, k, a, b, "(^|/)npm$", nested, "")
-  if (c && is_publish(c + 1, b) && !dry_run(c + 1, b)) { print "MATCH"; exit }
-}
-{ buf = buf $0 "\n" }
-END {
-  buf = strip_heredocs(buf)
-  nt = texts_of(buf, texts, nested)
-  for (x = 1; x <= nt; x++) {
-    n = scan(texts[x], w, k, q)
-    a = 1
-    for (i = 1; i <= n + 1; i++) {
-      if (i <= n && k[i] != ";") continue
-      if (a < i) segment(a, i - 1, nested[x])
-      a = i + 1
-    }
-  }
-}' 2>/dev/null)
+#
+# Each line from the scanner is one npm segment, its words from npm on:
+# {"nested":false,"words":["w:npm","w:publish","w:--tag","w:next"]}, where
+# "q:" marks a quoted word holding whitespace.
+segs=$(printf '%s' "$cmd" | python3 -I "$SCAN" scan --command '(^|/)npm$' 2>/dev/null) || exit 0
+match=$(printf '%s' "$segs" | jq -rs 'any(.[]; .words[1:] as $a
+  | ([$a[] | select(startswith("w:-") | not)][0] == "w:publish")
+    and (any($a[]; . == "w:--dry-run" or . == "w:--dry-run=true") | not))
+  | if . then "MATCH" else empty end' 2>/dev/null)
 [ "$match" = MATCH ] || exit 0
 
 jq -cn --arg r "Blocked by ~/.claude/hooks/npm-publish-auth.sh: run \`npm-publish-bg\` instead of \`npm publish\` -- same arguments, same directory. The user's npm account uses browser passkey 2FA, and the approval URL npm prints is redacted from your tool result before you see it, so a plain publish stalls on an approval nobody was told about. npm-publish-bg runs the publish detached and pushes that URL to the user directly (browser, notification, terminal); you will never see it, by design, so don't ask for it or try to print it. It returns a pid and a logfile -- tail the log, and confirm with \`npm view <pkg> dist-tags\`. See ~/.claude/rules/code.md, 'Publishing'." \
