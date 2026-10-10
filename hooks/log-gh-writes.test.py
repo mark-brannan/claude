@@ -97,8 +97,9 @@ class LogGhWritesTest(unittest.TestCase):
     def test_quoted_separators_and_newlines_are_one_write(self):
         r = self.one("gh pr comment 1 -b 'done; merged | ok && x'")
         self.assertEqual((r["verb"], r["target"]), ("pr comment", "1"))
-        r = self.one("gh pr comment 2 --body $'a\\nb'")
-        self.assertEqual(r["target"], "2")
+
+    def test_dollar_quoted_body(self):
+        self.assertEqual(self.one("gh pr comment 2 --body $'a\\nb'")["target"], "2")
 
     def test_multiline_body_one_row(self):
         self.assertEqual(len(self.run_hook('gh pr create --title t --body "line1\nline2"')), 1)
