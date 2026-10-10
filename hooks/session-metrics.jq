@@ -172,7 +172,7 @@ to_entries as $E
                elif .mechanism == "prose" then "gate"
                elif .n > 2 then "gate"
                else "inline" end),
-        question: (.text | redact | .[0:300])} ]) as $decisions
+        question: (.text | redact | .[0:300])} ]) as $decisions_raw
 
 # --- friction --------------------------------------------------------------
 # A friction event is a human turn that contradicts, corrects, overrides or
@@ -455,6 +455,21 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
 | (($friction_human + $self_reports) | sort_by(.turn_index)
    | to_entries | map(.value + {seq: (.key + 1)})) as $friction
 
+# --- junk decisions --------------------------------------------------------
+# A decision is junk when a non-retracted human friction record (correction,
+# override, rebuke) lands within JUNK_WINDOW index units after it in this
+# session: the question cost the user a decision and then a correction.
+# Decisions and friction share one index space (turn_index), so the window is
+# in transcript entries, not turns. Self-reports are the agent's own words and
+# do not count. Measured 2026-09-22: 81 of 1147 decisions were junk at 30.
+| 30 as $junk_window
+| ([ $decisions_raw[] | . as $d
+     | . + {junk: ([ $friction_human[]
+                     | select((.retracted | not)
+                              and .turn_index > $d.turn_index
+                              and .turn_index <= $d.turn_index + $junk_window) ]
+                    | length > 0)} ]) as $decisions
+
 # --- time ----------------------------------------------------------------
 # Three numbers, because they answer different questions and no one of them
 # substitutes for another:
@@ -655,7 +670,8 @@ def price:
         total: ($decisions | length),
         scoping: ([ $decisions[] | select(.type == "scoping") ] | length),
         inline:  ([ $decisions[] | select(.type == "inline") ]  | length),
-        gate:    ([ $decisions[] | select(.type == "gate") ]    | length)
+        gate:    ([ $decisions[] | select(.type == "gate") ]    | length),
+        junk:    ([ $decisions[] | select(.junk) ]                | length)
       },
       blocked: {
         total:      ($blocked | length),
