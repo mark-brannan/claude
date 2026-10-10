@@ -89,6 +89,52 @@ mode (`"/rewind isn't available in this environment"`, no request sent,
 zero usage). Whether it re-enters a cached prefix is still unverified;
 testing it requires the interactive REPL, not a scripted probe.
 
+## Harness share of the starting context, by source (2026-10-10)
+
+Method: first assistant turn of 386 main-thread sessions on Claude Code
+2.1.288-2.1.295 under `~/.claude/projects`, total = `input_tokens` +
+`cache_read_input_tokens` + `cache_creation_input_tokens`. Transcripts record
+the text of each injected source (system-prompt snapshot, CLAUDE.md files,
+skill and agent listings, deferred tool names, MCP instructions, hook
+context) but not tool schemas, so source sizes are bytes in the transcript
+and tokens are bytes ÷ 4. That ratio is checked against one `/context`
+reading: the skills listing is 17.9 KB here and 4.7k tokens in
+mark-brannan/claude#74 (≈3.8 bytes per token).
+
+**First-turn total, measured: median 49,750 (min 43,319, max 68,042).** The
+2.1.258 runs in #74 and the 36.7k above were lower; the floor has risen
+about 13k since 2.1.258 with no change to this config's tool settings.
+
+| # | Source | Tokens | Provenance | Switch-off |
+|---|---|---|---|---|
+| 1 | Skills listing (user, plugin, built-in) | ~4.5k | estimated: 17.9 KB median ÷ 4; #74 measured 4.7k with `/context` | `--disable-slash-commands` (loses `/context` too); shorten descriptions in `~/.claude/skills/*/SKILL.md`; `enabledPlugins: {"<plugin>": false}` per plugin |
+| 2 | User CLAUDE.md | ~4.3k | estimated: 17.2 KB ÷ 4; #74 measured 5.6k at 2.1.258 | prune the file; `rules/code.md` and `rules/writing.md` are path-globbed and not in the start (they did not load on a `gh` call, which is why the PR hook exists) |
+| 3 | System-prompt text recorded in transcript | ~2.4k | estimated: 9.5 KB ÷ 4; #74 measured 3.4k | not configurable |
+| 4 | SessionStart hook context (continuity brief, connector budget) | ~1.4k | estimated: 5.6 KB ÷ 4; #74 measured 2.8k for all SessionStart output | `disableAllHooks` (drops every gate too); no per-hook switch |
+| 5 | Deferred tool names (`deferred_tools_delta`) | ~1.3k | estimated: 5.3 KB ÷ 4 (0.9 KB when no MCP) | `--strict-mcp-config` removes MCP names; built-in names not configurable |
+| 6 | Agent listing | ~0.7k | estimated: 2.9 KB ÷ 4 | not configurable |
+| 7 | Env, model, date, session context, other attachments | ~0.6k | estimated: 2.5 KB ÷ 4 | not configurable |
+| 8 | MCP server instructions (github-pat) | ~0.5k | estimated: 1.85 KB ÷ 4, present in 319 of 386 | `--strict-mcp-config` |
+| 9 | Auto-memory index and project CLAUDE.md | ~0.2k, up to 7k | estimated: 0.95 KB median ÷ 4; project CLAUDE.md median 0.27 KB, max 28.6 KB | prune `MEMORY.md`; a repo's own CLAUDE.md is the repo's |
+| 10 | Built-in tool schemas, rest of the system prompt, first user message | ~33.8k | **residual**: measured total minus rows 1-9 (~16k). Not in transcripts. #74 `/context` gives 12.4k or 20.3k for tools and 3.4k for the prompt, which leaves ~10k unattributed | tools and prompt not configurable; MCP schemas when loaded (not deferred) are measured at 19.7k in #74 |
+
+Not a start-of-session cost, but the same family: the continuity hook
+`pr-ownership-context.sh` (13.8 KB) is **not** injected whole. Claude Code
+persists a hook output over ~12 KB to a file and puts a 2.3 KB preview plus a
+path in context: 2,284 median bytes (≈0.6k tokens) across 1,400+ firings in
+these transcripts. #74 estimated 3.5k for this row; 0.6k is what the model
+sees, and the rest only enters if it reads the file. Trimming the block
+below 2 KB would put the whole rule text in context instead of a preview, so
+the 13.8 KB is no longer the lever #74 took it for.
+
+### Follow-up
+
+The rows worth switching, largest first: skills listing (4.5k, 17.9 KB over
+~25 skills), user CLAUDE.md (4.3k), SessionStart hook context (1.4k to 2.8k),
+and plugin skills. Tool schemas and the system prompt (rows 3 and 10, over
+36k together) are the bulk and not configurable. Re-measure the unattributed
+~10k with one `/context` run on the current version.
+
 ## Why `/clear` is the whole game
 
 The floor is a one-time charge; growth is charged every turn. In the session
