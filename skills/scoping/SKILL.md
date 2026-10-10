@@ -192,7 +192,7 @@ item's own `###` heading counts inside the section, not as its end. Count as
 
 Re-run the `take` line first; a refusal now stops the filing, and a
 `read moved:` line means the record moved since the proposal. Then file
-each yes'd item exactly as proposed:
+each yes'd item exactly as proposed (an issue's text first needs its own yes, below):
 
 - a card owned `agent`, worded as `/card-write` words one (a link to the
   target in it), written to the item store with
@@ -202,7 +202,12 @@ each yes'd item exactly as proposed:
   `~/.claude/bin/work-item log <id> status=ready` so it is claimable;
 - at most one GitHub issue this session, never a batch (Solace,
   2026-10-01, pen); further issue-homed items stay in the proposal, marked
-  unfiled, and the hand-off names them.
+  unfiled, and the hand-off names them;
+- a tick is not a yes to an issue whose text Solace has not seen
+  (2026-10-10): show the draft and ask before filing;
+- an item a single line of the parent's body states in full stays that
+  line, not a sub-issue; this is the exception to §4's one sub-issue per
+  separable item.
 
 An item that rests on pencil says which, in the record's words, on its
 card or issue. Record what was filed in the proposal file (each card by its
