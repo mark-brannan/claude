@@ -29,8 +29,8 @@ SID = "abcdef12-0000-0000-0000-000000000000"
 REPO = "o/r"
 
 STUB = r'''#!/usr/bin/env python3
-import json, os, subprocess, sys
-S = os.environ["PRT_STUB"]
+import json, os, re, subprocess, sys
+S =os.environ["PRT_STUB"]
 a = sys.argv[1:]
 open(S + "/calls", "a").write(" ".join(a) + "\n")
 def arg(flag):
@@ -58,8 +58,23 @@ elif a[:2] == ["search", "prs"]:
 elif a[:2] == ["api", "user"]:
     print("o")
 elif a[:2] == ["api", "graphql"]:
+    if os.environ.get("STUB_GRAPHQL_FAIL"):
+        print(os.environ["STUB_GRAPHQL_FAIL"], file=sys.stderr)
+        sys.exit(1)
     name = next(x[5:] for x in a if x.startswith("name="))
     print(fixture("graphql-" + name + ".json", ""))
+elif a[0] == "api" and re.match(r"repos/o/\w+/(pulls|commits)", a[1]):
+    # The REST and CCR routes prt falls back to; fixtures are named by route.
+    m = re.match(r"repos/o/(\w+)/(pulls|commits)(?:/(\w+))?(?:/([\w-]+(?:/\w+)?))?", a[1].split("?")[0])
+    repo, kind, ident, tail = m.groups()
+    if "page=" in a[1] and "page=1" not in a[1]:
+        print("[]")
+    elif kind == "pulls" and ident == "comments":
+        print(fixture("rest-comment-" + tail + ".json", "{}"))
+    else:
+        key = "-".join(x.replace("/", "-") for x in (kind, repo, ident, tail) if x)
+        print(fixture("rest-" + key + ".json", '{"check_runs": []}' if tail == "check-runs" else
+                      '{"state": "pending", "statuses": []}' if tail == "status" else "[]"))
 elif a[0] == "api" and "/compare/" in a[1]:
     print("0")
 elif a[0] == "api" and "-X" in a:
@@ -112,6 +127,44 @@ PRS = [
     node(9, paths=("docs/agent_decisions.md",), lines=11),
     node(10, paths=("skills/x/decided.md",), lines=12),
 ]
+
+
+def rest_fixtures(stub, repo, nodes):
+    """Write the REST/CCR shape of GraphQL fixture nodes, route by route."""
+    name = repo.split("/")[1]
+    rollup = {"SUCCESS": [{"status": "completed", "conclusion": "success"}],
+              "FAILURE": [{"status": "completed", "conclusion": "failure"}],
+              "PENDING": [{"status": "in_progress", "conclusion": None}]}
+
+    def put(key, data):
+        (stub / f"rest-{key}.json").write_text(json.dumps(data))
+
+    def user(a):
+        return {"login": a["login"], "type": a["__typename"]}
+
+    put(f"pulls-{name}", [{"number": n["number"]} for n in nodes])
+    for n in nodes:
+        k, sha = n["number"], n["headRefOid"]
+        auto = n["autoMergeRequest"]
+        put(f"pulls-{name}-{k}", {
+            "number": k, "title": n["title"], "html_url": n["url"], "body": n["body"], "draft": n["isDraft"],
+            "mergeable": {"MERGEABLE": True, "CONFLICTING": False}.get(n["mergeable"]),
+            "base": {"ref": n["baseRefName"], "repo": {"full_name": repo}},
+            "head": {"ref": n["headRefName"], "sha": sha, "repo": {"full_name": repo}},
+            "auto_merge": auto and {"enabled_by": auto["enabledBy"]},
+            "additions": n["additions"], "deletions": n["deletions"], "user": user(n["author"]),
+            "changed_files": n["files"]["totalCount"], "labels": n["labels"]["nodes"]})
+        put(f"pulls-{name}-{k}-files", [{"filename": f["path"]} for f in n["files"]["nodes"]])
+        put(f"pulls-{name}-{k}-reviews", [])
+        threads = n["reviewThreads"]["nodes"]
+        put(f"pulls-{name}-{k}-ccr-review_threads", [
+            {"resolved": False, "outdated": False, "path": "x", "line": 1, "comment_ids": [k * 100 + i]}
+            for i in range(len(threads))])
+        for i, t in enumerate(threads):
+            c = t["comments"]["nodes"][0]
+            put(f"comment-{k * 100 + i}", {"html_url": c["url"], "user": user(c["author"])})
+        state = n["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["state"]
+        put(f"commits-{name}-{sha}-check-runs", {"check_runs": rollup[state]})
 
 
 def page(nodes):
@@ -184,6 +237,23 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(p[6]["pencils"], 1)
         self.assertEqual(list((self.T / "items").iterdir()), [])
         self.assertEqual(self.writes(), [])
+
+    def test_01b_without_graphql_the_rest_path_plans_the_same(self):
+        """Cloud sessions refuse GraphQL; REST plus the CCR threads must give the same plan."""
+        rest_fixtures(self.T / "stub", REPO, PRS)
+        want = self.plan("--repo", REPO, "--dry-run")
+        refused = "GitHub GraphQL is not available from Claude Code sessions; use the REST API (HTTP 403)"
+        got = self.plan("--repo", REPO, "--dry-run", env={"STUB_GRAPHQL_FAIL": refused})
+        # #8 fakes a GraphQL page cap that the CCR route does not have.
+        self.assertEqual({n: f for n, f in got.items() if n != 8}, {n: f for n, f in want.items() if n != 8})
+        self.assertEqual(got[6]["bot_threads"], 1)
+        self.assertEqual(got[4]["human_threads"], 1)
+        self.assertEqual(got[1]["ci"], "green")
+        self.assertEqual(self.writes(), [])
+
+    def test_01c_any_other_graphql_failure_is_not_a_fallback(self):
+        out = self.prt("--repo", REPO, "--dry-run", env={"STUB_GRAPHQL_FAIL": "HTTP 502 bad gateway"}, code=1)
+        self.assertEqual(out, "")
 
     def test_02_cap_holds_smallest_first(self):
         p = self.plan("--repo", REPO, "--dry-run", "--cap", "1")
