@@ -74,6 +74,11 @@ def objects(text):
     return out
 
 
+def oneline(s, n=80):
+    """Comment text is written by strangers and read by agents: printable ASCII, one line, bounded."""
+    return re.sub(r"[^\x20-\x7e]", "?", str(s or ""))[:n]
+
+
 def conversations(owner, repo, n, decision):
     out = []
     if decision == "CHANGES_REQUESTED":
@@ -85,11 +90,12 @@ def conversations(owner, repo, n, decision):
             if t["isResolved"]:
                 continue
             c = (t["comments"]["nodes"] or [{}])[0]
-            who = (c.get("author") or {}).get("login") or "?"
-            body = ((c.get("body") or "").strip().splitlines() or [""])[0][:80]
-            where = f"{t['path']}:{t['line']}" if t.get("line") else t["path"]
+            who = oneline((c.get("author") or {}).get("login") or "?", 40)
+            body = oneline(((c.get("body") or "").strip().splitlines() or [""])[0])
+            path = oneline(t["path"], 120)
+            where = f"{path}:{int(t['line'])}" if t.get("line") else path
             out.append(f"unresolved review thread at {where} by {who}{' (outdated)' if t['isOutdated'] else ''}: "
-                       f"\"{body}\"; fix: answer or act on it, then resolve the thread")
+                       f"{json.dumps(body)}; fix: answer or act on it, then resolve the thread")
     return out
 
 
