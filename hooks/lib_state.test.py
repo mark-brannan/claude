@@ -31,7 +31,7 @@ class ShimTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             hooks = Path(t) / "hooks"
             hooks.mkdir()
-            for f in ("lib_state.py", "lib-state.sh", "curia-roll.py"):
+            for f in ("lib_state.py", "lib-state.sh", "curia-roll.py", "curia_words.py"):
                 shutil.copy(HOOKS / f, hooks / f)
             env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "HOME": t, "CLAUDE_STATE_REPO": ""}
             p = subprocess.run([sys.executable, "-c",
