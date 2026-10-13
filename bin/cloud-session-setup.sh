@@ -85,6 +85,8 @@ skills/curia/forms/bdd.md
 skills/curia/forms/mvp-and-narrative.md
 skills/curia/forms/success-metric.md
 skills/scoping/SKILL.md
+skills/prt/SKILL.md
+skills/critical-review/SKILL.md
 hooks/lib-state.sh
 hooks/lib_state.py
 lib/state.py
@@ -137,6 +139,8 @@ bin/scoping-lock
 bin/gh-resolve-thread
 bin/pr-label-audit
 bin/npm-publish-bg
+bin/prt
+bin/pr-blockers
 "
 
 # --- what is wholly owned by this installer -------------------------------
