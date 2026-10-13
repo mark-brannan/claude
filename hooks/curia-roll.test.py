@@ -280,6 +280,7 @@ class CuriaRollTest(unittest.TestCase):
         (tree / "lib").mkdir()
         shutil.copy(HOOK, tree / "hooks")
         shutil.copy(HOOK.parent / "lib_state.py", tree / "hooks")
+        shutil.copy(HOOK.parent / "curia_words.py", tree / "hooks")
         shutil.copy(HOOK.parent.parent / "lib" / "state.py", tree / "lib")
         shutil.copy(HOOK.parent.parent / "lib" / "gitrun.py", tree / "lib")  # state.py imports it
         self.sitting("one-entry-point", f"{SID} 2026-10-02T05:00:00Z\n")
