@@ -1115,9 +1115,9 @@ class Stop:
 
         # Debounce the push, not the commit: every Stop still commits locally
         # (cheap, never lost), but this clone pushes at most once per debounce
-        # window, however many sessions stop. A cloud session pushes whenever
-        # archivable, so its last commit is never left on a VM about to be
-        # reaped; a local one batches, because its commit is already safe in
+        # window, however many sessions stop. A cloud session pushes on every
+        # Stop, never debounced, so its last commit is never left on a VM about
+        # to be reaped; a local one batches, because its commit is already safe in
         # the clone and a later Stop carries it.
         #
         # The stamp lives in the clone's git dir, never in the tracked tree.
@@ -1132,7 +1132,7 @@ class Stop:
         # can come back empty and put the stamp at the filesystem root.
         sentinel = f"{SR}/.git/claude-last-state-push"
         debounce_secs = 300
-        if (not cloud or self.verdict != "archivable") and os.path.isfile(sentinel):
+        if not cloud and os.path.isfile(sentinel):
             try:
                 last_push = sub(read(sentinel))
             except OSError:
@@ -1153,12 +1153,19 @@ class Stop:
         except ValueError:
             backoff = 3
         for attempt in (1, 2):
+            # A cloud clone is checked out on the harness's claude/* branch;
+            # ordinary state never goes by PR, so the destination is main.
+            pull = ("origin", "main") if cloud else ()
             # A conflicted rebase left in place wedges this clone for every
             # later Stop and every hand commit; back out, and let the push
             # below fail and say so.
-            if git_bounded(120, "pull", "--rebase", "--autostash", "-q") != 0:
+            if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
                 git_ok("rebase", "--abort")
-            if git_bounded(120, "push", "-q", "origin", "HEAD") == 0:
+            if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
+                if cloud:
+                    # Park the clone on main so the harness's own stop check
+                    # sees nothing unpushed; best effort, the push has landed.
+                    git_ok("checkout", "-q", "-B", "main", "origin/main")
                 return
             time.sleep(attempt * backoff)
         # In the cloud the optimistic verdict is now known to be wrong.
