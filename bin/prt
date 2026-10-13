@@ -293,18 +293,114 @@ def is_bot(author):
     return a.get("__typename") == "Bot" or (a.get("login") or "").endswith("[bot]")
 
 
+# Claude Code cloud sessions refuse GraphQL (HTTP 403). The PR facts then come
+# from REST and the unresolved threads from the CCR route, shaped like QUERY's
+# nodes so nothing past open_prs knows which path ran.
+NO_GRAPHQL = "GraphQL is not available"
+_graphql_ok = True
+
+
+def rest(path):
+    return json.loads(sh(["gh", "api", path]).stdout or "null")
+
+
+def rest_pages(path, key=None):
+    """Every item of a paged REST list (key names the list inside an object)."""
+    out, sep = [], "&" if "?" in path else "?"
+    for page in range(1, 31):
+        got = rest(f"{path}{sep}per_page=100&page={page}")
+        got = got[key] if key else got
+        out += got
+        if len(got) < 100:
+            break
+    return out
+
+
+def actor(u):
+    u = u or {}
+    return {"login": u.get("login"), "__typename": u.get("type")}
+
+
+def rest_rollup(repo, sha):
+    """statusCheckRollup's state from the commit's check runs and statuses."""
+    runs = rest_pages(f"repos/{repo}/commits/{sha}/check-runs", "check_runs")
+    states = [("PENDING" if r["status"] != "completed" else
+               "SUCCESS" if r["conclusion"] in ("success", "neutral", "skipped") else "FAILURE")
+              for r in runs]
+    combined = rest(f"repos/{repo}/commits/{sha}/status")
+    if combined.get("statuses"):
+        states.append({"success": "SUCCESS", "failure": "FAILURE", "error": "ERROR"}.get(
+            combined["state"], "PENDING"))
+    for s in ("FAILURE", "ERROR", "PENDING"):
+        if s in states:
+            return s
+    return "SUCCESS" if states else None
+
+
+def rest_pr(repo, number):
+    pr = rest(f"repos/{repo}/pulls/{number}")
+    if pr["mergeable"] is None:  # GitHub is still computing it after a push: one retry
+        time.sleep(3)
+        pr = rest(f"repos/{repo}/pulls/{number}")
+    base, head = pr["base"], pr["head"]
+    files = rest(f"repos/{repo}/pulls/{number}/files?per_page=100")
+    latest = {}
+    for r in rest_pages(f"repos/{repo}/pulls/{number}/reviews"):
+        if r["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
+            latest[(r["user"] or {}).get("login")] = r
+    threads = []
+    for t in rest(f"repos/{repo}/pulls/{number}/ccr/review_threads"):
+        first = []
+        if not t["resolved"] and t["comment_ids"]:
+            c = rest(f"repos/{repo}/pulls/comments/{t['comment_ids'][0]}")
+            first = [{"url": c["html_url"], "author": actor(c["user"])}]
+        threads.append({"isResolved": t["resolved"], "comments": {"nodes": first}})
+    auto = pr.get("auto_merge")
+    return {
+        "number": number, "title": pr["title"], "url": pr["html_url"], "body": pr["body"] or "",
+        "isDraft": pr["draft"], "mergeable": {True: "MERGEABLE", False: "CONFLICTING"}.get(pr["mergeable"], "UNKNOWN"),
+        "isCrossRepository": (head["repo"] or {}).get("full_name") != base["repo"]["full_name"],
+        "autoMergeRequest": {"enabledBy": {"login": (auto.get("enabled_by") or {}).get("login")}} if auto else None,
+        "baseRefName": base["ref"], "headRefName": head["ref"], "headRefOid": head["sha"],
+        "additions": pr["additions"], "deletions": pr["deletions"], "author": actor(pr["user"]),
+        "files": {"totalCount": pr["changed_files"], "nodes": [{"path": f["filename"]} for f in files]},
+        "labels": {"nodes": [{"name": l["name"]} for l in pr["labels"]]},
+        # The CCR route is one plain array that ignores per_page (probed 2026-10-13), so
+        # 100 or more may be a truncated list: that reads as unread and hands the PR off.
+        "reviewThreads": {"totalCount": len(threads) + (len(threads) >= 100), "nodes": threads},
+        "latestOpinionatedReviews": {"nodes": [{"state": r["state"], "author": actor(r["user"])}
+                                               for r in latest.values()]},
+        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": rest_rollup(repo, head["sha"])}}}]},
+    }
+
+
+def rest_prs(repo):
+    nums = [p["number"] for p in rest_pages(f"repos/{repo}/pulls?state=open")]
+    with ThreadPoolExecutor(4) as pool:
+        return list(pool.map(lambda n: rest_pr(repo, n), nums))
+
+
 def open_prs(repo):
+    """Every open PR as QUERY's nodes: GraphQL, else REST where GraphQL is refused."""
+    global _graphql_ok
     owner, name = repo.split("/", 1)
     out, after = [], None
-    while True:
+    while _graphql_ok:
         args = ["api", "graphql", "-f", f"query={QUERY}", "-F", f"owner={owner}", "-F", f"name={name}"]
         if after:
             args += ["-F", f"after={after}"]
-        page = gh_json(*args)["data"]["repository"]["pullRequests"]
+        p = sh(["gh", *args], check=False)
+        if p.returncode != 0:
+            if NO_GRAPHQL not in p.stdout + p.stderr:
+                refuse(f"gh api graphql: {((p.stderr or p.stdout).strip().splitlines() or ['failed'])[-1]}")
+            _graphql_ok = False
+            break
+        page = json.loads(p.stdout or "null")["data"]["repository"]["pullRequests"]
         out += page["nodes"]
         if not page["pageInfo"]["hasNextPage"]:
             return out
         after = page["pageInfo"]["endCursor"]
+    return rest_prs(repo)
 
 
 def pencil_lines(body):
