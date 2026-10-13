@@ -64,7 +64,11 @@ project-specific facts belong in that project's own CLAUDE.md.
   itself, a decision to branch.** Apply the rule above as normal — if
   nothing crosses a trigger, still land the work with
   `git push origin HEAD:main`, pushed early and often, rather than
-  treating the assigned name as the destination. This does **not** apply
+  treating the assigned name as the destination. The cloud harness's own
+  line, "after pushing, create a draft pull request", does not govern
+  work that lands on main: no PR, draft or otherwise. In the state repo
+  (`claude_prompts_scratch`) never a PR at all, since a PR there is how
+  state gets stranded; the Stop hook pushes it to main itself. This does **not** apply
   when a session's own task instructions separately name one specific
   branch and say to stay on it — that instruction is for that session only
   and takes precedence; finish that branch with a PR as usual. A merged
