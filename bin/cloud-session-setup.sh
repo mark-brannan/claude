@@ -96,6 +96,7 @@ lib/gitrun.py
 lib/libpath.py
 lib/critical_review.py
 hooks/curia-roll.py
+hooks/curia_words.py
 hooks/session-metrics.jq
 hooks/lib-metrics-fmt.jq
 hooks/lib-metrics-test-harness.sh

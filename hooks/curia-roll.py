@@ -29,9 +29,9 @@ does the harness's answer to a dismissed dialog.
 
 The app attaches its own notices to a prompt as leading <system-reminder>
 blocks (the worktree notice, the fork notice). Those are not the user's words:
-they are stripped, with the newlines after them, by the same pattern as
-build-roll.py's HARNESS, so the live roll and a rebuilt one agree. A prompt
-that is blank once they are gone writes nothing.
+they are stripped, with the newlines after them, by the pattern in
+curia_words.py, which the rebuild of a roll shares, so the live roll and a
+rebuilt one agree. A prompt that is blank once they are gone writes nothing.
 
 The roll is append-only (one-entry-point curia, 2026-10-02, the words log),
 save that words sharing a stamp are one entry, joined by a blank line, as
@@ -53,7 +53,9 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+import curia_words  # noqa: E402
 import lib_state  # noqa: E402
+from curia_words import AGENT_TEXT, DISMISSED, HARNESS, strip_harness  # noqa: E402,F401
 try:
     import ids  # noqa: E402
     import lock  # noqa: E402
@@ -61,32 +63,8 @@ except ImportError:  # a lib/ without lock.py or ids.py: main() writes nothing a
     ids = lock = None
 
 
-AGENT_TEXT = ("<task-notification>", "<agent-message", "Another Claude session sent a message:")
-# Keep in step with HARNESS in state/global/curia/build-roll.py.
-HARNESS = re.compile(
-    r"<system-reminder>\n(?:You are operating in a git worktree\.|This conversation was forked from)"
-    r".*?</system-reminder>\n*",
-    re.S,
-)
-
-
-# What the harness puts in place of an answer when the user dismisses a dialog.
-# Keep in step with DISMISSED in state/global/transcript-archive/extract.py.
-DISMISSED = "[User dismissed — do not proceed, wait for next instruction]"
-
-
-def strip_harness(text):
-    """The text without its leading harness reminders, as build-roll.py's words()."""
-    while (m := HARNESS.match(text)):
-        text = text[m.end():]
-    return text
-
-
 def entry(prompt, now):
-    longest = max((len(r) for r in re.findall(r"`+", prompt)), default=0)
-    fence = "`" * max(3, longest + 1)
-    stamp = ids.get_roll_stamp(now)
-    return f"\n### {stamp}\n{fence}\n{prompt}\n{fence}\n"
+    return curia_words.entry(prompt, ids.get_roll_stamp(now))
 
 
 def dialog_words(questions, answers, annotations=None):
@@ -129,10 +107,10 @@ def append(roll, prompt, now):
     with lock.locked(roll) as fd:
         old = os.pread(fd, os.fstat(fd).st_size, 0)
         at = len(old)
-        m = re.search(rb"\n### (\d{8}t\d{6}z)\n(`{3,})\n((?:(?!\n\2\n).)*)\n\2\n\Z", old, re.S)
-        if m and text.startswith(f"\n### {m.group(1).decode()}\n"):
+        last = curia_words.last_entry(old)
+        if last and text.startswith(f"\n### {last[1]}\n"):
             try:  # an undecodable entry, never this hook's, is appended after
-                text, at = entry(m.group(3).decode("utf-8", "surrogatepass") + "\n\n" + prompt, now), m.start()
+                text, at = entry(last[2].decode("utf-8", "surrogatepass") + "\n\n" + prompt, now), last[0]
             except UnicodeDecodeError:
                 pass
         data = text.encode("utf-8", "surrogatepass")
@@ -152,7 +130,7 @@ def main():
         prompt = dialog_words(got.get("questions"), got.get("answers"), got.get("annotations")) or None
     elif isinstance(prompt, str):
         prompt = strip_harness(prompt)
-        if prompt.lstrip().startswith(AGENT_TEXT) or not prompt.strip():
+        if curia_words.is_agent_text(prompt) or not prompt.strip():
             return
     if not isinstance(session_id, str) or not session_id or not isinstance(prompt, str):
         return
