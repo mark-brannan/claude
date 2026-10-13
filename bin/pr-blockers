@@ -45,25 +45,8 @@ def parse(ref):
     return m[1], m[2], m[3]
 
 
-def pages(text):
-    """gh api --paginate joins JSON arrays back to back; read them all."""
-    dec, i, out = json.JSONDecoder(), 0, []
-    text = text.strip()
-    while i < len(text):
-        val, i = dec.raw_decode(text, i)
-        out += val
-        while i < len(text) and text[i].isspace():
-            i += 1
-    return out
-
-
-THREADS = """query($o:String!,$r:String!,$n:Int!,$endCursor:String){repository(owner:$o,name:$r){
-pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
-nodes{isResolved isOutdated path line comments(first:1){nodes{author{login} body}}}}}}}"""
-
-
-def objects(text):
-    """gh api graphql --paginate joins JSON objects back to back; read them all."""
+def values(text):
+    """gh api --paginate joins JSON replies back to back; read them all."""
     dec, i, out = json.JSONDecoder(), 0, []
     text = text.strip()
     while i < len(text):
@@ -72,6 +55,11 @@ def objects(text):
         while i < len(text) and text[i].isspace():
             i += 1
     return out
+
+
+THREADS = """query($o:String!,$r:String!,$n:Int!,$endCursor:String){repository(owner:$o,name:$r){
+pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
+nodes{isResolved isOutdated path line comments(first:1){nodes{author{login} body}}}}}}}"""
 
 
 def oneline(s, n=80):
@@ -84,8 +72,8 @@ def conversations(owner, repo, n, decision):
     if decision == "CHANGES_REQUESTED":
         out.append("a reviewer requested changes; fix: address the review, then re-request it")
     text = gh("api", "graphql", "--paginate", "-f", f"query={THREADS}",
-              "-F", f"o={owner}", "-F", f"r={repo}", "-F", f"n={n}")
-    for page in objects(text):
+              "-f", f"o={owner}", "-f", f"r={repo}", "-F", f"n={n}")  # -F would coerce a repo named 123 or true
+    for page in values(text):
         for t in page["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]:
             if t["isResolved"]:
                 continue
@@ -102,7 +90,7 @@ def conversations(owner, repo, n, decision):
 def blockers(owner, repo, n):
     pr = json.loads(gh("pr", "view", n, "--repo", f"{owner}/{repo}", "--json",
                        "mergeStateStatus,mergeable,statusCheckRollup,headRefName,reviewDecision"))
-    commits = pages(gh("api", "--paginate", f"repos/{owner}/{repo}/pulls/{n}/commits"))
+    commits = [c for page in values(gh("api", "--paginate", f"repos/{owner}/{repo}/pulls/{n}/commits")) for c in page]
     head, state = pr["headRefName"], pr["mergeStateStatus"]
     conflicts, talk, out = [], conversations(owner, repo, n, pr.get("reviewDecision")), []
     for c in commits:
