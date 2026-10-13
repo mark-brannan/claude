@@ -1153,12 +1153,12 @@ class Stop:
         except ValueError:
             backoff = 3
         for attempt in (1, 2):
+            # A cloud clone is checked out on the harness's claude/* branch;
+            # ordinary state never goes by PR, so the destination is main.
+            pull = ("origin", "main") if cloud else ()
             # A conflicted rebase left in place wedges this clone for every
             # later Stop and every hand commit; back out, and let the push
             # below fail and say so.
-            # A cloud clone is checked out on the harness's claude/* branch;
-            # the state repo has no PRs, so the destination is main, not HEAD.
-            pull = ("origin", "main") if cloud else ()
             if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
                 git_ok("rebase", "--abort")
             if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
