@@ -339,6 +339,9 @@ def rest_rollup(repo, sha):
 
 def rest_pr(repo, number):
     pr = rest(f"repos/{repo}/pulls/{number}")
+    if pr["mergeable"] is None:  # GitHub is still computing it after a push: one retry
+        time.sleep(3)
+        pr = rest(f"repos/{repo}/pulls/{number}")
     base, head = pr["base"], pr["head"]
     files = rest(f"repos/{repo}/pulls/{number}/files?per_page=100")
     latest = {}
@@ -362,7 +365,9 @@ def rest_pr(repo, number):
         "additions": pr["additions"], "deletions": pr["deletions"], "author": actor(pr["user"]),
         "files": {"totalCount": pr["changed_files"], "nodes": [{"path": f["filename"]} for f in files]},
         "labels": {"nodes": [{"name": l["name"]} for l in pr["labels"]]},
-        "reviewThreads": {"totalCount": len(threads), "nodes": threads},
+        # The CCR route is one plain array that ignores per_page (probed 2026-10-13), so
+        # 100 or more may be a truncated list: that reads as unread and hands the PR off.
+        "reviewThreads": {"totalCount": len(threads) + (len(threads) >= 100), "nodes": threads},
         "latestOpinionatedReviews": {"nodes": [{"state": r["state"], "author": actor(r["user"])}
                                                for r in latest.values()]},
         "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": rest_rollup(repo, head["sha"])}}}]},

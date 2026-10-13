@@ -30,7 +30,7 @@ REPO = "o/r"
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, re, subprocess, sys
-S =os.environ["PRT_STUB"]
+S = os.environ["PRT_STUB"]
 a = sys.argv[1:]
 open(S + "/calls", "a").write(" ".join(a) + "\n")
 def arg(flag):
@@ -250,6 +250,15 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(got[4]["human_threads"], 1)
         self.assertEqual(got[1]["ci"], "green")
         self.assertEqual(self.writes(), [])
+
+    def test_01d_a_full_ccr_thread_list_reads_as_unread(self):
+        """The CCR route does not page, so 100 threads may be a truncated list: hand off."""
+        rest_fixtures(self.T / "stub", REPO, PRS)
+        (self.T / "stub" / "rest-pulls-r-1-ccr-review_threads.json").write_text(json.dumps(
+            [{"resolved": True, "outdated": False, "path": "x", "line": 1, "comment_ids": [i]} for i in range(100)]))
+        refused = "GitHub GraphQL is not available from Claude Code sessions; use the REST API (HTTP 403)"
+        got = self.plan("--repo", REPO, "--dry-run", env={"STUB_GRAPHQL_FAIL": refused})
+        self.assertIn("threads unread", got[1]["handoff"])
 
     def test_01c_any_other_graphql_failure_is_not_a_fallback(self):
         out = self.prt("--repo", REPO, "--dry-run", env={"STUB_GRAPHQL_FAIL": "HTTP 502 bad gateway"}, code=1)
