@@ -6,6 +6,11 @@
 # the PR cannot be read, for any reason, including a malformed reply or a
 # missing gh, never as an exit 1 with nothing on stdout. Read-only: it calls gh only to read.
 #
+# Lines come in priority order: merge conflicts first, then open conversations
+# (unresolved review threads, requested changes), then everything else
+# (signatures, base drift, draft, checks). Conflicts and conversations need a
+# human or a rebase before the checks are worth reading.
+#
 # Reads GitHub's view of the PR, which a local checkout cannot see: commits
 # without a verified signature (the ruleset refuses them), a merge conflict, a
 # branch behind its base, failing or pending checks. A PR GitHub calls BLOCKED
@@ -51,12 +56,48 @@ def pages(text):
     return out
 
 
+THREADS = """query($o:String!,$r:String!,$n:Int!,$endCursor:String){repository(owner:$o,name:$r){
+pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
+nodes{isResolved isOutdated path line comments(first:1){nodes{author{login} body}}}}}}}"""
+
+
+def objects(text):
+    """gh api graphql --paginate joins JSON objects back to back; read them all."""
+    dec, i, out = json.JSONDecoder(), 0, []
+    text = text.strip()
+    while i < len(text):
+        val, i = dec.raw_decode(text, i)
+        out.append(val)
+        while i < len(text) and text[i].isspace():
+            i += 1
+    return out
+
+
+def conversations(owner, repo, n, decision):
+    out = []
+    if decision == "CHANGES_REQUESTED":
+        out.append("a reviewer requested changes; fix: address the review, then re-request it")
+    text = gh("api", "graphql", "--paginate", "-f", f"query={THREADS}",
+              "-F", f"o={owner}", "-F", f"r={repo}", "-F", f"n={n}")
+    for page in objects(text):
+        for t in page["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]:
+            if t["isResolved"]:
+                continue
+            c = (t["comments"]["nodes"] or [{}])[0]
+            who = (c.get("author") or {}).get("login") or "?"
+            body = ((c.get("body") or "").strip().splitlines() or [""])[0][:80]
+            where = f"{t['path']}:{t['line']}" if t.get("line") else t["path"]
+            out.append(f"unresolved review thread at {where} by {who}{' (outdated)' if t['isOutdated'] else ''}: "
+                       f"\"{body}\"; fix: answer or act on it, then resolve the thread")
+    return out
+
+
 def blockers(owner, repo, n):
     pr = json.loads(gh("pr", "view", n, "--repo", f"{owner}/{repo}", "--json",
-                       "mergeStateStatus,mergeable,statusCheckRollup,headRefName"))
+                       "mergeStateStatus,mergeable,statusCheckRollup,headRefName,reviewDecision"))
     commits = pages(gh("api", "--paginate", f"repos/{owner}/{repo}/pulls/{n}/commits"))
     head, state = pr["headRefName"], pr["mergeStateStatus"]
-    out = []
+    conflicts, talk, out = [], conversations(owner, repo, n, pr.get("reviewDecision")), []
     for c in commits:
         v = c["commit"].get("verification") or {}
         if not v.get("verified"):
@@ -64,7 +105,7 @@ def blockers(owner, repo, n):
             out.append(f"unsigned commit {c['sha'][:7]} by {who} (reason: {v.get('reason', 'unknown')}); "
                        f"the ruleset requires verified signatures; fix: ~/.claude/bin/resign-branch.sh {head}")
     if pr["mergeable"] == "CONFLICTING" or state == "DIRTY":
-        out.append("merge conflict with the base; fix: rebase or merge the base into the branch")
+        conflicts.append("merge conflict with the base; fix: rebase or merge the base into the branch")
     elif state == "BEHIND":
         out.append("branch is behind its base and the base requires it up to date; "
                    f"fix: update {head} from the base")
@@ -79,6 +120,7 @@ def blockers(owner, repo, n):
             out.append(f"check failing: {name} ({done.lower()}); fix: read its log and repair the cause")
     if state == "UNKNOWN" or pr["mergeable"] == "UNKNOWN":
         out.append("GitHub has not yet computed whether the PR can merge; fix: run pr-blockers again in a minute")
+    out = conflicts + talk + out
     if state == "BLOCKED" and not out:
         out.append("BLOCKED, cause not named by pr-blockers: likely review approval or a ruleset rule")
     return out
