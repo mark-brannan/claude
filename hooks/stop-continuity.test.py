@@ -872,6 +872,18 @@ class StopContinuityTest(unittest.TestCase):
                          "no flock: the push lock is released after the Stop")
         (w.BIN / "flock").unlink()
 
+        # --- cloud: a clone on the harness's claude/* branch lands on main ------
+        # The state repo has no PRs; pushing HEAD would strand the commit on
+        # a claude/* branch. The debounce stamp never holds a cloud push back.
+        CORIGIN, CREPO = w.make_state("state-cloud")
+        w.gitq(CREPO, "checkout", "-q", "-b", "claude/harness-named")
+        stamp(CREPO).write_text(f"{int(time.time())}\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=CREPO, CLAUDE_CODE_REMOTE="true")
+        self.assertEqual(subject(CORIGIN), f"State: work session {SID[:8]}", "cloud: the commit landed on main")
+        self.assertEqual(w.git(CORIGIN, "branch", "--list", "claude/*"), "", "cloud: no claude/* branch pushed")
+        self.assertEqual(w.git(CREPO, "rev-parse", "--abbrev-ref", "HEAD"), "main",
+                         "cloud: the clone is parked on main, nothing unpushed for the harness check")
+
         # --- a conflicting state-repo pull is backed out, never left mid-rebase
         # Upstream and this clone both add one path with different bytes: the
         # Stop's own commit conflicts on `pull --rebase`, and a rebase left in
