@@ -4,10 +4,12 @@
 # What matters: it fires on PR-shaped calls and nothing else, exactly once per
 # session, emits valid JSON whatever the rules file contains, and says so out
 # loud when the rules file or the heading is missing instead of going quiet.
+#
+# The hook reads commands through the languette plugin's scanner. LANGUETTE_ROOT
+# is the languette checkout to test against (ci.yml clones it); unset, the
+# user-scope plugin install this machine has. The scratch HOME's
+# installed_plugins.json points there.
 set -uo pipefail
-# AWK_PATH: a directory whose `awk` is the one to test (ci.yml runs this under
-# mawk, gawk and original-awk, like the other lib-shell-words suites).
-[ -n "${AWK_PATH:-}" ] && PATH="$AWK_PATH:$PATH"
 
 HOOK="$(cd "$(dirname "$0")" && pwd)/pr-ownership-context.sh"
 pass=0
@@ -15,8 +17,16 @@ fail=0
 
 SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT
+REAL_PLUGINS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
+unset CLAUDE_CONFIG_DIR
 export TMPDIR="$SCRATCH/tmp"; mkdir -p "$TMPDIR"
-export HOME="$SCRATCH/home"; mkdir -p "$HOME/.claude/rules"
+export HOME="$SCRATCH/home"; mkdir -p "$HOME/.claude/rules" "$HOME/.claude/plugins"
+ROOT=${LANGUETTE_ROOT:-$(jq -r '[.plugins | to_entries[] | select(.key | startswith("languette@")) | .value[]
+                                 | select(.scope == "user") | .installPath][0] // empty' "$REAL_PLUGINS" 2>/dev/null)}
+printf 'x' | python3 -I "$ROOT/languette/__main__.py" scan >/dev/null 2>&1 ||
+  { echo "FAIL: no languette with \`scan\` at '$ROOT' (set LANGUETTE_ROOT to a languette checkout)"; exit 1; }
+jq -n --arg p "$ROOT" '{version:2,plugins:{"languette@languette":[{scope:"user",installPath:$p}]}}' \
+  > "$HOME/.claude/plugins/installed_plugins.json"
 cat > "$HOME/.claude/rules/code.md" <<'MD'
 # Code
 
@@ -211,6 +221,24 @@ t 'recorded as read' "$(printf 'repo\to/r\t9\tread')" "$(rec_last rw9)"
 check inject 'MCP merge_pull_request -> work' \
   "$(jq -n '{session_id:"rw10",tool_name:"mcp__github__merge_pull_request",tool_input:{owner:"o",repo:"r",pullNumber:10}}')"
 t 'recorded as work' "$(printf 'repo\to/r\t10\twork')" "$(rec_last rw10)"
+
+# --- no scanner: the raw command, over-matched, never silence ----------------
+mv "$HOME/.claude/plugins/installed_plugins.json" "$SCRATCH/plugins.json"
+check inject 'no plugin: echo gh pr over-matches' "$(bash_input nf1 'echo gh pr view 5')"
+check inject 'no plugin: a real call still fires' "$(bash_input nf2 'gh pr comment 7 -R o/r --body ok')"
+t 'no plugin: the record still names the PR' "$(printf 'repo\to/r\t7\twork')" "$(rec_last nf2)"
+plugin_at() {  # plugin_at <install path>: the scratch HOME's languette install
+  jq -n --arg p "$1" '{version:2,plugins:{"languette@languette":[{scope:"user",installPath:$p}]}}' \
+    > "$HOME/.claude/plugins/installed_plugins.json"
+}
+plugin_at "$SCRATCH/nowhere"
+check inject 'gone install path: echo gh pr over-matches' "$(bash_input nf3 'echo gh pr view 5')"
+mkdir -p "$SCRATCH/old/languette"
+printf 'import sys\nsys.exit(2)\n' > "$SCRATCH/old/languette/__main__.py"
+plugin_at "$SCRATCH/old"
+check inject 'plugin without scan: echo gh pr over-matches' "$(bash_input nf4 'echo gh pr view 5')"
+rm "$HOME/.claude/plugins/installed_plugins.json"
+mv "$SCRATCH/plugins.json" "$HOME/.claude/plugins/installed_plugins.json"
 
 # --- once per session ----------------------------------------------------------
 check inject 'first PR call in s8'   "$(bash_input s8 'gh pr view')"
