@@ -61,6 +61,14 @@ elif a[:2] == ["api", "graphql"]:
     if os.environ.get("STUB_GRAPHQL_FAIL"):
         print(os.environ["STUB_GRAPHQL_FAIL"], file=sys.stderr)
         sys.exit(1)
+    q = next((x for x in a if x.startswith("query=")), "")
+    if "pullRequest(number" in q and "reviewThreads(" in q:  # pr-blockers: no open threads
+        print('{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}')
+        sys.exit(0)
+    if "pullRequest(number" in q and "commits(" in q:  # pr-blockers: commit signatures
+        n = next(x[2:] for x in a if x.startswith("n="))
+        print(fixture("commits-pr-" + n + ".json", '{"data":{"repository":{"pullRequest":{"commits":{"nodes":[]}}}}}'))
+        sys.exit(0)
     name = next(x[5:] for x in a if x.startswith("name="))
     print(fixture("graphql-" + name + ".json", ""))
 elif a[0] == "api" and re.match(r"repos/o/\w+/(pulls|commits)", a[1]):
@@ -88,8 +96,6 @@ elif a[:2] == ["pr", "comment"]:
     pass
 elif a[:2] == ["pr", "view"]:
     print(fixture("view-" + a[2] + ".json", '{"mergeStateStatus": "CLEAN", "mergeable": "MERGEABLE", "headRefName": "b", "statusCheckRollup": []}'))
-elif a[0] == "api" and a[-1].endswith("/commits"):
-    print(fixture("commits-pr-" + a[-1].split("/")[-2] + ".json", "[]"))
 else:
     sys.exit(1)
 '''
@@ -373,8 +379,9 @@ class PrtTest(unittest.TestCase):
 
     def test_08b_queue_names_what_pr_blockers_finds(self):
         stub = self.T / "stub" / "commits-pr-1.json"
-        stub.write_text(json.dumps([{"sha": "d" * 40, "author": {"login": "coderabbitai[bot]"}, "commit": {
-            "author": {"name": "x"}, "verification": {"verified": False, "reason": "unsigned"}}}]))
+        stub.write_text(json.dumps({"data": {"repository": {"pullRequest": {"commits": {"nodes": [{"commit": {
+            "oid": "d" * 40, "author": {"name": "x", "user": {"login": "coderabbitai[bot]"}},
+            "signature": None}}]}}}}}))
         try:
             out = self.prt("queue", f"{REPO}#1")
             self.assertIn("unsigned commit ddddddd by coderabbitai[bot]", out)

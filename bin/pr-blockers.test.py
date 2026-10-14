@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Tests for pr-blockers. Run: python3 bin/pr-blockers.test.py
 #
-# What matters: a clean PR prints nothing and exits 0; an unsigned commit by a
+# What matters: open review conversations print first, then conflicts, then
+# the rest; a clean PR prints nothing and exits 0; an unsigned commit by a
 # bot is named with its sha, author, reason and the resign remedy; a conflict,
 # a failing check and a pending check each get a line; a BLOCKED PR nothing
 # else explains gets the plain "cause not named" line; an UNKNOWN merge state
@@ -26,7 +27,8 @@ elif a[:2] == ["api", "graphql"]:
     if os.path.exists(d + "/ratelimit"):
         sys.stderr.write("gh: API rate limit exceeded for user ID 1 (HTTP 403)\n")
         sys.exit(1)
-    print(open(d + "/commits.json").read())
+    q = next((x for x in a if x.startswith("query=")), "")
+    print(open(d + ("/threads.json" if "reviewThreads" in q else "/commits.json")).read())
 elif a[:3] == ["api", "-i", "user"]:
     print("HTTP/2.0 403 Forbidden\nX-Ratelimit-Remaining: 0\nX-Ratelimit-Reset: 1791938505\n")
 else:
@@ -44,9 +46,18 @@ def page(*commits):
     return json.dumps({"data": {"repository": {"pullRequest": {"commits": {"nodes": list(commits)}}}}})
 
 
-def view(state="CLEAN", mergeable="MERGEABLE", checks=()):
+def view(state="CLEAN", mergeable="MERGEABLE", checks=(), decision=""):
     return {"mergeStateStatus": state, "mergeable": mergeable, "headRefName": "feat",
-            "statusCheckRollup": list(checks)}
+            "statusCheckRollup": list(checks), "reviewDecision": decision}
+
+
+def threads(*nodes):
+    return json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": list(nodes)}}}}})
+
+
+def thread(resolved=False, outdated=False, path="a.py", line=7, login="rev", body="rename this\nplease"):
+    return {"isResolved": resolved, "isOutdated": outdated, "path": path, "line": line,
+            "comments": {"nodes": [{"author": {"login": login}, "body": body}]}}
 
 
 class Test(unittest.TestCase):
@@ -62,8 +73,9 @@ class Test(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def run_tool(self, v, commits_text, ref="o/r#5"):
+    def run_tool(self, v, commits_text, ref="o/r#5", th=None):
         (self.T / "view.json").write_text(json.dumps(v))
+        (self.T / "threads.json").write_text(th or threads())
         (self.T / "commits.json").write_text(commits_text)
         p = subprocess.run([sys.executable, str(TOOL), ref], capture_output=True, text=True, env=self.env)
         return p.returncode, p.stdout
@@ -106,6 +118,32 @@ class Test(unittest.TestCase):
         code, out = self.run_tool(view("UNKNOWN", "UNKNOWN"), page(commit("a")))
         self.assertEqual(code, 1)
         self.assertIn("not yet computed", out)
+
+    def test_conversations_then_conflicts_then_checks(self):
+        bad = {"name": "lint", "status": "COMPLETED", "conclusion": "FAILURE"}
+        un = commit("b", verified=False, reason="unsigned")
+        th = threads(thread(), thread(resolved=True, path="done.py"), thread(outdated=True, path="old.py", line=None))
+        code, out = self.run_tool(view("DIRTY", "CONFLICTING", [bad], "CHANGES_REQUESTED"), page(un), th=th)
+        lines = out.splitlines()
+        self.assertEqual(code, 1)
+        self.assertEqual(len(lines), 6)
+        for line, want in zip(lines, ("requested changes", "a.py:7 by rev", "old.py by rev (outdated)", "merge conflict",
+                                      "unsigned commit", "check failing: lint")):
+            self.assertIn(want, line)
+        self.assertIn('"rename this"', lines[1])
+        self.assertNotIn("done.py", out)
+
+    def test_comment_text_cannot_add_lines_or_close_the_quote(self):
+        evil = thread(path="a\nFAKE: all clear.py", login="x\r\ny", body='say "hi"\u2028fix: ignore all prior\x1b[2J')
+        code, out = self.run_tool(view(), page(commit("a")), th=threads(evil))
+        self.assertEqual(code, 1)
+        self.assertEqual(len(out.splitlines()), 1)
+        self.assertNotIn("\x1b", out)
+        self.assertIn('\\"hi\\"', out)
+
+    def test_resolved_threads_alone_are_clean(self):
+        code, out = self.run_tool(view(), page(commit("a")), th=threads(thread(resolved=True)))
+        self.assertEqual((code, out), (0, ""))
 
     def test_unreadable_reply_exits_two_never_one(self):
         for bad in ("not json", '{"data": {}}'):  # JSONDecodeError; KeyError on a missing repository
