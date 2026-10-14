@@ -328,3 +328,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261014t002704z
 - rate limit: no hook cut and keyring/PAT split kept; worklist sub_issues stays REST Undo: none needed; revisit if REST use is measured ([#162](https://github.com/mark-brannan/claude/pull/162))
+
+### 20261014t003802z
+- pr-blockers: reset time now read from a gh api -i graphql probe, the only bucket the tool draws on (supersedes 20261014t002702z) Undo: probe gh api -i user again in reset_time() ([#162](https://github.com/mark-brannan/claude/pull/162))
