@@ -20,25 +20,6 @@ def k: if . >= 1000 then "\(. / 1000 | floor)k" else "\(.)" end;
 # reserve here any more -- the next candidate goes on this list before it
 # goes on screen.
 
-# Right-pad to $w visible characters. Only ever widens; a field that is
-# already over budget is left alone rather than truncated mid-number.
-def pad($w; $fill): . + (if length < $w then ($fill * ($w - length)) else "" end);
-
-# we might not even need this but don't remove it yet
-def ev: {
-    sessionstart: "▶",
-    sessionend: "∎",
-    stop: "⏸",
-    subagentstop: "␚⏹",
-    prompt: "💬",
-    question: "‽",
-    notification: "✉",
-    recompact: "🗜",
-    posttooluse: "🔧",
-    git: "⎇ ",
-    pulse: "○",
-}[.last_event] // .last_event;
-
 # The branch is the one field with no upper bound -- `claude/*` names run to
 # 36 characters and would push everything after it off the line on their own.
 def env: " \(.repo)@\(.branch
@@ -110,54 +91,6 @@ def time:
 # carries the split inline.
 def split: " ☺ \(.human_seconds | dur)/⚙ \(.agent_seconds | dur)";
 
-# --- quality-of-life nags ---------------------------------------------
-# Deterministic, desktop-UI-only: computed from the system clock and the
-# cache's own elapsed_seconds, never sent to the model, so nagging the user
-# costs nothing in context. Lives only in `block` -- the systemMessage shown
-# in the desktop UI at question/git/stop events -- not `row`, the terminal
-# statusline, which renders too often for an escalating nag to feel like
-# anything but noise.
-
-# Pacific hour, not the host's TZ. An ephemeral/cloud session's host clock
-# is usually UTC, which made this fire "LATE!" every Pacific evening. TZOFF
-# is the US/Pacific UTC offset in seconds, an env var the caller computes
-# (jq has no timezone database of its own); defaults to PST (-8h) if unset.
-def night_nag:
-  (($ENV.TZOFF // "-28800") | tonumber) as $tzoff
-  | (now + $tzoff | gmtime) as $lt
-  | ($lt[3]) as $h24
-  | ($lt[4]) as $m
-  | if $h24 >= 22 or $h24 < 5
-    then
-      (if $h24 < 12 then "am" else "pm" end) as $ampm
-      | (if $h24 == 0 then 12 elif $h24 > 12 then $h24 - 12 else $h24 end) as $h12
-      | "\($h12):\(if $m < 10 then "0\($m)" else "\($m)" end)\($ampm)" as $clock
-      # Minutes since 22:00, wrapping through midnight -- 22:00 -> 0,
-      # 00:00 -> 120, 05:00 -> 420. Lets the tiers below read as a plain
-      # elif ladder instead of chained hour/minute comparisons.
-      | (if $h24 >= 22 then ($h24 - 22) * 60 + $m else ($h24 + 2) * 60 + $m end) as $mins
-      # [moons per side, lines repeated] -- edit this ladder to retune tiers.
-      | (if   $mins <  90 then [1, 1]   # 22:00 --
-         elif $mins < 180 then [2, 1]   # 23:30 --
-         elif $mins < 240 then [3, 2]   # 01:00 --
-         elif $mins < 300 then [3, 3]   # 02:00 --
-         else                  [3, 4]   # 03:00 --
-         end) as [$moons, $lines]
-      | ([range($moons)] | map("🌙") | join("")) as $m3
-      | ([range($lines)] | map("\($m3) LATE! \($m3)") | join("\n")) as $block
-      | " \($block)(\($clock))"
-    else ""
-    end;
-
-# The sitting clock is not here. It used to be -- `break_nag`, escalating off
-# a `time_since_break_seconds` field that metrics-live.sh stamped on every
-# event including every statusline render, so the readout wound its own
-# timer by being drawn. The clock that replaced it is prompt-driven and lives
-# in metrics-live.sh's crossing engine, where it fires once per threshold
-# instead of on every render.
-
-def nag: night_nag;
-
 # --- layouts --------------------------------------------------------------
 # The two readouts are one vocabulary in two shapes, so both shapes live here
 # next to each other. When they each owned their layout the field *order*
@@ -176,9 +109,3 @@ def fields2: [time, turns, work];
 
 # One row, for the statusline; no 'event'
 def row: (["◆\(env)"] + fields + fields2) | join(" ");
-
-def block($w; $fill): . as $in
-                    | ((fields | join(" ")) + (fields2 | join(" "))) as $main
-                    | nag as $n
-                    | if $n == "" then $main else $main + "\n" + $n end;
-def block: block(75; " ");
