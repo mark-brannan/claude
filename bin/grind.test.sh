@@ -238,6 +238,10 @@ eq 'two items recorded in state' 2 "$(jq '.items | length' "$sess")"
 eq 'the default mode is bypassPermissions, not acceptEdits' 2 \
   "$(grep -c -- '--permission-mode bypassPermissions' "$CLAUDE_LOG")"
 lacks 'acceptEdits is never passed by default' 'permission-mode acceptEdits'
+# A headless worker that polls with Monitor or ScheduleWakeup spent $14 of a
+# $15 cap on one item (claude#59); the flag removes both tools outright.
+eq 'every worker is started without Monitor and ScheduleWakeup' 2 \
+  "$(grep -c -- '--disallowedTools Monitor ScheduleWakeup' "$CLAUDE_LOG")"
 : > "$CLAUDE_LOG"
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
 run --session-budget 100 --pause-every 1 --permission-mode acceptEdits
