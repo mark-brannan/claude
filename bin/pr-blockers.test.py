@@ -6,7 +6,9 @@
 # bot is named with its sha, author, reason and the resign remedy; a conflict,
 # a failing check and a pending check each get a line; a BLOCKED PR nothing
 # else explains gets the plain "cause not named" line; an UNKNOWN merge state
-# is never clean; commit pages beyond the first are read. `gh` is a stub serving fixtures.
+# is never clean; commit pages beyond the first are read; where GraphQL is refused
+# with a 403 (a Claude Code cloud session) the REST reads print the same lines.
+# `gh` is a stub serving fixtures.
 import json
 import os
 import subprocess
@@ -18,10 +20,21 @@ from pathlib import Path
 TOOL = Path(__file__).resolve().parent / "pr-blockers"
 
 STUB = r'''#!/usr/bin/env python3
-import os, sys
+import json, os, sys
 a = sys.argv[1:]
 d = os.environ["PRB_STUB"]
-if a[:2] == ["pr", "view"]:
+REFUSED = "GitHub GraphQL is not available from Claude Code sessions; use the REST API (HTTP 403)\n"
+if a[0] == "api" and a[1].startswith("repos/"):
+    path, _, query = a[1].partition("?")
+    routes = json.load(open(d + "/rest.json"))
+    if "page=1" not in query and "page=" in query:
+        print('{"check_runs": []}' if path.endswith("check-runs") else "[]")
+    else:
+        print(json.dumps(routes[path]))
+elif os.path.exists(d + "/nographql") and a[0] in ("pr", "api"):
+    sys.stderr.write(REFUSED)
+    sys.exit(1)
+elif a[:2] == ["pr", "view"]:
     print(open(d + "/view.json").read())
 elif a[:2] == ["api", "graphql"]:
     if os.path.exists(d + "/ratelimit"):
@@ -161,6 +174,47 @@ class Test(unittest.TestCase):
         self.assertEqual(len(out.splitlines()), 1)
         self.assertIn("rate limit exceeded", out)
         self.assertIn("00:41Z", out)  # 1791938505
+
+    def test_without_graphql_the_rest_reads_print_the_same_lines(self):
+        """A cloud session refuses GraphQL with a 403; REST and the CCR threads must read the same PR."""
+        bad = {"name": "lint", "status": "COMPLETED", "conclusion": "FAILURE"}
+        slow = {"name": "slow", "status": "IN_PROGRESS", "conclusion": ""}
+        legacy = {"context": "legacy", "state": "PENDING"}
+        un = commit("b", verified=False, login="coderabbitai[bot]", reason="UNSIGNED")
+        th = threads(thread(), thread(resolved=True, path="done.py"), thread(outdated=True, path="old.py", line=None))
+        code, want = self.run_tool(view("DIRTY", "CONFLICTING", [bad, slow, legacy], "CHANGES_REQUESTED"),
+                                   page(commit("a"), un), th=th)
+        self.assertEqual((code, len(want.splitlines())), (1, 8))
+        r = "repos/o/r"
+        routes = {
+            f"{r}/pulls/5": {"mergeable": False, "mergeable_state": "dirty", "head": {"sha": "h" * 40, "ref": "feat"}},
+            f"{r}/pulls/5/reviews": [{"state": "COMMENTED", "user": {"login": "x"}},
+                                     {"state": "CHANGES_REQUESTED", "user": {"login": "rev"}}],
+            f"{r}/commits/{'h' * 40}/check-runs": {"check_runs": [
+                {"name": "lint", "status": "completed", "conclusion": "failure"},
+                {"name": "slow", "status": "in_progress", "conclusion": None}]},
+            f"{r}/commits/{'h' * 40}/status": {"state": "pending", "statuses": [{"context": "legacy", "state": "pending"}]},
+            f"{r}/pulls/5/commits": [
+                {"sha": "a" * 40, "author": {"login": "me"}, "commit": {"author": {"name": "me"},
+                                                                         "verification": {"verified": True, "reason": "valid"}}},
+                {"sha": "b" * 40, "author": {"login": "coderabbitai[bot]"}, "commit": {
+                    "author": {"name": "coderabbitai[bot]"}, "verification": {"verified": False, "reason": "unsigned"}}}],
+            f"{r}/pulls/5/ccr/review_threads": [
+                {"resolved": False, "comment_ids": [1]}, {"resolved": True, "comment_ids": [2]},
+                {"resolved": False, "comment_ids": [3]}],
+            f"{r}/pulls/comments/1": {"path": "a.py", "line": 7, "position": 3, "user": {"login": "rev"},
+                                      "body": "rename this\nplease"},
+            f"{r}/pulls/comments/3": {"path": "old.py", "line": None, "position": None, "user": {"login": "rev"},
+                                      "body": "rename this\nplease"},
+        }
+        (self.T / "rest.json").write_text(json.dumps(routes))
+        (self.T / "nographql").write_text("")
+        try:
+            p = subprocess.run([sys.executable, str(TOOL), "o/r#5"], capture_output=True, text=True, env=self.env)
+        finally:
+            (self.T / "nographql").unlink()
+        self.assertEqual(p.stdout, want)
+        self.assertEqual(p.returncode, 1)
 
     def test_missing_gh_exits_two(self):
         with tempfile.TemporaryDirectory() as empty:

@@ -95,6 +95,7 @@ lib/lock.py
 lib/gitrun.py
 lib/libpath.py
 lib/critical_review.py
+lib/ghrest.py
 hooks/curia-roll.py
 hooks/curia_words.py
 hooks/session-metrics.jq

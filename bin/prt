@@ -53,6 +53,14 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import ghrest  # noqa: E402
+except ImportError:
+    sys.exit("prt: lib/ghrest.py not found (looked beside the tool and in ~/.claude/lib)")
+
 HERE = Path(__file__).resolve().parent
 CAP = 15
 # Guesses until three runs are measured; then the mean of the logged spend.
@@ -296,45 +304,23 @@ def is_bot(author):
 # Claude Code cloud sessions refuse GraphQL (HTTP 403). The PR facts then come
 # from REST and the unresolved threads from the CCR route, shaped like QUERY's
 # nodes so nothing past open_prs knows which path ran.
-NO_GRAPHQL = "GraphQL is not available"
 _graphql_ok = True
 
 
+def _gh_out(args):
+    return sh(["gh", *args]).stdout
+
+
 def rest(path):
-    return json.loads(sh(["gh", "api", path]).stdout or "null")
+    return ghrest.rest(_gh_out, path)
 
 
 def rest_pages(path, key=None):
-    """Every item of a paged REST list (key names the list inside an object)."""
-    out, sep = [], "&" if "?" in path else "?"
-    for page in range(1, 31):
-        got = rest(f"{path}{sep}per_page=100&page={page}")
-        got = got[key] if key else got
-        out += got
-        if len(got) < 100:
-            break
-    return out
-
-
-def actor(u):
-    u = u or {}
-    return {"login": u.get("login"), "__typename": u.get("type")}
+    return ghrest.rest_pages(_gh_out, path, key)
 
 
 def rest_rollup(repo, sha):
-    """statusCheckRollup's state from the commit's check runs and statuses."""
-    runs = rest_pages(f"repos/{repo}/commits/{sha}/check-runs", "check_runs")
-    states = [("PENDING" if r["status"] != "completed" else
-               "SUCCESS" if r["conclusion"] in ("success", "neutral", "skipped") else "FAILURE")
-              for r in runs]
-    combined = rest(f"repos/{repo}/commits/{sha}/status")
-    if combined.get("statuses"):
-        states.append({"success": "SUCCESS", "failure": "FAILURE", "error": "ERROR"}.get(
-            combined["state"], "PENDING"))
-    for s in ("FAILURE", "ERROR", "PENDING"):
-        if s in states:
-            return s
-    return "SUCCESS" if states else None
+    return ghrest.rest_rollup(_gh_out, repo, sha)
 
 
 def rest_pr(repo, number):
@@ -353,7 +339,7 @@ def rest_pr(repo, number):
         first = []
         if not t["resolved"] and t["comment_ids"]:
             c = rest(f"repos/{repo}/pulls/comments/{t['comment_ids'][0]}")
-            first = [{"url": c["html_url"], "author": actor(c["user"])}]
+            first = [{"url": c["html_url"], "author": ghrest.actor(c["user"])}]
         threads.append({"isResolved": t["resolved"], "comments": {"nodes": first}})
     auto = pr.get("auto_merge")
     return {
@@ -362,13 +348,13 @@ def rest_pr(repo, number):
         "isCrossRepository": (head["repo"] or {}).get("full_name") != base["repo"]["full_name"],
         "autoMergeRequest": {"enabledBy": {"login": (auto.get("enabled_by") or {}).get("login")}} if auto else None,
         "baseRefName": base["ref"], "headRefName": head["ref"], "headRefOid": head["sha"],
-        "additions": pr["additions"], "deletions": pr["deletions"], "author": actor(pr["user"]),
+        "additions": pr["additions"], "deletions": pr["deletions"], "author": ghrest.actor(pr["user"]),
         "files": {"totalCount": pr["changed_files"], "nodes": [{"path": f["filename"]} for f in files]},
         "labels": {"nodes": [{"name": l["name"]} for l in pr["labels"]]},
         # The CCR route is one plain array that ignores per_page (probed 2026-10-13), so
         # 100 or more may be a truncated list: that reads as unread and hands the PR off.
         "reviewThreads": {"totalCount": len(threads) + (len(threads) >= 100), "nodes": threads},
-        "latestOpinionatedReviews": {"nodes": [{"state": r["state"], "author": actor(r["user"])}
+        "latestOpinionatedReviews": {"nodes": [{"state": r["state"], "author": ghrest.actor(r["user"])}
                                                for r in latest.values()]},
         "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": rest_rollup(repo, head["sha"])}}}]},
     }
@@ -391,7 +377,7 @@ def open_prs(repo):
             args += ["-F", f"after={after}"]
         p = sh(["gh", *args], check=False)
         if p.returncode != 0:
-            if NO_GRAPHQL not in p.stdout + p.stderr:
+            if ghrest.NO_GRAPHQL not in p.stdout + p.stderr:
                 refuse(f"gh api graphql: {((p.stderr or p.stdout).strip().splitlines() or ['failed'])[-1]}")
             _graphql_ok = False
             break

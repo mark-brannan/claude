@@ -19,15 +19,30 @@
 # nothing for an unexplained BLOCKED. GitHub computes mergeability lazily, so
 # a fresh push can read UNKNOWN; that is a line too, never a clean exit.
 #
-# Every read goes over GraphQL (`gh pr view`, and the commit signatures), so one
-# rate-limit bucket covers the run. When GitHub answers 403 "rate limit
+# Every read goes over GraphQL (`gh pr view`, the review threads, the commit
+# signatures), so one rate-limit bucket covers the run. A Claude Code cloud
+# session refuses GraphQL (HTTP 403); there the same facts come from REST and
+# the CCR threads route, shaped like the GraphQL replies, so the output is the
+# same line for line. GraphQL stays first, so REST quota is not spent while the
+# GraphQL bucket has budget. When GitHub answers 403 "rate limit
 # exceeded" the PR is unreadable, which is itself what blocks the caller: it
 # prints one blocker line with the reset time and exits 1, not 2.
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
+
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import ghrest  # noqa: E402
+except ImportError:
+    sys.stderr.write("pr-blockers: lib/ghrest.py not found (looked beside the tool and in ~/.claude/lib)\n")
+    sys.exit(2)
 
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"}
@@ -43,11 +58,17 @@ class RateLimited(Exception):
     pass
 
 
+class NoGraphQL(Exception):
+    pass
+
+
 def gh(*args):
     p = subprocess.run(["gh", *args], capture_output=True, text=True)
     if p.returncode != 0:
         if "rate limit" in (p.stderr + p.stdout).lower():
             raise RateLimited()
+        if ghrest.NO_GRAPHQL in p.stderr + p.stdout:
+            raise NoGraphQL()
         tail = ((p.stderr or p.stdout).strip().splitlines() or ["failed"])[-1]
         sys.stderr.write(f"pr-blockers: gh {' '.join(args[:2])}: {tail}\n")
         sys.exit(2)
@@ -95,35 +116,89 @@ def oneline(s, n=80):
     return re.sub(r"[^\x20-\x7e]", "?", str(s or ""))[:n]
 
 
-def conversations(owner, repo, n, decision):
+def graphql_threads(owner, repo, n):
+    text = gh("api", "graphql", "--paginate", "-f", f"query={THREADS}",
+              "-f", f"o={owner}", "-f", f"r={repo}", "-F", f"n={n}")  # -F would coerce a repo named 123 or true
+    return [t for page in values(text) for t in page["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]]
+
+
+def conversations(threads, decision):
     out = []
     if decision == "CHANGES_REQUESTED":
         out.append("a reviewer requested changes; fix: address the review, then re-request it")
-    text = gh("api", "graphql", "--paginate", "-f", f"query={THREADS}",
-              "-f", f"o={owner}", "-f", f"r={repo}", "-F", f"n={n}")  # -F would coerce a repo named 123 or true
-    for page in values(text):
-        for t in page["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]:
-            if t["isResolved"]:
-                continue
-            c = (t["comments"]["nodes"] or [{}])[0]
-            who = oneline((c.get("author") or {}).get("login") or "?", 40)
-            body = oneline(((c.get("body") or "").strip().splitlines() or [""])[0])
-            path = oneline(t["path"], 120)
-            where = f"{path}:{int(t['line'])}" if t.get("line") else path
-            out.append(f"unresolved review thread at {where} by {who}{' (outdated)' if t['isOutdated'] else ''}: "
-                       f"{json.dumps(body)}; fix: answer or act on it, then resolve the thread")
+    for t in threads:
+        if t["isResolved"]:
+            continue
+        c = (t["comments"]["nodes"] or [{}])[0]
+        who = oneline((c.get("author") or {}).get("login") or "?", 40)
+        body = oneline(((c.get("body") or "").strip().splitlines() or [""])[0])
+        path = oneline(t["path"], 120)
+        where = f"{path}:{int(t['line'])}" if t.get("line") else path
+        out.append(f"unresolved review thread at {where} by {who}{' (outdated)' if t['isOutdated'] else ''}: "
+                   f"{json.dumps(body)}; fix: answer or act on it, then resolve the thread")
     return out
 
 
-def blockers(owner, repo, n):
+def graphql_read(owner, repo, n):
     pr = json.loads(gh("pr", "view", n, "--repo", f"{owner}/{repo}", "--json",
                        "mergeStateStatus,mergeable,statusCheckRollup,headRefName,reviewDecision"))
     replies = values(gh("api", "graphql", "--paginate", "-f", f"query={COMMITS}",
                         "-f", f"owner={owner}", "-f", f"name={repo}", "-F", f"n={n}"))
     commits = [c["commit"] for r in replies
                for c in r["data"]["repository"]["pullRequest"]["commits"]["nodes"]]
+    return pr, commits, graphql_threads(owner, repo, n)
+
+
+def run_gh(args):
+    return gh(*args)
+
+
+def rest_read(owner, repo, n):
+    """The same three reads over REST, shaped like graphql_read's."""
+    r = f"repos/{owner}/{repo}"
+    pr = ghrest.rest(run_gh, f"{r}/pulls/{n}")
+    if pr["mergeable"] is None:  # GitHub is still computing it after a push: one retry
+        time.sleep(3)
+        pr = ghrest.rest(run_gh, f"{r}/pulls/{n}")
+    sha = pr["head"]["sha"]
+    latest = {}
+    for rv in ghrest.rest_pages(run_gh, f"{r}/pulls/{n}/reviews"):
+        if rv["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
+            latest[(rv["user"] or {}).get("login")] = rv["state"]
+    checks = [{"name": c["name"], "status": c["status"].upper(), "conclusion": (c["conclusion"] or "").upper()}
+              for c in ghrest.rest_pages(run_gh, f"{r}/commits/{sha}/check-runs", "check_runs")]
+    checks += [{"context": s["context"], "state": s["state"].upper()}
+               for s in ghrest.rest(run_gh, f"{r}/commits/{sha}/status").get("statuses") or []]
+    view = {"mergeStateStatus": pr["mergeable_state"].upper(),
+            "mergeable": {True: "MERGEABLE", False: "CONFLICTING"}.get(pr["mergeable"], "UNKNOWN"),
+            "statusCheckRollup": checks, "headRefName": pr["head"]["ref"],
+            "reviewDecision": "CHANGES_REQUESTED" if "CHANGES_REQUESTED" in latest.values() else ""}
+    commits = [{"oid": c["sha"], "author": {"name": c["commit"]["author"]["name"],
+                                            "user": {"login": (c.get("author") or {}).get("login")}},
+                "signature": {"isValid": c["commit"]["verification"]["verified"],
+                              "state": c["commit"]["verification"]["reason"]}}
+               for c in ghrest.rest_pages(run_gh, f"{r}/pulls/{n}/commits")]
+    listed = ghrest.rest(run_gh, f"{r}/pulls/{n}/ccr/review_threads")
+    if len(listed) >= 100:  # the CCR route does not page, so this may be a truncated list: unread, not clean
+        raise RuntimeError("100 or more review threads; the CCR list may be truncated")
+    threads = []
+    for t in listed:
+        if t["resolved"]:
+            continue
+        c = ghrest.rest(run_gh, f"{r}/pulls/comments/{t['comment_ids'][0]}") if t["comment_ids"] else {}
+        threads.append({"isResolved": False, "path": c.get("path"), "line": c.get("line"),
+                        "isOutdated": bool(c) and c.get("line") is None and c.get("position") is None,
+                        "comments": {"nodes": [{"author": c.get("user"), "body": c.get("body")}]}})
+    return view, commits, threads
+
+
+def blockers(owner, repo, n):
+    try:
+        pr, commits, threads = graphql_read(owner, repo, n)
+    except NoGraphQL:
+        pr, commits, threads = rest_read(owner, repo, n)
     head, state = pr["headRefName"], pr["mergeStateStatus"]
-    conflicts, talk, out = [], conversations(owner, repo, n, pr.get("reviewDecision")), []
+    conflicts, talk, out = [], conversations(threads, pr.get("reviewDecision")), []
     for c in commits:
         v = c.get("signature") or {}
         if not v.get("isValid"):
