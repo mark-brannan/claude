@@ -322,3 +322,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261014t002653z
 - pr-blockers: a rate-limited read exits 1 with one blocker line, not 2 Undo: change the RateLimited branch in main() to return 2 ([#162](https://github.com/mark-brannan/claude/pull/162))
+
+### 20261014t002702z
+- pr-blockers: reset time read from a refused gh api -i user, not rate_limit Undo: drop reset_time() in bin/pr-blockers ([#162](https://github.com/mark-brannan/claude/pull/162))
