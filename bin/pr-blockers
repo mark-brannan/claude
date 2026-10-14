@@ -12,18 +12,36 @@
 # for a reason none of those names gets a line saying so; it never prints
 # nothing for an unexplained BLOCKED. GitHub computes mergeability lazily, so
 # a fresh push can read UNKNOWN; that is a line too, never a clean exit.
+#
+# Every read goes over GraphQL (`gh pr view`, and the commit signatures), so one
+# rate-limit bucket covers the run. When GitHub answers 403 "rate limit
+# exceeded" the PR is unreadable, which is itself what blocks the caller: it
+# prints one blocker line with the reset time and exits 1, not 2.
 import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"}
 
 
+COMMITS = """query($owner:String!,$name:String!,$n:Int!,$endCursor:String){
+  repository(owner:$owner,name:$name){pullRequest(number:$n){
+    commits(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
+      nodes{commit{oid author{name user{login}} signature{isValid state}}}}}}}"""
+
+
+class RateLimited(Exception):
+    pass
+
+
 def gh(*args):
     p = subprocess.run(["gh", *args], capture_output=True, text=True)
     if p.returncode != 0:
+        if "rate limit" in (p.stderr + p.stdout).lower():
+            raise RateLimited()
         tail = ((p.stderr or p.stdout).strip().splitlines() or ["failed"])[-1]
         sys.stderr.write(f"pr-blockers: gh {' '.join(args[:2])}: {tail}\n")
         sys.exit(2)
@@ -40,28 +58,41 @@ def parse(ref):
 
 
 def pages(text):
-    """gh api --paginate joins JSON arrays back to back; read them all."""
+    """gh api --paginate joins JSON replies back to back; read them all."""
     dec, i, out = json.JSONDecoder(), 0, []
     text = text.strip()
     while i < len(text):
         val, i = dec.raw_decode(text, i)
-        out += val
+        out.append(val)
         while i < len(text) and text[i].isspace():
             i += 1
     return out
 
 
+def reset_time():
+    """When the REST/GraphQL bucket refills, read off a refused call's headers.
+    `rate_limit` is no use: it has read a fresh bucket while the real one was spent."""
+    p = subprocess.run(["gh", "api", "-i", "user"], capture_output=True, text=True)
+    m = re.search(r"^x-ratelimit-reset:\s*(\d+)", p.stdout, re.I | re.M)
+    if not m:
+        return "an unknown time"
+    return datetime.fromtimestamp(int(m[1]), timezone.utc).strftime("%H:%MZ")
+
+
 def blockers(owner, repo, n):
     pr = json.loads(gh("pr", "view", n, "--repo", f"{owner}/{repo}", "--json",
                        "mergeStateStatus,mergeable,statusCheckRollup,headRefName"))
-    commits = pages(gh("api", "--paginate", f"repos/{owner}/{repo}/pulls/{n}/commits"))
+    replies = pages(gh("api", "graphql", "--paginate", "-f", f"query={COMMITS}",
+                       "-F", f"owner={owner}", "-F", f"name={repo}", "-F", f"n={n}"))
+    commits = [c["commit"] for r in replies
+               for c in r["data"]["repository"]["pullRequest"]["commits"]["nodes"]]
     head, state = pr["headRefName"], pr["mergeStateStatus"]
     out = []
     for c in commits:
-        v = c["commit"].get("verification") or {}
-        if not v.get("verified"):
-            who = (c.get("author") or {}).get("login") or c["commit"]["author"]["name"]
-            out.append(f"unsigned commit {c['sha'][:7]} by {who} (reason: {v.get('reason', 'unknown')}); "
+        v = c.get("signature") or {}
+        if not v.get("isValid"):
+            who = ((c["author"].get("user") or {}).get("login")) or c["author"]["name"]
+            out.append(f"unsigned commit {c['oid'][:7]} by {who} (reason: {(v.get('state') or 'unsigned').lower()}); "
                        f"the ruleset requires verified signatures; fix: ~/.claude/bin/resign-branch.sh {head}")
     if pr["mergeable"] == "CONFLICTING" or state == "DIRTY":
         out.append("merge conflict with the base; fix: rebase or merge the base into the branch")
@@ -91,6 +122,9 @@ def main(argv):
     ref = parse(argv[0])
     try:
         lines = blockers(*ref)
+    except RateLimited:
+        lines = [f"GitHub API rate limit exceeded; pr-blockers cannot read the PR until {reset_time()}; "
+                 "fix: wait for the reset, then run pr-blockers again"]
     except Exception as e:  # exit 1 means "blockers"; an unreadable PR must never look like that
         sys.stderr.write(f"pr-blockers: could not read the PR: {type(e).__name__}: {e}\n")
         return 2
