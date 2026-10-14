@@ -61,6 +61,9 @@ elif a[:2] == ["api", "graphql"]:
     if os.environ.get("STUB_GRAPHQL_FAIL"):
         print(os.environ["STUB_GRAPHQL_FAIL"], file=sys.stderr)
         sys.exit(1)
+    if any(x.startswith("query=") and "pullRequest(number" in x for x in a):  # pr-blockers: no open threads
+        print('{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}')
+        sys.exit(0)
     name = next(x[5:] for x in a if x.startswith("name="))
     print(fixture("graphql-" + name + ".json", ""))
 elif a[0] == "api" and re.match(r"repos/o/\w+/(pulls|commits)", a[1]):
