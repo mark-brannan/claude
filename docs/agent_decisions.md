@@ -325,3 +325,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261014t002702z
 - pr-blockers: reset time read from a refused gh api -i user, not rate_limit Undo: drop reset_time() in bin/pr-blockers ([#162](https://github.com/mark-brannan/claude/pull/162))
+
+### 20261014t002704z
+- rate limit: no hook cut and keyring/PAT split kept; worklist sub_issues stays REST Undo: none needed; revisit if REST use is measured ([#162](https://github.com/mark-brannan/claude/pull/162))
