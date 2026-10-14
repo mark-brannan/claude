@@ -319,3 +319,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261009t192141z
 - metrics spec file is docs/metrics-dashboard-spec.md Undo: rename the file ([#141](https://github.com/mark-brannan/claude/pull/141))
+
+### 20261014t002653z
+- pr-blockers: a rate-limited read exits 1 with one blocker line, not 2 Undo: change the RateLimited branch in main() to return 2 ([#162](https://github.com/mark-brannan/claude/pull/162))
