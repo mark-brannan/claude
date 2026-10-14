@@ -29,7 +29,7 @@ elif a[:2] == ["api", "graphql"]:
         sys.exit(1)
     q = next((x for x in a if x.startswith("query=")), "")
     print(open(d + ("/threads.json" if "reviewThreads" in q else "/commits.json")).read())
-elif a[:3] == ["api", "-i", "user"]:
+elif a[:3] == ["api", "-i", "graphql"]:
     print("HTTP/2.0 403 Forbidden\nX-Ratelimit-Remaining: 0\nX-Ratelimit-Reset: 1791938505\n")
 else:
     sys.exit(1)

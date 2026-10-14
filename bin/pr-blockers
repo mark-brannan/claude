@@ -76,9 +76,9 @@ def values(text):
 
 
 def reset_time():
-    """When the REST/GraphQL bucket refills, read off a refused call's headers.
+    """When the GraphQL bucket, the only one this tool draws on, refills: read off a call's headers.
     `rate_limit` is no use: it has read a fresh bucket while the real one was spent."""
-    p = subprocess.run(["gh", "api", "-i", "user"], capture_output=True, text=True)
+    p = subprocess.run(["gh", "api", "-i", "graphql", "-f", "query={viewer{login}}"], capture_output=True, text=True)
     m = re.search(r"^x-ratelimit-reset:\s*(\d+)", p.stdout, re.I | re.M)
     if not m:
         return "an unknown time"
