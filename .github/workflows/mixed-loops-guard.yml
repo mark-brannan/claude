@@ -10,9 +10,9 @@ name: Mixed loops guard
 # Solace, 2026-09-29; the standing order is the "Double-loop learning"
 # section of CLAUDE.md.
 #
-# Design set: every CLAUDE.md, rules/, docs/, any ADR path, and the curia
+# Design set: every CLAUDE.md, rules/, docs/, hooks/*-requirements.md, any ADR path, and the curia
 # and agora skills -- the loop-two artifacts.
-# Implementation set: anything with a shebang (bin/), .jq files, workflows,
+# Implementation set: anything with a shebang (bin/), .jq and .py files, workflows,
 # hooks/ and settings.json.
 # Everything else -- README, runbooks, tests, the other skills -- is
 # neutral and never trips the gate.
@@ -63,19 +63,21 @@ jobs:
             | while IFS= read -r f; do
                 case "$f" in
                   CLAUDE.md|*/CLAUDE.md|\
-                  rules/*|docs/*|\
+                  rules/*|docs/*|hooks/*-requirements.md|\
                   docs/adr/*|*.adr.md|\
                   skills/curia/*|skills/agora/*)
                     printf '%s\n' "$f" >> "$design"; continue ;;
                   *.test.*|*.examples.sh)
                     continue ;;
-                  *.jq|.github/workflows/*|hooks/*|settings.json)
+                  *.jq|*.py|.github/workflows/*|hooks/*|settings.json)
                     printf '%s\n' "$f" >> "$impl"; continue ;;
                 esac
-                # `|| sig=` : head closing the pipe early is not a failure.
-                sig=$(git show "HEAD:$f" 2>/dev/null | head -c 2) || sig=
+                # `|| true` inside the substitution: head closes the pipe early
+                # and, under pipefail, git's SIGPIPE would blank the signature
+                # of any script over ~64 KiB (dotfiles#409).
+                sig=$(git show "HEAD:$f" 2>/dev/null | head -c 2 || true)
                 if [ -z "$sig" ]; then
-                  sig=$(git show "$base:$f" 2>/dev/null | head -c 2) || sig=
+                  sig=$(git show "$base:$f" 2>/dev/null | head -c 2 || true)
                 fi
                 case "$sig" in
                   '#!') printf '%s\n' "$f" >> "$impl" ;;

@@ -12,7 +12,7 @@ name: Churn guard
 #
 # Gated: any changed file with a `#!` line -- .sh, the extensionless scripts
 # in bin/, hooks, anything scripty added later --
-# plus every .jq file. Tests, examples and docs alongside them are free: they
+# plus every .jq and .py file (lib/ modules carry no shebang). Tests, examples and docs alongside them are free: they
 # are how a change gets explained and must never count against it.
 #
 # Two limits, both deliberately tight:
@@ -70,13 +70,13 @@ jobs:
             | grep -vE '\.test\.[a-z]+$|\.examples\.sh$' \
             | while IFS= read -r f; do
                 case "$f" in
-                  *.jq) printf '%s\n' "$f"; continue ;;
+                  *.jq|*.py) printf '%s\n' "$f"; continue ;;
                 esac
                 # `|| true` inside the substitution, not after it: head closes
                 # the pipe after two bytes, and under pipefail git's SIGPIPE
                 # fails the whole assignment, so an outer `|| sig=` blanked the
                 # signature of every script over the pipe buffer (~64 KiB) --
-                # the biggest ones were the ones the gate never saw (#409).
+                # the biggest ones were the ones the gate never saw (dotfiles#409).
                 sig=$(git show "HEAD:$f" 2>/dev/null | head -c 2 || true)
                 case "$sig" in
                   '#!') printf '%s\n' "$f" ;;
