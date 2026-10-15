@@ -1,0 +1,109 @@
+name: Mixed loops guard
+
+# Loop one is the work; loop two is questioning the governing ideas behind
+# it. The two interleave on purpose -- implementation starts against a
+# design known to be incomplete, design resumes against a bootstrap known
+# to be flawed -- but they land in isolation: a design document and the
+# implementation it governs do not change in the same PR. A mixed PR is
+# unreviewable in the way that matters: the reader cannot tell whether the
+# doc was bent to fit the code or the code to fit the doc. Ruled by
+# Solace, 2026-09-29; the standing order is the "Double-loop learning"
+# section of CLAUDE.md.
+#
+# Design set: every CLAUDE.md, rules/, docs/, any ADR path, and the curia
+# and agora skills -- the loop-two artifacts.
+# Implementation set: anything with a shebang (bin/), .jq files, workflows,
+# hooks/ and settings.json.
+# Everything else -- README, runbooks, tests, the other skills -- is
+# neutral and never trips the gate.
+#
+# Bypass is the `mixed-loops-ok` label, applied by a human. A session cannot
+# apply it: the languette plugin's guard-bypass-labels denies the label by name. A gate whose
+# bypass the gated party can reach is not a gate.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: mixed-loops-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  mixed-loops:
+    runs-on: ubuntu-latest
+    env:
+      LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+      # Through env, never interpolated into the script: a context expression
+      # pasted into shell is the standard injection hole, whoever owns the ref.
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Design and implementation land apart
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          base="origin/$BASE_REF"
+          # Temp files, never paths in the checkout: running this by hand
+          # must not leave untracked artefacts in the worktree.
+          design=$(mktemp)
+          impl=$(mktemp)
+
+          # Classify every changed path, deletions included -- removing a
+          # design doc or a script is still that kind of change. Shebangs
+          # are read from HEAD, falling back to the base side for a
+          # deletion, so the test is exact wherever this runs.
+          git diff --name-only "$base...HEAD" \
+            | while IFS= read -r f; do
+                case "$f" in
+                  CLAUDE.md|*/CLAUDE.md|\
+                  rules/*|docs/*|\
+                  docs/adr/*|*.adr.md|\
+                  skills/curia/*|skills/agora/*)
+                    printf '%s\n' "$f" >> "$design"; continue ;;
+                  *.test.*|*.examples.sh)
+                    continue ;;
+                  *.jq|.github/workflows/*|hooks/*|settings.json)
+                    printf '%s\n' "$f" >> "$impl"; continue ;;
+                esac
+                # `|| sig=` : head closing the pipe early is not a failure.
+                sig=$(git show "HEAD:$f" 2>/dev/null | head -c 2) || sig=
+                if [ -z "$sig" ]; then
+                  sig=$(git show "$base:$f" 2>/dev/null | head -c 2) || sig=
+                fi
+                case "$sig" in
+                  '#!') printf '%s\n' "$f" >> "$impl" ;;
+                esac
+              done
+
+          if [ ! -s "$design" ] || [ ! -s "$impl" ]; then
+            echo "ok: design and implementation do not mix here"
+            exit 0
+          fi
+
+          echo "design files touched:"
+          sed 's/^/  /' "$design"
+          echo "implementation files touched:"
+          sed 's/^/  /' "$impl"
+
+          # Before the ::error::, not after: a labelled PR is a deliberate,
+          # human allowance and must not carry an error annotation on a
+          # green step.
+          case " $LABELS " in
+            *" mixed-loops-ok "*)
+              echo "::notice::design and implementation in one PR -- allowed by the mixed-loops-ok label"
+              exit 0
+              ;;
+          esac
+
+          echo "::error::design and implementation in one PR"
+          echo "Split it: the design change lands alone, the implementation follows."
+          echo "The loops interleave on purpose; the PRs do not."
+          echo "Bypass is the mixed-loops-ok label, a human's to apply."
+          exit 1
