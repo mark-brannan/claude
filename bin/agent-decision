@@ -118,7 +118,7 @@ RECORD_PATHS = ("docs/", "rules/", "CLAUDE.md")
 RECORD_CAP = 60_000  # chars of each record item handed to the judge
 ISSUE_CAP = 10  # issues read from one PR body
 JUDGE = ["claude", "-p", "--setting-sources", "", "--no-session-persistence", "--tools", "",
-         "--model", "claude-sonnet-5-5", "--effort", "low", "--max-budget-usd", "0.25",
+         "--model", "sonnet", "--effort", "low", "--max-budget-usd", "0.25",
          "--output-format", "json", "--system-prompt"]
 JUDGE_SYSTEM = """You check whether a default an agent took, and wants to log, contradicts the instructions on record.
 The record is the linked issue, the governing documents as they stood before the change, and the user's own words.
