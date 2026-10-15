@@ -83,9 +83,10 @@ You are a worker agent in <owner/repo>, in your own git worktree under
   If git says a branch is checked out elsewhere, report it and stop.
 - Stage by path, never `git add -A`. Commits end with the Co-Authored-By
   line the session reminder gives.
-- Before the PR: the fast local checks for what you touched (the test file
-  beside a hook, `sh -n`, shellcheck where CI runs it), then rebase on
-  origin/main; merge instead if the rebase conflicts.
+- Before the PR: the local checks (`sh -n`, shellcheck where CI runs it,
+  and the tests: the whole suite when it runs in about a minute, otherwise
+  a narrowed run whose output shows the tests you added ran), then rebase
+  on origin/main; merge instead if the rebase conflicts.
 - Open the PR: `area: what changed` title, `Closes #<n>`, what and why,
   how verified, the Claude Code attribution line. Then `git checkout
   --detach`, so the branch is free for the next session, and stop. Do not
