@@ -128,9 +128,13 @@ in nobody's queue but this session's.
     mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
     conflicts with main, so green checks are not a mergeable PR;
   - read CI once after the push; if it is still running, hand over with the
-    link and say so — `awaiting-human` says when it is green. Never re-run
-    locally a suite a CI job runs on that platform; run locally only what CI
-    can't (macOS);
+    link and say so — `awaiting-human` says when it is green. The suite ran
+    locally on the commit being pushed, before the push: whole, when it
+    finishes in about a minute; narrowed above that, and then the output
+    shows the tests this change added or changed actually ran — a `-k` that
+    selects none of them is green by selecting nothing (languette#221).
+    After the push CI is the oracle: never re-run locally what it has run
+    on that commit; run locally only what CI can't (macOS);
   - **the body carries a `Head: <sha>` line naming this push** — the last
     edit before hand-over, so a head that moves afterward (one more commit,
     a rebase, a resign) is visible on the PR page before anyone merges it,
