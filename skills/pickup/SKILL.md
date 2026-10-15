@@ -100,32 +100,63 @@ git checkout <the branch the item names>
 
 If git refuses because the branch is checked out in another worktree, that
 worktree holds it — but a holder is not always alive. A sub-agent that
-committed keeps its worktree, and the branch, after it has finished. Ask
-whether the holder lives, without entering its worktree (`<name>` is the
-last part of the path git named; the stamp is read off the card by its link,
-since `read -C .` would read your own fork's branch, which has no card):
+committed keeps its worktree, and the branch, after it has finished; a
+desktop tab the user keeps open for reference holds its branch for hours
+while doing nothing. Ask whether the holder is *working*, without entering
+its worktree (`<name>` is the last part of the path git named; the stamp is
+read off the card by its link, since `read -C .` would read your own fork's
+branch, which has no card):
 
 ```
 ~/.claude/hooks/claim-stamp.sh card-claims <the PR or issue link the item names>
 for p in /proc/[0-9]*; do case $(readlink "$p/cwd" 2>/dev/null) in */<name> | */<name>/*) echo "live: pid ${p#/proc/}" ;; esac; done
+cat ~/.claude/sessions/<pid>.json          # name, status, statusUpdatedAt (needs a pid)
+ls -lt --time-style=full-iso ~/.claude/projects/<worktree path with / and . as ->/*.jsonl | head -1
 ```
 
-**Live** — another session's claim stamp younger than two hours, or any
-process in that worktree: say so, naming the branch and the worktree, and
-stop. Don't take it away from them, and don't work anywhere else on the
-same branch.
+The registry file carries the title the user sees in the desktop app (`name`),
+a `status` of `busy`, `idle` or `waiting`, and when that last changed. The
+transcript's mtime is when the holder last did anything. With no pid (the
+tab is closed, or a sub-agent has finished) there is no registry file: the
+stamp and the transcript are then the two tests.
 
-**Idle** — neither: the holder is gone. Leave its worktree alone and take
-the branch alongside it, then say in one line which worktree held it and
-that it was idle:
+**Live** — any one of: the registry `status` is `busy`; another session's
+claim stamp younger than **25 minutes**; the holder's transcript written in
+the last **5 minutes**. A working session's p99 gap between
+transcript writes is 1.2 minutes, which is what justifies the 5-minute
+window.
+
+A live holder narrows the work; it does not end it. Do every step that
+needs no push, from a local branch off the remote:
 
 ```
-git checkout --ignore-other-worktrees <the branch>
-git merge --ff-only origin/<the branch>
+git checkout -B <short-name> origin/<the branch>
 ```
 
-If `--ff-only` fails, the idle worktree holds commits the remote lacks:
-report that and stop.
+Reply to and resolve the threads that need no change, read the failing
+checks, rebase or merge locally and report conflicts. Do not push. Then
+**run the liveness check again** before stopping, and report from the
+fresh numbers: a holder that went idle while you worked is parked, and the
+push proceeds under the fixup contract.
+
+Check what the holder has not pushed, from outside its checkout:
+`git -C <holder worktree> log origin/<the branch>..HEAD --oneline`. Any
+commit listed goes in the report line below. A parked holder with unpushed
+commits is a stop: report it and push nothing.
+
+**Parked** — none of the three: leave its worktree alone and work alongside
+it on the local branch above, pushing with
+`git push --force-with-lease origin HEAD:<the branch>` (a plain `git push`
+would create a remote branch named for the local one). A refused lease means
+someone else pushed, possibly the holder waking up: §6's stop rule applies.
+
+Either way the report names what was checked, never "another session":
+
+```
+Branch <branch> is held by your session "<registry name>" (pid <n>, status
+<status> since <time>; transcript <path> last written <time>, <m> min ago;
+worktree <path>). Treating it as <live | parked>.
+```
 
 Then claim it on the card, so a session on *another machine* — which git
 cannot see — knows too:
@@ -157,8 +188,8 @@ git fetch origin wip/<session-id> && git diff <branch>..FETCH_HEAD
 ```
 
 For a **PR fixup** the branch is the PR's head branch, and the same three
-rules hold — your own worktree, fetch first, refuse a branch a live worktree
-holds:
+rules hold — your own worktree, fetch first, no push to a branch a live
+worktree holds:
 
 ```
 gh pr checkout <n> --repo <owner/repo>     # or: git fetch origin && git checkout <head branch>
