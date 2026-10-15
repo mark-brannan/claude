@@ -12,7 +12,8 @@ name: Churn guard
 #
 # Gated: any changed file with a `#!` line -- .sh, the extensionless scripts
 # in bin/, hooks, anything scripty added later --
-# plus every .jq and .py file (lib/ modules carry no shebang). Tests, examples and docs alongside them are free: they
+# plus every .jq and .py file (lib/ modules carry no shebang).
+# Tests, examples and docs alongside them are free: they
 # are how a change gets explained and must never count against it.
 #
 # Two limits, both deliberately tight:
