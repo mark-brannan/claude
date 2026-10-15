@@ -111,7 +111,7 @@ branch, which has no card):
 ~/.claude/hooks/claim-stamp.sh card-claims <the PR or issue link the item names>
 for p in /proc/[0-9]*; do case $(readlink "$p/cwd" 2>/dev/null) in */<name> | */<name>/*) echo "live: pid ${p#/proc/}" ;; esac; done
 cat ~/.claude/sessions/<pid>.json          # name, status, statusUpdatedAt (needs a pid)
-ls -l --time-style=full-iso ~/.claude/projects/<worktree path with / and . as ->/*.jsonl
+ls -lt --time-style=full-iso ~/.claude/projects/<worktree path with / and . as ->/*.jsonl | head -1
 ```
 
 The registry file carries the title the user sees in the desktop app (`name`),
@@ -124,7 +124,7 @@ stamp and the transcript are then the two tests.
 claim stamp younger than **25 minutes**; the holder's transcript written in
 the last **5 minutes**. A working session's p99 gap between
 transcript writes is 1.2 minutes, which is what justifies the 5-minute
-window; two hours called most parked tabs live.
+window.
 
 A live holder narrows the work; it does not end it. Do every step that
 needs no push, from a local branch off the remote:
@@ -153,9 +153,10 @@ Branch <branch> is held by your session "<registry name>" (pid <n>, status
 worktree <path>). Treating it as <live | parked>.
 ```
 
-If `git merge --ff-only origin/<the branch>` would fail on the holder's
-own checkout, that worktree holds commits the remote lacks: report that in
-the same line, and work from the pushed state.
+Check what the holder has not pushed, from outside its checkout:
+`git -C <holder worktree> log origin/<the branch>..HEAD --oneline`. Any
+commit listed goes in the report line above. A parked holder with unpushed
+commits is a stop: report it and push nothing.
 
 Then claim it on the card, so a session on *another machine* — which git
 cannot see — knows too:
