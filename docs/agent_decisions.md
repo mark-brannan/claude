@@ -331,3 +331,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261014t003802z
 - pr-blockers: reset time now read from a gh api -i graphql probe, the only bucket the tool draws on (supersedes 20261014t002702z) Undo: probe gh api -i user again in reset_time() ([#162](https://github.com/mark-brannan/claude/pull/162))
+
+### 20261015t171133z
+- critical-review --merge goes through prt queue, so a Pencil line blocks the merge Undo: let Pencil lines pass prt queue for critical-review's caller ([#171](https://github.com/mark-brannan/claude/pull/171))
