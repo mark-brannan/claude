@@ -45,7 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUDGET: 30
-      LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+      # contains() on the label array compares whole names; a space-joined
+      # string with a substring match let a label named "x churn-ok y" pass.
+      WAIVED: ${{ contains(github.event.pull_request.labels.*.name, 'churn-ok') }}
       # Through env, never interpolated into the script: a context expression
       # pasted into shell is the standard injection hole, whoever owns the ref.
       BASE_REF: ${{ github.base_ref }}
@@ -62,13 +64,23 @@ jobs:
           # A temp file, never a path in the checkout: running this script by
           # hand must not leave an untracked artefact in the worktree.
           gated=$(mktemp)
+          changed=$(mktemp)
 
           # A script is a file with a shebang, read out of the commit rather
           # than the worktree so this is exact wherever it runs; .jq files
           # have no shebang and are named instead. Deletions are skipped --
           # there is nothing left to read.
-          git diff --name-only --diff-filter=d "$base...HEAD" \
-            | grep -vE '\.test\.[a-z]+$|\.examples\.sh$' \
+          # The diff is written to a file first so its own failure stops the
+          # guard instead of reading as "no script touched". grep exits 1 on
+          # no match, which is fine; anything else is a failure.
+          git diff --name-only --diff-filter=d "$base...HEAD" > "$changed"
+          # Paths are later passed to git by word, so a space or glob
+          # character in one would change what is measured: refuse them.
+          if grep -qE '[[:space:]*?[\\"]' "$changed"; then
+            echo "::error::a changed path has a space or glob character; rename it"
+            exit 1
+          fi
+          { grep -vE '\.test\.[a-z]+$|\.examples\.sh$' "$changed" || [ $? -eq 1 ]; } \
             | while IFS= read -r f; do
                 case "$f" in
                   *.jq|*.py) printf '%s\n' "$f"; continue ;;
@@ -82,7 +94,7 @@ jobs:
                 case "$sig" in
                   '#!') printf '%s\n' "$f" ;;
                 esac
-              done > "$gated" || true
+              done > "$gated"
 
           if [ ! -s "$gated" ]; then
             echo "ok: no script touched"
@@ -90,9 +102,8 @@ jobs:
           fi
 
           count=$(wc -l < "$gated")
-          # $(cat) unquoted on purpose: no path in this repo has a space,
-          # and git diff has no --pathspec-from-file.
-          lines=$(git diff --numstat "$base...HEAD" -- $(cat "$gated") \
+          mapfile -t paths < "$gated"
+          lines=$(git diff --numstat "$base...HEAD" -- "${paths[@]}" \
             | awk '{ a += $1 + $2 } END { print a + 0 }')
           echo "scripts touched ($count):"
           sed 's/^/  /' "$gated"
@@ -113,12 +124,10 @@ jobs:
           # Before the ::error::, not after: a labelled PR is a deliberate,
           # human allowance and must not carry an error annotation on a
           # green step.
-          case " $LABELS " in
-            *" churn-ok "*)
-              echo "::notice::over budget ($over ) -- allowed by the churn-ok label"
-              exit 0
-              ;;
-          esac
+          if [ "$WAIVED" = true ]; then
+            echo "::notice::over budget ($over ) -- allowed by the churn-ok label"
+            exit 0
+          fi
 
           echo "::error::churn over budget:$over"
           echo "Split it. One script, one concern, smallest piece first."

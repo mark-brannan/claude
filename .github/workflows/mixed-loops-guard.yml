@@ -36,7 +36,9 @@ jobs:
   mixed-loops:
     runs-on: ubuntu-latest
     env:
-      LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+      # contains() on the label array compares whole names; a space-joined
+      # string with a substring match let a label named "x mixed-loops-ok y" pass.
+      WAIVED: ${{ contains(github.event.pull_request.labels.*.name, 'mixed-loops-ok') }}
       # Through env, never interpolated into the script: a context expression
       # pasted into shell is the standard injection hole, whoever owns the ref.
       BASE_REF: ${{ github.base_ref }}
@@ -97,12 +99,10 @@ jobs:
           # Before the ::error::, not after: a labelled PR is a deliberate,
           # human allowance and must not carry an error annotation on a
           # green step.
-          case " $LABELS " in
-            *" mixed-loops-ok "*)
-              echo "::notice::design and implementation in one PR -- allowed by the mixed-loops-ok label"
-              exit 0
-              ;;
-          esac
+          if [ "$WAIVED" = true ]; then
+            echo "::notice::design and implementation in one PR -- allowed by the mixed-loops-ok label"
+            exit 0
+          fi
 
           echo "::error::design and implementation in one PR"
           echo "Split it: the design change lands alone, the implementation follows."
