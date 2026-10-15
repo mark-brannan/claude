@@ -1,9 +1,10 @@
 ---
 name: critical-review
-description: Fire the critical-review prompt at one pull request — review, fix, hand over ready. Use on "/critical-review <PR>" or "critical review of #N". Not for merging; that is the user's.
+description: Fire the critical-review prompt at one pull request — review, fix, hand over ready. Use on "/critical-review <PR> [--merge]" or "critical review of #N". Merges only on --merge, and only when nothing needs the user.
 ---
 
-Do a critical review of $ARGUMENTS.
+Do a critical review of $ARGUMENTS. `--merge` is not part of the PR
+ref; it is my word to merge, read at the end.
 
 You may ask questions or comment directly on the PR; every comment you
 post is signed as an agent's, the way the code rules say. Then, without
@@ -111,5 +112,12 @@ moved on bot comments until I asked what the doc said; then languette#110,
 #112 and #116 on 2026-10-08, my instruction undone on a thread three
 times in one night. Before you change anything a second time: find the
 record, write the Reversed or Decide line, stop.
+
+**With `--merge`:** when Look at, Reversed and Decide are all empty, run
+`~/.claude/bin/prt queue <owner/repo#n> --merge`. It queues the PR with
+Mergify after its own checks, and dequeue is the undo. Never `gh pr
+merge`. If it refuses, its reasons go under Look at, nothing else is
+tried, and the opening line says not merged. Without the flag, nothing
+merges.
 
 End with the PR link.
