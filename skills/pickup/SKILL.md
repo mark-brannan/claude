@@ -139,6 +139,11 @@ checks, rebase or merge locally and report conflicts. Do not push. Then
 fresh numbers: a holder that went idle while you worked is parked, and the
 push proceeds under the fixup contract.
 
+Check what the holder has not pushed, from outside its checkout:
+`git -C <holder worktree> log origin/<the branch>..HEAD --oneline`. Any
+commit listed goes in the report line below. A parked holder with unpushed
+commits is a stop: report it and push nothing.
+
 **Parked** — none of the three: leave its worktree alone and work alongside
 it on the local branch above, pushing with
 `git push --force-with-lease origin HEAD:<the branch>` (a plain `git push`
@@ -152,11 +157,6 @@ Branch <branch> is held by your session "<registry name>" (pid <n>, status
 <status> since <time>; transcript <path> last written <time>, <m> min ago;
 worktree <path>). Treating it as <live | parked>.
 ```
-
-Check what the holder has not pushed, from outside its checkout:
-`git -C <holder worktree> log origin/<the branch>..HEAD --oneline`. Any
-commit listed goes in the report line above. A parked holder with unpushed
-commits is a stop: report it and push nothing.
 
 Then claim it on the card, so a session on *another machine* — which git
 cannot see — knows too:
