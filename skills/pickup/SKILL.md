@@ -110,20 +110,21 @@ branch, which has no card):
 ```
 ~/.claude/hooks/claim-stamp.sh card-claims <the PR or issue link the item names>
 for p in /proc/[0-9]*; do case $(readlink "$p/cwd" 2>/dev/null) in */<name> | */<name>/*) echo "live: pid ${p#/proc/}" ;; esac; done
-cat ~/.claude/sessions/<pid>.json          # name, status, statusUpdatedAt
+cat ~/.claude/sessions/<pid>.json          # name, status, statusUpdatedAt (needs a pid)
 ls -l --time-style=full-iso ~/.claude/projects/<worktree path with / and . as ->/*.jsonl
 ```
 
 The registry file carries the title the user sees in the desktop app (`name`),
 a `status` of `busy`, `idle` or `waiting`, and when that last changed. The
-transcript's mtime is when the holder last did anything.
+transcript's mtime is when the holder last did anything. With no pid (the
+tab is closed, or a sub-agent has finished) there is no registry file: the
+stamp and the transcript are then the two tests.
 
 **Live** — any one of: the registry `status` is `busy`; another session's
 claim stamp younger than **25 minutes**; the holder's transcript written in
-the last **5 minutes**. Measured over 225 held-branch refusals
-(2026-10-14): a working session's p99 gap between transcript writes is 1.2
-minutes, and the holder had been quiet a median 30 minutes, 70% over 25.
-Two hours, the old window, called most parked tabs live.
+the last **5 minutes**. A working session's p99 gap between
+transcript writes is 1.2 minutes, which is what justifies the 5-minute
+window; two hours called most parked tabs live.
 
 A live holder narrows the work; it does not end it. Do every step that
 needs no push, from a local branch off the remote:
@@ -139,9 +140,10 @@ fresh numbers: a holder that went idle while you worked is parked, and the
 push proceeds under the fixup contract.
 
 **Parked** — none of the three: leave its worktree alone and work alongside
-it on the local branch above, pushing with `--force-with-lease` to the
-branch's own remote. A refused lease is the holder waking up: §6's stop
-rule applies.
+it on the local branch above, pushing with
+`git push --force-with-lease origin HEAD:<the branch>` (a plain `git push`
+would create a remote branch named for the local one). A refused lease means
+someone else pushed, possibly the holder waking up: §6's stop rule applies.
 
 Either way the report names what was checked, never "another session":
 
