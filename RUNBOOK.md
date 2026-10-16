@@ -1,14 +1,7 @@
 # Claude Code runbook
 
-Procedures for the Claude Code layer of these dotfiles: the hooks, the cloud
-environments, the PR workflows, and what to do when one of them misbehaves.
-
-The machine itself — setup, sync, secrets — is [RUNBOOK.md](../RUNBOOK.md),
-and nothing about Claude Code goes there. This file is where a hook, a cloud
-seed entry or a workflow gets its procedure.
-
-Procedures only. The hook designs and the scars behind them are in
-[README.md § Conventions](../README.md).
+Things to run. Hooks, cloud environments, PR workflows, and what to do when
+one misbehaves. What the layer is and how it is laid out: [README.md](README.md).
 
 ## Where things are
 
@@ -19,7 +12,9 @@ Procedures only. The hook designs and the scars behind them are in
 - [Refresh the MCP connector deny list](#refresh-the-mcp-connector-deny-list)
 
 **A real machine**
-- [Wire the hooks on a real machine](#wire-the-hooks-on-a-real-machine)
+- [Set up a new machine](#set-up-a-new-machine)
+- [Emergency: turn a guard off](#emergency-turn-a-guard-off)
+- [Work without an agent](#work-without-an-agent)
 - [Install the languette plugin](#install-the-languette-plugin)
 - [Change what the metrics readouts show](#change-what-the-metrics-readouts-show)
 - [Check a repo's prose budgets](#check-a-repos-prose-budgets)
@@ -192,22 +187,58 @@ job: it governs the CLI's own auto-fetch path, not the server-side delivery
 cloud sessions use. `deniedMcpServers` merges across all settings sources and
 beats every allowlist.
 
-## Wire the hooks on a real machine
-
-Nothing to do — `yadm clone` puts `.claude/settings.json` and
-`.claude/hooks/` in `$HOME`, which is user scope, and every session on the
-machine reads them. Hook commands resolve against `$HOME/.claude/hooks/`; the
-cloud seed's whole job is to put the same files at the same path on a VM.
-
-To confirm on a machine you have just set up:
+## Set up a new machine
 
 ```bash
-ls ~/.claude/hooks/
-bash ~/.claude/hooks/statusline-metrics.sh   # prints the status line, or nothing
+git clone https://github.com/mark-brannan/claude.git ~/.claude
 ```
 
-Then start a session: `session-start-continuity.sh` injecting the worklist brief
-is the end-to-end proof.
+```bash
+git clone https://github.com/mark-brannan/claude_prompts_scratch.git ~/claude_prompts_scratch
+```
+
+```bash
+claude plugin marketplace add mark-brannan/languette && claude plugin install languette@languette
+```
+
+```bash
+grep -q '.claude/bin' ~/.profile || printf '\nPATH="$HOME/.claude/bin:$PATH"\n' >> ~/.profile; export PATH="$HOME/.claude/bin:$PATH"
+```
+
+Verify: start a session. The first line printed is the worklist brief.
+No brief → [state repo not found](#session-state-went-to-claudestateglobal).
+
+## Emergency: turn a guard off
+
+A languette guard blocking a git command you mean to run:
+
+```bash
+claude plugin disable languette@languette
+```
+
+What each guard blocks and why: [languette README](https://github.com/mark-brannan/languette#readme).
+Still blocked → the gate is a hook in `settings.json`, not the plugin.
+Back on: `claude plugin enable languette@languette`.
+
+## Work without an agent
+
+What to run by hand when there is no session to ask.
+
+```bash
+worklist                      # the board: rulings, click work, the queue
+```
+
+```bash
+ls ~/claude_prompts_scratch/state/global/pickup/   # one hand-off per open session, newest last
+```
+
+```bash
+gh auth status || gh auth login    # most "403" and "could not resolve" errors are this
+```
+
+```bash
+git -C ~/.claude pull --rebase --autostash && git -C ~/claude_prompts_scratch pull --rebase --autostash
+```
 
 ## Install the languette plugin
 
