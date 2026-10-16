@@ -69,7 +69,7 @@ jobs:
                   docs/adr/*|*.adr.md|\
                   skills/curia/*|skills/agora/*)
                     printf '%s\n' "$f" >> "$design"; continue ;;
-                  *.test.*|*.examples.sh)
+                  *.test.*|*.examples.sh|tests/*|*/tests/*|test_*.py|*/test_*.py)
                     continue ;;
                   *.jq|*.py|.github/workflows/*|hooks/*|settings.json)
                     printf '%s\n' "$f" >> "$impl"; continue ;;

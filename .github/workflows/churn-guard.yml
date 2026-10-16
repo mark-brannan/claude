@@ -67,20 +67,17 @@ jobs:
           changed=$(mktemp)
 
           # A script is a file with a shebang, read out of the commit rather
-          # than the worktree so this is exact wherever it runs; .jq files
-          # have no shebang and are named instead. Deletions are skipped --
+          # than the worktree so this is exact wherever it runs; .jq and .py
+          # files may have no shebang and are named instead. Deletions are skipped --
           # there is nothing left to read.
           # The diff is written to a file first so its own failure stops the
           # guard instead of reading as "no script touched". grep exits 1 on
           # no match, which is fine; anything else is a failure.
           git diff --name-only --diff-filter=d "$base...HEAD" > "$changed"
-          # Paths are later passed to git by word, so a space or glob
-          # character in one would change what is measured: refuse them.
-          if grep -qE '[[:space:]*?[\\"]' "$changed"; then
-            echo "::error::a changed path has a space or glob character; rename it"
-            exit 1
-          fi
-          { grep -vE '\.test\.[a-z]+$|\.examples\.sh$' "$changed" || [ $? -eq 1 ]; } \
+          # Tests ride free under both naming styles: `x.test.sh` beside the
+          # script, and pytest's tests/ and test_*.py.
+          { grep -vE '\.test\.[a-z]+$|\.examples\.sh$|(^|/)tests/|(^|/)test_[^/]*\.py$' "$changed" \
+              || [ $? -eq 1 ]; } \
             | while IFS= read -r f; do
                 case "$f" in
                   *.jq|*.py) printf '%s\n' "$f"; continue ;;
@@ -103,7 +100,9 @@ jobs:
 
           count=$(wc -l < "$gated")
           mapfile -t paths < "$gated"
-          lines=$(git diff --numstat "$base...HEAD" -- "${paths[@]}" \
+          # --literal-pathspecs: a path with a glob character is that path,
+          # not a pattern that could widen or narrow what is measured.
+          lines=$(git --literal-pathspecs diff --numstat "$base...HEAD" -- "${paths[@]}" \
             | awk '{ a += $1 + $2 } END { print a + 0 }')
           echo "scripts touched ($count):"
           sed 's/^/  /' "$gated"
