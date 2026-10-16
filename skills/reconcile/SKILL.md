@@ -1,6 +1,6 @@
 ---
 name: reconcile
-description: Check the board and its memos against GitHub reality — a card on a merged/closed PR, a memo silent about being overtaken, a "Pending:" tail nobody resolved — and correct the record. Mechanical, not judgment: every finding is a `gh` check with proof. Use on "/reconcile", "reconcile the board", or when `worklist` reports it hasn't run today.
+description: "Check the board and its memos against GitHub reality — a card on a merged/closed PR, a memo silent about being overtaken, a \"Pending:\" tail nobody resolved — and correct the record. Mechanical, not judgment: every finding is a `gh` check with proof. Use on \"/reconcile\", \"reconcile the board\", or when `worklist` reports it hasn't run today."
 ---
 
 # Reconcile
