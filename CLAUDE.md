@@ -322,6 +322,12 @@ disruption, not an edit. When genuinely unsure whether something rises to
 this level, treat it as if it does; the cost of a false positive is one
 extra private file, the cost of a false negative is already public.
 
+**The working age key pair has one job: sops encryption of the secrets
+files.** Its public half encrypts nothing else; its private half stays
+where sops reads it, never fetched, printed or moved, and nothing is
+designed to need it readable by a workflow or an agent. Other work gets a
+purpose-made fine-grained PAT or a purpose-made key.
+
 # Nits
 When asking me to check a website or specific page, always give me the bare link in the chat first.
 If an option I need to click on an admin site is buried somewhere, talk me through the steps to get there;
