@@ -914,8 +914,11 @@ class StopContinuityTest(unittest.TestCase):
 
         # The local twin: the same failed push on a machine that keeps its
         # clone. The commit is the promise there, and it held (ruled for
-        # dotfiles#149).
+        # dotfiles#149). It needs a change of its own: within the same clock
+        # second as the cloud Stop above, its checkpoint and metrics match
+        # HEAD, so it would commit nothing and never reach the push.
         stamp(SREPO).unlink(missing_ok=True)
+        (SREPO / "state" / "global" / "twin.txt").write_text("twin\n")
         w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SREPO)
         self.assertEqual(w.git(SRORIGIN, "log", "-1", "--format=%s", "main"), "upstream-conflict",
                          "conflicting pull, local: the push really failed")
