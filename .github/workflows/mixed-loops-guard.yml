@@ -66,7 +66,7 @@ jobs:
                 case "$f" in
                   CLAUDE.md|*/CLAUDE.md|\
                   rules/*|docs/*|hooks/*-requirements.md|\
-                  docs/adr/*|*.adr.md|\
+                  *.adr.md|\
                   skills/curia/*|skills/agora/*)
                     printf '%s\n' "$f" >> "$design"; continue ;;
                   *.test.*|*.examples.sh|tests/*|*/tests/*|test_*.py|*/test_*.py)
