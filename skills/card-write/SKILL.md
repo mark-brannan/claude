@@ -1,6 +1,6 @@
 ---
 name: card-write
-description: Route an open loop to its one home — work it around, a GitHub issue, or a card, which is one work item in the state repo written through `work-item`: a one-line imperative brief, link mandatory. Use whenever a loop is found that must be captured ("card that", "add a card", "put it on the board", "file that", a unilateral call, a finding that doesn't belong in this session). Not for walking a card or issue with the user — that is /card-helper; not for pruning cards — that is /sweep.
+description: "Route an open loop to its one home — work it around, a GitHub issue, or a card, which is one work item in the state repo written through `work-item`: a one-line imperative brief, link mandatory. Use whenever a loop is found that must be captured (\"card that\", \"add a card\", \"put it on the board\", \"file that\", a unilateral call, a finding that doesn't belong in this session). Not for walking a card or issue with the user — that is /card-helper; not for pruning cards — that is /sweep."
 ---
 
 # Writing a card
