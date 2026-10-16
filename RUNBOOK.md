@@ -1,7 +1,7 @@
 # Claude Code runbook
 
 Things to run. Hooks, cloud environments, PR workflows, and what to do when
-one misbehaves. Why they are built this way: [README.md](README.md).
+one misbehaves. What the layer is and how it is laid out: [README.md](README.md).
 
 ## Where things are
 
@@ -13,7 +13,6 @@ one misbehaves. Why they are built this way: [README.md](README.md).
 
 **A real machine**
 - [Set up a new machine](#set-up-a-new-machine)
-- [Emergency: turn the hooks off](#emergency-turn-the-hooks-off)
 - [Emergency: turn a guard off](#emergency-turn-a-guard-off)
 - [Work without an agent](#work-without-an-agent)
 - [Install the languette plugin](#install-the-languette-plugin)
@@ -203,27 +202,11 @@ claude plugin marketplace add mark-brannan/languette && claude plugin install la
 ```
 
 ```bash
-grep -q '.claude/bin' ~/.profile || printf '\nPATH="$HOME/.claude/bin:$PATH"\n' >> ~/.profile
+grep -q '.claude/bin' ~/.profile || printf '\nPATH="$HOME/.claude/bin:$PATH"\n' >> ~/.profile; export PATH="$HOME/.claude/bin:$PATH"
 ```
 
 Verify: start a session. The first line printed is the worklist brief.
 No brief → [state repo not found](#session-state-went-to-claudestateglobal).
-
-## Emergency: turn the hooks off
-
-A Stop hook that blocks every stop, a gate that denies every Bash call, a
-session that will not end. All hooks come from one file; move it and they are
-gone from the next session.
-
-```bash
-mv ~/.claude/settings.json ~/.claude/settings.json.off
-```
-
-Back on:
-
-```bash
-mv ~/.claude/settings.json.off ~/.claude/settings.json
-```
 
 ## Emergency: turn a guard off
 
@@ -233,8 +216,9 @@ A languette guard blocking a git command you mean to run:
 claude plugin disable languette@languette
 ```
 
-Still blocked → the gate is a hook in `settings.json`, not the plugin: turn
-the hooks off (above). Back on: `claude plugin enable languette@languette`.
+What each guard blocks and why: [languette README](https://github.com/mark-brannan/languette#readme).
+Still blocked → the gate is a hook in `settings.json`, not the plugin.
+Back on: `claude plugin enable languette@languette`.
 
 ## Work without an agent
 
