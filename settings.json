@@ -368,6 +368,11 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/curia-roll.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null; true"
+          },
+          {
+            "type": "command",
+            "timeout": 30,
+            "command": "h=\"$HOME/.claude/hooks/pr-blockers-prompt.py\"; [ -f \"$h\" ] && python3 \"$h\"; true"
           }
         ]
       }

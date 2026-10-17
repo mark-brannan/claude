@@ -6,13 +6,17 @@ description: Fire the critical-review prompt at one pull request — review, fix
 Do a critical review of $ARGUMENTS. `--merge` is not part of the PR
 ref; it is my word to merge, read at the end.
 
+First, run `~/.claude/bin/pr-blockers <PR>`. Its lines are the first
+action items, in its order: open conversations before anything else.
+
 You may ask questions or comment directly on the PR; every comment you
 post is signed as an agent's, the way the code rules say. Then, without
 waiting for answers, switch gears: fix any open issues and get the PR
 ready for my review.
 
 Before the summary may call the PR ready to merge, run
-`~/.claude/bin/pr-blockers <PR>`. Any line it prints is fixed (an unsigned
+`~/.claude/bin/pr-blockers <PR>` again, after the review bots have had
+their pass on your last push. Any line it prints is fixed (an unsigned
 commit by `~/.claude/bin/resign-branch.sh`) or reported, never assumed:
 "awaiting approval" is a guess until it has said nothing else blocks.
 
