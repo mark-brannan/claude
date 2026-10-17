@@ -334,3 +334,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261015t171133z
 - critical-review --merge goes through prt queue, so a Pencil line blocks the merge Undo: let Pencil lines pass prt queue for critical-review's caller ([#171](https://github.com/mark-brannan/claude/pull/171))
+
+### 20261017t103814z
+- pr-blockers-prompt fires on any prompt naming a PR by URL or owner/repo#n, not only on fixup wording; a bare #n is not matched Undo: add a fixup/work verb test to pr_refs in hooks/pr-blockers-prompt.py (https://github.com/mark-brannan/claude/pulls) (no PR, branch claude/pr-blockers-fixup-priority-26e55f)
