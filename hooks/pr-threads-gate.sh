@@ -75,7 +75,13 @@ prs=$(sort -u "$record" | while IFS="$(printf '\t')" read -r kind a b c; do
       [ -d "$a" ] || continue
       # The PR url names the base repo, which is where the threads live; the
       # head repo would be wrong for a PR from a fork.
-      (cd "$a" && gh pr view --json url -q .url 2>/dev/null | sed -n 's#^https://github\.com/\([^/]*/[^/]*\)/pull/\([0-9]*\)$#\1\t\2#p') || :
+      # A local branch named apart from the PR's head (pickup's `checkout -B
+      # <short-name>`) has no PR by name; after its push, its HEAD does.
+      (cd "$a" && { u=$(gh pr view --json url -q .url 2>/dev/null) && [ -n "$u" ] ||
+          { sha=$(git rev-parse HEAD 2>/dev/null) && [ -n "$sha" ] &&
+            u=$(gh pr list --state open --limit 100 --json url,headRefOid \
+                  -q ".[] | select(.headRefOid==\"$sha\") | .url" 2>/dev/null); }; } &&
+        printf '%s\n' "$u" | sed -n 's#^https://github\.com/\([^/]*/[^/]*\)/pull/\([0-9]*\)$#\1\t\2#p') || :
       ;;
   esac
 done | sort -u)
