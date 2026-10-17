@@ -78,7 +78,9 @@ prs=$(sort -u "$record" | while IFS="$(printf '\t')" read -r kind a b c; do
       # A local branch named apart from the PR's head (pickup's `checkout -B
       # <short-name>`) has no PR by name; after its push, its HEAD does.
       (cd "$a" && { u=$(gh pr view --json url -q .url 2>/dev/null) && [ -n "$u" ] ||
-          u=$(gh pr list --state open --search "$(git rev-parse HEAD 2>/dev/null)" --json url -q '.[].url' 2>/dev/null); } &&
+          { sha=$(git rev-parse HEAD 2>/dev/null) && [ -n "$sha" ] &&
+            u=$(gh pr list --state open --limit 100 --json url,headRefOid \
+                  -q ".[] | select(.headRefOid==\"$sha\") | .url" 2>/dev/null); }; } &&
         printf '%s\n' "$u" | sed -n 's#^https://github\.com/\([^/]*/[^/]*\)/pull/\([0-9]*\)$#\1\t\2#p') || :
       ;;
   esac
