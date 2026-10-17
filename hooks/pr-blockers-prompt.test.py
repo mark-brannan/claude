@@ -21,6 +21,7 @@ case "$1" in
          echo 'merge conflict with main; fix: merge'; exit 1 ;;
   o/r#2) exit 0 ;;
   o/r#3) echo 'pr-blockers: gh pr view: not found' >&2; exit 2 ;;
+  o/r#4) echo 'pr-blockers: o/r#4 is merged' >&2; exit 3 ;;
   *) echo "called $1" >> "$(dirname "$0")/calls"; exit 0 ;;
 esac
 """
@@ -64,6 +65,15 @@ class PromptHookTest(unittest.TestCase):
         self.assertIn("o/r#2: nothing blocks it", ctx)
         self.assertIn("could not read o/r#3", ctx)
         self.assertIn("not found", ctx)
+
+    def test_not_open_is_one_line_and_no_action_items(self):
+        """A hand-off prompt names merged PRs and issues as context; the session must not be sent to work them."""
+        out = self.hook("picking up after o/r#4")
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("o/r#4 is merged; not an open pull request", ctx)
+        self.assertNotIn("These are your first action items", ctx)
+        self.assertNotIn("Run pr-blockers again", ctx)
+        self.assertTrue(out["systemMessage"].endswith(" o/r#4 is merged"), out["systemMessage"])
 
     def test_url_and_short_ref_to_same_pr_run_once_and_cap_holds(self):
         self.hook("https://github.com/x/y/pull/9 x/y#9 a/b#1 a/b#2 a/b#3")
