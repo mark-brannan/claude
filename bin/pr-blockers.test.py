@@ -35,6 +35,9 @@ elif os.path.exists(d + "/nographql") and a[0] in ("pr", "api"):
     sys.stderr.write(REFUSED)
     sys.exit(1)
 elif a[:2] == ["pr", "view"]:
+    if os.path.exists(d + "/notapr"):
+        sys.stderr.write("GraphQL: Could not resolve to a PullRequest with the number of 5. (repository.pullRequest)\n")
+        sys.exit(1)
     print(open(d + "/view.json").read())
 elif a[:2] == ["api", "graphql"]:
     if os.path.exists(d + "/ratelimit"):
@@ -59,9 +62,9 @@ def page(*commits):
     return json.dumps({"data": {"repository": {"pullRequest": {"commits": {"nodes": list(commits)}}}}})
 
 
-def view(state="CLEAN", mergeable="MERGEABLE", checks=(), decision=""):
+def view(state="CLEAN", mergeable="MERGEABLE", checks=(), decision="", pr_state="OPEN"):
     return {"mergeStateStatus": state, "mergeable": mergeable, "headRefName": "feat",
-            "statusCheckRollup": list(checks), "reviewDecision": decision}
+            "statusCheckRollup": list(checks), "reviewDecision": decision, "state": pr_state}
 
 
 def threads(*nodes):
@@ -86,12 +89,30 @@ class Test(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def run_tool(self, v, commits_text, ref="o/r#5", th=None):
+    def run_tool(self, v, commits_text, ref="o/r#5", th=None, err=None):
         (self.T / "view.json").write_text(json.dumps(v))
         (self.T / "threads.json").write_text(th or threads())
         (self.T / "commits.json").write_text(commits_text)
         p = subprocess.run([sys.executable, str(TOOL), ref], capture_output=True, text=True, env=self.env)
+        if err is not None:
+            err.append(p.stderr)
         return p.returncode, p.stdout
+
+    def test_merged_closed_and_issue_exit_three_and_say_which(self):
+        """A hand-off prompt names merged PRs and issues; none is a blocker, and none is unreadable."""
+        for pr_state, word in (("MERGED", "is merged"), ("CLOSED", "is closed without merging")):
+            err = []
+            code, out = self.run_tool(view("UNKNOWN", "UNKNOWN", pr_state=pr_state), page(commit("a")), err=err)
+            self.assertEqual((code, out), (3, ""), pr_state)
+            self.assertIn(f"o/r#5 {word}", err[0])
+        (self.T / "notapr").write_text("")
+        try:
+            err = []
+            code, out = self.run_tool(view(), page(commit("a")), err=err)
+        finally:
+            (self.T / "notapr").unlink()
+        self.assertEqual((code, out), (3, ""))
+        self.assertIn("o/r#5 is not a pull request", err[0])
 
     def test_clean_exits_zero_and_prints_nothing(self):
         ok = {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}
@@ -187,7 +208,8 @@ class Test(unittest.TestCase):
         self.assertEqual((code, len(want.splitlines())), (1, 8))
         r = "repos/o/r"
         routes = {
-            f"{r}/pulls/5": {"mergeable": False, "mergeable_state": "dirty", "head": {"sha": "h" * 40, "ref": "feat"}},
+            f"{r}/pulls/5": {"mergeable": False, "mergeable_state": "dirty", "state": "open", "merged": False,
+                             "head": {"sha": "h" * 40, "ref": "feat"}},
             f"{r}/pulls/5/reviews": [{"state": "COMMENTED", "user": {"login": "x"}},
                                      {"state": "CHANGES_REQUESTED", "user": {"login": "rev"}}],
             f"{r}/commits/{'h' * 40}/check-runs": {"check_runs": [
