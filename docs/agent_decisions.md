@@ -337,3 +337,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261017t103814z
 - pr-blockers-prompt fires on any prompt naming a PR by URL or owner/repo#n, not only on fixup wording; a bare #n is not matched Undo: add a fixup/work verb test to pr_refs in hooks/pr-blockers-prompt.py (https://github.com/mark-brannan/claude/pulls) (no PR, branch claude/pr-blockers-fixup-priority-26e55f)
+
+### 20261017t200326z
+- the prompt hook says one line for an issue, a merged or a closed PR rather than nothing Undo: drop the not-open branch's two appends in hooks/pr-blockers-prompt.py ([#176](https://github.com/mark-brannan/claude/pull/176))
