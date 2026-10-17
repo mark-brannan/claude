@@ -11,6 +11,7 @@ truth for the layer; it began as a copy from
 stopped tracking it at f09f0d2. Nothing is installed from this repo yet.
 
 ## Layout
+Set up and emergency instructions are here: [RUNBOOK.md](RUNBOOK.md)
 
 The repo root is `~/.claude`: delivery clones this repo there. So
 `hooks/`, `skills/`, `rules/`, `settings.json` and `CLAUDE.md` sit at the
