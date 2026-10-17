@@ -195,10 +195,13 @@ worktree holds:
 gh pr checkout <n> --repo <owner/repo>     # or: git fetch origin && git checkout <head branch>
 ```
 
-Then read the two briefs, and act on the one command they name. Nothing else
-in this skill makes a branch decision, and neither do you:
+Then read the three briefs. `pr-blockers` comes first, and its lines are the
+work list in its order: open conversations, then conflicts, then the rest.
+Act on the one branch command the others name. Nothing else in this skill
+makes a branch decision, and neither do you:
 
 ```
+~/.claude/bin/pr-blockers <owner/repo#n>    # what keeps it from merging, threads first
 pr-label-audit --pr <owner/repo#n>          # the GitHub side: verdict, threads, failing checks
 branch_brief <repo root> <head branch>      # the local side: base, ahead/behind, conflicts, unsigned
 ```
@@ -235,8 +238,9 @@ One text, two runners: this section is what a session works a PR to, and it
 is the same text `grind --prs` hands its headless workers. Lift it verbatim;
 do not paraphrase it into a second version that can drift from this one.
 
-1. **Threads first.** Address every unresolved review thread, reply on it,
-   resolve it. Before the checks, always: a session watching CI with an
+1. **Threads first.** Run `~/.claude/bin/pr-blockers <PR>`; its lines are
+   the work list, in its order. Address every unresolved review thread, reply
+   on it, resolve it. Before the checks, always: a session watching CI with an
    unanswered comment on the PR is spending the only resource that matters on
    the lowest-priority thing there is.
 
@@ -263,7 +267,10 @@ do not paraphrase it into a second version that can drift from this one.
    push you found.
 
 6. **Finish is `awaiting-human` back on the PR** — and Mergify puts it there,
-   computed from a green `ci-gate / gate` and no unresolved thread. The
+   computed from a green `ci-gate / gate` and no unresolved thread. Run
+   `pr-blockers` again after the last push, once the review bots have had
+   their pass: a bot thread lands minutes after the push that caused it.
+   The report opens with what it prints, conversations first. The
    session never applies that label and never merges the PR.
 
    After **one honest attempt**, or about **$1 of spend**, stop instead:

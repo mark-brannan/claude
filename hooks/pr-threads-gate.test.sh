@@ -19,7 +19,9 @@ cat > "$SCRATCH/bin/gh" <<'GH'
 #!/bin/sh
 echo "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "pr view") printf 'https://github.com/o/r/pull/7\n'; exit 0 ;;
+  "pr view") [ -n "${GH_NO_BRANCH_PR:-}" ] && { echo 'no pull requests found for branch "fix183"' >&2; exit 1; }
+    printf 'https://github.com/o/r/pull/7\n'; exit 0 ;;
+  "pr list") printf 'https://github.com/o/r/pull/7\n'; exit 0 ;;
   "repo view")
     case "$3" in
       o/notfound) echo "gh: HTTP 404: Not Found" >&2; exit 1 ;;
@@ -125,6 +127,11 @@ record s4 "$(printf 'repo\to/r\t7')"
 check block 'cwd -> PR via gh pr view' open "$(stop_input s4)"
 reason 'resolved to o/r#7'             'o/r#7 has'
 t 'same PR queried once' 1 "$(grep -c 'api graphql' "$GH_LOG")"
+# A local branch named apart from the PR head finds no PR by name; its HEAD does.
+record s6 "$(printf 'cwd\t%s' "$SCRATCH/repo")"
+export GH_NO_BRANCH_PR=1
+check block 'cwd -> PR by head sha'    open "$(stop_input s6)"
+unset GH_NO_BRANCH_PR
 record s5 "$(printf 'cwd\t%s/nope' "$SCRATCH")"
 check silent 'cwd that no longer exists' open "$(stop_input s5)"
 
