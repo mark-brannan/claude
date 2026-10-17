@@ -108,6 +108,10 @@ in nobody's queue but this session's.
   the threads while it runs. A session idling on `gh pr checks --watch` or a
   test run while an unanswered comment sits on the PR is wasting the one
   resource that matters.
+- In a repo whose `.github/show-dont-tell.yml` has a `serve:` line, a PR touching its rendered
+  paths carries a `## Try it` block that serves that PR's head from its own worktree in one
+  paste: the repo's `scripts/try-it` prints it; the shared show-dont-tell check is red without
+  it. On any PR or hypothetical change there, a dev server is up and its URL shown before the diff.
 - **Ready before hand-over.** In order:
   - every fast check the repo defines passes locally — formatter, lint,
     typecheck, build, tests; whatever that repo actually has;
