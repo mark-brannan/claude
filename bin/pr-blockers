@@ -4,7 +4,8 @@
 # One line per thing that keeps the pull request from merging, each naming its
 # cause and its remedy. Exit 0 when there are none, 1 when there are, 2 when
 # the PR cannot be read, for any reason, including a malformed reply or a
-# missing gh, never as an exit 1 with nothing on stdout. Read-only: it calls gh only to read.
+# missing gh, never as an exit 1 with nothing on stdout. Exit 3, one stderr line and
+# nothing on stdout, when the ref is not an open PR: an issue, merged, or closed. Read-only: it calls gh only to read.
 #
 # Lines come in priority order: open conversations (unresolved review threads,
 # requested changes) first, then merge conflicts, then everything else
@@ -62,6 +63,10 @@ class NoGraphQL(Exception):
     pass
 
 
+class NotOpen(Exception):
+    """Not an open pull request; str(e) says what it is."""
+
+
 def gh(*args):
     p = subprocess.run(["gh", *args], capture_output=True, text=True)
     if p.returncode != 0:
@@ -70,6 +75,9 @@ def gh(*args):
         if ghrest.NO_GRAPHQL in p.stderr + p.stdout:
             raise NoGraphQL()
         tail = ((p.stderr or p.stdout).strip().splitlines() or ["failed"])[-1]
+        if "Could not resolve to a PullRequest" in tail or (  # the PR read itself; a 404 on a later route is still exit 2
+                "HTTP 404" in tail and re.fullmatch(r"repos/[^/]+/[^/]+/pulls/\d+", args[-1])):
+            raise NotOpen("not a pull request (an issue, or no such number)")
         sys.stderr.write(f"pr-blockers: gh {' '.join(args[:2])}: {tail}\n")
         sys.exit(2)
     return p.stdout
@@ -139,9 +147,16 @@ def conversations(threads, decision):
     return out
 
 
+def must_be_open(state, merged=False):
+    """state as GitHub spells it, any case; a read without one is open, the old contract."""
+    if merged or (state or "OPEN").upper() != "OPEN":
+        raise NotOpen("merged" if merged or state.upper() == "MERGED" else "closed without merging")
+
+
 def graphql_read(owner, repo, n):
     pr = json.loads(gh("pr", "view", n, "--repo", f"{owner}/{repo}", "--json",
-                       "mergeStateStatus,mergeable,statusCheckRollup,headRefName,reviewDecision"))
+                       "mergeStateStatus,mergeable,statusCheckRollup,headRefName,reviewDecision,state"))
+    must_be_open(pr.get("state"))
     replies = values(gh("api", "graphql", "--paginate", "-f", f"query={COMMITS}",
                         "-f", f"owner={owner}", "-f", f"name={repo}", "-F", f"n={n}"))
     commits = [c["commit"] for r in replies
@@ -157,6 +172,7 @@ def rest_read(owner, repo, n):
     """The same three reads over REST, shaped like graphql_read's."""
     r = f"repos/{owner}/{repo}"
     pr = ghrest.rest(run_gh, f"{r}/pulls/{n}")
+    must_be_open(pr.get("state"), pr.get("merged"))
     if pr["mergeable"] is None:  # GitHub is still computing it after a push: one retry
         time.sleep(3)
         pr = ghrest.rest(run_gh, f"{r}/pulls/{n}")
@@ -237,6 +253,9 @@ def main(argv):
     except RateLimited:
         lines = [f"GitHub API rate limit exceeded; pr-blockers cannot read the PR until {reset_time()}; "
                  "fix: wait for the reset, then run pr-blockers again"]
+    except NotOpen as e:
+        sys.stderr.write(f"pr-blockers: {ref[0]}/{ref[1]}#{ref[2]} is {e}\n")
+        return 3
     except Exception as e:  # exit 1 means "blockers"; an unreadable PR must never look like that
         sys.stderr.write(f"pr-blockers: could not read the PR: {type(e).__name__}: {e}\n")
         return 2
