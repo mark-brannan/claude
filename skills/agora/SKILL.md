@@ -50,6 +50,13 @@ reuses it. A card whose question events have overtaken never reaches the
 user: restate the live question under it, or route it
 to `/sweep`. "May I delete this?" is never the item. The docket is counted
 after admission; a card routed away leaves the count.
+A visual item (how something looks: a drawing, a crop, a sprite, a
+picture, a layout) is admitted only with its visual evidence attached or
+linked in the question itself: goldens, a before/after, or a rendered
+example. With none, the brief's subagent renders it first, or the item
+does not reach the user.
+A question never cites a label by its code alone (R1, D5, Q-nn, §7); it
+gives the label's words, in one or two sentences.
 
 **The brief** follows [brief.md](brief.md), which `/scoping` shares;
 read it before writing one.
