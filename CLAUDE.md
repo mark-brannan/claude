@@ -258,8 +258,9 @@ Hooks handle the mechanics unprompted.
   sections: rulings, my click work, your queue. `worklist` reads, `/sweep`
   prunes with my tick, nothing else edits.
 - **The one-way-door test:** name the default and its undo; if there is a
-  default, and the undo is a revert in a repo you control before anyone
-  else has seen or built on the choice, take the default. A choice I have
+  default, the undo is a revert in a repo you control before anyone else
+  has seen or built on the choice, and the choice is no convention, take
+  the default. A choice I have
   made — in an issue, a design doc, a decisions line, a thread — is one I
   have seen: undoing it is a reversal, never a default, however cheap the
   revert. Only a failure
