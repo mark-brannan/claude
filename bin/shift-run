@@ -1,0 +1,148 @@
+#!/bin/bash
+# shift-run -- the headless shift entry point: one command works a repo's
+# open issues that carry a label, one item at a time, in the shift shape:
+#
+#   coder -> bot threads -> critical review -> CI gate -> squash merge
+#
+# A zero-token driver, like grind: the script owns the order, the CI wait and
+# the merge; a worker (a fresh `claude -p` per phase) owns only the judgment
+# parts. A halt never becomes a question: it becomes a comment on the issue,
+# the `needs-human` label and, best effort, a card; the run goes on to the
+# next item.
+#
+#   shift-run --label <label> [--repo o/r] [--worker <cmd>] [--limit N]
+#             [--wait-minutes N] [--needs-human <label>] [--dry-run]
+#
+#   --label        issues carrying this label are the queue (required; a
+#                  parameter, no name is built in)
+#   --repo         default: the checkout's repo
+#   --worker       the command that takes a worker's seat; prompt on stdin,
+#                  answer on stdout. Default `claude -p --permission-mode
+#                  bypassPermissions`; also $SHIFT_WORKER. Any CLI that reads
+#                  a prompt and ends with a status line can sit there.
+#   --limit        most items this run (default 5)
+#   --wait-minutes the one bounded CI wait per PR (default 8, capped at 9)
+#   --dry-run      list what would be dispatched and with which worker; no
+#                  worker runs, nothing on GitHub is written
+#
+# Worker contract: the last `SHIFT:` line of its answer counts.
+#   SHIFT: pr=<n>        coder only: the PR is open
+#   SHIFT: ok            threads and review phases: nothing left open
+#   SHIFT: halt <why>    any phase: a question only a human can answer
+# No status line, a non-zero exit or a `halt` all halt the item.
+# Exit 0 when every item merged, 1 when any halted, 2 on a usage error.
+set -uo pipefail
+
+usage() { printf 'usage: shift-run --label <label> [--repo o/r] [--worker <cmd>] [--limit N] [--wait-minutes N] [--needs-human <label>] [--dry-run]\n'; }
+
+label=""; repo=""; limit=5; wait_min=8; needs_human=needs-human; dry=0
+worker=${SHIFT_WORKER:-"claude -p --permission-mode bypassPermissions"}
+while [ $# -gt 0 ]; do
+  case $1 in
+    --label) label=${2:-}; shift ;;
+    --repo) repo=${2:-}; shift ;;
+    --worker) worker=${2:-}; shift ;;
+    --limit) limit=${2:-}; shift ;;
+    --wait-minutes) wait_min=${2:-}; shift ;;
+    --needs-human) needs_human=${2:-}; shift ;;
+    --dry-run) dry=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'shift-run: unknown argument %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+[ -n "$label" ] || { usage >&2; exit 2; }
+case $limit in ''|*[!0-9]*) echo "shift-run: --limit wants a number" >&2; exit 2 ;; esac
+case $wait_min in ''|*[!0-9]*) echo "shift-run: --wait-minutes wants a number" >&2; exit 2 ;; esac
+[ "$wait_min" -le 9 ] || wait_min=9
+command -v jq >/dev/null 2>&1 || { echo "shift-run: needs jq" >&2; exit 2; }
+if [ -z "$repo" ]; then
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) || repo=""
+  [ -n "$repo" ] || { echo "shift-run: no --repo and no repo for this checkout" >&2; exit 2; }
+fi
+
+here=$(cd "$(dirname "$0")" && pwd)
+work_item=${SHIFT_WORK_ITEM:-$here/work-item}
+card_id=${SHIFT_CARD_ID:-$here/card-id}
+
+# Queue: open issues with the label, lowest number first, minus the ones a
+# human already holds (the needs-human label).
+queue=$(gh issue list -R "$repo" --label "$label" --state open --limit 100 --json number,title,labels 2>/dev/null) \
+  || { echo "shift-run: could not list issues for $repo" >&2; exit 1; }
+queue=$(printf '%s' "$queue" | jq -c --arg nh "$needs_human" --argjson n "$limit" \
+  '[.[] | select((.labels|map(.name)|index($nh)) == null)] | sort_by(.number) | .[:$n]')
+count=$(printf '%s' "$queue" | jq 'length')
+
+if [ "$dry" = 1 ]; then
+  printf 'shift-run dry run: %s, label "%s", %s item(s)\n' "$repo" "$label" "$count"
+  printf 'worker: %s\n' "$worker"
+  printf 'phases per item: coder, threads, review, ci-gate (%sm), squash-merge\n' "$wait_min"
+  printf '%s' "$queue" | jq -r --arg w "$worker" '.[] | "  would dispatch #\(.number)  \(.title)  [worker: \($w)]"'
+  [ "$count" -gt 0 ] || echo "  (nothing to dispatch)"
+  exit 0
+fi
+
+NEVER_WAIT='You are short-lived and never wait on a PR: no `gh pr checks --watch`, no sleep, no polling loop. If a question only a human can answer blocks you, do not ask it: end with "SHIFT: halt <the question and your default>".'
+
+# ask <prompt> -> sets $answer (worker stdout) and $status (last SHIFT: line)
+ask() {
+  answer=$(printf '%s\n' "$1" | sh -c "$worker" 2>/dev/null) || { status="SHIFT: halt the worker command failed"; return; }
+  status=$(printf '%s\n' "$answer" | grep '^SHIFT:' | tail -n 1)
+  [ -n "$status" ] || status="SHIFT: halt the worker ended without a status line"
+}
+
+halt() { # <issue> <title> <pr> <why>
+  local n=$1 title=$2 pr=$3 why=$4 body id
+  body="Shift halted on this item${pr:+ (PR #$pr)}: $why"
+  gh issue comment "$n" -R "$repo" --body "$body"$'\n\n'"Generated by shift-run." >/dev/null 2>&1 || true
+  gh issue edit "$n" -R "$repo" --add-label "$needs_human" >/dev/null 2>&1 || true
+  if id=$("$card_id" new 2>/dev/null); then
+    "$work_item" create --id "$id" --repo "$repo" --owner human-ruling \
+      --brief "Shift halted on https://github.com/$repo/issues/$n -- $why" \
+      "Shift halt: $repo#$n $title" >/dev/null 2>&1 || true
+  fi
+  printf 'HALT  %s#%s: %s\n' "$repo" "$n" "$why"
+}
+
+merged=0; halted=0
+while IFS= read -r item; do
+  [ -n "$item" ] || continue
+  n=$(jq -r .number <<<"$item"); title=$(jq -r .title <<<"$item")
+  printf 'ITEM  %s#%s %s\n' "$repo" "$n" "$title"
+
+  ask "Work $repo#$n ($title) in your own worktree on a new branch off fresh origin/main. Read the issue with gh issue view $n -R $repo; build what it asks and nothing more; run the local checks; open one PR that says Closes #$n. Never merge. $NEVER_WAIT
+End your answer with: SHIFT: pr=<number>"
+  case $status in
+    "SHIFT: pr="[0-9]*) pr=${status#SHIFT: pr=}; pr=${pr%% *} ;;
+    *) halt "$n" "$title" "" "coder: ${status#SHIFT: }"; halted=$((halted+1)); continue ;;
+  esac
+
+  ask "Read the bot review threads on $repo#$pr once. For each unresolved thread: read it, fix it or answer it with evidence, resolve it by id, one at a time. Push at most one commit. $NEVER_WAIT
+End your answer with: SHIFT: ok"
+  [ "$status" = "SHIFT: ok" ] || { halt "$n" "$title" "$pr" "threads: ${status#SHIFT: }"; halted=$((halted+1)); continue; }
+
+  ask "You did not write $repo#$pr. Invoke the critical-review skill on it: one pass; you may push one commit of fixes. A judgment call that is the user's, a reversal of an instruction or a design question is not yours to fix: end with SHIFT: halt and the question. $NEVER_WAIT
+End your answer with: SHIFT: ok"
+  [ "$status" = "SHIFT: ok" ] || { halt "$n" "$title" "$pr" "review: ${status#SHIFT: }"; halted=$((halted+1)); continue; }
+
+  # The gate is the script's: one bounded wait, then one reading.
+  timeout "${wait_min}m" gh pr checks "$pr" -R "$repo" --watch --fail-fast >/dev/null 2>&1
+  checks_rc=$?
+  mergeable=$(gh pr view "$pr" -R "$repo" --json mergeable -q .mergeable 2>/dev/null || echo UNKNOWN)
+  open_threads=$(gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved}}}}}' \
+    -F o="${repo%%/*}" -F r="${repo#*/}" -F n="$pr" \
+    -q '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved|not)]|length' 2>/dev/null || echo "?")
+  if [ "$checks_rc" -ne 0 ] || [ "$mergeable" != MERGEABLE ] || [ "$open_threads" != 0 ]; then
+    halt "$n" "$title" "$pr" "gate: checks exit $checks_rc, mergeable $mergeable, open threads $open_threads"
+    halted=$((halted+1)); continue
+  fi
+
+  if gh pr merge "$pr" -R "$repo" --squash --delete-branch >/dev/null 2>&1; then
+    printf 'MERGED %s#%s as PR #%s\n' "$repo" "$n" "$pr"; merged=$((merged+1))
+  else
+    halt "$n" "$title" "$pr" "squash merge refused"; halted=$((halted+1))
+  fi
+done < <(printf '%s' "$queue" | jq -c '.[]')
+
+printf 'shift-run: %s merged, %s halted\n' "$merged" "$halted"
+[ "$halted" -eq 0 ]
