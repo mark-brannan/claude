@@ -79,6 +79,7 @@ state/global/curia/<id>/
   digest.md   the design: a narrative a cold reader follows, ADR-shaped, from template.md
   <form>.md   one sidecar per chosen form, beside the digest: working-backwards.md, scenarios.md, …
   LIVE        the last sitting's session id and ISO timestamp; closing leaves it
+  CLOSED      the session id and ISO time of the last close; newer than LIVE means no sitting is live
   agent-notes.md the agent's working memory and trace, for the next agent (see Agent notes)
   agent_decisions.md agents' pencil calls that touch this curia: append-only, stamped, written by `agent-decision`
   inputs/     read-only side products: spikes, side-chat pastes, facet reports
@@ -457,7 +458,10 @@ curia for it. It becomes a line under `## Open questions` here, or a
    from the document's header. Nothing else to paste, nothing to hold in
    memory. A hand-off prompt names `/curia <id>` only for a folder that
    exists; it never proposes a new one.
-5. Leave the `LIVE` file in place.
+5. Leave the `LIVE` file in place, and write `CLOSED` beside it with this
+   session id and an ISO time (`<session-uuid> <iso time>`), so the metrics
+   hook knows the sitting is over and says anything it held. A later
+   sitting's `LIVE` supersedes it by timestamp.
 6. The user has the final word; the hook records it. Open nothing new.
 
 ## Bare `/curia`
