@@ -277,7 +277,8 @@ to_entries as $E
 
 | def strip_fences: gsub("```[^`]*```"; "");
 def clean_human($h):
-    strip_fences | split("\n")
+    gsub("(?s)<pasted_content[^>]*>.*?</pasted_content>"; "")
+    | strip_fences | split("\n")
     | map(gsub("^\\s+|\\s+$"; ""))
     | map(select(test("^Stop says:") | not))
     | map(select(test("^>") | not))
@@ -308,7 +309,7 @@ def s4_words_re: "(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull|\\b(wtf|
 # "stop doing that!!". Needs the "!" or an "either/again/anymore" in the same
 # clause, so "don't worry!", "never mind!" and "stop there, great work!" stay calm.
 def s4_emph_re: "(?i)^(no[,.!]?\\s*)?(don'?t|do not|stop|never|quit)\\b(?! ?(mind|worry))[^.,;?!\\n]*(!|\\b(either|again|anymore)\\b)";
-def automated_re: "^\\s*(Review this change for security|You previously flagged these candidate|This item is a card from the agent|##\\s|<pasted_content|\\(copy paste)";
+def automated_re: "^\\s*(Review this change for security|You previously flagged these candidate|This item is a card from the agent|##\\s|\\(copy paste)";
 def s1_first: test(s1_first_re);
 def s1_conduct: test(s1_conduct_re);
 def s1_any: test(s1_any_re);

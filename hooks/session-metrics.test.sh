@@ -233,17 +233,20 @@ for c in "Review this change for security vulnerabilities. CRITICAL HIGH MEDIUM"
          "## Why  NEVER MUST SHOULD"; do
   eq "automated prompt is not a rebuke: $c" '0' "$(fric "$c")"
 done
+# A paste is not the user speaking; the words typed after it are.
+eq "a pasted block is not a rebuke" '0' "$(fric $'<pasted_content id="a">\nNEVER, you idiot\n</pasted_content>')"
+eq "words after a paste still count" '1' "$(fric $'<pasted_content id="a">\nlog\n</pasted_content>\nyou idiot, I said revert it')"
 
 # A tool that prints the user's words back AFTER the turn (a hand-off note, a
 # log) must not erase the turn; a tool result printed BEFORE it still strips a
 # pasted line.
-tr() { jq -nc --arg t "$1" '{type:"user", uuid:"t", timestamp:"2026-09-22T00:00:01.000Z",
+tool_out() { jq -nc --arg t "$1" '{type:"user", uuid:"t", timestamp:"2026-09-22T00:00:01.000Z",
   message:{role:"user", content:[{type:"tool_result", tool_use_id:"x", content:$t}]}}'; }
 eq "words echoed by a later tool result still count" '1' \
-   "$({ fq "please fix the thing"; fa; fq "I'm so fucking pissed"; fa; tr "I'm so fucking pissed"; } \
+   "$({ fq "please fix the thing"; fa; fq "I'm so fucking pissed"; fa; tool_out "I'm so fucking pissed"; } \
       | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n -f "$JQF" | jq -c '.session.friction.total')"
 eq "a line pasted from earlier tool output is still stripped" '0' \
-   "$({ fq "please fix the thing"; tr "I'm so fucking pissed"; fa; fq "I'm so fucking pissed"; fa; } \
+   "$({ fq "please fix the thing"; tool_out "I'm so fucking pissed"; fa; fq "I'm so fucking pissed"; fa; } \
       | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n -f "$JQF" | jq -c '.session.friction.total')"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
