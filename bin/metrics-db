@@ -119,8 +119,9 @@ def jsonl(path):
 def host_for(cwd, homes):
     """The host whose home directory holds cwd, longest home first; None for
     a session on a host that exports no input (a cloud VM)."""
+    norm = lambda p: p.replace("\\", "/").rstrip("/").lower() if re.match(r"^[A-Za-z]:", p) else p.rstrip("/")
     for home, host in homes:
-        if cwd and (cwd == home or cwd.startswith(home.rstrip("/") + "/")):
+        if cwd and (norm(cwd) == norm(home) or norm(cwd).startswith(norm(home) + "/")):
             return host
     return None
 

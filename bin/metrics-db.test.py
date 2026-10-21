@@ -275,6 +275,7 @@ class InputTest(FixtureTest):
         self.assertEqual(mdb.host_for("/fixture/cwd", [("/fixture/cwd/deeper", "boxb"), ("/fixture", "boxa")]), "boxa")
         self.assertEqual(mdb.host_for("/fixturelike", [("/fixture", "boxa")]), None)
         self.assertEqual(mdb.host_for(None, [("/fixture", "boxa")]), None)
+        self.assertEqual(mdb.host_for("c:\\Users\\x\\repo", [("C:\\Users\\x", "boxw")]), "boxw")
 
     def test_no_input_leaves_the_tables_as_they_were(self):
         self.write_host("boxa", "/home/a", [{"minute": 1, "keys": 1}])
