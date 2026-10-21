@@ -222,7 +222,8 @@ done
 for c in "Don't worry about the npm deprecation." "I asked for it because we had a gap." \
          "The issue is NOT in the parser, it is in the lexer." "hello, can you continue?" \
          "Make it so, yes!" "Don't forget to rerun it, thanks!" "Stop there for now, great work!" \
-         "why did you pick the second option?"; do
+         "why did you pick the second option?" "Never mind!" "Don't worry!" \
+         "the mistake in the lexer is a missing escape"; do
   eq "calm stays calm: $c" '0' "$(fric "$c")"
 done
 

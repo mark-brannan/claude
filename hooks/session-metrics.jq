@@ -283,7 +283,7 @@ def s1_conduct_re: "(?i)stop (hedging|arguing|speculating)|don'?t (want to hear|
 # human turns sampled from the last 28 days).
 # Each is anchored to the assistant's conduct -- a bare "I asked" or "again" is
 # the user explaining, not rebuking, and was measured at 1 true in 5.
-def s1_any_re: "(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not (quite )?what I|(is|was)n'?t (quite )?what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify|have to remind you|already happened|you keep (saying|doing)|not the first time|I asked a question|I'?(ve|d) (already )?(asked|said|told)[^.\\n]{0,40}(twice|again|already|before)|why didn'?t you|(this|that) is (so )?(silly|ridiculous|absurd)|I hate (that|this|it)|you'?re (mistaken|wrong)|(your|the) mistake|you (were|are|was)[^.\\n]{0,30}supposed to|your [a-z]+ (was|were) supposed to|(response|answer|reply) is too long";
+def s1_any_re: "(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not (quite )?what I|(is|was)n'?t (quite )?what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify|have to remind you|already happened|you keep (saying|doing)|not the first time|I asked a question|I'?(ve|d) (already )?(asked|said|told)[^.\\n]{0,40}(twice|again|already|before)|why didn'?t you|(this|that) is (so )?(silly|ridiculous|absurd)|I hate (that|this|it)|you'?re (mistaken|wrong)|your mistake|you (were|are|was)[^.\\n]{0,30}supposed to|your [a-z]+ (was|were) supposed to|(response|answer|reply) is too long";
 # A paragraph of an assistant turn that opens by owning a mistake. Scored on
 # its own, not through a human turn, so a woopsy Claude caught itself still
 # gets logged. Tested per line (jq's ^ only anchors the string) with at most
@@ -299,8 +299,8 @@ def s4_words_re: "(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull|\\b(wtf|
 # in the sample were emphasis inside a plain directive, mostly not aimed at Claude.
 # A negative imperative that ends the thought with force: "don't undo it either!",
 # "stop doing that!!". Needs the "!" or an "either/again/anymore" in the same
-# clause, so "don't worry about X" and "stop there, great work!" stay calm.
-def s4_emph_re: "(?i)^(no[,.!]?\\s*)?(don'?t|do not|stop|never|quit)\\b[^.,;?!\\n]*(!|\\b(either|again|anymore)\\b)";
+# clause, so "don't worry!", "never mind!" and "stop there, great work!" stay calm.
+def s4_emph_re: "(?i)^(no[,.!]?\\s*)?(don'?t|do not|stop|never|quit)\\b(?! ?(mind|worry))[^.,;?!\\n]*(!|\\b(either|again|anymore)\\b)";
 def s1_first: test(s1_first_re);
 def s1_conduct: test(s1_conduct_re);
 def s1_any: test(s1_any_re);
