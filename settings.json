@@ -295,7 +295,7 @@
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/scratch-mirror.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/scratch-mirror.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null || true"
           }
         ]
       },
