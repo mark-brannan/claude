@@ -343,3 +343,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261021t030059z
 - Input host directory is the ActivityWatch hostname, lowercased. Undo: rename the directory and host.json's host ([#191](https://github.com/mark-brannan/claude/pull/191))
+
+### 20261021t030103z
+- A session's host is the host whose host.json $HOME holds its cwd. Undo: revert host_for in bin/metrics-db ([#191](https://github.com/mark-brannan/claude/pull/191))
