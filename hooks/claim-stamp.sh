@@ -6,8 +6,8 @@
 # Why a remote stamp: nothing else says which session holds a branch in a way
 # a second machine can see. The languette plugin's `guard-worktrees` and
 # `branch_brief` see local worktrees only, so two sessions on two machines could both pick up the
-# same branch and neither would know until a push was rejected. Ruled by
-# Solace, 2026-09-22 (dotfiles#287): stamp the card itself, so an accidental
+# same branch and neither would know until a push was rejected.
+# 2026-09-22 (dotfiles#287): stamp the card itself, so an accidental
 # parallel session is visible at open, and anything deciding whether a branch
 # is free has a remote claim to read rather than a clock to guess from.
 # Supersedes the local-heartbeat shape proposed in dotfiles#167.

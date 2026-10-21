@@ -6,8 +6,8 @@ name: Mixed loops guard
 # to be flawed -- but they land in isolation: a design document and the
 # implementation it governs do not change in the same PR. A mixed PR is
 # unreviewable in the way that matters: the reader cannot tell whether the
-# doc was bent to fit the code or the code to fit the doc. Ruled by
-# Solace, 2026-09-29; the standing order is the "Double-loop learning"
+# doc was bent to fit the code or the code to fit the doc. (2026-09-29)
+# The standing order is the "Double-loop learning"
 # section of CLAUDE.md.
 #
 # Design set: every CLAUDE.md, rules/, docs/, hooks/*-requirements.md, any ADR path, and the curia

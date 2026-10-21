@@ -286,7 +286,7 @@ def pr_notes($owner): [
   (if (failing_names|length) == 0 and (rollup|IN("FAILURE","ERROR")) then "checks \(rollup|ascii_downcase), names past the first 50 contexts" else empty end),
   (if (failing_names|length) == 0 and (rollup|IN("PENDING","EXPECTED")) then "checks pending" else empty end),
   (unresolved | if . > 0 then "\(.) unresolved thread(s)" else empty end) ] | join("; ");
-# rollup NONE (no checks at all) counts as ready: a repo without CI still needs the user to merge. Ruled on #90.
+# rollup NONE (no checks at all) counts as ready: a repo without CI still needs the user to merge. (#90)
 def awaiting_human: (.isDraft|not) and .mergeable == "MERGEABLE" and (failing_names|length) == 0
   and (rollup|IN("SUCCESS","NONE")) and unresolved == 0 and .autoMergeRequest == null;
 def labels: [(.labels.nodes // [])[].name];

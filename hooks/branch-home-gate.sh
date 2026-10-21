@@ -7,7 +7,7 @@
 # pushed, never opened as a PR, and pointed at from nowhere durable. The Stop
 # hook records *unpushed* commits, so a pushed orphan trips no alarm, and
 # `worklist` lists stranded branches at the bottom where nobody acts on them.
-# Detection is not closure. Ruled 2026-09-09 (Solace): a PR is not required
+# Detection is not closure (2026-09-09): a PR is not required
 # for every branch, but until one exists a pointer must -- a board card or an
 # open issue naming the branch and what it holds.
 #
