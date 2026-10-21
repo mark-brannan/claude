@@ -27,10 +27,17 @@ top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ "$(realpath "$top")" = "$sr" ] && exit 0
 
 # Flat, by file name: the state repo's tree means nothing to the reader.
-dest="$top/.scratch/$(basename "$file")"
-mkdir -p "$top/.scratch" && cp "$file" "$dest" || exit 0
+# A repo that brings its own .scratch (a symlink, or tracked files) is not
+# ours to write into: a copy there could land outside the repo or be committed.
+dir="$top/.scratch"; dest="$dir/$(basename "$file")"
+{ [ -L "$dir" ] || [ -L "$dest" ]; } && exit 0
+[ -n "$(git -C "$top" ls-files -- .scratch)" ] && exit 0
+mkdir -p "$dir" || exit 0
 excl="$(git -C "$top" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
 grep -qx '.scratch/' "$excl" 2>/dev/null || { mkdir -p "${excl%/*}"; echo '.scratch/' >> "$excl"; }
+[ -e "$dir/.gitignore" ] || printf '*\n' > "$dir/.gitignore"
+git -C "$top" check-ignore -q "$dest" || exit 0
+cp --remove-destination "$file" "$dest" || exit 0
 
 rel=$(realpath --relative-to="$cwd" "$dest")
 jq -n --arg ctx "Copied for the user to open: $rel. Link the user to [$(basename "$file")]($rel), never to the state-repo path; the copy refreshes on each Write or Edit of the original." \

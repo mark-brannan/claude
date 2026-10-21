@@ -38,5 +38,12 @@ ok 'a session in the state repo itself gets nothing' '[ -z "$out" ] && [ ! -e "$
 out=$(run "$DOC" "$T")
 ok 'a session outside any repo gets nothing' '[ -z "$out" ]'
 
+LINKED="$T/linked"; git init -q "$LINKED"; OUTSIDE="$T/outside"; mkdir -p "$OUTSIDE"
+ln -s "$OUTSIDE" "$LINKED/.scratch"; out=$(run "$DOC" "$LINKED")
+ok 'a symlinked .scratch is not written through' '[ -z "$out" ] && [ -z "$(ls -A "$OUTSIDE")" ]'
+TRACKED="$T/tracked"; git init -q "$TRACKED"; mkdir -p "$TRACKED/.scratch"; printf 'k\n' > "$TRACKED/.scratch/keep"
+git -C "$TRACKED" add .scratch/keep; out=$(run "$DOC" "$TRACKED")
+ok 'a repo that tracks .scratch gets no copy' '[ -z "$out" ] && [ ! -e "$TRACKED/.scratch/2026-10-20-foo-bar.md" ]'
+
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
