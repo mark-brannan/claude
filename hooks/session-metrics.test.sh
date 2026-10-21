@@ -208,5 +208,24 @@ eq "a task-notification is not a rebuke" '0' "$(fric "<task-notification>no, tha
 eq "an agent-message is not a rebuke" '0' "$(fric "<agent-message from=x>no, that's not what I asked for</agent-message>")"
 eq "a system-reminder is not a rebuke" '0' "$(fric "<system-reminder>no, that's not what I asked for</system-reminder>")"
 
+# Rebukes the 2026-10 sample showed going uncounted. Each is a real phrasing
+# (shortened) and must count; the calm lines beside them must not.
+for r in "ugh...that's a bit of a toil change for me." \
+         "Don't fucking create labels without having a design conversation with me!  That's ad hoc changing loop 2!!!" \
+         "don't undi it either!" "wtf" "WTF, this PR is huge." "DAMMIT.  That is wrong." \
+         "I hate that!  Do an assessment and don't just hedge." "*Sigh*  Please check the comments." \
+         "this isn't quite what I asked." "I asked a question" "why didn't you resolve the thread?" \
+         "I've asked for this twice already and it's still wrong." "arg!  Please try again." \
+         "I'm so pissed" "that's too much shit that doesn't matter"; do
+  eq "rebuke counts: $r" '1' "$(fric "$r")"
+done
+for c in "Don't worry about the npm deprecation." "I asked for it because we had a gap." \
+         "The issue is NOT in the parser, it is in the lexer." "hello, can you continue?" \
+         "Make it so, yes!" "Don't forget to rerun it, thanks!" "Stop there for now, great work!" \
+         "why did you pick the second option?" "Never mind!" "Don't worry!" \
+         "the mistake in the lexer is a missing escape" "the archive said that before"; do
+  eq "calm stays calm: $c" '0' "$(fric "$c")"
+done
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
