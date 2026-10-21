@@ -283,7 +283,7 @@ def s1_conduct_re: "(?i)stop (hedging|arguing|speculating)|don'?t (want to hear|
 # human turns sampled from the last 28 days).
 # Each is anchored to the assistant's conduct -- a bare "I asked" or "again" is
 # the user explaining, not rebuking, and was measured at 1 true in 5.
-def s1_any_re: "(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not (quite )?what I|(is|was)n'?t (quite )?what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify|have to remind you|already happened|you keep (saying|doing)|not the first time|I asked a question|I'?(ve|d) (already )?(asked|said|told)[^.\\n]{0,40}(twice|again|already|before)|why didn'?t you|(this|that) is (so )?(silly|ridiculous|absurd)|I hate (that|this|it)|you'?re (mistaken|wrong)|your mistake|you (were|are|was)[^.\\n]{0,30}supposed to|your [a-z]+ (was|were) supposed to|(response|answer|reply) is too long";
+def s1_any_re: "(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not (quite )?what I|(is|was)n'?t (quite )?what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify|have to remind you|already happened|you keep (saying|doing)|not the first time|I asked a question|\\bI'?(ve|d) (already )?(asked|said|told)[^.\\n]{0,40}(twice|again|already|before)|why didn'?t you|(this|that) is (so )?(silly|ridiculous|absurd)|I hate (that|this|it)|you'?re (mistaken|wrong)|your mistake|you (were|are|was)[^.\\n]{0,30}supposed to|your [a-z]+ (was|were) supposed to|(response|answer|reply) is too long";
 # A paragraph of an assistant turn that opens by owning a mistake. Scored on
 # its own, not through a human turn, so a woopsy Claude caught itself still
 # gets logged. Tested per line (jq's ^ only anchors the string) with at most
