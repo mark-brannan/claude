@@ -333,7 +333,7 @@ has 'the notice names the item, without its directory, as unwritten' \
     '^📄 2026-09-09T09-00-stopn\.md \(p\)$' "$(msg "$o")"
 has 'the notice still carries the metrics block' '^» ' "$(msg "$o")"
 has 'the reason gives the model the full path' \
-    'Item: `/.*/pickup/2026-09-09T09-00-stopn\.md`\. Then answer in one line' \
+    'Item: `/.*/pickup/2026-09-09T09-00-stopn\.md`\. Then answer with the body you wrote' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
 hasnt 'and no item lines in the reason' '📄' "$(printf '%s' "$o" | jq -r '.reason // ""')"
 has "and keeps the last word the user's" 'no summary, no question, nothing new\.$' \
@@ -1223,6 +1223,67 @@ t 'a prompt past the `stay <n>` deadline is an overrun' '[15,true]' "$(last end2
 sitting end3 61 5; said end3 go; shift_ts "$STATE/metrics/crossings/en/end3.jsonl" time 50
 sitting end4 80 40; said end4 back
 t 'the next sitting start stamps every chat, from the old last prompt' '[10,null]' "$(last end3)"
+
+# --- 17. a live curia sitting silences the sitting nags -----------------------
+# A LIVE marker naming the session withholds the screen and model sitting
+# lines; a marker naming another session does not; counting carries on.
+mkdir -p "$STATE/curia/cx"
+sitting cur1 61 10
+printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+hasnt 'a live curia names the session: no sitting line' '⏱ 1h0' "$(msg "$out17")"
+t     'and nothing reaches the model' '' "$(ctx "$out17")"
+t     'and the sitting is still counted' yes \
+      "$([ -f "$STATE/metrics/sitting.json" ] && echo yes || echo no)"
+sitting cur2 61 10
+out17=$(payload "$TP2" cur2 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has   'a LIVE naming another session leaves this one nagging' '⏱ 1h0[0-9]' "$(msg "$out17")"
+# Two hours must not arm the Stop hand-off block while the curia is live.
+sitting cur3 121 10
+printf 'cur3 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+payload "$TP2" cur3 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+t 'a live curia past two hours does not arm the Stop nag' false \
+  "$(jq -r '.since_nag' "$STATE/metrics/live/cu/cur3.nag.json")"
+sitting cur4 121 10
+payload "$TP2" cur4 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+t 'and without one it does' true \
+  "$(jq -r '.since_nag' "$STATE/metrics/live/cu/cur4.nag.json")"
+# A long pause in a live sitting stays silent; only a marker past the
+# 8-hour backstop stops silencing.
+cp "$TP2" "$SCRATCH/idle.jsonl"; touch -d '6 minutes ago' "$SCRATCH/idle.jsonl"
+sitting cur5 61 10
+printf 'cur5 %s\n' "$(date -u -d '30 minutes ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+out17=$(payload "$SCRATCH/idle.jsonl" cur5 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+hasnt 'a sitting past 25 min with a 6 min pause stays silent' '⏱' "$(msg "$out17")"
+sitting cur6 61 10
+printf 'cur6 %s\n' "$(date -u -d '9 hours ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+out17=$(payload "$SCRATCH/idle.jsonl" cur6 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has 'a marker older than 8 hours no longer silences the session' '⏱ 1h0[0-9]' "$(msg "$out17")"
+# Gentle lines are held while the curia is live and said once when it is not.
+HELD17="$STATE/metrics/live/cu/cur1.held"
+t 'the sitting line was held, not dropped' yes "$([ -s "$HELD17" ] && echo yes || echo no)"
+sleep 1; printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/CLOSED"
+payload "$TP2" cur1 "$SCRATCH" Stop | bash "$HOOK" stop 0 show >/dev/null 2>&1
+t 'a Stop after the close leaves the held line for the next prompt' yes "$([ -s "$HELD17" ] && echo yes || echo no)"
+out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has   'at the close (CLOSED beside a fresh LIVE) the held sitting line is delivered' '⏱ 1h0[0-9]' "$(msg "$out17")"
+out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+hasnt 'and not repeated on the prompt after' '⏱' "$(msg "$out17")"
+sleep 1; printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+sitting cur1 121 10
+out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+hasnt 'a newer LIVE supersedes the CLOSED: silent again' '⏱' "$(msg "$out17")"
+# Bedtime: held, then delivered once.
+set_bed $(( PIN + 240 )); jq --arg e "$(TZ=UTC date -d "@$PIN" +%Y-%m-%d)" ".bed_asked_eve = \$e" "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"
+printf 'bed3 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+o=$(BP bed3 "go on")
+t 'a bedtime warning is silent during a live curia' '' "$(msg "$o")$(ctx "$o")"
+rm -f "$STATE/curia/cx/LIVE"
+o=$(BP bed3 "go on")
+has 'and delivered once at the close' '4 min to [0-9][0-9]:[0-9][0-9]' "$(msg "$o")"
+o=$(BP bed3 "go on")
+t 'and not again' '' "$(msg "$o")"
+rm -rf "$STATE/curia"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

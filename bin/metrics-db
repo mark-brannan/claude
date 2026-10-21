@@ -10,17 +10,21 @@
 #   items/*.md                    the board: one row per status line   -> item_events
 #   ~/.claude/projects/**/*.jsonl the user's own typed prompts         -> typing
 #                                 (local transcripts; incremental by mtime+size)
+#   metrics/input/<host>/*.jsonl  per-minute input counts, from bin/input-export
+#                                 on each host running ActivityWatch -> input, input_win, hosts;
+#                                 sessions.host is the host whose $HOME holds the session's cwd
 #   GitHub (--github)             issues and PRs of every repo the user owns -> gh_items
 #
 # The file is derived and per-machine, like metrics.json: it lives under
 # metrics/dashboard/ in the state repo and is gitignored, never committed.
 #
-# Usage: metrics-db [--db FILE] [--github] [--no-typing] [--quiet]
+# Usage: metrics-db [--db FILE] [--github] [--no-typing] [--no-input] [--quiet]
 #   --github     refresh gh_items (about one GraphQL call per 100 items per
 #                repo; ~70 calls for the current account, well inside the
 #                5000/hour limit). Without it the table is left as it was.
 #   --no-typing  skip the transcript scan (the one slow source on first run).
 #   --rescan-typing  rescan every transcript (after changing what counts as typed).
+#   --no-input   leave the input tables as they were.
 # Exit 0 on success, 2 on usage, 3 when the state repo cannot be found, 4 when
 # the database path is inside a git checkout and not gitignored (it is private).
 # Python 3 stdlib only.
@@ -53,7 +57,7 @@ create table if not exists sessions(
   dec_total int, dec_scoping int, dec_inline int, dec_gate int,
   blk_total int, blk_classifier int, blk_rule int, blk_user int,
   fr_total int, fr_correction int, fr_override int, fr_rebuke int, fr_repeat int, fr_pushback int,
-  verdict text, tools_json text);
+  verdict text, tools_json text, cwd text, host text);
 create table if not exists decisions(ts text, session_id text, repo text, seq int, turn_index int,
   mechanism text, questions int, before_first_write int, type text, question text);
 create table if not exists friction(ts text, session_id text, repo text, seq int, turn_index int,
@@ -72,6 +76,10 @@ create table if not exists gh_repos(repo text primary key, topics text, archived
 create table if not exists gh_items(repo text, number int, kind text, created_at text, closed_at text,
   merged_at text, state text, draft int, head_ref text, author text, title text,
   primary key(repo, number, kind));
+create table if not exists input(host text, minute int, keys int, clicks int, scroll int, move int,
+  afk int, seen int, primary key(host, minute));
+create table if not exists input_win(host text, minute int, category text, seconds int);
+create table if not exists hosts(host text primary key, home text);
 create table if not exists meta(key text primary key, value text);
 """
 
@@ -108,7 +116,19 @@ def jsonl(path):
     except OSError:
         return
 
+def host_for(cwd, homes):
+    """The host whose home directory holds cwd, longest home first; None for
+    a session on a host that exports no input (a cloud VM)."""
+    norm = lambda p: p.replace("\\", "/").rstrip("/").lower() if re.match(r"^[A-Za-z]:", p) else p.rstrip("/")
+    for home, host in homes:
+        if cwd and (norm(cwd) == norm(home) or norm(cwd).startswith(norm(home) + "/")):
+            return host
+    return None
+
 def load_sessions(cx, sd):
+    homes = sorted(((d["home"], d["host"]) for d in (load_json(p) for p in
+                    glob.glob(os.path.join(sd, "metrics", "input", "*", "host.json")))
+                    if d and d.get("home") and d.get("host")), key=lambda h: -len(h[0]))
     rows = []
     for p in glob.glob(os.path.join(sd, "metrics", "sessions", "*.json")) + \
              glob.glob(os.path.join(sd, "metrics", "sessions", "*", "*.json")):
@@ -126,9 +146,10 @@ def load_sessions(cx, sd):
             dec.get("total"), dec.get("scoping"), dec.get("inline"), dec.get("gate"),
             blk.get("total"), blk.get("classifier"), blk.get("rule"), blk.get("user"),
             fr.get("total"), fr.get("correction"), fr.get("override"), fr.get("rebuke"), fr.get("repeat"),
-            fr.get("pushback"), d.get("verdict"), json.dumps(d.get("tools") or {})))
+            fr.get("pushback"), d.get("verdict"), json.dumps(d.get("tools") or {}), d.get("cwd"),
+            host_for(d.get("cwd"), homes)))
     cx.execute("delete from sessions")
-    cx.executemany("insert or replace into sessions values (" + ",".join("?" * 41) + ")", rows)
+    cx.executemany("insert or replace into sessions values (" + ",".join("?" * 43) + ")", rows)
     return len(rows)
 
 def load_stream(cx, sd, sub, table, pick):
@@ -259,6 +280,29 @@ def load_typing(cx, projects):
                    (p, sid, st.st_mtime, st.st_size, cwd, first, last, prompts, chars, words, pasted))
     return scanned, len(paths)
 
+def load_input(cx, sd):
+    """Every host's per-minute files, reloaded whole: a month is ~40k rows
+    per host and loads in well under a second."""
+    rows, wins, hosts = [], [], []
+    for hd in sorted(glob.glob(os.path.join(sd, "metrics", "input", "*", ""))):
+        host = os.path.basename(os.path.dirname(hd))
+        meta = load_json(os.path.join(hd, "host.json")) or {}
+        hosts.append((host, meta.get("home")))
+        for p in sorted(glob.glob(os.path.join(hd, "*.jsonl"))):
+            for d in jsonl(p):
+                m = d.get("minute")
+                if not isinstance(m, int):
+                    continue
+                rows.append((host, m, d.get("keys"), d.get("clicks"), d.get("scroll"), d.get("move"),
+                             d.get("afk"), d.get("seen")))
+                wins += [(host, m, c, s) for c, s in (d.get("win") or {}).items()]
+    for t in ("input", "input_win", "hosts"):
+        cx.execute(f"delete from {t}")
+    cx.executemany("insert or replace into input values (?,?,?,?,?,?,?,?)", rows)
+    cx.executemany("insert into input_win values (?,?,?,?)", wins)
+    cx.executemany("insert or replace into hosts values (?,?)", hosts)
+    return len(rows), len(hosts)
+
 GQL = """query($owner:String!,$name:String!,$ia:String,$pa:String,$doI:Boolean!,$doP:Boolean!){
   repository(owner:$owner,name:$name){
     issues(first:100,after:$ia,orderBy:{field:CREATED_AT,direction:ASC}) @include(if:$doI){
@@ -319,6 +363,7 @@ def main():
     ap.add_argument("--db")
     ap.add_argument("--github", action="store_true")
     ap.add_argument("--no-typing", action="store_true")
+    ap.add_argument("--no-input", action="store_true")
     ap.add_argument("--rescan-typing", action="store_true", help="forget the per-transcript cache first")
     ap.add_argument("--projects", default=os.path.expanduser("~/.claude/projects"))
     ap.add_argument("--quiet", action="store_true")
@@ -339,6 +384,11 @@ def main():
     # rather than migrate it.
     if {r[1] for r in cx.execute("pragma table_info(typing)") if r[5]} == {"session_id"}:
         cx.execute("drop table typing")
+    # sessions is rebuilt on every run, so a table from before a new column
+    # is dropped, not migrated.
+    cols = {r[1] for r in cx.execute("pragma table_info(sessions)")}
+    if cols and "host" not in cols:
+        cx.execute("drop table sessions")
     cx.executescript(SCHEMA)
     t0 = time.time()
     report = {"sessions": load_sessions(cx, sd), **load_streams(cx, sd), "item_events": load_items(cx, sd)}
@@ -349,6 +399,10 @@ def main():
         scanned, total = load_typing(cx, a.projects)
         cx.commit()
         report["typing"] = f"{scanned} of {total} transcripts rescanned"
+    if not a.no_input:
+        n, hosts = load_input(cx, sd)
+        cx.commit()
+        report["input"] = f"{n} minutes from {hosts} hosts"
     if a.github:
         n, calls, repos = load_github(cx)
         cx.commit()

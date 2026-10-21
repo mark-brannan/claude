@@ -33,7 +33,7 @@
 # ⛁ context (» below the first rung; ¢ and ○ were the other candidates),
 # ⚡ friction and ⏱ sitting-clock crossings, and any glyph
 # family added alongside them) is frozen: do not modify without direct,
-# explicit interaction with Solace.
+# explicit interaction with the user.
 #
 # Changes here are small and contained -- one glyph/family at a time. Never
 # a wholesale rewrite: don't drop an existing glyph, family, or behavior
@@ -95,7 +95,7 @@ SHOW="${3:-}"               # "show" -> also print a systemMessage block
 #             standing orders' capacity rule is what it is asking for
 #
 # There is no decision-count line here, on screen or to the model: the count
-# is measured, never alarmed (one-entry-point §5, 2026-09-30). Friction is the
+# is measured, never alarmed (one-entry-point §5). Friction is the
 # one alarm. The decisions-per-session-hour ratio is shown at session start and
 # in the Stop summary only, never here.
 NAG_CONTEXT_LINES="${METRICS_CONTEXT_LINES:-60000 90000 120000 150000 185000}"
@@ -689,7 +689,53 @@ in_flight() {
   [ -n "$in_flight_memo" ]
 }
 
+# True while a curia sitting's LIVE marker names this session. The human
+# decision-load nags (sitting rung, friction) go silent then: a curia is the
+# deliberate long sitting, and the clock's answer is not its business. Every
+# counter keeps counting and every metrics file keeps being written; only the
+# nag text is withheld. Read only where the engine runs.
+#
+# This hook runs inside the session, so a LIVE marker naming it means the
+# session is alive. The sitting is live until a CLOSED for this session is
+# stamped at or after the marker. One backstop: a marker older than 8 hours
+# belongs to a session resumed long after a sitting with no close written.
+in_curia() {
+  local f stamp stamp_ts cstamp cstamp_ts
+  [ -n "$sid" ] || return 1
+  for f in "$(state_dir)"/curia/*/LIVE; do
+    { [ -f "$f" ] && grep -qwF -- "$sid" "$f" 2>/dev/null; } || continue
+    stamp=$(awk -v s="$sid" '$1 == s {print $2; exit}' "$f" 2>/dev/null)
+    stamp_ts=$(date -d "$stamp" +%s 2>/dev/null || echo 0)
+    # A CLOSED beside it, naming this session at or after the LIVE stamp, is
+    # the sitting's close: not live from that turn on.
+    cstamp=$(awk -v s="$sid" '$1 == s {print $2; exit}' "${f%LIVE}CLOSED" 2>/dev/null)
+    if [ -n "$cstamp" ]; then
+      cstamp_ts=$(date -d "$cstamp" +%s 2>/dev/null || echo 0)
+      [ "$cstamp_ts" -ge "$stamp_ts" ] && continue
+    fi
+    [ $((now_ts - stamp_ts)) -lt 28800 ] && return 0
+  done
+  return 1
+}
+curia_live=0
+
+# Gentle, non-reactive lines (sitting clock, bedtime) are held while a curia
+# is live and said once when it is not: one line per kind, the latest wins.
+HELDF=$(state_shard_path "$LIVE" "$sid.held" "$sid")
+hold() {  # hold <kind> <text>
+  local keep=""
+  [ -f "$HELDF" ] && keep=$(grep -v "^$1	" "$HELDF" 2>/dev/null)
+  mkdir -p "$(dirname "$HELDF")" 2>/dev/null
+  printf '%s%s\t%s\n' "${keep:+$keep
+}" "$1" "$2" > "$HELDF.tmp" 2>/dev/null && mv "$HELDF.tmp" "$HELDF" 2>/dev/null
+}
+
 if [ "$run_engine" -eq 1 ]; then
+  in_curia && curia_live=1
+  if [ "$curia_live" -eq 0 ] && [ "$can_inject" -eq 1 ] && [ -s "$HELDF" ]; then
+    while IFS=$'\t' read -r _k _t; do [ -n "$_t" ] && add_line "$_t"; done < "$HELDF"
+    rm -f "$HELDF"
+  fi
   # The local clock the bedtime reads: hour, midnight and the evening's date.
   # An hour before NAG_NIGHT_END_HOUR still belongs to last night's evening.
   LTZ=$(local_tz)
@@ -736,7 +782,7 @@ if [ "$run_engine" -eq 1 ]; then
       add_line "$t"; record_crossing stay "$stay_min" "$t"
       add_model "The user said stay: acknowledge in one line, nothing else."
     fi
-    # Bedtime (Solace, 2026-10-01). The question goes on screen once per
+    # Bedtime. The question goes on screen once per
     # evening, machine-wide, on the first prompt after the night hour, and
     # is never repeated: no answer is an answer. A bare clock time typed
     # after it -- and nothing else -- is the reply, any number of times.
@@ -851,11 +897,16 @@ if [ "$run_engine" -eq 1 ]; then
     if [ "$n" -ge "$NAG_SIT_EVERY_MIN" ] && [ "$n" -gt "$time_line" ]; then
       # Two hours arms the Stop block's hand-off, unless work is in flight:
       # landing it comes first, and the injection below already says so.
-      if [ "$n" -ge $((NAG_SIT_EVERY_MIN * 2)) ] && ! in_flight; then since_nag=1; fi
+      if [ "$n" -ge $((NAG_SIT_EVERY_MIN * 2)) ] && ! in_flight \
+         && [ "$curia_live" -eq 0 ]; then since_nag=1; fi
       t="⏱ $(hm "$sit_min") · context $(kfmt "$ctx")"
       sit_t=$(sit_tail); [ -n "$sit_t" ] && t="$t · $sit_t"
       w=$(work_str); [ -n "$w" ] && t="$t $w"
-      add_line "$t"; record_crossing time "$n" "$t"
+      if [ "$curia_live" -eq 0 ]; then
+        add_line "$t"; record_crossing time "$n" "$t"
+      else
+        hold time "$t"
+      fi
       time_line=$n
     fi
   fi
@@ -869,8 +920,8 @@ if [ "$run_engine" -eq 1 ]; then
   # The sitting rung carries the fact, the mechanics the orders don't hold,
   # and a pointer: the orders say how to stop, and a procedure here would
   # displace them. The test checks the lead still exists in .claude/CLAUDE.md.
-  # Landing first is the one rule held in both places on purpose (Solace,
-  # 2026-10-01): durable enough to duplicate. Don't fold it into the pointer.
+  # Landing first is the one rule held in both places on purpose:
+  # durable enough to duplicate. Don't fold it into the pointer.
   sit_orders='Standing orders: "At a sitting rung".'
 
   # Model side of the sitting clock. Reads the same thresholds the screen
@@ -882,7 +933,7 @@ if [ "$run_engine" -eq 1 ]; then
   # shaped, which work in flight leaves unspent so the shaping still fires
   # at that rung once the work has landed.
   if [ "$is_prompt" -eq 1 ] && [ "$NAG_SIT_EVERY_MIN" -gt 0 ] \
-     && [ "$sit_start" -gt 0 ]; then
+     && [ "$sit_start" -gt 0 ] && [ "$curia_live" -eq 0 ]; then
     m_min=$(( (now_ts - sit_start) / 60 ))
     r=$(rung_of "$NAG_SIT_EVERY_MIN" "$NAG_SIT_EVERY_MIN" "$m_min")
     if [ "$r" -eq 0 ]; then
@@ -906,20 +957,28 @@ if [ "$run_engine" -eq 1 ]; then
   if [ "$can_inject" -eq 1 ] && [ "$bed_at" -gt 0 ] && [ "$bed_night" -eq 1 ]; then
     if [ "$now_ts" -ge "$bed_at" ] && [ "$bed_past_at" -ne "$bed_at" ]; then
       t="ok, it's $(lhhmm "$now_ts"), you said $(lhhmm "$bed_at")"
-      add_line "$t"; record_crossing bed_past $(( (now_ts - bed_at) / 60 )) "$t"
-      add_model "It's $(lhhmm "$now_ts"); the user said bed at $(lhhmm "$bed_at"). Say that once. $pickup_duty $sit_orders"
+      if [ "$curia_live" -eq 0 ]; then
+        add_line "$t"; record_crossing bed_past $(( (now_ts - bed_at) / 60 )) "$t"
+        add_model "It's $(lhhmm "$now_ts"); the user said bed at $(lhhmm "$bed_at"). Say that once. $pickup_duty $sit_orders"
+      else
+        hold bed "$t"
+      fi
       bed_past_at=$bed_at; bed_warn_at=$bed_at
     elif [ "$now_ts" -ge $((bed_at - NAG_BED_WARN_MIN * 60)) ] && [ "$bed_warn_at" -ne "$bed_at" ]; then
       bed_left=$(( (bed_at - now_ts + 59) / 60 ))
       t="$bed_left min to $(lhhmm "$bed_at")"
-      add_line "$t"; record_crossing bed_warn "$bed_left" "$t"
-      add_model "Bedtime $(lhhmm "$bed_at") is $bed_left minutes away. $pickup_duty $sit_orders"
+      if [ "$curia_live" -eq 0 ]; then
+        add_line "$t"; record_crossing bed_warn "$bed_left" "$t"
+        add_model "Bedtime $(lhhmm "$bed_at") is $bed_left minutes away. $pickup_duty $sit_orders"
+      elif ! grep -q "^bed	" "$HELDF" 2>/dev/null; then
+        hold bed "$t"
+      fi
       bed_warn_at=$bed_at
     fi
   fi
 
   # Keep the machine-wide day counter counting (#301). Measurement only: no
-  # line, no injection reads it (one-entry-point §5, 2026-09-30). Gated on
+  # line, no injection reads it (one-entry-point §5). Gated on
   # is_prompt: the gap that starts a fresh day is measured between prompts
   # anywhere on the machine.
   if [ "$is_prompt" -eq 1 ]; then
@@ -937,6 +996,7 @@ if [ "$run_engine" -eq 1 ]; then
   # falls to the else branch below. No record_crossing here on purpose: the
   # real crossing is the one that trips fric_tripped, not each in-flight repeat.
   if [ "$is_prompt" -eq 1 ] && [ "$fric_tripped" -ne 1 ] \
+     && [ "$curia_live" -eq 0 ] \
      && [ "$fric_win" -ge "$NAG_FRICTION_N" ]; then
     if in_flight; then
       fm="$fric_win corrections or rebukes in the last $NAG_FRICTION_TURNS turns, with work in flight. Do not raise capacity or offer a stopping point yet: land this without asking -- commit, push, open the PR -- then apply the capacity rule."
@@ -1082,7 +1142,7 @@ EOF_ITEMS
       # crossings, the verdict and the item names. It needs no skill loaded:
       # the body's format is the one the 📄 line reads back.
       paths=$(printf '%s\n' "$items" | awk -F'\t' 'NF { printf "%s`%s`", (n++ ? ", " : ""), $1 }')
-      block_reason="Write the hand-off: replace the body (below \`---\`) of this session's pickup item with the next step, then link:, model: and effort: lines. Item: ${paths:-none exists yet in $(state_dir)/pickup/}. Then answer in one line naming the file -- no summary, no question, nothing new."
+      block_reason="Write the hand-off: replace the body (below \`---\`) of this session's pickup item with the next step, then link:, model: and effort: lines. Item: ${paths:-none exists yet in $(state_dir)/pickup/}. Then answer with the body you wrote, pasted as-is in a fenced block -- the user cannot open files outside the session's repo -- and nothing else: no summary, no question, nothing new."
     fi
   fi
 fi
@@ -1178,7 +1238,7 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
   [ -n "$bl_fric_cluster" ] && bl_main="$bl_main $bl_fric_cluster"
   bl_main="$bl_main $bl_blocked_cluster"
   [ -n "$bl_sit_cluster" ] && bl_main="$bl_main $bl_sit_cluster"
-  # The tail is the reason glyphs alone, no words (Solace, 2026-10-01), and
+  # The tail is the reason glyphs alone, no words, and
   # it disappears entirely when no reason trips -- no "still room" filler (#137).
   if [ "$bl_propose" -eq 1 ]; then
     bl_main="$bl_main — $bl_reason"

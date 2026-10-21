@@ -208,6 +208,47 @@ eq "a task-notification is not a rebuke" '0' "$(fric "<task-notification>no, tha
 eq "an agent-message is not a rebuke" '0' "$(fric "<agent-message from=x>no, that's not what I asked for</agent-message>")"
 eq "a system-reminder is not a rebuke" '0' "$(fric "<system-reminder>no, that's not what I asked for</system-reminder>")"
 
+# Rebukes the 2026-10 sample showed going uncounted. Each is a real phrasing
+# (shortened) and must count; the calm lines beside them must not.
+for r in "ugh...that's a bit of a toil change for me." \
+         "Don't fucking create labels without having a design conversation with me!  That's ad hoc changing loop 2!!!" \
+         "don't undi it either!" "wtf" "WTF, this PR is huge." "DAMMIT.  That is wrong." \
+         "I hate that!  Do an assessment and don't just hedge." "*Sigh*  Please check the comments." \
+         "this isn't quite what I asked." "I asked a question" "why didn't you resolve the thread?" \
+         "I've asked for this twice already and it's still wrong." "arg!  Please try again." \
+         "I'm so pissed" "that's too much shit that doesn't matter"; do
+  eq "rebuke counts: $r" '1' "$(fric "$r")"
+done
+for c in "Don't worry about the npm deprecation." "I asked for it because we had a gap." \
+         "The issue is NOT in the parser, it is in the lexer." "hello, can you continue?" \
+         "Make it so, yes!" "Don't forget to rerun it, thanks!" "Stop there for now, great work!" \
+         "why did you pick the second option?" "Never mind!" "Don't worry!" \
+         "the mistake in the lexer is a missing escape" "the archive said that before"; do
+  eq "calm stays calm: $c" '0' "$(fric "$c")"
+done
+
+# Prompts a script or the harness wrote are not the user speaking, however
+# loud their capitals.
+for c in "Review this change for security vulnerabilities. CRITICAL HIGH MEDIUM" \
+         "## Why  NEVER MUST SHOULD"; do
+  eq "automated prompt is not a rebuke: $c" '0' "$(fric "$c")"
+done
+# A paste is not the user speaking; the words typed after it are.
+eq "a pasted block is not a rebuke" '0' "$(fric $'<pasted_content id="a">\nNEVER, you idiot\n</pasted_content>')"
+eq "words after a paste still count" '1' "$(fric $'<pasted_content id="a">\nlog\n</pasted_content>\nyou idiot, I said revert it')"
+
+# A tool that prints the user's words back AFTER the turn (a hand-off note, a
+# log) must not erase the turn; a tool result printed BEFORE it still strips a
+# pasted line.
+tool_out() { jq -nc --arg t "$1" '{type:"user", uuid:"t", timestamp:"2026-09-22T00:00:01.000Z",
+  message:{role:"user", content:[{type:"tool_result", tool_use_id:"x", content:$t}]}}'; }
+eq "words echoed by a later tool result still count" '1' \
+   "$({ fq "please fix the thing"; fa; fq "I'm so fucking pissed"; fa; tool_out "I'm so fucking pissed"; } \
+      | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n -f "$JQF" | jq -c '.session.friction.total')"
+eq "a line pasted from earlier tool output is still stripped" '0' \
+   "$({ fq "please fix the thing"; tool_out "I'm so fucking pissed"; fa; fq "I'm so fucking pissed"; fa; } \
+      | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n -f "$JQF" | jq -c '.session.friction.total')"
+
 # --- sub-agent transcripts price into cost and tokens -------------------------
 # A sub-agent's requests live in their own file, never in the session's. The
 # callers hand them over as --slurpfile subs; a request id seen in both is
