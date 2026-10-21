@@ -99,7 +99,8 @@ You are a worker agent in <owner/repo>, in your own git worktree under
 - Scope: the issue as written. File no cards or issues; anything off-scope
   or needing a human's judgment goes in your final report.
 - Final report, under 200 words: PR URL, branch, what changed, checks run
-  and their result, anything undone, anything a human must decide.
+  and their result, anything undone, anything a human must decide. A red
+  churn check is never one: split, or state the overrun in the PR body.
 ```
 
 Worker findings are yours to route. The 2026-09-22 workers surfaced three
