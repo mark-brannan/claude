@@ -91,9 +91,14 @@ class ShiftReportTest(unittest.TestCase):
 
     def test_writes_state_file(self):
         self.run_main()
-        files = list(Path(self.sd, "log").glob("*-r-shift.md"))
+        files = list(Path(self.sd, "log").glob("*-r-issues-1-2-3-shift.md"))
         self.assertEqual(len(files), 1)
         self.assertIn("## Merged (1)", files[0].read_text())
+
+    def test_two_shifts_same_day_keep_both_files(self):
+        self.run_main()
+        self.run_main("--issues", "1")
+        self.assertEqual(len(list(Path(self.sd, "log").glob("*-shift.md"))), 2)
 
 
 if __name__ == "__main__":

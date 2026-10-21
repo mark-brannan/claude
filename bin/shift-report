@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # shift-report -- at the end of a shift: PRs merged, halted and parked, and the
-# spend by issue. Prints it and writes it to <state>/log/<date>-<repo>-shift.md.
+# spend by issue. Prints it and writes it to
+# <state>/log/<date>-<repo>-<label or issues-N-M>-shift.md, one file per shift.
 #
 # A shift is a window (--since, --until) plus a repo and a label: the issues
 # carrying the label, and the PRs that close them.
@@ -125,7 +126,8 @@ def main(argv=None):
     if not a.no_write:
         d = os.path.join(sd, "log")
         os.makedirs(d, exist_ok=True)
-        p = os.path.join(d, f"{now.astimezone(tz):%Y-%m-%d}-{a.repo.split('/')[-1]}-shift.md")
+        tag = a.label.replace("/", "-") if a.label else "issues-" + "-".join(map(str, issues))
+        p = os.path.join(d, f"{now.astimezone(tz):%Y-%m-%d}-{a.repo.split('/')[-1]}-{tag}-shift.md")
         with open(p, "w") as f:
             f.write(text)
         print(f"wrote {p}", file=sys.stderr)
