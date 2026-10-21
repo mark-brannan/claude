@@ -34,6 +34,7 @@
 # GitHub-homed item carries `home=`, no link back.
 #
 # Refused at write: a create whose brief carries no link (kanban-lint's L6); a
+# human-owned create or brief that asks for a churn waiver (card-write); a
 # `status=done` line with no `evidence=`; any `status=closed`, which only the
 # future whole-tree sweep writes (docs/work-item-lifecycle.md).
 #
@@ -140,6 +141,10 @@ def points_ok(p):
         die(f"points is one of 1 2 3 5 8 13, got [{p}]")
 
 
+# A churn waiver asked of the user: churn-ok, mark-as-churn-ok, waive the churn,
+# a churn guard/budget waiver. Bare "churn" is an ordinary word and passes.
+WAIVER = re.compile(r"\bchurn[-_]ok\b|\bwaiv\w*\s+(?:the\s+)?churn\b"
+                    r"|\bchurn(?:[- ](?:guard|budget|gate|check))?[- ](?:waiver|bypass)", re.I)
 LINK = re.compile(r"https?://|(^|[^\w./-])[\w.-]+/[\w.-]+#\d+|\]\((\.\./)*log/")
 
 
@@ -376,6 +381,12 @@ def check_owner(o):
         die(f"owner is agent, human-ruling or human-click, got [{o}]")
 
 
+def no_waiver(owner, *texts):
+    if owner != "agent" and any(WAIVER.search(t) for t in texts):
+        refuse("churn-ok is the user's, on the PR; state the overrun in the PR body; "
+               "never a card or question (card-write)")
+
+
 def replayed(path, body, now):
     """True when the file is this same create, landed earlier: the same text
     once the log is read at the second it was written (a replay carries the
@@ -412,6 +423,7 @@ def create(args):
     if not title or not one_line(title):
         die("the title is one non-empty line")
     check_owner(opt["owner"])
+    no_waiver(opt["owner"], title, brief)
     for k in ("repo", "parent", "model", "effort"):
         word(k, opt[k])
     if opt["parent"] != "-" and not is_item_id(opt["parent"]):
@@ -481,7 +493,9 @@ def main(argv):
         brief = read_brief(args[0])
         sid = me()
         it.lock()
-        it.write_brief(brief, points or it.facts()["points"])
+        f = it.facts()
+        no_waiver(f["owner"], f["title"], brief)
+        it.write_brief(brief, points or f["points"])
         it.append(sid, "briefed")
     elif cmd == "log":
         if not args:

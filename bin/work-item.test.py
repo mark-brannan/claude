@@ -195,6 +195,33 @@ class WorkItemTest(unittest.TestCase):
             ok(A, "create", "--id", f"170000010{i}077c62eb", "--brief", link, "Linked")
         ok(A, "brief", self.id, "an older card is re-briefed without a link")
 
+    def test_09b_a_churn_waiver_is_never_the_users_card(self):
+        asks = ("churn-ok for claude#188 shift-run", "Waive churn on the input-counts PR?",
+                "Waive the churn guard on #191", "churn guard waiver for #12",
+                "churn budget bypass on #7", "run mark-as-churn-ok.sh 191", "Churn_OK the PR")
+        for i, title in enumerate(asks):
+            for owner in ("human-ruling", "human-click"):
+                p = run(A, "create", "--id", f"170000030{i}077c62eb", "--owner", owner,
+                        "--brief", LINK, title)
+                self.assertEqual(p.returncode, 1, f"[{title}] as {owner} is refused")
+                self.assertIn("state the overrun in the PR body", p.stderr, "the refusal names the remedy")
+            p = run(A, "create", "--id", f"170000031{i}077c62eb", "--owner", "human-ruling",
+                    "--brief", f"{title} {LINK}", "A plain title")
+            self.assertEqual(p.returncode, 1, f"[{title}] in the brief is refused")
+        for i, title in enumerate(("Cut cache churn in the metrics rollup",
+                                   "Split hooks/x.sh to fit the churn budget",
+                                   "Does the churn guard count test files?",
+                                   "Waive the mixed-loops gate on #5")):
+            ok(A, "create", "--id", f"170000032{i}077c62eb", "--owner", "human-ruling",
+               "--brief", LINK, title)
+        ok(A, "create", "--id", "1700000330077c62eb", "--brief", LINK, "churn-ok audit of old PRs")
+        human = ok(A, "create", "--id", "1700000331077c62eb", "--owner", "human-click",
+                   "--brief", LINK, "Click the deploy button")
+        self.assertEqual(run(A, "brief", human, f"apply churn-ok {LINK}").returncode, 1,
+                         "a human item cannot be re-briefed into a waiver")
+        self.assertEqual(run(A, "brief", self.id, f"churn-ok seen on {LINK}").returncode, 0,
+                         "an agent item may name the label")
+
     def test_10_done_needs_evidence_and_closed_is_refused(self):
         item = ok(A, "create", "--id", "1700000200077c62eb", "--brief", LINK, "Lifecycle")
         ok(A, "log", item, "status=ready")

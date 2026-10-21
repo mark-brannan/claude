@@ -27,7 +27,8 @@ name: Churn guard
 #
 # Bypass is the `churn-ok` label, applied by a human. A session cannot apply
 # it: the languette plugin's guard-bypass-labels denies the label by name. A gate whose
-# bypass the gated party can reach is not a gate.
+# bypass the gated party can reach is not a gate. Nor does a session ask for
+# it: the overrun goes in the PR body, and work-item refuses it as a card.
 
 on:
   pull_request:
@@ -133,4 +134,5 @@ jobs:
           echo "The ruling, in full:"
           echo "https://github.com/mark-brannan/dotfiles/issues/149"
           echo "Raising the ceiling is Solace's call, not a session's."
+          echo "Never ask for churn-ok, by card or question: state the overrun in the PR body."
           exit 1

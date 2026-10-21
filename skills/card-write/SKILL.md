@@ -51,9 +51,10 @@ no GitHub home. Take the first line that fits:
   stated expected output is an `agent` card, your own queue, unmentioned;
   one costly enough to plan is a research issue under the issue bar; one with
   no expected output is dropped.
-- **A `churn-ok` request** — the label is the user's alone, given on the PR.
-  Never a card, ruling or agora item. A working session may ask about the
-  churn guard inline; otherwise it says nothing.
+- **A `churn-ok` request** — the label is the user's alone, given on the PR
+  when they review it. Never a card, ruling, agora item or question, inline
+  included: a session states the overrun in the PR body and says nothing
+  else. `work-item` refuses a human-owned card that asks for one.
 - **The issue bar** — file an issue only when a fresh session could start
   from the body alone: a link to the evidence **and** a next action an agent
   can execute without asking. Status mirrors, vague loops, "review/merge X"
