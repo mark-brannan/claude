@@ -352,3 +352,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261021t030109z
 - metrics-db reloads every input file on each build instead of a per-file offset cache. Undo: add the cache ([#191](https://github.com/mark-brannan/claude/pull/191))
+
+### 20261021t030113z
+- input-export's first run reaches 28 days back. Undo: pass --days ([#191](https://github.com/mark-brannan/claude/pull/191))
