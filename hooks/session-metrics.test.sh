@@ -208,5 +208,21 @@ eq "a task-notification is not a rebuke" '0' "$(fric "<task-notification>no, tha
 eq "an agent-message is not a rebuke" '0' "$(fric "<agent-message from=x>no, that's not what I asked for</agent-message>")"
 eq "a system-reminder is not a rebuke" '0' "$(fric "<system-reminder>no, that's not what I asked for</system-reminder>")"
 
+# --- sub-agent transcripts price into cost and tokens -------------------------
+# A sub-agent's requests live in their own file, never in the session's. The
+# callers hand them over as --slurpfile subs; a request id seen in both is
+# counted once.
+main="$S/sub-main.jsonl"; sub="$S/sub-agent.jsonl"
+mtok_msg claude-opus-4-8 m1 | jq -c '. + {requestId:"r1"}' > "$main"
+{ mtok_msg claude-opus-4-8 s1 | jq -c '. + {requestId:"r2", isSidechain:true}'
+  mtok_msg claude-opus-4-8 m1 | jq -c '. + {requestId:"r1", isSidechain:true}'; } > "$sub"
+sess() { jq -s "$@" --arg sid s --arg repo r --arg branch b --arg cwd / --arg now n -f "$JQF" "$main"; }
+alone=$(sess | jq -c '.session|[.cost_usd,.subagent_turns,.assistant_turns]')
+with=$(sess --slurpfile subs "$sub" | jq -c '.session|[.cost_usd,.subagent_turns,.assistant_turns]')
+one=$(echo "$alone" | jq '.[0]')
+eq "no sub-agent file: cost as before, no sub-agent turns" "[$one,0,1]" "$alone"
+eq "sub-agent request is added, a duplicate id is not; main turns unchanged" \
+   "[$(jq -n "$one * 2"),1,1]" "$with"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

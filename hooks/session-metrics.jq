@@ -96,6 +96,18 @@ to_entries as $E
 | ([ $E[].value | select(.type == "assistant") ]
    | group_by(.requestId // .uuid) | map(.[0])) as $amsgs
 
+# Sub-agent transcripts (<session>/subagents/agent-*.jsonl) are separate files.
+# Measured on 2026-10-20: a session's own transcript carries none of its
+# sub-agents' requests (zero isSidechain records, zero shared request ids), so
+# a cost summed over $amsgs alone leaves their spend out. The callers pass
+# those files, concatenated, as `--slurpfile subs`; absent, there are none.
+# They feed the money and token sums only -- turns, tools, clock and the
+# context window stay the main session's.
+| ($ARGS.named.subs // []) as $subrecs
+| ([ $subrecs[] | select(.type == "assistant") ]
+   | group_by(.requestId // .uuid) | map(.[0])) as $submsgs
+| ($amsgs + $submsgs | group_by(.requestId // .uuid) | map(.[0])) as $cmsgs
+
 | [ $E[] | .key as $i | .value | select(.type == "assistant")
     | (.message.content[]? | select(.type == "tool_use")
        | {i: $i, name: .name, input: .input}) ] as $tools
@@ -506,7 +518,7 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
 | (([ $gaps[] | ([.d, $cap] | min) ] | add) // 0 | round) as $active_s
 | (([ $gaps[] | select(.h) | ([.d, $cap] | min) ] | add) // 0 | round) as $human_s
 
-| def sumu(f): ([ $amsgs[] | (.message.usage | f) // 0 ] | add) // 0;
+| def sumu(f): ([ $cmsgs[] | (.message.usage | f) // 0 ] | add) // 0;
 
 # --- cost ------------------------------------------------------------------
 # A dollar estimate, priced here rather than read: the transcript JSONL carries
@@ -554,7 +566,7 @@ def price:
     elif test("haiku")                then {i: 1,  o: 5}
     else                                   {i: 10, o: 50} end;
 
-([ $amsgs[] | {m: (.message.model // "unknown"), u: (.message.usage // {})} ]
+([ $cmsgs[] | {m: (.message.model // "unknown"), u: (.message.usage // {})} ]
    | group_by(.m)
    | map({ key: .[0].m,
            value: ((.[0].m | price) as $p
@@ -634,6 +646,7 @@ def price:
       # assumptions and why it is derived rather than read.
       cost_usd: ([ $cost_by_model[] ] | add // 0 | . * 10000 | round | . / 10000),
       cost_usd_by_model: $cost_by_model,
+      subagent_turns: (($cmsgs | length) - ($amsgs | length)),
       cache_churn_pct: (sumu(.cache_read_input_tokens) as $r
         | if $r > 0 then ((sumu(.cache_creation_input_tokens) / $r * 100) | round)
           else null end),

@@ -37,6 +37,7 @@ lib/state-parity.test.py holds equal to lib-state.sh's.
 Always exits 0. A metrics hook that can fail a session is worse than no
 metrics hook. Stdlib only.
 """
+import glob
 import json
 import os
 import re
@@ -44,6 +45,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -358,11 +360,25 @@ class Stop:
         self.work_branch = git("-C", cwd, "rev-parse", "--abbrev-ref", "HEAD")[1]
         work_root, work_repo = self.work_root, self.work_repo
 
-        rc, out = cap(["jq", "-s", "--arg", "sid", sid, "--arg", "repo", work_repo,
+        # Sub-agent transcripts are priced into cost and tokens (session-metrics.jq).
+        subs = sorted(glob.glob(os.path.splitext(self.tp)[0] + "/subagents/agent-*.jsonl"))
+        subargs = []
+        if subs:
+            with tempfile.NamedTemporaryFile("wb", suffix=".jsonl", delete=False) as tf:
+                for f in subs:
+                    with open(f, "rb") as fh:
+                        tf.write(fh.read() + b"\n")
+            subargs = ["--slurpfile", "subs", tf.name]
+        rc, out = cap(["jq", "-s", *subargs, "--arg", "sid", sid, "--arg", "repo", work_repo,
                        "--arg", "branch", self.work_branch, "--arg", "cwd", cwd,
                        "--arg", "now", self.now,
                        "--arg", "slug", f"{self.today}-{work_repo}-{sid[:8]}",
                        "-f", jqprog, self.tp])
+        if subargs:
+            try:
+                os.unlink(subargs[2])
+            except OSError:
+                pass
         if rc != 0 or not out:
             return
         self.metrics = metrics = parse(out)
