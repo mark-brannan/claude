@@ -105,6 +105,24 @@ class WordGuardTest(unittest.TestCase):
         out = self.bash("acme/app", "cd x && gh pr create --body 'Zed wants it'")
         self.assertEqual(self.decision(out), "deny")
 
+    def test_git_dash_c_denied(self):
+        out = self.bash("other/app", f'git -C {self.repos["acme/app"]} commit -m "per Zed"')
+        self.assertEqual(self.decision(out), "deny")
+
+    def test_body_file_read(self):
+        f = self.repos["acme/app"] / "body.md"
+        f.write_text("thanks Zed")
+        try:
+            self.assertEqual(self.decision(self.bash("acme/app", "gh pr create --body-file body.md")), "deny")
+            self.assertEqual(self.decision(self.bash("acme/app", "git commit -F body.md")), "deny")
+        finally:
+            f.unlink()
+
+    def test_owner_case_ignored(self):
+        out = run({"hook_event_name": "PreToolUse", "tool_name": "mcp__github-pat__create_pull_request",
+                   "tool_input": {"owner": "ACME", "repo": "App", "body": "for Zed"}}, self.config)
+        self.assertEqual(self.decision(out), "deny")
+
     def test_other_bash_ignored(self):
         self.assertIsNone(self.bash("acme/app", "grep -rn Zed ."))
 

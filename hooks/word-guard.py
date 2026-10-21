@@ -30,8 +30,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GLOBAL_CONFIG = os.environ.get("WORD_GUARD_CONFIG", os.path.join(HERE, "word-guard.json"))
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+# git may carry global options (-C dir, -c k=v, --git-dir=...) before the subcommand.
 OUTWARD_BASH = re.compile(
-    r"(^|[\s;&|(`])(git\s+(commit|tag|notes)\b|gh\s+(pr|issue|release|api|gist)\b)")
+    r"(^|[\s;&|(`])(git(\s+(-[Cc]\s+\S+|--[\w-]+(=\S+)?))*\s+(commit|tag|notes)\b"
+    r"|gh\s+(pr|issue|release|api|gist)\b)")
+GIT_DIR = re.compile(r"\bgit\s+(?:\S+\s+)*?-C\s+(['\"]?)([^\s'\"]+)\1")
+# Message and body files: their text is what goes out, so it is read too.
+TEXT_FILE = re.compile(r"(?:^|\s)(?:-F|--file|--body-file)(?:\s+|=)(['\"]?)([^\s'\"]+)\1")
 MCP_WRITE = re.compile(
     r"^mcp__.*github.*__(create_|update_|add_|push_|merge_|issue_write|sub_issue_write|pull_request_review_write)")
 
@@ -59,7 +64,7 @@ def load(path):
 
 
 def globs(patterns, value):
-    return any(fnmatch.fnmatchcase(value, p) for p in patterns)
+    return any(fnmatch.fnmatchcase(value.lower(), p.lower()) for p in patterns)
 
 
 def in_scope(entry, slug, rel):
@@ -113,10 +118,22 @@ def check(payload):
         pairs, outward, where = edit_pairs(name, ti), False, rel
     elif name == "Bash":
         cmd = ti.get("command", "")
-        root = git(cwd, "rev-parse", "--show-toplevel") if OUTWARD_BASH.search(cmd) else None
+        if not OUTWARD_BASH.search(cmd):
+            return None
+        m = GIT_DIR.search(cmd)
+        base = os.path.join(cwd, os.path.expanduser(m.group(2))) if m else cwd
+        root = git(base, "rev-parse", "--show-toplevel")
         if not root:
             return None
         rel, pairs, outward, where = None, [("", cmd)], True, "the command"
+        for fm in TEXT_FILE.finditer(cmd):
+            f = os.path.join(cwd, os.path.expanduser(fm.group(2)))
+            try:
+                if os.path.isfile(f) and os.path.getsize(f) < 1 << 20:
+                    with open(f, errors="replace") as fh:
+                        pairs.append(("", fh.read()))
+            except OSError:
+                pass
     elif MCP_WRITE.match(name) and ti.get("owner") and ti.get("repo"):
         root, rel, outward, where = None, None, True, "the GitHub write"
         pairs = [("", s) for s in strings(ti)]
