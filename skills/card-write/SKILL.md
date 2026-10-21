@@ -52,7 +52,7 @@ no GitHub home. Take the first line that fits:
   one costly enough to plan is a research issue under the issue bar; one with
   no expected output is dropped.
 - **A `churn-ok` request** — the label is the user's alone, given on the PR
-  when they review it. Never a card, ruling, agora item or question, inline
+  when they review it. Never a card, agora item or question, inline
   included: a session states the overrun in the PR body and says nothing
   else. `work-item` refuses a human-owned card that asks for one.
 - **The issue bar** — file an issue only when a fresh session could start

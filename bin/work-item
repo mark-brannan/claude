@@ -383,8 +383,8 @@ def check_owner(o):
 
 def no_waiver(owner, *texts):
     if owner != "agent" and any(WAIVER.search(t) for t in texts):
-        refuse("churn-ok is the user's, on the PR; state the overrun in the PR body; "
-               "never a card or question (card-write)")
+        refuse("churn-ok is the user's, given on the PR; state the overrun in the PR body "
+               "and never raise it as a card or question (card-write)")
 
 
 def replayed(path, body, now):
