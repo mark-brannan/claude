@@ -1254,6 +1254,24 @@ sitting cur5 61 10
 printf 'cur5 %s\n' "$(date -u -d '2 hours ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
 out17=$(payload "$SCRATCH/idle.jsonl" cur5 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 has 'a stale LIVE marker no longer silences the session' '⏱ 1h0[0-9]' "$(msg "$out17")"
+# Gentle lines are held while the curia is live and said once when it is not.
+HELD17="$STATE/metrics/live/cu/cur1.held"
+t 'the sitting line was held, not dropped' yes "$([ -s "$HELD17" ] && echo yes || echo no)"
+rm -f "$STATE/curia/cx/LIVE"
+out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has   'at the close the held sitting line is delivered' '⏱ 1h0[0-9]' "$(msg "$out17")"
+out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+hasnt 'and not repeated on the prompt after' '⏱' "$(msg "$out17")"
+# Bedtime: held, then delivered once.
+set_bed $(( PIN + 240 )); jq --arg e "$(TZ=UTC date -d "@$PIN" +%Y-%m-%d)" ".bed_asked_eve = \$e" "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"
+printf 'bed3 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+o=$(BP bed3 "go on")
+t 'a bedtime warning is silent during a live curia' '' "$(msg "$o")$(ctx "$o")"
+rm -f "$STATE/curia/cx/LIVE"
+o=$(BP bed3 "go on")
+has 'and delivered once at the close' '4 min to [0-9][0-9]:[0-9][0-9]' "$(msg "$o")"
+o=$(BP bed3 "go on")
+t 'and not again' '' "$(msg "$o")"
 rm -rf "$STATE/curia"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

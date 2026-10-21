@@ -708,8 +708,23 @@ in_curia() {
 }
 curia_live=0
 
+# Gentle, non-reactive lines (sitting clock, bedtime) are held while a curia
+# is live and said once when it is not: one line per kind, the latest wins.
+HELDF=$(state_shard_path "$LIVE" "$sid.held" "$sid")
+hold() {  # hold <kind> <text>
+  local keep=""
+  [ -f "$HELDF" ] && keep=$(grep -v "^$1	" "$HELDF" 2>/dev/null)
+  mkdir -p "$(dirname "$HELDF")" 2>/dev/null
+  printf '%s%s\t%s\n' "${keep:+$keep
+}" "$1" "$2" > "$HELDF.tmp" 2>/dev/null && mv "$HELDF.tmp" "$HELDF" 2>/dev/null
+}
+
 if [ "$run_engine" -eq 1 ]; then
   in_curia && curia_live=1
+  if [ "$curia_live" -eq 0 ] && [ -s "$HELDF" ]; then
+    while IFS=$'\t' read -r _k _t; do [ -n "$_t" ] && add_line "$_t"; done < "$HELDF"
+    rm -f "$HELDF"
+  fi
   # The local clock the bedtime reads: hour, midnight and the evening's date.
   # An hour before NAG_NIGHT_END_HOUR still belongs to last night's evening.
   LTZ=$(local_tz)
@@ -873,11 +888,13 @@ if [ "$run_engine" -eq 1 ]; then
       # landing it comes first, and the injection below already says so.
       if [ "$n" -ge $((NAG_SIT_EVERY_MIN * 2)) ] && ! in_flight \
          && [ "$curia_live" -eq 0 ]; then since_nag=1; fi
+      t="⏱ $(hm "$sit_min") · context $(kfmt "$ctx")"
+      sit_t=$(sit_tail); [ -n "$sit_t" ] && t="$t · $sit_t"
+      w=$(work_str); [ -n "$w" ] && t="$t $w"
       if [ "$curia_live" -eq 0 ]; then
-        t="⏱ $(hm "$sit_min") · context $(kfmt "$ctx")"
-        sit_t=$(sit_tail); [ -n "$sit_t" ] && t="$t · $sit_t"
-        w=$(work_str); [ -n "$w" ] && t="$t $w"
         add_line "$t"; record_crossing time "$n" "$t"
+      else
+        hold time "$t"
       fi
       time_line=$n
     fi
@@ -929,14 +946,22 @@ if [ "$run_engine" -eq 1 ]; then
   if [ "$can_inject" -eq 1 ] && [ "$bed_at" -gt 0 ] && [ "$bed_night" -eq 1 ]; then
     if [ "$now_ts" -ge "$bed_at" ] && [ "$bed_past_at" -ne "$bed_at" ]; then
       t="ok, it's $(lhhmm "$now_ts"), you said $(lhhmm "$bed_at")"
-      add_line "$t"; record_crossing bed_past $(( (now_ts - bed_at) / 60 )) "$t"
-      add_model "It's $(lhhmm "$now_ts"); the user said bed at $(lhhmm "$bed_at"). Say that once. $pickup_duty $sit_orders"
+      if [ "$curia_live" -eq 0 ]; then
+        add_line "$t"; record_crossing bed_past $(( (now_ts - bed_at) / 60 )) "$t"
+        add_model "It's $(lhhmm "$now_ts"); the user said bed at $(lhhmm "$bed_at"). Say that once. $pickup_duty $sit_orders"
+      else
+        hold bed "$t"
+      fi
       bed_past_at=$bed_at; bed_warn_at=$bed_at
     elif [ "$now_ts" -ge $((bed_at - NAG_BED_WARN_MIN * 60)) ] && [ "$bed_warn_at" -ne "$bed_at" ]; then
       bed_left=$(( (bed_at - now_ts + 59) / 60 ))
       t="$bed_left min to $(lhhmm "$bed_at")"
-      add_line "$t"; record_crossing bed_warn "$bed_left" "$t"
-      add_model "Bedtime $(lhhmm "$bed_at") is $bed_left minutes away. $pickup_duty $sit_orders"
+      if [ "$curia_live" -eq 0 ]; then
+        add_line "$t"; record_crossing bed_warn "$bed_left" "$t"
+        add_model "Bedtime $(lhhmm "$bed_at") is $bed_left minutes away. $pickup_duty $sit_orders"
+      elif ! grep -q "^bed	" "$HELDF" 2>/dev/null; then
+        hold bed "$t"
+      fi
       bed_warn_at=$bed_at
     fi
   fi

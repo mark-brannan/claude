@@ -153,11 +153,14 @@ place, so read the shape, not the number.
 ⏱ 2h05 · context 42k · sun sets in 1h 52
 ```
 
-**A live curia sitting silences the human nags.** While a
-`state/global/curia/*/LIVE` file names this session and that session is live (transcript written within 5 minutes, or the marker stamped within 25), the sitting line, its
-model-facing sitting injection and the friction injection are withheld. Counting
-continues and every metrics file is still written; only the nag text is
-silenced, and so is the two-hour arming of the Stop hand-off block.
+**Nags stay quiet during a live curia sitting, and gentle ones wait for its
+close.** A curia sitting is live while a `state/global/curia/*/LIVE` file names
+this session and that session is active (transcript written within 5 minutes,
+or the marker stamped within 25). Reactive nags (friction, decision gates, the
+two-hour arming of the Stop hand-off) stay silent. Gentle, non-reactive ones
+(the sitting clock, bedtime) are not lost: they are held and said once, on the
+first prompt after the sitting is no longer live, where they help rather than
+interrupt. Counting continues and every metrics file is still written.
 
 ## Thresholds
 
