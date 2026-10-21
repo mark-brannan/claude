@@ -21,7 +21,7 @@ check() { # check <name> <pattern>
 }
 check "merge created on a vended repo" '^label create merge -R testowner/repoa --color 0E8A16 '
 check "queued created on a vended repo" '^label create queued -R testowner/repoa --color 006B75 '
-check "mixed-loops-ok created on dotfiles too" '^label create mixed-loops-ok -R testowner/dotfiles --color BFD4F2 '
+check "mixed-loops-ok created on dotfiles too" '^label create mixed-loops-ok -R testowner/dotfiles --color F9A8A0 '
 check "epic still created" '^label create epic -R testowner/repoa '
 check "existing labels still created" '^label create ready -R testowner/repoa '
 n=$(grep -c -E ' (lane-|needs-ruling)' "$GH_LOG")
