@@ -153,6 +153,12 @@ place, so read the shape, not the number.
 ⏱ 2h05 · context 42k · sun sets in 1h 52
 ```
 
+**A live curia sitting silences the human nags.** While a
+`state/global/curia/*/LIVE` file names this session, the sitting line, its
+model-facing sitting injection and the friction injection are withheld. Counting
+continues and every metrics file is still written; only the nag text is
+silenced. Ruled by Solace, 2026-10-21.
+
 ## Thresholds
 
 **Every threshold is easily modifiable by the user,** in one obvious place,

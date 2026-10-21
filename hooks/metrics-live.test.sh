@@ -1224,5 +1224,21 @@ sitting end3 61 5; said end3 go; shift_ts "$STATE/metrics/crossings/en/end3.json
 sitting end4 80 40; said end4 back
 t 'the next sitting start stamps every chat, from the old last prompt' '[10,null]' "$(last end3)"
 
+# --- 17. a live curia sitting silences the sitting nags -----------------------
+# A LIVE marker naming the session withholds the screen and model sitting
+# lines; a marker naming another session does not; counting carries on.
+mkdir -p "$STATE/curia/cx"
+sitting cur1 61 10
+printf 'cur1 2026-10-21T00:00:00Z\n' > "$STATE/curia/cx/LIVE"
+out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+hasnt 'a live curia names the session: no sitting line' '⏱ 1h0' "$(msg "$out17")"
+t     'and nothing reaches the model' '' "$(ctx "$out17")"
+t     'and the sitting is still counted' yes \
+      "$([ -f "$STATE/metrics/sitting.json" ] && echo yes || echo no)"
+sitting cur2 61 10
+out17=$(payload "$TP2" cur2 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has   'a LIVE naming another session leaves this one nagging' '⏱ 1h0[0-9]' "$(msg "$out17")"
+rm -rf "$STATE/curia"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

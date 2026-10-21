@@ -684,6 +684,21 @@ in_flight() {
   [ -n "$in_flight_memo" ]
 }
 
+# True while a curia sitting's LIVE marker names this session. The human
+# decision-load nags (sitting rung, friction) go silent then: a curia is the
+# deliberate long sitting, and the clock's answer is not its business. Every
+# counter keeps counting and every metrics file keeps being written; only the
+# nag text is withheld. Ruled by Solace, 2026-10-21.
+in_curia() {
+  local f
+  [ -n "$sid" ] || return 1
+  for f in "$(state_dir)"/curia/*/LIVE; do
+    [ -f "$f" ] && grep -qwF -- "$sid" "$f" 2>/dev/null && return 0
+  done
+  return 1
+}
+curia_live=0; in_curia && curia_live=1
+
 if [ "$run_engine" -eq 1 ]; then
   # The local clock the bedtime reads: hour, midnight and the evening's date.
   # An hour before NAG_NIGHT_END_HOUR still belongs to last night's evening.
@@ -847,10 +862,12 @@ if [ "$run_engine" -eq 1 ]; then
       # Two hours arms the Stop block's hand-off, unless work is in flight:
       # landing it comes first, and the injection below already says so.
       if [ "$n" -ge $((NAG_SIT_EVERY_MIN * 2)) ] && ! in_flight; then since_nag=1; fi
-      t="⏱ $(hm "$sit_min") · context $(kfmt "$ctx")"
-      sit_t=$(sit_tail); [ -n "$sit_t" ] && t="$t · $sit_t"
-      w=$(work_str); [ -n "$w" ] && t="$t $w"
-      add_line "$t"; record_crossing time "$n" "$t"
+      if [ "$curia_live" -eq 0 ]; then
+        t="⏱ $(hm "$sit_min") · context $(kfmt "$ctx")"
+        sit_t=$(sit_tail); [ -n "$sit_t" ] && t="$t · $sit_t"
+        w=$(work_str); [ -n "$w" ] && t="$t $w"
+        add_line "$t"; record_crossing time "$n" "$t"
+      fi
       time_line=$n
     fi
   fi
@@ -877,7 +894,7 @@ if [ "$run_engine" -eq 1 ]; then
   # shaped, which work in flight leaves unspent so the shaping still fires
   # at that rung once the work has landed.
   if [ "$is_prompt" -eq 1 ] && [ "$NAG_SIT_EVERY_MIN" -gt 0 ] \
-     && [ "$sit_start" -gt 0 ]; then
+     && [ "$sit_start" -gt 0 ] && [ "$curia_live" -eq 0 ]; then
     m_min=$(( (now_ts - sit_start) / 60 ))
     r=$(rung_of "$NAG_SIT_EVERY_MIN" "$NAG_SIT_EVERY_MIN" "$m_min")
     if [ "$r" -eq 0 ]; then
@@ -932,6 +949,7 @@ if [ "$run_engine" -eq 1 ]; then
   # falls to the else branch below. No record_crossing here on purpose: the
   # real crossing is the one that trips fric_tripped, not each in-flight repeat.
   if [ "$is_prompt" -eq 1 ] && [ "$fric_tripped" -ne 1 ] \
+     && [ "$curia_live" -eq 0 ] \
      && [ "$fric_win" -ge "$NAG_FRICTION_N" ]; then
     if in_flight; then
       fm="$fric_win corrections or rebukes in the last $NAG_FRICTION_TURNS turns, with work in flight. Do not raise capacity or offer a stopping point yet: land this without asking -- commit, push, open the PR -- then apply the capacity rule."
