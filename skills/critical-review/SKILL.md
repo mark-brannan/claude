@@ -64,7 +64,8 @@ direction, legal, people — so I can scan:
 thread you answered with a default is one of these, so I see it without
 deciding it. My silence keeps them. Toil — names, structure, order,
 tooling, wording — is yours and goes nowhere. So is the churn guard: a red
-churn check means a smaller change, never a line to me.
+churn check means a smaller change; an overrun that stands is one line in
+the PR body, never a line to me, a card or a question.
 
 **Decide** — a question only I can answer, that this PR cannot merge
 without. Kind first, then the ruling card's own line:
