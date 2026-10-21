@@ -229,5 +229,15 @@ class HelpersTest(unittest.TestCase):
         self.assertNotIn("<i>", md.tile("<i>label</i>", 1))
 
 
+class InputHelpersTest(unittest.TestCase):
+    def test_parallel_sessions_share_minutes_per_host(self):
+        rows = [{"host": "boxa", "started_at": "2026-10-20T18:43:10Z", "ended_at": "2026-10-20T18:45:00Z"},
+                {"host": "boxa", "started_at": "2026-10-20T18:44:00Z", "ended_at": "2026-10-20T18:44:30Z"},
+                {"host": "boxb", "started_at": "2026-10-20T18:43:00Z", "ended_at": None}]
+        m = md.session_minutes(rows)
+        self.assertEqual(sorted(m["boxa"]), [29875363, 29875364, 29875365])
+        self.assertNotIn("boxb", m)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+# input-export -- per-minute input counts from this machine's ActivityWatch,
+# written to the state repo so metrics-db can join them to sessions from any
+# host. Counts and categories only: no keys, no window titles leave the box.
+#
+# Reads three buckets of the local ActivityWatch server (AW_URL, default
+# http://localhost:5600), the ones aw-qt's autostart runs:
+#   aw-watcher-input_<host>   5 s heartbeats of presses, clicks, mouse travel, scroll
+#   aw-watcher-afk_<host>     afk / not-afk spans
+#   aw-watcher-window_<host>  foreground app and title, folded to a category here
+#
+# Writes <state repo>/state/global/metrics/input/<host>/YYYY-MM-DD.jsonl, one
+# file per UTC day, one line per minute that any of the three buckets covers:
+#   {"minute":29875783,"keys":143,"clicks":4,"scroll":22,"move":4097,
+#    "afk":0,"seen":60,"win":{"claude":41,"browser":19}}
+# minute is UTC unix seconds / 60. afk and seen are seconds of that minute
+# the afk bucket called away and called anything; win is seconds per
+# category. A minute with no line is no data, never zero input.
+# Beside the day files, host.json records this machine's $HOME, which is how
+# metrics-db tells which host a session ran on from its cwd.
+#
+# Incremental: each run rewrites the days from the newest file's day onward
+# (or --days back on the first run) and leaves a file untouched when its
+# content would not change, so the Stop hook's commit carries only new minutes.
+# The minute still in progress is never written.
+#
+# Usage: input-export [--days N] [--state DIR] [--quiet]
+# Exit 0 on success and when no ActivityWatch server answers (a host without
+# one has nothing to export), 3 when the state repo cannot be found.
+# Python 3 stdlib only.
+import argparse, datetime, json, os, re, socket, sys, time, urllib.error, urllib.parse, urllib.request
+
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+
+# First match wins: (app pattern, title pattern or None, category). Titles are
+# read only to pick a category and never written. App patterns match whole
+# words of Windows process names and macOS app names alike.
+CATEGORIES = [
+    (r"claude", None, "claude"),
+    (r"chrome|msedge|firefox|safari|arc|brave", r"github", "github"),
+    (r"chrome|msedge|firefox|safari|arc|brave", r"claude", "claude"),
+    (r"chrome|msedge|firefox|safari|arc|brave", None, "browser"),
+    (r"windowsterminal|terminal|iterm\d?|wezterm|alacritty|kitty|ghostty|wsl", None, "terminal"),
+    (r"code|kiro|cursor|notepad|sublime|zed|textedit|xcode|idea|pycharm", None, "editor"),
+    (r"discord|slack|teams|zoom|messages|whatsapp|signal|telegram|mail|outlook", None, "chat"),
+    (r"evernote|obsidian|notion|onenote|notes", None, "notes"),
+    (r"spotify|music|vlc|netflix", None, "media"),
+    (r"explorer|finder|searchhost|shellexperiencehost|startmenuexperiencehost|lockapp|"
+     r"loginwindow|dwm|taskmgr|systemsettings|openwith|dock|spotlight", None, "system"),
+]
+_CATS = [(re.compile(rf"\b({a})\b", re.I), re.compile(t, re.I) if t else None, c) for a, t, c in CATEGORIES]
+
+def category(app, title):
+    app, title = app or "", title or ""
+    for a, t, c in _CATS:
+        if a.search(app) and (t is None or t.search(title)):
+            return c
+    return "other"
+
+def state_dir():
+    try:
+        import state
+    except ModuleNotFoundError as e:
+        if e.name != "state":
+            raise
+        return None
+    repo = state.state_repo()
+    return os.path.join(repo, "state", "global") if repo else None
+
+def get(base, path, **q):
+    url = base.rstrip("/") + path + ("?" + urllib.parse.urlencode(q) if q else "")
+    with urllib.request.urlopen(url, timeout=10) as r:
+        return json.load(r)
+
+def ts(s):
+    return datetime.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
+def iso(t):
+    return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+
+def spread(t0, secs, add):
+    """Call add(minute, seconds) for each minute the span [t0, t0+secs) touches."""
+    t1 = t0 + max(secs or 0, 0)
+    while t0 < t1:
+        m = int(t0 // 60)
+        edge = min(t1, (m + 1) * 60)
+        add(m, edge - t0)
+        t0 = edge
+
+def aggregate(inputs, afks, windows, before):
+    """Per-minute records from the three buckets' events, minutes < before only."""
+    rows = {}
+    def row(m):
+        return rows.setdefault(m, {"minute": m, "keys": 0, "clicks": 0, "scroll": 0, "move": 0,
+                                   "afk": 0.0, "seen": 0.0, "win": {}})
+    for e in inputs:
+        d = e.get("data") or {}
+        r = row(int(ts(e["timestamp"]) // 60))
+        r["keys"] += int(d.get("presses") or 0)
+        r["clicks"] += int(d.get("clicks") or 0)
+        r["scroll"] += abs(int(d.get("scrollX") or 0)) + abs(int(d.get("scrollY") or 0))
+        r["move"] += abs(int(d.get("deltaX") or 0)) + abs(int(d.get("deltaY") or 0))
+    for e in afks:
+        away = (e.get("data") or {}).get("status") == "afk"
+        def add(m, s, away=away):
+            r = row(m)
+            r["seen"] += s
+            if away:
+                r["afk"] += s
+        spread(ts(e["timestamp"]), e.get("duration"), add)
+    for e in windows:
+        d = e.get("data") or {}
+        c = category(d.get("app"), d.get("title"))
+        def add(m, s, c=c):
+            w = row(m)["win"]
+            w[c] = w.get(c, 0) + s
+        spread(ts(e["timestamp"]), e.get("duration"), add)
+    out = []
+    for m in sorted(rows):
+        if m >= before:
+            continue
+        r = rows[m]
+        # Heartbeats overlap at their edges; a minute holds 60 seconds at most.
+        r["afk"], r["seen"] = min(round(r["afk"]), 60), min(round(r["seen"]), 60)
+        r["win"] = {k: min(round(v), 60) for k, v in sorted(r["win"].items()) if round(v) > 0}
+        out.append(r)
+    return out
+
+def day_of(minute):
+    return datetime.datetime.fromtimestamp(minute * 60, datetime.timezone.utc).strftime("%Y-%m-%d")
+
+def write_if_changed(path, text):
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == text:
+                return False
+    except OSError:
+        pass
+    tmp = os.path.join(os.path.dirname(path), f".{os.path.basename(path)}.tmp.{os.getpid()}")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+    return True
+
+def host_of(buckets):
+    """The hostname the buckets carry, lowercased: the directory name."""
+    for k, v in buckets.items():
+        if k.startswith("aw-watcher-afk_") or k.startswith("aw-watcher-input_"):
+            return k, (v.get("hostname") or k.split("_", 1)[1])
+    return None, None
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--days", type=int, default=28, help="how far back the first run reaches")
+    ap.add_argument("--state", help="state/global directory (default: found by lib/state.py)")
+    ap.add_argument("--url", default=os.environ.get("AW_URL", "http://localhost:5600"))
+    ap.add_argument("--quiet", action="store_true")
+    a = ap.parse_args()
+    sd = a.state or state_dir()
+    if not sd:
+        print("input-export: state repo not found", file=sys.stderr)
+        return 3
+    try:
+        buckets = get(a.url, "/api/0/buckets/")
+    except (urllib.error.URLError, socket.timeout, OSError, ValueError):
+        if not a.quiet:
+            print(f"input-export: no ActivityWatch at {a.url}; nothing to export")
+        return 0
+    _, hostname = host_of(buckets)
+    if not hostname:
+        if not a.quiet:
+            print("input-export: ActivityWatch has no afk or input bucket; nothing to export")
+        return 0
+    host = re.sub(r"[^a-z0-9_.-]", "-", hostname.lower())
+    out = os.path.join(sd, "metrics", "input", host)
+    os.makedirs(out, exist_ok=True)
+    write_if_changed(os.path.join(out, "host.json"),
+                     json.dumps({"host": host, "home": os.path.expanduser("~")}) + "\n")
+    now = time.time()
+    days = sorted(f for f in os.listdir(out) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.jsonl", f))
+    if days:
+        start = datetime.datetime.strptime(days[-1][:10], "%Y-%m-%d").replace(
+            tzinfo=datetime.timezone.utc).timestamp()
+    else:
+        start = (now // 86400 - a.days) * 86400
+    q = {"start": iso(start), "end": iso(now), "limit": -1}
+    ev = {}
+    for kind in ("input", "afk", "window"):
+        b = f"aw-watcher-{kind}_{hostname}"
+        ev[kind] = get(a.url, f"/api/0/buckets/{urllib.parse.quote(b)}/events", **q) if b in buckets else []
+    rows = aggregate(ev["input"], ev["afk"], ev["window"], before=int(now // 60))
+    by_day = {}
+    for r in rows:
+        if r["minute"] * 60 >= start:
+            by_day.setdefault(day_of(r["minute"]), []).append(r)
+    changed = 0
+    for day, rs in sorted(by_day.items()):
+        text = "".join(json.dumps(r, separators=(",", ":")) + "\n" for r in rs)
+        changed += write_if_changed(os.path.join(out, day + ".jsonl"), text)
+    if not a.quiet:
+        print(f"input-export: {host}: {len(rows)} minutes over {len(by_day)} days, {changed} files written")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

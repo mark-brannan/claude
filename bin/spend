@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+# spend -- what the sessions cost, rolled up by pull request, repo, day and hour.
+#
+# Joins two things the hooks already record:
+#   metrics/sessions/**/<id>.json   one per session: cost_usd (sub-agents
+#                                   included since hooks/session-metrics.jq
+#                                   prices them), tokens, branch, repo, commits
+#   commits.jsonl                   every commit by session id and branch
+# to the pull requests those branches became, from metrics-db's gh_items table
+# (head_ref -> repo#number, state). A session's cost is split equally across the
+# distinct PRs its branches landed in; a session with none is "(no PR)".
+#
+# The PR table is read from the database, never fetched per session. `--refresh`
+# runs metrics-db's own GitHub load (about one GraphQL call per 100 items per
+# repo, ~70 calls for the current account) and then reads it; without it no
+# GitHub call is made.
+#
+# Usage: spend [--since WHEN] [--until DATE] [--tz ZONE] [--by pr,repo,day,hour]
+#              [--top N] [--refresh] [--state DIR] [--db FILE] [--json]
+#   WHEN   2026-10-15 | 7d | 36h   (a date is midnight in --tz; default tz: local)
+#   --until is exclusive.
+# Exit 0, 2 on usage, 3 when the state repo cannot be found.
+# Python 3 stdlib only.
+import argparse, glob, importlib.machinery, importlib.util, json, os, re, sqlite3, sys
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+
+sys.dont_write_bytecode = True
+HERE = os.path.dirname(os.path.realpath(__file__))
+NO_PR = "(no PR)"
+NO_BRANCH = {"", "HEAD", "main", "master"}
+SLACK = timedelta(hours=2)  # a PR may be opened a little after the session's last Stop
+
+def load_metrics_db():
+    """metrics-db is a script, not a package: load it by path, reuse its
+    state_dir, schema and GitHub loader instead of copying them."""
+    path = os.path.join(HERE, "metrics-db")
+    spec = importlib.util.spec_from_loader("metrics_db", importlib.machinery.SourceFileLoader("metrics_db", path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+def parse_ts(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+def local_tz(name):
+    if not name:
+        return datetime.now().astimezone().tzinfo
+    from zoneinfo import ZoneInfo
+    return ZoneInfo(name)
+
+def parse_when(s, tz, now):
+    m = re.fullmatch(r"(\d+)([dh])", s)
+    if m:
+        n = int(m.group(1))
+        return now - (timedelta(days=n) if m.group(2) == "d" else timedelta(hours=n))
+    try:
+        d = datetime.fromisoformat(s)
+    except ValueError:
+        raise SystemExit(f"spend: cannot read {s!r} as a date, Nd or Nh")
+    return (d if d.tzinfo else d.replace(tzinfo=tz)).astimezone(timezone.utc)
+
+def load_sessions(sd):
+    out = []
+    root = os.path.join(sd, "metrics", "sessions")
+    for p in glob.glob(os.path.join(root, "*.json")) + glob.glob(os.path.join(root, "*", "*.json")):
+        try:
+            with open(p) as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            continue
+        t = parse_ts(d.get("ended_at")) or parse_ts(d.get("ts"))
+        if t and d.get("session_id"):
+            d["_t"] = t
+            out.append(d)
+    return out
+
+def load_branches(sd):
+    """session id -> branches its commits were made on."""
+    b = defaultdict(set)
+    try:
+        with open(os.path.join(sd, "commits.jsonl")) as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                b[d.get("session_id")].add(d.get("branch") or "")
+    except OSError:
+        pass
+    return b
+
+def load_prs(db):
+    """head_ref -> [(created, repo, number, state, merged)] from gh_items."""
+    prs = defaultdict(list)
+    if not db or not os.path.exists(db):
+        return prs
+    cx = sqlite3.connect(db)
+    try:
+        for repo, num, created, state, merged, head in cx.execute(
+                "select repo, number, created_at, state, merged_at, head_ref from gh_items "
+                "where kind = 'pr' and head_ref is not null"):
+            prs[head].append((parse_ts(created), repo, num, "MERGED" if merged else state, merged))
+    except sqlite3.Error:
+        pass
+    finally:
+        cx.close()
+    return prs
+
+def load_repo_names(db):
+    """short name -> owner/name, so a session's working directory names its repo."""
+    out = {}
+    if db and os.path.exists(db):
+        cx = sqlite3.connect(db)
+        try:
+            out = {r[0].split("/", 1)[1]: r[0] for r in cx.execute("select repo from gh_repos")}
+        except sqlite3.Error:
+            pass
+        finally:
+            cx.close()
+    return out
+
+def session_repo(s, names):
+    """The repo a session worked in. session.repo is the worktree's directory
+    name, which says nothing; the checkout it hangs off, the first directory
+    under home in cwd, does."""
+    parts = [p for p in (s.get("cwd") or "").split("/") if p]
+    if len(parts) >= 3 and parts[0] == "home":
+        return names.get(parts[2], parts[2])
+    return names.get(s.get("repo") or "", s.get("repo") or "?")
+
+def pick_pr(cands, session_end):
+    """The PR a branch name means for this session: the newest one opened no
+    later than the session's end (plus slack); a name reused later is another job."""
+    ok = [c for c in cands if c[0] and c[0] <= session_end + SLACK]
+    return max(ok, key=lambda c: c[0]) if ok else None
+
+def attribute(sessions, branches, prs, repo_names=None):
+    """Rows (session, pr_key|NO_PR, repo, state, share_of_cost, share_of_tokens...)."""
+    rows = []
+    for s in sessions:
+        names = {s.get("branch") or ""} | branches.get(s["session_id"], set())
+        found = {}
+        for n in names - NO_BRANCH:
+            c = pick_pr(prs.get(n, []), s["_t"])
+            if c:
+                found[(c[1], c[2])] = c
+        shares = sorted(found.values(), key=lambda c: (c[1], c[2])) or [None]
+        nopr = NO_PR + (" - commits" if s.get("commits") else " - no commits")
+        k = len(shares)
+        for c in shares:
+            rows.append({
+                "t": s["_t"], "session": s["session_id"], "k": k,
+                "pr": f"{c[1]}#{c[2]}" if c else nopr,
+                "repo": c[1] if c else session_repo(s, repo_names or {}),
+                "state": c[3] if c else "",
+                "cost": (s.get("cost_usd") or 0) / k,
+                "out": (s.get("output_tokens") or 0) / k,
+                "cache": ((s.get("cache_read_tokens") or 0) + (s.get("cache_creation_tokens") or 0)) / k,
+                "sessions": 1 / k,
+            })
+    return rows
+
+def roll(rows, keyf):
+    acc = defaultdict(lambda: {"cost": 0.0, "out": 0.0, "cache": 0.0, "sessions": 0.0, "state": ""})
+    for r in rows:
+        a = acc[keyf(r)]
+        for f in ("cost", "out", "cache", "sessions"):
+            a[f] += r[f]
+        a["state"] = r["state"]
+    return acc
+
+def mtok(n):
+    return f"{n / 1e6:.1f}M" if n >= 1e5 else f"{n / 1e3:.0f}k"
+
+def table(title, acc, label, top=0, state=False, order="cost"):
+    items = sorted(acc.items(), key=(lambda kv: -kv[1]["cost"]) if order == "cost" else (lambda kv: kv[0]))
+    shown, rest = (items[:top], items[top:]) if top else (items, [])
+    w = max([len(label)] + [len(str(k)) for k, _ in shown] + [8])
+    lines = [title, f"  {label:<{w}}  {'sessions':>8}  {'cost':>9}  {'out':>6}  {'cache':>7}" + ("  state" if state else "")]
+    for k, a in shown:
+        lines.append(f"  {str(k):<{w}}  {a['sessions']:>8.1f}  {'$%.2f' % a['cost']:>9}  {mtok(a['out']):>6}  "
+                     f"{mtok(a['cache']):>7}" + (f"  {a['state'].lower()}" if state else ""))
+    if rest:
+        lines.append(f"  {'... ' + str(len(rest)) + ' more':<{w}}  {sum(a['sessions'] for _, a in rest):>8.1f}  "
+                     f"{'$%.2f' % sum(a['cost'] for _, a in rest):>9}")
+    tot = sum(a["cost"] for _, a in items)
+    lines.append(f"  {'total':<{w}}  {sum(a['sessions'] for _, a in items):>8.1f}  {'$%.2f' % tot:>9}")
+    return "\n".join(lines)
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="spend per merged PR, repo, day and hour")
+    ap.add_argument("--since", help="2026-10-15 | 7d | 36h")
+    ap.add_argument("--until", help="exclusive date")
+    ap.add_argument("--tz", help="IANA zone for day and hour buckets (default: local)")
+    ap.add_argument("--by", default="pr,repo,day,hour", help="comma list of pr, repo, day, hour")
+    ap.add_argument("--top", type=int, default=15, help="PR rows to show (0 = all)")
+    ap.add_argument("--refresh", action="store_true", help="refresh the PR table first (metrics-db --github)")
+    ap.add_argument("--state", help="state dir (default: metrics-db's)")
+    ap.add_argument("--db", help="metrics.db (default: under the state dir)")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+    by = [x for x in a.by.split(",") if x]
+    if not by or set(by) - {"pr", "repo", "day", "hour"}:
+        print("spend: --by takes pr, repo, day, hour", file=sys.stderr)
+        return 2
+
+    mdb = load_metrics_db()
+    sd = a.state or mdb.state_dir()
+    if not sd:
+        print("spend: state repo not found", file=sys.stderr)
+        return 3
+    db = a.db or os.path.join(sd, "metrics", "dashboard", "metrics.db")
+    tz = local_tz(a.tz)
+    now = datetime.now(timezone.utc)
+
+    if a.refresh:
+        os.makedirs(os.path.dirname(db), exist_ok=True)
+        cx = sqlite3.connect(db)
+        cx.executescript(mdb.SCHEMA)
+        n, calls, repos = mdb.load_github(cx)
+        cx.commit()
+        cx.close()
+        print(f"refreshed {n} issues and PRs from {repos} repos in {calls} calls", file=sys.stderr)
+
+    lo = parse_when(a.since, tz, now) if a.since else None
+    hi = parse_when(a.until, tz, now) if a.until else None
+    sessions = [s for s in load_sessions(sd) if (not lo or s["_t"] >= lo) and (not hi or s["_t"] < hi)]
+    prs = load_prs(db)
+    rows = attribute(sessions, load_branches(sd), prs, load_repo_names(db))
+
+    merged = {r["pr"] for r in rows if r["state"] == "MERGED"}
+    merged_cost = sum(r["cost"] for r in rows if r["state"] == "MERGED")
+    head = (f"{len(sessions)} sessions, ${sum(s.get('cost_usd') or 0 for s in sessions):.2f}"
+            f"  |  {len(merged)} merged PRs, ${merged_cost:.2f}"
+            + (f" (${merged_cost / len(merged):.2f} each)" if merged else "")
+            + f"  |  ${sum(r['cost'] for r in rows if r['pr'].startswith(NO_PR)):.2f} with no PR")
+
+    def local(r):
+        return r["t"].astimezone(tz)
+    keyfs = {
+        "pr": ("spend by PR", lambda r: r["pr"], "PR", a.top, True, "cost"),
+        "repo": ("spend by repo", lambda r: r["repo"], "repo", 0, False, "cost"),
+        "day": ("spend by day", lambda r: local(r).strftime("%Y-%m-%d"), "day", 0, False, "key"),
+        "hour": ("spend by hour", lambda r: local(r).strftime("%Y-%m-%d %H:00"), "hour", 0, False, "key"),
+    }
+    if a.json:
+        out = {"summary": head}
+        for k in by:
+            out[k] = {str(key): v for key, v in roll(rows, keyfs[k][1]).items()}
+        print(json.dumps(out, indent=1, default=str))
+        return 0
+    when = f"{a.since or 'start'} .. {a.until or 'now'}  ({getattr(tz, 'key', None) or tz})"
+    print(f"spend {when}\n{head}")
+    if not prs:
+        print("note: no PR table (run `spend --refresh`); every session reads as (no PR)")
+    for k in by:
+        title, kf, label, top, st, order = keyfs[k]
+        print("\n" + table(title, roll(rows, kf), label, top=top, state=st, order=order))
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

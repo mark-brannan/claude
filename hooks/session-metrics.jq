@@ -96,6 +96,18 @@ to_entries as $E
 | ([ $E[].value | select(.type == "assistant") ]
    | group_by(.requestId // .uuid) | map(.[0])) as $amsgs
 
+# Sub-agent transcripts (<session>/subagents/agent-*.jsonl) are separate files.
+# Measured on 2026-10-20: a session's own transcript carries none of its
+# sub-agents' requests (zero isSidechain records, zero shared request ids), so
+# a cost summed over $amsgs alone leaves their spend out. The callers pass
+# those files, concatenated, as `--slurpfile subs`; absent, there are none.
+# They feed the money and token sums only -- turns, tools, clock and the
+# context window stay the main session's.
+| ($ARGS.named.subs // []) as $subrecs
+| ([ $subrecs[] | select(.type == "assistant") ]
+   | group_by(.requestId // .uuid) | map(.[0])) as $submsgs
+| ($amsgs + $submsgs | group_by(.requestId // .uuid) | map(.[0])) as $cmsgs
+
 | [ $E[] | .key as $i | .value | select(.type == "assistant")
     | (.message.content[]? | select(.type == "tool_use")
        | {i: $i, name: .name, input: .input}) ] as $tools
@@ -207,10 +219,17 @@ to_entries as $E
 # quoted command result cannot trip the S3 quote-back check. A set, not an
 # array: clean_human tests every line of every human turn against it, and
 # `index` on an array is a linear scan.
-| ([ $tool_texts[].t ]
-   | map(split("\n")[]) | map(gsub("^\\s+|\\s+$"; ""))
-   | map(select(. != ""))
-   | reduce .[] as $l ({}; .[$l] = true)) as $tool_lines
+#
+# Each line maps to the index of the first tool result that held it, and
+# clean_human only strips a line seen *before* the turn. As a bare set, a line
+# a tool printed after the turn -- a log, a hand-off note, a card quoting the
+# prompt back -- erased the user's own words from the turn that wrote them:
+# "I'm so fucking pissed" went uncounted because the session's own hand-off
+# file later contained it as a line.
+| ([ $tool_texts[] | .i as $i
+     | .t | split("\n")[] | gsub("^\\s+|\\s+$"; "") | select(. != "")
+     | {l: ., i: $i} ]
+   | reduce .[] as $r ({}; .[$r.l] = (.[$r.l] // $r.i))) as $tool_lines
 
 # Whole-transcript interrupt/decline markers, for S7. Zero-cost: neither
 # calibration transcript hits it, but it is free to compute.
@@ -269,24 +288,40 @@ to_entries as $E
                  | redact | .[0:160])} ]) as $blocked
 
 | def strip_fences: gsub("```[^`]*```"; "");
-def clean_human:
-    strip_fences | split("\n")
+def clean_human($h):
+    gsub("(?s)<pasted_content[^>]*>.*?</pasted_content>"; "")
+    | strip_fences | split("\n")
     | map(gsub("^\\s+|\\s+$"; ""))
     | map(select(test("^Stop says:") | not))
     | map(select(test("^>") | not))
-    | map(select(. as $l | ($tool_lines | has($l)) | not))
+    | map(select(. as $l | (($tool_lines[$l] // 1e15) < $h) | not))
     | join("\n");
 
 def s1_first_re: "(?i)^(no|nope|wrong|not)\\b[?.,!:]?";
 def s1_conduct_re: "(?i)stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|you'?re not making|quantify";
-def s1_any_re: "(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify|have to remind you|already happened|you keep (saying|doing)|not the first time";
+# Second block is the rebuke phrasings the first block missed (2026-10, 2,003
+# human turns sampled from the last 28 days).
+# Each is anchored to the assistant's conduct -- a bare "I asked" or "again" is
+# the user explaining, not rebuking, and was measured at 1 true in 5.
+def s1_any_re: "(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not (quite )?what I|(is|was)n'?t (quite )?what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify|have to remind you|already happened|you keep (saying|doing)|not the first time|I asked a question|\\bI'?(ve|d) (already )?(asked|said|told)[^.\\n]{0,40}(twice|again|already|before)|why didn'?t you|(this|that) is (so )?(silly|ridiculous|absurd)|I hate (that|this|it)|you'?re (mistaken|wrong)|your mistake|you (were|are|was)[^.\\n]{0,30}supposed to|your [a-z]+ (was|were) supposed to|(response|answer|reply) is too long";
 # A paragraph of an assistant turn that opens by owning a mistake. Scored on
 # its own, not through a human turn, so a woopsy Claude caught itself still
 # gets logged. Tested per line (jq's ^ only anchors the string) with at most
 # 30 chars of lead-in, so a mention deep in prose does not count.
 def s9_self_re: "(?i)^[^\\n]{0,30}?((mistake|correction|error) on my side|my mistake|I (misread|got that wrong))";
 def s5_undo_re: "(?i)^(no[,.!]?\\s*)?(take (it|that|this)? ?out|remove|revert|undo|put (it )?back|don'?t|stop)\\b";
-def s4_words_re: "(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull";
+# Second line added 2026-10 from the same sample: profanity beyond the f-word
+# (shit, damn/dammit, pissed), the acronyms (wtf), grunts (ugh, *sigh*), and
+# 3+ repeated "!" -- each turned up unflagged in real rebukes. "hell" is
+# left out on purpose: it is mostly "hello" and "what the hell" is covered by wtf-style hits.
+def s4_words_re: "(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull|\\b(wtf|wth|ffs|jfc|ugh+|argh+)\\b|\\*sigh\\*|\\barg+h+\\b|\\barg+!|\\bsigh\\b[.!,]|shit\\w*|\\bdamn\\w*|dammit|goddam\\w*|godam\\w*|pissed|bullshit|\\bcrap\\b|\\bno{3,}\\b|!{3,}";
+# A single capitalised NOT/MUST/NEVER was tried as heat and dropped: 15 of 15 hits
+# in the sample were emphasis inside a plain directive, mostly not aimed at Claude.
+# A negative imperative that ends the thought with force: "don't undo it either!",
+# "stop doing that!!". Needs the "!" or an "either/again/anymore" in the same
+# clause, so "don't worry!", "never mind!" and "stop there, great work!" stay calm.
+def s4_emph_re: "(?i)^(no[,.!]?\\s*)?(don'?t|do not|stop|never|quit)\\b(?! ?(mind|worry))[^.,;?!\\n]*(!|\\b(either|again|anymore)\\b)";
+def automated_re: "^\\s*(Review this change for security|You previously flagged these candidate|This item is a card from the agent|##\\s|\\(copy paste)";
 def s1_first: test(s1_first_re);
 def s1_conduct: test(s1_conduct_re);
 def s1_any: test(s1_any_re);
@@ -294,6 +329,7 @@ def s2_retract: test("(?i)^(fair|you'?re right|that (claim|was) (was )?wrong|bad
 def s5_undo: test(s5_undo_re);
 def s8_pushback: test("(?i)I('d| would) still|I disagree|doesn'?t change the answer|recommend(ation)?:? (ignore|reject|don'?t)|that case stands");
 def s4_words: test(s4_words_re);
+def s4_emph: test(s4_emph_re);
 # The exact substrings a detector fired on, so a friction record says what
 # tripped it rather than only that something did.
 def phrases($re): [ match($re; "g") | .string | select(. != "") ];
@@ -337,7 +373,10 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
     .key as $pos | .value as $h
     | (if $pos == 0 then -1 else $humans[$pos - 1] end) as $prev
     | (($human_texts[] | select(.i == $h) | .text) // "") as $raw
-    | ($raw | clean_human) as $clean
+    # Prompts the harness or a script wrote for a headless reviewer are not the
+    # user speaking: in the 2026-10 sample 913 of 2,916 enqueues were the
+    # security-review template, 653 of them tagged rebuke by its own capitals.
+    | (if ($raw | test(automated_re)) then "" else ($raw | clean_human($h)) end) as $clean
     | (prev_ask($h) != null and ($clean | length) < 40) as $is_answer
     | ($clean | s1_conduct) as $conduct_hit
     # A short reply to a question is "no" answering, not friction -- unless
@@ -360,7 +399,8 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
     | ((($clean | split("\n") | first) // "") | s5_undo) as $undo_line
     | ($undo_line and $mutated_before) as $undo
     | (($seen_before[$h | tostring]) // {}) as $seen
-    | ($clean as $c | ($c | s4_caps($seen)) or ($c | s4_words)) as $heat
+    | ($clean as $c | ($c | s4_caps($seen)) or ($c | s4_words)
+                       or (($c | split("\n") | first // "") | s4_emph)) as $heat
     | first($atext[] | select(.i > $h)) as $next
     | ((($next.text // "")[0:200]) | s2_retract) as $retracted
     | (($veto_at | map(select(. > $prev and . <= $h)) | length) > 0) as $veto
@@ -377,6 +417,7 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
     | ([ (if $lexicon then ($clean | phrases(s1_first_re), phrases(s1_conduct_re), phrases(s1_any_re)) else empty end),
          (if $undo then ((($clean | split("\n") | first) // "") | phrases(s5_undo_re)) else empty end),
          (if $heat then ($clean | phrases(s4_words_re)),
+                        ((($clean | split("\n") | first) // "") | phrases(s4_emph_re) | map(redact | .[0:40])),
                         ($clean | [ scan("[A-Z]{3,}") ] | map(select(test("[0-9_]") | not))
                                  | map(. as $w | select(($seen | has($w | ascii_downcase)) | not)))
                    else empty end) ]
@@ -506,7 +547,7 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
 | (([ $gaps[] | ([.d, $cap] | min) ] | add) // 0 | round) as $active_s
 | (([ $gaps[] | select(.h) | ([.d, $cap] | min) ] | add) // 0 | round) as $human_s
 
-| def sumu(f): ([ $amsgs[] | (.message.usage | f) // 0 ] | add) // 0;
+| def sumu(f): ([ $cmsgs[] | (.message.usage | f) // 0 ] | add) // 0;
 
 # --- cost ------------------------------------------------------------------
 # A dollar estimate, priced here rather than read: the transcript JSONL carries
@@ -554,7 +595,7 @@ def price:
     elif test("haiku")                then {i: 1,  o: 5}
     else                                   {i: 10, o: 50} end;
 
-([ $amsgs[] | {m: (.message.model // "unknown"), u: (.message.usage // {})} ]
+([ $cmsgs[] | {m: (.message.model // "unknown"), u: (.message.usage // {})} ]
    | group_by(.m)
    | map({ key: .[0].m,
            value: ((.[0].m | price) as $p
@@ -606,7 +647,7 @@ def price:
                       | select(.type == "queue-operation" and .operation == "enqueue"
                                and (.content // "") != "")
                       | .content ] | last // ""
-                    | clean_human | split("\n") | map(select(test("\\S"))) | first // ""
+                    | clean_human(1e15) | split("\n") | map(select(test("\\S"))) | first // ""
                     | redact | .[0:200]),
       curia_refs:  ([ $E[].value
                       | select(.type == "queue-operation" and .operation == "enqueue")
@@ -634,6 +675,7 @@ def price:
       # assumptions and why it is derived rather than read.
       cost_usd: ([ $cost_by_model[] ] | add // 0 | . * 10000 | round | . / 10000),
       cost_usd_by_model: $cost_by_model,
+      subagent_turns: (($cmsgs | length) - ($amsgs | length)),
       cache_churn_pct: (sumu(.cache_read_input_tokens) as $r
         | if $r > 0 then ((sumu(.cache_creation_input_tokens) / $r * 100) | round)
           else null end),
