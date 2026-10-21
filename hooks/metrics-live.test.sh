@@ -1258,6 +1258,8 @@ has 'a stale LIVE marker no longer silences the session' '⏱ 1h0[0-9]' "$(msg "
 HELD17="$STATE/metrics/live/cu/cur1.held"
 t 'the sitting line was held, not dropped' yes "$([ -s "$HELD17" ] && echo yes || echo no)"
 sleep 1; printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/CLOSED"
+payload "$TP2" cur1 "$SCRATCH" Stop | bash "$HOOK" stop 0 show >/dev/null 2>&1
+t 'a Stop after the close leaves the held line for the next prompt' yes "$([ -s "$HELD17" ] && echo yes || echo no)"
 out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 has   'at the close (CLOSED beside a fresh LIVE) the held sitting line is delivered' '⏱ 1h0[0-9]' "$(msg "$out17")"
 out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)

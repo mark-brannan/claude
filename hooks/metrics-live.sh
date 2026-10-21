@@ -728,7 +728,7 @@ hold() {  # hold <kind> <text>
 
 if [ "$run_engine" -eq 1 ]; then
   in_curia && curia_live=1
-  if [ "$curia_live" -eq 0 ] && [ -s "$HELDF" ]; then
+  if [ "$curia_live" -eq 0 ] && [ "$can_inject" -eq 1 ] && [ -s "$HELDF" ]; then
     while IFS=$'\t' read -r _k _t; do [ -n "$_t" ] && add_line "$_t"; done < "$HELDF"
     rm -f "$HELDF"
   fi
