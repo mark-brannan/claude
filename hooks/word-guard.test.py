@@ -109,6 +109,22 @@ class WordGuardTest(unittest.TestCase):
         out = self.bash("other/app", f'git -C {self.repos["acme/app"]} commit -m "per Zed"')
         self.assertEqual(self.decision(out), "deny")
 
+    def test_dash_c_in_a_later_call_still_checked(self):
+        a = self.repos["acme/app"]
+        out = self.bash("other/app", f'true && git -C {a} status && git commit -m "per Zed"')
+        self.assertEqual(self.decision(out), "deny")  # unclear which repo: the strictest wins
+
+    def test_body_file_relative_to_dash_c(self):
+        a = self.repos["acme/app"]
+        (a / "msg.txt").write_text("Zed")
+        try:
+            self.assertEqual(self.decision(self.bash("other/app", f"git -C {a} commit -F msg.txt")), "deny")
+        finally:
+            (a / "msg.txt").unlink()
+
+    def test_path_globs_keep_case(self):
+        self.assertEqual(self.decision(self.edit("acme/app", "Word-Guard.json", "Zed")), "deny")
+
     def test_body_file_read(self):
         f = self.repos["acme/app"] / "body.md"
         f.write_text("thanks Zed")

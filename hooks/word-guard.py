@@ -34,7 +34,8 @@ EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 OUTWARD_BASH = re.compile(
     r"(^|[\s;&|(`])(git(\s+(-[Cc]\s+\S+|--[\w-]+(=\S+)?))*\s+(commit|tag|notes)\b"
     r"|gh\s+(pr|issue|release|api|gist)\b)")
-GIT_DIR = re.compile(r"\bgit\s+(?:\S+\s+)*?-C\s+(['\"]?)([^\s'\"]+)\1")
+# Every -C in the command is a repo it may write to; each one is checked.
+GIT_DIR = re.compile(r"(?:^|\s)-C\s+(['\"]?)([^\s'\"]+)\1")
 # Message and body files: their text is what goes out, so it is read too.
 TEXT_FILE = re.compile(r"(?:^|\s)(?:-F|--file|--body-file)(?:\s+|=)(['\"]?)([^\s'\"]+)\1")
 MCP_WRITE = re.compile(
@@ -64,11 +65,13 @@ def load(path):
 
 
 def globs(patterns, value):
-    return any(fnmatch.fnmatchcase(value.lower(), p.lower()) for p in patterns)
+    return any(fnmatch.fnmatchcase(value, p) for p in patterns)
 
 
 def in_scope(entry, slug, rel):
-    if not globs(entry.get("repos", ["*"]), slug) or globs(entry.get("exclude_repos", []), slug):
+    # GitHub owner and repo names are case-blind; file paths are not.
+    repos = [p.lower() for p in entry.get("repos", ["*"])]
+    if not globs(repos, slug.lower()) or globs([p.lower() for p in entry.get("exclude_repos", [])], slug.lower()):
         return False
     if rel is None:
         return True
@@ -115,19 +118,19 @@ def check(payload):
         rel = os.path.relpath(path, root)
         if git(root, "check-ignore", "-q", rel) is not None:
             return None
-        pairs, outward, where = edit_pairs(name, ti), False, rel
+        targets, pairs, outward, where = [(root, slug_of(root))], edit_pairs(name, ti), False, rel
     elif name == "Bash":
         cmd = ti.get("command", "")
         if not OUTWARD_BASH.search(cmd):
             return None
-        m = GIT_DIR.search(cmd)
-        base = os.path.join(cwd, os.path.expanduser(m.group(2))) if m else cwd
-        root = git(base, "rev-parse", "--show-toplevel")
-        if not root:
+        dirs = [cwd] + [os.path.join(cwd, os.path.expanduser(m.group(2))) for m in GIT_DIR.finditer(cmd)]
+        roots = {r for r in (git(d, "rev-parse", "--show-toplevel") for d in dirs) if r}
+        if not roots:
             return None
+        targets = [(r, slug_of(r)) for r in sorted(roots)]
         rel, pairs, outward, where = None, [("", cmd)], True, "the command"
-        for fm in TEXT_FILE.finditer(cmd):
-            f = os.path.join(cwd, os.path.expanduser(fm.group(2)))
+        files = {os.path.join(d, os.path.expanduser(m.group(2))) for m in TEXT_FILE.finditer(cmd) for d in dirs}
+        for f in sorted(files):
             try:
                 if os.path.isfile(f) and os.path.getsize(f) < 1 << 20:
                     with open(f, errors="replace") as fh:
@@ -135,14 +138,27 @@ def check(payload):
             except OSError:
                 pass
     elif MCP_WRITE.match(name) and ti.get("owner") and ti.get("repo"):
-        root, rel, outward, where = None, None, True, "the GitHub write"
+        targets, rel, outward, where = [(None, f"{ti['owner']}/{ti['repo']}")], None, True, "the GitHub write"
         pairs = [("", s) for s in strings(ti)]
     else:
         return None
 
-    slug = slug_of(root) if root else f"{ti['owner']}/{ti['repo']}"
-    entries = load(GLOBAL_CONFIG) + (load(os.path.join(root, ".claude", "word-guard.json")) if root else [])
+    lines = []
+    for root, slug in targets:
+        lines += scan(root, slug, rel, pairs, outward, where, want)
+    lines = list(dict.fromkeys(lines))
+    if not lines:
+        return None
+    text = "\n".join(lines)
+    if want == "deny":
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": text + "\nRewrite without it and retry."}}
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUse",
+                                   "additionalContext": text + "\nFix it now, before moving on."}}
 
+
+def scan(root, slug, rel, pairs, outward, where, want):
+    entries = load(GLOBAL_CONFIG) + (load(os.path.join(root, ".claude", "word-guard.json")) if root else [])
     lines = []
     for e in entries:
         if e.get("action", "warn") != want or (outward and not e.get("outward", False)):
@@ -159,14 +175,7 @@ def check(payload):
                 hits.update(m.group(0) for m in rx.finditer(new))
         if hits:
             lines.append(f"word-guard: {', '.join(sorted(hits))} in {where} ({slug}). {e.get('message', '')}".rstrip())
-    if not lines:
-        return None
-    text = "\n".join(lines)
-    if want == "deny":
-        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                       "permissionDecisionReason": text + "\nRewrite without it and retry."}}
-    return {"hookSpecificOutput": {"hookEventName": "PostToolUse",
-                                   "additionalContext": text + "\nFix it now, before moving on."}}
+    return lines
 
 
 def main():
