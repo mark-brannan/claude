@@ -56,6 +56,13 @@ class LiveCloneTest(unittest.TestCase):
         self.assertIn("1 behind", value)
         self.assertIn("upstream deleted", value)
 
+    def test_unfetched_or_failed_fetch_is_never_ok(self):
+        self.assertEqual(sc.live_row(fetch=False)[0], "warn")
+        sh(sc.LIVE, "git", "remote", "set-url", "origin", "/nonexistent")
+        status, value = sc.live_row(fetch=True)
+        self.assertEqual(status, "warn")
+        self.assertIn("fetch failed", value)
+
     def test_dirty_paths_keep_their_first_letter(self):
         Path(sc.LIVE, "settings.json").write_text("{}")
         self.assertEqual(sc.dirty_row(), ("warn", "1: settings.json"))

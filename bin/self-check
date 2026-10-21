@@ -45,22 +45,25 @@ def git(*args, timeout=None):
 
 def live_row(fetch):
     """The clone every session runs: on main, tracking a live upstream, not behind."""
-    if fetch:
-        git("fetch", "-q", "origin", "main", timeout=20)
+    fetched = git("fetch", "-q", "origin", "main", timeout=20) is not None if fetch else None
     branch = git("rev-parse", "--abbrev-ref", "HEAD")
     if branch is None:
         return ("bad", "%s is not a git clone" % LIVE)
     sha = git("rev-parse", "--short", "HEAD")
     main = git("rev-parse", "--short", "origin/main")
+    if main is None:
+        return ("bad", "%s @ %s, no origin/main" % (branch, sha))
     track = git("for-each-ref", "--format=%(upstream:track)", "refs/heads/" + branch) or ""
     counts = git("rev-list", "--left-right", "--count", "HEAD...origin/main")
     ahead, behind = (int(n) for n in counts.split()) if counts else (0, 0)
     value = "%s @ %s, origin/main %s, %d behind, %d ahead" % (branch, sha, main, behind, ahead)
     if "gone" in track:
         value += ", upstream deleted"
+    if fetched is not True:
+        value += ", not fetched" if fetched is None else ", fetch failed (origin/main may be stale)"
     if branch != "main" or behind or "gone" in track:
         return ("bad", value)
-    return ("warn" if ahead else "ok", value)
+    return ("warn" if ahead or fetched is not True else "ok", value)
 
 
 def dirty_row():
@@ -154,7 +157,7 @@ def hand_run_row(transcript, sid, cwd):
 
 def find_transcript(arg):
     if arg and os.path.isfile(arg):
-        return arg, os.path.basename(arg)[:-len(".jsonl")]
+        return arg, os.path.splitext(os.path.basename(arg))[0]
     sid = arg or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     hits = glob.glob(os.path.join(LIVE, "projects", "*", sid + ".jsonl")) if sid else []
     return (hits[0] if hits else None), sid
