@@ -1,6 +1,6 @@
 # metrics-live.sh: requirements
 
-Rulings by the user, from the strategy review in
+From the strategy review in
 [dotfiles#149](https://github.com/mark-brannan/dotfiles/issues/149) and the
 review threads on the PRs before it. Each item is the intent and one line it
 governs. Values in the examples are tuning, not part of the ruling.
