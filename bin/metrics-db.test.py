@@ -249,6 +249,42 @@ class SourcesTest(FixtureTest):
         self.assertEqual(self.build("--quiet").stdout, "")
 
 
+class InputTest(FixtureTest):
+    def write_host(self, host, home, minutes):
+        d = self.fx.sd / "metrics" / "input" / host
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "host.json").write_text(json.dumps({"host": host, "home": home}))
+        write_jsonl(d / "2026-10-20.jsonl", minutes)
+
+    def test_minutes_and_categories_load_per_host(self):
+        self.write_host("boxa", "/home/a", [
+            {"minute": 100, "keys": 30, "clicks": 2, "scroll": 1, "move": 9, "afk": 0, "seen": 60,
+             "win": {"claude": 40, "browser": 20}},
+            {"minute": "bad"}])
+        self.write_host("boxb", "/Users/b", [{"minute": 100, "keys": 5, "afk": 60, "seen": 60}])
+        self.build("--quiet", "--no-typing")
+        self.assertEqual(self.fx.q("select host, minute, keys, afk from input order by host"),
+                         [("boxa", 100, 30, 0), ("boxb", 100, 5, 60)])
+        self.assertEqual(self.fx.q("select category, seconds from input_win order by category"),
+                         [("browser", 20), ("claude", 40)])
+
+    def test_a_session_takes_the_host_whose_home_holds_its_cwd(self):
+        self.write_host("boxa", "/fixture", [])
+        self.write_host("boxb", "/fixture/cwd/deeper", [])
+        self.build("--quiet", "--no-typing")
+        self.assertEqual(mdb.host_for("/fixture/cwd", [("/fixture/cwd/deeper", "boxb"), ("/fixture", "boxa")]), "boxa")
+        self.assertEqual(mdb.host_for("/fixturelike", [("/fixture", "boxa")]), None)
+        self.assertEqual(mdb.host_for(None, [("/fixture", "boxa")]), None)
+        self.assertEqual(mdb.host_for("c:\\Users\\x\\repo", [("C:\\Users\\x", "boxw")]), "boxw")
+
+    def test_no_input_leaves_the_tables_as_they_were(self):
+        self.write_host("boxa", "/home/a", [{"minute": 1, "keys": 1}])
+        self.build("--quiet", "--no-typing")
+        (self.fx.sd / "metrics" / "input" / "boxa" / "2026-10-20.jsonl").unlink()
+        self.build("--quiet", "--no-typing", "--no-input")
+        self.assertEqual(self.fx.q("select count(*) from input"), [(1,)])
+
+
 class TypingTest(FixtureTest):
     def typing(self, sid):
         return self.fx.q("select prompts, chars, words, pasted_chars, cwd, first_ts, last_ts "

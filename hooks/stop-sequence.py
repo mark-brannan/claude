@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Stop hook: run stop-continuity.py, then metrics-live.sh's Stop readout.
 
+First, input-export writes this host's new input minutes into the state repo,
+so the commit stop-continuity.py makes carries them. It answers in well under
+a second, and exits at once on a host with no ActivityWatch.
+
 Claude Code runs every matching hook in parallel. Run as two entries, the
 📦 notice computed its own "archivable" while stop-continuity.py was still
 salvaging and committing, so the checkpoint and the notice could answer the
@@ -23,6 +27,7 @@ HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 # Inside settings.json's 330s for the entry, so the readout always gets its turn.
 CONTINUITY_SECS = int(os.environ.get("STOP_CONTINUITY_SECS", "290"))
 READOUT_SECS = int(os.environ.get("STOP_READOUT_SECS", "30"))
+INPUT_SECS = int(os.environ.get("STOP_INPUT_SECS", "10"))
 
 
 def run(argv, payload, timeout, env=None, keep_stdout=False):
@@ -59,6 +64,7 @@ def run(argv, payload, timeout, env=None, keep_stdout=False):
 def main():
     payload = sys.stdin.buffer.read()
     since = str(int(time.time()))
+    run(["python3", os.path.join(HOOK_DIR, "..", "bin", "input-export"), "--quiet"], b"", INPUT_SECS)
     run(["python3", os.path.join(HOOK_DIR, "stop-continuity.py")], payload, CONTINUITY_SECS)
     env = dict(os.environ, STOP_VERDICT_SINCE=since)
     out = run(["bash", os.path.join(HOOK_DIR, "metrics-live.sh"), "stop", "0", "show"],
