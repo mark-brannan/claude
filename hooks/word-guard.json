@@ -1,0 +1,23 @@
+{
+  "_doc": "Words agents must not write. Read by hooks/word-guard.py; a repo adds its own in .claude/word-guard.json. action: deny refuses the write, warn lets it land and tells the agent to fix it. outward: also check commits, PRs, issues and GitHub writes.",
+  "entries": [
+    {
+      "pattern": "\\bSolace\\b",
+      "action": "deny",
+      "repos": ["mark-brannan/*"],
+      "exclude_repos": ["mark-brannan/claude_prompts_scratch"],
+      "exclude_paths": ["hooks/word-guard.json"],
+      "outward": true,
+      "message": "The user's name never goes in repo text, commits, PRs or issues. Write \"the user\"."
+    },
+    {
+      "pattern": "\\brul(e|es|ed|ing|ings)\\b",
+      "action": "warn",
+      "repos": ["mark-brannan/*"],
+      "exclude_repos": ["mark-brannan/claude_prompts_scratch", "mark-brannan/claude"],
+      "paths": ["*.md"],
+      "outward": true,
+      "message": "The user dislikes rule, ruled and ruling. Say what was decided and who decided it: \"decided\", \"the user's call\", \"chose\"."
+    }
+  ]
+}
