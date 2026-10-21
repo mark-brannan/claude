@@ -717,7 +717,7 @@ class Stop:
         self.work_branch = work_branch = git("-C", work_root, "rev-parse", "--abbrev-ref", "HEAD")[1]
 
         # --- named refusals: something is dirty but we will not touch it -----
-        # Settled policy, 2026-09-22, issue #61: there is
+        # Policy, 2026-09-22, issue #61: there is
         # no policy table and none is coming. The conservative default lives
         # here, in this public repo, reviewable beside the code it governs;
         # the only inputs from outside are reduce-only (CLAUDE_STOP_COMMIT=off,
