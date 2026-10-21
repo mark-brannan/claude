@@ -340,3 +340,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261017t200326z
 - the prompt hook says one line for an issue, a merged or a closed PR rather than nothing Undo: drop the not-open branch's two appends in hooks/pr-blockers-prompt.py ([#176](https://github.com/mark-brannan/claude/pull/176))
+
+### 20261021t030059z
+- Input host directory is the ActivityWatch hostname, lowercased. Undo: rename the directory and host.json's host ([#191](https://github.com/mark-brannan/claude/pull/191))
