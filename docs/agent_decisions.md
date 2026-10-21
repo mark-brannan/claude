@@ -358,3 +358,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261021t030116z
 - The dashboard adds present hours per day by foreground app. Undo: drop the chart ([#191](https://github.com/mark-brannan/claude/pull/191))
+
+### 20261021t050254z
+- friction-recall.py, the measurement script, lives in the state repo's scripts/ rather than this repo's bin/: at 64 lines it cannot land here under the churn budget Undo: a PR adding it back to bin/ with the churn-ok label ([#195](https://github.com/mark-brannan/claude/pull/195))
