@@ -222,7 +222,12 @@ work_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || echo "")
 work_repo=$([ -n "$work_root" ] && basename "$work_root" || basename "$cwd")
 work_branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
-metrics=$(jq -s \
+# Sub-agent transcripts sit beside the session's, one file each; the engine
+# prices them into cost and tokens (see session-metrics.jq).
+subfiles=("${tp%.jsonl}"/subagents/agent-*.jsonl)
+subargs=()
+[ -f "${subfiles[0]}" ] && subargs=(--slurpfile subs <(for f in "${subfiles[@]}"; do cat "$f" 2>/dev/null; echo; done))
+metrics=$(jq -s "${subargs[@]}" \
   --arg sid "$sid" --arg repo "$work_repo" --arg branch "$work_branch" \
   --arg cwd "$cwd" --arg now "$now" \
   -f "$JQPROG" "$tp" 2>/dev/null) || exit 0
