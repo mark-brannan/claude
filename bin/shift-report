@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+# shift-report -- at the end of a shift: PRs merged, halted and parked, and the
+# spend by issue. Prints it and writes it to <state>/log/<date>-<repo>-shift.md.
+#
+# A shift is a window (--since, --until) plus a repo and a label: the issues
+# carrying the label, and the PRs that close them.
+#   merged  the closing PR merged inside the window
+#   halted  the issue carries needs-human
+#   parked  the closing PR is open and the issue is not halted
+# Spend by issue is the spend of the PRs that close it, joined and priced by
+# bin/spend (loaded, not copied); a PR the PR table doesn't know costs $0 until
+# `spend --refresh`.
+#
+# Usage: shift-report --repo OWNER/NAME (--label L | --issues 183,184) --since WHEN
+#                     [--until DATE] [--state-dir DIR] [--no-write]
+# Exit 0, 2 on usage, 3 when the state repo cannot be found. The GH env var names the gh binary.
+import argparse, importlib.machinery, importlib.util, json, os, subprocess, sys
+from datetime import datetime, timezone
+
+sys.dont_write_bytecode = True
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+def load_spend():
+    path = os.path.join(HERE, "spend")
+    spec = importlib.util.spec_from_loader("spend", importlib.machinery.SourceFileLoader("spend", path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+def gh(*args):
+    r = subprocess.run([os.environ.get("GH", "gh"), *args], capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit(f"shift-report: gh {' '.join(args[:2])} failed: {r.stderr.strip()}")
+    return json.loads(r.stdout or "null")
+
+def collect(repo, label, issues, lo, parse_ts):
+    """[(issue, [pr dicts])] for the shift."""
+    nums = issues
+    if not nums:
+        found = gh("issue", "list", "-R", repo, "--label", label, "--state", "all", "--limit", "200",
+                   "--json", "number,updatedAt")
+        nums = [i["number"] for i in found if parse_ts(i["updatedAt"]) >= lo]
+    out = []
+    for n in sorted(nums):
+        i = gh("issue", "view", str(n), "-R", repo, "--json",
+               "number,title,state,labels,closedByPullRequestsReferences")
+        prs = [gh("pr", "view", str(p["number"]), "-R", repo, "--json", "number,state,mergedAt")
+               for p in i.get("closedByPullRequestsReferences") or []]
+        out.append((i, prs))
+    return out
+
+def classify(issue, prs, lo, hi, parse_ts):
+    halted = any(l["name"] == "needs-human" for l in issue["labels"])
+    merged = [p for p in prs if p.get("mergedAt") and parse_ts(p["mergedAt"]) >= lo
+              and (not hi or parse_ts(p["mergedAt"]) < hi)]
+    parked = [] if halted else [p for p in prs if p["state"] == "OPEN"]
+    return merged, halted, parked
+
+def report(repo, title, shift, cost):
+    spend_of = lambda prs: sum(cost.get(f"{repo}#{p['number']}", 0.0) for p in prs)
+    groups = {"merged": [], "halted": [], "parked": []}
+    for (i, prs), (merged, halted, parked) in shift:
+        row = f"| #{i['number']} {i['title']} | {', '.join('#%d' % p['number'] for p in prs) or '-'} | ${spend_of(prs):.2f} |"
+        for name, hit in (("merged", merged), ("halted", halted), ("parked", parked)):
+            if hit:
+                groups[name].append(row)
+    lines = [f"# Shift {title}", ""]
+    for name, rows in groups.items():
+        lines.append(f"## {name.capitalize()} ({len(rows)})")
+        lines += (["| issue | PR | spend |", "|---|---|---|"] + rows) if rows else ["none"]
+        lines.append("")
+    lines += ["## Spend by issue", "| issue | spend |", "|---|---|"]
+    for (i, prs), _ in shift:
+        lines.append(f"| #{i['number']} {i['title']} | ${spend_of(prs):.2f} |")
+    lines.append(f"| total | ${sum(spend_of(prs) for (_, prs), _ in shift):.2f} |")
+    return "\n".join(lines) + "\n"
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="end-of-shift report")
+    ap.add_argument("--repo", required=True)
+    ap.add_argument("--label", default="", help="issue label that defines the shift")
+    ap.add_argument("--issues", help="comma list of issue numbers instead of --label")
+    ap.add_argument("--since", required=True)
+    ap.add_argument("--until")
+    ap.add_argument("--state-dir")
+    ap.add_argument("--no-write", action="store_true")
+    a = ap.parse_args(argv)
+    if not a.label and not a.issues:
+        print("shift-report: need --label or --issues", file=sys.stderr)
+        return 2
+    sp = load_spend()
+    sd = a.state_dir or sp.load_metrics_db().state_dir()
+    if not sd:
+        print("shift-report: state repo not found", file=sys.stderr)
+        return 3
+    tz, now = sp.local_tz(None), datetime.now(timezone.utc)
+    lo = sp.parse_when(a.since, tz, now)
+    hi = sp.parse_when(a.until, tz, now) if a.until else None
+
+    issues = [int(x) for x in a.issues.split(",")] if a.issues else None
+    shift = [((i, prs), classify(i, prs, lo, hi, sp.parse_ts))
+             for i, prs in collect(a.repo, a.label, issues, lo, sp.parse_ts)]
+
+    db = os.path.join(sd, "metrics", "dashboard", "metrics.db")
+    sessions = [s for s in sp.load_sessions(sd) if s["_t"] >= lo and (not hi or s["_t"] < hi)]
+    rows = sp.attribute(sessions, sp.load_branches(sd), sp.load_prs(db), sp.load_repo_names(db))
+    cost = {}
+    for r in rows:
+        cost[r["pr"]] = cost.get(r["pr"], 0.0) + r["cost"]
+
+    text = report(a.repo, f"{a.repo} {a.label or 'issues ' + a.issues}  {a.since} .. {a.until or 'now'}", shift, cost)
+    sys.stdout.write(text)
+    if not a.no_write:
+        d = os.path.join(sd, "log")
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, f"{now.astimezone(tz):%Y-%m-%d}-{a.repo.split('/')[-1]}-shift.md")
+        with open(p, "w") as f:
+            f.write(text)
+        print(f"wrote {p}", file=sys.stderr)
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
