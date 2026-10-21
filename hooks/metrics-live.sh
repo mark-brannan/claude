@@ -226,7 +226,7 @@ work_branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 # prices them into cost and tokens (see session-metrics.jq).
 subfiles=("${tp%.jsonl}"/subagents/agent-*.jsonl)
 subargs=()
-[ -f "${subfiles[0]}" ] && subargs=(--slurpfile subs <(cat "${subfiles[@]}"))
+[ -f "${subfiles[0]}" ] && subargs=(--slurpfile subs <(for f in "${subfiles[@]}"; do cat "$f" 2>/dev/null; echo; done))
 metrics=$(jq -s "${subargs[@]}" \
   --arg sid "$sid" --arg repo "$work_repo" --arg branch "$work_branch" \
   --arg cwd "$cwd" --arg now "$now" \

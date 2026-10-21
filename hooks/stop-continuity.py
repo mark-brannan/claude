@@ -366,8 +366,11 @@ class Stop:
         if subs:
             with tempfile.NamedTemporaryFile("wb", suffix=".jsonl", delete=False) as tf:
                 for f in subs:
-                    with open(f, "rb") as fh:
-                        tf.write(fh.read() + b"\n")
+                    try:
+                        with open(f, "rb") as fh:
+                            tf.write(fh.read() + b"\n")
+                    except OSError:
+                        continue  # vanished or unreadable: skip that file
             subargs = ["--slurpfile", "subs", tf.name]
         rc, out = cap(["jq", "-s", *subargs, "--arg", "sid", sid, "--arg", "repo", work_repo,
                        "--arg", "branch", self.work_branch, "--arg", "cwd", cwd,
