@@ -96,6 +96,13 @@ t     'a tool hook inside a sub-agent is silent' '' "$outa"
 outp=$(payload "$TPA" agent1 "$SCRATCH" PostToolUse | bash "$HOOK" posttooluse 0 show 2>&1)
 has   'and the parent still gets its block afterwards' '^⛁⛁ ' "$(msg "$outp")"
 
+# claude#189: once a sub-agent transcript sits beside the parent's, the
+# parent's block must keep coming, not go silent for the rest of the session.
+TPS="$SCRATCH/withsubs.jsonl"; turn "$TPS" 152000
+mkdir -p "${TPS%.jsonl}/subagents"; turn "${TPS%.jsonl}/subagents/agent-a1b2c3.jsonl" 5000
+outs=$(payload "$TPS" subs1 "$SCRATCH" PostToolUse | bash "$HOOK" posttooluse 0 show 2>&1)
+has   'a session with sub-agent transcripts still gets its block' '^⛁⛁ ' "$(msg "$outs")"
+
 CROSS="$STATE/metrics/crossings/${SID:0:2}/$SID.jsonl"
 t 'both crossings are recorded, in order' \
   "$(printf '100000\n150000')" \

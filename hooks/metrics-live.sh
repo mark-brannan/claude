@@ -223,11 +223,11 @@ work_repo=$([ -n "$work_root" ] && basename "$work_root" || basename "$cwd")
 work_branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
 # Sub-agent transcripts sit beside the session's, one file each; the engine
-# prices them into cost and tokens (see session-metrics.jq).
+# prices them into cost and tokens (see session-metrics.jq). The <(...) must sit
+# on the jq line itself: built in an assignment, its pipe is closed before jq runs.
+# No sub-agents: the glob stays literal, cat fails quietly, and subs is [].
 subfiles=("${tp%.jsonl}"/subagents/agent-*.jsonl)
-subargs=()
-[ -f "${subfiles[0]}" ] && subargs=(--slurpfile subs <(for f in "${subfiles[@]}"; do cat "$f" 2>/dev/null; echo; done))
-metrics=$(jq -s "${subargs[@]}" \
+metrics=$(jq -s --slurpfile subs <(for f in "${subfiles[@]}"; do cat "$f" 2>/dev/null; echo; done) \
   --arg sid "$sid" --arg repo "$work_repo" --arg branch "$work_branch" \
   --arg cwd "$cwd" --arg now "$now" \
   -f "$JQPROG" "$tp" 2>/dev/null) || exit 0
