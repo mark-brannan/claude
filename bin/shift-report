@@ -56,11 +56,14 @@ def classify(issue, prs, lo, hi, parse_ts):
     parked = [] if halted else [p for p in prs if p["state"] == "OPEN"]
     return merged, halted, parked
 
+def cell(text):
+    return text.replace("|", "\\|")
+
 def report(repo, title, shift, cost):
     spend_of = lambda prs: sum(cost.get(f"{repo}#{p['number']}", 0.0) for p in prs)
     groups = {"merged": [], "halted": [], "parked": []}
     for (i, prs), (merged, halted, parked) in shift:
-        row = f"| #{i['number']} {i['title']} | {', '.join('#%d' % p['number'] for p in prs) or '-'} | ${spend_of(prs):.2f} |"
+        row = f"| #{i['number']} {cell(i['title'])} | {', '.join('#%d' % p['number'] for p in prs) or '-'} | ${spend_of(prs):.2f} |"
         for name, hit in (("merged", merged), ("halted", halted), ("parked", parked)):
             if hit:
                 groups[name].append(row)
@@ -71,7 +74,7 @@ def report(repo, title, shift, cost):
         lines.append("")
     lines += ["## Spend by issue", "| issue | spend |", "|---|---|"]
     for (i, prs), _ in shift:
-        lines.append(f"| #{i['number']} {i['title']} | ${spend_of(prs):.2f} |")
+        lines.append(f"| #{i['number']} {cell(i['title'])} | ${spend_of(prs):.2f} |")
     lines.append(f"| total | ${sum(spend_of(prs) for (_, prs), _ in shift):.2f} |")
     unpriced = [f"#{p['number']}" for (_, prs), _ in shift for p in prs if f"{repo}#{p['number']}" not in cost]
     if unpriced:
@@ -102,7 +105,11 @@ def main(argv=None):
     lo = sp.parse_when(a.since, tz, now)
     hi = sp.parse_when(a.until, tz, now) if a.until else None
 
-    issues = [int(x) for x in a.issues.split(",")] if a.issues else None
+    try:
+        issues = [int(x) for x in a.issues.split(",")] if a.issues else None
+    except ValueError:
+        print(f"shift-report: --issues wants comma-separated numbers, got {a.issues!r}", file=sys.stderr)
+        return 2
     shift = [((i, prs), classify(i, prs, lo, hi, sp.parse_ts))
              for i, prs in collect(a.repo, a.label, issues, lo, sp.parse_ts)]
 

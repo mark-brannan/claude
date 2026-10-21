@@ -43,6 +43,7 @@ class ShiftReportTest(unittest.TestCase):
         stub = Path(sd, "gh")
         stub.write_text(STUB % (ISSUES, PRS))
         stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+        self.addCleanup(os.environ.pop, "GH", None)
         os.environ["GH"] = str(stub)
         sess = Path(sd, "metrics", "sessions")
         sess.mkdir(parents=True)
@@ -78,6 +79,11 @@ class ShiftReportTest(unittest.TestCase):
         self.assertIn("| #2 stuck | $3.00 |", out)
         self.assertIn("| total | $8.00 |", out)
         self.assertIn("no spend recorded: #13.", out)
+
+    def test_bad_issues_and_pipe_title(self):
+        rc, _ = self.run_main("--no-write", "--issues", "1,x")
+        self.assertEqual(rc, 2)
+        self.assertEqual(sr.cell("a|b"), "a\\|b")
 
     def test_window_excludes_merge(self):
         _, out = self.run_main("--no-write", "--until", "2026-10-20")
