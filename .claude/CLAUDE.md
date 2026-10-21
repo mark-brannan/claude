@@ -1,0 +1,22 @@
+# This repo
+
+The Claude Code layer: hooks, skills, rules, settings and the `bin/` tools.
+`~/.claude` is a clone of it, so what merges to `main` is what every session
+runs, and hooks run from `~/.claude`, never from this checkout. The root
+`CLAUDE.md` is the standing orders themselves, not a copy of them.
+
+Where each subsystem's design lives:
+
+- Layout and delivery: README "Layout"; RUNBOOK "Where things are" indexes every operation.
+- Metrics readouts: RUNBOOK "Change what the metrics readouts show"; `hooks/metrics-live-requirements.md`.
+- Stop hook, checkpoints and pickup items: `hooks/stop-continuity-requirements.md`.
+- Config sync across machines: `docs/config-sync-strategy.md`.
+- Work items: `docs/work-item-lifecycle.md`.
+
+Two reflexes:
+
+- A display problem (a readout missing, wrong or wrapping): read RUNBOOK
+  "Change what the metrics readouts show" before any code.
+- A hook problem (silent, stale or misfiring): run the hook by hand on a real
+  transcript, then read the live clone's reflog. `~/.claude/bin/self-check`
+  runs the hook and sets the live clone against `origin/main` in one table.
