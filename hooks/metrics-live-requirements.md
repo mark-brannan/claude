@@ -157,7 +157,7 @@ place, so read the shape, not the number.
 `state/global/curia/*/LIVE` file names this session, the sitting line, its
 model-facing sitting injection and the friction injection are withheld. Counting
 continues and every metrics file is still written; only the nag text is
-silenced. Ruled by Solace, 2026-10-21.
+silenced, and so is the two-hour arming of the Stop hand-off block.
 
 ## Thresholds
 

@@ -688,7 +688,7 @@ in_flight() {
 # decision-load nags (sitting rung, friction) go silent then: a curia is the
 # deliberate long sitting, and the clock's answer is not its business. Every
 # counter keeps counting and every metrics file keeps being written; only the
-# nag text is withheld. Ruled by Solace, 2026-10-21.
+# nag text is withheld. Read only where the engine runs.
 in_curia() {
   local f
   [ -n "$sid" ] || return 1
@@ -697,9 +697,10 @@ in_curia() {
   done
   return 1
 }
-curia_live=0; in_curia && curia_live=1
+curia_live=0
 
 if [ "$run_engine" -eq 1 ]; then
+  in_curia && curia_live=1
   # The local clock the bedtime reads: hour, midnight and the evening's date.
   # An hour before NAG_NIGHT_END_HOUR still belongs to last night's evening.
   LTZ=$(local_tz)
@@ -861,7 +862,8 @@ if [ "$run_engine" -eq 1 ]; then
     if [ "$n" -ge "$NAG_SIT_EVERY_MIN" ] && [ "$n" -gt "$time_line" ]; then
       # Two hours arms the Stop block's hand-off, unless work is in flight:
       # landing it comes first, and the injection below already says so.
-      if [ "$n" -ge $((NAG_SIT_EVERY_MIN * 2)) ] && ! in_flight; then since_nag=1; fi
+      if [ "$n" -ge $((NAG_SIT_EVERY_MIN * 2)) ] && ! in_flight \
+         && [ "$curia_live" -eq 0 ]; then since_nag=1; fi
       if [ "$curia_live" -eq 0 ]; then
         t="⏱ $(hm "$sit_min") · context $(kfmt "$ctx")"
         sit_t=$(sit_tail); [ -n "$sit_t" ] && t="$t · $sit_t"
