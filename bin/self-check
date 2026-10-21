@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+# self-check: one table that says whether the live layer is the one on main
+# and whether this session's hooks are firing, for the moment the readouts
+# go quiet and nothing says why.
+#
+# Rows: the live ~/.claude clone's branch and sha against origin/main, its
+# dirty files, this session's hook records by event and the last one, the
+# metrics cache's last event, and the metrics hook run by hand on this
+# session's transcript, its stderr kept. The hand run writes to a scratch
+# state repo, so the live crossing state is never advanced by a check.
+#
+# Usage: self-check [SESSION_ID | TRANSCRIPT] [--offline]
+#
+# The session defaults to $CLAUDE_CODE_SESSION_ID. --offline skips the
+# fetch of origin/main. Exit 1 when any row is bad, 0 otherwise, 2 on usage.
+# Python 3 stdlib only; needs lib/ beside it or in ~/.claude/lib (exit 3 if not).
+import argparse
+import collections
+import glob
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+NAME = "self-check"
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import gitrun  # noqa: E402
+except ImportError:
+    print("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
+    sys.exit(3)
+
+LIVE = os.path.expanduser("~/.claude")
+HOOK = os.path.join(LIVE, "hooks", "metrics-live.sh")
+
+
+def git(*args, timeout=None):
+    p = gitrun.run("-C", LIVE, *args, timeout=timeout)
+    return p.stdout.rstrip() if p.returncode == 0 else None
+
+
+def live_row(fetch):
+    """The clone every session runs: on main, tracking a live upstream, not behind."""
+    if fetch:
+        git("fetch", "-q", "origin", "main", timeout=20)
+    branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    if branch is None:
+        return ("bad", "%s is not a git clone" % LIVE)
+    sha = git("rev-parse", "--short", "HEAD")
+    main = git("rev-parse", "--short", "origin/main")
+    track = git("for-each-ref", "--format=%(upstream:track)", "refs/heads/" + branch) or ""
+    counts = git("rev-list", "--left-right", "--count", "HEAD...origin/main")
+    ahead, behind = (int(n) for n in counts.split()) if counts else (0, 0)
+    value = "%s @ %s, origin/main %s, %d behind, %d ahead" % (branch, sha, main, behind, ahead)
+    if "gone" in track:
+        value += ", upstream deleted"
+    if branch != "main" or behind or "gone" in track:
+        return ("bad", value)
+    return ("warn" if ahead else "ok", value)
+
+
+def dirty_row():
+    out = git("status", "--porcelain")
+    if out is None:
+        return ("bad", "git status failed")
+    paths = [line[3:] for line in out.splitlines()]
+    if not paths:
+        return ("ok", "clean")
+    return ("warn", "%d: %s" % (len(paths), ", ".join(paths[:5]) + (" ..." if len(paths) > 5 else "")))
+
+
+def hook_records(transcript):
+    """Every hook attachment in the transcript, oldest first."""
+    recs = []
+    with open(transcript, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            a = entry.get("attachment") if entry.get("type") == "attachment" else None
+            if isinstance(a, dict) and a.get("hookEvent"):
+                recs.append({"ts": entry.get("timestamp", ""), "event": a["hookEvent"],
+                             "name": a.get("hookName", ""), "type": a.get("type", ""),
+                             "exit": a.get("exitCode")})
+    return recs
+
+
+def hook_rows(recs):
+    if not recs:
+        return [("bad", "none in this transcript"), ("bad", "-")]
+    by_event = collections.Counter(r["event"] for r in recs)
+    failed = sum(1 for r in recs if r["exit"] not in (None, 0))
+    counts = ", ".join("%s %d" % kv for kv in sorted(by_event.items()))
+    if failed:
+        counts += "; %d non-zero exits" % failed
+    last = recs[-1]
+    return [("warn" if failed else "ok", counts),
+            ("ok", "%s %s at %s" % (last["name"], last["type"], last["ts"]))]
+
+
+def cache_row(state_dir, sid):
+    """The file the statusline prints from; state_shard_path in hooks/lib-state.sh."""
+    live = os.path.join(state_dir, "metrics", "live")
+    path = os.path.join(live, sid + ".json")
+    if not os.path.exists(path):
+        path = os.path.join(live, sid[:2] or "_", sid + ".json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cache = json.load(fh)
+    except (OSError, ValueError):
+        return ("bad", "no cache at %s" % path)
+    return ("ok", "%s at %s" % (cache.get("last_event", "?"), cache.get("updated_at", "?")))
+
+
+def state_dir():
+    """lib-state.sh's state_dir(), by asking it: one home for the search order."""
+    lib = os.path.join(LIVE, "hooks", "lib-state.sh")
+    p = subprocess.run(["bash", "-c", '. "$1" && state_dir', "-", lib], capture_output=True, text=True)
+    return p.stdout.strip() if p.returncode == 0 and p.stdout.strip() else os.path.join(LIVE, "state", "global")
+
+
+def hand_run_row(transcript, sid, cwd):
+    """metrics-live.sh as PostToolUse wires it, against a scratch state repo, stderr kept."""
+    if not os.path.isfile(HOOK):
+        return ("bad", "%s missing" % HOOK)
+    payload = json.dumps({"session_id": sid, "transcript_path": transcript, "cwd": cwd,
+                          "hook_event_name": "PostToolUse", "tool_name": "Bash",
+                          "tool_input": {"command": "true"}})
+    with tempfile.TemporaryDirectory(prefix="self-check-") as scratch:
+        os.mkdir(os.path.join(scratch, ".git"))
+        env = dict(os.environ, CLAUDE_STATE_REPO=scratch)
+        try:
+            p = subprocess.run(["bash", HOOK, "posttooluse", "0", "show"], input=payload, env=env,
+                               capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            return ("bad", "timed out after 60s")
+    try:
+        msg = json.loads(p.stdout).get("systemMessage", "") if p.stdout.strip() else ""
+    except ValueError:
+        msg = ""
+    err = p.stderr.strip().splitlines()
+    value = "exit %d, block %s, stderr %s" % (
+        p.returncode, "%d lines" % len(msg.splitlines()) if msg else "empty",
+        repr(err[0][:80]) if err else "empty")
+    if p.returncode or err:
+        return ("bad", value)
+    return ("ok" if msg else "warn", value)
+
+
+def find_transcript(arg):
+    if arg and os.path.isfile(arg):
+        return arg, os.path.basename(arg)[:-len(".jsonl")]
+    sid = arg or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    hits = glob.glob(os.path.join(LIVE, "projects", "*", sid + ".jsonl")) if sid else []
+    return (hits[0] if hits else None), sid
+
+
+def table(rows):
+    w = max(len(r[0]) for r in rows)
+    return "\n".join("%-4s  %-*s  %s" % (s, w, label, value) for label, s, value in rows)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog=NAME, description="Is the live layer on main, and are this session's hooks firing?")
+    ap.add_argument("session", nargs="?", help="session id or transcript path (default: $CLAUDE_CODE_SESSION_ID)")
+    ap.add_argument("--offline", action="store_true", help="skip the fetch of origin/main")
+    args = ap.parse_args(argv)
+
+    rows = [("live ~/.claude", *live_row(not args.offline)), ("dirty files", *dirty_row())]
+    transcript, sid = find_transcript(args.session)
+    if transcript:
+        records, last = hook_rows(hook_records(transcript))
+        rows += [("hook records", *records), ("last hook record", *last),
+                 ("metrics cache", *cache_row(state_dir(), sid)),
+                 ("metrics hook by hand", *hand_run_row(transcript, sid, os.getcwd()))]
+    else:
+        rows.append(("transcript", "bad", "not found for session %r" % (sid or "-")))
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print("%s  session %s  %s\n" % (NAME, (sid or "-")[:8], now))
+    print(table(rows))
+    return 1 if any(s == "bad" for _, s, _ in rows) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -132,6 +132,7 @@ hooks/branch-home-gate.sh
 hooks/claim-stamp.sh
 hooks/fixtures
 bin/metrics-preview.sh
+bin/self-check
 bin/metrics-breakdown.sh
 bin/prose-budget
 bin/worklist

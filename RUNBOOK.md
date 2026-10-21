@@ -38,6 +38,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Run the PR fixer on a timer](#run-the-pr-fixer-on-a-timer)
 
 **Troubleshooting**
+- [Notices stopped](#notices-stopped)
 - [Session state went to `~/.claude/state/global`](#session-state-went-to-claudestateglobal)
 - [A hook didn't fire in a cloud session](#a-hook-didnt-fire-in-a-cloud-session)
 - [A cloud session is running an old rule](#a-cloud-session-is-running-an-old-rule)
@@ -830,6 +831,30 @@ systemctl --user disable --now grind-prs@dotfiles.timer
 ```
 
 ---
+
+## Notices stopped
+
+The statusline row, the event block or a hook's notes went quiet, or show
+stale numbers. From inside the session:
+
+```bash
+~/.claude/bin/self-check
+```
+
+One table: the live `~/.claude` clone's branch and sha against `origin/main`,
+its dirty files, this session's hook records by event and the last one, the
+metrics cache's last event, and the metrics hook run by hand on this
+session's transcript with its stderr kept. Exit 1 when any row is `bad`.
+
+- `live ~/.claude` bad → the clone is off `main` or behind it, so no fix has
+  reached the hooks. `git -C ~/.claude reflog -10` says how it got there;
+  `git -C ~/.claude checkout main && git -C ~/.claude pull --ff-only` puts
+  it back.
+- `metrics hook by hand` bad → its stderr is the bug; every wiring hides it.
+- `hook records` bad → nothing is wired; see
+  [A hook didn't fire in a cloud session](#a-hook-didnt-fire-in-a-cloud-session).
+
+Verify: a second `self-check` shows every row `ok` or `warn`.
 
 ## Session state went to `~/.claude/state/global`
 
