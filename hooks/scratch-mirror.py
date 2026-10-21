@@ -73,10 +73,11 @@ def main():
     shutil.copyfile(path, dest)
 
     rel = os.path.relpath(dest, cwd)
-    name = os.path.basename(path)
+    # Angle brackets keep a space or parenthesis in the name from ending the link.
+    name = os.path.basename(path).replace("[", "\\[").replace("]", "\\]")
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PostToolUse",
-        "additionalContext": f"Copied for the user to open: {rel}. Link the user to [{name}]({rel}), "
+        "additionalContext": f"Copied for the user to open: {rel}. Link the user to [{name}](<{rel}>), "
                              "never to the state-repo path; the copy refreshes on each Write or Edit of the original.",
     }}))
 

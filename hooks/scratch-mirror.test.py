@@ -46,7 +46,7 @@ class ScratchMirrorTest(unittest.TestCase):
     def test_copies_flat_and_names_the_link(self):
         out = self.run_hook(self.doc, self.work)
         self.assertEqual((self.work / ".scratch" / NAME).read_text(), "# v1\n")
-        self.assertIn(f"[{NAME}](.scratch/{NAME})", out)
+        self.assertIn(f"[{NAME}](<.scratch/{NAME}>)", out)
 
     def test_copy_is_ignored_and_exclude_written_once(self):
         self.run_hook(self.doc, self.work)
@@ -64,7 +64,12 @@ class ScratchMirrorTest(unittest.TestCase):
 
     def test_link_is_relative_to_session_dir(self):
         (self.work / "sub").mkdir()
-        self.assertIn(f"(../.scratch/{NAME})", self.run_hook(self.doc, self.work / "sub"))
+        self.assertIn(f"(<../.scratch/{NAME}>)", self.run_hook(self.doc, self.work / "sub"))
+
+    def test_link_survives_spaces_and_parentheses(self):
+        odd = self.state / "global" / "my notes (v2).md"
+        odd.write_text("x\n")
+        self.assertIn("[my notes (v2).md](<.scratch/my notes (v2).md>)", self.run_hook(odd, self.work))
 
     def test_quiet_cases(self):
         notes = self.state / "global/notes.txt"
