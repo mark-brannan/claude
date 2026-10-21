@@ -207,10 +207,17 @@ to_entries as $E
 # quoted command result cannot trip the S3 quote-back check. A set, not an
 # array: clean_human tests every line of every human turn against it, and
 # `index` on an array is a linear scan.
-| ([ $tool_texts[].t ]
-   | map(split("\n")[]) | map(gsub("^\\s+|\\s+$"; ""))
-   | map(select(. != ""))
-   | reduce .[] as $l ({}; .[$l] = true)) as $tool_lines
+#
+# Each line maps to the index of the first tool result that held it, and
+# clean_human only strips a line seen *before* the turn. As a bare set, a line
+# a tool printed after the turn -- a log, a hand-off note, a card quoting the
+# prompt back -- erased the user's own words from the turn that wrote them:
+# "I'm so fucking pissed" went uncounted because the session's own hand-off
+# file later contained it as a line.
+| ([ $tool_texts[] | .i as $i
+     | .t | split("\n")[] | gsub("^\\s+|\\s+$"; "") | select(. != "")
+     | {l: ., i: $i} ]
+   | reduce .[] as $r ({}; .[$r.l] = (.[$r.l] // $r.i))) as $tool_lines
 
 # Whole-transcript interrupt/decline markers, for S7. Zero-cost: neither
 # calibration transcript hits it, but it is free to compute.
@@ -269,12 +276,12 @@ to_entries as $E
                  | redact | .[0:160])} ]) as $blocked
 
 | def strip_fences: gsub("```[^`]*```"; "");
-def clean_human:
+def clean_human($h):
     strip_fences | split("\n")
     | map(gsub("^\\s+|\\s+$"; ""))
     | map(select(test("^Stop says:") | not))
     | map(select(test("^>") | not))
-    | map(select(. as $l | ($tool_lines | has($l)) | not))
+    | map(select(. as $l | (($tool_lines[$l] // 1e15) < $h) | not))
     | join("\n");
 
 def s1_first_re: "(?i)^(no|nope|wrong|not)\\b[?.,!:]?";
@@ -301,6 +308,7 @@ def s4_words_re: "(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull|\\b(wtf|
 # "stop doing that!!". Needs the "!" or an "either/again/anymore" in the same
 # clause, so "don't worry!", "never mind!" and "stop there, great work!" stay calm.
 def s4_emph_re: "(?i)^(no[,.!]?\\s*)?(don'?t|do not|stop|never|quit)\\b(?! ?(mind|worry))[^.,;?!\\n]*(!|\\b(either|again|anymore)\\b)";
+def automated_re: "^\\s*(Review this change for security|You previously flagged these candidate|This item is a card from the agent|##\\s|<pasted_content|\\(copy paste)";
 def s1_first: test(s1_first_re);
 def s1_conduct: test(s1_conduct_re);
 def s1_any: test(s1_any_re);
@@ -352,7 +360,10 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
     .key as $pos | .value as $h
     | (if $pos == 0 then -1 else $humans[$pos - 1] end) as $prev
     | (($human_texts[] | select(.i == $h) | .text) // "") as $raw
-    | ($raw | clean_human) as $clean
+    # Prompts the harness or a script wrote for a headless reviewer are not the
+    # user speaking: in the 2026-10 sample 913 of 2,916 enqueues were the
+    # security-review template, 653 of them tagged rebuke by its own capitals.
+    | (if ($raw | test(automated_re)) then "" else ($raw | clean_human($h)) end) as $clean
     | (prev_ask($h) != null and ($clean | length) < 40) as $is_answer
     | ($clean | s1_conduct) as $conduct_hit
     # A short reply to a question is "no" answering, not friction -- unless
@@ -623,7 +634,7 @@ def price:
                       | select(.type == "queue-operation" and .operation == "enqueue"
                                and (.content // "") != "")
                       | .content ] | last // ""
-                    | clean_human | split("\n") | map(select(test("\\S"))) | first // ""
+                    | clean_human(1e15) | split("\n") | map(select(test("\\S"))) | first // ""
                     | redact | .[0:200]),
       curia_refs:  ([ $E[].value
                       | select(.type == "queue-operation" and .operation == "enqueue")

@@ -227,5 +227,24 @@ for c in "Don't worry about the npm deprecation." "I asked for it because we had
   eq "calm stays calm: $c" '0' "$(fric "$c")"
 done
 
+# Prompts a script or the harness wrote are not the user speaking, however
+# loud their capitals.
+for c in "Review this change for security vulnerabilities. CRITICAL HIGH MEDIUM" \
+         "## Why  NEVER MUST SHOULD"; do
+  eq "automated prompt is not a rebuke: $c" '0' "$(fric "$c")"
+done
+
+# A tool that prints the user's words back AFTER the turn (a hand-off note, a
+# log) must not erase the turn; a tool result printed BEFORE it still strips a
+# pasted line.
+tr() { jq -nc --arg t "$1" '{type:"user", uuid:"t", timestamp:"2026-09-22T00:00:01.000Z",
+  message:{role:"user", content:[{type:"tool_result", tool_use_id:"x", content:$t}]}}'; }
+eq "words echoed by a later tool result still count" '1' \
+   "$({ fq "please fix the thing"; fa; fq "I'm so fucking pissed"; fa; tr "I'm so fucking pissed"; } \
+      | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n -f "$JQF" | jq -c '.session.friction.total')"
+eq "a line pasted from earlier tool output is still stripped" '0' \
+   "$({ fq "please fix the thing"; tr "I'm so fucking pissed"; fa; fq "I'm so fucking pissed"; fa; } \
+      | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n -f "$JQF" | jq -c '.session.friction.total')"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
