@@ -346,3 +346,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261021t030103z
 - A session's host is the host whose host.json $HOME holds its cwd. Undo: revert host_for in bin/metrics-db ([#191](https://github.com/mark-brannan/claude/pull/191))
+
+### 20261021t030106z
+- Present time is ActivityWatch's own not-afk time, not the draft's derived away rule. Undo: compute away from counts in the dashboard ([#191](https://github.com/mark-brannan/claude/pull/191))
