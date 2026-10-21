@@ -11,18 +11,30 @@ has() { grep -q -- "$2" "$1"; ok "$3" $?; }
 lacks() { ! grep -q -- "$2" "$1"; ok "$3" $?; }
 
 cat > "$S/issues.json" <<'J'
-[{"number":9,"title":"Nine","labels":[{"name":"lane"}]},
- {"number":3,"title":"Three","labels":[{"name":"lane"}]},
- {"number":7,"title":"Held","labels":[{"name":"lane"},{"name":"needs-human"}]}]
+[{"number":9,"title":"Nine","labels":[{"name":"lane"}],"author":{"login":"alice"}},
+ {"number":3,"title":"Three","labels":[{"name":"lane"}],"author":{"login":"alice"}},
+ {"number":11,"title":"Outsider","labels":[{"name":"lane"}],"author":{"login":"mallory"}},
+ {"number":12,"title":"Edited","labels":[{"name":"lane"}],"author":{"login":"alice"}},
+ {"number":7,"title":"Held","labels":[{"name":"lane"},{"name":"needs-human"}],"author":{"login":"alice"}}]
 J
 cat > "$S/bin/gh" <<'G'
 #!/bin/sh
 echo "$*" >> "$GH_LOG"
-case "$1 $2" in
-  "issue list") cat "$S/issues.json" ;;
-  "pr checks") exit "${CHECKS_RC:-0}" ;;
-  "pr view") echo "${MERGEABLE:-MERGEABLE}" ;;
-  "api graphql") echo "${OPEN_THREADS:-0}" ;;
+case "$*" in
+  "issue list"*) cat "$S/issues.json" ;;
+  "issue view"*) echo "body of the issue" ;;
+  "repo view"*) echo main ;;
+  "api user"*) echo "${OPERATOR:-op}" ;;
+  *collaborators/mallory/*) echo read ;;
+  *collaborators/*) echo write ;;
+  *timeline*) echo '[{"event":"labeled","label":{"name":"lane"},"created_at":"2026-01-01T00:00:00Z"}]' ;;
+  *lastEditedAt*) case "$*" in *n=12*) echo 2026-02-01T00:00:00Z ;; esac ;;
+  "pr list"*) [ -n "$NO_PR" ] || echo "${PRLIST_N:-$(echo "$*" | sed 's/.*shift\/issue-\([0-9]*\).*/\1/')0}" ;;
+  "pr checks"*) exit "${CHECKS_RC:-0}" ;;
+  "pr view"*) n=$(echo "$*" | awk '{print $3}')
+    printf '{"headRefOid":"sha%s","baseRefName":"%s","isCrossRepository":%s,"author":{"login":"%s"},"mergeable":"%s","closingIssuesReferences":[{"number":%s}]}\n' \
+      "$n" "${BASE:-main}" "${XREPO:-false}" "${PRAUTHOR:-op}" "${MERGEABLE:-MERGEABLE}" "${REFS:-$((n/10))}" ;;
+  "api graphql"*) echo "${OPEN_THREADS:-0}" ;;
   *) exit 0 ;;
 esac
 G
@@ -50,6 +62,8 @@ has "$S/o" "worker: $S/bin/worker" "dry: names the worker"
 has "$S/o" "would dispatch #3" "dry: lists 3"
 has "$S/o" "would dispatch #9" "dry: lists 9"
 lacks "$S/o" "#7" "dry: skips needs-human item"
+lacks "$S/o" "#11" "dry: skips author without write access"
+lacks "$S/o" "#12" "dry: skips issue edited after the label"
 if [ ! -s "$W_LOG" ]; then ok "dry: no worker ran" 0; else ok "dry: no worker ran" 1; fi
 lacks "$GH_LOG" "merge" "dry: no merge"
 if [ "$(grep 'would dispatch' "$S/o" | head -1 | grep -c '#3')" = 1 ]; then ok "dry: lowest number first" 0; else ok "dry: lowest number first" 1; fi
@@ -58,7 +72,8 @@ if [ "$(grep 'would dispatch' "$S/o" | head -1 | grep -c '#3')" = 1 ]; then ok "
 run > "$S/o"; rc=$?
 if [ $rc = 0 ]; then ok "pass: exit 0" 0; else ok "pass: exit 0" 1; fi
 has "$S/o" "MERGED o/r#3 as PR #30" "pass: merged 3"
-has "$GH_LOG" "pr merge 30 -R o/r --squash --delete-branch" "pass: squash merge"
+has "$GH_LOG" "pr merge 30 -R o/r --squash --delete-branch --match-head-commit sha30" "pass: squash merge pinned to the gated head"
+has "$W_LOG" "Work o/r#3" "pass: coder prompt names the issue"
 if [ "$(wc -l < "$W_LOG")" = 6 ]; then ok "pass: 3 worker phases x 2 items" 0; else ok "pass: 3 worker phases x 2 items" 1; fi
 
 # coder halts: label, comment, card; next item still merges
@@ -75,6 +90,22 @@ CHECKS_RC=1 run --limit 1 > "$S/o"; rc=$?
 if [ $rc = 1 ]; then ok "gate: red checks halt" 0; else ok "gate: red checks halt" 1; fi
 lacks "$GH_LOG" "pr merge" "gate: no merge on red"
 OPEN_THREADS=2 run --limit 1 > "$S/o"; has "$GH_LOG" "needs-human" "gate: open threads halt"
+
+# PR trust checks: each failing property halts and never merges
+XREPO=true run --limit 1 >/dev/null; rc=$?; [ $rc = 1 ]; ok "trust XREPO=true: halts" $?
+lacks "$GH_LOG" "pr merge" "trust XREPO=true: no merge"
+PRAUTHOR=eve run --limit 1 >/dev/null; rc=$?; [ $rc = 1 ]; ok "trust PRAUTHOR=eve: halts" $?
+lacks "$GH_LOG" "pr merge" "trust PRAUTHOR=eve: no merge"
+REFS=99 run --limit 1 >/dev/null; rc=$?; [ $rc = 1 ]; ok "trust REFS=99: halts" $?
+lacks "$GH_LOG" "pr merge" "trust REFS=99: no merge"
+BASE=dev run --limit 1 >/dev/null; rc=$?; [ $rc = 1 ]; ok "trust BASE=dev: halts" $?
+lacks "$GH_LOG" "pr merge" "trust BASE=dev: no merge"
+NO_PR=1 run --limit 1 >/dev/null; rc=$?; [ $rc = 1 ]; ok "trust NO_PR=1: halts" $?
+lacks "$GH_LOG" "pr merge" "trust NO_PR=1: no merge"
+PRLIST_N=31 run --limit 1 >/dev/null; rc=$?; [ $rc = 1 ]; ok "trust PRLIST_N=31: halts" $?
+lacks "$GH_LOG" "pr merge" "trust PRLIST_N=31: no merge"
+MERGEABLE=CONFLICTING run --limit 1 >/dev/null; rc=$?; [ $rc = 1 ]; ok "trust MERGEABLE=CONFLICTING: halts" $?
+lacks "$GH_LOG" "pr merge" "trust MERGEABLE=CONFLICTING: no merge"
 
 # usage
 bash "$SR" >/dev/null 2>&1; [ $? = 2 ]; ok "usage: no label is 2" $?
