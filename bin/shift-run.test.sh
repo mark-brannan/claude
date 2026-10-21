@@ -17,6 +17,7 @@ cat > "$S/issues.json" <<'J'
  {"number":11,"title":"Outsider","labels":[{"name":"lane"}],"author":{"login":"mallory"}},
  {"number":12,"title":"Edited","labels":[{"name":"lane"}],"author":{"login":"alice"}},
  {"number":13,"title":"Renamed","labels":[{"name":"lane"}],"author":{"login":"alice"}},
+ {"number":14,"title":"RaceRename","labels":[{"name":"lane"}],"author":{"login":"alice"}},
  {"number":7,"title":"Held","labels":[{"name":"lane"},{"name":"needs-human"}],"author":{"login":"alice"}}]
 J
 cat > "$S/bin/gh" <<'G'
@@ -30,6 +31,7 @@ case "$*" in
   *collaborators/mallory/*) echo read ;;
   *collaborators/*) echo write ;;
   *timeline*) case "$*" in
+    *issues/14/*) if [ -e "$S/gq14" ]; then echo '[{"event":"labeled","label":{"name":"lane"},"created_at":"2026-01-01T00:00:00Z"},{"event":"renamed","created_at":"2026-03-01T00:00:00Z"}]'; else echo '[{"event":"labeled","label":{"name":"lane"},"created_at":"2026-01-01T00:00:00Z"}]'; fi ;;
     *issues/13/*) echo '[{"event":"labeled","label":{"name":"lane"},"created_at":"2026-01-01T00:00:00Z"},{"event":"renamed","created_at":"2026-03-01T00:00:00Z"}]' ;;
     *) echo '[{"event":"labeled","label":{"name":"lane"},"created_at":"2026-01-01T00:00:00Z"}]' ;;
   esac ;;
@@ -39,6 +41,7 @@ case "$*" in
     if [ -n "$EDIT_LATE" ] && case "$*" in *n=3*) true ;; *) false ;; esac; then
       echo x >> "$S/reads"; [ "$(wc -l < "$S/reads")" -ge 2 ] && ed='"2026-02-01T00:00:00Z"'
     fi
+    case "$*" in *n=14*) : > "$S/gq14" ;; esac   # a rename lands right after the content read
     jq -nc --arg b "$body" --argjson e "$ed" '{title:"T",body:$b,lastEditedAt:$e}' ;;
   "pr list"*) [ -n "$NO_PR" ] || echo "${PRLIST_N:-$(echo "$*" | sed 's/.*shift\/issue-\([0-9]*\).*/\1/')0}" ;;
   "pr checks"*) exit "${CHECKS_RC:-0}" ;;
@@ -76,6 +79,8 @@ lacks "$S/o" "#7" "dry: skips needs-human item"
 lacks "$S/o" "#11" "dry: skips author without write access"
 lacks "$S/o" "#12" "dry: skips issue edited after the label"
 lacks "$S/o" "#13" "dry: skips issue renamed after the label"
+lacks "$S/o" "#14" "dry: rename landing between content and timeline reads is caught"
+first=$(grep -m1 -E 'n=14|issues/14/timeline' "$GH_LOG"); case $first in *n=14*) ok "order: content read before timeline" 0 ;; *) ok "order: content read before timeline" 1 ;; esac
 if [ ! -s "$W_LOG" ]; then ok "dry: no worker ran" 0; else ok "dry: no worker ran" 1; fi
 lacks "$GH_LOG" "merge" "dry: no merge"
 if [ "$(grep 'would dispatch' "$S/o" | head -1 | grep -c '#3')" = 1 ]; then ok "dry: lowest number first" 0; else ok "dry: lowest number first" 1; fi
