@@ -33,7 +33,7 @@
 # ⛁ context (» below the first rung; ¢ and ○ were the other candidates),
 # ⚡ friction and ⏱ sitting-clock crossings, and any glyph
 # family added alongside them) is frozen: do not modify without direct,
-# explicit interaction with Solace.
+# explicit interaction with the user.
 #
 # Changes here are small and contained -- one glyph/family at a time. Never
 # a wholesale rewrite: don't drop an existing glyph, family, or behavior
@@ -95,7 +95,7 @@ SHOW="${3:-}"               # "show" -> also print a systemMessage block
 #             standing orders' capacity rule is what it is asking for
 #
 # There is no decision-count line here, on screen or to the model: the count
-# is measured, never alarmed (one-entry-point §5, 2026-09-30). Friction is the
+# is measured, never alarmed (one-entry-point §5). Friction is the
 # one alarm. The decisions-per-session-hour ratio is shown at session start and
 # in the Stop summary only, never here.
 NAG_CONTEXT_LINES="${METRICS_CONTEXT_LINES:-60000 90000 120000 150000 185000}"
@@ -692,14 +692,21 @@ in_flight() {
 #
 # A marker counts only while the session it names is live: that session's
 # transcript written in the last 5 minutes, or the marker's own stamp under
-# 25 minutes old. A curia that crashed without clearing LIVE goes quiet again.
+# 25 minutes old, unless its close was recorded. A curia that crashed without clearing LIVE goes quiet again.
 in_curia() {
-  local f stamp stamp_ts tmt
+  local f stamp stamp_ts tmt cstamp cstamp_ts
   [ -n "$sid" ] || return 1
   for f in "$(state_dir)"/curia/*/LIVE; do
     { [ -f "$f" ] && grep -qwF -- "$sid" "$f" 2>/dev/null; } || continue
     stamp=$(awk -v s="$sid" '$1 == s {print $2; exit}' "$f" 2>/dev/null)
     stamp_ts=$(date -d "$stamp" +%s 2>/dev/null || echo 0)
+    # A CLOSED beside it, naming this session at or after the LIVE stamp, is
+    # the sitting's close: not live from that turn on.
+    cstamp=$(awk -v s="$sid" '$1 == s {print $2; exit}' "${f%LIVE}CLOSED" 2>/dev/null)
+    if [ -n "$cstamp" ]; then
+      cstamp_ts=$(date -d "$cstamp" +%s 2>/dev/null || echo 0)
+      [ "$cstamp_ts" -ge "$stamp_ts" ] && continue
+    fi
     [ $((now_ts - stamp_ts)) -lt 1500 ] && return 0
     tmt=$(stat -c %Y "$tp" 2>/dev/null || stat -f %m "$tp" 2>/dev/null || echo 0)
     [ $((now_ts - tmt)) -lt 300 ] && return 0
@@ -771,7 +778,7 @@ if [ "$run_engine" -eq 1 ]; then
       add_line "$t"; record_crossing stay "$stay_min" "$t"
       add_model "The user said stay: acknowledge in one line, nothing else."
     fi
-    # Bedtime (Solace, 2026-10-01). The question goes on screen once per
+    # Bedtime. The question goes on screen once per
     # evening, machine-wide, on the first prompt after the night hour, and
     # is never repeated: no answer is an answer. A bare clock time typed
     # after it -- and nothing else -- is the reply, any number of times.
@@ -909,8 +916,8 @@ if [ "$run_engine" -eq 1 ]; then
   # The sitting rung carries the fact, the mechanics the orders don't hold,
   # and a pointer: the orders say how to stop, and a procedure here would
   # displace them. The test checks the lead still exists in .claude/CLAUDE.md.
-  # Landing first is the one rule held in both places on purpose (Solace,
-  # 2026-10-01): durable enough to duplicate. Don't fold it into the pointer.
+  # Landing first is the one rule held in both places on purpose:
+  # durable enough to duplicate. Don't fold it into the pointer.
   sit_orders='Standing orders: "At a sitting rung".'
 
   # Model side of the sitting clock. Reads the same thresholds the screen
@@ -967,7 +974,7 @@ if [ "$run_engine" -eq 1 ]; then
   fi
 
   # Keep the machine-wide day counter counting (#301). Measurement only: no
-  # line, no injection reads it (one-entry-point §5, 2026-09-30). Gated on
+  # line, no injection reads it (one-entry-point §5). Gated on
   # is_prompt: the gap that starts a fresh day is measured between prompts
   # anywhere on the machine.
   if [ "$is_prompt" -eq 1 ]; then
@@ -1227,7 +1234,7 @@ if [ "$SHOW" = show ] && [ -n "$metrics" ]; then
   [ -n "$bl_fric_cluster" ] && bl_main="$bl_main $bl_fric_cluster"
   bl_main="$bl_main $bl_blocked_cluster"
   [ -n "$bl_sit_cluster" ] && bl_main="$bl_main $bl_sit_cluster"
-  # The tail is the reason glyphs alone, no words (Solace, 2026-10-01), and
+  # The tail is the reason glyphs alone, no words, and
   # it disappears entirely when no reason trips -- no "still room" filler (#137).
   if [ "$bl_propose" -eq 1 ]; then
     bl_main="$bl_main — $bl_reason"

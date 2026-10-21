@@ -1257,11 +1257,15 @@ has 'a stale LIVE marker no longer silences the session' '⏱ 1h0[0-9]' "$(msg "
 # Gentle lines are held while the curia is live and said once when it is not.
 HELD17="$STATE/metrics/live/cu/cur1.held"
 t 'the sitting line was held, not dropped' yes "$([ -s "$HELD17" ] && echo yes || echo no)"
-rm -f "$STATE/curia/cx/LIVE"
+sleep 1; printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/CLOSED"
 out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has   'at the close the held sitting line is delivered' '⏱ 1h0[0-9]' "$(msg "$out17")"
+has   'at the close (CLOSED beside a fresh LIVE) the held sitting line is delivered' '⏱ 1h0[0-9]' "$(msg "$out17")"
 out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 hasnt 'and not repeated on the prompt after' '⏱' "$(msg "$out17")"
+sleep 1; printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+sitting cur1 121 10
+out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+hasnt 'a newer LIVE supersedes the CLOSED: silent again' '⏱' "$(msg "$out17")"
 # Bedtime: held, then delivered once.
 set_bed $(( PIN + 240 )); jq --arg e "$(TZ=UTC date -d "@$PIN" +%Y-%m-%d)" ".bed_asked_eve = \$e" "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"
 printf 'bed3 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
