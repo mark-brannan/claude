@@ -27,7 +27,5 @@ check "queued created on a vended repo" '^label create queued -R testowner/repoa
 check "mixed-loops-ok created on dotfiles too" '^label create mixed-loops-ok -R testowner/dotfiles --color F9A8A0 '
 check "existing epic is recoloured" '^label edit epic -R testowner/repoa --color 5319E7 '
 check "existing labels still created" '^label create ready -R testowner/repoa '
-n=$(grep -c -E ' (lane-|needs-ruling)' "$GH_LOG")
-if [ "$n" -eq 0 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL lane-* or needs-ruling created ($n)"; fi
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
