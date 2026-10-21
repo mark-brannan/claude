@@ -279,14 +279,28 @@ def clean_human:
 
 def s1_first_re: "(?i)^(no|nope|wrong|not)\\b[?.,!:]?";
 def s1_conduct_re: "(?i)stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|you'?re not making|quantify";
-def s1_any_re: "(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify|have to remind you|already happened|you keep (saying|doing)|not the first time";
+# Second block is the rebuke phrasings the first block missed (2026-10, 2,003
+# human turns sampled from the last 28 days).
+# Each is anchored to the assistant's conduct -- a bare "I asked" or "again" is
+# the user explaining, not rebuking, and was measured at 1 true in 5.
+def s1_any_re: "(?i)you'?re not|that'?s (wrong|not)|I (said|told you)|not (quite )?what I|(is|was)n'?t (quite )?what I|disagree|stop (hedging|arguing|speculating)|don'?t (want to hear|hedge)|quantify|have to remind you|already happened|you keep (saying|doing)|not the first time|I asked a question|\\bI'?(ve|d) (already )?(asked|said|told)[^.\\n]{0,40}(twice|again|already|before)|why didn'?t you|(this|that) is (so )?(silly|ridiculous|absurd)|I hate (that|this|it)|you'?re (mistaken|wrong)|your mistake|you (were|are|was)[^.\\n]{0,30}supposed to|your [a-z]+ (was|were) supposed to|(response|answer|reply) is too long";
 # A paragraph of an assistant turn that opens by owning a mistake. Scored on
 # its own, not through a human turn, so a woopsy Claude caught itself still
 # gets logged. Tested per line (jq's ^ only anchors the string) with at most
 # 30 chars of lead-in, so a mention deep in prose does not count.
 def s9_self_re: "(?i)^[^\\n]{0,30}?((mistake|correction|error) on my side|my mistake|I (misread|got that wrong))";
 def s5_undo_re: "(?i)^(no[,.!]?\\s*)?(take (it|that|this)? ?out|remove|revert|undo|put (it )?back|don'?t|stop)\\b";
-def s4_words_re: "(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull";
+# Second line added 2026-10 from the same sample: profanity beyond the f-word
+# (shit, damn/dammit, pissed), the acronyms (wtf), grunts (ugh, *sigh*), and
+# 3+ repeated "!" -- each turned up unflagged in real rebukes. "hell" is
+# left out on purpose: it is mostly "hello" and "what the hell" is covered by wtf-style hits.
+def s4_words_re: "(?i)fuck\\w*|dumb|stupid|idiot|thick (silicon )?skull|\\b(wtf|wth|ffs|jfc|ugh+|argh+)\\b|\\*sigh\\*|\\barg+h+\\b|\\barg+!|\\bsigh\\b[.!,]|shit\\w*|\\bdamn\\w*|dammit|goddam\\w*|godam\\w*|pissed|bullshit|\\bcrap\\b|\\bno{3,}\\b|!{3,}";
+# A single capitalised NOT/MUST/NEVER was tried as heat and dropped: 15 of 15 hits
+# in the sample were emphasis inside a plain directive, mostly not aimed at Claude.
+# A negative imperative that ends the thought with force: "don't undo it either!",
+# "stop doing that!!". Needs the "!" or an "either/again/anymore" in the same
+# clause, so "don't worry!", "never mind!" and "stop there, great work!" stay calm.
+def s4_emph_re: "(?i)^(no[,.!]?\\s*)?(don'?t|do not|stop|never|quit)\\b(?! ?(mind|worry))[^.,;?!\\n]*(!|\\b(either|again|anymore)\\b)";
 def s1_first: test(s1_first_re);
 def s1_conduct: test(s1_conduct_re);
 def s1_any: test(s1_any_re);
@@ -294,6 +308,7 @@ def s2_retract: test("(?i)^(fair|you'?re right|that (claim|was) (was )?wrong|bad
 def s5_undo: test(s5_undo_re);
 def s8_pushback: test("(?i)I('d| would) still|I disagree|doesn'?t change the answer|recommend(ation)?:? (ignore|reject|don'?t)|that case stands");
 def s4_words: test(s4_words_re);
+def s4_emph: test(s4_emph_re);
 # The exact substrings a detector fired on, so a friction record says what
 # tripped it rather than only that something did.
 def phrases($re): [ match($re; "g") | .string | select(. != "") ];
@@ -360,7 +375,8 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
     | ((($clean | split("\n") | first) // "") | s5_undo) as $undo_line
     | ($undo_line and $mutated_before) as $undo
     | (($seen_before[$h | tostring]) // {}) as $seen
-    | ($clean as $c | ($c | s4_caps($seen)) or ($c | s4_words)) as $heat
+    | ($clean as $c | ($c | s4_caps($seen)) or ($c | s4_words)
+                       or (($c | split("\n") | first // "") | s4_emph)) as $heat
     | first($atext[] | select(.i > $h)) as $next
     | ((($next.text // "")[0:200]) | s2_retract) as $retracted
     | (($veto_at | map(select(. > $prev and . <= $h)) | length) > 0) as $veto
@@ -377,6 +393,7 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
     | ([ (if $lexicon then ($clean | phrases(s1_first_re), phrases(s1_conduct_re), phrases(s1_any_re)) else empty end),
          (if $undo then ((($clean | split("\n") | first) // "") | phrases(s5_undo_re)) else empty end),
          (if $heat then ($clean | phrases(s4_words_re)),
+                        ((($clean | split("\n") | first) // "") | phrases(s4_emph_re) | map(redact | .[0:40])),
                         ($clean | [ scan("[A-Z]{3,}") ] | map(select(test("[0-9_]") | not))
                                  | map(. as $w | select(($seen | has($w | ascii_downcase)) | not)))
                    else empty end) ]
