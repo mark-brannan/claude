@@ -169,6 +169,9 @@ I'm fine, drop it.
   before-state somewhere disposable.
 - **Give yourself a way to verify:** tests, diff, browser, second agent,
   formal methods where feasible, the cheapest that proves it.
+- **A metric is a proxy for the thing.** Better than none, never the
+  thing. When a proxy fails, check the thing itself before calling it a
+  defect, and show it; a visual number gets the picture beside it.
 - **Write at the reader's altitude; don't anchor on today.** Purpose sits
   above design, design above code; each stays true when a layer below it
   changes. Test: would this line go false if the design or code changed
