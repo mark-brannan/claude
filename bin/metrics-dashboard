@@ -2,10 +2,11 @@
 # metrics-dashboard -- render the metrics SQLite file (see metrics-db) as one
 # self-contained HTML page: inline SVG, no scripts, no network, so it opens
 # from file://, survives being mailed to a phone, and reads the same in the
-# dark. Four sections, one per question the page exists to answer:
+# dark. Five sections, one per question the page exists to answer:
 #   open work      issues, PRs and board cards over time
 #   sessions       hours at the keyboard vs agent hours, friction, decisions
 #   typing         prompts and words the user typed, per day
+#   input          keys, clicks and presence from ActivityWatch, in and out of sessions
 #   agent work     how much lands with how few touches
 #
 # Usage: metrics-dashboard [--db FILE] [--out FILE] [--days N]
@@ -139,6 +140,30 @@ def mondays(first, end):
         out.append(d.isoformat()); d += dt.timedelta(days=7)
     return out
 
+# A minute is active input at this many key presses (~4 words); stray hotkeys
+# stay under it, sustained typing runs near 200. A guess to tune on real data.
+ACTIVE_KEYS_PER_MIN = 20
+# Foreground categories charted by name; the rest of input-export's map is "other".
+INPUT_CATS = ["claude", "terminal", "github", "browser"]
+
+def minute_day(m):
+    return dt.datetime.fromtimestamp(m * 60, dt.timezone.utc).date().isoformat()
+
+def epoch_min(iso):
+    return int(dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() // 60)
+
+def session_minutes(rows):
+    """{host: set of UTC minutes some session on that host was open}; parallel
+    sessions share a minute, counted once."""
+    out = defaultdict(set)
+    for r in rows:
+        try:
+            a, b = epoch_min(r["started_at"]), epoch_min(r["ended_at"])
+        except (AttributeError, TypeError, ValueError):
+            continue
+        out[r["host"]].update(range(a, b + 1))
+    return out
+
 def build(db, out, ndays):
     cx = sqlite3.connect(db); cx.row_factory = sqlite3.Row
     q = lambda sql, *a: cx.execute(sql, a).fetchall()
@@ -216,6 +241,27 @@ def build(db, out, ndays):
         touches.setdefault(b, defaultdict(int))[r["w"]] += 1
     touch_order = ["0–1 prompts", "2–5 prompts", "6+ prompts", "no session"]
 
+    # input: one row per host-minute the host's ActivityWatch covered -------------
+    lo = epoch_min(start + "T00:00:00Z")
+    has_input = bool(q("select 1 from sqlite_master where name='input'"))
+    inp = q("select host, minute, keys, clicks, afk, seen from input where minute >= ?", lo) if has_input else []
+    wins = q("select category, minute, seconds from input_win where minute >= ?", lo) if has_input else []
+    inside = session_minutes(q("select host, started_at, ended_at from sessions where host is not null and ended_at >= ?", start))
+    present, active, keys_in, keys_out, keys_d, clicks_d = (defaultdict(float) for _ in range(6))
+    for r in inp:
+        d = minute_day(r["minute"])
+        present[d] += max((r["seen"] or 0) - (r["afk"] or 0), 0) / 3600.0
+        if (r["keys"] or 0) >= ACTIVE_KEYS_PER_MIN: active[d] += 1 / 60.0
+        (keys_in if r["minute"] in inside.get(r["host"], ()) else keys_out)[d] += r["keys"] or 0
+        keys_d[d] += r["keys"] or 0; clicks_d[d] += r["clicks"] or 0
+    fg = defaultdict(lambda: defaultdict(float))
+    for r in wins:
+        c = r["category"] if r["category"] in INPUT_CATS else "other"
+        fg[c][minute_day(r["minute"])] += (r["seconds"] or 0) / 3600.0
+    cover = sorted({minute_day(r["minute"]) for r in inp})
+    r1 = lambda dd: {k: round(v, 1) for k, v in dd.items()}
+    def in7(dd, a, b): return sum(v for k, v in dd.items() if dkeys[a] <= k <= dkeys[b])
+
     # tiles: last 7 days vs the 7 before ---------------------------------------
     def win(sql, a, b):
         return q(sql, dkeys[a], dkeys[b])[0][0] or 0
@@ -231,6 +277,11 @@ def build(db, out, ndays):
         tile("words typed, 7d", win(T7 % "sum(words)", a7, b7), win(T7 % "sum(words)", a14, b14), good="down"),
         tile("friction events, 7d", win(S7 % "sum(fr_total)", a7, b7), win(S7 % "sum(fr_total)", a14, b14), good="down"),
         tile("gate decisions, 7d", win(S7 % "sum(dec_gate)", a7, b7), win(S7 % "sum(dec_gate)", a14, b14), good="down"),
+        tile("active input hours, 7d", round(in7(active, a7, b7), 1), round(in7(active, a14, b14), 1), good="down"),
+        tile("keys outside Claude, 7d", int(in7(keys_out, a7, b7)), int(in7(keys_out, a14, b14)), good="down"),
+        tile("chars to Claude per key, 7d", round(win(T7 % "sum(chars)", a7, b7) / in7(keys_in, a7, b7), 2) if in7(keys_in, a7, b7) else None,
+             round(win(T7 % "sum(chars)", a14, b14) / in7(keys_in, a14, b14), 2) if in7(keys_in, a14, b14) else None, good="up"),
+        tile("days with input data, 7d", sum(1 for d in cover if dkeys[a7] <= d <= dkeys[b7]), sum(1 for d in cover if dkeys[a14] <= d <= dkeys[b14]), good="up"),
         tile("open issues", open_on("issue", dkeys[-1]), open_on("issue", dkeys[-8]), good="down"),
         tile("open PRs", open_on("pr", dkeys[-1]), open_on("pr", dkeys[-8]), good="down"),
         tile("rulings waiting", cards_open(dkeys[-1], "human-ruling"), cards_open(dkeys[-8], "human-ruling") if dkeys[-8] >= card_first else None, good="down"),
@@ -258,6 +309,12 @@ def build(db, out, ndays):
             lines("Words per prompt, weekly mean", wkeys, [("words/prompt", {r["w"]: round(r["wd"] / r["p"], 1) for r in typing_w if r["p"]})], every=4),
             lines("Characters per prompt, daily mean", dkeys, [("chars/prompt", {r["d"]: round(r["c"] / r["p"]) for r in typing_d if r["p"]})]),
         ],
+        "input": [
+            lines("Hours per day: keyboard vs active input vs present", dkeys, [("keyboard", series(daily, "d", "hh")), ("active input", r1(active)), ("present", r1(present))], unit="h"),
+            bars("Keys per day: inside a session vs outside", dkeys, [("inside a session", dict(keys_in)), ("outside", dict(keys_out))]),
+            bars("Present hours per day, by foreground app", dkeys, [(c, r1(fg[c])) for c in INPUT_CATS + ["other"]], unit="h"),
+            lines("Clicks per day", dkeys, [("clicks", dict(clicks_d))]),
+        ],
         "agent": [
             bars("Sessions per week, by prompts typed", wkeys, [("0 (headless)", series(weekly, "w", "t0")), ("1", series(weekly, "w", "t1")), ("2–5", series(weekly, "w", "t2")), ("6+", series(weekly, "w", "t3"))], every=4),
             bars("Merged PRs per week, by prompts typed on the branch", wkeys, [(b, touches.get(b, {})) for b in touch_order], every=4),
@@ -269,6 +326,7 @@ def build(db, out, ndays):
     sections = [("open", "Open work", "Issues and PRs are reconstructed from GitHub timestamps, so the history is complete; board cards start when the item store did."),
                 ("sessions", "Sessions and friction", f"Daily series cover the last {ndays} days; weekly series the whole record."),
                 ("typing", "Typing", "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing. Each transcript is counted on the day its first prompt was typed, so a session that runs past midnight or is resumed later keeps all its prompts on that first day."),
+                ("input", "Input", f"Per-minute counts from ActivityWatch on each host that exports them (input-export); counts and app categories only. A minute is active input at {ACTIVE_KEYS_PER_MIN}+ key presses; present is time ActivityWatch did not call away. A session's minutes are those between its start and end on the host whose home holds its cwd. Days with no data are gaps, never zeros; the coverage tile says how many there were."),
                 ("agent", "Agent work vs touches", "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch.")]
     body = "".join(f'<h2 id="{k}">{html.escape(t)}</h2><p class="note">{html.escape(n)}</p><div class="grid">{"".join(figs[k])}</div>' for k, t, n in sections)
     page = PAGE.format(tiles="".join(tiles), body=body,
