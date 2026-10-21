@@ -1077,7 +1077,7 @@ EOF_ITEMS
       # crossings, the verdict and the item names. It needs no skill loaded:
       # the body's format is the one the 📄 line reads back.
       paths=$(printf '%s\n' "$items" | awk -F'\t' 'NF { printf "%s`%s`", (n++ ? ", " : ""), $1 }')
-      block_reason="Write the hand-off: replace the body (below \`---\`) of this session's pickup item with the next step, then link:, model: and effort: lines. Item: ${paths:-none exists yet in $(state_dir)/pickup/}. Then answer in one line naming the file -- no summary, no question, nothing new."
+      block_reason="Write the hand-off: replace the body (below \`---\`) of this session's pickup item with the next step, then link:, model: and effort: lines. Item: ${paths:-none exists yet in $(state_dir)/pickup/}. Then answer with the body you wrote, pasted as-is in a fenced block -- the user cannot open files outside the session's repo -- and nothing else: no summary, no question, nothing new."
     fi
   fi
 fi
