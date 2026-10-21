@@ -29,6 +29,7 @@ import re
 import sys
 
 NAME = "prose-budget"
+VERSION = "1"  # the shared CI workflow prints it ahead of the findings
 sys.dont_write_bytecode = True
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
@@ -917,6 +918,7 @@ def format_finding(f):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="prose-budget", add_help=True)
+    ap.add_argument("--version", action="version", version="%s %s" % (NAME, VERSION))
     ap.add_argument("--config")
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--tree", action="store_true")
