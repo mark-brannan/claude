@@ -154,7 +154,7 @@ place, so read the shape, not the number.
 ```
 
 **A live curia sitting silences the human nags.** While a
-`state/global/curia/*/LIVE` file names this session, the sitting line, its
+`state/global/curia/*/LIVE` file names this session and that session is live (transcript written within 5 minutes, or the marker stamped within 25), the sitting line, its
 model-facing sitting injection and the friction injection are withheld. Counting
 continues and every metrics file is still written; only the nag text is
 silenced, and so is the two-hour arming of the Stop hand-off block.

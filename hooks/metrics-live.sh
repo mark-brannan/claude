@@ -689,11 +689,20 @@ in_flight() {
 # deliberate long sitting, and the clock's answer is not its business. Every
 # counter keeps counting and every metrics file keeps being written; only the
 # nag text is withheld. Read only where the engine runs.
+#
+# A marker counts only while the session it names is live: that session's
+# transcript written in the last 5 minutes, or the marker's own stamp under
+# 25 minutes old. A curia that crashed without clearing LIVE goes quiet again.
 in_curia() {
-  local f
+  local f stamp stamp_ts tmt
   [ -n "$sid" ] || return 1
   for f in "$(state_dir)"/curia/*/LIVE; do
-    [ -f "$f" ] && grep -qwF -- "$sid" "$f" 2>/dev/null && return 0
+    { [ -f "$f" ] && grep -qwF -- "$sid" "$f" 2>/dev/null; } || continue
+    stamp=$(awk -v s="$sid" '$1 == s {print $2; exit}' "$f" 2>/dev/null)
+    stamp_ts=$(date -d "$stamp" +%s 2>/dev/null || echo 0)
+    [ $((now_ts - stamp_ts)) -lt 1500 ] && return 0
+    tmt=$(stat -c %Y "$tp" 2>/dev/null || stat -f %m "$tp" 2>/dev/null || echo 0)
+    [ $((now_ts - tmt)) -lt 300 ] && return 0
   done
   return 1
 }

@@ -1229,7 +1229,7 @@ t 'the next sitting start stamps every chat, from the old last prompt' '[10,null
 # lines; a marker naming another session does not; counting carries on.
 mkdir -p "$STATE/curia/cx"
 sitting cur1 61 10
-printf 'cur1 2026-10-21T00:00:00Z\n' > "$STATE/curia/cx/LIVE"
+printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
 out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 hasnt 'a live curia names the session: no sitting line' '⏱ 1h0' "$(msg "$out17")"
 t     'and nothing reaches the model' '' "$(ctx "$out17")"
@@ -1240,7 +1240,7 @@ out17=$(payload "$TP2" cur2 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
 has   'a LIVE naming another session leaves this one nagging' '⏱ 1h0[0-9]' "$(msg "$out17")"
 # Two hours must not arm the Stop hand-off block while the curia is live.
 sitting cur3 121 10
-printf 'cur3 2026-10-21T00:00:00Z\n' > "$STATE/curia/cx/LIVE"
+printf 'cur3 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
 payload "$TP2" cur3 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
 t 'a live curia past two hours does not arm the Stop nag' false \
   "$(jq -r '.since_nag' "$STATE/metrics/live/cu/cur3.nag.json")"
@@ -1248,6 +1248,12 @@ sitting cur4 121 10
 payload "$TP2" cur4 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
 t 'and without one it does' true \
   "$(jq -r '.since_nag' "$STATE/metrics/live/cu/cur4.nag.json")"
+# A stale marker (old stamp, idle transcript) is not live: the nag speaks.
+cp "$TP2" "$SCRATCH/idle.jsonl"; touch -d '2 hours ago' "$SCRATCH/idle.jsonl"
+sitting cur5 61 10
+printf 'cur5 %s\n' "$(date -u -d '2 hours ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+out17=$(payload "$SCRATCH/idle.jsonl" cur5 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has 'a stale LIVE marker no longer silences the session' '⏱ 1h0[0-9]' "$(msg "$out17")"
 rm -rf "$STATE/curia"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
