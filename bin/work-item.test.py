@@ -198,7 +198,9 @@ class WorkItemTest(unittest.TestCase):
     def test_09b_a_churn_waiver_is_never_the_users_card(self):
         asks = ("churn-ok for claude#188 shift-run", "Waive churn on the input-counts PR?",
                 "Waive the churn guard on #191", "churn guard waiver for #12",
-                "churn budget bypass on #7", "run mark-as-churn-ok.sh 191", "Churn_OK the PR")
+                "churn budget bypass on #7", "run mark-as-churn-ok.sh 191", "Churn_OK the PR",
+                "Bypass the churn guard on #191", "Override the churn check on #191",
+                "Skip churn on #4")
         for i, title in enumerate(asks):
             for owner in ("human-ruling", "human-click"):
                 p = run(A, "create", "--id", f"170000030{i}077c62eb", "--owner", owner,
@@ -221,6 +223,11 @@ class WorkItemTest(unittest.TestCase):
                          "a human item cannot be re-briefed into a waiver")
         self.assertEqual(run(A, "brief", self.id, f"churn-ok seen on {LINK}").returncode, 0,
                          "an agent item may name the label")
+        legacy = "1700000332077c62eb"
+        (self.dir / f"{legacy}.md").write_text(
+            f"# Old card\n\n## Brief\n{LINK}\n\n## Log\n2026-01-01T00:00:00Z 077c62eb status=open\n")
+        self.assertEqual(run(A, "brief", legacy, f"churn-ok seen on {LINK}").returncode, 0,
+                         "an item with no owner= line is an agent's, as list reads it")
 
     def test_10_done_needs_evidence_and_closed_is_refused(self):
         item = ok(A, "create", "--id", "1700000200077c62eb", "--brief", LINK, "Lifecycle")

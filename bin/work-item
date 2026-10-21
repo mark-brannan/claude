@@ -141,9 +141,9 @@ def points_ok(p):
         die(f"points is one of 1 2 3 5 8 13, got [{p}]")
 
 
-# A churn waiver asked of the user: churn-ok, mark-as-churn-ok, waive the churn,
-# a churn guard/budget waiver. Bare "churn" is an ordinary word and passes.
-WAIVER = re.compile(r"\bchurn[-_]ok\b|\bwaiv\w*\s+(?:the\s+)?churn\b"
+# A churn waiver asked of the user: churn-ok, mark-as-churn-ok, waive (bypass,
+# skip, override) the churn, a churn guard/budget waiver. Bare "churn" is an ordinary word and passes.
+WAIVER = re.compile(r"\bchurn[-_]ok\b|\b(?:waiv|bypass|skip|overrid)\w*\s+(?:the\s+)?churn\b"
                     r"|\bchurn(?:[- ](?:guard|budget|gate|check))?[- ](?:waiver|bypass)", re.I)
 LINK = re.compile(r"https?://|(^|[^\w./-])[\w.-]+/[\w.-]+#\d+|\]\((\.\./)*log/")
 
@@ -494,7 +494,7 @@ def main(argv):
         sid = me()
         it.lock()
         f = it.facts()
-        no_waiver(f["owner"], f["title"], brief)
+        no_waiver(f["owner"] or "agent", f["title"], brief)  # as list reads it
         it.write_brief(brief, points or f["points"])
         it.append(sid, "briefed")
     elif cmd == "log":
