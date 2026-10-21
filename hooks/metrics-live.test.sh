@@ -333,7 +333,7 @@ has 'the notice names the item, without its directory, as unwritten' \
     '^📄 2026-09-09T09-00-stopn\.md \(p\)$' "$(msg "$o")"
 has 'the notice still carries the metrics block' '^» ' "$(msg "$o")"
 has 'the reason gives the model the full path' \
-    'Item: `/.*/pickup/2026-09-09T09-00-stopn\.md`\. Then answer in one line' \
+    'Item: `/.*/pickup/2026-09-09T09-00-stopn\.md`\. Then answer with the body you wrote' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
 hasnt 'and no item lines in the reason' '📄' "$(printf '%s' "$o" | jq -r '.reason // ""')"
 has "and keeps the last word the user's" 'no summary, no question, nothing new\.$' \
