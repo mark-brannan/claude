@@ -112,6 +112,7 @@ hooks/release-subagent-branch.sh
 hooks/pr-ownership-context.sh
 hooks/pr-threads-gate.sh
 hooks/pr-blockers-prompt.py
+hooks/scratch-mirror.py
 hooks/npm-publish-auth.sh
 hooks/no-prose-gate.sh
 hooks/no-unsigned-push.sh
