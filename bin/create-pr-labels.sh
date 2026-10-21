@@ -4,8 +4,9 @@
 # Idempotent: gh exits non-zero on "already exists"
 
 set -u
-OWNER=${OWNER:-mark-brannan}
-REPOS="dotfiles symphony $(tr -d '\r' < ~/.local/share/vended-repos.txt | grep -v '^[[:space:]]*$')"
+OWNER="${OWNER:-mark-brannan}"
+special_repos='dotfiles .github symphony'
+REPOS="$special_repos $(tr -d '\r' < ~/.local/share/vended-repos.txt | grep -v '^[[:space:]]*$')"
 LABELS='
 awaiting-human|8250DF|Green and thread-free: it is your turn
 ready|1D76DB|Agent-startable: grind will pull this
@@ -14,9 +15,10 @@ churn-ok|FBCA04|Waives the churn-diff gate (human-applied only)
 fixup-hard|D93F0B|A fixer session gave up; needs a bigger session or a human
 blocked|B60205|Waiting on something; body carries the Blocked by line
 epic|3E4B9E|An [Epic] issue: the aim; its sub-issues hold the work
-lane-auto|0E8A16|Admits this issue to the autonomous lane: agents work it through to main
-lane-gated|BFD4F2|Admits this issue to the gated lane: lands on a holding branch a human walks before main
 '
+# Deferred:
+#lane-auto|0E8A16|Admits this issue to the autonomous lane: agents work it through to main
+#lane-gated|BFD4F2|Admits this issue to the gated lane: lands on a holding branch a human walks before main
 
 ensure() { # ensure <repo> <label> <color> <desc>
   if gh label create "$2" -R "$OWNER/$1" --color "$3" -d "$4" >/dev/null 2>&1; then
