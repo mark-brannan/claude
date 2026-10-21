@@ -73,6 +73,11 @@ def report(repo, title, shift, cost):
     for (i, prs), _ in shift:
         lines.append(f"| #{i['number']} {i['title']} | ${spend_of(prs):.2f} |")
     lines.append(f"| total | ${sum(spend_of(prs) for (_, prs), _ in shift):.2f} |")
+    unpriced = [f"#{p['number']}" for (_, prs), _ in shift for p in prs if f"{repo}#{p['number']}" not in cost]
+    if unpriced:
+        lines.append("")
+        lines.append(f"Shown as $0.00, no spend recorded: {', '.join(unpriced)}. "
+                     "Open PRs read $0.00 until `spend --refresh` loads them.")
     return "\n".join(lines) + "\n"
 
 def main(argv=None):

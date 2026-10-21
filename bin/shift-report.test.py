@@ -77,6 +77,7 @@ class ShiftReportTest(unittest.TestCase):
         self.assertIn("| #1 done | $5.00 |", out)
         self.assertIn("| #2 stuck | $3.00 |", out)
         self.assertIn("| total | $8.00 |", out)
+        self.assertIn("no spend recorded: #13.", out)
 
     def test_window_excludes_merge(self):
         _, out = self.run_main("--no-write", "--until", "2026-10-20")
