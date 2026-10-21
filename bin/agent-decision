@@ -36,7 +36,7 @@
 # the human") claims provenance, and CLAIM matches it anywhere in the rendered
 # entry. It is wide on purpose: a false refusal is a reword.
 #
-# A reversal is never a pencil call (ruled 2026-10-09, claude#127), and the
+# A reversal is never a pencil call (2026-10-09, claude#127), and the
 # guard sits on the write, before anything is pushed:
 #
 #   - A call that says the user chose it ("Solace chose", "the user asked") is

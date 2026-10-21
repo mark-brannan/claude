@@ -6,8 +6,8 @@ name: Churn guard
 # that changes a displayed line, a threshold and the code that formats both,
 # 80 to 474 lines at a time, unreviewable in the only way that matters -- the
 # reader cannot tell which hunk changed what they see on screen.
-# https://github.com/mark-brannan/dotfiles/issues/149 ruled that a display
-# change and a threshold change are separate PRs. This is that ruling as a
+# A display change and a threshold change are separate PRs
+# (https://github.com/mark-brannan/dotfiles/issues/149). This is that line as a
 # check, repo wide, because nothing about the failure was specific to metrics.
 #
 # Gated: any changed file with a `#!` line -- .sh, the extensionless scripts

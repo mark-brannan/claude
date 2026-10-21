@@ -913,8 +913,8 @@ class StopContinuityTest(unittest.TestCase):
                          "conflicting pull: and so does the metrics record")
 
         # The local twin: the same failed push on a machine that keeps its
-        # clone. The commit is the promise there, and it held (ruled for
-        # dotfiles#149). It needs a change of its own: within the same clock
+        # clone. The commit is the promise there, and it held
+        # (dotfiles#149). It needs a change of its own: within the same clock
         # second as the cloud Stop above, its checkpoint and metrics match
         # HEAD, so it would commit nothing and never reach the push.
         stamp(SREPO).unlink(missing_ok=True)

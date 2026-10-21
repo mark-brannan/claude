@@ -828,7 +828,7 @@ claude_cards() {
 # ruling_readiness <card text> -- prints `ready` or `waiting` for one
 # ## Needs ruling card, its continuation lines already folded onto one line.
 #
-# Ruled by Solace, 2026-10-01 (one-entry-point curia, decided so far): a
+# 2026-10-01 (one-entry-point curia): a
 # ruling card is ready when its `until:` date has arrived or the PR or issue
 # it links is in flight, otherwise waiting -- kept, counted, hidden by
 # default. `until:` holds a date, a PR/issue link, or an event in words; an

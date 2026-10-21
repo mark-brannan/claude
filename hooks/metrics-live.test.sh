@@ -67,7 +67,7 @@ hasnt() {
 }
 
 # --- 1. context rungs are counted, never spoken ------------------------------
-# Ruled on dotfiles#137, 2026-09-22: one notice per event, and that notice is
+# dotfiles#137, 2026-09-22: one notice per event, and that notice is
 # the block. A context crossing moves the block's ⛁ cluster and prints no
 # line of its own -- least of all one naming the rung, which reused the a/b
 # shape the block spends on output_tokens/context_peak.
@@ -860,7 +860,7 @@ hasnt 'past every old decision rung, nothing about decisions reaches the model' 
       'decisions pushed to Solace' "$ctx6k"
 
 # --- 7. the sitting line carries context and git state ----------------------
-# Ruled by Solace, 2026-10-01: the rung line keeps the context and the ⎇ git
+# 2026-10-01: the rung line keeps the context and the ⎇ git
 # state it carried before the tail rework. A fresh repo, not $REPO -- that one
 # already carries a leftover "dirty" file from the archivable tests above, and
 # this is checking the exact count.
@@ -1009,7 +1009,7 @@ chmod +x "$SCRATCH/bin/gh"
 # --- 11. calm states, and the ⏰ tier ---------------------------------------
 # ✅ has shown blocked=0 since the #137 spec landed; friction and decisions
 # vanished at zero instead, so "no friction" and "this field does not exist"
-# looked the same. Ruled 2026-09-22: 🌌 friction, 🧘 decisions, bare --
+# looked the same. 2026-09-22: 🌌 friction, 🧘 decisions, bare --
 # the glyph names its own field, so no ⚡/⚖ prefix.
 # DAY forces the night window shut: a leftover sitting clock plus a real
 # Pacific hour past 22:00 otherwise trips the night reason and every "calm"
@@ -1059,7 +1059,7 @@ has 'at night a sitting clock alone trips the night reason' '— 🌙$' "$o11n"
 rm -f "$SITF11"
 
 # --- 12. PostToolUse drives the engine and may carry an injection ------------
-# dotfiles#137, ruled 2026-09-22. Context is the one counter that climbs while
+# dotfiles#137, 2026-09-22. Context is the one counter that climbs while
 # the model works, so its rung is spoken on the tool call that crosses it and
 # repeated after NAG_MODEL_CONTEXT_REPEAT tool calls of unacted silence. Both
 # are behaviour a prompt-only engine could not have.

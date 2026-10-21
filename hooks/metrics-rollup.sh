@@ -9,7 +9,7 @@
 # to read; each machine regenerates its own from whatever sessions it has.
 # Reads that must not depend on a local rollup use the `jq -s` one-liners in
 # metrics/README.md over sessions/*.json (and sessions/*/*.json) directly.
-# (Decided 2026-08-20 after one such conflict; see the metrics README.)
+# (2026-08-20, after one such conflict; see the metrics README.)
 set -uo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib-state.sh
