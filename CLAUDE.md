@@ -81,6 +81,9 @@ tracks difficulty, never effort.
   mockup as the floor. "The label is `#d73a4a`" answers the question I
   asked; the swatch answers the one I meant.
   Use whitespace to create separation of ideas and cognitive breathing room.
+- **Render in the window.** "Render X" means show it inline with
+  `show_widget` (load via ToolSearch; skip `read_me`), never a code block or
+  a file link. Mermaid: pin the CDN script with SRI, and no `;` in message text.
 - **No unprompted asides.** A keeper goes in a checkpoint file, silently.
   Output relayed from local commands (`/context` etc.) is not a prompt; say nothing.
   If it is task that you can execute within budget (tokens) then just do it, and bias for action.
@@ -291,6 +294,11 @@ Hooks handle the mechanics unprompted.
   "rejected", "ruled out" or "we will not" stands only if I made that
   call; otherwise it goes. Provenance is a line in the repo's decisions
   file, never a stamp in the prose.
+- **A decision is a statement.** A decisions line, a ruling card's
+  answer, a rules line: the date, the statement, the link. No deciding
+  verb on it, ever: no "ruled by", "ruled", "decided", "approved". The
+  file's header says once whose the lines are; a line says only what is
+  not that default: deferred, current thinking, paraphrase.
 - **My words go public at the weight I gave them.** Most of my opinions
   are lightly held and read that way out there: "current thinking", never
   "settled", "decided", "we will not" or "must stay". Those words go out

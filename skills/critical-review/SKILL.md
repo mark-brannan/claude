@@ -36,10 +36,10 @@ an instruction: a governing document (a design doc, a decisions file, an
 ADR, a curia, a rules file, CLAUDE.md), the linked issue's words, a
 thread I wrote. The bot read the text; it never read the sitting that
 wrote it, so its ask is a reversal of a ruling in plain clothes. **A
-reversal is never Pencil** (ruled 2026-10-09, claude#127): you do not
+reversal is never Pencil** (2026-10-09, claude#127): you do not
 make the change, however cheap the revert, and the thread stays open.
 **A bot finding against a governing document's substance is never an
-edit** (ruled 2026-10-09; languette#112 shipped one, d6227e9 reverted
+edit** (2026-10-09; languette#112 shipped one, d6227e9 reverted
 it): you do not change the design doc, decisions file, ADR, curia, rules
 file, CLAUDE.md or standing orders on a bot's word. It becomes a Decide
 line and the thread stays open. Typos and broken links in one are yours.
