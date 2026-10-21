@@ -835,7 +835,7 @@ systemctl --user disable --now grind-prs@dotfiles.timer
 ## Notices stopped
 
 The statusline row, the event block or a hook's notes went quiet, or show
-stale numbers. From inside the session:
+stale numbers. In the session, or in any terminal for the newest session:
 
 ```bash
 ~/.claude/bin/self-check

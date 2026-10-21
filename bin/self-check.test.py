@@ -68,25 +68,69 @@ class LiveCloneTest(unittest.TestCase):
         self.assertEqual(sc.dirty_row(), ("warn", "1: settings.json"))
 
 
+NOW = sc.when("2026-10-21T22:00:00Z")
+
+
 class HookRecordsTest(unittest.TestCase):
     def test_counts_by_event_and_names_the_last(self):
         lines = [{"type": "user"},
-                 {"type": "attachment", "timestamp": "t1",
+                 {"type": "attachment", "timestamp": "2026-10-21T21:59:00Z",
                   "attachment": {"type": "hook_success", "hookEvent": "SessionStart", "hookName": "SessionStart:startup", "exitCode": 0}},
                  {"type": "attachment", "timestamp": "t2", "attachment": {"type": "date"}},
-                 {"type": "attachment", "timestamp": "t3",
+                 {"type": "attachment", "timestamp": "2026-10-21T21:59:30.500Z",
                   "attachment": {"type": "hook_success", "hookEvent": "PostToolUse", "hookName": "PostToolUse:Bash", "exitCode": 1}}]
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
             fh.write("\n".join(json.dumps(x) for x in lines) + "\nnot json\n")
         try:
-            counts, last = sc.hook_rows(sc.hook_records(fh.name))
+            counts, last = sc.hook_rows(sc.hook_records(fh.name), NOW)
         finally:
             os.unlink(fh.name)
         self.assertEqual(counts, ("warn", "PostToolUse 1, SessionStart 1; 1 non-zero exits"))
-        self.assertEqual(last, ("ok", "PostToolUse:Bash hook_success at t3"))
+        self.assertEqual(last[0], "ok")
+        self.assertIn("PostToolUse:Bash", last[1])
+
+    def test_an_old_last_record_is_bad(self):
+        rec = {"ts": "2026-10-21T20:00:00Z", "event": "PostToolUse", "name": "PostToolUse:Bash", "type": "hook_success", "exit": 0}
+        self.assertEqual(sc.hook_rows([rec], NOW)[1][0], "bad")
 
     def test_no_records_is_bad(self):
-        self.assertEqual(sc.hook_rows([])[0][0], "bad")
+        self.assertEqual(sc.hook_rows([], NOW)[0][0], "bad")
+
+
+class CacheTest(unittest.TestCase):
+    def cache(self, updated_at):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "metrics", "live", "ab"))
+        with open(os.path.join(d, "metrics", "live", "ab", "abcd.json"), "w") as fh:
+            json.dump({"last_event": "posttooluse", "updated_at": updated_at}, fh)
+        return d
+
+    def test_cache_written_with_the_last_hook_is_ok(self):
+        d = self.cache("2026-10-21T21:59:30Z")
+        self.assertEqual(sc.cache_row(d, "abcd", "2026-10-21T21:59:30.500Z", NOW)[0], "ok")
+
+    def test_cache_left_behind_by_the_hooks_is_bad(self):
+        # Hooks still fire, the cache stopped moving: the "notices stopped" shape.
+        d = self.cache("2026-10-21T19:00:00Z")
+        self.assertEqual(sc.cache_row(d, "abcd", "2026-10-21T21:59:30Z", NOW)[0], "bad")
+
+
+class FindTranscriptTest(unittest.TestCase):
+    def test_outside_a_session_takes_the_newest_transcript(self):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "projects", "p"))
+        for name, mtime in (("old", 1), ("new", 2)):
+            path = os.path.join(d, "projects", "p", name + ".jsonl")
+            Path(path).write_text("")
+            os.utime(path, (mtime, mtime))
+        live, sc.LIVE = sc.LIVE, d
+        env = os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        try:
+            self.assertEqual(sc.find_transcript(None)[1], "new")
+        finally:
+            sc.LIVE = live
+            if env is not None:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = env
 
 
 if __name__ == "__main__":

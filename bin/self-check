@@ -11,8 +11,8 @@
 #
 # Usage: self-check [SESSION_ID | TRANSCRIPT] [--offline]
 #
-# The session defaults to $CLAUDE_CODE_SESSION_ID. --offline skips the
-# fetch of origin/main. Exit 1 when any row is bad, 0 otherwise, 2 on usage.
+# The session defaults to $CLAUDE_CODE_SESSION_ID, else the newest transcript.
+# --offline skips the fetch of origin/main. Exit 1 when any row is bad, 0 otherwise, 2 on usage.
 # Python 3 stdlib only; needs lib/ beside it or in ~/.claude/lib (exit 3 if not).
 import argparse
 import collections
@@ -93,7 +93,26 @@ def hook_records(transcript):
     return recs
 
 
-def hook_rows(recs):
+# A hook fires on every prompt and tool call, so in a session that is running
+# self-check the newest record is seconds old; past this, hooks have stopped.
+STALE_HOOK_SECONDS = 600
+# The metrics hook rewrites its cache on every record; this much behind one is a broken hook.
+STALE_CACHE_SECONDS = 120
+
+
+def when(ts):
+    """An ISO timestamp as an aware datetime, or None."""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+
+
+def ago(t, now):
+    return "%ds ago" % (now - t).total_seconds() if t else "at an unreadable time"
+
+
+def hook_rows(recs, now):
     if not recs:
         return [("bad", "none in this transcript"), ("bad", "-")]
     by_event = collections.Counter(r["event"] for r in recs)
@@ -101,12 +120,13 @@ def hook_rows(recs):
     counts = ", ".join("%s %d" % kv for kv in sorted(by_event.items()))
     if failed:
         counts += "; %d non-zero exits" % failed
-    last = recs[-1]
+    last, t = recs[-1], when(recs[-1]["ts"])
+    stale = t is None or (now - t).total_seconds() > STALE_HOOK_SECONDS
     return [("warn" if failed else "ok", counts),
-            ("ok", "%s %s at %s" % (last["name"], last["type"], last["ts"]))]
+            ("bad" if stale else "ok", "%s %s, %s" % (last["name"], last["type"], ago(t, now)))]
 
 
-def cache_row(state_dir, sid):
+def cache_row(state_dir, sid, last_record, now):
     """The file the statusline prints from; state_shard_path in hooks/lib-state.sh."""
     live = os.path.join(state_dir, "metrics", "live")
     path = os.path.join(live, sid + ".json")
@@ -117,7 +137,11 @@ def cache_row(state_dir, sid):
             cache = json.load(fh)
     except (OSError, ValueError):
         return ("bad", "no cache at %s" % path)
-    return ("ok", "%s at %s" % (cache.get("last_event", "?"), cache.get("updated_at", "?")))
+    t, hook_t = when(cache.get("updated_at")), when(last_record)
+    value = "%s, %s" % (cache.get("last_event", "?"), ago(t, now))
+    if t is None or (hook_t and (hook_t - t).total_seconds() > STALE_CACHE_SECONDS):
+        return ("bad", value + ", older than the last hook record")
+    return ("ok", value)
 
 
 def state_dir():
@@ -159,7 +183,11 @@ def find_transcript(arg):
     if arg and os.path.isfile(arg):
         return arg, os.path.splitext(os.path.basename(arg))[0]
     sid = arg or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    hits = glob.glob(os.path.join(LIVE, "projects", "*", sid + ".jsonl")) if sid else []
+    if not sid:
+        # Outside a session: the newest transcript, the session most likely the one gone quiet.
+        hits = sorted(glob.glob(os.path.join(LIVE, "projects", "*", "*.jsonl")), key=os.path.getmtime)
+        return (hits[-1], os.path.splitext(os.path.basename(hits[-1]))[0]) if hits else (None, "")
+    hits = glob.glob(os.path.join(LIVE, "projects", "*", sid + ".jsonl"))
     return (hits[0] if hits else None), sid
 
 
@@ -176,16 +204,17 @@ def main(argv):
 
     rows = [("live ~/.claude", *live_row(not args.offline)), ("dirty files", *dirty_row())]
     transcript, sid = find_transcript(args.session)
+    now = datetime.now(timezone.utc)
     if transcript:
-        records, last = hook_rows(hook_records(transcript))
+        recs = hook_records(transcript)
+        records, last = hook_rows(recs, now)
         rows += [("hook records", *records), ("last hook record", *last),
-                 ("metrics cache", *cache_row(state_dir(), sid)),
+                 ("metrics cache", *cache_row(state_dir(), sid, recs[-1]["ts"] if recs else None, now)),
                  ("metrics hook by hand", *hand_run_row(transcript, sid, os.getcwd()))]
     else:
         rows.append(("transcript", "bad", "not found for session %r" % (sid or "-")))
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    print("%s  session %s  %s\n" % (NAME, (sid or "-")[:8], now))
+    print("%s  session %s  %s\n" % (NAME, (sid or "-")[:8], now.strftime("%Y-%m-%dT%H:%M:%SZ")))
     print(table(rows))
     return 1 if any(s == "bad" for _, s, _ in rows) else 0
 
