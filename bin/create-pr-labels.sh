@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 
 # Ensure the fleet's triage labels exist on every vended repo.
-# Idempotent: gh exits non-zero on "already exists"
+# Idempotent: gh exits non-zero on "already exists"; an existing label is
+# edited to the colour and description below, so a change here converges.
 
 set -u
 OWNER="${OWNER:-mark-brannan}"
@@ -27,6 +28,7 @@ ensure() { # ensure <repo> <label> <color> <desc>
   if gh label create "$2" -R "$OWNER/$1" --color "$3" -d "$4" >/dev/null 2>&1; then
     echo "created  $1  $2"
   elif gh label list -R "$OWNER/$1" --json name -q '.[].name' 2>/dev/null | grep -qx "$2"; then
+    gh label edit "$2" -R "$OWNER/$1" --color "$3" -d "$4" >/dev/null 2>&1 || echo "FAILED   $1  $2 (edit)" >&2
     echo "present  $1  $2"
   else
     echo "FAILED   $1  $2" >&2

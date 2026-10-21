@@ -9,6 +9,9 @@ printf 'repoa\n' > "$S/home/.local/share/vended-repos.txt"
 cat > "$S/bin/gh" <<'EOF'
 #!/bin/sh
 [ "$1 $2" = "label create" ] && echo "$*" >> "$GH_LOG"
+[ "$1 $2" = "label edit" ] && echo "$*" >> "$GH_LOG"
+[ "$1 $2" = "label create" ] && [ "$3" = "epic" ] && exit 1
+[ "$1 $2" = "label list" ] && echo epic
 exit 0
 EOF
 chmod +x "$S/bin/gh"
@@ -22,7 +25,7 @@ check() { # check <name> <pattern>
 check "merge created on a vended repo" '^label create merge -R testowner/repoa --color 0E8A16 '
 check "queued created on a vended repo" '^label create queued -R testowner/repoa --color 006B75 '
 check "mixed-loops-ok created on dotfiles too" '^label create mixed-loops-ok -R testowner/dotfiles --color F9A8A0 '
-check "epic still created" '^label create epic -R testowner/repoa '
+check "existing epic is recoloured" '^label edit epic -R testowner/repoa --color 5319E7 '
 check "existing labels still created" '^label create ready -R testowner/repoa '
 n=$(grep -c -E ' (lane-|needs-ruling)' "$GH_LOG")
 if [ "$n" -eq 0 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL lane-* or needs-ruling created ($n)"; fi
