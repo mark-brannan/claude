@@ -1,6 +1,6 @@
 # metrics-live.sh: requirements
 
-Rulings by the user, 2026-09-10, from the strategy review in
+From the strategy review in
 [dotfiles#149](https://github.com/mark-brannan/dotfiles/issues/149) and the
 review threads on the PRs before it. Each item is the intent and one line it
 governs. Values in the examples are tuning, not part of the ruling.
@@ -9,7 +9,7 @@ governs. Values in the examples are tuning, not part of the ruling.
 
 **A notice on every event, and one notice per event.** On every Stop, every
 tool invocation, and every prompt (`UserPromptSubmit` renders the block too,
-ruled 2026-09-22, [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137))
+[dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137))
 — high frequency, one block each time. Louder and *more often* is the
 direction; going quieter is never a cleanup, and display lines cost no
 tokens, so frequency is free. This is the default for any new wiring too:
@@ -18,9 +18,8 @@ otherwise for that specific case.
 
 This corrects what was written here before. `#149` was read as a ruling about
 lines *per event*: "more lines, not fewer... do not coalesce, dedupe or fire
-at the right time", so a jump across four rungs printed four lines. Ruled by
-Solace, 2026-09-22 ([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)):
-that was never the ask. He was pushing back on repeated attempts to make the
+at the right time", so a jump across four rungs printed four lines. See [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137):
+that was never the ask. The user was pushing back on repeated attempts to make the
 readout appear **less often**. Frequency, not line count. A four-rung jump
 renders one block with four ⛁ in it.
 
@@ -36,8 +35,7 @@ shape, one line away, meaning something different.
 
 **A counted field never vanishes; zero is a state with a glyph.** 🧘
 decisions, 🌌 friction, ✅ blocked — the field keeps its slot and its `(x0)`,
-so "nothing happened" and "this is not measured" never look the same. Ruled
-by Solace, 2026-09-22 ([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)).
+so "nothing happened" and "this is not measured" never look the same. See [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137).
 Each calm glyph names its own field, so it carries no family prefix.
 
 **The sitting cluster gets louder past its hot rung.** ⏱️ or 🌙 for the
@@ -56,8 +54,8 @@ there is some.
 
 **The verdict tail only appears when something is wrong.** No "still room"
 filler, no replacement wording — the whole `— …` tail is absent when nothing
-proposes stopping. Ruled by Solace, 2026-09-22
-([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)).
+proposes stopping. See
+[dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137).
 
 ```
 » 20/41k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m
@@ -137,8 +135,8 @@ run can spend a whole rung's worth without ever reaching a prompt — and
 edge-triggered there means the line is said once, tens of thousands of
 tokens before it matters, and never again. Injections also run on
 PostToolUse, not prompts alone, so the rung is spoken when it is crossed.
-Ruled by Solace, 2026-09-22
-([dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137)).
+See
+[dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137).
 
 **The screen ladder and the model-facing ladder are separate.** Whether
 their values coincide is tuning. Both are adjusted in the same place as
@@ -152,6 +150,16 @@ place, so read the shape, not the number.
 ```
 ⏱ 2h05 · context 42k · sun sets in 1h 52
 ```
+
+**Nags stay quiet during a live curia sitting, and gentle ones wait for its
+close.** A curia sitting is live while a `state/global/curia/*/LIVE` file names
+this session and no close has been recorded for it since; a marker older than 8
+hours is ignored, for a session resumed long after a sitting that never closed.
+Reactive nags (friction, decision gates, the
+two-hour arming of the Stop hand-off) stay silent. Gentle, non-reactive ones
+(the sitting clock, bedtime) are not lost: they are held and said once, on the
+first prompt after the sitting is no longer live, where they help rather than
+interrupt. Counting continues and every metrics file is still written.
 
 ## Thresholds
 
