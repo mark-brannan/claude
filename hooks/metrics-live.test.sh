@@ -1248,12 +1248,17 @@ sitting cur4 121 10
 payload "$TP2" cur4 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
 t 'and without one it does' true \
   "$(jq -r '.since_nag' "$STATE/metrics/live/cu/cur4.nag.json")"
-# A stale marker (old stamp, idle transcript) is not live: the nag speaks.
-cp "$TP2" "$SCRATCH/idle.jsonl"; touch -d '2 hours ago' "$SCRATCH/idle.jsonl"
+# A long pause in a live sitting stays silent; only a marker past the
+# 8-hour backstop stops silencing.
+cp "$TP2" "$SCRATCH/idle.jsonl"; touch -d '6 minutes ago' "$SCRATCH/idle.jsonl"
 sitting cur5 61 10
-printf 'cur5 %s\n' "$(date -u -d '2 hours ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+printf 'cur5 %s\n' "$(date -u -d '30 minutes ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
 out17=$(payload "$SCRATCH/idle.jsonl" cur5 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
-has 'a stale LIVE marker no longer silences the session' '⏱ 1h0[0-9]' "$(msg "$out17")"
+hasnt 'a sitting past 25 min with a 6 min pause stays silent' '⏱' "$(msg "$out17")"
+sitting cur6 61 10
+printf 'cur6 %s\n' "$(date -u -d '9 hours ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
+out17=$(payload "$SCRATCH/idle.jsonl" cur6 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+has 'a marker older than 8 hours no longer silences the session' '⏱ 1h0[0-9]' "$(msg "$out17")"
 # Gentle lines are held while the curia is live and said once when it is not.
 HELD17="$STATE/metrics/live/cu/cur1.held"
 t 'the sitting line was held, not dropped' yes "$([ -s "$HELD17" ] && echo yes || echo no)"

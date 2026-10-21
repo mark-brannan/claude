@@ -153,8 +153,9 @@ place, so read the shape, not the number.
 
 **Nags stay quiet during a live curia sitting, and gentle ones wait for its
 close.** A curia sitting is live while a `state/global/curia/*/LIVE` file names
-this session and that session is active (transcript written within 5 minutes,
-or the marker stamped within 25). Reactive nags (friction, decision gates, the
+this session and no close has been recorded for it since; a marker older than 8
+hours is ignored, for a session resumed long after a sitting that never closed.
+Reactive nags (friction, decision gates, the
 two-hour arming of the Stop hand-off) stay silent. Gentle, non-reactive ones
 (the sitting clock, bedtime) are not lost: they are held and said once, on the
 first prompt after the sitting is no longer live, where they help rather than
