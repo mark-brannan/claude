@@ -19,11 +19,12 @@ pass=0; fail=0
 check() { # check <name> <pattern>
   if grep -Eq -- "$2" "$GH_LOG"; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $1"; fi
 }
-check "auto lane created on a vended repo" '^label create lane-auto -R testowner/repoa --color 0E8A16 -d .*autonomous lane'
-check "gated lane created on a vended repo" '^label create lane-gated -R testowner/repoa --color BFD4F2 -d .*gated lane'
-check "gated lane created on dotfiles too" '^label create lane-gated -R testowner/dotfiles '
+check "merge created on a vended repo" '^label create merge -R testowner/repoa --color 0E8A16 '
+check "queued created on a vended repo" '^label create queued -R testowner/repoa --color 006B75 '
+check "mixed-loops-ok created on dotfiles too" '^label create mixed-loops-ok -R testowner/dotfiles --color BFD4F2 '
+check "epic still created" '^label create epic -R testowner/repoa '
 check "existing labels still created" '^label create ready -R testowner/repoa '
-n=$(grep -c ' lane-' "$GH_LOG")
-if [ "$n" -eq 6 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL expected 6 lane creates, got $n"; fi
+n=$(grep -c -E ' (lane-|needs-ruling)' "$GH_LOG")
+if [ "$n" -eq 0 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL lane-* or needs-ruling created ($n)"; fi
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

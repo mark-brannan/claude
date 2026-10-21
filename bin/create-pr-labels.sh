@@ -15,6 +15,9 @@ churn-ok|FBCA04|Waives the churn-diff gate (human-applied only)
 fixup-hard|D93F0B|A fixer session gave up; needs a bigger session or a human
 blocked|B60205|Waiting on something; body carries the Blocked by line
 epic|3E4B9E|An [Epic] issue: the aim; its sub-issues hold the work
+merge|0E8A16|Queue this pull request with Mergify; the queue updates, checks and merges it
+queued|006B75|Mergify has this pull request in its merge queue
+mixed-loops-ok|BFD4F2|Human waiver: a design doc and its implementation may land in this one PR
 '
 # Deferred:
 #lane-auto|0E8A16|Admits this issue to the autonomous lane: agents work it through to main
