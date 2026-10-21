@@ -226,11 +226,19 @@ work_branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 # prices them into cost and tokens (see session-metrics.jq).
 subfiles=("${tp%.jsonl}"/subagents/agent-*.jsonl)
 subargs=()
-[ -f "${subfiles[0]}" ] && subargs=(--slurpfile subs <(for f in "${subfiles[@]}"; do cat "$f" 2>/dev/null; echo; done))
+# A temp file, not a process substitution: bash closes a procsub's fd when the
+# array assignment finishes, and jq then cannot open /dev/fd/N.
+subtmp=""
+if [ -f "${subfiles[0]}" ]; then
+  subtmp=$(mktemp 2>/dev/null) || exit 0
+  for f in "${subfiles[@]}"; do cat "$f" 2>/dev/null; echo; done > "$subtmp"
+  subargs=(--slurpfile subs "$subtmp")
+fi
 metrics=$(jq -s "${subargs[@]}" \
   --arg sid "$sid" --arg repo "$work_repo" --arg branch "$work_branch" \
   --arg cwd "$cwd" --arg now "$now" \
-  -f "$JQPROG" "$tp" 2>/dev/null) || exit 0
+  -f "$JQPROG" "$tp" 2>/dev/null) || { rm -f "$subtmp"; exit 0; }
+[ -z "$subtmp" ] || rm -f "$subtmp"
 [ -n "$metrics" ] || exit 0
 
 # Git state, the part that decides whether the chat is safe to kill.

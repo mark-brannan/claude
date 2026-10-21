@@ -101,6 +101,14 @@ t 'both crossings are recorded, in order' \
   "$(printf '100000\n150000')" \
   "$(jq -r 'select(.kind == "context") | .at' "$CROSS" 2>/dev/null)"
 
+# A transcript with a sibling subagents/agent-*.jsonl must still speak: the
+# sub-agent files used to reach jq through a procsub bash had already closed
+# (jq: Bad JSON in --slurpfile subs /dev/fd/63), and the hook went silent.
+TPS="$SCRATCH/withsub.jsonl"; turn "$TPS" 152000
+mkdir -p "$SCRATCH/withsub/subagents"; turn "$SCRATCH/withsub/subagents/agent-x.jsonl" 5000
+outs=$(payload "$TPS" subs1 "$SCRATCH" PostToolUse | bash "$HOOK" posttooluse 0 show 2>&1)
+has 'a session with a sub-agent transcript still emits its block' '^⛁' "$(msg "$outs")"
+
 # --- 2. a 40-minute gap starts a new sitting ---------------------------------
 # The clock is wall-clock, so the way to put a session 61 minutes in is to
 # write the state file the engine reads, which is what a resumed session's
