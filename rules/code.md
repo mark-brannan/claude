@@ -150,7 +150,7 @@ in nobody's queue but this session's.
     appended with `~/.claude/bin/agent-decision "<call>" --undo "<undo>" --link <PR>`
     (add `--curia <id>` when the work came from a curia), committed in this
     PR. None taken: say `## Pencil: none`. **A reversal is never a pencil
-    call** (ruled 2026-10-09, claude#127): a default that contradicts the
+    call** (2026-10-09, claude#127): a default that contradicts the
     linked issue, a design doc, a decisions line or a thread the user
     wrote is not yours however cheap the revert; the instruction stands
     and the conflict goes under the critical-review summary's Reversed
@@ -346,7 +346,7 @@ public" section.
   `.github/actions/<name>@main`. One copy to fix is the whole point of
   putting them in `mark-brannan/.github`: a pin means a fix there does not
   reach the repo that needs it until someone remembers to re-pin, across a
-  dozen repos, which nobody does. Ruled by Solace, 2026-09-14.
+  dozen repos, which nobody does. (2026-09-14)
 - The supply-chain argument for pinning is about code we do not control.
   These are the user's own repos under the user's own account, already
   covered by the same branch protection as everything else, so the pin buys
