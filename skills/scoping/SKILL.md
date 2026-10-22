@@ -158,7 +158,8 @@ taken; never overwrite an earlier one. Commit it. Shape:
    of the umbrella lands in the plan: as a work item, folded into one
    (named), or set aside with its reason. Each work item: the umbrella
    items or rulings it plans, its files, the worker model and effort it
-   carries, an estimate of its spend, and every default the doer will
+   carries, an estimate of its spend, the depth of its one critical review
+   from the work's criticality, and every default the doer will
    pick that carries medium risk or more, as a table of default, undo,
    risk. The plan's home is one parent card, the batch, with one child
    card per work item, whatever the umbrella (2026-10-22); an issue the
@@ -264,12 +265,14 @@ the 2026-10-22 rulings:
   the spend facts' shape, pencil). The walk reports each child's actual,
   and the batch's, against them, and logs the batch's on the parent the
   same way, `actual=<n>usd`.
-- **Reviews.** A critical review per PR as it opens, less deep, and one
-  final pass on the stack before the walk. The arete check runs once, on
-  the batch, at that final pass; on a single PR only where this scoping
-  deems it important and says so in the brief.
+- **Reviews.** One critical review per PR, as it opens, at the depth the
+  work's criticality warrants; this scoping estimates that criticality
+  and the child's card carries the depth. No final-pass critical review
+  on the stack (2026-10-22). The arete check runs once, on the batch,
+  before the walk; on a single PR only where this scoping deems it
+  important and says so in the brief.
 - **Who merges.** In the autonomous lane the driver puts the `merge` label
-  on each PR in stack order once the final reviews are clean, and the
+  on each PR in stack order once every PR's review is clean, and the
   queue lands them; the user's gate is the batch after the fact, with a
   revert as the undo. This replaces "only I merge" (2026-10-01) for the
   autonomous lane. The gated lane keeps the user's merge.
