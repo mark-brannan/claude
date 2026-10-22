@@ -139,8 +139,9 @@ you under sid <sid>; you release that claim at the end.
    standing orders) is never an edit: you do not change the document, you
    write a Decide line and leave the thread open. Typos and broken links
    in one are yours to fix.
-4. Bring the branch up to date under section 6: rebase when it is clean,
-   merge when the rebase conflicts, and once merged never linearize.
+4. Touch the base only when the branch conflicts with it, under section 6:
+   merge the base in, resolve, and never linearize. A branch that is merely
+   behind is left for the queue.
 5. Push only with
    `git push --force-with-lease=<branch>:<start sha> origin HEAD:<branch>`;
    a second push leases on the sha your first one left. A refused lease
@@ -228,7 +229,7 @@ Would merge (merging is off: post the line to queue)
   https://github.com/mark-brannan/languette/pull/108  @mergifyio queue
 
 Not ready
-  claude#121  fixup-hard: the rebase conflicts in the test fixtures  $1.10
+  claude#121  fixup-hard: the merge with main conflicts in the test fixtures  $1.10
 
 Handed off
   claude#110  labelled blocked

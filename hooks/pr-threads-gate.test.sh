@@ -8,7 +8,7 @@
 set -uo pipefail
 
 HOOK="$(cd "$(dirname "$0")" && pwd)/pr-threads-gate.sh"
-RECORDER="$(cd "$(dirname "$0")" && pwd)/pr-ownership-context.sh"
+RECORDER="$(cd "$(dirname "$0")" && pwd)/pr-ownership-context.py"
 pass=0; fail=0
 SCRATCH=$(mktemp -d); trap 'rm -rf "$SCRATCH"' EXIT
 export TMPDIR="$SCRATCH/tmp"; mkdir -p "$TMPDIR"
@@ -90,7 +90,7 @@ check silent 'no session id'           open "$(jq -n '{stop_hook_active:false}')
 check silent 'empty payload'           open ''
 
 # --- the recorder writes what the gate reads -----------------------------------
-rec() { printf '%s' "$2" | sh "$RECORDER" >/dev/null; cat "$TMPDIR/claude-pr-threads.$1" 2>/dev/null | tail -1; }
+rec() { printf '%s' "$2" | python3 "$RECORDER" >/dev/null; cat "$TMPDIR/claude-pr-threads.$1" 2>/dev/null | tail -1; }
 bash_in() { jq -n --arg s "$1" --arg c "$2" '{session_id:$s,cwd:"/work/here",tool_name:"Bash",tool_input:{command:$c}}'; }
 t() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi; }
 t 'gh pr view N --repo'      "$(printf 'repo\to/r\t25\tread')"  "$(rec r1 "$(bash_in r1 'gh pr view 25 --repo o/r --comments')")"

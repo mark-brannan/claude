@@ -12,7 +12,9 @@
 # step in CI's existing tool-tests job, so no new job and nothing drawn
 # from the account's concurrent-job cap.
 import importlib.util
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -305,6 +307,139 @@ class LockTest(Base):
         self.assertEqual(load(LIB).STATE_PUSH_LOCK, f"{self.T}/claude-state-push.lock.d")
         os.environ.pop("TMPDIR")
         self.assertEqual(load(LIB).STATE_PUSH_LOCK, "/tmp/claude-state-push.lock.d")
+
+
+class DayDecisionsTest(Base):
+    """The machine-wide decision store (dotfiles#301), in a scratch state repo."""
+
+    def setUp(self):
+        super().setUp()
+        repo = self.T / "state-repo"
+        (repo / ".git").mkdir(parents=True)
+        os.environ["CLAUDE_STATE_REPO"] = str(repo)
+        self.DAYF = repo / "state" / "global" / "metrics" / "day-decisions.json"
+        self.lock = Path(f"{self.DAYF}.lock")
+
+    def day(self, *a):
+        return self.state.day_decisions(*a)
+
+    def hold(self):
+        self.lock.mkdir(parents=True)
+        (self.lock / "meta").write_text(f"pid={os.getpid()}\nhostname={os.uname().nodename}\n")
+
+    def test_the_day(self):
+        self.assertEqual(self.day("sess-a", 7, 1, 1000, 10800), (7, 1), "first call seeds the day")
+        self.assertEqual(self.day("sess-b", 13, 2, 1100, 10800), (20, 3), "a second session sums")
+        # The hook fires on every prompt, so a running total would multiply.
+        self.assertEqual(self.day("sess-a", 11, 1, 1200, 10800), (24, 3), "same session is idempotent")
+        self.assertEqual(self.day("sess-b", 14, 2, 11000, 10800), (25, 3), "gap under the limit keeps the day")
+        self.assertEqual(self.day("sess-b", 4, 0, 30000, 10800), (4, 0), "gap past the limit resets")
+        self.assertEqual(list(json.loads(self.DAYF.read_text())["sessions"]), ["sess-b"],
+                         "reset drops the other sessions' contributions")
+        self.assertEqual(self.day("sess-c", 5, 5, 30100, 10800), (9, 5), "junk rides beside the total")
+        self.hold()
+        self.assertEqual(self.day("sess-d", 99, 0, 30200, 10800), (9, 5), "contended lock writes nothing")
+        shutil.rmtree(self.lock)
+        self.day("sess-e", 1, 0, 30300, 10800)
+        self.assertFalse(self.lock.exists(), "a call leaves no lock dir behind")
+
+    def test_the_read_happens_inside_the_lock(self):
+        # A stand-in lock writes another session's entry the moment it is taken:
+        # a read before the lock would overwrite that entry.
+        def lock(_d):
+            self.DAYF.parent.mkdir(parents=True, exist_ok=True)
+            self.DAYF.write_text('{"last_prompt": 40000, "sessions": {"sess-x": {"total": 6, "junk": 1}}}')
+            return True
+        real = self.state.state_lock, self.state.state_unlock
+        self.state.state_lock, self.state.state_unlock = lock, lambda: None
+        try:
+            self.assertEqual(self.day("sess-y", 2, 0, 40100, 10800), (8, 1))
+        finally:
+            self.state.state_lock, self.state.state_unlock = real
+
+    def test_interleaved_callers(self):
+        self.day("sess-p", 6, 1, 41000, 10800)
+        self.hold()
+        self.assertEqual(self.day("sess-q", 9, 2, 41100, 10800), (6, 1), "lock held: the second caller writes nothing")
+        shutil.rmtree(self.lock)
+        self.assertEqual(self.day("sess-q", 9, 2, 41200, 10800), (15, 3), "lock free: the second caller lands on top")
+
+    def test_no_store_no_lock(self):
+        self.hold()
+        self.assertEqual(self.day("sess-r", 3, 0, 41300, 10800), (0, 0))
+
+    def test_no_metrics_dir_raises(self):
+        bad = self.T / "bad-repo"
+        (bad / ".git").mkdir(parents=True)
+        (bad / "state" / "global").mkdir(parents=True)
+        (bad / "state" / "global" / "metrics").touch()
+        os.environ["CLAUDE_STATE_REPO"] = str(bad)
+        with self.assertRaises(OSError, msg="the caller reports it; no number is made up"):
+            self.day("sess-s", 3, 0, 41400, 10800)
+
+
+class StopNoticeTest(Base):
+    """buffered_state and verdict_explain: the lines under the Stop's 📦."""
+
+    def setUp(self):
+        super().setUp()
+        self.SR = self.T / "state-repo"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.SR)], check=True)
+        (self.SR / "state" / "global" / "metrics").mkdir(parents=True)
+        (self.SR / "README").touch()
+        gitq(self.SR, "add", "README")
+        gitq(self.SR, "commit", "-q", "-m", "init")
+        (self.SR / "state" / "global" / "metrics" / "live.json").touch()
+        self.WT = self.T / "work"
+        subprocess.run(["git", "init", "-q", "-b", "feature", str(self.WT)], check=True)
+        os.environ["CLAUDE_STATE_REPO"] = str(self.SR)
+
+    def test_buffered_state(self):
+        bs = self.state.buffered_state
+        lead = "→ buffered in the state repo, not committed yet (the next Stop commits it): "
+        (self.SR / "state" / "global" / "pickup").mkdir()
+        (self.SR / "state" / "global" / "pickup" / "h.md").touch()
+        self.assertEqual(bs(str(self.SR)), lead + "pickup/h.md, + 1 metrics file",
+                         "names the hand-off, counts the metrics")
+        shutil.rmtree(self.SR / "state" / "global" / "pickup")
+        (self.SR / "state" / "global" / "metrics" / "two.json").touch()
+        self.assertEqual(bs(str(self.SR)), lead + "+ 2 metrics files", "metrics alone are a count")
+        (self.WT / "state").mkdir()
+        (self.WT / "state" / "x").touch()
+        self.assertEqual(bs(str(self.WT)), "", "silent outside the state repo")
+        gitq(self.SR, "add", "state/")
+        gitq(self.SR, "commit", "-q", "-m", "state")
+        self.assertEqual(bs(str(self.SR)), "", "silent when state/ is committed")
+
+    def test_verdict_explain(self):
+        ve = self.state.verdict_explain
+        tail = "Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
+        for n in "abcd":
+            (self.WT / n).touch()
+        self.assertEqual(ve("not archivable: worktree dirty", str(self.WT)),
+                         f"→ worktree dirty: 4 uncommitted file(s) (a, b, c, +1 more). {tail}",
+                         "names three files and counts the rest")
+        for n in "abcd":
+            (self.WT / n).unlink()
+        (self.WT / "my file").touch()
+        self.assertEqual(ve("not archivable: worktree dirty", str(self.WT)),
+                         f"→ worktree dirty: 1 uncommitted file(s) (my file). {tail}",
+                         "a name with a space prints unquoted")
+        self.assertEqual(ve("not archivable: worktree dirty"),
+                         f"→ worktree dirty: uncommitted files in this worktree. {tail}",
+                         "without the tree, no file list")
+        self.assertEqual(len(ve("not archivable: worktree dirty, 2 commit(s) unpushed").split("\n")), 2,
+                         "two reasons, one line each")
+        self.assertEqual(ve("not archivable: something no explanation knows"), "", "an unknown reason has none")
+
+
+class GitEventTest(Base):
+    def test_matches_a_git_state_change_only(self):
+        hit = lambda s: re.search(self.state.GIT_EVENT_RE, s) is not None  # noqa: E731
+        for s in ("git commit -m x", "git push -u origin b", "gh pr create", "merge_pull_request"):
+            self.assertTrue(hit(s), s)
+        for s in ("git status", "git add -A", "ls -la", "git log", "gitcommit"):
+            self.assertFalse(hit(s), s)
 
 
 if __name__ == "__main__":

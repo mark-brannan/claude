@@ -84,37 +84,15 @@ json_str() {
 }
 block() { printf '{"decision":"block","reason":%s}\n' "$(json_str "$1")"; exit 0; }
 
-# The set of tool calls that change git state, in one place.
-#
-# It lives here because three consumers have to agree on it: the PostToolUse
-# matcher in settings.json, metrics-live.sh's "is this worth recomputing"
-# filter, and measure-git-events.sh's pre-filter. When they disagreed the
-# narrow one won by accident -- a `git push`, a `git reset`, a `git branch
-# -D`, an MCP `push_files` or a `merge_pull_request` each changed the repo
-# and none of them moved a counter until the Stop hook swept the transcript
-# at the end of the session. A number that only becomes true afterwards is
-# not a live number, and the git block the user actually reads never appeared at
-# the moment the state changed.
-#
-# Deliberately NOT here: `git add`, `fetch`, `clone`, `remote`, `status`,
-# `log`, `diff`. The first four are frequent and carry no decision; the rest
-# are reads. Every entry costs a full jq pass over the transcript, so the
-# line is drawn at "did the repo's history, refs or worktree move".
-#
-# Two shapes are matched: a shell command (Bash tool_input.command) and a
-# bare tool name (any MCP tool that writes a repo, branch or PR).
-git_event_re() {
-  printf '%s' '\bgit\s+(commit|push|pull|merge|rebase|cherry-pick|revert|checkout|switch|branch|worktree|tag|stash|reset|restore|rm|mv|apply|am)\b|\bgh\s+(pr|release)\b|\b(yadm|dotsync)\b|create_pull_request|merge_pull_request|update_pull_request|update_pull_request_branch|push_files|create_or_update_file|delete_file|create_branch|create_repository|fork_repository'
-}
-
 # Answer "does this branch hold commits that exist nowhere but here?" for a
 # repo root ($1) and the branch name ($2, `HEAD` or empty when detached).
 #
-# It lives here because two hooks have to agree on the answer: metrics-live.sh
+# It lives here because two hooks have to agree on the answer: metrics-live.py
+# (through lib/state.py, its twin)
 # draws the ⎇ nag and the archival verdict from it, stop-continuity.sh's
 # set_verdict decides from it whether the session is safe to kill. When each
 # had its own copy they drifted -- #148 had to port two carve-outs back into
-# metrics-live.sh that stop-continuity.sh had grown in #126 and #128/#143.
+# metrics-live that stop-continuity.sh had grown in #126 and #128/#143.
 #
 # Prints one word, plus a count for the first:
 #   ahead <n>     an upstream exists; n commits are on no origin branch (n may be 0)
@@ -162,37 +140,15 @@ dirty_paths() {
   fi
 }
 
-# buffered_state <work_root> -- in the state repo only, one line naming what
-# dirty_paths left out: the uncommitted files under state/. stop-continuity.sh
-# has already committed this Stop's by the time this runs, so what is left was
-# written since, or its commit failed; the next Stop commits it, and the push is
-# debounced. Leaving them out of the verdict is right; leaving
-# them unsaid is not: a hand-off or card still on disk is worth knowing
-# about. Metrics are counted, everything else is named. Empty elsewhere, and
-# when nothing is buffered.
-buffered_state() {
-  local root="$1" sr paths named nm
-  sr=$(state_repo 2>/dev/null) || return 0
-  [ "$(cd "$root" 2>/dev/null && pwd -P)" = "$(cd "$sr" 2>/dev/null && pwd -P)" ] || return 0
-  paths=$(git -C "$root" -c core.quotePath=off status --porcelain --untracked-files=all -- state/ 2>/dev/null \
-    | cut -c4- | sed 's/.* -> //; s/^"\(.*\)"$/\1/; s|^state/global/||; s|^state/||')
-  [ -n "$paths" ] || return 0
-  named=$(printf '%s\n' "$paths" | grep -v '^metrics/' | paste -sd, - | sed 's/,/, /g')
-  nm=$(printf '%s\n' "$paths" | grep -c '^metrics/')
-  if [ "$nm" -gt 0 ]; then
-    named="${named:+$named, }+ $nm metrics file$([ "$nm" -eq 1 ] || echo s)"
-  fi
-  echo "→ buffered in the state repo, not committed yet (the next Stop commits it): $named"
-}
-
 # archivable_reasons <work_root> <work_branch> [<session-id>] -- the reasons
 # a session on this branch is not yet archivable, comma-joined; empty when
 # it is. Order: worktree dirty, unpushed commits, branch home, session live.
 #
-# Lives here for the same reason unpushed_state does: metrics-live.sh's live
+# Lives here for the same reason unpushed_state does: metrics-live.py's live
+# (through lib/state.py, its twin)
 # nag and stop-continuity.sh's Stop-hook verdict must never disagree about
 # what "archivable" means (dotfiles#149). Before this they didn't even
-# agree on what a "home" is -- metrics-live.sh re-checked PR-or-card
+# agree on what a "home" is -- metrics-live re-checked PR-or-card
 # inline and never looked for a pointer issue, the one branch-home-gate.sh
 # already finds.
 #
@@ -288,51 +244,6 @@ archivable_reasons() {
   printf '%s' "$reasons"
 }
 
-# verdict_explain <verdict> [<work_root>] -- one line per reason the verdict
-# names: what is at risk, then what to do. A bare "not archivable" sent the
-# user back to the session to ask what it meant, a turn spent on every reason
-# here. Matched by pattern, not split on commas: a reason's own text can hold
-# one. A reason with no line here is still printed in the verdict itself.
-# Given <work_root>, the dirty line names the files: "edits are not on the
-# branch" alone still sent the user back to ask which, and whose move it was.
-verdict_explain() {
-  local v="$1" root="${2:-}" paths n shown
-  case "$v" in *"not a git repo"*)
-    echo "→ not a git repo: the session ran outside any repo, so there was no branch to check." ;; esac
-  case "$v" in *"worktree dirty"*)
-    paths=""
-    [ -z "$root" ] || paths=$(dirty_paths "$root" | cut -c4- | sed 's/.* -> //; s/^"\(.*\)"$/\1/')
-    n=$(printf '%s' "$paths" | grep -c .)
-    if [ "$n" -gt 0 ]; then
-      shown=$(printf '%s\n' "$paths" | head -3 | paste -sd, - | sed 's/,/, /g')
-      [ "$n" -le 3 ] || shown="$shown, +$((n - 3)) more"
-      echo "→ worktree dirty: $n uncommitted file(s) ($shown). Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
-    else
-      echo "→ worktree dirty: uncommitted files in this worktree. Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
-    fi ;; esac
-  case "$v" in *" commit(s) unpushed"*)
-    echo "→ commits unpushed: they exist on this machine only. Push the branch." ;; esac
-  case "$v" in *"has no upstream (never pushed)"*)
-    echo "→ never pushed: the branch exists on this machine only. Push it with -u." ;; esac
-  case "$v" in *"detached HEAD"*)
-    echo "→ detached HEAD: the commits are on no branch. Check out or create one." ;; esac
-  case "$v" in *"could not count unpushed commits"*)
-    echo "→ git could not compare the branch with its upstream. Run git status there." ;; esac
-  case "$v" in *"no PR and no pointer"*)
-    echo "→ no PR and no pointer: nothing tells a future session this branch exists. Open a PR, or card it." ;; esac
-  case "$v" in *"branch home unverified"*)
-    echo "→ home unverified: gh could not check for a PR or card (network or auth). The next Stop retries." ;; esac
-  case "$v" in *"session live"*)
-    echo "→ session live: another session holds this branch. Closing this chat is safe; archiving the worktree is not." ;; esac
-  case "$v" in *"state repo not committed"*|*"state-repo commit failed"*)
-    echo "→ state not committed: this session's checkpoint and item edits are not saved, even locally. Run git status in the state repo." ;; esac
-  case "$v" in *"state-repo push failed"*)
-    echo "→ state not pushed: this cloud VM's state commit is not on GitHub and dies with the VM." ;; esac
-  case "$v" in *"did not finish"*)
-    echo "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries." ;; esac
-  return 0
-}
-
 # state_lock <dir> / state_unlock -- mkdir atomic test-and-set, copied from
 # grind's per-repo lock (no flock: macOS has none). meta carries pid+host; a
 # same-host dead pid is reclaimed via rename-then-rm. Installs no trap of its
@@ -387,35 +298,6 @@ state_lock_wait() {
     [ "$n" -gt 0 ] || return 1
     n=$((n - 1)); sleep 1
   done
-}
-
-# day_decisions <sid> <total> <junk> <now> <gap-seconds> -- fold this session's
-# decision counts into the machine-wide store beside sitting.json and print the
-# day's totals as "<total>\t<junk>". Decision load is spent across a day, not
-# per chat (#99); a prompt gap past <gap-seconds> anywhere on the machine starts
-# a fresh day. Keyed by session id, holding each session's own running counts
-# rather than a delta, so a replayed hook cannot double-count. junk rides beside
-# the total, never subtracted -- exclude it by subtracting field two. No trap
-# here: it would clobber the caller's (#361).
-day_decisions() {
-  local f next
-  f="$(state_dir)/metrics/day-decisions.json"
-  mkdir -p "${f%/*}" 2>/dev/null || { printf '0\t0\n'; return 0; }
-  if state_lock "$f.lock"; then
-    # Read, modify and write all inside the lock -- a read before it is the race
-    # the lock closes: a second session's write in between would be overwritten.
-    [ -f "$f" ] || printf '{}\n' > "$f" 2>/dev/null
-    next=$(jq --arg sid "$1" --argjson t "$2" --argjson j "$3" \
-      --argjson now "$4" --argjson gap "$5" \
-      'if (.last_prompt // 0) > 0 and ($now - .last_prompt) > $gap
-       then {day_start: $now, sessions: {}} else . end
-       | .last_prompt = $now | .day_start //= $now
-       | .sessions[$sid] = {total: $t, junk: $j}' "$f" 2>/dev/null)
-    if [ -n "$next" ] && printf '%s\n' "$next" > "$f.$$" 2>/dev/null \
-       && mv -f "$f.$$" "$f" 2>/dev/null; then :; else rm -f "$f.$$" 2>/dev/null; fi
-    state_unlock
-  fi
-  jq -r '[([.sessions[]?.total] | add // 0), ([.sessions[]?.junk] | add // 0)] | @tsv' "$f" 2>/dev/null || printf '0\t0\n'
 }
 
 # decision_rate <decisions> <span-seconds> -- "<n> decisions in 1h10 (2.6/h)",

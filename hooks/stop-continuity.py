@@ -401,7 +401,7 @@ class Stop:
         except OSError:
             return
 
-        # The per-session lock metrics-live.sh's nag read-modify-write also
+        # The per-session lock metrics-live.py's nag read-modify-write also
         # takes (dotfiles#161). main() releases whatever is held on every way
         # out; a failed acquisition degrades to running unlocked rather than
         # skipping the write -- a metrics hook never blocks Stop.
@@ -439,7 +439,7 @@ class Stop:
 
         # The live snapshot has served its purpose; the finished session file
         # supersedes it, so drop it rather than leaving two records of one
-        # session. Locked against a concurrent metrics-live.sh writing the
+        # session. Locked against a concurrent metrics-live.py writing the
         # same path (#161 finding 4); a lock that could not be taken still
         # gets the delete, just unprotected -- deleting nothing is not a safer
         # failure than a stale file.
@@ -496,7 +496,7 @@ class Stop:
         # next Stop silently eats the hand-off the model was told to write.
         # Everything from the `## Resume` heading to the next `## ` heading is
         # carried verbatim, including the `- consumed:` marker a resuming
-        # session appends. Locked (#161 finding 2): metrics-live.sh's
+        # session appends. Locked (#161 finding 2): metrics-live.py's
         # resume_ckpt() greps this same file, and the truncate below must not
         # land mid-read.
         state.state_lock(f"{LIVE}/{sid}.lock")
@@ -640,7 +640,7 @@ class Stop:
     #      until the bottom.
     # "Could not verify" is never a pass, here as in the gate.
     #
-    # This is the one verdict. metrics-live.sh's 📦 notice runs after this
+    # This is the one verdict. metrics-live.py's 📦 notice runs after this
     # hook (stop-sequence.py) and reads it back from the metrics record,
     # verdict_at included, rather than computing its own (dotfiles#149's
     # second answer).
@@ -648,14 +648,14 @@ class Stop:
         # Cached across calls: nothing about work_root changes between the
         # salvage and the state-repo push below, and the home check costs a
         # `gh` round trip. archivable() is lib/state.py's -- the
-        # home/dirty/unpushed check shared with metrics-live.sh's live nag, so
+        # home/dirty/unpushed check shared with metrics-live.py's live nag, so
         # the two can never disagree about what "archivable" means (#149).
         if self.reasons is None:
             if self.work_root:
                 self.reasons, self.home = state.archivable(self.work_root, self.work_branch,
                                                            self.sid, HOOK_DIR)
             else:
-                # The label metrics-live.sh's notice used before it read this
+                # The label metrics-live.py's notice used before it read this
                 # verdict back; "no PR and no pointer for ``" named a branch
                 # that isn't there.
                 self.reasons = "not a git repo"

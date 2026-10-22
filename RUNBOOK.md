@@ -278,11 +278,11 @@ Edit that file, not the scripts.
 | File | What it owns |
 | --- | --- |
 | `session-metrics.jq` | the measurement — tokens, turns, decisions, time |
-| `metrics-live.sh` | writes the cache; prints the two-line event block |
+| `metrics-live.py` | writes the cache; prints the two-line event block |
 | `statusline-metrics.sh` | prints the one-line statusline row |
 | `lib-metrics-fmt.jq` | **every field and both layouts** |
 
-The decision count is measured, never alarmed: `metrics-live.sh` has no
+The decision count is measured, never alarmed: `metrics-live.py` has no
 decision line on screen or to the model. The decisions-per-session-hour ratio
 (session clock, first prompt to last) appears in exactly two places, the
 session-start "Decision load, last 7 days" block and the Stop checkpoint's
@@ -591,9 +591,11 @@ PR's base branch with `-S` (which re-signs every commit and drops any "Update
 branch" merge commits), verifies each one locally, and force-pushes with
 lease. The base comes from GitHub, so a stacked PR stays on its parent; with
 no open PR it uses the default branch, and `RESIGN_BASE=<branch>` names the
-base by hand when `gh` can't answer. It also runs when the branch is merely
-behind its base, so it doubles as a signed, linear "Update branch". Running
-it on a branch that already verifies and is up to date does nothing. It
+base by hand when `gh` can't answer. Run it to re-sign, never to catch a
+branch up: a branch that is merely behind is brought up to date by the merge
+queue, so it is not a reason to run this (the script does rebase onto the
+base, so a behind branch comes out current as a side effect). Running it on
+a branch that already verifies and is up to date does nothing. It
 refuses if any clone of the repo on this machine — `~/dotfiles` and yadm's
 both count — has local commits on the branch that are not on origin, if
 the rebase conflicts, or if linearizing would drop content from a

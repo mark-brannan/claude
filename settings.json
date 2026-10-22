@@ -220,7 +220,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/pr-ownership-context.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
+            "command": "h=\"$HOME/.claude/hooks/pr-ownership-context.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
             "statusMessage": "Loading the PR ownership rules"
           }
         ]
@@ -273,7 +273,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" posttooluse 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.py\"; [ -f \"$h\" ] && python3 \"$h\" posttooluse 0 show || true"
           }
         ]
       },
@@ -304,11 +304,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/measure-git-events.py\"; [ -f \"$h\" ] && python3 \"$h\"; true"
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/log-commit.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/log-commit.py\"; [ -f \"$h\" ] && python3 \"$h\"; true"
           }
         ]
       },
@@ -337,7 +337,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" subagentstop 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.py\"; [ -f \"$h\" ] && python3 \"$h\" subagentstop 0 show || true"
           },
           {
             "type": "command",
@@ -368,6 +368,11 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/session-start-sync-status.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
+            "timeout": 15
           }
         ]
       }
@@ -377,7 +382,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" prompt 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.py\"; [ -f \"$h\" ] && python3 \"$h\" prompt 0 show || true"
           },
           {
             "type": "command",
