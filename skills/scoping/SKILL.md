@@ -212,8 +212,9 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   `~/.claude/bin/work-item create --id "$(~/.claude/bin/card-id new)" --owner agent [--repo <r>] --brief - "$title"`
   (the card text on stdin; it prints the new id; `$title` is read from a
   quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe),
-  then `~/.claude/bin/work-item log <parent-id> allocation=<n>usd`, the
-  estimates summed (§4.4);
+  then `~/.claude/bin/work-item log <parent-id> status=ready allocation=<n>usd`,
+  the estimates summed (§4.4); `ready` because `/pickup` finds an agent
+  item only when it is ready or claimed (`claude_cards`, hooks/lib-state.sh);
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
   `--parent <parent-id> [--model <m>] [--effort <e>]`, then
@@ -229,8 +230,8 @@ the batch exactly as proposed, cards and the issues the proposal showed:
 - an item vetoed, or held on a new word (§4.5), is not filed, and the
   proposal says so.
 
-The parent stays `open`: it is the batch, not a session's work, and the
-driver below is what reads it. An item that rests on pencil says which, in
+The parent is the batch, not a session's work: the driver below claims it
+and no child's session marks it done. An item that rests on pencil says which, in
 the record's words, on its card. Record what was filed in the proposal file
 (the parent and each child by its printed id), then:
 
