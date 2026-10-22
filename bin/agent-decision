@@ -115,7 +115,7 @@ SAID = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/(?:issues/(\d+)(?:#iss
                   r"|pull/(\d+)#(?:issuecomment-(\d+)|discussion_r(\d+)|pullrequestreview-(\d+)))")
 SIGNED = "🤖"
 RECORD_PATHS = ("docs/", "rules/", "CLAUDE.md")
-RECORD_CAP = 60_000  # chars of each record item handed to the judge
+RECORD_CAP = 120_000  # chars of the whole record handed to the judge; 340k chars cost $0.44 against the $0.25 budget
 ISSUE_CAP = 10  # issues read from one PR body
 JUDGE = ["claude", "-p", "--setting-sources", "", "--no-session-persistence", "--tools", "",
          "--model", "sonnet", "--effort", "low", "--max-budget-usd", "0.25",
@@ -247,16 +247,44 @@ def pr_record(root, tag):
     return out
 
 
+def fit(record, cap):
+    """The record's items trimmed so their bodies total at most cap chars: short
+    items stay whole, the long ones share what is left equally."""
+    left, todo, out = cap, sorted(range(len(record)), key=lambda i: len(record[i][1])), {}
+    for k, i in enumerate(todo):
+        share = left // (len(todo) - k)
+        out[i] = record[i][1][:share]
+        left -= len(out[i])
+    return [(label, out[i]) for i, (label, _) in enumerate(record)]
+
+
+def ask_judge(prompt):
+    """(reply text, why it failed). A failed run says why from stderr, else from
+    the JSON on stdout, which is where the CLI reports a spent budget."""
+    for attempt in range(2):
+        p = subprocess.run([*JUDGE, JUDGE_SYSTEM], input=prompt, capture_output=True, text=True, timeout=180)
+        try:
+            out = json.loads(p.stdout)
+        except ValueError:
+            out = None
+        if p.returncode == 0 and isinstance(out, dict):
+            return out["result"], ""
+        why = (p.stderr.strip().splitlines() or [""])[-1]
+        if not why and isinstance(out, dict):
+            why = " ".join(str(out.get(k)) for k in ("subtype", "result") if out.get(k))
+        if attempt == 0 and "unrecognized_model" in p.stdout + p.stderr:  # intermittent; once more
+            continue
+        return "", why or f"exit {p.returncode}"
+
+
 def judged(call, undo, record):
     """None when the judge reads the call as consistent with the record, else
     the refusal. The record is handed over on stdin; nothing else is."""
-    text = "\n\n".join(f"--- {label} ---\n{body[:RECORD_CAP]}" for label, body in record)
+    text = "\n\n".join(f"--- {label} ---\n{body}" for label, body in fit(record, RECORD_CAP))
     prompt = f"Call: {call}\nUndo: {undo or '(none given)'}\n\nThe record:\n\n{text}\n"
     why = ""
     try:
-        p = subprocess.run([*JUDGE, JUDGE_SYSTEM], input=prompt, capture_output=True, text=True, timeout=180)
-        why = (p.stderr.strip().splitlines() or [f"exit {p.returncode}"])[-1]
-        result = json.loads(p.stdout)["result"] if p.returncode == 0 else ""
+        result, why = ask_judge(prompt)
         verdict = json.loads(result.strip().strip("`").removeprefix("json").strip())
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as e:
         return f"the judge could not read the record ({why or e}); nothing logged"
