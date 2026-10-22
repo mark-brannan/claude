@@ -5,6 +5,7 @@
 #
 # Sources, all in the state repo (lib/state.py's state_repo) unless noted:
 #   metrics/sessions/*.json       one row per finished session        -> sessions
+#   metrics/headless-runs/*.jsonl one line per headless claude run, with cost -> headless_runs
 #   metrics/{decisions,friction,blocked,git-events,crossings}/*.jsonl -> one table each
 #   commits.jsonl                 commits by session and branch        -> commits
 #   items/*.md                    the board: one row per status line   -> item_events
@@ -67,6 +68,8 @@ create table if not exists git_events(ts text, session_id text, kind text, repo 
   created_branch text, draft int);
 create table if not exists crossings(ts text, session_id text, kind text, at int, min int, stay int,
   overrun int);
+create table if not exists headless_runs(ts text, what text, repo text, pr int, model text, cost_usd real,
+  input_tokens int, output_tokens int, cache_creation_tokens int, cache_read_tokens int, outcome text, raw text);
 create table if not exists commits(ts text, session_id text, repo text, branch text, commit_sha text);
 create table if not exists item_events(item_id text, ts text, session8 text, status text, owner text,
   repo text, parent text, model text, effort text, home text, title text);
@@ -163,6 +166,16 @@ def load_stream(cx, sd, sub, table, pick):
         cx.executemany(f"insert into {table} values ({','.join('?' * len(rows[0]))})", rows)
     return len(rows)
 
+def headless_run(s, d):
+    """The columns a query needs, and the whole line in raw for json_extract on what nobody planned
+    for. A line comes from CI too, so a value of the wrong shape is stored as text, never fatal."""
+    raw, d = json.dumps(d), d if isinstance(d, dict) else {}
+    u = d.get("usage") if isinstance(d.get("usage"), dict) else {}
+    cell = lambda v: v if v is None or isinstance(v, (str, int, float)) else json.dumps(v)
+    return (*(cell(d.get(k)) for k in ("ts", "what", "repo", "pr", "model", "total_cost_usd")),
+            *(cell(u.get(k)) for k in ("input_tokens", "output_tokens", "cache_creation_input_tokens",
+              "cache_read_input_tokens")), cell(d.get("outcome")), raw)
+
 def load_streams(cx, sd):
     n = {}
     n["decisions"] = load_stream(cx, sd, "decisions", "decisions", lambda s, d: (d.get("ts"),
@@ -179,6 +192,7 @@ def load_streams(cx, sd):
     n["crossings"] = load_stream(cx, sd, "crossings", "crossings", lambda s, d: (d.get("ts"),
         d.get("session_id", s), d.get("kind"), d.get("at"), d.get("min"),
         None if d.get("stay") is None else (1 if d.get("stay") else 0), d.get("overrun")))
+    n["headless_runs"] = load_stream(cx, sd, "headless-runs", "headless_runs", headless_run)
     rows = [(d.get("ts"), d.get("session_id"), d.get("repo"), d.get("branch"), d.get("commit"))
             for d in jsonl(os.path.join(sd, "commits.jsonl"))]
     cx.execute("delete from commits")
