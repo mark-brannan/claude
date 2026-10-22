@@ -248,6 +248,8 @@ Hooks handle the mechanics unprompted.
   answer blocks the task; card the rest for batch review at wrap-up. Work
   unblocked and around obstacles; the one exception is a one-way door — an
   irreversible step halts for conference immediately.
+- **A plan of several sessions ends in one driver prompt,** never a list of
+  prompts to paste one at a time.
 
 ## Open loops
 

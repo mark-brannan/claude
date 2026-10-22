@@ -219,3 +219,10 @@ printed id), then:
 
 A run that ends without a yes releases the same way. A dead session's lock
 lapses at 25 minutes like any other.
+
+**The driver prompt.** The run ends with one prompt for one outer session,
+the driver, which runs every yes'd item through worker sub-agents: the
+order, which items run in parallel, which worker model and effort each
+item gets, the review points, who merges, the exits (park the item, or
+pull the andon cord), and the walk it hands back. Never a list of prompts
+for Solace to paste one at a time.
