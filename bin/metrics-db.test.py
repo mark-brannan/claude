@@ -431,6 +431,28 @@ class PrivacyGuardTest(FixtureTest):
         self.assertTrue(mdb.ignored_by_git(str(self.fx.db)))
 
 
+class SessionPrTest(FixtureTest):
+    def test_pr_create_rows_load_and_cost_splits_over_merged_prs(self):
+        d = self.fx.sd / "metrics" / "gh-writes"
+        d.mkdir(parents=True)
+        lines = [{"session_id": "sess-typed-1", "verb": "pr create", "target": "https://github.com/acme/widgets/pull/7"},
+                 {"session_id": "sess-typed-1", "verb": "pr create", "target": "https://github.com/acme/widgets/pull/8"},
+                 {"session_id": "sess-typed-1", "verb": "pr create", "target": "no url"},
+                 {"session_id": "sess-typed-1", "verb": "pr merge", "target": "https://github.com/acme/widgets/pull/9"}]
+        (d / "sess-typed-1.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+        self.build("--quiet")
+        self.assertEqual(self.fx.q("select session_id, repo, number from session_pr order by number"),
+                         [("sess-typed-1", "acme/widgets", 7), ("sess-typed-1", "acme/widgets", 8)])
+        cx = sqlite3.connect(self.fx.db)
+        cx.execute("insert into gh_items(repo, number, kind, merged_at) values ('acme/widgets', 7, 'pr', '2026-10-02T00:00:00Z')")
+        cx.execute("insert into gh_items(repo, number, kind) values ('acme/widgets', 8, 'pr')")
+        cx.commit()
+        cx.close()
+        # session cost 1.5 over two PRs; only #7 is merged
+        self.assertEqual(self.fx.q("select repo, number, cost_usd_guess, sessions from pr_cost_guess"),
+                         [("acme/widgets", 7, 0.75, 1)])
+
+
 class GithubTest(FixtureTest):
     def test_github_flag_loads_repos_issues_and_prs(self):
         r = self.build("--github")
