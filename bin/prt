@@ -310,9 +310,10 @@ def agent_logins():
     global _agent
     if _agent is None:
         try:
-            p = subprocess.run(["gh-agent", "--login"], capture_output=True, text=True)
+            p = subprocess.run([str(tool("bin/gh-agent")), "--login"],
+                               capture_output=True, text=True, timeout=30)
             s = p.stdout.strip().removesuffix("[bot]") if p.returncode == 0 else ""
-        except OSError:
+        except (OSError, subprocess.TimeoutExpired):
             s = ""
         _agent = {f"{s}[bot]", s, f"app/{s}"} if s else set()
     return _agent
