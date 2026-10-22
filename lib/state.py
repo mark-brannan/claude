@@ -6,18 +6,20 @@ The bash hooks' twin is hooks/lib-state.sh, which ~20 shell scripts still
 source. The functions here are ports of the ones the Python side needs --
 state_repo, state_dir, state_is_repo, state_shard_path, the state_lock
 family, unpushed_state, dirty_paths, archivable_reasons, decision_rate --
-and must answer exactly as their shell twins do: metrics-live.sh draws its
-live nag from the shell archivable_reasons while stop-continuity.py takes
-the Stop verdict from this one, and the two must never disagree about
-"archivable" (dotfiles#149). lib/state-parity.test.py runs both over the
-same fixtures and fails on any difference. Change one, change both.
+and must answer exactly as their shell twins do: shell hooks still read
+"archivable" and the rest from lib-state.sh, and the two must never disagree
+(dotfiles#149). lib/state-parity.test.py runs both over the same fixtures
+and fails on any difference. Change one, change both. GIT_EVENT_RE,
+buffered_state, verdict_explain and day_decisions have no shell twin: only
+metrics-live.py reads them.
 
-The locks are the shell's mkdir protocol, not lib/lock.py: metrics-live.sh,
-abandon-branch.sh and claim-stamp.sh take the same directories from bash.
+The locks are the shell's mkdir protocol, not lib/lock.py: abandon-branch.sh
+and claim-stamp.sh take the same directories from bash.
 
 The one home for this lookup (dotfiles#517). hooks/lib_state.py re-exports
 it; bin tools put this directory on sys.path and `import state`.
 """
+import json
 import os
 import re
 import shutil
@@ -99,11 +101,11 @@ def state_shard_path(d, name, sid):
 # Answer "does this branch hold commits that exist nowhere but here?" for a
 # repo root and the branch name (`HEAD` or empty when detached).
 #
-# It lives here because two hooks have to agree on the answer: metrics-live.sh
+# It lives here because two hooks have to agree on the answer: metrics-live.py
 # draws the ⎇ nag and the archival verdict from it, stop-continuity.py's
 # set_verdict decides from it whether the session is safe to kill. When each
 # had its own copy they drifted -- #148 had to port two carve-outs back into
-# metrics-live.sh that the Stop hook had grown in #126 and #128/#143.
+# metrics-live that the Stop hook had grown in #126 and #128/#143.
 #
 # One word, plus a count for the first:
 #   ahead <n>     an upstream exists; n commits are on no origin branch (n may be 0)
@@ -200,10 +202,10 @@ def _live_claim_names(names, self8, hook_dir):
 # archivable, comma-joined; empty when it is. Order: worktree dirty,
 # unpushed commits, branch home, session live.
 #
-# Lives here for the same reason unpushed_state does: metrics-live.sh's live
+# Lives here for the same reason unpushed_state does: metrics-live.py's live
 # nag and stop-continuity.py's Stop-hook verdict must never disagree about
 # what "archivable" means (dotfiles#149). Before this they didn't even
-# agree on what a "home" is -- metrics-live.sh re-checked PR-or-card
+# agree on what a "home" is -- metrics-live re-checked PR-or-card
 # inline and never looked for a pointer issue, the one branch-home-gate.sh
 # already finds.
 #
@@ -281,7 +283,7 @@ def archivable_reasons(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
 # state_lock / state_unlock -- mkdir atomic test-and-set, the same protocol
 # and the same `meta` file as lib-state.sh's (copied there from grind's
 # per-repo lock; no flock: macOS has none), so a lock taken here holds
-# against metrics-live.sh, abandon-branch.sh and claim-stamp.sh taking it
+# against abandon-branch.sh and claim-stamp.sh taking it
 # from bash, and the other way round. meta carries pid+host; a same-host
 # dead pid is reclaimed via rename-then-rm. A dir with no meta at all (a
 # kill between mkdir and the meta write) has no pid to check; one older
@@ -409,3 +411,145 @@ def decision_rate(decisions=0, span=0):
     one = re.fullmatch(r"[ \t\n]*" + _NUM.pattern + r"[ \t\n]*", str(decisions)) and d == 1
     return "%d decision%s in %dh%02d (%.1f/h)" % (d, "" if one else "s", m // 60, m % 60,
                                                    d * 3600 / s)
+
+
+# The tool calls that change git state: a shell command (Bash
+# tool_input.command) or a bare tool name (an MCP tool that writes a repo,
+# branch or PR). The line is drawn at "did the repo's history, refs or
+# worktree move": `git add`, `fetch`, `clone`, `remote` and the reads are out.
+GIT_EVENT_RE = (r"\bgit\s+(commit|push|pull|merge|rebase|cherry-pick|revert|checkout|switch|branch"
+                r"|worktree|tag|stash|reset|restore|rm|mv|apply|am)\b|\bgh\s+(pr|release)\b"
+                r"|\b(yadm|dotsync)\b|create_pull_request|merge_pull_request|update_pull_request"
+                r"|update_pull_request_branch|push_files|create_or_update_file|delete_file"
+                r"|create_branch|create_repository|fork_repository")
+
+
+def _porcelain_paths(text):
+    """The paths in `git status --porcelain` lines: a rename's new name, a
+    quoted name unquoted."""
+    paths = []
+    for ln in text.split("\n"):
+        if not ln:
+            continue
+        p = ln[3:]
+        if " -> " in p:
+            p = p.rsplit(" -> ", 1)[1]
+        if len(p) >= 2 and p.startswith('"') and p.endswith('"'):
+            p = p[1:-1]
+        paths.append(p)
+    return paths
+
+
+# buffered_state -- in the state repo only, one line naming what dirty_paths
+# left out: the uncommitted files under state/. stop-continuity.py has already
+# committed this Stop's by the time the readout runs, so what is left was
+# written since, or its commit failed; the next Stop commits it. Leaving them
+# out of the verdict is right; leaving them unsaid is not: a hand-off or card
+# still on disk is worth knowing about. Metrics are counted, everything else
+# is named. "" elsewhere, and when nothing is buffered.
+def buffered_state(root):
+    sr = state_repo()
+    if not sr or _pwd_p(root) != _pwd_p(sr):
+        return ""
+    text = _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain",
+                "--untracked-files=all", "--", "state/")[1]
+    paths = []
+    for p in _porcelain_paths(text):
+        p = p[len("state/global/"):] if p.startswith("state/global/") else p
+        p = p[len("state/"):] if p.startswith("state/") else p
+        paths.append(p)
+    if not paths:
+        return ""
+    named = ", ".join(p for p in paths if not p.startswith("metrics/"))
+    nm = sum(1 for p in paths if p.startswith("metrics/"))
+    if nm:
+        named = f"{named + ', ' if named else ''}+ {nm} metrics file{'' if nm == 1 else 's'}"
+    return f"→ buffered in the state repo, not committed yet (the next Stop commits it): {named}"
+
+
+# verdict_explain -- one line per reason the verdict names: what is at risk,
+# then what to do. Matched by pattern, not split on commas: a reason's own
+# text can hold one. A reason with no line here is still printed in the
+# verdict itself. Given the tree, the dirty line names the files.
+_EXPLAIN = (
+    (("not a git repo",),
+     "→ not a git repo: the session ran outside any repo, so there was no branch to check."),
+    (("worktree dirty",), None),
+    ((" commit(s) unpushed",),
+     "→ commits unpushed: they exist on this machine only. Push the branch."),
+    (("has no upstream (never pushed)",),
+     "→ never pushed: the branch exists on this machine only. Push it with -u."),
+    (("detached HEAD",),
+     "→ detached HEAD: the commits are on no branch. Check out or create one."),
+    (("could not count unpushed commits",),
+     "→ git could not compare the branch with its upstream. Run git status there."),
+    (("no PR and no pointer",),
+     "→ no PR and no pointer: nothing tells a future session this branch exists. Open a PR, or card it."),
+    (("branch home unverified",),
+     "→ home unverified: gh could not check for a PR or card (network or auth). The next Stop retries."),
+    (("session live",),
+     "→ session live: another session holds this branch. Closing this chat is safe; archiving the worktree is not."),
+    (("state repo not committed", "state-repo commit failed"),
+     "→ state not committed: this session's checkpoint and item edits are not saved, even locally. Run git status in the state repo."),
+    (("state-repo push failed",),
+     "→ state not pushed: this cloud VM's state commit is not on GitHub and dies with the VM."),
+    (("did not finish",),
+     "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries."),
+)
+_DIRTY_TAIL = "Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
+
+
+def verdict_explain(verdict, root=""):
+    """The explanation lines, newline-joined; "" when no reason has one."""
+    lines = []
+    for needles, line in _EXPLAIN:
+        if not any(n in verdict for n in needles):
+            continue
+        if line is not None:
+            lines.append(line)
+            continue
+        paths = _porcelain_paths(dirty_paths(root)) if root else []
+        if paths:
+            shown = ", ".join(paths[:3]) + (f", +{len(paths) - 3} more" if len(paths) > 3 else "")
+            lines.append(f"→ worktree dirty: {len(paths)} uncommitted file(s) ({shown}). {_DIRTY_TAIL}")
+        else:
+            lines.append(f"→ worktree dirty: uncommitted files in this worktree. {_DIRTY_TAIL}")
+    return "\n".join(lines)
+
+
+# day_decisions -- fold this session's decision counts into the machine-wide
+# store beside sitting.json and answer the day's totals as (total, junk).
+# Decision load is spent across a day, not per chat (#99); a prompt gap past
+# gap seconds anywhere on the machine starts a fresh day. Keyed by session
+# id, holding each session's own running counts rather than a delta, so a
+# replayed hook cannot double-count. junk rides beside the total, never
+# subtracted. A lock held elsewhere skips the write and answers the store as
+# it stands. A store that is not JSON raises, for the caller to report.
+def day_decisions(sid, total, junk, now, gap):
+    f = f"{state_dir()}/metrics/day-decisions.json"
+    os.makedirs(os.path.dirname(f), exist_ok=True)
+    if state_lock(f"{f}.lock"):
+        try:
+            # Read inside the lock: a read before it is the race the lock closes.
+            day = {}
+            if os.path.exists(f):
+                with open(f, encoding="utf-8") as fh:
+                    day = json.load(fh)
+            if (day.get("last_prompt") or 0) > 0 and now - day["last_prompt"] > gap:
+                day = {"day_start": now, "sessions": {}}
+            day["last_prompt"] = now
+            if day.get("day_start") in (None, False):
+                day["day_start"] = now
+            day.setdefault("sessions", {})[sid] = {"total": total, "junk": junk}
+            tmp = f"{f}.{os.getpid()}"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(day, indent=2, ensure_ascii=False) + "\n")
+            os.replace(tmp, f)
+        finally:
+            state_unlock()
+    if not os.path.exists(f):
+        return 0, 0
+    with open(f, encoding="utf-8") as fh:
+        sessions = (json.load(fh).get("sessions") or {}).values()
+    return (sum(s.get("total") or 0 for s in sessions),
+            sum(s.get("junk") or 0 for s in sessions))

@@ -121,7 +121,7 @@ hooks/spend-gate.py
 hooks/session-start-seed-refresh.sh
 hooks/guard-add-repo.sh
 hooks/metrics-format.sh
-hooks/metrics-live.sh
+hooks/metrics-live.py
 hooks/metrics-rollup.sh
 hooks/log-commit.py
 hooks/log-gh-writes.py

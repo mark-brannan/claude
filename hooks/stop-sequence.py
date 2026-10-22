@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stop hook: run stop-continuity.py, then metrics-live.sh's Stop readout.
+"""Stop hook: run stop-continuity.py, then metrics-live.py's Stop readout.
 
 First, input-export writes this host's new input minutes into the state repo,
 so the commit stop-continuity.py makes carries them. It answers in well under
@@ -9,12 +9,12 @@ Claude Code runs every matching hook in parallel. Run as two entries, the
 📦 notice computed its own "archivable" while stop-continuity.py was still
 salvaging and committing, so the checkpoint and the notice could answer the
 same question two ways in one Stop. In sequence there is one verdict:
-stop-continuity.py writes it to the metrics record, and metrics-live.sh reads
+stop-continuity.py writes it to the metrics record, and metrics-live.py reads
 it back, refusing one older than STOP_VERDICT_SINCE, the moment this started.
 
 Fails open, like both hooks it runs: a timeout or crash in the first still
 lets the second speak, and the second then reports that no verdict came.
-Only metrics-live.sh's stdout is passed through; it is the one that emits
+Only metrics-live.py's stdout is passed through; it is the one that emits
 the notice and the block.
 """
 import os
@@ -67,7 +67,7 @@ def main():
     run(["python3", os.path.join(HOOK_DIR, "..", "bin", "input-export"), "--quiet"], b"", INPUT_SECS)
     run(["python3", os.path.join(HOOK_DIR, "stop-continuity.py")], payload, CONTINUITY_SECS)
     env = dict(os.environ, STOP_VERDICT_SINCE=since)
-    out = run(["bash", os.path.join(HOOK_DIR, "metrics-live.sh"), "stop", "0", "show"],
+    out = run(["python3", os.path.join(HOOK_DIR, "metrics-live.py"), "stop", "0", "show"],
               payload, READOUT_SECS, env=env, keep_stdout=True)
     sys.stdout.buffer.write(out or b"")
     return 0

@@ -241,7 +241,7 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(verdict(CKPT), "archivable", "clean, pushed, PR: archivable")
         rec = sessions / SID[:2] / f"{SID}.json"
         self.assertEqual(jfield(rec, "verdict"), "archivable", "the metrics record says the same")
-        # metrics-live.sh refuses a verdict older than its Stop sequence's
+        # metrics-live.py refuses a verdict older than its Stop sequence's
         # start, so the record has to say when this one was reached.
         at = jfield(rec, "verdict_at")
         self.assertGreaterEqual(int(at or 0), int(time.time()) - 60,
@@ -1091,7 +1091,7 @@ class StopContinuityTest(unittest.TestCase):
     def live_lock(self):
         # Pre-create $LIVE/<sid>.lock with meta naming this test process's own
         # pid, so state_lock sees a live holder on this host and refuses to
-        # reclaim it -- the same shape a concurrent metrics-live.sh nag
+        # reclaim it -- the same shape a concurrent metrics-live.py nag
         # read-modify-write would leave.
         w = self.world("livelock")
         _, WORK = w.make_work()

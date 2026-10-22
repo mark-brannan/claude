@@ -181,7 +181,7 @@ timeout 25 git -C "$SR" pull --rebase --autostash -q >/dev/null 2>&1 || true
     fi
   fi
 
-  # What followed each sitting rung (metrics-live.sh stamp_time_after), so the
+  # What followed each sitting rung (metrics-live.py stamp_time_after), so the
   # rungs can be set from the user's own behaviour. Measured, never nudged.
   if [ -d "$SD/metrics/crossings" ]; then
     since28=$(date -u -d '28 days ago' +%Y-%m-%d 2>/dev/null \
