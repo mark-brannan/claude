@@ -361,3 +361,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261021t050254z
 - friction-recall.py, the measurement script, lives in the state repo's scripts/ rather than this repo's bin/: at 64 lines it cannot land here under the churn budget Undo: a PR adding it back to bin/ with the churn-ok label ([#195](https://github.com/mark-brannan/claude/pull/195))
+
+### 20261022t024805z
+- scoping §6: the parent card stays open; only its children go status=ready Undo: log the parent status=ready too, one line in §6 ([#216](https://github.com/mark-brannan/claude/pull/216))
