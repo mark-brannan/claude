@@ -11,6 +11,7 @@
 #   metrics/permission-requests/*.jsonl one line per permission dialog -> permission_requests
 #   commits.jsonl                 commits by session and branch        -> commits
 #   items/*.md                    the board: one row per status line   -> item_events
+#                                 allocation=/actual= lines            -> item_money; views card_cost, batch_cost
 #   ~/.claude/projects/**/*.jsonl the user's own typed prompts         -> typing
 #                                 (local transcripts; incremental by mtime+size)
 #   metrics/input/<host>/*.jsonl  per-minute input counts, from bin/input-export
@@ -84,6 +85,24 @@ create table if not exists headless_runs(ts text, what text, repo text, pr int, 
 create table if not exists commits(ts text, session_id text, repo text, branch text, commit_sha text);
 create table if not exists item_events(item_id text, ts text, session8 text, status text, owner text,
   repo text, parent text, model text, effort text, home text, title text);
+create table if not exists item_money(item_id text, ts text, kind text, usd real);
+-- One session's cost lands on one card: the first it claimed. A card's full cost is its subtree's sum.
+create view if not exists session_card as
+  select substr(session_id, 1, 8) as session8, item_id, cost_usd from (
+    select s.session_id, s.cost_usd, e.item_id, row_number() over (partition by s.session_id order by e.ts, e.item_id) rn
+    from sessions s join item_events e on e.session8 = substr(s.session_id, 1, 8) and e.status = 'claimed')
+  where rn = 1;
+create view if not exists card_cost as
+  with recursive tree(root, id) as (
+    select distinct item_id, item_id from item_events
+    union select t.root, e.item_id from tree t join item_events e on e.parent = t.id and e.item_id != t.id)
+  select t.root as card, coalesce(sum(case when t.id = t.root then c.cost_usd end), 0) as own_usd,
+         coalesce(sum(c.cost_usd), 0) as subtree_usd
+  from tree t left join session_card c on c.item_id = t.id group by t.root;
+create view if not exists batch_cost as
+  select k.card, (select usd from item_money where item_id = k.card and kind = 'allocation' order by ts desc limit 1) as allocation_usd,
+         k.subtree_usd, (select sum(usd) from item_money where item_id = k.card and kind = 'actual') as actual_usd
+  from card_cost k where exists (select 1 from item_events where parent = k.card);
 create table if not exists typing(path text primary key, session_id text, mtime real, size int,
   cwd text, first_ts text, last_ts text, prompts int, chars int, words int, pasted_chars int);
 create table if not exists gh_repos(repo text primary key, topics text, archived int, private int);
@@ -243,8 +262,10 @@ def load_session_pr(cx, sd):
 
 LOG_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T[\d:]+Z)\s+(\S+)\s+(.*)$")
 
+MONEY_RE = re.compile(r"\b(allocation|actual)=(\d+(?:\.\d+)?)(?:usd)?(?=\s|$)")
+
 def load_items(cx, sd):
-    rows = []
+    rows, money = [], []
     for p in glob.glob(os.path.join(sd, "items", "*.md")):
         item_id = os.path.basename(p)[:-3]
         try:
@@ -260,12 +281,16 @@ def load_items(cx, sd):
             m = LOG_RE.match(line) if in_log else None
             if not m:
                 continue
+            for mm in MONEY_RE.finditer(m.group(3)):
+                money.append((item_id, m.group(1), mm.group(1), float(mm.group(2))))
             kv = dict(kv.split("=", 1) for kv in m.group(3).split() if "=" in kv)
             if "status" not in kv:
                 continue
             rows.append((item_id, m.group(1), m.group(2), kv.get("status", "").strip("`,"),
                 kv.get("owner"), kv.get("repo"), kv.get("parent"), kv.get("model"), kv.get("effort"),
                 kv.get("home"), title))
+    cx.execute("delete from item_money")
+    cx.executemany("insert into item_money values (?,?,?,?)", money)
     cx.execute("delete from item_events")
     cx.executemany("insert into item_events values (?,?,?,?,?,?,?,?,?,?,?)", rows)
     return len(rows)
