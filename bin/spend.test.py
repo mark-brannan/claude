@@ -147,6 +147,78 @@ class SpendTest(unittest.TestCase):
             self.assertIn(title, text)
         self.assertIn("2 merged PRs", text)
 
+    def write_runs(self, lines):
+        d = Path(self.sd, "metrics", "headless-runs")
+        d.mkdir(parents=True)
+        (d / "x.jsonl").write_text("".join((l if isinstance(l, str) else json.dumps(l)) + "\n" for l in lines))
+
+    def test_headless_runs_land_on_their_pr_and_roll_up_by_bot(self):
+        self.write_runs([
+            {"ts": "2026-10-15T01:40:00Z", "what": "agent-decision judge", "repo": "acme/widgets", "pr": 7,
+             "total_cost_usd": 0.5, "usage": {"output_tokens": 10}},
+            {"ts": "2026-10-15T01:50:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 7,
+             "total_cost_usd": 1.5},
+            {"ts": "2026-10-16T01:50:00Z", "what": "claude-review", "total_cost_usd": 0.25},
+            {"ts": "2026-10-16T02:00:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 7,
+             "total_cost_usd": {"x": 1}},                     # untrusted shape: counts as a run, $0
+            {"ts": "2026-10-01T00:00:00Z", "what": "claude-review", "total_cost_usd": 50},  # outside the window
+            "not json", ["not", "an", "object"], {"what": "no time", "total_cost_usd": 9},
+        ])
+        out = self.run_json()
+        self.assertAlmostEqual(out["pr"]["acme/widgets#7"]["cost"], 4.0 + 0.5 + 1.5)
+        self.assertEqual(out["pr"]["acme/widgets#7"]["runs"], 3)
+        self.assertAlmostEqual(out["pr"]["(no PR) - headless"]["cost"], 0.25)
+        self.assertAlmostEqual(out["bot"]["claude-review"]["cost"], 1.75)
+        self.assertEqual(out["bot"]["claude-review"]["runs"], 3)
+        self.assertAlmostEqual(out["bot"]["agent-decision judge"]["cost"], 0.5)
+        for k in ("pr", "repo", "day", "hour"):
+            self.assertAlmostEqual(sum(v["cost"] for v in out[k].values()), 15.25, msg=k)
+        self.assertIn("4 headless runs, $2.25", out["summary"])
+
+    def test_hostile_cost_is_zero(self):
+        self.write_runs([
+            '{"ts": "2026-10-15T01:40:00Z", "what": "a", "total_cost_usd": NaN}',
+            '{"ts": "2026-10-15T01:41:00Z", "what": "a", "total_cost_usd": Infinity}',
+            '{"ts": "2026-10-15T01:42:00Z", "what": "a", "total_cost_usd": -Infinity}',
+            '{"ts": "2026-10-15T01:43:00Z", "what": "a", "total_cost_usd": -5}',
+            '{"ts": "2026-10-15T01:44:00Z", "what": "a", "total_cost_usd": 0.5}',
+            '{"ts": "2026-10-15T01:45:00Z", "what": "a", "total_cost_usd": 1' + "0" * 400 + '}',
+            '{"ts": "2026-10-15T01:46:00Z", "what": "a", "total_cost_usd": 1e300}'])
+        out = self.run_json()
+        self.assertEqual(out["bot"]["a"]["cost"], 0.5)
+        self.assertEqual(out["bot"]["a"]["runs"], 7)
+
+    def test_control_characters_never_reach_the_terminal(self):
+        self.write_runs([{"ts": "2026-10-15T01:40:00Z", "what": "bot\x1b[31m\nred", "repo": "x/y\x07z",
+                          "pr": 1, "total_cost_usd": 1}])
+        out = json.dumps(self.run_json())
+        self.assertNotIn("\\u001b", out)
+        self.assertNotIn("\\u0007", out)
+        self.assertNotIn("\\n", out.replace("\\n\\n", ""))  # no newline survives inside a key
+        self.assertIn("bot[31mred", out)
+
+    def test_a_fork_run_names_no_pr(self):
+        self.write_runs([
+            {"ts": "2026-10-15T01:40:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 7,
+             "trusted": False, "head_repository": "evil/widgets", "total_cost_usd": 1},
+            {"ts": "2026-10-15T01:41:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 7,
+             "head_repository": "evil/widgets", "total_cost_usd": 2},
+            {"ts": "2026-10-15T01:42:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 7,
+             "trusted": True, "head_repository": "acme/widgets", "total_cost_usd": 4}])
+        pr = self.run_json()["pr"]
+        self.assertAlmostEqual(pr["acme/widgets#7"]["cost"], 4.0 + 4)
+        self.assertAlmostEqual(pr["(no PR) - headless"]["cost"], 3)
+
+    def test_text_shows_the_bot_table_only_when_there_are_runs(self):
+        def text():
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                spend.main(["--state", self.sd, "--db", self.db, "--tz", "UTC", "--since", "2026-10-02"])
+            return buf.getvalue()
+        self.assertNotIn("spend by headless run", text())
+        self.write_runs([{"ts": "2026-10-15T01:40:00Z", "what": "claude-review", "total_cost_usd": 1.0}])
+        self.assertIn("spend by headless run", text())
+
     def test_bad_by_is_usage(self):
         with self.assertRaises(SystemExit) as cm:
             spend.main(["--by", "nope"]) if False else sys.exit(spend.main(["--by", "nope"]))
