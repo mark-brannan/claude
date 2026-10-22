@@ -4,9 +4,10 @@
 # go quiet and nothing says why.
 #
 # Rows: the live ~/.claude clone's branch and sha against origin/main, its
-# dirty files, this session's hook records by event and the last one, the
-# metrics cache's last event, and the metrics hook run by hand on this
-# session's transcript, its stderr kept. The hand run writes to a scratch
+# dirty files, the hooks that traced a swallowed error in the last day, this
+# session's hook records by event and the last one, the metrics cache's last
+# event, and the metrics hook run by hand on this session's transcript, its
+# stderr kept. The hand run writes to a scratch
 # state repo, so the live crossing state is never advanced by a check.
 #
 # Usage: self-check [SESSION_ID | TRANSCRIPT] [--offline]
@@ -31,8 +32,9 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import gitrun  # noqa: E402
+    import hooktrace  # noqa: E402
 except ImportError:
-    print("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
+    print("%s: lib/gitrun.py or lib/hooktrace.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
     sys.exit(3)
 
 LIVE = os.path.expanduser("~/.claude")
@@ -208,6 +210,14 @@ def hand_run_row(transcript, sid, cwd):
     return ("ok" if msg else "warn", value)
 
 
+def hook_errors_row(sd, rows=None):
+    """Hooks that traced a swallowed error in the last day (lib/hooktrace.py)."""
+    rows = hooktrace.recent(sd) if rows is None else rows
+    if not rows:
+        return ("ok", "none traced in the last day")
+    return ("warn", "%d: %s" % (len(rows), hooktrace.summary(rows)))
+
+
 def find_transcript(arg):
     if arg and os.path.isfile(arg):
         return arg, os.path.splitext(os.path.basename(arg))[0]
@@ -247,7 +257,8 @@ def main(argv):
     ap.add_argument("--offline", action="store_true", help="skip the fetch of origin/main")
     args = ap.parse_args(argv)
 
-    rows = [("live ~/.claude", *live_row(not args.offline)), ("dirty files", *dirty_row())]
+    rows = [("live ~/.claude", *live_row(not args.offline)), ("dirty files", *dirty_row()),
+            ("hook errors", *hook_errors_row(state_dir()))]
     transcript, sid = find_transcript(args.session)
     now = datetime.now(timezone.utc)
     if transcript:
