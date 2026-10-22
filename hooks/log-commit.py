@@ -5,7 +5,7 @@ traceable back to the session and machine that made them.
 Fires on every Bash call and returns at once unless the command text holds
 `git` and, later on the same line, `commit`. It filters on the command text,
 not the matcher (matcher-side filtering does not work here: the matcher is
-shared with measure-git-events.sh).
+shared with the git-event measure hook).
 
 One line, in the state dir's commits.jsonl:
     {"ts":"2026-01-01T00:00:00Z","session_id":"...","remote_session_id":"",
