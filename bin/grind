@@ -310,7 +310,7 @@ item_terms() {
   ip_kind=$(printf '%s' "$1" | jq -r .kind)
   case $ip_kind in
     pr)   ip_me=$(gh api user --jq .login 2>/dev/null) || ip_me=""
-          ip_text=""; ip_ok=$(jq -cn --arg me "$ip_me" --argjson a "$(agent_logins)" '[$me] + $a')
+          ip_text=""; ip_ok=$(jq -cn --arg me "$ip_me" --argjson a "$(agent_logins)" '[$me] + $a.bot')
           [ -z "$ip_me" ] || ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json author,body,comments \
             --jq "$ip_ok as \$ok | [(if (.author.login | IN(\$ok[])) then .body // \"\" else \"\" end), ([.comments[]? | select(.author.login | IN(\$ok[]))] | last | .body // \"\")] | join(\"\\n\")" 2>/dev/null || true) ;;
     card) ip_text=$(printf '%s' "$1" | jq -r .text) ;;
@@ -1250,12 +1250,13 @@ last_status() {
   printf '%s\n' "$1" | grep -oE "$status_line_re" | tail -n 1 | sed 's/.*: //'
 }
 
-# agent_logins -> a JSON array of the agent App's login in each spelling GitHub
-# gives it (slug[bot] in REST, slug in GraphQL, app/slug in gh --json); [] with
-# no App, when `gh-agent --login` fails.
+# agent_logins -> {"bot": the App's logins that carry their own bot marker
+# (slug[bot], app/slug), "bare": the unmarked slug GraphQL gives}; both empty
+# with no App, when `gh-agent --login` fails. The App is accepted only with a
+# bot signal: a marked login, or the bare slug on an author gh flags is_bot.
 agent_logins() {
   al=$(gh-agent --login 2>/dev/null) || al=""
-  jq -cn --arg s "${al%\[bot\]}" 'if $s == "" then [] else [$s + "[bot]", $s, "app/" + $s] end'
+  jq -cn --arg s "${al%\[bot\]}" 'if $s == "" then {bot: [], bare: ""} else {bot: [$s + "[bot]", "app/" + $s], bare: $s} end'
 }
 
 # prs_opened_since <ISO 8601> <urls, one per line> <branch> <item ref> -> the
@@ -1269,12 +1270,12 @@ prs_opened_since() {
   printf '%s' "$2" | awk 'NF' | grep -q . || return 0
   me=$(gh api user --jq .login 2>/dev/null) || me=""
   [ -n "$me" ] || { warn "could not read the account grind runs as (gh api user); no PR the worker named is counted as its work"; return 0; }
-  ok=$(jq -cn --arg me "$me" --argjson a "$(agent_logins)" '[$me] + $a')
+  ok=$(jq -cn --arg me "$me" --argjson a "$(agent_logins)" '{ok: ([$me] + $a.bot), bare: $a.bare}')
   printf '%s\n' "$2" | while IFS= read -r u; do
     [ -n "$u" ] || continue
     j=$(gh pr view "$u" --json createdAt,author,headRefName,body 2>/dev/null) || continue
     printf '%s' "$j" | jq -e --arg s "$1" --argjson ok "$ok" --arg b "$3" --arg r "$4" \
-      '(.createdAt // "") >= $s and (.author.login | IN($ok[]))
+      '(.createdAt // "") >= $s and ((.author.login | IN($ok.ok[])) or (.author.is_bot == true and $ok.bare != "" and .author.login == $ok.bare))
        and (.headRefName == $b or ((.body // "") | contains("Grind item: " + $r)))' >/dev/null 2>&1 || continue
     printf '%s\n' "$u"
   done
