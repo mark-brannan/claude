@@ -33,9 +33,7 @@ MAX_CHARS = 500
 
 
 def languette_root():
-    """The user-scope languette install Claude Code records in
-    installed_plugins.json (undocumented, but what it loads and free to read;
-    `claude plugin list --json` is the documented way and takes ~6 s), or ""."""
+    """The user-scope languette install from installed_plugins.json, or ""."""
     path = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
                         "plugins", "installed_plugins.json")
     try:
@@ -52,9 +50,9 @@ def languette_root():
 
 
 def languette_record():
-    """languette's record module: the recorded plugin install, else the
-    interpreter's own languette; None when none imports."""
-    for root in [languette_root() or None, None]:  # None: an installed package
+    """languette's record module: the recorded install, else the interpreter's; None if neither."""
+    roots = [r for r in (languette_root(),) if r] + [None]  # None: an installed package
+    for root in roots:
         if root is not None:
             if not os.path.isfile(os.path.join(root, "languette", "record.py")):
                 continue
