@@ -421,7 +421,7 @@ class PrivacyGuardTest(FixtureTest):
 class GithubTest(FixtureTest):
     def test_github_flag_loads_repos_issues_and_prs(self):
         r = self.build("--github")
-        self.assertIn("gh_items", r.stdout)
+        self.assertRegex(r.stdout, r"gh_items +4 from ")  # the item count, not another loader's
         self.assertEqual(self.fx.q("select repo, topics, archived, private from gh_repos order by repo"),
                          [("acme/old", "", 1, 1), ("acme/widgets", "project-alpha,python", 0, 0)])
         self.assertEqual(self.fx.q("select count(*) from gh_items"), [(4,)])
