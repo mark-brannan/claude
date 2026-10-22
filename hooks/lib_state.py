@@ -43,12 +43,13 @@ def event():
     return {}
 
 
-def trace_failure(hook, event, err):
-    """A hook's last-resort handler: trace the swallowed error through
+def trace_failure(hook, event, err, stage="main"):
+    """A hook's handler for an error it swallows: trace it through
     lib/hooktrace.py under the session last read, or say it on stderr when
-    lib/ is missing from a seed. Never raises."""
+    lib/ is missing from a seed. stage names where it was swallowed; "main"
+    is the last-resort handler round the whole hook. Never raises."""
     try:
         import hooktrace
-        hooktrace.trace(hook, "main", err, str(LAST.get("session_id") or ""), event)
+        hooktrace.trace(hook, stage, err, str(LAST.get("session_id") or ""), event)
     except ImportError:
         print(f"{hook}: {err}", file=sys.stderr)

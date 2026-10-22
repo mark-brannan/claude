@@ -85,5 +85,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except OSError:
-        pass
+    except Exception as e:  # noqa: BLE001 -- a copy that fails never fails the Write
+        lib_state.trace_failure("scratch-mirror", "PostToolUse", e)

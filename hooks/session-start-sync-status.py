@@ -16,7 +16,8 @@ Two triggers, either one:
 
 No clone, or no sync script: silent; there is nothing to report on.
 
-CONVENIENCE: never blocks a session, always exits 0; a crash goes to stderr.
+CONVENIENCE: never blocks a session, always exits 0; a crash is traced to
+the state repo's metrics/hook-errors/ (lib/hooktrace.py).
 """
 import json
 import os
@@ -74,5 +75,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a convenience hook never stops a session
-        print(f"session-start-sync-status: {type(e).__name__}: {e}", file=sys.stderr)
+        import lib_state  # beside this file
+        lib_state.trace_failure("session-start-sync-status", "SessionStart", e)
     sys.exit(0)

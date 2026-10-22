@@ -40,13 +40,25 @@ class SpendGateTest(unittest.TestCase):
         lines = [{"type": "user", "message": {"content": "go"}}, a, a, b,
                  {"type": "user", "message": {"content": [{"type": "tool_result"}]}}]
         self.transcript.write_text("".join(json.dumps(x) + "\n" for x in lines))
+        self.state = Path(self.tmp.name) / "state"
+        (self.state / ".git").mkdir(parents=True)
 
     def tearDown(self):
         self.tmp.cleanup()
 
+    def traced(self):
+        """(stage, error) of each row the hook traced to metrics/hook-errors/."""
+        rows = [json.loads(ln) for p in sorted(self.state.glob("state/global/metrics/hook-errors/*/*.jsonl"))
+                for ln in p.read_text().splitlines()]
+        for r in rows:
+            self.assertEqual((r["hook"], r["event"]), ("spend-gate", "PreToolUse"))
+            # the line is read before the input, so only later stages know the session
+            self.assertEqual(r["session_id"], "" if r["stage"] == "line" else "s")
+        return [(r["stage"], r["error"]) for r in rows]
+
     def run_hook(self, tool, tool_input, transcript=None, extra=None, **env):
-        e = {k: v for k, v in os.environ.items() if k not in ENV_KEYS}
-        e.update(env)
+        e = {k: v for k, v in os.environ.items() if k not in ENV_KEYS + ("CLAUDE_CODE_SESSION_ID",)}
+        e.update(env, CLAUDE_STATE_REPO=str(self.state))
         payload = {"session_id": "s", "transcript_path": str(transcript or self.transcript),
                    "cwd": "/w", "hook_event_name": "PreToolUse", "tool_name": tool,
                    "tool_input": tool_input}
@@ -148,19 +160,23 @@ class SpendGateTest(unittest.TestCase):
     def test_missing_transcript_allows_with_a_note(self):
         d, _, err = self.run_hook(*self.BASH, transcript="/nonexistent/t.jsonl",
                                   SPEND_GATE_USD="0.01")
-        self.assertEqual(d, "allow")
-        self.assertIn("spend-gate: cannot read the transcript", err)
-        self.assertEqual(len(err.strip().splitlines()), 1)
+        self.assertEqual((d, err), ("allow", ""))
+        ((stage, why),) = self.traced()
+        self.assertEqual(stage, "transcript")
+        self.assertIn("cannot read the transcript (/nonexistent/t.jsonl", why)
 
     def test_unreadable_transcript_allows_with_a_note(self):
         d, _, err = self.run_hook(*self.BASH, transcript=self.tmp.name, SPEND_GATE_USD="0.01")
-        self.assertEqual(d, "allow")
-        self.assertIn("cannot read the transcript", err)
+        self.assertEqual((d, err), ("allow", ""))
+        ((stage, why),) = self.traced()
+        self.assertIn("cannot read the transcript", why)
 
     def test_a_line_that_is_not_a_number_is_ignored(self):
         d, _, err = self.run_hook(*self.BASH, SPEND_GATE_USD="five")
-        self.assertEqual(d, "allow")
-        self.assertIn("SPEND_GATE_USD='five' is not a number", err)
+        self.assertEqual((d, err), ("allow", ""))
+        ((stage, why),) = self.traced()
+        self.assertEqual(stage, "line")
+        self.assertIn("SPEND_GATE_USD='five' is not a number", why)
 
     def test_model_prices(self):
         # 1M output tokens on each model: opus $25, fable $50, haiku $5,

@@ -91,5 +91,20 @@ class PromptHookTest(unittest.TestCase):
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class TraceTest(unittest.TestCase):
+    def test_a_crash_is_traced_not_sent_to_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".git").mkdir()
+            env = {**os.environ, "CLAUDE_STATE_REPO": tmp}
+            r = subprocess.run([sys.executable, str(HOOK)], input=json.dumps({"session_id": "ab1", "prompt": 7}),
+                               capture_output=True, text=True, env=env)
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+            (path,) = Path(tmp).glob("state/global/metrics/hook-errors/ab/ab1.jsonl")
+            row = json.loads(path.read_text())
+            self.assertEqual((row["hook"], row["event"], row["stage"]),
+                             ("pr-blockers-prompt", "UserPromptSubmit", "main"))
+            self.assertIn("TypeError", row["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -104,6 +104,35 @@ class SyncStatus(unittest.TestCase):
         subprocess.run(["rm", "-rf", str(self.clone / ".git")], check=True)
         self.assertIsNone(self.run_hook())
 
+# Runs the hook named by argv[1] as Claude Code would, after the patch in
+# argv[2], so a test can make it crash where no input could.
+# The patch can name boom, which raises RuntimeError("boom").
+WRAP = """import os, runpy, sys
+def boom(*a, **k):
+    raise RuntimeError("boom")
+hook, patch = sys.argv.pop(1), sys.argv.pop(1)
+sys.path.insert(0, os.path.dirname(hook))
+exec(patch)
+runpy.run_path(hook, run_name="__main__")
+"""
+
+
+class CrashIsTraced(unittest.TestCase):
+    def test_a_crash_is_traced_not_sent_to_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude/.git").mkdir(parents=True)
+            (home / ".local/bin").mkdir(parents=True)
+            (home / ".local/bin/dotfiles-sync.sh").write_text("")
+            (home / "state/.git").mkdir(parents=True)
+            env = {**os.environ, "HOME": tmp, "CLAUDE_STATE_REPO": str(home / "state"), "CLAUDE_CODE_SESSION_ID": "ab3"}
+            r = subprocess.run([sys.executable, "-c", WRAP, str(HOOK), "import subprocess; subprocess.run = boom"],
+                               capture_output=True, text=True, env=env)
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+            row = json.loads((home / "state/state/global/metrics/hook-errors/ab/ab3.jsonl").read_text())
+            self.assertEqual((row["hook"], row["event"], row["stage"], row["error"]),
+                             ("session-start-sync-status", "SessionStart", "main", "RuntimeError: boom"))
+
 
 if __name__ == "__main__":
     unittest.main()
