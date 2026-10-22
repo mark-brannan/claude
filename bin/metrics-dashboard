@@ -267,10 +267,11 @@ def build(db, out, ndays):
     for r in q(f"select {wk('s.started_at')} w, c.model m, sum(c.cost_usd) usd from session_cost c "
                "join sessions s on s.session_id = c.session_id group by w, m"):
         m = model_name(r["m"]); mtot[m] += r["usd"] or 0; mweek[m][r["w"]] += r["usd"] or 0
-    ranked = sorted(mtot, key=lambda m: -mtot[m])  # fixed order by spend; a 5th model folds into other
-    for m in ranked[3:]:
+    ranked = sorted(mtot, key=lambda m: -mtot[m])  # fixed order by spend: four named at most
+    named = ranked if len(ranked) <= 4 else ranked[:3]  # a 5th and later fold into other
+    for m in ranked[len(named):]:
         for w, v in mweek[m].items(): mweek["other"][w] += v
-    model_series = [(m, {w: round(v, 2) for w, v in mweek[m].items()}) for m in ranked[:3] + (["other"] if len(ranked) > 3 else [])]
+    model_series = [(m, {w: round(v, 2) for w, v in mweek[m].items()}) for m in named + (["other"] if len(named) < len(ranked) else [])]
     ratio = lambda num, den, scale=1: {r["w"]: round(scale * (r[num] or 0) / r[den], 1) for r in costw if r[den]}
 
     # input: one row per host-minute the host's ActivityWatch covered -------------

@@ -218,7 +218,8 @@ class SourcesTest(FixtureTest):
         self.assertEqual(row[:7], ("acme/widgets", 4, 1, 1, 2, 1, 1))
         self.assertEqual(row[7], 1.5)
         self.assertEqual(json.loads(row[8]), {"Bash": 30, "Edit": 20})
-        # one row per model with a numeric figure; a session without the field has none
+        # one row per model with a numeric figure; a record without the field and with
+        # no cost_usd has none
         self.assertEqual(self.fx.q("select model, cost_usd from session_cost order by model"),
                          [("model-x", 1.2), ("model-y", 0.3)])
         self.assertEqual(self.fx.q("select work_started, dec_total from sessions where session_id='sess-headless-2'"),
