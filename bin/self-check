@@ -11,7 +11,8 @@
 #
 # Usage: self-check [SESSION_ID | TRANSCRIPT] [--offline]
 #
-# The session defaults to $CLAUDE_CODE_SESSION_ID, else the newest transcript.
+# The session defaults to $CLAUDE_CODE_SESSION_ID; outside a session, with none
+# given, it lists the newest sessions with hook records to pick from.
 # --offline skips the fetch of origin/main. Exit 1 when any row is bad, 0 otherwise, 2 on usage.
 # Python 3 stdlib only; needs lib/ beside it or in ~/.claude/lib (exit 3 if not).
 import argparse
@@ -93,11 +94,35 @@ def hook_records(transcript):
     return recs
 
 
-# A hook fires on every prompt and tool call, so in a session that is running
-# self-check the newest record is seconds old; past this, hooks have stopped.
-STALE_HOOK_SECONDS = 600
+def last_event(transcript):
+    """Timestamp of the newest tool result or typed prompt: each one fires the metrics hook.
+
+    A denied call fires no PostToolUse and a failed one fires PostToolUseFailure, which
+    the metrics hook is not wired to, so neither counts."""
+    last = None
+    with open(transcript, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if entry.get("type") != "user":
+                continue
+            content = (entry.get("message") or {}).get("content")
+            results = [c for c in content if isinstance(c, dict) and c.get("type") == "tool_result"] \
+                if isinstance(content, list) else []
+            if results:
+                if not entry.get("toolDenialKind") and not any(c.get("is_error") for c in results):
+                    last = entry.get("timestamp")
+            elif (entry.get("origin") or {}).get("kind") == "human":
+                last = entry.get("timestamp")
+    return last
+
+
 # The metrics hook rewrites its cache on every record; this much behind one is a broken hook.
 STALE_CACHE_SECONDS = 120
+# The hook writes the cache before the event lands in the transcript: p99 1 s over 1,000 sessions.
+CACHE_BEHIND_EVENT_SECONDS = 10
 
 
 def when(ts):
@@ -120,13 +145,13 @@ def hook_rows(recs, now):
     counts = ", ".join("%s %d" % kv for kv in sorted(by_event.items()))
     if failed:
         counts += "; %d non-zero exits" % failed
+    # A record lands only when a hook prints something, so its age says nothing about liveness.
     last, t = recs[-1], when(recs[-1]["ts"])
-    stale = t is None or (now - t).total_seconds() > STALE_HOOK_SECONDS
     return [("warn" if failed else "ok", counts),
-            ("bad" if stale else "ok", "%s %s, %s" % (last["name"], last["type"], ago(t, now)))]
+            ("ok", "%s %s, %s" % (last["name"], last["type"], ago(t, now)))]
 
 
-def cache_row(state_dir, sid, last_record, now):
+def cache_row(state_dir, sid, last_record, last_evt, now):
     """The file the statusline prints from; state_shard_path in hooks/lib-state.sh."""
     live = os.path.join(state_dir, "metrics", "live")
     path = os.path.join(live, sid + ".json")
@@ -137,9 +162,13 @@ def cache_row(state_dir, sid, last_record, now):
             cache = json.load(fh)
     except (OSError, ValueError):
         return ("bad", "no cache at %s" % path)
-    t, hook_t = when(cache.get("updated_at")), when(last_record)
+    t, hook_t, evt_t = when(cache.get("updated_at")), when(last_record), when(last_evt)
     value = "%s, %s" % (cache.get("last_event", "?"), ago(t, now))
-    if t is None or (hook_t and (hook_t - t).total_seconds() > STALE_CACHE_SECONDS):
+    if t is None:
+        return ("bad", value)
+    if evt_t and (evt_t - t).total_seconds() > CACHE_BEHIND_EVENT_SECONDS:
+        return ("bad", value + ", %ds behind the last tool result or prompt" % (evt_t - t).total_seconds())
+    if hook_t and (hook_t - t).total_seconds() > STALE_CACHE_SECONDS:
         return ("bad", value + ", older than the last hook record")
     return ("ok", value)
 
@@ -184,11 +213,27 @@ def find_transcript(arg):
         return arg, os.path.splitext(os.path.basename(arg))[0]
     sid = arg or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not sid:
-        # Outside a session: the newest transcript, the session most likely the one gone quiet.
-        hits = sorted(glob.glob(os.path.join(LIVE, "projects", "*", "*.jsonl")), key=os.path.getmtime)
-        return (hits[-1], os.path.splitext(os.path.basename(hits[-1]))[0]) if hits else (None, "")
-    hits = glob.glob(os.path.join(LIVE, "projects", "*", sid + ".jsonl"))
-    return (hits[0] if hits else None), sid
+        return None, ""
+    # A prefix will do, so the eight characters the session list prints are enough.
+    hits = glob.glob(os.path.join(LIVE, "projects", "*", sid + "*.jsonl"))
+    if len(hits) != 1:
+        return None, sid
+    return hits[0], os.path.splitext(os.path.basename(hits[0]))[0]
+
+
+def recent_sessions(now, n=5, scan=50):
+    """The newest transcripts with hook records, as "id8 age project"; headless runs have none."""
+    paths = sorted(glob.glob(os.path.join(LIVE, "projects", "*", "*.jsonl")), key=os.path.getmtime, reverse=True)
+    out = []
+    for path in paths[:scan]:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            if '"hookEvent"' not in fh.read():
+                continue
+        age = now.timestamp() - os.path.getmtime(path)
+        out.append("%s %ds ago %s" % (os.path.basename(path)[:8], age, os.path.basename(os.path.dirname(path))))
+        if len(out) == n:
+            break
+    return out
 
 
 def table(rows):
@@ -198,7 +243,7 @@ def table(rows):
 
 def main(argv):
     ap = argparse.ArgumentParser(prog=NAME, description="Is the live layer on main, and are this session's hooks firing?")
-    ap.add_argument("session", nargs="?", help="session id or transcript path (default: $CLAUDE_CODE_SESSION_ID)")
+    ap.add_argument("session", nargs="?", help="session id or its prefix, or a transcript path (default: $CLAUDE_CODE_SESSION_ID)")
     ap.add_argument("--offline", action="store_true", help="skip the fetch of origin/main")
     args = ap.parse_args(argv)
 
@@ -209,13 +254,18 @@ def main(argv):
         recs = hook_records(transcript)
         records, last = hook_rows(recs, now)
         rows += [("hook records", *records), ("last hook record", *last),
-                 ("metrics cache", *cache_row(state_dir(), sid, recs[-1]["ts"] if recs else None, now)),
+                 ("metrics cache", *cache_row(state_dir(), sid, recs[-1]["ts"] if recs else None,
+                                              last_event(transcript), now)),
                  ("metrics hook by hand", *hand_run_row(transcript, sid, os.getcwd()))]
+    elif sid:
+        rows.append(("transcript", "bad", "no single transcript for session %r" % sid))
     else:
-        rows.append(("transcript", "bad", "not found for session %r" % (sid or "-")))
+        rows.append(("session", "warn", "none given; pass one of the newest below"))
 
     print("%s  session %s  %s\n" % (NAME, (sid or "-")[:8], now.strftime("%Y-%m-%dT%H:%M:%SZ")))
     print(table(rows))
+    if not sid:
+        print("\n" + "\n".join("  " + s for s in recent_sessions(now)))
     return 1 if any(s == "bad" for _, s, _ in rows) else 0
 
 

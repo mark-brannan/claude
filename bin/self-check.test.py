@@ -89,9 +89,10 @@ class HookRecordsTest(unittest.TestCase):
         self.assertEqual(last[0], "ok")
         self.assertIn("PostToolUse:Bash", last[1])
 
-    def test_an_old_last_record_is_bad(self):
+    def test_an_old_last_record_is_not_bad(self):
+        # Away from the keyboard for two hours: the record is old and nothing is wrong.
         rec = {"ts": "2026-10-21T20:00:00Z", "event": "PostToolUse", "name": "PostToolUse:Bash", "type": "hook_success", "exit": 0}
-        self.assertEqual(sc.hook_rows([rec], NOW)[1][0], "bad")
+        self.assertEqual(sc.hook_rows([rec], NOW)[1][0], "ok")
 
     def test_no_records_is_bad(self):
         self.assertEqual(sc.hook_rows([], NOW)[0][0], "bad")
@@ -107,30 +108,70 @@ class CacheTest(unittest.TestCase):
 
     def test_cache_written_with_the_last_hook_is_ok(self):
         d = self.cache("2026-10-21T21:59:30Z")
-        self.assertEqual(sc.cache_row(d, "abcd", "2026-10-21T21:59:30.500Z", NOW)[0], "ok")
+        self.assertEqual(sc.cache_row(d, "abcd", "2026-10-21T21:59:30.500Z", "2026-10-21T21:59:31Z", NOW)[0], "ok")
 
     def test_cache_left_behind_by_the_hooks_is_bad(self):
         # Hooks still fire, the cache stopped moving: the "notices stopped" shape.
         d = self.cache("2026-10-21T19:00:00Z")
-        self.assertEqual(sc.cache_row(d, "abcd", "2026-10-21T21:59:30Z", NOW)[0], "bad")
+        self.assertEqual(sc.cache_row(d, "abcd", "2026-10-21T21:59:30Z", None, NOW)[0], "bad")
+
+    def test_a_tool_result_after_the_cache_is_bad(self):
+        # The hook stopped: tool calls go on landing with no write behind them.
+        d = self.cache("2026-10-21T21:50:00Z")
+        status, value = sc.cache_row(d, "abcd", "2026-10-21T21:50:00Z", "2026-10-21T21:59:00Z", NOW)
+        self.assertEqual(status, "bad")
+        self.assertIn("540s behind", value)
+
+    def test_a_long_break_after_the_last_event_is_ok(self):
+        d = self.cache("2026-10-21T18:00:00Z")
+        self.assertEqual(sc.cache_row(d, "abcd", "2026-10-21T18:00:00Z", "2026-10-21T18:00:00.400Z", NOW)[0], "ok")
+
+
+class LastEventTest(unittest.TestCase):
+    def test_counts_results_and_typed_prompts_not_denials_errors_or_notifications(self):
+        def result(ts, **kw):
+            return dict({"type": "user", "timestamp": ts,
+                         "message": {"content": [dict({"type": "tool_result"}, **kw.pop("c", {}))]}}, **kw)
+        lines = [{"type": "user", "timestamp": "t-prompt", "origin": {"kind": "human"}, "message": {"content": "hi"}},
+                 result("t-result"),
+                 result("t-denied", toolDenialKind="hook"),
+                 result("t-error", c={"is_error": True}),
+                 {"type": "user", "timestamp": "t-note", "origin": {"kind": "task-notification"}, "message": {"content": "x"}},
+                 {"type": "assistant", "timestamp": "t-asst", "message": {"content": []}}]
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
+            fh.write("\n".join(json.dumps(x) for x in lines) + "\n")
+        try:
+            self.assertEqual(sc.last_event(fh.name), "t-result")
+        finally:
+            os.unlink(fh.name)
 
 
 class FindTranscriptTest(unittest.TestCase):
-    def test_outside_a_session_takes_the_newest_transcript(self):
-        d = tempfile.mkdtemp()
-        os.makedirs(os.path.join(d, "projects", "p"))
-        for name, mtime in (("old", 1), ("new", 2)):
-            path = os.path.join(d, "projects", "p", name + ".jsonl")
-            Path(path).write_text("")
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.d, "projects", "p"))
+        for name, mtime, body in (("aaaa1111-old", 1, '{"hookEvent":"x"}'), ("bbbb2222-new", 2, '{"hookEvent":"x"}'),
+                                  ("cccc3333-headless", 3, "{}")):
+            path = os.path.join(self.d, "projects", "p", name + ".jsonl")
+            Path(path).write_text(body)
             os.utime(path, (mtime, mtime))
-        live, sc.LIVE = sc.LIVE, d
-        env = os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
-        try:
-            self.assertEqual(sc.find_transcript(None)[1], "new")
-        finally:
-            sc.LIVE = live
-            if env is not None:
-                os.environ["CLAUDE_CODE_SESSION_ID"] = env
+        self.live, sc.LIVE = sc.LIVE, self.d
+        self.env = os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+
+    def tearDown(self):
+        sc.LIVE = self.live
+        if self.env is not None:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = self.env
+
+    def test_outside_a_session_guesses_nothing(self):
+        self.assertEqual(sc.find_transcript(None), (None, ""))
+
+    def test_a_prefix_finds_the_session(self):
+        self.assertEqual(sc.find_transcript("bbbb2222")[1], "bbbb2222-new")
+
+    def test_the_list_is_newest_first_and_skips_sessions_without_hooks(self):
+        listed = sc.recent_sessions(NOW)
+        self.assertEqual([s.split()[0] for s in listed], ["bbbb2222", "aaaa1111"])
 
 
 if __name__ == "__main__":
