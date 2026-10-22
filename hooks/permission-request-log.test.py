@@ -4,7 +4,7 @@
 # Cost per push: well under a second, a step in CI's existing tool-tests job.
 # Each case runs the hook as Claude Code does, a subprocess fed PermissionRequest
 # JSON on stdin, with CLAUDE_STATE_REPO and HOME pointed at a throwaway dir and
-# LANGUETTE_ROOT at a stub whose mask swaps the word SECRETVALUE.
+# installed_plugins.json pointing at a stub whose mask swaps the word SECRETVALUE.
 import json
 import os
 import subprocess
@@ -34,9 +34,16 @@ class PermissionRequestLogTest(unittest.TestCase):
         lang.mkdir(parents=True)
         (lang / "__init__.py").write_text("")
         (lang / "record.py").write_text(STUB)
+        plugins = self.home / ".claude" / "plugins"
+        plugins.mkdir(parents=True)
+        self.installed = plugins / "installed_plugins.json"
+        self.installed.write_text(json.dumps({"version": 2, "plugins": {
+            "languette@languette": [{"scope": "user", "installPath": str(lang.parent)}]}}))
         self.log = repo / "state/global/metrics/permission-requests/ab/abc123.jsonl"
-        self.env = {**os.environ, "HOME": str(self.home), "CLAUDE_STATE_REPO": str(repo),
-                    "LANGUETTE_ROOT": str(lang.parent), "PYTHONDONTWRITEBYTECODE": "1"}
+        env = {**os.environ, "HOME": str(self.home), "CLAUDE_STATE_REPO": str(repo),
+               "PYTHONDONTWRITEBYTECODE": "1"}
+        env.pop("CLAUDE_CONFIG_DIR", None)
+        self.env = env
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -79,13 +86,13 @@ class PermissionRequestLogTest(unittest.TestCase):
         self.assertLess(len(row["input"]["content"]), 600)
 
     def test_no_languette_logs_no_input(self):
-        self.env["LANGUETTE_ROOT"] = str(self.home / "nowhere")
+        self.installed.unlink()
         row = self.run_hook({"command": "GH_TOKEN=SECRETVALUE git push"})[0]
         self.assertIsNone(row["input"])
         self.assertEqual(row["tool"], "Bash")
 
     def test_installed_languette_used_without_plugin_cache(self):
-        del self.env["LANGUETTE_ROOT"]
+        self.installed.unlink()
         self.env["PYTHONPATH"] = str(self.home / "languette-stub")
         row = self.run_hook({"command": "GH_TOKEN=SECRETVALUE git push"})[0]
         self.assertEqual(row["input"]["command"], "GH_TOKEN=<secret> git push")

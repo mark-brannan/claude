@@ -21,7 +21,6 @@ one with a secret. masked counts the secrets replaced.
 
 Fails open: any error exits 0 and the dialog is untouched.
 """
-import glob
 import json
 import os
 import sys
@@ -33,17 +32,26 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 MAX_CHARS = 500
 
 
+def languette_root():
+    """The user-scope languette install from installed_plugins.json, or ""."""
+    path = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
+                        "plugins", "installed_plugins.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            plugins = json.load(f)["plugins"]
+        for key, installs in plugins.items():
+            if key.startswith("languette@"):
+                for i in installs:
+                    if i.get("scope") == "user":
+                        return i.get("installPath") or ""
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass
+    return ""
+
+
 def languette_record():
-    """languette's record module: from LANGUETTE_ROOT when set (the whole
-    search), else the newest plugin-cache copy, else the interpreter's own
-    languette; None when none imports."""
-    if os.environ.get("LANGUETTE_ROOT"):
-        roots = [os.environ["LANGUETTE_ROOT"]]
-    else:
-        base = os.path.expanduser("~/.claude/plugins")
-        roots = sorted((os.path.dirname(os.path.dirname(p)) for p in
-                        glob.glob(os.path.join(base, "cache", "languette", "languette", "*", "languette", "record.py"))),
-                       key=os.path.getmtime, reverse=True) + [None]  # None: an installed package
+    """languette's record module: the recorded install, else the interpreter's; None if neither."""
+    roots = [r for r in (languette_root(),) if r] + [None]  # None: an installed package
     for root in roots:
         if root is not None:
             if not os.path.isfile(os.path.join(root, "languette", "record.py")):

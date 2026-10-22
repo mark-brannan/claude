@@ -85,9 +85,10 @@ class AgentDecisionTest(unittest.TestCase):
                 "closingIssuesReferences": [{"number": i} for i in issues], "files": [{"path": f} for f in files]}
         (self.stub / "pr_view.json").write_text(json.dumps(view))
 
-    def said(self, path, login="t", body="use the awk rung"):
+    def said(self, path, login="t", body="use the awk rung", utype="User"):
         (self.stub / "api_user.json").write_text('{"login":"t"}')
-        (self.stub / f"api_{path.replace('/', '_')}.json").write_text(json.dumps({"user": {"login": login}, "body": body}))
+        (self.stub / f"api_{path.replace('/', '_')}.json").write_text(
+            json.dumps({"user": {"login": login, "type": utype}, "body": body}))
 
     def verdict(self, text):
         Path(self.env["CLAUDE_STUB"]).write_text(text)
@@ -298,6 +299,10 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         p = self.run_ad("--said", "https://github.com/o/r/pull/7#discussion_r12", "the user asked for it")
         self.assertEqual(p.returncode, 1)
         self.assertIn("🤖", p.stderr)
+        self.said("repos/o/r/issues/comments/13", login="agent[bot]", utype="Bot")
+        p = self.run_ad("--said", "https://github.com/o/r/pull/7#issuecomment-13", "the user asked for it")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("a bot: an agent's comment", p.stderr)
         self.no_decisions_branch()
 
     def test_said_user_words_are_logged_and_shown_to_the_judge(self):
