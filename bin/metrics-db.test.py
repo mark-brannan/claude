@@ -438,24 +438,29 @@ class GithubTest(FixtureTest):
         self.assertEqual(self.fx.q("select count(*) from gh_items"), [(4,)])
 
     def test_a_ci_review_artifact_lands_as_one_row_and_a_refetch_adds_none(self):
-        self.build("--github", "--quiet")
-        cx = sqlite3.connect(self.fx.db)
-        cx.execute("update gh_items set created_at = ?", (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),))
-        cx.commit()
-        cx.close()
-        line = json.dumps({"ts": "2026-10-20T10:00:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 2,
+        good = json.dumps({"ts": "2026-10-20T10:00:00Z", "what": "planted", "repo": "evil/x", "pr": 2, "extra": "x",
                            "model": "claude-sonnet-5-5", "total_cost_usd": 0.5, "outcome": "success",
-                           "usage": {"input_tokens": 3, "output_tokens": 4}})
+                           "usage": {"input_tokens": 3, "output_tokens": 4, "other": 9}})
+        runs = json.dumps({"workflow_runs": [{"id": n, "head_repository": {"full_name": r}} for n, r in
+                           ((42, "acme/widgets"), (43, "fork/widgets"), (44, "acme/widgets"))]})
         gh = self.fx.bin / "gh"
         gh.rename(self.fx.bin / "gh-real")
-        gh.write_text(
-            '#!/bin/sh\n[ "$1" = run ] || exec gh-real "$@"\n[ "$2" = list ] && { echo \'[{"databaseId": 42}]\'; exit 0; }\n'
-            f'while [ "$1" != -D ]; do shift; done; echo \'{line}\' > "$2/headless-run.jsonl"\n')
+        # The fixture's PR is made recent; run 43 is a fork's, run 44's artifact is junk.
+        gh.write_text(f"""#!/bin/sh
+case "$1" in
+  api) case "$2" in repos/*) echo '{runs}';; *) gh-real "$@" | sed "s/2026-09-02T10:00:00Z/$(date -u +%Y-%m-%dT%H:%M:%SZ)/";; esac;;
+  run) id=$3; while [ "$1" != -D ]; do shift; done
+       if [ "$id" = 44 ]; then echo '[1, "junk"' > "$2/headless-run.jsonl"; else echo '{good}' > "$2/headless-run.jsonl"; fi;;
+  *) exec gh-real "$@";;
+esac
+""")
         gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
         for _ in range(2):
             self.build("--github", "--quiet")
-            self.assertEqual(self.fx.q("select what, pr, cost_usd, output_tokens from headless_runs where what = 'claude-review'"),
-                             [("claude-review", 2, 0.5, 4)])
+            self.assertEqual(self.fx.q("select what, repo, pr, cost_usd, output_tokens from headless_runs where what = 'claude-review'"),
+                             [("claude-review", "acme/widgets", 2, 0.5, 4)])
+        self.assertEqual(sorted(p.name for p in (self.fx.sd / "metrics" / "headless-runs").glob("ci-review-*")),
+                         ["ci-review-42.jsonl"])
 
     def test_a_failing_gh_is_a_failed_build(self):
         (self.fx.bin / "gh").write_text("#!/bin/sh\necho nope >&2\nexit 9\n")
