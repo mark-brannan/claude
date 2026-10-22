@@ -212,8 +212,7 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   `~/.claude/bin/work-item create --id "$(~/.claude/bin/card-id new)" --owner agent [--repo <r>] --brief - "$title"`
   (the card text on stdin; it prints the new id; `$title` is read from a
   quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe),
-  then `~/.claude/bin/work-item log <parent-id> status=ready allocation=<n>usd`,
-  the estimates summed (§4.4); `ready` because `/pickup` finds an agent
+  then `~/.claude/bin/work-item log <parent-id> status=ready`; `ready` because `/pickup` finds an agent
   item only when it is ready or claimed (`claude_cards`, hooks/lib-state.sh);
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
@@ -259,11 +258,12 @@ the 2026-10-22 rulings:
   works on top of it. Once all the PRs are up, the driver serializes them
   into one merge order, each rebased onto the one before, since the queue
   updates one PR at a time and cannot resolve a conflict.
-- **Estimate and actual.** Each child's card carries its estimate; the
-  parent's log carries the batch's `allocation=<n>usd`, logged on the
-  parent at filing (a trial of the spend facts' shape, pencil). The walk
-  reports each child's actual, and the batch's, against them, and logs the
-  batch's on the parent the same way, `actual=<n>usd`.
+- **Estimate and actual.** Each child carries its estimate; the parent
+  carries the batch's allocation, logged at filing as
+  `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
+  the spend facts' shape, pencil). The walk reports each child's actual,
+  and the batch's, against them, and logs the batch's on the parent the
+  same way, `actual=<n>usd`.
 - **Reviews.** A critical review per PR as it opens, less deep, and one
   final pass on the stack before the walk. The arete check runs once, on
   the batch, at that final pass; on a single PR only where this scoping
