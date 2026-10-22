@@ -15,7 +15,7 @@ call. The state dir is session content, kept in the private state repo and
 never in this public one; lib/state.py says where it is.
 
 Prints nothing. Fails open: any error exits 0 and the call is untouched, but
-it is said on stderr. A quiet exit (no cwd, not a repo, no commit yet) is
+it is traced to the state repo's metrics/hook-errors/ (lib/hooktrace.py). A quiet exit (no cwd, not a repo, no commit yet) is
 not an error.
 """
 import json
@@ -43,8 +43,7 @@ def main():
     if not cwd:
         return
     if not os.path.isdir(cwd):
-        print(f"log-commit: cwd {cwd!r} is not a directory", file=sys.stderr)
-        return
+        raise NotADirectoryError(f"cwd {cwd!r} is not a directory")
 
     import gitrun
     if not gitrun.ok("rev-parse", "--git-dir", cwd=cwd):
@@ -78,5 +77,10 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a logger never blocks a call
-        print(f"log-commit: {e}", file=sys.stderr)
+        try:
+            import lib_state  # noqa: F401  (puts lib/ on sys.path)
+            import hooktrace
+            hooktrace.trace("log-commit", "main", e, str(lib_state.LAST.get("session_id") or ""), "PostToolUse")
+        except ImportError:  # a seed without lib/: stderr is all there is
+            print(f"log-commit: {e}", file=sys.stderr)
     sys.exit(0)

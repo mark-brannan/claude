@@ -28,10 +28,16 @@ except ImportError as e:
         return None
 
 
+LAST = {}  # the event last read, so a trace can name its session after a crash
+
+
 def event():
     """The hook's event JSON from stdin, or {} when it is absent or malformed."""
     try:
         data = json.load(sys.stdin)
     except (ValueError, OSError):
         return {}
-    return data if isinstance(data, dict) else {}
+    if isinstance(data, dict):
+        LAST.update(data)
+        return data
+    return {}

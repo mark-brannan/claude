@@ -404,5 +404,10 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a logger never blocks a call
-        print(f"log-gh-writes: {e}", file=sys.stderr)
+        try:
+            import lib_state  # noqa: F401  (puts lib/ on sys.path)
+            import hooktrace
+            hooktrace.trace("log-gh-writes", "main", e, str(lib_state.LAST.get("session_id") or ""), "PostToolUse")
+        except ImportError:  # a seed without lib/: stderr is all there is
+            print(f"log-gh-writes: {e}", file=sys.stderr)
     sys.exit(0)

@@ -109,5 +109,10 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a logger never blocks a dialog
-        print(f"permission-request-log: {e}", file=sys.stderr)
+        try:
+            import lib_state  # noqa: F401  (puts lib/ on sys.path)
+            import hooktrace
+            hooktrace.trace("permission-request-log", "main", e, str(lib_state.LAST.get("session_id") or ""), "PermissionRequest")
+        except ImportError:  # a seed without lib/: stderr is all there is
+            print(f"permission-request-log: {e}", file=sys.stderr)
     sys.exit(0)
