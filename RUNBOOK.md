@@ -280,7 +280,7 @@ Edit that file, not the scripts.
 | --- | --- |
 | `session-metrics.jq` | the measurement — tokens, turns, decisions, time |
 | `metrics-live.py` | writes the cache; prints the two-line event block |
-| `statusline-metrics.sh` | prints the one-line statusline row |
+| `statusline-metrics.py` | prints the one-line statusline row |
 | `lib-metrics-fmt.jq` | **every field and both layouts** |
 
 The decision count is measured, never alarmed: `metrics-live.py` has no

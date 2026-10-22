@@ -129,10 +129,10 @@ done
 
 # --- row -------------------------------------------------------------------
 say ""
-say "--- statusline-metrics.sh"
+say "--- statusline-metrics.py"
 row=$(jq -nc --arg sid "$sid" --arg cwd "$PWD" \
         '{session_id:$sid, cwd:$cwd, model:{display_name:"Opus 5"}}' \
-      | bash "$HOOKS/statusline-metrics.sh" 2>&1)
+      | python3 "$HOOKS/statusline-metrics.py" 2>&1)
 case "$row" in
   ""|*"warming up"*|*"⛁ —"*) bad "statusline fell back to: ${row:-<empty>}" ;;
   *) say "$row" ;;
