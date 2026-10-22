@@ -623,7 +623,7 @@ type in are untouched.
 | Call | Runs as |
 |---|---|
 | `gh ...` in a session (hooks and headless runs too) | the App, through `bin/gh-agent` |
-| `gh api user`, `gh pr merge` | you: who you are, and merging, stay yours |
+| `gh api user`, `gh auth ...`, `gh pr merge` | you: who you are, your credentials, and merging, stay yours |
 | GitHub MCP server | the App, through `bin/github-mcp-headers` |
 | `git push` | you |
 | anything with `AGENT_BOT_OFF=1`, `GH_TOKEN` set, outside a session, or with no `~/.config/secrets/agent-bot.env` | you |
