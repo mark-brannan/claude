@@ -406,3 +406,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t112519z
 - card-id new: the id's eight hex are 32 random bits, the seconds the plain clock, and there is no store step or counter; a same-second collision is the store's refusal, at 2^-32 per pair Undo: restore the loop stepping the seconds past an id already filed ([#256](https://github.com/mark-brannan/claude/pull/256))
+
+### 20261022t112523z
+- card-id new refuses an argument; no caller passed a session id Undo: accept and ignore one ([#256](https://github.com/mark-brannan/claude/pull/256))
