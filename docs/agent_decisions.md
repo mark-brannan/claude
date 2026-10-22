@@ -397,3 +397,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t073106z
 - A non-numeric METRICS_* knob falls back to its default with a trace line Undo: raise in Knobs.number and Knobs.ladder ([#240](https://github.com/mark-brannan/claude/pull/240))
+
+### 20261022t085911z
+- SessionStart sync-status note goes to both the session (additionalContext) and the user (systemMessage) Undo: drop systemMessage from session-start-sync-status.py ([#166](https://github.com/mark-brannan/claude/issues/166)) (no PR, branch claude/sessionstart-dotfiles-sync-status-359d55)
