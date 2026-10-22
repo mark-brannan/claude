@@ -114,6 +114,34 @@ class LookupTest(Base):
                          "a file still at the flat path is used where it is")
         self.assertEqual(sp(SH, "x.json", ""), f"{SH}/_/x.json", "an empty id goes under _, never the dir itself")
 
+    # --- names_branch, items_dir, board_union: branch-home-gate.py's board ----
+    def test_names_branch(self):
+        nb = self.state.names_branch
+        self.assertTrue(nb("the work is on claude/homed, then", "claude/homed"), "a trailing comma is stripped")
+        self.assertFalse(nb("on claude/homed.", "claude/homed"), "a period is a branch character, as in the shell")
+        self.assertTrue(nb("on `claude/homed`, then", "claude/homed"))
+        self.assertFalse(nb("on claude/homed-extra", "claude/homed"), "a longer branch is not this one")
+        self.assertFalse(nb("on xclaude/homed", "claude/homed"))
+        self.assertFalse(nb("anything", ""), "no branch is never named")
+
+    def test_items_dir_and_board_union(self):
+        os.environ["CLAUDE_STATE_REPO"] = str(self.T / "sr")
+        (self.T / "sr" / ".git").mkdir(parents=True)
+        os.environ.pop("WORK_ITEM_DIR", None)
+        self.assertEqual(self.state.items_dir(), f"{self.T}/sr/state/global/items")
+        d = self.T / "items"
+        os.environ["WORK_ITEM_DIR"] = str(d)
+        self.assertEqual(self.state.items_dir(), str(d))
+        self.assertEqual(self.state.board_union(), "", "no store, no board")
+        d.mkdir()
+        os.environ["WORK_ITEM_BIN"] = str(LIB.parent.parent / "bin" / "work-item")
+        (d / "1790000000aaaaaaaa.md").write_text(
+            "# T\n\n## Brief\nOn `claude/x`.\n\n## Log\n2026-10-03T05:00:00Z 1d68120b status=open owner=agent "
+            "repo=- parent=- model=- effort=-\n")
+        board = self.state.board_union()
+        self.assertTrue(board.startswith("## Claude's\n- [ ] "), board)
+        self.assertTrue(self.state.names_branch(board, "claude/x"))
+
     # --- decision_rate ---------------------------------------------------------
     def test_decision_rate(self):
         dr = self.state.decision_rate
@@ -138,14 +166,14 @@ class ArchivableTest(Base):
         gitq(self.WT, "remote", "add", "origin", str(origin))
         gitq(self.WT, "push", "-q", "-u", "origin", "feature")
         self.origin = origin
-        # A fake hook dir: branch-home-gate.sh says "home" and names the
+        # A fake hook dir: branch-home-gate.py says "home" and names the
         # branch's card; the claims come from an items/ store, as work-item
         # reads them.
         self.FAKE = self.T / "hooks"
         self.FAKE.mkdir()
-        gate = self.FAKE / "branch-home-gate.sh"
-        gate.write_text('#!/bin/sh\nif [ "$1" = --card ]; then echo "pr https://github.com/o/r/pull/1"; '
-                        'else echo "home: pr https://github.com/o/r/pull/1"; fi\n')
+        gate = self.FAKE / "branch-home-gate.py"
+        gate.write_text('import sys\nprint("pr https://github.com/o/r/pull/1" if sys.argv[1] == "--card" '
+                        'else "home: pr https://github.com/o/r/pull/1")\n')
         gate.chmod(0o755)
         self.SL = self.T / "sl-items"
         os.environ["WORK_ITEM_DIR"] = str(self.SL)

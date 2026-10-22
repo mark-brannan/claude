@@ -46,11 +46,12 @@ PR7 = '[{"url":"https://github.com/o/r/pull/7"}]'
 # --- a fake gh: GH_PRS is what `gh pr list` answers ---------------------------
 FAKE_GH = r'''#!/bin/sh
 [ "${GH_FAIL:-0}" = 1 ] && { echo "gh: not logged in" >&2; exit 1; }
-# GH_LOG, when set, records each call with its grandparent's argv -- the
-# script that wanted the answer (branch-home-gate.sh --check vs --card).
+# GH_LOG, when set, records each call with its parent's and grandparent's
+# argv -- the script that wanted the answer (branch-home-gate.py --check vs
+# --card), which runs gh itself or through a subshell.
 if [ -n "${GH_LOG:-}" ]; then
   gp=$(ps -o ppid= -p $PPID 2>/dev/null | tr -d ' ')
-  echo "$* <- $(ps -o args= -p "$gp" 2>/dev/null)" >> "$GH_LOG"
+  echo "$* <- $(ps -o args= -p $PPID 2>/dev/null) <- $(ps -o args= -p "$gp" 2>/dev/null)" >> "$GH_LOG"
 fi
 case "$1 ${2:-}" in
   "pr list")    printf '%s\n' "${GH_PRS:-[]}" ;;
@@ -295,7 +296,7 @@ class StopContinuityTest(unittest.TestCase):
         # claim-stamp.sh's own `--card` lookup is a separate, deliberate call
         # and is not counted here; the verdict's `--check` is what must run once.
         n = sum(1 for ln in read(GH_LOG).splitlines()
-                if re.match(r"pr list --head.*branch-home-gate\.sh --check", ln))
+                if re.match(r"pr list --head.*branch-home-gate\.py --check", ln))
         self.assertEqual(n, 1, "the verdict asks gh for the head once per Stop")
         items = sorted(glob.glob(f"{w.PICKD}/*-ghlog000.md"))
         self.assertEqual(f"pr: {field(items[0], 'pr')}" if items else "",
@@ -342,7 +343,7 @@ class StopContinuityTest(unittest.TestCase):
         w.gitq(WORK, "checkout", "claude/work")
 
         # --- a fresh branch, no upstream, zero commits ahead of main ----------
-        # branch-home-gate.sh already treats this as "nothing to strand"; the
+        # branch-home-gate.py already treats this as "nothing to strand"; the
         # verdict should agree instead of flagging the same branch as
         # never-pushed.
         w.gitq(WORK, "checkout", "-b", "claude/fresh-review", "main")

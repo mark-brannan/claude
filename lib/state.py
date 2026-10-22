@@ -5,7 +5,8 @@ only.
 The bash hooks' twin is hooks/lib-state.sh, which ~20 shell scripts still
 source. The functions here are ports of the ones the Python side needs --
 state_repo, state_dir, state_is_repo, state_shard_path, the state_lock
-family, unpushed_state, dirty_paths, archivable_reasons, decision_rate --
+family, unpushed_state, dirty_paths, archivable_reasons, decision_rate,
+names_branch, items_dir, board_union --
 and must answer exactly as their shell twins do: shell hooks still read
 "archivable" and the rest from lib-state.sh, and the two must never disagree
 (dotfiles#149). lib/state-parity.test.py runs both over the same fixtures
@@ -189,11 +190,51 @@ def _names(line, t):
     return re.search(re.escape(t) + r"(?![0-9])", line) is not None
 
 
+def names_branch(text, branch):
+    """text names branch as a whole token, not merely as a substring, as
+    lib-state.sh's names_branch: every maximal run of branch-name characters
+    is a token, and one must equal the branch. claude/homed-extra does not
+    name claude/homed. The charset strips prose punctuation such as a
+    trailing comma or backquote; a period is a branch character, so a
+    branch that ends a sentence is not named, in either language."""
+    return bool(branch) and branch in re.findall(r"[A-Za-z0-9._/+@-]+", text or "")
+
+
+def items_dir():
+    """The work-item store's directory: $WORK_ITEM_DIR, else items/ in the
+    state dir, as lib-state.sh's items_dir."""
+    return os.environ.get("WORK_ITEM_DIR") or f"{state_dir()}/items"
+
+
+def board_union(hook_dir=HOOK_DIR):
+    """The store as one board text, as lib-state.sh's board_union: every
+    item as a `- [ ] ` card under `## Needs ruling` (owner human-ruling,
+    `### <repo name>` as the group, else `### global`), `## Human's`
+    (human-click) or `## Claude's` (agent). "" when the store is empty."""
+    r, h, a = [], [], []
+    for f in _item_rows(hook_dir):
+        f = f + [""] * (7 - len(f))
+        g = re.sub(r"^.*/", "", f[5])
+        if g in ("", "-"):
+            g = "global"
+        if f[1] == "human-ruling":
+            r.append(f"### {g}\n- [ ] {f[6]}")
+        elif f[1] == "human-click":
+            h.append(f"- [ ] {f[6]}")
+        else:
+            a.append(f"- [ ] {f[6]}")
+    out = []
+    for head, cards in (("## Needs ruling", r), ("## Human's", h), ("## Claude's", a)):
+        if cards:
+            out += [head, *cards, ""]
+    return "\n".join(out) + "\n" if out else ""
+
+
 def _item_rows(hook_dir):
     """work-item list's rows for the store (`id owner status holder updated
     repo line`, split on tabs); [] when there is no items/ or it cannot be
     read, as lib-state.sh's item_rows."""
-    d = os.environ.get("WORK_ITEM_DIR") or f"{state_dir()}/items"
+    d = items_dir()
     if not os.path.isdir(d):
         return []
     for wi in (os.environ.get("WORK_ITEM_BIN", ""), f"{hook_dir}/../bin/work-item",
@@ -223,15 +264,15 @@ def _live_claim_names(names, self8, hook_dir):
 # nag and stop-continuity.py's Stop-hook verdict must never disagree about
 # what "archivable" means (dotfiles#149). Before this they didn't even
 # agree on what a "home" is -- metrics-live re-checked PR-or-card
-# inline and never looked for a pointer issue, the one branch-home-gate.sh
+# inline and never looked for a pointer issue, the one branch-home-gate.py
 # already finds.
 #
-# branch-home-gate.sh lives in hook_dir and is shelled out to, not sourced,
+# branch-home-gate.py lives in hook_dir and is shelled out to, not sourced,
 # so its own state (the once-per-session gate) never leaks into this
 # read-only check.
 #
 # Home is checked before session-live, and both only when dirty/unpushed are
-# already clean: both can shell out to `gh` (branch-home-gate.sh up to two
+# already clean: both can shell out to `gh` (branch-home-gate.py up to two
 # 30s calls per mode, and session-live asks for its --card after the home
 # check has), so a dirty mid-work tree -- the common
 # case, and the one Stop fires on every turn -- never pays that cost.
@@ -250,10 +291,10 @@ def _live_claim_names(names, self8, hook_dir):
 # judge) and anything that only becomes true after a push is attempted --
 # both are the caller's own facts to add.
 def archivable(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
-    """(reasons, home): archivable_reasons, plus the branch-home-gate.sh
+    """(reasons, home): archivable_reasons, plus the branch-home-gate.py
     line it read, or None when it never got that far. The Stop hook's
     pickup item wants the same home line and must not pay
-    branch-home-gate.sh's gh round trip a second time in one Stop."""
+    branch-home-gate.py's gh round trip a second time in one Stop."""
     reasons = []
     home = None
     if dirty_paths(work_root).rstrip("\n"):
@@ -273,7 +314,7 @@ def archivable(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
             reasons.append(f"`{work_branch}` has no upstream (never pushed)")
 
     if not reasons:
-        home = _cap(["sh", f"{hook_dir}/branch-home-gate.sh", "--check", work_root])
+        home = _cap([sys.executable, f"{hook_dir}/branch-home-gate.py", "--check", work_root])
         if home.startswith("home:"):
             pass
         elif home.startswith("unverified:"):
@@ -282,9 +323,9 @@ def archivable(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
         else:
             reasons.append(f"no PR and no pointer for `{work_branch}`")
 
-    gate = f"{hook_dir}/branch-home-gate.sh"
+    gate = f"{hook_dir}/branch-home-gate.py"
     if not reasons and os.access(gate, os.X_OK):
-        card = _cap(["sh", gate, "--card", work_root])
+        card = _cap([sys.executable, gate, "--card", work_root])
         if card.startswith(("pr ", "issue ")):
             url = card.split(" ", 1)[1]
             if _live_claim_names(card_names(url), self_sid[:8], hook_dir):

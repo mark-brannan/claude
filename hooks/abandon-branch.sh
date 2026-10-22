@@ -1,6 +1,6 @@
 #!/bin/sh
 # Deletes a branch locally and on its remote, deliberately. Split out of
-# branch-home-gate.sh; see dotfiles#115.
+# branch-home-gate.py; see dotfiles#115.
 #
 # Usage: abandon-branch.sh [-C <path>] [<branch>]
 #   -C <path>   the repo to act in (default: cwd)

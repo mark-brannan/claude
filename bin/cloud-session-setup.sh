@@ -136,7 +136,7 @@ hooks/connector-budget.sh
 hooks/session-start-sync-status.py
 hooks/session-start-hook-errors.py
 hooks/prose-budget-edit.sh
-hooks/branch-home-gate.sh
+hooks/branch-home-gate.py
 hooks/claim-stamp.sh
 hooks/fixtures
 bin/metrics-preview.sh

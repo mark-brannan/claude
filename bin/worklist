@@ -482,7 +482,7 @@ STRANDED_CANDIDATES='
 # is dropped from the bucket, not merely annotated, once a home names it --
 # a work item (names_branch against $kb, set by board_path) or an open
 # issue in the same repo (whole-token match against title+body). Same
-# names_branch as branch-home-gate.sh (dotfiles#114), shared via
+# names_branch as branch-home-gate.py (dotfiles#114), shared via
 # lib-state.sh so a branch counts as pointed-at the same way in both
 # places. Only the first 100 open issues are ever fetched (see $trunc), so
 # a pointer past that page is missed the same way every other issue-derived

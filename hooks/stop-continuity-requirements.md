@@ -46,7 +46,7 @@ is under Interfaces.
   `claude-stop-home.<pid>` (the home line, job 6 to job 9),
   `claude-branch-home.*` (the gate's own), `claude-pickup-pr-miss.*`
   (job 9's 10-minute miss).
-- Scripts called: `branch-home-gate.sh --check` prints `home:<…>` or
+- Scripts called: `branch-home-gate.py --check` prints `home:<…>` or
   `unverified:<…>`, else nothing; `claim-stamp.sh refresh|release`;
   `metrics-rollup.sh`. The transcript's fields are whatever
   `session-metrics.jq` emits, which is the contract for job 2.
@@ -113,7 +113,7 @@ otherwise `not archivable: ` and the reasons, comma-joined, in this order:
    upstream to compare against`. A count that fails: `could not count
    unpushed commits`. No origin refs at all, or nothing ahead of any origin
    branch, is clear.
-3. `` no PR and no pointer for `<branch>` ``, by `branch-home-gate.sh
+3. `` no PR and no pointer for `<branch>` ``, by `branch-home-gate.py
    --check`; `branch home unverified (<detail>)` when the gate cannot say
 4. `session live`: another session's fresh claim stamp on the branch's card;
    the session's own never counts
@@ -350,7 +350,7 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 6.7 | `@{u}` is `main` and the commits are on a pushed `stack/` branch | Stop | not unpushed | test |
 | 6.8 | the home check cannot reach GitHub | Stop | not archivable, `branch home unverified` | test |
 | 6.9 | `cwd` outside any repo | Stop | `not archivable: not a git repo` | feature |
-| 6.10 | a clean, pushed branch | Stop | `branch-home-gate.sh --check` runs once | test |
+| 6.10 | a clean, pushed branch | Stop | `branch-home-gate.py --check` runs once | test |
 | 6.11 | another session's fresh claim stamp on the branch's card | Stop | not archivable; the session's own stamp alone is not a reason | code |
 | 7.1 | a dirty Claude-made worktree, level with origin | Stop | a signed commit on `wip/<id>`, pushed; branch `HEAD` and `@{u}` unchanged; files still dirty | test |
 | 7.2 | 7.1 after a first salvage | Stop again | `wip/<id>` moves; the branch is untouched | test |

@@ -726,7 +726,7 @@ the branch. `stale` means the session died without releasing it; the next
 `claim` on that card deletes it, so there is nothing to clean up by hand.
 `free` means the card carries no claim at all.
 `no card` means the branch has no PR and no pointer issue, so there is nowhere
-to stamp: `branch-home-gate.sh` will say the same thing at the end of the
+to stamp: `branch-home-gate.py` will say the same thing at the end of the
 session.
 
 Fleet-wide, the `claimed` label is the cheap filter — `pr-label-audit --json`
