@@ -20,8 +20,9 @@ jobs:
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     with:
-      # Overriding replaces the default list, so restate it with claude[bot].
-      allowed-bots: mergify[bot],mark-brannan-release-please[bot],claude[bot]
+      # Overriding replaces the default list, so restate it with claude[bot] and
+      # the mark-brannan-agent App local sessions post as.
+      allowed-bots: mergify[bot],mark-brannan-release-please[bot],claude[bot],mark-brannan-agent[bot]
       prompt: |
         Review this pull request to a public repo holding a Claude Code layer:
         hooks, skills and settings that run unattended inside an agent session.
