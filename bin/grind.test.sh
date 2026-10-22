@@ -1497,6 +1497,7 @@ case "\$1 \$2" in
   "pr list")    jq -r "\$filter" "$S/pr-list.json" ;;
   "issue view") jq -r "\$filter" "$S/issue-comments.json" ;;
   "api repos/"*"/sub_issues"*) f="$S/subs/\$(printf '%s' "\${2%%\?*}" | tr / _).json"; if [ "\$(cat "\$f" 2>/dev/null)" = FAIL ]; then exit 1; elif [ -f "\$f" ]; then cat "\$f"; else echo '[]'; fi ;;
+  "api --paginate") n=\${3%/comments}; n=\${n##*/}; jq -r "[.comments[]? | {body, user:{login:.author.login, type:(.author.type // \"User\")}}] | \$filter" "$S/pr-\$n.json" ;;
   "api repos/"*"/issues/"*) if [ -f "$S/updated-at" ]; then cat "$S/updated-at"; else echo 2999-01-01T00:00:00Z; fi ;;
   "pr view")    jq -r "\$filter" "$S/pr-\$3.json" ;;
   "api user")   echo solace ;;
@@ -1645,6 +1646,16 @@ has 'your last comment sets the budget; a later stranger comment does not' '^  b
 jq '. + {author:{login:"stranger"}, body:"budget: 9999", comments:[]}' "$S/pr-11.saved" > "$S/pr-11.json"
 run --prs --dry-run
 has 'nor does a stranger-written PR body' '^  budget: +soft \$1\.25 '
+# the agent App's comment counts only with a bot signal: REST says user.type Bot
+printf '#!/bin/sh\n[ "$1" = --login ] && echo "agent-bot[bot]"\n' > "$S/bin/gh-agent"; chmod +x "$S/bin/gh-agent"
+for case in 'agent-bot[bot]|Bot|\$6\.00' 'agent-bot|User|\$1\.25' 'agent-bot[bot]|User|\$1\.25' 'agent-bot-evil[bot]|Bot|\$1\.25'; do
+  cl=${case%%|*}; rest=${case#*|}; ct=${rest%%|*}; cb=${rest#*|}
+  jq --arg l "$cl" --arg t "$ct" '. + {author:{login:"solace"}, body:"", comments:[{author:{login:$l, type:$t}, body:"budget: 6"}]}' \
+    "$S/pr-11.saved" > "$S/pr-11.json"
+  run --prs --dry-run
+  has "a comment by $cl (type $ct) sets budget $cb" "^  budget: +soft $cb "
+done
+rm -f "$S/bin/gh-agent"
 mv "$S/pr-11.saved" "$S/pr-11.json"
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json
 reply 0.20 "done" 1
@@ -2218,7 +2229,7 @@ cat > "$S/ready.json" <<'JSON'
 [{"number": 17, "title": "Cross-repo item", "body": "fix it in .github", "url": "https://github.com/o/alpha/issues/17", "labels": [{"name": "ready"}]}]
 JSON
 mkdir -p "$S/prview"
-pv() { jq -nc --arg c "$2" --arg a "$3" --arg h "$4" --arg b "$5" '{createdAt:$c, author:{login:$a}, headRefName:$h, body:$b}' > "$S/prview/$1.json"; }
+pv() { jq -nc --arg c "$2" --arg a "$3" --arg h "$4" --arg b "$5" --argjson k "${6:-false}" '{createdAt:$c, author:{login:$a, is_bot:$k}, headRefName:$h, body:$b}' > "$S/prview/$1.json"; }
 pv https___github.com_o_dotgithub_pull_47 2999-01-01T00:00:00Z grind-me fix-it 'Fixes it. Grind item: o/alpha#17'
 pv https___github.com_o_alpha_pull_3 2001-01-01T00:00:00Z grind-me old 'Grind item: o/alpha#17'
 pv https___github.com_o_dotgithub_pull_48 2999-01-01T00:00:00Z someone-else fix-it 'Grind item: o/alpha#17'
@@ -2252,6 +2263,24 @@ said 1 0.80 'Opened https://github.com/o/dotgithub/pull/50.
 GRIND_STATUS: done'
 KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
 has 'a PR on the item branch verifies done' '^o/alpha#17: Cross-repo item -- sonnet'
+# a PR the agent App opened is grind's own work, whichever way its login is
+# spelled and whichever way gh-agent --login spells it, with a bot signal; a
+# bare login that is not a bot, a look-alike, or any bot with no App set up, is
+# a stranger's
+for case in 'app/agent-bot|agent-bot[bot]|ok' 'agent-bot[bot]|agent-bot|ok' 'agent-bot+bot|agent-bot[bot]|ok' 'agent-bot|agent-bot[bot]|no' \
+            'app/agent-bot-evil|agent-bot[bot]|no' 'xagent-bot|agent-bot|no' 'agent-bot[bot]x|agent-bot[bot]|no' 'app/agent-bot||no'; do
+  au=${case%%|*}; k=false; case $au in *+bot) k=true; au=${au%+bot} ;; esac; rest=${case#*|}; lg=${rest%%|*}; want=${rest#*|}
+  pv https___github.com_o_dotgithub_pull_51 2999-01-01T00:00:00Z "$au" fix-it 'Grind item: o/alpha#17' "$k"
+  printf '#!/bin/sh\n[ "$1" = --login ] && [ -n "%s" ] && echo "%s"\n' "$lg" "$lg" > "$S/bin/gh-agent"; chmod +x "$S/bin/gh-agent"
+  git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+  rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
+  said 1 0.80 'Opened https://github.com/o/dotgithub/pull/51.
+GRIND_STATUS: done'
+  KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
+  if [ "$want" = ok ]; then has "PR by $au (is_bot $k) with login $lg verifies done" '^o/alpha#17: Cross-repo item -- sonnet'
+  else has "PR by $au (is_bot $k) with login '$lg' does not verify done" '^UNVERIFIED: o/alpha#17'; fi
+done
+rm -f "$S/bin/gh-agent"
 # an account grind cannot read counts no named PR, and says so
 git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$S/user-fail"
