@@ -348,6 +348,46 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.assertEqual(self.run_ad("a call with no record").returncode, 0)
         self.assertEqual(self.seen.read_text().count("Call:"), 1, "the judge ran again with nothing to read")
 
+    def stub_claude(self, script):
+        (self.bin / "claude").write_text("#!/bin/sh\ncat > \"$CLAUDE_SEEN\"\n" + script)
+
+    def test_spent_budget_is_reported_from_stdout_when_stderr_is_empty(self):
+        self.pr(issues=[3])
+        self.said("repos/o/r/issues/3")
+        self.stub_claude("echo '{\"subtype\": \"error_max_budget_usd\", \"is_error\": true}'\nexit 1\n")
+        p = self.run_ad("a call with a record")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("error_max_budget_usd", p.stderr)
+        self.no_decisions_branch()
+
+    def test_a_rejected_model_is_retried_once(self):
+        self.pr(issues=[3])
+        self.said("repos/o/r/issues/3")
+        count = Path(self.tmp.name) / "count"
+        ok = '{"verdict":"consistent","source":"","quote":""}'
+        self.stub_claude(f'echo x >> "{count}"\n'
+                         f'if [ "$(wc -l < "{count}")" -lt 2 ]; then echo \'{{"subtype":"unrecognized_model"}}\'; exit 1; fi\n'
+                         f"echo '{json.dumps({'result': ok})}'\n")
+        p = self.run_ad("a call with a record")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(count.read_text().count("x"), 2)
+        self.stub_claude("echo '{\"subtype\":\"unrecognized_model\"}'; echo x >> \"%s\"; exit 1\n" % count)
+        count.unlink()
+        self.assertEqual(self.run_ad("another call with a record").returncode, 1)
+        self.assertEqual(count.read_text().count("x"), 2, "retried more than once")
+
+    def test_the_whole_record_is_capped_and_short_items_stay_whole(self):
+        self.pr(issues=[3, 4])
+        self.said("repos/o/r/issues/3", body="A" * 340_000)
+        self.said("repos/o/r/issues/4", body="short item stays whole")
+        self.verdict('{"verdict":"consistent","source":"","quote":""}')
+        self.assertEqual(self.run_ad("a call with a big record").returncode, 0)
+        shown = self.seen.read_text()
+        record = shown.split("\n\nThe record:\n\n", 1)[1][:-1]
+        self.assertLessEqual(len(record), 120_000)
+        self.assertGreater(record.count("A"), 60_000)
+        self.assertIn("short item stays whole", shown)
+
     def test_part_of_issues_are_read_and_a_record_that_cannot_be_read_refuses(self):
         self.pr(body="Part of #3, after #4 (a PR). Closes nothing.")
         self.said("repos/o/r/issues/3", body="the issue's rule")
