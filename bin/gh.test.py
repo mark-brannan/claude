@@ -61,6 +61,17 @@ class Shim(unittest.TestCase):
         self.secret.unlink()
         self.assertEqual(self.gh("pr", "list")[1], "user pr list", "no App secret")
 
+    def test_a_link_to_the_shim_is_not_the_real_gh(self):
+        link = self.T / "link"
+        link.mkdir()
+        (link / "gh").symlink_to(self.T / "layer" / "gh")
+        p = subprocess.run([str(link / "gh"), "pr", "list"], env={**self.env, "CLAUDECODE": "",
+                           "PATH": f"{link}:{self.T / 'sys'}:/usr/bin:/bin"}, capture_output=True, text=True, timeout=10)
+        self.assertEqual(p.stdout.strip(), "user pr list")
+
+    def test_bare_gh_is_the_real_gh(self):
+        self.assertEqual(self.gh()[1], "user")
+
     def test_a_failed_mint_fails_the_call(self):
         (self.T / "mint-fails").write_text("")
         rc, out, err = self.gh("pr", "list")

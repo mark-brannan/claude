@@ -9,17 +9,18 @@ SECRETS = os.environ.get("AGENT_BOT_SECRETS") or os.path.expanduser("~/.config/s
 
 
 def real_gh():
-    """The first gh on PATH outside a Claude layer's bin/ (one that holds gh-agent)."""
+    """The first gh on PATH outside a Claude layer's bin/ (one that holds gh-agent),
+    symlinks followed, so a link to this shim is never taken for the real gh."""
     for d in os.environ.get("PATH", "").split(os.pathsep):
         c = Path(d or ".") / "gh"
-        if c.is_file() and os.access(c, os.X_OK) and not (c.parent / "gh-agent").exists():
+        if c.is_file() and os.access(c, os.X_OK) and not (c.resolve().parent / "gh-agent").exists():
             return str(c)
     sys.exit("gh: no gh on PATH but this shim")
 
 
 def as_agent(args):
     """Asking who the user is, and merging, stay the user's."""
-    return (os.environ.get("CLAUDECODE") == "1" and not os.environ.get("GH_TOKEN")
+    return (args and os.environ.get("CLAUDECODE") == "1" and not os.environ.get("GH_TOKEN")
             and not os.environ.get("AGENT_BOT_OFF") and os.path.exists(SECRETS)
             and args[:2] not in (["api", "user"], ["api", "/user"], ["pr", "merge"]))
 
