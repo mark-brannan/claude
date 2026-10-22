@@ -158,7 +158,8 @@ taken; never overwrite an earlier one. Commit it. Shape:
    of the umbrella lands in the plan: as a work item, folded into one
    (named), or set aside with its reason. Each work item: the umbrella
    items or rulings it plans, its files, the worker model and effort it
-   carries, an estimate of its spend, and every default the doer will
+   carries, an estimate of its spend, the depth of its one critical review
+   from the work's criticality, and every default the doer will
    pick that carries medium risk or more, as a table of default, undo,
    risk. The plan's home is one parent card, the batch, with one child
    card per work item, whatever the umbrella (2026-10-22); an issue the
@@ -206,14 +207,17 @@ Re-run the `take` line first; a refusal now stops the filing, and a
 `read moved:` line means the record moved since the proposal. Then file
 the batch exactly as proposed, cards and the issues the proposal showed:
 
-- the parent first, a card owned `agent` whose brief is the proposal's
-  header and the batch's allocation (a link to the target in it), written
+- the parent first, a card owned `agent` whose brief is the driver brief
+  below, with links to the target and the proposal, written
   to the item store with
   `~/.claude/bin/work-item create --id "$(~/.claude/bin/card-id new)" --owner agent [--repo <r>] --brief - "$title"`
   (the card text on stdin; it prints the new id; `$title` is read from a
-  quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe);
-- then one child per yes'd item, worded as `/card-write` words one, by the
-  same line with `--parent <parent-id> [--model <m>] [--effort <e>]`, then
+  quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe),
+  then `~/.claude/bin/work-item log <parent-id> status=ready`; `ready` because `/pickup` finds an agent
+  item only when it is ready or claimed (`claude_cards`, hooks/lib-state.sh);
+- then one child per yes'd item, worded as `/card-write` words one, its
+  estimate in the card text, by the same line with
+  `--parent <parent-id> [--model <m>] [--effort <e>]`, then
   `~/.claude/bin/work-item log <id> status=ready` so it is claimable; a
   child that plans an issue gets `~/.claude/bin/work-item log <id> home=<owner/repo#n>`;
 - an item proposed as an issue (§4.4) is filed as the shown draft, the
@@ -226,8 +230,8 @@ the batch exactly as proposed, cards and the issues the proposal showed:
 - an item vetoed, or held on a new word (§4.5), is not filed, and the
   proposal says so.
 
-The parent stays `open`: it is the batch, not a session's work, and the
-driver below is what reads it. An item that rests on pencil says which, in
+The parent is the batch, not a session's work: the driver below claims it
+and no child's session marks it done. An item that rests on pencil says which, in
 the record's words, on its card. Record what was filed in the proposal file
 (the parent and each child by its printed id), then:
 
@@ -238,10 +242,51 @@ the record's words, on its card. Record what was filed in the proposal file
 A run that ends without a yes releases the same way. A dead session's lock
 lapses at 25 minutes like any other.
 
-**The driver prompt.** The run ends with one prompt for one outer session,
-the driver, which grinds the batch through workers: the parent's id, the
-order, which children run in parallel, the review points, who merges, the
-exits (park the child on a card for the agora, or pull the andon cord), and
-the walk it hands back. Each child's card carries its worker model and
-effort; the prompt repeats neither. Never a list of prompts for the user to
-paste one at a time.
+**The driver brief.** The driver is one fresh session that grinds the
+batch through workers. Its prompt is the parent's brief, written into the
+parent card on filing: the parent's id, the order, the review points, who
+merges, the exits (park the child on a card for the agora, or pull the
+andon cord), and the walk it hands back. Each child's card carries its
+worker model, effort and estimate; the brief repeats none of them. Never a
+list of prompts for the user to paste one at a time. The brief holds, from
+the 2026-10-22 rulings:
+
+- **The plan's order, then one stack.** Serial or parallel is scoping's
+  call, made in the proposal before anything launches (§4: dependencies
+  named, and why that order), never the driver's mid-run. Children the
+  plan names no dependency between run in parallel, one worker each; a
+  child the plan makes wait starts once the PR it waits on is up, and
+  works on top of it. Once all the PRs are up, the driver serializes them
+  into one merge order, each rebased onto the one before, since the queue
+  updates one PR at a time and cannot resolve a conflict.
+- **Estimate and actual.** Each child carries its estimate; the parent
+  carries the batch's allocation, logged at filing as
+  `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
+  the spend facts' shape, pencil). The walk reports each child's actual,
+  and the batch's, against them, and logs the batch's on the parent the
+  same way, `actual=<n>usd`.
+- **Reviews.** One critical review per PR, as it opens, at the depth the
+  work's criticality warrants; this scoping estimates that criticality
+  and the child's card carries the depth (2026-10-22).
+- **Arete.** A separate action from the critical review, which is why it
+  comes last: the arete check runs once, on the stack as a whole, at the
+  end before the walk. Its findings go to the user with the walk, the
+  user's to decide on and act on. It never blocks the autonomous lane's
+  work; a finding the driver judges must hold something is escalated to
+  the agora, parked on a card, and nothing else holds (2026-10-22).
+- **Who merges.** In the autonomous lane the driver puts the `merge` label
+  on each PR in stack order once every PR's review is clean, and the
+  queue lands them; the user's gate is the batch after the fact, with a
+  revert as the undo. This replaces "only I merge" (2026-10-01) for the
+  autonomous lane. The gated lane keeps the user's merge.
+
+The run's last line is the one line that starts the driver:
+
+```
+/pickup <parent-id>
+```
+
+`/pickup` already takes a card id, and the parent's brief is the whole
+hand-off (pencil on the how: the plan as a card, not a path `/pickup`
+learns). Near term that line opens an interactive session the user
+watches; long term the same item is what an unattended run picks up.
