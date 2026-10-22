@@ -464,7 +464,9 @@ class CardCostTest(FixtureTest):
              "2026-10-01T09:01:00Z sess-typ status=claimed", "2026-10-01T09:02:00Z abcd1234 allocation=3usd",
              "2026-10-01T09:03:00Z abcd1234 allocation=2.5usd")
         card("kid", "2026-10-01T09:00:00Z abcd1234 status=open parent=parent",
-             "2026-10-01T09:05:00Z sess-typ status=claimed")
+             "2026-10-01T09:05:00Z sess-typ status=claimed",
+             "2026-10-01T09:05:10Z abcd1234 actual=1.25usd", "2026-10-01T09:05:20Z abcd1234 actual=unknown (no meter)",
+             "2026-10-01T09:05:30Z abcd1234 actual=0.5usd")
         card("grandkid", "2026-10-01T09:00:00Z abcd1234 status=open parent=kid",
              "2026-10-01T09:06:00Z sess-typ status=claimed", "2026-10-01T09:07:00Z abcd1234 actual=unmeasured")
         self.build("--quiet")
@@ -481,6 +483,9 @@ class CardCostTest(FixtureTest):
                          [("grandkid", 0.25, 0.25), ("kid", 0, 0.25), ("parent", 1.5, 1.75)])
         self.assertEqual(self.fx.q("select card, allocation_usd, subtree_usd from batch_cost order by card"),
                          [("kid", None, 0.25), ("parent", 2.5, 1.75)])
+        # appended actuals sum; the non-numeric one is skipped
+        self.assertEqual(self.fx.q("select card, actual_usd from batch_cost order by card"),
+                         [("kid", 1.75), ("parent", None)])
 
 
 class GithubTest(FixtureTest):

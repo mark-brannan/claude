@@ -97,7 +97,7 @@ create view if not exists card_cost as
   from tree t left join session_card c on c.item_id = t.id group by t.root;
 create view if not exists batch_cost as
   select k.card, (select usd from item_money where item_id = k.card and kind = 'allocation' order by ts desc limit 1) as allocation_usd,
-         k.subtree_usd, (select usd from item_money where item_id = k.card and kind = 'actual' order by ts desc limit 1) as actual_usd
+         k.subtree_usd, (select sum(usd) from item_money where item_id = k.card and kind = 'actual') as actual_usd
   from card_cost k where exists (select 1 from item_events where parent = k.card);
 create table if not exists typing(path text primary key, session_id text, mtime real, size int,
   cwd text, first_ts text, last_ts text, prompts int, chars int, words int, pasted_chars int);
