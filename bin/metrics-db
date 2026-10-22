@@ -92,7 +92,7 @@ create view if not exists card_cost as
   with recursive tree(root, id) as (
     select distinct item_id, item_id from item_events
     union select t.root, e.item_id from tree t join item_events e on e.parent = t.id and e.item_id != t.id)
-  select t.root as card, coalesce((select sum(cost_usd) from session_card where item_id = t.root), 0) as own_usd,
+  select t.root as card, coalesce(sum(case when t.id = t.root then c.cost_usd end), 0) as own_usd,
          coalesce(sum(c.cost_usd), 0) as subtree_usd
   from tree t left join session_card c on c.item_id = t.id group by t.root;
 create view if not exists batch_cost as
