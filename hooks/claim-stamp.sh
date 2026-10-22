@@ -99,7 +99,7 @@ machine_id() {
 # when it last refreshed. Under TMPDIR, never under the state dir --
 # stop-continuity.py commits and pushes that, so a per-session file there
 # would be repo churn in every session (the convention branch-home-gate.sh
-# and pr-ownership-context.sh already use).
+# and pr-ownership-context.py already use).
 record_path() {
   printf '%s/claude-claim-stamp.%s' "${TMPDIR:-/tmp}" \
     "$(printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '_')"
