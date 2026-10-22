@@ -247,15 +247,20 @@ worker model, effort and estimate; the brief repeats none of them. Never a
 list of prompts for the user to paste one at a time. The brief holds, from
 the 2026-10-22 rulings:
 
-- **Workers in parallel, one stack.** Workers run in parallel, one child
-  each. Once all their PRs are up, the driver serializes them into one
-  merge order, each rebased onto the one before, since the queue updates
-  one PR at a time and cannot resolve a conflict.
+- **The plan's order, then one stack.** Serial or parallel is scoping's
+  call, made in the proposal before anything launches (§4: dependencies
+  named, and why that order), never the driver's mid-run. Children the
+  plan names no dependency between run in parallel, one worker each; a
+  child the plan makes wait starts once the PR it waits on is up, and
+  works on top of it. Once all the PRs are up, the driver serializes them
+  into one merge order, each rebased onto the one before, since the queue
+  updates one PR at a time and cannot resolve a conflict.
 - **Estimate and actual.** Each child carries its estimate; the parent
   carries the batch's allocation, logged at filing as
   `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
   the spend facts' shape, pencil). The walk reports each child's actual,
-  and the batch's, against them.
+  and the batch's, against them, and logs the batch's on the parent the
+  same way, `actual=<n>usd`.
 - **Reviews.** A critical review per PR as it opens, less deep, and one
   final pass on the stack before the walk. The arete check runs once, on
   the batch, at that final pass; on a single PR only where this scoping
