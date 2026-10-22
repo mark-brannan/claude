@@ -6,28 +6,36 @@
 # and runs `GH_TOKEN=<token> gh "$@"`. GH_TOKEN outranks stored credentials, so
 # the user's own `gh` login is never touched.
 #
-# Setup, once, by hand ($AGENT_BOT_DIR defaults to ~/.config/agent-bot):
+# Setup, once, by hand:
 #   1. Register a private App at https://github.com/settings/apps/new: webhook
 #      off; repository permissions Pull requests and Issues read and write,
 #      nothing else, so its token cannot push code.
-#   2. On the App's page, save its App ID to $AGENT_BOT_DIR/app-id, then
-#      generate a private key and save it as $AGENT_BOT_DIR/key.pem, mode 600.
+#   2. Generate a private key on the App's page and store it with the App ID
+#      as a dotfiles secret named agent-bot, holding two lines:
+#        AGENT_BOT_APP_ID=<the App ID>
+#        AGENT_BOT_PRIVATE_KEY_B64=<the .pem file, base64, one line>
+#      `yadm bootstrap` decrypts it to ~/.config/secrets/agent-bot.env, which
+#      no shell loads. The file is parsed here, never sourced, and the key
+#      reaches openssl through a pipe, never a file on disk.
 #   3. Install the App (its Install App tab) on the repos agents work in.
 #
 # Undo: uninstall the App at https://github.com/settings/installations, delete
-# it at https://github.com/settings/apps, delete $AGENT_BOT_DIR and the cache.
+# it at https://github.com/settings/apps, delete the agent-bot secret and the
+# cache.
 #
 # Env: AGENT_BOT_INSTALLATION_ID (digits) picks the installation when the App
 # has more than one; AGENT_BOT_API (https://host, no path) overrides
 # https://api.github.com.
-# Test hooks, not for use: AGENT_BOT_NOW (epoch seconds) and AGENT_BOT_CACHE
-# (the cache file path).
-# Cache: $XDG_RUNTIME_DIR/agent-bot/token, else $AGENT_BOT_DIR/cache/token;
+# Test hooks, not for use: AGENT_BOT_SECRETS (the secrets file path),
+# AGENT_BOT_NOW (epoch seconds) and AGENT_BOT_CACHE (the cache file path).
+# Cache: $XDG_RUNTIME_DIR/agent-bot/token, else ~/.cache/agent-bot/token;
 # owned by you, mode 600, in a mode 700 directory; reused for the same App,
 # installation and API host while more than five minutes remain. A cache that
 # fails those checks is ignored and re-minted.
 #
 # gh-agent --agent-help   prints this text.
+# gh-agent --login        prints the App's login, <slug>[bot], the author
+#                         name GitHub gives what it posts.
 set -euo pipefail
 set +x # the JWT and the token must never reach a trace
 
@@ -37,12 +45,12 @@ die() { echo "gh-agent: $*" >&2; exit 1; }
 
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
-conf_dir() { printf '%s' "${AGENT_BOT_DIR:-$HOME/.config/agent-bot}"; }
+secrets_file() { printf '%s' "${AGENT_BOT_SECRETS:-$HOME/.config/secrets/agent-bot.env}"; }
 api_base() { printf '%s' "${AGENT_BOT_API:-https://api.github.com}"; }
 cache_file() {
   if [ -n "${AGENT_BOT_CACHE:-}" ]; then printf '%s' "$AGENT_BOT_CACHE"
   elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then printf '%s' "$XDG_RUNTIME_DIR/agent-bot/token"
-  else printf '%s' "$(conf_dir)/cache/token"
+  else printf '%s' "$HOME/.cache/agent-bot/token"
   fi
 }
 
@@ -54,28 +62,43 @@ owned_mode() {
 }
 now() { printf '%s' "${AGENT_BOT_NOW:-$(date +%s)}"; }
 
+# secret <NAME> -> the value of the first NAME= line in the secrets file.
+# Tolerates an `export ` prefix, one pair of surrounding quotes and CRLF.
+secret() {
+  tr -d '\r' <"$(secrets_file)" | sed -n \
+    -e "s/^\(export[[:space:]]\{1,\}\)\{0,1\}$1=//" \
+    -e 't found' -e 'd' \
+    -e ': found' -e "s/^\"\(.*\)\"\$/\1/" -e "s/^'\(.*\)'\$/\1/" -e 'p' -e 'q'
+}
+
 require_files() {
-  local f
-  for f in key.pem app-id; do
-    [ -r "$(conf_dir)/$f" ] || die "missing $(conf_dir)/$f; register the app first; see the gh-agent usage text (gh-agent --agent-help)"
+  local f n
+  f=$(secrets_file)
+  [ -r "$f" ] || die "missing $f; register the app first; see the gh-agent usage text (gh-agent --agent-help)"
+  owned_mode "$f" 600 || owned_mode "$f" 400 || die "$f must be yours with mode 600; run: chmod 600 $f"
+  for n in AGENT_BOT_APP_ID AGENT_BOT_PRIVATE_KEY_B64; do
+    [ -n "$(secret "$n")" ] || die "$f has no $n; see the gh-agent usage text (gh-agent --agent-help)"
   done
 }
 
 app_id() {
   local id
-  id=$(tr -d '[:space:]' <"$(conf_dir)/app-id")
-  case $id in ''|*[!0-9]*) die "$(conf_dir)/app-id must hold the numeric App ID, got '$id'" ;; esac
+  id=$(secret AGENT_BOT_APP_ID | tr -d '[:space:]')
+  case $id in ''|*[!0-9]*) die "AGENT_BOT_APP_ID in $(secrets_file) must be the numeric App ID" ;; esac # never echo a secrets-file value
   printf '%s' "$id"
 }
 
-# build_jwt <app-id> <key.pem> -> header.claims.signature on stdout
+key_pem() { secret AGENT_BOT_PRIVATE_KEY_B64 | openssl base64 -d -A; }
+
+# build_jwt <app-id> -> header.claims.signature on stdout, signed with the key
+# from the secrets file through a /dev/fd pipe
 build_jwt() {
-  local app_id=$1 key=$2 t h c sig
+  local app_id=$1 t h c sig
   t=$(now)
   h=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
   c=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((t - 60)) $((t + 540)) "$app_id" | b64url)
-  sig=$(printf '%s.%s' "$h" "$c" | openssl dgst -sha256 -sign "$key" -binary | b64url) && [ -n "$sig" ] \
-    || die "could not sign with $key"
+  sig=$(printf '%s.%s' "$h" "$c" | openssl dgst -sha256 -sign <(key_pem) -binary 2>/dev/null | b64url) && [ -n "$sig" ] \
+    || die "could not sign with AGENT_BOT_PRIVATE_KEY_B64 from $(secrets_file)"
   printf '%s.%s.%s' "$h" "$c" "$sig"
 }
 
@@ -105,14 +128,15 @@ installation_id() {
 
 # mint_token -> "<expiry epoch> <token>" on stdout
 mint_token() {
-  local jwt id resp
-  jwt=$(build_jwt "$(app_id)" "$(conf_dir)/key.pem") || return 1
+  local app jwt id resp
+  app=$(app_id) || return 1
+  jwt=$(build_jwt "$app") || return 1
   id=$(installation_id "$jwt") || return 1
   resp=$(api POST "/app/installations/$id/access_tokens" "$jwt") || die "token mint failed for installation $id"
   python3 -c '
 import calendar, json, re, sys, time
 r = json.load(sys.stdin)
-assert re.fullmatch(r"[A-Za-z0-9_]+", r["token"])
+assert re.fullmatch(r"[A-Za-z0-9_.-]+", r["token"])
 print(calendar.timegm(time.strptime(r["expires_at"], "%Y-%m-%dT%H:%M:%SZ")), r["token"])' <<<"$resp" 2>/dev/null \
     || die "token mint for installation $id returned something unreadable"
 }
@@ -138,9 +162,23 @@ token() {
   printf '%s' "${line#* }"
 }
 
+# login -> <slug>[bot], from the App's own record
+login() {
+  local app jwt resp
+  app=$(app_id) || return 1
+  jwt=$(build_jwt "$app") || return 1
+  resp=$(api GET /app "$jwt") || die "app lookup failed"
+  python3 -c '
+import json, re, sys
+s = json.load(sys.stdin)["slug"]
+assert re.fullmatch(r"[a-z0-9-]+", s)
+print(s + "[bot]")' <<<"$resp" 2>/dev/null || die "app lookup returned something unreadable"
+}
+
 main() {
   case "${1:-}" in
     --agent-help) usage; exit 0 ;;
+    --login) require_files; login; exit ;;
     "") usage >&2; exit 2 ;;
   esac
   require_files
