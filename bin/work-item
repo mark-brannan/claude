@@ -26,7 +26,7 @@
 #   2026-10-01T23:20:15Z 86eba7f7 status=open owner=agent repo=- parent=- model=sonnet effort=medium
 #   2026-10-02T08:30:11Z 9a1b2c3d cost tokens=812340 usd=1.42 by=grind
 #
-# The id is epoch seconds then the session's eight hex, opaque; the caller
+# The id is epoch seconds then eight random hex, opaque; the caller
 # makes it (`card-id new`) and this store never does; the file is the
 # lookup. An item is created in `open`, always. Six statuses: open, ready,
 # claimed, blocked, done, closed; the transitions are ALLOWED below. A claim

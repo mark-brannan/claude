@@ -130,6 +130,7 @@ case "$*" in
   "pr comment "*)
     [ "${GH_COMMENT_FAIL:-0}" = 1 ] && { echo "gh: could not comment" >&2; exit 1; }
     echo "$*" >> "$(dirname "$0")/.comments"
+    echo "AGENT_BOT_OFF=${AGENT_BOT_OFF:-}" >> "$(dirname "$0")/.comment-env"
     exit 0 ;;
 esac
 exit 1
@@ -376,13 +377,15 @@ run
 eq 'default (no --refresh) still exits 0' 0 "$RC"
 [ -f "$BIN/.comments" ] && { fail=$((fail + 1)); echo "FAIL: no --refresh: a comment was posted anyway"; } || pass=$((pass + 1))
 
-rm -f "$BIN/.comments"
+rm -f "$BIN/.comments" "$BIN/.comment-env"
 GH_LOGIN=mergify-bot runargs --refresh
 eq '--refresh (nothing already posted) exits 0' 0 "$RC"
 eq 'exactly one comment was posted, to the stale-label PR, by number and -R repo' 1 \
   "$(posted '^pr comment 1 -R testowner/alpha ')"
 eq 'the comment text is exactly the refresh trigger' 1 \
   "$(posted '--body @mergifyio refresh')"
+eq 'it posts as the user, not the agent App (Mergify refuses the App)' 1 \
+  "$(grep -c '^AGENT_BOT_OFF=1$' "$BIN/.comment-env")"
 
 # A green-but-unlabelled PR in a repo that defines the label is the other
 # refresh target; a green-and-labelled one is not.

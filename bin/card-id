@@ -1,23 +1,21 @@
 #!/bin/sh
-# SOFT SHOULD: id generation belongs in lib/ids.py, the one home for every
-# entity's id (card 17910884757abba648). This script still makes a work item's id itself;
-# move it there when convenient, no deadline.
-# card-id -- make a work item's identifier, and look one up.
+# card-id -- make a work item's identifier, and look one up. The command line
+# over lib/ids.py, the one home for every entity's id (card 17910884757abba648):
+# this script formats no id of its own. SOFT SHOULD: the command itself is
+# still shell; rewrite it in Python when convenient, no deadline.
 #
-# A work item's identifier is epoch seconds then the minting session's eight
-# hex, no separator -- 1790836842077c62eb -- never edited, never reused. A
+# A work item's identifier is epoch seconds then eight random hex, no
+# separator -- 1790836842077c62eb -- opaque, never edited, never reused. A
 # work item's file is named by it, and its card line carries it as `id: <id>`.
 #
-#   card-id new [<session-id>]    print a fresh id (session from
-#                                 $CLAUDE_CODE_SESSION_ID when not given)
+#   card-id new                   print a fresh id
 #   card-id show <id>             the item: `<section>\t<group>\t<card>`
 #   card-id roll-stamp [<epoch>]  print the curia roll's stamp for now (or for
 #                                 <epoch> seconds), e.g. 20261002t054107z
 #
-# No lock, no ledger. Two sessions never share a hex; one session minting
-# twice in the same second is the only collision, and `new` steps to the next
-# second past any id already filed in the store. Two calls before the first
-# item is written can still match; file the item between calls.
+# `new` consults nothing: no session, no lock, no ledger, no look at the
+# store. The seconds are the clock and the hex are the OS's randomness, so
+# any number of calls in one second differ (lib/ids.py has the odds).
 set -u
 
 self=$0
@@ -30,30 +28,29 @@ done
 [ -n "$lib" ] || { printf 'card-id: lib-state.sh not found\n' >&2; exit 2; }
 # shellcheck disable=SC1090
 . "$lib"
+ids_dir=$self_dir/../lib
+[ -f "$ids_dir/ids.py" ] || ids_dir=$HOME/.claude/lib
 
 die() { printf 'card-id: %s\n' "$*" >&2; exit 2; }
+# py <code> [arg...] -- run <code> with lib/ids.py imported as ids; the args
+# follow the lib dir in sys.argv, so <code> reads them from sys.argv[2:].
+py() {
+  code=$1; shift
+  python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import ids
+$code" "$ids_dir" "$@"
+}
 
 case "${1:-}" in
   new)
-    sid=${2:-${CLAUDE_CODE_SESSION_ID:-}}
-    hex=$(printf '%s' "$sid" | tr -d '-' | cut -c1-8 | tr 'A-F' 'a-f')
-    case $hex in ????????) ;; *) die "no session id (pass one, or run inside a session)" ;; esac
-    case $hex in *[!0-9a-f]*) die "session id $sid does not start with eight hex" ;; esac
-    # Step past an item already in the store: the same second, same session
-    # is the one collision left, so take the next second until the id is free.
-    dir=$(items_dir)
-    t=$(date -u +%s)
-    while [ -e "$dir/$t$hex.md" ]; do t=$((t + 1)); done
-    printf '%s%s\n' "$t" "$hex" ;;
+    [ $# -eq 1 ] || die "new takes no argument"
+    py 'print(ids.new_item_id(int(sys.argv[2])))' "$(date -u +%s)" ;;
   show)
     is_card_id "${2:-}" || die "not a card id: ${2:-<id>}"
     board_card "$2" || { printf 'card-id: no item %s in %s\n' "$2" "$(items_dir)" >&2; exit 1; } ;;
   roll-stamp)
     epoch=${2:-$(date -u +%s)}
     case $epoch in ''|*[!0-9]*) die "not epoch seconds: $epoch" ;; esac
-    ids_dir=$self_dir/../lib
-    [ -f "$ids_dir/ids.py" ] || ids_dir=$HOME/.claude/lib
-    python3 -c 'import datetime, sys; sys.path.insert(0, sys.argv[1]); import ids
-print(ids.get_roll_stamp(datetime.datetime.fromtimestamp(int(sys.argv[2]), datetime.timezone.utc)))' "$ids_dir" "$epoch" ;;
+    py 'import datetime
+print(ids.get_roll_stamp(datetime.datetime.fromtimestamp(int(sys.argv[2]), datetime.timezone.utc)))' "$epoch" ;;
   *) sed -n '11,15p' "$0" | sed 's/^#   //' >&2; exit 2 ;;
 esac

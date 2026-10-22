@@ -174,5 +174,15 @@ class FindTranscriptTest(unittest.TestCase):
         self.assertEqual([s.split()[0] for s in listed], ["bbbb2222", "aaaa1111"])
 
 
+class HookErrorsRowTest(unittest.TestCase):
+    def test_none_is_ok(self):
+        self.assertEqual(sc.hook_errors_row("/unused", rows=[])[0], "ok")
+
+    def test_a_traced_hook_is_named(self):
+        status, value = sc.hook_errors_row("/unused", rows=[{"hook": "log-commit", "stage": "main", "error": "E: x"}])
+        self.assertEqual(status, "warn")
+        self.assertIn("log-commit x1", value)
+
+
 if __name__ == "__main__":
     unittest.main()
