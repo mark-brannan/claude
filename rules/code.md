@@ -115,18 +115,23 @@ in nobody's queue but this session's.
 - **Ready before hand-over.** In order:
   - every fast check the repo defines passes locally — formatter, lint,
     typecheck, build, tests; whatever that repo actually has;
-  - the branch is current with its base and has no conflict — `git fetch
-    origin <base> && git rebase origin/<base>` before the first push AND
-    again immediately before handing the PR over. Main moves while a
-    session works; a branch that was clean an hour ago is not clean now;
-  - **when that rebase conflicts, merge instead of rebasing.** `git merge
+  - the branch has no conflict with its base — `git fetch origin <base>`
+    and look at `gh pr view --json mergeable`. A branch that is merely
+    behind is handed over as is: Mergify brings it up to date inside the
+    queue, once, and a rebase of a clean branch only costs a force-push, a
+    stale `Head:` line, reset review state and a CI re-run. Main moves
+    while a session works; check for conflict before the first push AND
+    again immediately before handing the PR over;
+  - **only when the branch conflicts, merge — don't rebase.** `git merge
     origin/<base>`, resolve, commit — the merge commit is signed like any
     other and carries the hand-resolution in its tree — then push it as a
     plain fast-forward. Do NOT then `git rebase`/`resign-branch.sh` to
     linearize it: a rebase replays only single-parent commits, so every
     edit that lives only in the merge commit's tree is silently dropped
-    (`resign-branch.sh` refuses this case for that reason). A PR branch
-    tracks its own remote branch, never main. Never `--no-verify`: skipping
+    (`resign-branch.sh` refuses this case for that reason). A stacked PR
+    is the one rebase left: `git rebase --onto origin/<base>` after its
+    parent squash-merges, which the queue cannot do. A PR branch tracks
+    its own remote branch, never main. Never `--no-verify`: skipping
     hooks is the user's call, asked for, never taken;
   - the merge state says so, not just the checks — `gh pr view --json
     mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
