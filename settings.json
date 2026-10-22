@@ -304,11 +304,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/measure-git-events.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/measure-git-events.py\"; [ -f \"$h\" ] && python3 \"$h\"; true"
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/log-commit.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/log-commit.py\"; [ -f \"$h\" ] && python3 \"$h\"; true"
           }
         ]
       },
