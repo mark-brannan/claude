@@ -46,10 +46,10 @@ def trace(hook, stage, err, session_id="", event="", once=False):
         sd = state.state_dir()
         if not sd:
             raise OSError("no state dir")
-        d = f"{sd}/{SUBDIR}"
-        if once and _seen(state.state_shard_path(d, f"{sid or 'unknown'}.jsonl", sid), hook, stage, error):
+        path = state.state_shard_path(f"{sd}/{SUBDIR}", f"{sid or 'unknown'}.jsonl", sid)
+        if once and _seen(path, hook, stage, error):
             return
-        state.append_row(d, sid or "unknown", row)
+        jsonl.append(path, row)
     except Exception as e2:  # noqa: BLE001 -- the last place left to say it
         print(f"{hook}: {line} (trace not written: {e2})", file=sys.stderr)
 
