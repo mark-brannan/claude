@@ -352,7 +352,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/session-start-seed-refresh.sh\"; [ -f \"$h\" ] && bash \"$h\" || true",
+            "command": "h=\"$HOME/.claude/hooks/session-start-seed-refresh.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
             "timeout": 60
           },
           {
@@ -367,7 +367,7 @@
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/connector-budget.py\"; [ -f \"$h\" ] && python3 \"$h\" || true"
           },
           {
             "type": "command",
