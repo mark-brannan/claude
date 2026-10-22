@@ -418,3 +418,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t120246z
 - stop-item.py, reply-length and spend import lib/ at the top; session-start-sync-status imports gitrun guarded and reports 0 behind without it Undo: restore their inline git call and parse ([#264](https://github.com/mark-brannan/claude/pull/264))
+
+### 20261022t120250z
+- one hidden temp name (.name.tmp.pid) for every atomic writer Undo: none needed; nothing reads the temp name ([#264](https://github.com/mark-brannan/claude/pull/264))
