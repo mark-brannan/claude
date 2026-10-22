@@ -6,6 +6,10 @@
 #                                   included since hooks/session-metrics.jq
 #                                   prices them), tokens, branch, repo, commits
 #   commits.jsonl                   every commit by session id and branch
+#   metrics/headless-runs/*.jsonl   one per headless claude run with no transcript (the
+#                                   agent-decision judge, CI reviews): total_cost_usd,
+#                                   repo, pr. Their cost lands on the PR they name,
+#                                   and `--by bot` rolls them up by what ran.
 # to the pull requests those branches became, from metrics-db's gh_items table
 # (head_ref -> repo#number, state). A session's cost is split equally across the
 # distinct PRs its branches landed in; a session with none is "(no PR)".
@@ -15,7 +19,7 @@
 # repo, ~70 calls for the current account) and then reads it; without it no
 # GitHub call is made.
 #
-# Usage: spend [--since WHEN] [--until DATE] [--tz ZONE] [--by pr,repo,day,hour]
+# Usage: spend [--since WHEN] [--until DATE] [--tz ZONE] [--by pr,repo,day,hour,bot]
 #              [--top N] [--refresh] [--state DIR] [--db FILE] [--json]
 #   WHEN   2026-10-15 | 7d | 36h   (a date is midnight in --tz; default tz: local)
 #   --until is exclusive.
@@ -79,6 +83,52 @@ def load_sessions(sd):
             d["_t"] = t
             out.append(d)
     return out
+
+def load_headless(sd):
+    """Headless runs as pseudo-sessions: time, what ran, repo, pr, cost. CI lines are untrusted, so a
+    cost that is not a plain number reads as 0 and a line without a time is skipped."""
+    def num(v):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+    out = []
+    root = os.path.join(sd, "metrics", "headless-runs")
+    for p in glob.glob(os.path.join(root, "*.jsonl")) + glob.glob(os.path.join(root, "*", "*.jsonl")):
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            t = parse_ts(d.get("ts")) if isinstance(d, dict) and isinstance(d.get("ts"), str) else None
+            if not t:
+                continue
+            u = d.get("usage") if isinstance(d.get("usage"), dict) else {}
+            pr = d.get("pr")
+            out.append({"_t": t, "what": str(d.get("what") or "headless"),
+                        "repo": d.get("repo") if isinstance(d.get("repo"), str) else None,
+                        "pr": pr if isinstance(pr, int) and not isinstance(pr, bool) else None,
+                        "cost_usd": num(d.get("total_cost_usd")), "output_tokens": num(u.get("output_tokens")),
+                        "cache_read_tokens": num(u.get("cache_read_input_tokens")),
+                        "cache_creation_tokens": num(u.get("cache_creation_input_tokens"))})
+    return out
+
+def attribute_headless(runs, prs):
+    """Rows like attribute()'s, one per run: on repo#pr when the run names one, else (no PR)."""
+    state = {(c[1], c[2]): c[3] for cands in prs.values() for c in cands}
+    rows = []
+    for r in runs:
+        named = r["repo"] and r["pr"]
+        rows.append({
+            "t": r["_t"], "session": None, "k": 1, "bot": r["what"],
+            "pr": f"{r['repo']}#{r['pr']}" if named else NO_PR + " - headless",
+            "repo": r["repo"] or "?", "state": state.get((r["repo"], r["pr"]), "") if named else "",
+            "cost": r["cost_usd"], "out": r["output_tokens"],
+            "cache": r["cache_read_tokens"] + r["cache_creation_tokens"], "sessions": 0.0, "runs": 1,
+        })
+    return rows
 
 def load_branches(sd):
     """session id -> branches its commits were made on."""
@@ -167,11 +217,12 @@ def attribute(sessions, branches, prs, repo_names=None):
     return rows
 
 def roll(rows, keyf):
-    acc = defaultdict(lambda: {"cost": 0.0, "out": 0.0, "cache": 0.0, "sessions": 0.0, "state": ""})
+    acc = defaultdict(lambda: {"cost": 0.0, "out": 0.0, "cache": 0.0, "sessions": 0.0, "runs": 0, "state": ""})
     for r in rows:
         a = acc[keyf(r)]
         for f in ("cost", "out", "cache", "sessions"):
             a[f] += r[f]
+        a["runs"] += r.get("runs", 0)
         a["state"] = r["state"]
     return acc
 
@@ -182,15 +233,15 @@ def table(title, acc, label, top=0, state=False, order="cost"):
     items = sorted(acc.items(), key=(lambda kv: -kv[1]["cost"]) if order == "cost" else (lambda kv: kv[0]))
     shown, rest = (items[:top], items[top:]) if top else (items, [])
     w = max([len(label)] + [len(str(k)) for k, _ in shown] + [8])
-    lines = [title, f"  {label:<{w}}  {'sessions':>8}  {'cost':>9}  {'out':>6}  {'cache':>7}" + ("  state" if state else "")]
+    lines = [title, f"  {label:<{w}}  {'sessions':>8}  {'runs':>5}  {'cost':>9}  {'out':>6}  {'cache':>7}" + ("  state" if state else "")]
     for k, a in shown:
-        lines.append(f"  {str(k):<{w}}  {a['sessions']:>8.1f}  {'$%.2f' % a['cost']:>9}  {mtok(a['out']):>6}  "
+        lines.append(f"  {str(k):<{w}}  {a['sessions']:>8.1f}  {a['runs']:>5}  {'$%.2f' % a['cost']:>9}  {mtok(a['out']):>6}  "
                      f"{mtok(a['cache']):>7}" + (f"  {a['state'].lower()}" if state else ""))
     if rest:
         lines.append(f"  {'... ' + str(len(rest)) + ' more':<{w}}  {sum(a['sessions'] for _, a in rest):>8.1f}  "
-                     f"{'$%.2f' % sum(a['cost'] for _, a in rest):>9}")
+                     f"{sum(a['runs'] for _, a in rest):>5}  {'$%.2f' % sum(a['cost'] for _, a in rest):>9}")
     tot = sum(a["cost"] for _, a in items)
-    lines.append(f"  {'total':<{w}}  {sum(a['sessions'] for _, a in items):>8.1f}  {'$%.2f' % tot:>9}")
+    lines.append(f"  {'total':<{w}}  {sum(a['sessions'] for _, a in items):>8.1f}  {sum(a['runs'] for _, a in items):>5}  {'$%.2f' % tot:>9}")
     return "\n".join(lines)
 
 def main(argv=None):
@@ -198,7 +249,7 @@ def main(argv=None):
     ap.add_argument("--since", help="2026-10-15 | 7d | 36h")
     ap.add_argument("--until", help="exclusive date")
     ap.add_argument("--tz", help="IANA zone for day and hour buckets (default: local)")
-    ap.add_argument("--by", default="pr,repo,day,hour", help="comma list of pr, repo, day, hour")
+    ap.add_argument("--by", default="pr,repo,day,hour", help="comma list of pr, repo, day, hour, bot")
     ap.add_argument("--top", type=int, default=15, help="PR rows to show (0 = all)")
     ap.add_argument("--refresh", action="store_true", help="refresh the PR table first (metrics-db --github)")
     ap.add_argument("--state", help="state dir (default: metrics-db's)")
@@ -206,8 +257,8 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     by = [x for x in a.by.split(",") if x]
-    if not by or set(by) - {"pr", "repo", "day", "hour"}:
-        print("spend: --by takes pr, repo, day, hour", file=sys.stderr)
+    if not by or set(by) - {"pr", "repo", "day", "hour", "bot"}:
+        print("spend: --by takes pr, repo, day, hour, bot",file=sys.stderr)
         return 2
 
     mdb = load_metrics_db()
@@ -233,13 +284,19 @@ def main(argv=None):
     sessions = [s for s in load_sessions(sd) if (not lo or s["_t"] >= lo) and (not hi or s["_t"] < hi)]
     prs = load_prs(db)
     rows = attribute(sessions, load_branches(sd), prs, load_repo_names(db))
+    runs = [r for r in load_headless(sd) if (not lo or r["_t"] >= lo) and (not hi or r["_t"] < hi)]
+    hrows = attribute_headless(runs, prs)
+    rows += hrows
+    if a.by == "pr,repo,day,hour" and hrows:  # the default shows the bots once there are any
+        by.append("bot")
 
     merged = {r["pr"] for r in rows if r["state"] == "MERGED"}
     merged_cost = sum(r["cost"] for r in rows if r["state"] == "MERGED")
     head = (f"{len(sessions)} sessions, ${sum(s.get('cost_usd') or 0 for s in sessions):.2f}"
             f"  |  {len(merged)} merged PRs, ${merged_cost:.2f}"
             + (f" (${merged_cost / len(merged):.2f} each)" if merged else "")
-            + f"  |  ${sum(r['cost'] for r in rows if r['pr'].startswith(NO_PR)):.2f} with no PR")
+            + f"  |  ${sum(r['cost'] for r in rows if r['pr'].startswith(NO_PR)):.2f} with no PR"
+            + f"  |  {len(hrows)} headless runs, ${sum(r['cost'] for r in hrows):.2f}")
 
     def local(r):
         return r["t"].astimezone(tz)
@@ -247,12 +304,13 @@ def main(argv=None):
         "pr": ("spend by PR", lambda r: r["pr"], "PR", a.top, True, "cost"),
         "repo": ("spend by repo", lambda r: r["repo"], "repo", 0, False, "cost"),
         "day": ("spend by day", lambda r: local(r).strftime("%Y-%m-%d"), "day", 0, False, "key"),
+        "bot": ("spend by headless run", lambda r: r["bot"], "ran", 0, False, "cost"),
         "hour": ("spend by hour", lambda r: local(r).strftime("%Y-%m-%d %H:00"), "hour", 0, False, "key"),
     }
     if a.json:
         out = {"summary": head}
         for k in by:
-            out[k] = {str(key): v for key, v in roll(rows, keyfs[k][1]).items()}
+            out[k] = {str(key): v for key, v in roll(hrows if k == "bot" else rows, keyfs[k][1]).items()}
         print(json.dumps(out, indent=1, default=str))
         return 0
     when = f"{a.since or 'start'} .. {a.until or 'now'}  ({getattr(tz, 'key', None) or tz})"
@@ -261,7 +319,7 @@ def main(argv=None):
         print("note: no PR table (run `spend --refresh`); every session reads as (no PR)")
     for k in by:
         title, kf, label, top, st, order = keyfs[k]
-        print("\n" + table(title, roll(rows, kf), label, top=top, state=st, order=order))
+        print("\n" + table(title, roll(hrows if k == "bot" else rows, kf), label, top=top, state=st, order=order))
     return 0
 
 if __name__ == "__main__":
