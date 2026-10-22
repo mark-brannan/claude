@@ -453,6 +453,36 @@ class SessionPrTest(FixtureTest):
                          [("acme/widgets", 7, 0.75, 1)])
 
 
+class CardCostTest(FixtureTest):
+    def test_session_cost_lands_once_on_its_first_claim_and_sums_up_the_tree(self):
+        items = self.fx.sd / "items"
+        items.mkdir(exist_ok=True)
+        def card(name, *log):
+            (items / (name + ".md")).write_text("# " + name + "\n\n## Log\n" + "\n".join(log) + "\n")
+        # sess-typed-1 (cost 1.5) is the driver: claims the parent, then every child
+        card("parent", "2026-10-01T09:00:00Z abcd1234 status=open owner=agent",
+             "2026-10-01T09:01:00Z sess-typ status=claimed", "2026-10-01T09:02:00Z abcd1234 allocation=3usd",
+             "2026-10-01T09:03:00Z abcd1234 allocation=2.5usd")
+        card("kid", "2026-10-01T09:00:00Z abcd1234 status=open parent=parent",
+             "2026-10-01T09:05:00Z sess-typ status=claimed")
+        card("grandkid", "2026-10-01T09:00:00Z abcd1234 status=open parent=kid",
+             "2026-10-01T09:06:00Z sess-typ status=claimed", "2026-10-01T09:07:00Z abcd1234 actual=unmeasured")
+        self.build("--quiet")
+        self.assertEqual(self.fx.q("select session8, item_id from session_card"), [("sess-typ", "parent")])
+        self.assertEqual(self.fx.q("select card, own_usd, subtree_usd from card_cost where card != 'item-one' order by card"),
+                         [("grandkid", 0, 0), ("kid", 0, 0), ("parent", 1.5, 1.5)])
+        # a worker session of its own, on the grandchild, rolls up through two levels
+        cx = sqlite3.connect(self.fx.db)
+        cx.execute("insert into sessions(session_id, cost_usd) values ('wrk12345-x', 0.25)")
+        cx.execute("insert into item_events(item_id, ts, session8, status) values ('grandkid', '2026-10-01T10:00:00Z', 'wrk12345', 'claimed')")
+        cx.commit()
+        cx.close()
+        self.assertEqual(self.fx.q("select card, own_usd, subtree_usd from card_cost where card != 'item-one' order by card"),
+                         [("grandkid", 0.25, 0.25), ("kid", 0, 0.25), ("parent", 1.5, 1.75)])
+        self.assertEqual(self.fx.q("select card, allocation_usd, subtree_usd from batch_cost order by card"),
+                         [("kid", None, 0.25), ("parent", 2.5, 1.75)])
+
+
 class GithubTest(FixtureTest):
     def test_github_flag_loads_repos_issues_and_prs(self):
         r = self.build("--github")
