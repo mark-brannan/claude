@@ -269,11 +269,28 @@ trailer), because auto-push otherwise launders agent edits under the user's name
 
 ### 6.6 Local pull (R5)
 
-SessionStart: `yadm fetch` (bounded timeout, offline-tolerant), then report
-"local config N behind origin/main — run `dotsync`" in the brief.
-Notify-only at first; an auto-apply flag (fast-forward, clean tree only) can
-come later if the nagging gets old. Auto-rebasing `$HOME` from a hook while
-other sessions run is not worth the risk on day one.
+`~/.claude` is a clone of mark-brannan/claude, and the dotfiles `*/5` cron
+(`dotfiles-sync.sh`) is its one automatic puller: fast-forward only, after the
+yadm `$HOME` step, on every machine the dotfiles install reaches. A session
+start never pulls; two writers on one clone would race, and a network call
+would land in every start for nothing the cron has not already done.
+
+The cron never stashes, rebases or merges. Unattended, an autostash whose
+re-apply conflicts on `settings.json` leaves invalid JSON live and a stash no
+one sees, and a hook file that fails to parse denies every tool call (dotfiles
+README, "Why the cron sync is ff-only"). So a dirty file the incoming commits
+also touch, a local commit, or a merge in progress is a skip, and the skip
+names its cause.
+
+A skip is only worth something if a person sees it. SessionStart reads the
+cron's last result (`dotfiles-sync.sh --status`, local, no network) and the
+brief carries it whenever the clone is behind or skipped (§6.7).
+
+A clean clone keeps the skips rare. The clone is written by two things that
+are not a merge to `main`: an agent editing in place (#215 warns), and Claude
+Code's own UI saving a toggle into the tracked `settings.json`. Where
+machine-local settings live, so that the second one stops dirtying the clone,
+is open (#166).
 
 ### 6.7 The brief (R6)
 
@@ -282,6 +299,7 @@ hook would double the fixed context tax:
 
 - `config: main@1a2b3c4 (current)` — healthy.
 - `config: main@1a2b3c4, origin 4 ahead` — refresh pending or failed quietly.
+- `config: 2 behind, cron skipped: dirty settings.json` — the cron's last skip, cause named.
 - `config: DEGRADED — <reason>` — no status file, incomplete install, fetch
   failure.
 

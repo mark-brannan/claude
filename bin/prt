@@ -301,6 +301,24 @@ def is_bot(author):
     return a.get("__typename") == "Bot" or (a.get("login") or "").endswith("[bot]")
 
 
+_agent = None
+
+
+def agent_logins():
+    """The agent App's login in each spelling GitHub gives it, from
+    `gh-agent --login`; empty when there is no App. Asked once per run."""
+    global _agent
+    if _agent is None:
+        try:
+            p = subprocess.run([str(tool("bin/gh-agent")), "--login"],
+                               capture_output=True, text=True, timeout=30)
+            s = p.stdout.strip().removesuffix("[bot]") if p.returncode == 0 else ""
+        except (OSError, subprocess.TimeoutExpired):
+            s = ""
+        _agent = {f"{s}[bot]", s, f"app/{s}"} if s else set()
+    return _agent
+
+
 # Claude Code cloud sessions refuse GraphQL (HTTP 403). The PR facts then come
 # from REST and the unresolved threads from the CCR route, shaped like QUERY's
 # nodes so nothing past open_prs knows which path ran.
@@ -475,7 +493,7 @@ def facts(repo, pr):
     why = ""
     if pr["isDraft"]:
         why = "draft"
-    elif is_bot(pr["author"]):
+    elif is_bot(pr["author"]) and (pr["author"] or {}).get("login") not in agent_logins():
         why = "bot-authored: it regenerates its own branch"
     elif pr["isCrossRepository"]:
         why = "head is in a fork"
