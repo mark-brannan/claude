@@ -3,7 +3,7 @@
 # counts -- the detail dotfiles#132 explicitly dropped from the nag display
 # (⚖0[0/0/0], ⚡0[0/0/0], tool-call/git-event counts) rather than bring back.
 # The data was never deleted: metrics-live.sh already caches it in
-# metrics/live/<sid>.json and measure-git-events.sh already logs it to
+# metrics/live/<sid>.json and measure-git-events.py already logs it to
 # metrics/git-events/<sid>.jsonl. This just reads both, on request, from a
 # terminal -- not the statusline, not a hook.
 #
