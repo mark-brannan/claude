@@ -388,3 +388,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t073003z
 - metrics-live.py traces a swallowed error as one JSON line {ts, hook, event, session_id, stage, error} in <state>/metrics/hook-errors/<sid[:2]>/<sid>.jsonl Undo: change trace() in hooks/metrics-live.py ([#240](https://github.com/mark-brannan/claude/pull/240))
+
+### 20261022t073014z
+- GIT_EVENT_RE, buffered_state, verdict_explain and day_decisions move to lib/state.py and leave lib-state.sh, which had no other caller Undo: restore the four functions and their cases from main's history ([#240](https://github.com/mark-brannan/claude/pull/240))
