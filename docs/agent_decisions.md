@@ -367,3 +367,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t024830z
 - scoping §4 and §6: the spend estimate per item and the batch's allocation are text in the proposal and the parent's brief, no new fact key, until the facts' shape is ruled (easy-grind question 34) Undo: move the numbers to the fact the curia names ([#216](https://github.com/mark-brannan/claude/pull/216))
+
+### 20261022t024841z
+- scoping §6: the driver prompt stays a second act after the yes files the batch, and says 'through workers' without naming orchestrate, the Workflow tool or sub-agents Undo: name the executor once the curia picks one ([#216](https://github.com/mark-brannan/claude/pull/216))
