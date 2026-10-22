@@ -85,8 +85,9 @@ You are a worker agent in <owner/repo>, in your own git worktree under
   line the session reminder gives.
 - Before the PR: the local checks (`sh -n`, shellcheck where CI runs it,
   and the tests: the whole suite when it runs in about a minute, otherwise
-  a narrowed run whose output shows the tests you added ran), then rebase
-  on origin/main; merge instead if the rebase conflicts.
+  a narrowed run whose output shows the tests you added ran), then, only
+  if the branch conflicts with origin/main, merge it in; a branch merely
+  behind is left for the queue.
 - Open the PR: `area: what changed` title, `Closes #<n>`, what and why,
   how verified, the Claude Code attribution line. Then `git checkout
   --detach`, so the branch is free for the next session, and stop. Do not
@@ -198,6 +199,6 @@ hand-off, then offer the break, once.
 /pickup the <repo> review backlog. <n> PRs are open from the <date>
 orchestration session; list, stacks and deferrals are in
 claude_prompts_scratch state/global/log/<date>-<repo>-orchestration.md.
-Work them oldest-first: threads, rebase, checks, hand over. Skip any PR
+Work them oldest-first: threads, conflicts, checks, hand over. Skip any PR
 the user has a thread on. Model: sonnet. Effort: medium.
 ```
