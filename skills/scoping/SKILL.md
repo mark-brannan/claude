@@ -206,8 +206,8 @@ Re-run the `take` line first; a refusal now stops the filing, and a
 `read moved:` line means the record moved since the proposal. Then file
 the batch exactly as proposed, cards and the issues the proposal showed:
 
-- the parent first, a card owned `agent` whose brief is the proposal's
-  header and the batch's allocation (a link to the target in it), written
+- the parent first, a card owned `agent` whose brief is the driver brief
+  below, with links to the target and the proposal, written
   to the item store with
   `~/.claude/bin/work-item create --id "$(~/.claude/bin/card-id new)" --owner agent [--repo <r>] --brief - "$title"`
   (the card text on stdin; it prints the new id; `$title` is read from a
@@ -238,10 +238,40 @@ the record's words, on its card. Record what was filed in the proposal file
 A run that ends without a yes releases the same way. A dead session's lock
 lapses at 25 minutes like any other.
 
-**The driver prompt.** The run ends with one prompt for one outer session,
-the driver, which grinds the batch through workers: the parent's id, the
-order, which children run in parallel, the review points, who merges, the
-exits (park the child on a card for the agora, or pull the andon cord), and
-the walk it hands back. Each child's card carries its worker model and
-effort; the prompt repeats neither. Never a list of prompts for the user to
-paste one at a time.
+**The driver brief.** The driver is one fresh session that grinds the
+batch through workers. Its prompt is the parent's brief, written into the
+parent card on filing: the parent's id, the order, the review points, who
+merges, the exits (park the child on a card for the agora, or pull the
+andon cord), and the walk it hands back. Each child's card carries its
+worker model, effort and estimate; the brief repeats none of them. Never a
+list of prompts for the user to paste one at a time. The brief holds, from
+the 2026-10-22 rulings:
+
+- **Workers in parallel, one stack.** Workers run in parallel, one child
+  each. Once all their PRs are up, the driver serializes them into one
+  merge order, each rebased onto the one before, since the queue updates
+  one PR at a time and cannot resolve a conflict.
+- **Estimate and actual.** Each child carries its estimate; the parent
+  carries the batch's allocation, logged at filing as
+  `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
+  the spend facts' shape, pencil). The walk reports each child's actual,
+  and the batch's, against them.
+- **Reviews.** A critical review per PR as it opens, and one final pass on
+  the stack. The arete check runs once, on the batch; on a single PR only
+  where this scoping deems it important and says so in the brief.
+- **Who merges.** In the autonomous lane the driver puts the `merge` label
+  on each PR in stack order once the final reviews are clean, and the
+  queue lands them; the user's gate is the batch after the fact, with a
+  revert as the undo. This replaces "only I merge" (2026-10-01) for the
+  autonomous lane. The gated lane keeps the user's merge.
+
+The run's last line is the one line that starts the driver:
+
+```
+/pickup <parent-id>
+```
+
+`/pickup` already takes a card id, and the parent's brief is the whole
+hand-off (pencil on the how: the plan as a card, not a path `/pickup`
+learns). Near term that line opens an interactive session the user
+watches; long term the same item is what an unattended run picks up.
