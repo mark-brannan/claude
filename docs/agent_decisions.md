@@ -373,3 +373,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t024948z
 - scoping §4: an umbrella item already one session in size gets a child card under the batch that carries only its link and home=, so the batch can group it Undo: drop that child card and list the item in the parent's brief ([#216](https://github.com/mark-brannan/claude/pull/216))
+
+### 20261022t032610z
+- agent-decision caps the whole record handed to the judge at 120,000 chars, shared equally among long items, inside the $0.25 judge budget Undo: change RECORD_CAP in bin/agent-decision ([#218](https://github.com/mark-brannan/claude/pull/218))
