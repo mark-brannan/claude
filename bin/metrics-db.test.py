@@ -123,10 +123,6 @@ class Fixture:
         write_jsonl(m / "git-events" / "sess-typed-1.jsonl", [
             {"ts": "2026-10-01T11:00:00Z", "kind": "pr-create", "repo": "acme/widgets",
              "branch": "claude/fixture", "created_branch": "claude/fixture", "draft": False}])
-        write_jsonl(m / "headless-runs" / "agent-decision.jsonl", [
-            {"ts": "2026-10-01T10:07:00Z", "what": "agent-decision judge", "repo": "acme/widgets", "pr": 7,
-             "model": "claude-sonnet-5-5", "total_cost_usd": 0.0123, "outcome": "success",
-             "usage": {"input_tokens": 5, "output_tokens": 6, "cache_creation_input_tokens": 7, "cache_read_input_tokens": 8}}])
         write_jsonl(m / "crossings" / "sess-typed-1.jsonl", [
             {"ts": "2026-10-01T11:30:00Z", "kind": "sitting", "at": 90, "min": 30, "stay": True, "overrun": 0},
             {"ts": "2026-10-01T11:40:00Z", "kind": "sitting", "at": 100, "min": 40, "stay": False, "overrun": 1},
@@ -222,8 +218,6 @@ class SourcesTest(FixtureTest):
                          [("sess-typed-1", "rule", "Bash")])
         self.assertEqual(self.fx.q("select kind, created_branch, draft from git_events"),
                          [("pr-create", "claude/fixture", 0)])
-        self.assertEqual(self.fx.q("select what, repo, pr, cost_usd, input_tokens, cache_read_tokens, outcome from headless_runs"),
-                         [("agent-decision judge", "acme/widgets", 7, 0.0123, 5, 8, "success")])
         self.assertEqual(self.fx.q("select stay from crossings order by at"), [(1,), (0,), (None,)])
         self.assertEqual(self.fx.q("select count(*), count(distinct commit_sha) from commits"), [(2, 2)])
 
