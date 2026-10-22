@@ -382,3 +382,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t071650z
 - permission-request-log masks input with languette's built-in secret rules only, not a project's own Undo: pass project rules into record.mask ([#235](https://github.com/mark-brannan/claude/pull/235))
+
+### 20261022t071654z
+- permission-request-log cuts each masked input string at 500 chars Undo: raise MAX_CHARS in hooks/permission-request-log.py ([#235](https://github.com/mark-brannan/claude/pull/235))
