@@ -25,7 +25,7 @@
 #   --until is exclusive.
 # Exit 0, 2 on usage, 3 when the state repo cannot be found.
 # Python 3 stdlib only.
-import argparse, glob, importlib.machinery, importlib.util, json, os, re, sqlite3, sys
+import argparse, glob, importlib.machinery, importlib.util, json, math, os, re, sqlite3, sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -88,7 +88,12 @@ def load_headless(sd):
     """Headless runs as pseudo-sessions: time, what ran, repo, pr, cost. CI lines are untrusted, so a
     cost that is not a plain number reads as 0 and a line without a time is skipped."""
     def num(v):
-        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+        ok = isinstance(v, (int, float)) and not isinstance(v, bool)
+        return v if ok and math.isfinite(v) and v >= 0 else 0  # json.loads accepts NaN, Infinity, negatives
+
+    def clean(s):
+        """Untrusted text is printed to a terminal: drop control and escape characters."""
+        return "".join(c for c in s if c.isprintable())[:80]
     out = []
     root = os.path.join(sd, "metrics", "headless-runs")
     for p in glob.glob(os.path.join(root, "*.jsonl")) + glob.glob(os.path.join(root, "*", "*.jsonl")):
@@ -107,9 +112,11 @@ def load_headless(sd):
                 continue
             u = d.get("usage") if isinstance(d.get("usage"), dict) else {}
             pr = d.get("pr")
-            out.append({"_t": t, "what": str(d.get("what") or "headless"),
-                        "repo": d.get("repo") if isinstance(d.get("repo"), str) else None,
-                        "pr": pr if isinstance(pr, int) and not isinstance(pr, bool) else None,
+            repo = clean(d["repo"]) if isinstance(d.get("repo"), str) else None
+            # a run from a fork (trusted false, or another head repository) names no PR of ours
+            foreign = d.get("trusted") is False or (d.get("head_repository") not in (None, d.get("repo")))
+            out.append({"_t": t, "what": clean(str(d.get("what") or "")) or "headless", "repo": repo,
+                        "pr": pr if isinstance(pr, int) and not isinstance(pr, bool) and not foreign else None,
                         "cost_usd": num(d.get("total_cost_usd")), "output_tokens": num(u.get("output_tokens")),
                         "cache_read_tokens": num(u.get("cache_read_input_tokens")),
                         "cache_creation_tokens": num(u.get("cache_creation_input_tokens"))})

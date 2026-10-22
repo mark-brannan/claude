@@ -175,6 +175,38 @@ class SpendTest(unittest.TestCase):
             self.assertAlmostEqual(sum(v["cost"] for v in out[k].values()), 15.25, msg=k)
         self.assertIn("4 headless runs, $2.25", out["summary"])
 
+    def test_hostile_cost_is_zero(self):
+        self.write_runs([
+            '{"ts": "2026-10-15T01:40:00Z", "what": "a", "total_cost_usd": NaN}',
+            '{"ts": "2026-10-15T01:41:00Z", "what": "a", "total_cost_usd": Infinity}',
+            '{"ts": "2026-10-15T01:42:00Z", "what": "a", "total_cost_usd": -Infinity}',
+            '{"ts": "2026-10-15T01:43:00Z", "what": "a", "total_cost_usd": -5}',
+            '{"ts": "2026-10-15T01:44:00Z", "what": "a", "total_cost_usd": 0.5}'])
+        out = self.run_json()
+        self.assertEqual(out["bot"]["a"]["cost"], 0.5)
+        self.assertEqual(out["bot"]["a"]["runs"], 5)
+
+    def test_control_characters_never_reach_the_terminal(self):
+        self.write_runs([{"ts": "2026-10-15T01:40:00Z", "what": "bot\x1b[31m\nred", "repo": "x/y\x07z",
+                          "pr": 1, "total_cost_usd": 1}])
+        out = json.dumps(self.run_json())
+        self.assertNotIn("\\u001b", out)
+        self.assertNotIn("\\u0007", out)
+        self.assertNotIn("\\n", out.replace("\\n\\n", ""))  # no newline survives inside a key
+        self.assertIn("bot[31mred", out)
+
+    def test_a_fork_run_names_no_pr(self):
+        self.write_runs([
+            {"ts": "2026-10-15T01:40:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 7,
+             "trusted": False, "head_repository": "evil/widgets", "total_cost_usd": 1},
+            {"ts": "2026-10-15T01:41:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 7,
+             "head_repository": "evil/widgets", "total_cost_usd": 2},
+            {"ts": "2026-10-15T01:42:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 7,
+             "trusted": True, "head_repository": "acme/widgets", "total_cost_usd": 4}])
+        pr = self.run_json()["pr"]
+        self.assertAlmostEqual(pr["acme/widgets#7"]["cost"], 4.0 + 4)
+        self.assertAlmostEqual(pr["(no PR) - headless"]["cost"], 3)
+
     def test_text_shows_the_bot_table_only_when_there_are_runs(self):
         def text():
             buf = io.StringIO()
