@@ -99,6 +99,7 @@ class Fixture:
             "human_seconds": 600, "agent_seconds": 3000, "idle_seconds": 3600, "user_turns": 4,
             "assistant_turns": 20, "tool_calls": 50, "output_tokens": 1000, "input_tokens": 200,
             "cache_creation_tokens": 30, "cache_read_tokens": 4000, "cost_usd": 1.5, "context_peak": 90000,
+            "cost_usd_by_model": {"model-x": 1.2, "model-y": 0.3, "model-z": "n/a"},
             "files_written": 3, "commits": 2, "work_started": True,
             "decisions": {"total": 3, "scoping": 1, "inline": 1, "gate": 1},
             "blocked": {"total": 2, "classifier": 1, "rule": 1, "user": 0},
@@ -217,6 +218,10 @@ class SourcesTest(FixtureTest):
         self.assertEqual(row[:7], ("acme/widgets", 4, 1, 1, 2, 1, 1))
         self.assertEqual(row[7], 1.5)
         self.assertEqual(json.loads(row[8]), {"Bash": 30, "Edit": 20})
+        # one row per model with a numeric figure; a record without the field and with
+        # no cost_usd has none
+        self.assertEqual(self.fx.q("select model, cost_usd from session_cost order by model"),
+                         [("model-x", 1.2), ("model-y", 0.3)])
         self.assertEqual(self.fx.q("select work_started, dec_total from sessions where session_id='sess-headless-2'"),
                          [(0, None)])
 
