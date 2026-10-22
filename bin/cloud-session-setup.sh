@@ -128,6 +128,7 @@ hooks/log-gh-writes.py
 hooks/permission-request-log.py
 hooks/statusline-metrics.sh
 hooks/connector-budget.sh
+hooks/session-start-sync-status.py
 hooks/prose-budget-edit.sh
 hooks/branch-home-gate.sh
 hooks/claim-stamp.sh
