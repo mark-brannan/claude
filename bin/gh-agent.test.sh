@@ -228,5 +228,13 @@ out=$(bash "$SCRIPT" --login 2>&1); rc=$?
 eq "$rc" 1 "an unreadable slug fails"
 case $out in *Traceback*) bad "an unreadable slug has no traceback: $out" ;; *unreadable*) ok ;; *) bad "an unreadable slug says so: $out" ;; esac
 
+# --- python runs isolated: a json.py in the caller's directory is not imported
+mkdir -p "$T/clone"; rm -f "$T/pwned"
+printf 'open("%s/pwned", "w")\nfrom importlib import import_module\n' "$T" > "$T/clone/json.py"
+echo '{"slug":"some-agent"}' > "$T/app.json"
+(cd "$T/clone" && bash "$SCRIPT" --login >/dev/null 2>&1)
+[ ! -e "$T/pwned" ] && ok || bad "a json.py in the working directory is never imported"
+grep -n 'python3' "$SCRIPT" | grep -v 'python3 -I ' && bad "every python3 call runs with -I" || ok
+
 echo "gh-agent: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

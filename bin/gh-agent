@@ -120,7 +120,7 @@ installation_id() {
     printf '%s' "$AGENT_BOT_INSTALLATION_ID"; return
   fi
   resp=$(api GET /app/installations "$1") || die "installation lookup failed"
-  read -ra ids < <(python3 -c 'import json,sys; print(*[int(i["id"]) for i in json.load(sys.stdin)])' <<<"$resp" 2>/dev/null) \
+  read -ra ids < <(python3 -I -c 'import json,sys; print(*[int(i["id"]) for i in json.load(sys.stdin)])' <<<"$resp" 2>/dev/null) \
     || die "installation lookup returned something unreadable"
   [ "${#ids[@]}" -eq 1 ] || die "the app has ${#ids[@]} installations (${ids[*]:-}); set AGENT_BOT_INSTALLATION_ID to pick one"
   printf '%s' "${ids[0]}"
@@ -133,7 +133,7 @@ mint_token() {
   jwt=$(build_jwt "$app") || return 1
   id=$(installation_id "$jwt") || return 1
   resp=$(api POST "/app/installations/$id/access_tokens" "$jwt") || die "token mint failed for installation $id"
-  python3 -c '
+  python3 -I -c '
 import calendar, json, re, sys, time
 r = json.load(sys.stdin)
 assert re.fullmatch(r"[A-Za-z0-9_.-]+", r["token"])
@@ -168,7 +168,7 @@ login() {
   app=$(app_id) || return 1
   jwt=$(build_jwt "$app") || return 1
   resp=$(api GET /app "$jwt") || die "app lookup failed"
-  python3 -c '
+  python3 -I -c '
 import json, re, sys
 s = json.load(sys.stdin)["slug"]
 assert re.fullmatch(r"[a-z0-9-]+", s)
