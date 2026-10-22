@@ -424,7 +424,9 @@ if [ "$REFRESH" -eq 1 ]; then
       continue
     fi
     # `gh pr comment` reads `owner/repo#n` as a branch name; the repo goes in -R.
-    gh pr comment "$t_number" -R "$t_owner/$t_repo" --body '@mergifyio refresh' >/dev/null || \
+    # AGENT_BOT_OFF: as the user, not the agent App -- Mergify refuses a command
+    # from a sender without write access, and the App's contents are read-only.
+    AGENT_BOT_OFF=1 gh pr comment "$t_number" -R "$t_owner/$t_repo" --body '@mergifyio refresh' >/dev/null || \
       echo "pr-label-audit: could not post the refresh comment on $t_owner/$t_repo#$t_number" >&2
   done
 fi
