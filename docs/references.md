@@ -8,7 +8,7 @@ An entry the web could not confirm is marked unverified, never dropped.
 
 ## Framing
 
-The user's, verbatim.
+The user's, name neutralised.
 
 - Two loops. Loop one is the work (grind). Loop two is questioning the governing
   ideas behind the work (confer). Both are agent-assisted; loop two is never
