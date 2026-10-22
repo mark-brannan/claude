@@ -400,3 +400,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t085911z
 - SessionStart sync-status note goes to both the session (additionalContext) and the user (systemMessage) Undo: drop systemMessage from session-start-sync-status.py ([#166](https://github.com/mark-brannan/claude/issues/166)) (no PR, branch claude/sessionstart-dotfiles-sync-status-359d55)
+
+### 20261022t102036z
+- Scoping's last line is /pickup <parent-id>: the driver brief is written as the parent card's brief, since /pickup already takes a card id, rather than /pickup learning a file path (the second exit the ledger's 2026-10-22 pencil line names) Undo: teach /pickup a file path and have scoping write the plan there; the parent card's brief then carries only the link ([#252](https://github.com/mark-brannan/claude/pull/252))
