@@ -251,7 +251,8 @@ done
 # passed -- the default (no `--refresh`) is fully read-only and must never
 # shell out to see who it's authenticated as.
 if [ "$REFRESH" -eq 1 ]; then
-  login=$(gh api user -q .login) || { echo "pr-label-audit: could not read the authenticated user" >&2; exit 1; }
+  # AGENT_BOT_OFF: the refresh comment is the user's, so is the login it is compared to.
+  login=$(AGENT_BOT_OFF=1 gh api user -q .login) || { echo "pr-label-audit: could not read the authenticated user" >&2; exit 1; }
 fi
 
 single_pr=0
