@@ -161,15 +161,27 @@ taken; never overwrite an earlier one. Commit it. Shape:
    carries, an estimate of its spend, and every default the doer will
    pick that carries medium risk or more, as a table of default, undo,
    risk. The plan's home is one parent card, the batch, with one child
-   card per work item, whatever the umbrella (2026-10-22): scoping files
-   no GitHub issue, ever, and adds no label; an issue the plan covers is
-   named by its child card's `home=`, and an epic's sub-issues are read
-   as items, never written. An umbrella item already one session in size
-   is its own work item and its child card carries only the link; a
-   bigger one splits into children of the batch. A careful sequence is
-   one work item whose brief holds the sequence; anything uncertain is a
-   research item with its questions and its output. The estimates
-   summed are the batch's allocation, on the parent.
+   card per work item, whatever the umbrella (2026-10-22); an issue the
+   plan covers is named by its child card's `home=`, and an epic's
+   sub-issues are read as items. Home by shape, not by target
+   (2026-10-22): the target says where the cards hang; the item's shape
+   says whether it also earns an issue. A *deliverable*, a thing someone
+   outside the sitting could ask after or read in a release note, with
+   its own discussion and an unknown number of PRs, is proposed as a
+   sub-issue of the epic (an issue of the repo, where there is no epic),
+   its draft text in the proposal, its child card carrying `home=`. A
+   *change*, one PR whose title and body say everything an issue would,
+   gets no issue. A *step*, meaningful only inside the batch, is a child
+   card. A curia question becomes an issue only when its ruling yields
+   buildable work of unknown PR count. A research item is judged by what
+   it produces: an answer a planned step needs is a card; an answer that
+   would change the epic's shape is an issue. No label is ever added. An
+   umbrella item already one session in size is its own work item and its
+   child card carries only the link; a bigger one splits into children of
+   the batch. A careful sequence is one work item whose brief holds the
+   sequence; anything uncertain is a research item with its questions and
+   its output. The estimates summed are the batch's allocation, on the
+   parent.
 5. **Pencil and new words.** How many items rest on pencil, and which
    pencil; whether any item needs a new word or idea. If one does, name
    it and its two exits, a veto here or back to the curia or agora; that
@@ -192,7 +204,7 @@ item's own `###` heading counts inside the section, not as its end. Count as
 
 Re-run the `take` line first; a refusal now stops the filing, and a
 `read moved:` line means the record moved since the proposal. Then file
-the batch exactly as proposed, cards only:
+the batch exactly as proposed, cards and the issues the proposal showed:
 
 - the parent first, a card owned `agent` whose brief is the proposal's
   header and the batch's allocation (a link to the target in it), written
@@ -204,6 +216,13 @@ the batch exactly as proposed, cards only:
   same line with `--parent <parent-id> [--model <m>] [--effort <e>]`, then
   `~/.claude/bin/work-item log <id> status=ready` so it is claimable; a
   child that plans an issue gets `~/.claude/bin/work-item log <id> home=<owner/repo#n>`;
+- an item proposed as an issue (§4.4) is filed as the shown draft, the
+  sub-issue first and then its child card with `home=`; a tick is not a
+  yes to issue text the user has not seen (2026-10-10): show the draft
+  and ask before filing. The proposal says how many issues it would
+  file, and the user's yes covers that number (2026-10-22; before it,
+  at most one a session, 2026-10-01); the issue guards hold the line
+  beyond that;
 - an item vetoed, or held on a new word (§4.5), is not filed, and the
   proposal says so.
 
