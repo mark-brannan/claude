@@ -117,5 +117,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a logger never blocks a dialog
-        print(f"permission-request-log: {e}", file=sys.stderr)
+        import lib_state
+        lib_state.trace_failure("permission-request-log", "PermissionRequest", e)
     sys.exit(0)
