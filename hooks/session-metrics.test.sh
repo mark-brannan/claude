@@ -203,6 +203,15 @@ fric() { # fric <enqueued content> -> friction total
     | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n \
         -f "$JQF" | jq -c '.session.friction.total'
 }
+# claude#200: a rebuke with no assistant reply after it still scores.
+fric_tail() { # fric_tail <final human turn> -> friction total, no reply after it
+  { fq "please fix the thing"; fa; fq "$1"; } \
+    | jq -s --arg sid t --arg repo r --arg branch b --arg cwd . --arg now n \
+        -f "$JQF" | jq -c '.session.friction.total'
+}
+eq "rebuke followed by a reply (#200 row 1)" '1' "$(fric "you idiot")"
+eq "rebuke with no reply after it (#200 row 2)" '1' "$(fric_tail "you idiot")"
+eq "calm last turn with no reply is not friction" '0' "$(fric_tail "thanks, looks good")"
 eq "a real rebuke counts" '1' "$(fric "no, that's not what I asked for")"
 eq "a task-notification is not a rebuke" '0' "$(fric "<task-notification>no, that's not what I asked for</task-notification>")"
 eq "an agent-message is not a rebuke" '0' "$(fric "<agent-message from=x>no, that's not what I asked for</agent-message>")"
