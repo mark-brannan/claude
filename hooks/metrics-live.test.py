@@ -153,6 +153,9 @@ class World:
                              env=dict(self.env, **(env or {})), text=True)
         p.stdin.write(json.dumps(payload))
         p.stdin.close()
+        # Detached, so communicate() leaves it alone: Python 3.12's flushes
+        # a stdin it still holds, closed or not, and raises.
+        p.stdin = None
         return p
 
     @staticmethod
