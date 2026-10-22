@@ -2,8 +2,12 @@
 
 The Claude Code layer: hooks, skills, rules, settings and the `bin/` tools.
 `~/.claude` is a clone of it, so what merges to `main` is what every session
-runs, and hooks run from `~/.claude`, never from this checkout. The root
-`CLAUDE.md` is the standing orders themselves, not a copy of them.
+runs, and hooks run from `~/.claude`, never from this checkout. Edit in a
+worktree of `~/claude`, never in `~/.claude`. The root `CLAUDE.md` is the
+standing orders themselves, live at `~/.claude/CLAUDE.md`, not a copy of
+them. This file is live at `~/.claude/.claude/CLAUDE.md` and loads only in
+this repo, its worktrees and `~/.claude`. README "Layout" maps every repo
+path to its live one.
 
 Where each subsystem's design lives:
 
