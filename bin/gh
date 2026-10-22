@@ -1,0 +1,30 @@
+#!/usr/bin/env -S python3 -I
+# gh: in a Claude Code session, gh as the agent's GitHub App, through gh-agent;
+# anywhere else, the real gh. RUNBOOK "Act on GitHub as the agent App".
+import os
+import sys
+from pathlib import Path
+
+SECRETS = os.environ.get("AGENT_BOT_SECRETS") or os.path.expanduser("~/.config/secrets/agent-bot.env")
+
+
+def real_gh():
+    """The first gh on PATH outside a Claude layer's bin/ (one that holds gh-agent)."""
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        c = Path(d or ".") / "gh"
+        if c.is_file() and os.access(c, os.X_OK) and not (c.parent / "gh-agent").exists():
+            return str(c)
+    sys.exit("gh: no gh on PATH but this shim")
+
+
+def as_agent(args):
+    """Asking who the user is, and merging, stay the user's."""
+    return (os.environ.get("CLAUDECODE") == "1" and not os.environ.get("GH_TOKEN")
+            and not os.environ.get("AGENT_BOT_OFF") and os.path.exists(SECRETS)
+            and args[:2] not in (["api", "user"], ["api", "/user"], ["pr", "merge"]))
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    exe = str(Path(__file__).resolve().parent / "gh-agent") if as_agent(args) else real_gh()
+    os.execv(exe, [exe, *args])

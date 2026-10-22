@@ -27,6 +27,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 **GitHub repository**
 - [Set the auth token for the PR review workflows](#set-the-auth-token-for-the-pr-review-workflows)
 - [Re-sign a branch whose commits are unsigned](#re-sign-a-branch-whose-commits-are-unsigned)
+- [Act on GitHub as the agent App](#act-on-github-as-the-agent-app)
 
 **PRs**
 - [Find all PRs awaiting human review](#find-all-prs-awaiting-human-review)
@@ -612,6 +613,37 @@ If the local verify step reports every commit as `U` or `E` instead of
 format is `<email> <key-type> <key>` — email first, unlike
 `authorized_keys`. The script builds a temporary one when none is
 configured, so this only matters for `git log --show-signature` by hand.
+
+## Act on GitHub as the agent App
+
+In a Claude Code session, what agents post on GitHub is authored by the
+`mark-brannan-agent` App, not by you, so you can approve their PRs. Shells you
+type in are untouched.
+
+| Call | Runs as |
+|---|---|
+| `gh ...` in a session (hooks and headless runs too) | the App, through `bin/gh-agent` |
+| `gh api user`, `gh pr merge` | you: who you are, and merging, stay yours |
+| GitHub MCP server | the App, through `bin/github-mcp-headers` |
+| `git push` | you |
+| anything with `AGENT_BOT_OFF=1`, `GH_TOKEN` set, outside a session, or with no `~/.config/secrets/agent-bot.env` | you |
+
+`bin/gh` is the router. When the secret is there, a failed mint fails the call
+with a `gh-agent:` message; it never falls back to you. Mergify refuses the
+App's commands (it lacks write access), so `prt` and `pr-label-audit` post
+`@mergifyio` comments with `AGENT_BOT_OFF=1`.
+
+Which identity is live:
+
+```bash
+gh api /installation/repositories --jq .total_count   # a number: gh is the App; 403: it is you
+gh-agent --login                                      # the App's login: mark-brannan-agent[bot]
+gh pr view <n> --json author --jq .author.login       # app/mark-brannan-agent on an agent's PR
+```
+
+Turn it off for one command: `AGENT_BOT_OFF=1 gh ...`. For a whole session:
+`export AGENT_BOT_OFF=1` in the shell that starts `claude`. The App's setup and
+undo: `gh-agent --agent-help`.
 
 ## Find all PRs awaiting human review
 
