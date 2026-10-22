@@ -4,7 +4,8 @@
 # a terminal) reads the same tables instead of re-parsing the JSON.
 #
 # Sources, all in the state repo (lib/state.py's state_repo) unless noted:
-#   metrics/sessions/*.json       one row per finished session        -> sessions
+#   metrics/sessions/*.json       one row per finished session        -> sessions,
+#                                 and one row per model it spent on   -> session_cost
 #   metrics/headless-runs/*.jsonl one line per headless claude run, with cost -> headless_runs
 #   metrics/{decisions,friction,blocked,git-events,crossings}/*.jsonl -> one table each
 #   metrics/permission-requests/*.jsonl one line per permission dialog -> permission_requests
@@ -62,6 +63,7 @@ create table if not exists sessions(
   blk_total int, blk_classifier int, blk_rule int, blk_user int,
   fr_total int, fr_correction int, fr_override int, fr_rebuke int, fr_repeat int, fr_pushback int,
   verdict text, tools_json text, cwd text, host text);
+create table if not exists session_cost(session_id text, model text, cost_usd real);
 create table if not exists decisions(ts text, session_id text, repo text, seq int, turn_index int,
   mechanism text, questions int, before_first_write int, type text, question text);
 create table if not exists friction(ts text, session_id text, repo text, seq int, turn_index int,
@@ -137,7 +139,7 @@ def load_sessions(cx, sd):
     homes = sorted(((d["home"], d["host"]) for d in (load_json(p) for p in
                     glob.glob(os.path.join(sd, "metrics", "input", "*", "host.json")))
                     if d and d.get("home") and d.get("host")), key=lambda h: -len(h[0]))
-    rows = []
+    rows, cost = [], {}  # cost by session_id: the two layouts can hold one session twice
     for p in glob.glob(os.path.join(sd, "metrics", "sessions", "*.json")) + \
              glob.glob(os.path.join(sd, "metrics", "sessions", "*", "*.json")):
         d = load_json(p)
@@ -156,8 +158,16 @@ def load_sessions(cx, sd):
             fr.get("total"), fr.get("correction"), fr.get("override"), fr.get("rebuke"), fr.get("repeat"),
             fr.get("pushback"), d.get("verdict"), json.dumps(d.get("tools") or {}), d.get("cwd"),
             host_for(d.get("cwd"), homes)))
-    cx.execute("delete from sessions")
+        # cost_usd_by_model: the Stop hook prices each model's tokens apart, so a
+        # sub-agent's spend lands on its own model, not the session's. An older
+        # record without it puts its whole figure on the session's model.
+        by_model = d.get("cost_usd_by_model")
+        if not isinstance(by_model, dict) and isinstance(d.get("cost_usd"), (int, float)):
+            by_model = {d.get("model") or "unknown": d["cost_usd"]}
+        cost[d["session_id"]] = [(d["session_id"], m, c) for m, c in (by_model or {}).items() if isinstance(c, (int, float))]
+    cx.execute("delete from sessions"); cx.execute("delete from session_cost")
     cx.executemany("insert or replace into sessions values (" + ",".join("?" * 43) + ")", rows)
+    cx.executemany("insert into session_cost values (?, ?, ?)", [r for rs in cost.values() for r in rs])
     return len(rows)
 
 def load_stream(cx, sd, sub, table, pick):

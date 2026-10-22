@@ -304,14 +304,21 @@ item_field() {
 # only its text: the body, or a PR's body and its last comment -- each only
 # when the account grind runs as wrote it, since anyone may comment on a PR
 # and a stranger's `budget: 99999` would otherwise be obeyed. A budget is
-# dollars, `$` optional; anything else is no budget.
+# dollars, `$` optional; anything else is no budget. What the agent App
+# wrote counts as grind's own: agents post as the App.
 item_terms() {
   ip_kind=$(printf '%s' "$1" | jq -r .kind)
   case $ip_kind in
     pr)   ip_me=$(gh api user --jq .login 2>/dev/null) || ip_me=""
-          ip_text=""
-          [ -z "$ip_me" ] || ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json author,body,comments \
-            --jq "[(if .author.login == \"$ip_me\" then .body // \"\" else \"\" end), ([.comments[]? | select(.author.login == \"$ip_me\")] | last | .body // \"\")] | join(\"\\n\")" 2>/dev/null || true) ;;
+          ip_text=""; ip_a=$(agent_logins); ip_n=$(printf '%s' "$1" | jq -r .number); ip_r=$(printf '%s' "$1" | jq -r .repo)
+          if [ -n "$ip_me" ]; then
+            ip_body=$(gh pr view "$ip_n" --repo "$ip_r" --json author,body \
+              --jq "$(jq -cn --arg me "$ip_me" --argjson a "$ip_a" '{ok: ([$me] + $a.bot), bare: $a.bare}') as \$ok | if (.author.login | IN(\$ok.ok[])) or (.author.is_bot == true and \$ok.bare != \"\" and .author.login == \$ok.bare) then .body // \"\" else \"\" end" 2>/dev/null || true)
+            # comments come from REST, whose user.type is the bot signal gh's own comment authors lack
+            ip_last=$(gh api --paginate "repos/$ip_r/issues/$ip_n/comments" \
+              --jq ".[] | select(.user.login == \"$ip_me\" or ((.user.type == \"Bot\") and (.user.login | IN($(printf '%s' "$ip_a" | jq -c .bot)[]))))  | .body // \"\" | @json" 2>/dev/null | tail -n 1 | jq -r . 2>/dev/null || true)
+            ip_text=$(printf '%s\n%s' "$ip_body" "$ip_last")
+          fi ;;
     card) ip_text=$(printf '%s' "$1" | jq -r .text) ;;
     *)    ip_text=$(printf '%s' "$1" | jq -r .body) ;;
   esac
@@ -1249,9 +1256,18 @@ last_status() {
   printf '%s\n' "$1" | grep -oE "$status_line_re" | tail -n 1 | sed 's/.*: //'
 }
 
+# agent_logins -> {"bot": the App's logins that carry their own bot marker
+# (slug[bot], app/slug), "bare": the unmarked slug GraphQL gives}; both empty
+# with no App, when `gh-agent --login` fails. The App is accepted only with a
+# bot signal: a marked login, or the bare slug on an author gh flags is_bot.
+agent_logins() {
+  al=$(gh-agent --login 2>/dev/null) || al=""
+  jq -cn --arg s "${al%\[bot\]}" 'if $s == "" then {bot: [], bare: ""} else {bot: [$s + "[bot]", "app/" + $s], bare: $s} end'
+}
+
 # prs_opened_since <ISO 8601> <urls, one per line> <branch> <item ref> -> the
 # ones that are this item's work: opened at or after then, by the account grind
-# runs as, and either on the item's branch or carrying a `Grind item: <ref>`
+# runs as or the agent App, and either on the item's branch or carrying a `Grind item: <ref>`
 # line in the body (the worker is told to write one for a PR in another repo).
 # A PR another session opened during the run, or one the worker merely names,
 # fails the author or the relation test. A lookup that fails drops that URL: a
@@ -1260,11 +1276,12 @@ prs_opened_since() {
   printf '%s' "$2" | awk 'NF' | grep -q . || return 0
   me=$(gh api user --jq .login 2>/dev/null) || me=""
   [ -n "$me" ] || { warn "could not read the account grind runs as (gh api user); no PR the worker named is counted as its work"; return 0; }
+  ok=$(jq -cn --arg me "$me" --argjson a "$(agent_logins)" '{ok: ([$me] + $a.bot), bare: $a.bare}')
   printf '%s\n' "$2" | while IFS= read -r u; do
     [ -n "$u" ] || continue
     j=$(gh pr view "$u" --json createdAt,author,headRefName,body 2>/dev/null) || continue
-    printf '%s' "$j" | jq -e --arg s "$1" --arg me "$me" --arg b "$3" --arg r "$4" \
-      '(.createdAt // "") >= $s and .author.login == $me
+    printf '%s' "$j" | jq -e --arg s "$1" --argjson ok "$ok" --arg b "$3" --arg r "$4" \
+      '(.createdAt // "") >= $s and ((.author.login | IN($ok.ok[])) or (.author.is_bot == true and $ok.bare != "" and .author.login == $ok.bare))
        and (.headRefName == $b or ((.body // "") | contains("Grind item: " + $r)))' >/dev/null 2>&1 || continue
     printf '%s\n' "$u"
   done
