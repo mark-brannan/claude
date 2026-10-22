@@ -425,7 +425,7 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.assertIn("cannot read", p.stderr)
         self.assertEqual(len(self.bullets(self.branch_log())), 2)
 
-    CLAIMS = ["Solace chose the scale", "the user ruled the scale", "the user ruled the scale", "scale set per the user",
+    CLAIMS = ["Solace chose the scale", "the user ruled the scale", "scale set per the user",
               "scale kept on the user's order", "the user asked for the scale", "scale kept as ordered",
               "scale kept, ruled by the user", "the owner chose the scale", "per the owner, the scale stays",
               "the owner decided the scale", "THE USER DECIDED the scale", "the user has ordered the scale",
