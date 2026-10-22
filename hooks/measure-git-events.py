@@ -20,7 +20,8 @@ Match the tool NAME in settings.json and filter the command in here: a matcher
 written as `Bash(git commit.*)` is permission-rule syntax, which as a regex
 needs a tool literally named `Bashgit commit...`, so it never fires.
 
-Fails open: any error exits 0 with one line on stderr, and the call is untouched.
+Fails open: any error exits 0 with one line in the state repo's metrics/hook-errors/
+(lib/hooktrace.py), and the call is untouched.
 """
 import json
 import os
@@ -135,5 +136,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a logger never blocks a call
-        print(f"measure-git-events: {e}", file=sys.stderr)
+        import lib_state
+        lib_state.trace_failure("measure-git-events", "PostToolUse", e)
     sys.exit(0)

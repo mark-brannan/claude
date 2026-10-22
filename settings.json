@@ -373,6 +373,11 @@
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/session-start-sync-status.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/session-start-hook-errors.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
+            "timeout": 10
           }
         ]
       }

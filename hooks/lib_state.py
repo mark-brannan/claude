@@ -28,10 +28,27 @@ except ImportError as e:
         return None
 
 
+LAST = {}  # the event last read, so a trace can name its session after a crash
+
+
 def event():
     """The hook's event JSON from stdin, or {} when it is absent or malformed."""
     try:
         data = json.load(sys.stdin)
     except (ValueError, OSError):
         return {}
-    return data if isinstance(data, dict) else {}
+    if isinstance(data, dict):
+        LAST.update(data)
+        return data
+    return {}
+
+
+def trace_failure(hook, event, err):
+    """A hook's last-resort handler: trace the swallowed error through
+    lib/hooktrace.py under the session last read, or say it on stderr when
+    lib/ is missing from a seed. Never raises."""
+    try:
+        import hooktrace
+        hooktrace.trace(hook, "main", err, str(LAST.get("session_id") or ""), event)
+    except ImportError:
+        print(f"{hook}: {err}", file=sys.stderr)

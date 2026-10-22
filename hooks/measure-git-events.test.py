@@ -220,6 +220,14 @@ class MeasureGitEventsTest(unittest.TestCase):
             self.send(text)
         self.assertEqual(self.rows(), [])
 
+    def test_a_swallowed_error_is_traced_to_hook_errors(self):
+        self.events.parent.mkdir(parents=True)
+        self.events.write_text("a file where the events directory should be\n")
+        r = self.send({"tool_name": CREATE_PR, "session_id": "abc123", "tool_input": {}})
+        self.assertEqual(r.stderr, "")
+        row = json.loads((self.events.parent / "hook-errors/ab/abc123.jsonl").read_text())
+        self.assertEqual((row["hook"], row["stage"], row["session_id"]), ("measure-git-events", "main", "abc123"))
+
     def test_a_failed_write_reaches_stderr_and_does_not_block(self):
         (self.home / "state/state").write_text("a file where the state dir should be\n")
         r = self.send({"tool_name": CREATE_PR, "session_id": "abc123", "tool_input": {}})
