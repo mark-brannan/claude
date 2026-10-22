@@ -1243,7 +1243,7 @@ if __name__ == "__main__":
         try:
             import lib_state  # beside this file
             lib_state.trace_failure("stop-continuity", "Stop", e)
-        except Exception:
+        except BaseException:
             pass
     finally:
         try:
