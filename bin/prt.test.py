@@ -508,7 +508,12 @@ class PrtTest(unittest.TestCase):
 
         self.assertEqual(why("agent"), "")
         self.assertEqual(why("agent[bot]"), "")
-        self.assertEqual(why("renovate"), "bot-authored: it regenerates its own branch")
+        skipped = "bot-authored: it regenerates its own branch"
+        # Other bots, and look-alikes of the App's login, stay skipped.
+        for other in ("renovate", "dependabot[bot]", "app/dependabot", "agent-x[bot]",
+                      "xagent[bot]", "agent[bot]x", "Agent[bot]", "agent [bot]"):
+            self.assertEqual(why(other), skipped, other)
+        self.assertEqual(why("app/agent"), "")
 
 
     def test_11_fixer_prompt_turns_a_bot_finding_on_a_governing_doc_into_a_decide(self):
