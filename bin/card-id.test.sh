@@ -8,7 +8,7 @@ pass=0; fail=0
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 unset CLAUDE_CODE_SESSION_ID
 export WORK_ITEM_DIR="$T/items"
-export CARD_ID_CLAIMS="$T/claims"
+export CARD_ID_STATE="$T/state"
 ok() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi; }
 
 now=$(date -u +%s)
@@ -23,6 +23,9 @@ d=$(sh "$CID" new 077c62eb); ok 'new steps past ids already filed' 1 "$(printf '
 rm -rf "$T/items"
 ids=$(for _ in 1 2 3 4 5 6 7; do sh "$CID" new f7a66884; done)
 ok 'seven back-to-back calls give seven distinct ids' 7 "$(printf '%s\n' "$ids" | sort -u | wc -l)"
+ok 'each of the same shape' 7 "$(printf '%s\n' "$ids" | grep -cE '^[0-9]{10}f7a66884$')"
+: > "$T/not-a-dir"
+e=$(CARD_ID_STATE="$T/not-a-dir/state" sh "$CID" new f7a66884 2>&1 >/dev/null); ok 'no usable counter dir: an id still, and one stderr line' 1 "$(printf '%s' "$e" | grep -c '^card-id: no counter at .*stepped past the store only$')"
 sh "$CID" new "" >/dev/null 2>&1; ok 'no session id refuses' 2 $?
 sh "$CID" new zzzzzzzz >/dev/null 2>&1; ok 'a non-hex session refuses' 2 $?
 
