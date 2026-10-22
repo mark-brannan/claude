@@ -290,6 +290,12 @@ Hooks handle the mechanics unprompted.
   double-loop test: propose it, don't build it. Its undo is not the
   revert; it is everything routed, filed or forgotten under it
   meanwhile, and that does not come back.
+- **Screen a change before weighing its exit** (the 10 CFR 50.59 screen
+  of nuclear licensing). Of the change or the pencil call, ask: does it
+  change what a rule requires, how compliance is judged, or the criterion
+  for done? No to all three screens it out: one line in a periodic summary
+  I read at leisure, never an ask and never a card. Yes to any opens the
+  three exits.
 - **A judgment call has three exits,** preferred in this order: **omit**
   (it gates nothing, so say nothing and leave the question visibly open),
   **card** (it gates later work), **ask** (it gates this turn).
