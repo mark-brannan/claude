@@ -2252,6 +2252,19 @@ said 1 0.80 'Opened https://github.com/o/dotgithub/pull/50.
 GRIND_STATUS: done'
 KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
 has 'a PR on the item branch verifies done' '^o/alpha#17: Cross-repo item -- sonnet'
+# a PR the agent App opened is grind's own work; with no App it is a stranger's
+pv https___github.com_o_dotgithub_pull_51 2999-01-01T00:00:00Z app/agent-bot fix-it 'Grind item: o/alpha#17'
+printf '#!/bin/sh\n[ "$1" = --login ] && [ -f "%s/agent-on" ] && echo "agent-bot[bot]"\n' "$S" > "$S/bin/gh-agent"; chmod +x "$S/bin/gh-agent"
+for app in on off; do
+  git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
+  rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$S/agent-on"; [ "$app" = off ] || : > "$S/agent-on"
+  said 1 0.80 'Opened https://github.com/o/dotgithub/pull/51.
+GRIND_STATUS: done'
+  KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
+  if [ "$app" = on ]; then has 'a PR by the agent App verifies done' '^o/alpha#17: Cross-repo item -- sonnet'
+  else has 'with no App, a bot PR does not verify done' '^UNVERIFIED: o/alpha#17'; fi
+done
+rm -f "$S/bin/gh-agent"
 # an account grind cannot read counts no named PR, and says so
 git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
 rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json; : > "$S/user-fail"

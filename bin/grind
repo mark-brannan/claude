@@ -304,14 +304,15 @@ item_field() {
 # only its text: the body, or a PR's body and its last comment -- each only
 # when the account grind runs as wrote it, since anyone may comment on a PR
 # and a stranger's `budget: 99999` would otherwise be obeyed. A budget is
-# dollars, `$` optional; anything else is no budget.
+# dollars, `$` optional; anything else is no budget. What the agent App
+# wrote counts as grind's own: agents post as the App.
 item_terms() {
   ip_kind=$(printf '%s' "$1" | jq -r .kind)
   case $ip_kind in
     pr)   ip_me=$(gh api user --jq .login 2>/dev/null) || ip_me=""
-          ip_text=""
+          ip_text=""; ip_ok=$(jq -cn --arg me "$ip_me" --argjson a "$(agent_logins)" '[$me] + $a')
           [ -z "$ip_me" ] || ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json author,body,comments \
-            --jq "[(if .author.login == \"$ip_me\" then .body // \"\" else \"\" end), ([.comments[]? | select(.author.login == \"$ip_me\")] | last | .body // \"\")] | join(\"\\n\")" 2>/dev/null || true) ;;
+            --jq "$ip_ok as \$ok | [(if (.author.login | IN(\$ok[])) then .body // \"\" else \"\" end), ([.comments[]? | select(.author.login | IN(\$ok[]))] | last | .body // \"\")] | join(\"\\n\")" 2>/dev/null || true) ;;
     card) ip_text=$(printf '%s' "$1" | jq -r .text) ;;
     *)    ip_text=$(printf '%s' "$1" | jq -r .body) ;;
   esac
@@ -1251,20 +1252,29 @@ last_status() {
 
 # prs_opened_since <ISO 8601> <urls, one per line> <branch> <item ref> -> the
 # ones that are this item's work: opened at or after then, by the account grind
-# runs as, and either on the item's branch or carrying a `Grind item: <ref>`
+# runs as or the agent App, and either on the item's branch or carrying a `Grind item: <ref>`
 # line in the body (the worker is told to write one for a PR in another repo).
 # A PR another session opened during the run, or one the worker merely names,
 # fails the author or the relation test. A lookup that fails drops that URL: a
 # PR grind cannot see is not one it can vouch for.
+# agent_logins -> a JSON array of the agent App's login in each spelling GitHub
+# gives it (slug[bot] in REST, slug in GraphQL, app/slug in gh --json); [] with
+# no App, when `gh-agent --login` fails.
+agent_logins() {
+  al=$(gh-agent --login 2>/dev/null) || al=""
+  jq -cn --arg s "${al%\[bot\]}" 'if $s == "" then [] else [$s + "[bot]", $s, "app/" + $s] end'
+}
+
 prs_opened_since() {
   printf '%s' "$2" | awk 'NF' | grep -q . || return 0
   me=$(gh api user --jq .login 2>/dev/null) || me=""
   [ -n "$me" ] || { warn "could not read the account grind runs as (gh api user); no PR the worker named is counted as its work"; return 0; }
+  ok=$(jq -cn --arg me "$me" --argjson a "$(agent_logins)" '[$me] + $a')
   printf '%s\n' "$2" | while IFS= read -r u; do
     [ -n "$u" ] || continue
     j=$(gh pr view "$u" --json createdAt,author,headRefName,body 2>/dev/null) || continue
-    printf '%s' "$j" | jq -e --arg s "$1" --arg me "$me" --arg b "$3" --arg r "$4" \
-      '(.createdAt // "") >= $s and .author.login == $me
+    printf '%s' "$j" | jq -e --arg s "$1" --argjson ok "$ok" --arg b "$3" --arg r "$4" \
+      '(.createdAt // "") >= $s and (.author.login | IN($ok[]))
        and (.headRefName == $b or ((.body // "") | contains("Grind item: " + $r)))' >/dev/null 2>&1 || continue
     printf '%s\n' "$u"
   done
