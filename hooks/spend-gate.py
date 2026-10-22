@@ -170,21 +170,25 @@ SEEN = {}  # the hook input once read, so a trace can name its session
 
 def trace(stage, err):
     """Record an error the gate swallows to allow the call, through
-    hooks/lib_state.py; stderr from a hook that exits 0 reaches no one."""
+    hooks/lib_state.py; stderr from a hook that exits 0 reaches no one. Once
+    per session: each of these repeats on every tool call until fixed."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import lib_state
     lib_state.LAST.update(SEEN)
-    lib_state.trace_failure("spend-gate", "PreToolUse", err, stage)
+    lib_state.trace_failure("spend-gate", "PreToolUse", err, stage, once=True)
 
 
-def line_from_env(name):
+def line_from_env(name, bad):
+    """The line in env var name, or None; a value that is not a number is
+    ignored and its error added to bad, for main to trace once the session
+    is known."""
     raw = os.environ.get(name, "").strip()
     if not raw:
         return None
     try:
         v = float(raw)
     except ValueError:
-        trace("line", ValueError(f"{name}={raw!r} is not a number; ignoring it"))
+        bad.append(ValueError(f"{name}={raw!r} is not a number; ignoring it"))
         return None
     return v if v > 0 else None
 
@@ -204,9 +208,10 @@ def fmt_tokens(n):
 
 
 def main():
-    usd_line = line_from_env("SPEND_GATE_USD")
-    tok_line = line_from_env("SPEND_GATE_TOKENS")
-    if usd_line is None and tok_line is None:
+    bad = []
+    usd_line = line_from_env("SPEND_GATE_USD", bad)
+    tok_line = line_from_env("SPEND_GATE_TOKENS", bad)
+    if usd_line is None and tok_line is None and not bad:
         return 0
     handoff = os.environ.get("SPEND_GATE_HANDOFF", "").strip() or "HANDOFF.md"
     try:
@@ -216,6 +221,10 @@ def main():
         return 0
     if isinstance(inp, dict) and inp.get("session_id"):
         SEEN["session_id"] = inp["session_id"]
+    for err in bad:
+        trace("line", err)
+    if usd_line is None and tok_line is None:
+        return 0
     path = inp.get("transcript_path") or ""
     try:
         spend, ctx = measure(path)

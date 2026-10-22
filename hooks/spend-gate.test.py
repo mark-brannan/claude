@@ -52,8 +52,7 @@ class SpendGateTest(unittest.TestCase):
                 for ln in p.read_text().splitlines()]
         for r in rows:
             self.assertEqual((r["hook"], r["event"]), ("spend-gate", "PreToolUse"))
-            # the line is read before the input, so only later stages know the session
-            self.assertEqual(r["session_id"], "" if r["stage"] == "line" else "s")
+            self.assertEqual(r["session_id"], "s")
         return [(r["stage"], r["error"]) for r in rows]
 
     def run_hook(self, tool, tool_input, transcript=None, extra=None, **env):
@@ -174,6 +173,7 @@ class SpendGateTest(unittest.TestCase):
     def test_a_line_that_is_not_a_number_is_ignored(self):
         d, _, err = self.run_hook(*self.BASH, SPEND_GATE_USD="five")
         self.assertEqual((d, err), ("allow", ""))
+        self.run_hook(*self.BASH, SPEND_GATE_USD="five")  # a second call adds no second row
         ((stage, why),) = self.traced()
         self.assertEqual(stage, "line")
         self.assertIn("SPEND_GATE_USD='five' is not a number", why)

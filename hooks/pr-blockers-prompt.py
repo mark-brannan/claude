@@ -25,9 +25,9 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-import lib_state
-
 sys.dont_write_bytecode = True
+
+import lib_state  # noqa: E402
 
 MAX_PRS = 3
 TIMEOUT_S = 20

@@ -39,6 +39,15 @@ class HooktraceTest(unittest.TestCase):
                          ("log-commit", "main", "ValueError: boom", "PostToolUse"))
         self.assertEqual(hooktrace.recent(self.sd), [row])
 
+    def test_once_skips_a_repeat_in_the_same_session(self):
+        for err in ("bad line", "bad line", "other"):
+            hooktrace.trace("spend-gate", "line", ValueError(err), session_id="abc9", once=True)
+        hooktrace.trace("spend-gate", "line", ValueError("bad line"), session_id="abc9")  # once=False: always
+        hooktrace.trace("spend-gate", "line", ValueError("bad line"), session_id="abd0", once=True)  # another session
+        rows = [json.loads(ln) for ln in Path(f"{self.sd}/metrics/hook-errors/ab/abc9.jsonl").read_text().splitlines()]
+        self.assertEqual([r["error"] for r in rows], ["ValueError: bad line", "ValueError: other", "ValueError: bad line"])
+        self.assertTrue(Path(f"{self.sd}/metrics/hook-errors/ab/abd0.jsonl").exists())
+
     def test_a_flat_file_is_still_appended_to(self):
         d = f"{self.sd}/metrics/hook-errors"
         os.makedirs(d)
