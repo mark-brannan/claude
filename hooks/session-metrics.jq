@@ -401,7 +401,7 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
     | (($seen_before[$h | tostring]) // {}) as $seen
     | ($clean as $c | ($c | s4_caps($seen)) or ($c | s4_words)
                        or (($c | split("\n") | first // "") | s4_emph)) as $heat
-    | first($atext[] | select(.i > $h)) as $next
+    | (first($atext[] | select(.i > $h)) // {text: ""}) as $next
     | ((($next.text // "")[0:200]) | s2_retract) as $retracted
     | (($veto_at | map(select(. > $prev and . <= $h)) | length) > 0) as $veto
     | ([ (if $lexicon then "lexicon" else empty end),
