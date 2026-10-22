@@ -105,7 +105,7 @@ hooks/session-start-continuity.sh
 hooks/stop-continuity.py
 hooks/stop-sequence.py
 hooks/stop-item.py
-hooks/measure-git-events.sh
+hooks/measure-git-events.py
 hooks/no-persistent-polling.sh
 hooks/no-late-pr-subscribe.sh
 hooks/release-subagent-branch.sh
