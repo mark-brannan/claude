@@ -4,10 +4,10 @@
 # The hook only decides -- nothing here runs npm -- so every case is a
 # payload in and a decision out.
 #
-# The hook reads commands through the languette plugin's scanner. LANGUETTE_ROOT
-# is the languette checkout to test against (ci.yml clones it); unset, the
-# user-scope plugin install this machine has. Each case runs under a scratch
-# HOME whose installed_plugins.json points there.
+# The hook reads commands through the languette plugin's scanner: the user-scope
+# install this machine's installed_plugins.json records (ci.yml clones languette
+# and records it). Each case runs under a scratch HOME whose
+# installed_plugins.json points there.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -19,10 +19,10 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 REAL_PLUGINS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
 unset CLAUDE_CONFIG_DIR
 export HOME="$TMP/home"; mkdir -p "$HOME/.claude/plugins"
-ROOT=${LANGUETTE_ROOT:-$(jq -r '[.plugins | to_entries[] | select(.key | startswith("languette@")) | .value[]
-                                 | select(.scope == "user") | .installPath][0] // empty' "$REAL_PLUGINS" 2>/dev/null)}
+ROOT=$(jq -r '[.plugins | to_entries[] | select(.key | startswith("languette@")) | .value[]
+               | select(.scope == "user") | .installPath][0] // empty' "$REAL_PLUGINS" 2>/dev/null)
 printf 'x' | python3 -I "$ROOT/languette/__main__.py" scan >/dev/null 2>&1 ||
-  { echo "FAIL: no languette with \`scan\` at '$ROOT' (set LANGUETTE_ROOT to a languette checkout)"; exit 1; }
+  { echo "FAIL: no languette with \`scan\` at '$ROOT' (install the languette plugin)"; exit 1; }
 plugins() {  # plugins <install path>: the scratch HOME's languette install
   jq -n --arg p "$1" '{version:2,plugins:{"languette@languette":[{scope:"user",installPath:$p}]}}' \
     > "$HOME/.claude/plugins/installed_plugins.json"

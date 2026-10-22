@@ -206,7 +206,10 @@ def said_words(root, url):
     me, said = gh(root, "api", "user"), gh(root, "api", path)
     if not isinstance(me, dict) or not isinstance(said, dict):
         return f"cannot read {url} with gh; nothing logged", None
-    login, body = (said.get("user") or {}).get("login"), said.get("body") or ""
+    user = said.get("user") or {}
+    login, body = user.get("login"), said.get("body") or ""
+    if user.get("type") == "Bot":  # agents post as a GitHub App, which GitHub records as a Bot
+        return f"{url} is by {login}, a bot: an agent's comment, not the user's words", None
     if login != me.get("login"):
         return f"{url} is by {login or 'nobody'}, not {me.get('login')}: not the user's words", None
     if body.lstrip().startswith(SIGNED):

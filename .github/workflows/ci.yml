@@ -88,13 +88,13 @@ jobs:
           git init -q "$d"
           git -C "$d" fetch -q --depth 1 https://github.com/mark-brannan/languette "$LANGUETTE_SHA"
           git -C "$d" checkout -q FETCH_HEAD
+          # the install the hooks and their tests read, as Claude Code records it
+          mkdir -p "$HOME/.claude/plugins"
+          jq -n --arg p "$d" '{version:2,plugins:{"languette@languette":[{scope:"user",installPath:$p}]}}' \
+            > "$HOME/.claude/plugins/installed_plugins.json"
       - name: Python test suites
-        env:
-          LANGUETTE_ROOT: ${{ runner.temp }}/languette
         run: for t in bin/*.test.py hooks/*.test.py lib/*.test.py; do echo "== $t"; python3 "$t"; done
       - name: Run every other test suite in parallel
-        env:
-          LANGUETTE_ROOT: ${{ runner.temp }}/languette
         run: |
           set -euo pipefail
           printf '%s\n' hooks/*.test.sh bin/*.test.sh \
