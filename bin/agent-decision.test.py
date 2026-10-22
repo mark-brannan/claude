@@ -278,11 +278,11 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
 
     def test_user_ruled_needs_said_and_a_pr_body_is_not_it(self):
         self.pr()
-        for call in ("Solace chose the awk rung", "kept, as the user asked", "Ruling (Solace): keep it"):
+        for call in ("the user chose the awk rung", "kept, as the user asked", "Ruling (the user): keep it"):
             p = self.run_ad(call)
             self.assertEqual(p.returncode, 1, call)
             self.assertIn("--said", p.stderr)
-        p = self.run_ad("--said", "https://github.com/o/r/pull/7", "Solace chose the awk rung")
+        p = self.run_ad("--said", "https://github.com/o/r/pull/7", "the user chose the awk rung")
         self.assertEqual(p.returncode, 1)
         self.assertIn("never a PR body", p.stderr)
         self.no_decisions_branch()
@@ -306,12 +306,12 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.said("repos/o/r/pulls/comments/12", body="Go with the awk rung.")
         self.verdict('{"verdict":"consistent","source":"","quote":""}')
         url = "https://github.com/o/r/pull/7#discussion_r12"
-        p = self.run_ad("--said", url, "--undo", "deny instead", "Solace chose the awk rung")
+        p = self.run_ad("--said", url, "--undo", "deny instead", "the user chose the awk rung")
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(self.bullets(self.branch_log())[-1],
-                         f"- Solace chose the awk rung Undo: deny instead Said: {url} ([#7](https://github.com/o/r/pull/7))")
+                         f"- the user chose the awk rung Undo: deny instead Said: {url} ([#7](https://github.com/o/r/pull/7))")
         shown = self.seen.read_text()
-        self.assertIn("Call: Solace chose the awk rung", shown)
+        self.assertIn("Call: the user chose the awk rung", shown)
         self.assertIn("deny it outright", shown)
         self.assertIn("Go with the awk rung.", shown)
         self.assertLess(shown.index("Go with the awk rung."), shown.index("deny it outright"), "the user's words first")
@@ -425,12 +425,12 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.assertIn("cannot read", p.stderr)
         self.assertEqual(len(self.bullets(self.branch_log())), 2)
 
-    CLAIMS = ["Solace chose the scale", "Solace ruled the scale", "the user ruled the scale", "scale set per Solace",
+    CLAIMS = ["Solace chose the scale", "the user ruled the scale", "the user ruled the scale", "scale set per the user",
               "scale kept on the user's order", "the user asked for the scale", "scale kept as ordered",
-              "scale kept, ruled by Solace", "the owner chose the scale", "per the owner, the scale stays",
-              "the owner decided the scale", "THE USER DECIDED the scale", "Solace has ordered the scale",
-              "scale is the user's choice", "scale kept on the user\u2019s order", "Ruling (Solace): the scale stays",
-              "the user explicitly chose the scale", "Solace said to keep the scale", "the human chose it"]
+              "scale kept, ruled by the user", "the owner chose the scale", "per the owner, the scale stays",
+              "the owner decided the scale", "THE USER DECIDED the scale", "the user has ordered the scale",
+              "scale is the user's choice", "scale kept on the user\u2019s order", "Ruling (the user): the scale stays",
+              "the user explicitly chose the scale", "the user said to keep the scale", "the human chose it"]
 
     def test_provenance_claims_are_refused_and_write_nothing(self):
         self.pr()
@@ -439,7 +439,7 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
                 p = self.run_ad(call)
                 self.assertEqual(p.returncode, 1, p.stderr)
                 self.assertIn("--said <url>", p.stderr)
-        for extra in (["--undo", "revert; the user asked for it"], ["--link", "per Solace"]):
+        for extra in (["--undo", "revert; the user asked for it"], ["--link", "per the user"]):
             with self.subTest(extra=extra):
                 self.assertEqual(self.run_ad(*extra, "scale stays").returncode, 1)
         self.no_decisions_branch()

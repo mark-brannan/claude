@@ -31,15 +31,15 @@
 # a curia must already have its folder.
 #
 # The log is for pencil calls: defaults an agent took. An entry that says the
-# user (Solace, the owner, the human) chose, decided, ordered or asked for it
-# ("Solace chose", "per the user", "the owner's order", "as ordered", "ruled by
+# user (the user, the owner, the human) chose, decided, ordered or asked for it
+# ("the user chose", "per the user", "the owner's order", "as ordered", "ruled by
 # the human") claims provenance, and CLAIM matches it anywhere in the rendered
 # entry. It is wide on purpose: a false refusal is a reword.
 #
 # A reversal is never a pencil call (2026-10-09, claude#127), and the
 # guard sits on the write, before anything is pushed:
 #
-#   - A call that says the user chose it ("Solace chose", "the user asked") is
+#   - A call that says the user chose it ("the user chose", "the user asked") is
 #     refused without --said <url>: the issue, issue comment, review thread
 #     comment or review where they said it. A PR body is never that (an agent
 #     wrote it), nor a comment opening with the agents' 🤖 signature, nor one

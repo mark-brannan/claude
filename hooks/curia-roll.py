@@ -17,7 +17,7 @@ prompt (three at least), so a heading or a ``` inside the prompt stays inside
 the entry. The heading is the bare stamp: UTC date and time to the second with
 no separators and a lower-case `t` and `z`, so GitHub's anchor for the entry is
 `#20261002t054107z` and a reference to it is `<curia>/roll.md#<stamp>`
-(Solace, 2026-10-02; the session id was dropped from the heading the same
+(the user, 2026-10-02; the session id was dropped from the heading the same
 day). A newline is always added after the prompt before the closing fence:
 strip exactly one to get the prompt back.
 
@@ -35,7 +35,7 @@ rebuilt one agree. A prompt that is blank once they are gone writes nothing.
 
 The roll is append-only (one-entry-point curia, 2026-10-02, the words log),
 save that words sharing a stamp are one entry, joined by a blank line, as
-build-roll.py merges them (Solace, 2026-10-02). Until a curia's
+build-roll.py merges them (the user, 2026-10-02). Until a curia's
 folder is moved to the roll/digest layout, roll.md is still the curated
 document, so a folder without digest.md is skipped.
 

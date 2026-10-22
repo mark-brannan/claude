@@ -436,7 +436,7 @@ eq 'the session file says the queue ran out, exit 0' 'queue-exhausted 0' "$(jq -
 # --- caps: soft and hard, per item and per run (claude#43) -----------------------
 # What matters: an item's soft cap is --item-budget scaled by its model's price
 # against Sonnet's and its effort weight, or its budget: when that is higher;
-# its hard cap is 3x, the worker's --max-budget-usd, never cut (Solace on #47:
+# its hard cap is 3x, the worker's --max-budget-usd, never cut (the user on #47:
 # soft stops, not hard ones). Dispatch stops only once spend reaches the run's
 # soft budget, however big the next item's cap; nothing at the run level ends a
 # worker. A cap flag on --resume wins over the session file and is written to
@@ -2004,7 +2004,7 @@ GH
 chmod +x "$S/bin/gh"
 
 # --- review band: pause dispatch while PRs awaiting a look pile up -----------------
-# memory: review-band-five-to-ten (Solace, 2026-09-22); design rung 1b. Cap is
+# memory: review-band-five-to-ten (the user, 2026-09-22); design rung 1b. Cap is
 # read from worklist's own buckets.awaiting_human, the record grind already
 # fetches -- no extra gh call needed to know the band is full. Base sandbox
 # ($S/repo, no signing key), so the pr kind drops itself silently and only

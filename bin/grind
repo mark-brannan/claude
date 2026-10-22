@@ -103,7 +103,7 @@
 # hand-off prompt), each only when the account grind runs as wrote it. An item with neither gets the one default pair below,
 # which is pencil. --model and --effort are refused.
 #
-# Budgets (Solace's rulings on claude#43 and #47: soft stops, not hard ones;
+# Budgets (the user's rulings on claude#43 and #47: soft stops, not hard ones;
 # overshoot rather than kill good work -- "death by a thousand cuts"; more
 # cautious hard stops are for a later revisit). Every item has two caps:
 #   soft  the worker's stop, told in its prompt and enforced by
@@ -155,7 +155,7 @@
 # blind. A card routes by its `.repo` (its `repo:` field, else its link's
 # repo), so a project grind takes every ## Claude's card that names any
 # family repo; a card that needs PRs in two repos is not yet expressible --
-# see the PR that added this for the design (Solace, 2026-09-29: settled as
+# see the PR that added this for the design (the user, 2026-09-29: settled as
 # a given, on trial against /orchestrate, which is single-repo by design).
 #
 # A pr item is a fixup: pr-label-audit supplies its verdict and skip facts
@@ -705,7 +705,7 @@ if [ "$dry_run" -eq 0 ] && [ -n "$project" ]; then
 fi
 
 # --- review band: pause dispatch while PRs awaiting a look pile up -----------
-# memory: review-band-five-to-ten (Solace, 2026-09-22). The count is
+# memory: review-band-five-to-ten (the user, 2026-09-22). The count is
 # worklist's own buckets.awaiting_human -- the PRs its render calls "Human's
 # turn" -- so grind and worklist cannot disagree about whether the band is
 # full. The hysteresis (paused at ten, resumes below five) lives in a marker

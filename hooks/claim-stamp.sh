@@ -364,7 +364,7 @@ do_read() {  # do_read <dir> [<url>]
 # -------------------------------------------------------------- card claims
 # A card on the board's `## Claude's` is a unit of work with no branch, so
 # the branch lookup above cannot find it: a card is claimed by its link
-# (one-entry-point curia, Solace, 2026-10-01). The truth is a ledger in the
+# (one-entry-point curia, the user, 2026-10-01). The truth is a ledger in the
 # state repo, one file per card and session, which the Stop hook pushes like
 # every other state file -- so a listing reads it with no network call, and
 # a card whose link is not a GitHub issue or PR can still be claimed. Where
@@ -515,7 +515,7 @@ case "$cmd" in
 $CLAIM_HELD
 
 The claim is a stamp on ${CLAIM_URL:-the card}, refreshed by that session's Stop
-hook. It is not stale, so assume the other session is alive: say so to Solace in
+hook. It is not stale, so assume the other session is alive: say so to the user in
 one line, name the session and the card, and do not push to this branch until
 you know the other session has let go.
 EOF

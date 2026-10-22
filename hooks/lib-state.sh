@@ -576,7 +576,7 @@ branch_brief() {
 # ------------------------------------------------------------- units of work
 # A pickup item and an agent-owned work item are facets of one
 # thing, the unit of work and of continuity between sessions (one-entry-point
-# curia, Solace, 2026-10-01). Until they are one record on disk they are one
+# curia, the user, 2026-10-01). Until they are one record on disk they are one
 # record on read: every view that lists work reads it through work_record, so
 # pickup-list, worklist's resume section and /pickup cannot disagree about
 # what an item is.
@@ -694,7 +694,7 @@ work_claims_load() {
 }
 
 # is_card_id <word> -- true for a work item's identifier: epoch seconds, then
-# the minting session's eight hex, no separator (Solace, 2026-10-01).
+# the minting session's eight hex, no separator (the user, 2026-10-01).
 is_card_id() {
   case "${1:-}" in *[!0-9a-f]*|'') return 1 ;; esac
   [ ${#1} -eq 18 ] && case "$1" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*) return 0 ;; esac
