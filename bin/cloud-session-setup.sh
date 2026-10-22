@@ -93,6 +93,7 @@ lib/state.py
 lib/ids.py
 lib/lock.py
 lib/gitrun.py
+lib/hooktrace.py
 lib/libpath.py
 lib/critical_review.py
 lib/ghrest.py
@@ -129,6 +130,7 @@ hooks/permission-request-log.py
 hooks/statusline-metrics.sh
 hooks/connector-budget.sh
 hooks/session-start-sync-status.py
+hooks/session-start-hook-errors.py
 hooks/prose-budget-edit.sh
 hooks/branch-home-gate.sh
 hooks/claim-stamp.sh

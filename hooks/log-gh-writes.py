@@ -404,5 +404,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a logger never blocks a call
-        print(f"log-gh-writes: {e}", file=sys.stderr)
+        import lib_state
+        lib_state.trace_failure("log-gh-writes", "PostToolUse", e)
     sys.exit(0)
