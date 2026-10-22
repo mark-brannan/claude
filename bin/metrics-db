@@ -162,8 +162,8 @@ def load_sessions(cx, sd):
 
 def load_stream(cx, sd, sub, table, pick):
     rows = []
-    d = os.path.join(sd, "metrics", sub)
-    for p in glob.glob(os.path.join(d, "*.jsonl")) + glob.glob(os.path.join(d, "*", "*.jsonl")):  # flat or sharded
+    base = os.path.join(sd, "metrics", sub)
+    for p in glob.glob(os.path.join(base, "*.jsonl")) + glob.glob(os.path.join(base, "*", "*.jsonl")):  # flat or sharded
         sid = os.path.basename(p)[:-6]
         for d in jsonl(p):
             rows.append(pick(sid, d))
