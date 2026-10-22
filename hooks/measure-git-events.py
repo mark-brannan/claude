@@ -136,10 +136,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a logger never blocks a call
-        try:
-            import lib_state  # noqa: F401  (puts lib/ on sys.path)
-            import hooktrace
-            hooktrace.trace("measure-git-events", "main", e, str(lib_state.LAST.get("session_id") or ""), "PostToolUse")
-        except ImportError:  # a seed without lib/: stderr is all there is
-            print(f"measure-git-events: {e}", file=sys.stderr)
+        import lib_state
+        lib_state.trace_failure("measure-git-events", "PostToolUse", e)
     sys.exit(0)
