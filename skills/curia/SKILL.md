@@ -18,7 +18,9 @@ the user's to form; this skill takes the strict reading until it is.
 Ancestor concepts: the one-way-door test (why it is here at all), the
 coaching kata (the same prompt, every sitting), context engineering (the
 durable document is the point), Architecture Decision Records (ADR),
-"Working Backwards" PR/FAQ.
+"Working Backwards" PR/FAQ, nominal group technique and Delphi (positions
+formed before exposure, the `propose` opening), the 10 CFR 50.59 screen
+(what reaches the user at all, in the standing orders).
 
 **Design principle, Anthropic's words: "good context engineering means
 finding the smallest possible set of high-signal tokens that maximize the
