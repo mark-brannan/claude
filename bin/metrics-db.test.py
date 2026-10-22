@@ -135,6 +135,11 @@ class Fixture:
             {"ts": "2026-10-01T11:30:00Z", "kind": "sitting", "at": 90, "min": 30, "stay": True, "overrun": 0},
             {"ts": "2026-10-01T11:40:00Z", "kind": "sitting", "at": 100, "min": 40, "stay": False, "overrun": 1},
             {"ts": "2026-10-01T11:50:00Z", "kind": "sitting", "at": 110, "min": 50, "overrun": 2}])
+        write_jsonl(m / "permission-requests" / "se" / "sess-typed-1.jsonl", [  # sharded, as the hook writes it
+            {"ts": "2026-10-01T11:45:00Z", "session_id": "sess-typed-1", "cwd": "/w", "permission_mode": "auto",
+             "tool": "Bash", "input": {"command": "git push"}, "masked": 0},
+            {"ts": "2026-10-01T11:46:00Z", "session_id": "sess-typed-1", "cwd": "/w", "permission_mode": "auto",
+             "tool": "Write", "input": None, "masked": None}])
         write_jsonl(self.sd / "commits.jsonl", [
             {"ts": "2026-10-01T11:00:00Z", "session_id": "sess-typed-1", "repo": "acme/widgets",
              "branch": "claude/fixture", "commit": "deadbeef"},
@@ -233,6 +238,9 @@ class SourcesTest(FixtureTest):
         self.assertEqual(self.fx.q("select raw from headless_runs where ts is null"), [('["not", "an", "object"]',)])
         self.assertEqual(self.fx.q("select stay from crossings order by at"), [(1,), (0,), (None,)])
         self.assertEqual(self.fx.q("select count(*), count(distinct commit_sha) from commits"), [(2, 2)])
+        self.assertEqual(self.fx.q("select tool, permission_mode, json_extract(input, '$.command') from"
+                                   " permission_requests order by ts"),
+                         [("Bash", "auto", "git push"), ("Write", "auto", None)])
 
     def test_item_events_come_only_from_the_log_section(self):
         self.build("--quiet")

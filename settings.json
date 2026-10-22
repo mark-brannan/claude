@@ -322,6 +322,16 @@
         ]
       }
     ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/permission-request-log.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [
