@@ -368,6 +368,11 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/session-start-sync-status.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
+            "timeout": 15
           }
         ]
       }
