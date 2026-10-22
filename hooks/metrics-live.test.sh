@@ -26,7 +26,7 @@ set -uo pipefail
 # and its inherited sdk-cli would skip every blocking-Stop case.
 export CLAUDE_CODE_ENTRYPOINT=cli
 
-HOOK="$(cd "$(dirname "$0")" && pwd)/metrics-live.sh"
+HOOK="$(cd "$(dirname "$0")" && pwd)/metrics-live.py"
 pass=0; fail=0
 SCRATCH=$(mktemp -d); trap 'rm -rf "$SCRATCH"' EXIT
 export HOME="$SCRATCH/home"; mkdir -p "$HOME" "$SCRATCH/bin"
@@ -73,10 +73,10 @@ hasnt() {
 # shape the block spends on output_tokens/context_peak.
 TP="$SCRATCH/ctx.jsonl"; SID=ctx1
 turn "$TP" 103000
-out1=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out1=$(payload "$TP" "$SID" "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 turn "$TP" 152000
-payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
-out2=$(payload "$TP" "$SID" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+payload "$TP" "$SID" "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
+out2=$(payload "$TP" "$SID" "$SCRATCH" | python3 "$HOOK" posttooluse 0 show 2>&1)
 
 t     'a crossing on a prompt says nothing at all' '' "$(msg "$out1")"
 has   'the block counts both rungs'          '^⛁⛁ ' "$(msg "$out2")"
@@ -91,16 +91,16 @@ hasnt 'and the tail carries no words'          'propose|stopping' "$(msg "$out2"
 TPA="$SCRATCH/agent.jsonl"; turn "$TPA" 152000
 outa=$(payload "$TPA" agent1 "$SCRATCH" PostToolUse \
   | jq -c '. + {agent_id:"a1b2c3", agent_type:"Explore"}' \
-  | bash "$HOOK" posttooluse 0 show 2>&1)
+  | python3 "$HOOK" posttooluse 0 show 2>&1)
 t     'a tool hook inside a sub-agent is silent' '' "$outa"
-outp=$(payload "$TPA" agent1 "$SCRATCH" PostToolUse | bash "$HOOK" posttooluse 0 show 2>&1)
+outp=$(payload "$TPA" agent1 "$SCRATCH" PostToolUse | python3 "$HOOK" posttooluse 0 show 2>&1)
 has   'and the parent still gets its block afterwards' '^⛁⛁ ' "$(msg "$outp")"
 
 # claude#189: once a sub-agent transcript sits beside the parent's, the
 # parent's block must keep coming, not go silent for the rest of the session.
 TPS="$SCRATCH/withsubs.jsonl"; turn "$TPS" 152000
 mkdir -p "${TPS%.jsonl}/subagents"; turn "${TPS%.jsonl}/subagents/agent-a1b2c3.jsonl" 5000
-outs=$(payload "$TPS" subs1 "$SCRATCH" PostToolUse | bash "$HOOK" posttooluse 0 show 2>&1)
+outs=$(payload "$TPS" subs1 "$SCRATCH" PostToolUse | python3 "$HOOK" posttooluse 0 show 2>&1)
 has   'a session with sub-agent transcripts still gets its block' '^⛁⛁ ' "$(msg "$outs")"
 
 CROSS="$STATE/metrics/crossings/${SID:0:2}/$SID.jsonl"
@@ -134,19 +134,19 @@ sitting() {  # sitting <session id> <minutes since sitting start> <minutes since
 
 TP2="$SCRATCH/sit.jsonl"; turn "$TP2" 1000
 sitting gap 61 40
-out=$(payload "$TP2" gap "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out=$(payload "$TP2" gap "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 hasnt 'a 40 min gap resets the clock: no 60 min line' '⏱' "$(msg "$out")"
 
 sitting nogap 61 10
-out=$(payload "$TP2" nogap "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out=$(payload "$TP2" nogap "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has 'a 10 min gap leaves the clock running' '⏱ 1h0[0-9]' "$(msg "$out")"
 hasnt 'the hour line gives no instruction'  'stand up|stop here|/wrapup|offer' "$(msg "$out")"
 
-out=$(payload "$TP2" nogap "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out=$(payload "$TP2" nogap "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 t 'the 60 min line does not repeat' '' "$(msg "$out")"
 
 sitting twohours 121 10
-out=$(payload "$TP2" twohours "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out=$(payload "$TP2" twohours "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has   'two hours names the elapsed time'  '⏱ 2h01' "$(msg "$out")"
 hasnt 'and gives no instruction either'   'stop here|/wrapup' "$(msg "$out")"
 
@@ -161,14 +161,14 @@ sit_start() { jq -r '.sitting_start // 0' "$SITF" 2>/dev/null || true; \
 TPS="$SCRATCH/stopfirst.jsonl"; turn "$TPS" 1000
 clock_clear
 payload "$TPS" sfirst "$SCRATCH" Stop \
-  | bash "$HOOK" stop 0 show >/dev/null 2>&1
+  | python3 "$HOOK" stop 0 show >/dev/null 2>&1
 t 'a Stop before any prompt does not start the clock' 0 "$(sit_start)"
 
 payload "$TPS" sfirst "$SCRATCH" SubagentStop \
-  | bash "$HOOK" subagentstop 0 show >/dev/null 2>&1
+  | python3 "$HOOK" subagentstop 0 show >/dev/null 2>&1
 t 'nor does a SubagentStop' 0 "$(sit_start)"
 
-out=$(payload "$TPS" sfirst "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out=$(payload "$TPS" sfirst "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 hasnt 'so the first prompt after them is minute zero' '⏱' "$(msg "$out")"
 t 'and it is the prompt that starts the clock' yes \
   "$( [ "$(sit_start)" -gt 0 ] && echo yes || echo no )"
@@ -176,10 +176,10 @@ t 'and it is the prompt that starts the clock' yes \
 # An hour on the clock: a Stop must neither report it nor disturb it.
 sitting quiet 61 10
 before=$(sit_start)
-out=$(payload "$TPS" quiet "$SCRATCH" Stop | bash "$HOOK" stop 0 show 2>&1)
+out=$(payload "$TPS" quiet "$SCRATCH" Stop | python3 "$HOOK" stop 0 show 2>&1)
 hasnt 'a Stop past the line says nothing about sitting' '⏱ sitting' "$(msg "$out")"
 t    'and leaves the clock exactly where it found it' "$before" "$(sit_start)"
-out=$(payload "$TPS" quiet "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out=$(payload "$TPS" quiet "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has  'the next prompt is what reports it' '⏱ 1h0[0-9]' "$(msg "$out")"
 
 # --- 2c. one clock for the machine, one report per session -------------------
@@ -188,7 +188,7 @@ has  'the next prompt is what reports it' '⏱ 1h0[0-9]' "$(msg "$out")"
 # that any session's UserPromptSubmit advances; only time_line is per session,
 # so each chat says a threshold once where its reader is looking.
 TPM="$SCRATCH/multi.jsonl"; turn "$TPM" 1000
-P() { payload "$TPM" "$1" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1; }
+P() { payload "$TPM" "$1" "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1; }
 nag_field() { jq -r "$2" "$STATE/metrics/live/${1:0:2}/$1.nag.json" 2>/dev/null; }
 
 clock_clear
@@ -291,24 +291,24 @@ TP3="$SCRATCH/stop.jsonl"; turn "$TP3" 1000
 # of the way so what is under test is the crossing alone.
 arm() {  # arm <session id> <minutes on the shared clock>
   clock "$2" 10
-  payload "$TP3" "$1" "$REPO" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+  payload "$TP3" "$1" "$REPO" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
   plant "$1"
-  payload "$TP3" "$1" "$REPO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1
+  payload "$TP3" "$1" "$REPO" Stop | METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1
 }
 o=$(arm arm1 61)
 has 'the one-hour crossing is still reported' '⏱ 1h0[0-9]' \
-    "$(msg "$(clock 61 10; payload "$TP3" armX "$REPO" | bash "$HOOK" prompt 0 2>&1)")"
+    "$(msg "$(clock 61 10; payload "$TP3" armX "$REPO" | python3 "$HOOK" prompt 0 2>&1)")"
 t 'but it does not arm the Stop block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
 o=$(arm arm2 121)
 t 'the two-hour crossing does' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 
 S() { plant stop1; payload "$TP3" stop1 "$REPO" Stop \
-      | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
+      | METRICS_STOP_HOUR=0 python3 "$HOOK" stop 0 show 2>&1; }
 
 # A headless session (claude -p reports entrypoint sdk-cli) is never asked for
 # a hand-off; the same Stop in an interactive entrypoint still is.
 o=$(plant stop1h; payload "$TP3" stop1h "$REPO" Stop \
-    | CLAUDE_CODE_ENTRYPOINT=sdk-cli METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
+    | CLAUDE_CODE_ENTRYPOINT=sdk-cli METRICS_STOP_HOUR=0 python3 "$HOOK" stop 0 show 2>&1)
 t 'a headless Stop is not asked for a hand-off' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
 
 o1=$(S)
@@ -334,7 +334,7 @@ handoff() {  # handoff <sid> -- a pickup item whose body was edited past the def
 # model the full path. Neither restates what the body should hold.
 printf 'status: open\nupdated: x\nsession: stopn\nmodel: m\nbranch: b\npr: none\nwhere: w\nprompt: p\n---\np\n' \
   > "$PK/2026-09-09T09-00-stopn.md"
-o=$(plant stopn; payload "$TP3" stopn "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
+o=$(plant stopn; payload "$TP3" stopn "$REPO" Stop | METRICS_STOP_HOUR=0 python3 "$HOOK" stop 0 show 2>&1)
 t   'an unedited pickup item still blocks' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 has 'the notice names the item, without its directory, as unwritten' \
     '^📄 2026-09-09T09-00-stopn\.md \(p\)$' "$(msg "$o")"
@@ -347,7 +347,7 @@ has "and keeps the last word the user's" 'no summary, no question, nothing new\.
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
 printf 'status: open\nprompt: p\n---\nnext: x\n' > "$PK/2026-09-09T11-00-stopm.md"
 printf 'status: open\nprompt: p\n---\np\n' > "$PK/2026-09-09T12-00-stopm.md"
-o=$(plant stopm; payload "$TP3" stopm "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
+o=$(plant stopm; payload "$TP3" stopm "$REPO" Stop | METRICS_STOP_HOUR=0 python3 "$HOOK" stop 0 show 2>&1)
 t 'two items for one session are each listed with their state' \
   '📄 2026-09-09T11-00-stopm.md (saved HH:MM: ? · ? · ?)|📄 2026-09-09T12-00-stopm.md (p)' \
   "$(msg "$o" | grep '^📄' | sed -E 's/saved [0-9]{2}:[0-9]{2}/saved HH:MM/' | paste -sd'|')"
@@ -357,7 +357,7 @@ has 'and tells the model where a new one goes' 'none exists yet in /.*/pickup/\.
 
 handoff stop0
 S0() { plant stop0; payload "$TP3" stop0 "$REPO" Stop \
-       | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
+       | METRICS_STOP_HOUR=0 python3 "$HOOK" stop 0 show 2>&1; }
 o=$(S0); o1s=$o
 t     'an armed Stop with the block on disk does not block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
 has   'and lists the item with its saved time, link, model and effort' \
@@ -395,7 +395,7 @@ hasnt 'and carries no age line'      'Hand-off .* old|Next time' "$(msg "$o3")"
 # The block was ignored: no edited body anywhere. Say so, do not claim one,
 # and do not block again -- the late-hour arm is spent for the session.
 S3() { plant stop3; payload "$TP3" stop3 "$REPO" Stop \
-       | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1; }
+       | METRICS_STOP_HOUR=0 python3 "$HOOK" stop 0 show 2>&1; }
 o=$(S3); t 'blocks once' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 o=$(S3)
 t     'an unanswered block does not re-block' '' "$(printf '%s' "$o" | jq -r '.decision // ""')"
@@ -408,7 +408,7 @@ o=$(S3); t 'and stays quiet after' '' "$(printf '%s' "$o" | jq -r '.decision // 
 # the next Stop, which is the one that passes.
 TP4="$SCRATCH/cross.jsonl"; turn "$TP4" 103000
 plant stop4
-o=$(payload "$TP4" stop4 "$REPO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
+o=$(payload "$TP4" stop4 "$REPO" Stop | METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1)
 t   'a context crossing at Stop blocks' block "$(printf '%s' "$o" | jq -r '.decision // ""')"
 hasnt 'and the reason carries no threshold line' '⛁' \
     "$(printf '%s' "$o" | jq -r '.reason // ""')"
@@ -416,7 +416,7 @@ hasnt 'and the reason carries no threshold line' '⛁' \
 # A dirty tree is not archivable, so nothing blocks however late it is.
 : > "$REPO/dirty"
 plant stop2 'not archivable: worktree dirty'
-o4=$(payload "$TP3" stop2 "$REPO" Stop | METRICS_STOP_HOUR=0 bash "$HOOK" stop 0 show 2>&1)
+o4=$(payload "$TP3" stop2 "$REPO" Stop | METRICS_STOP_HOUR=0 python3 "$HOOK" stop 0 show 2>&1)
 t 'a dirty tree is never archivable' '' "$(printf '%s' "$o4" | jq -r '.decision // ""')"
 
 # --- 3c. order: the block first, the archival verdict after it ---------------
@@ -434,7 +434,7 @@ git -C "$REPOO" push -q -u origin feat/order
 
 TPO="$SCRATCH/order.jsonl"; turn "$TPO" 103000
 plant orderx
-oO1=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
+oO1=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1)
 t 'order setup: the first Stop blocks' block "$(printf '%s' "$oO1" | jq -r '.decision // ""')"
 
 handoff orderx
@@ -443,7 +443,7 @@ handoff orderx
 # nag, the block, and the archival tail all fire together -- no re-block.
 turn "$TPO" 152000
 plant orderx
-oO2=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
+oO2=$(payload "$TPO" orderx "$REPOO" Stop | METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1)
 t 'order: the confirming Stop does not re-block' '' "$(printf '%s' "$oO2" | jq -r '.decision // ""')"
 msgO2=$(msg "$oO2")
 status_at=$(printf '%s\n' "$msgO2" | grep -n '— ' | head -1 | cut -d: -f1)
@@ -465,17 +465,17 @@ has 'and reports the hand-off it found' '^📄 .*\(saved ' "$msgO2"
 FIX="$(cd "$(dirname "$0")" && pwd)/fixtures/friction-contentious.jsonl"
 if [ -f "$FIX" ]; then
   ctx=$(payload "$FIX" fric "$SCRATCH" \
-        | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 \
+        | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 \
         | jq -r '.hookSpecificOutput.additionalContext // ""')
   has 'the friction line reaches the model'  'corrections or rebukes' "$ctx"
   has 'and names the capacity rule'          'capacity rule'          "$ctx"
   ctx2=$(payload "$FIX" fric "$SCRATCH" \
-         | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 \
+         | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 \
          | jq -r '.hookSpecificOutput.additionalContext // ""')
   t 'and fires once, not every turn' '0' \
     "$(printf '%s' "$ctx2" | grep -c 'corrections or rebukes' | tr -d ' ')"
 
-  scr=$(msg "$(payload "$FIX" fric2 "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)")
+  scr=$(msg "$(payload "$FIX" fric2 "$SCRATCH" | python3 "$HOOK" posttooluse 0 show 2>&1)")
   has 'friction past its nag threshold trips the reason cluster' \
     '— [^ ]*⚡' "$scr"
 
@@ -495,7 +495,7 @@ if [ -f "$FIX" ]; then
   : > "$FWT/dirty.txt"
 
   fctx1=$(payload "$FIX" fricflight "$FWT" \
-          | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 \
+          | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 \
           | jq -r '.hookSpecificOutput.additionalContext // ""')
   has 'with work in flight the friction line says land it, not apply the rule' \
       'with work in flight.*Do not raise capacity or offer a stopping point yet' "$fctx1"
@@ -503,7 +503,7 @@ if [ -f "$FIX" ]; then
       'Apply the capacity rule from the standing orders, once' "$fctx1"
 
   fctx2=$(payload "$FIX" fricflight "$FWT" \
-          | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 \
+          | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 \
           | jq -r '.hookSpecificOutput.additionalContext // ""')
   has 'and a second call still says it -- unspent, not fired-once' \
       'with work in flight' "$fctx2"
@@ -513,7 +513,7 @@ if [ -f "$FIX" ]; then
   git -C "$FWT" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
   rm -f "$FWT/dirty.txt"
   fctx3=$(payload "$FIX" fricflight "$FWT" \
-          | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 \
+          | METRICS_FRICTION_TURNS=200 METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 \
           | jq -r '.hookSpecificOutput.additionalContext // ""')
   has 'and once the work lands the ordinary capacity-rule line fires' \
       'Apply the capacity rule from the standing orders, once' "$fctx3"
@@ -530,8 +530,8 @@ fi
 # and switches to "(xN)".
 TP5="$SCRATCH/ladder.jsonl"; SID5=ladder
 turn "$TP5" 350000
-payload "$TP5" "$SID5" "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
-out5=$(payload "$TP5" "$SID5" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+payload "$TP5" "$SID5" "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
+out5=$(payload "$TP5" "$SID5" "$SCRATCH" | python3 "$HOOK" posttooluse 0 show 2>&1)
 has 'the ladder reaches past the last configured line' '/350k' "$(msg "$out5")"
 has 'and the glyph count is capped, with the total after it' \
     '⛁⛁⛁⛁⛁\(x6\)' "$(msg "$out5")"
@@ -547,25 +547,25 @@ t 'six rungs cross in one jump, in order' \
 TP6="$SCRATCH/inject.jsonl"; SID6=inject
 turn "$TP6" 103000
 ctx6a=$(payload "$TP6" "$SID6" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 t 'below the first model rung, nothing reaches the model' '' "$ctx6a"
 
 turn "$TP6" 152000
 ctx6b=$(payload "$TP6" "$SID6" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 has 'the first crossing at/above the stop line offers to stop' \
     'a stopping point' "$ctx6b"
 
 turn "$TP6" 260000
 ctx6c=$(payload "$TP6" "$SID6" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 has  'a later crossing names the rung last offered'  'last offered at 125k' "$ctx6c"
 hasnt 'and does not repeat the stopping-point offer' 'a stopping point'      "$ctx6c"
 
 # dotfiles#282: a prompt that crosses no new rung carries no context line.
 turn "$TP6" 261000
 ctx6c2=$(payload "$TP6" "$SID6" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 t 'and the next prompt over the same rung says nothing' '' "$ctx6c2"
 
 # A single call can cross more than one stop-eligible rung at once (a big
@@ -575,7 +575,7 @@ t 'and the next prompt over the same rung says nothing' '' "$ctx6c2"
 TP6b="$SCRATCH/inject2.jsonl"; SID6b=inject2
 turn "$TP6b" 300000
 ctx6d=$(payload "$TP6b" "$SID6b" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 t 'one jump across three stop-eligible rungs still sends one line' \
   1 "$(printf '%s' "$ctx6d" | grep -c 'stopping point\|last offered')"
 
@@ -584,11 +584,11 @@ t 'one jump across three stop-eligible rungs still sends one line' \
 # clock clears the injection with it.
 SID6e=sitmodel
 sitting "$SID6e" 40 10
-out6e=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out6e=$(payload "$TP2" "$SID6e" "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 t 'below the first sitting rung, nothing reaches the model' '' "$(ctx "$out6e")"
 
 clock 61 10
-out6f=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out6f=$(payload "$TP2" "$SID6e" "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has 'the first sitting crossing is the time, the pickup and a pointer' \
     '^Sitting 1h01 at this machine, past 1h00\. Write the single next step .*pickup item.*without showing it\. Standing orders: "At a sitting rung"\.$' "$(ctx "$out6f")"
 has 'and names the pickup item by this session'"'"'s short id' \
@@ -602,22 +602,22 @@ t 'and the standing orders still carry that bold lead' 1 \
 hasnt 'and never offers a break or asks' 'offer a break|Offer one|\?' "$(ctx "$out6f")"
 
 clock 121 10
-out6g=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out6g=$(payload "$TP2" "$SID6e" "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has 'a later sitting crossing shapes the stop again at the new rung' \
     'Sitting 2h01 at this machine, past 2h00\. Write the single next step' "$(ctx "$out6g")"
 hasnt 'with no "last offered" repeat line' 'last offered' "$(ctx "$out6g")"
 
 # dotfiles#282: still past 2h, no new rung -- silence, not a re-nag.
 clock 125 10
-out6g2=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out6g2=$(payload "$TP2" "$SID6e" "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 t 'and the next prompt inside the same rung says nothing' '' "$(ctx "$out6g2")"
 
 clock 5 2
-out6h=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out6h=$(payload "$TP2" "$SID6e" "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 t 'a sitting-clock restart resets the model side too' '' "$(ctx "$out6h")"
 
 clock 61 10
-out6i=$(payload "$TP2" "$SID6e" "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out6i=$(payload "$TP2" "$SID6e" "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has 'so the next real crossing shapes a stop again' \
     'past 1h00\. Write the single' "$(ctx "$out6i")"
 clock_clear
@@ -633,13 +633,13 @@ git -C "$WT" checkout -q -b feature 2>/dev/null || true
 
 SID6j=sitflight
 sitting "$SID6j" 61 10
-out6j=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
+out6j=$(payload "$TP2" "$SID6j" "$WT" | python3 "$HOOK" prompt 0 2>&1)
 has 'with work in flight the rung is held until it lands' \
     'with work in flight .*land this first, without asking.*comes back once it lands\. Standing orders' "$(ctx "$out6j")"
 hasnt 'and does not point at the stop yet' 'past 1h00\. Write the single' "$(ctx "$out6j")"
 
 clock 121 10
-out6k=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
+out6k=$(payload "$TP2" "$SID6j" "$WT" | python3 "$HOOK" prompt 0 2>&1)
 has   'two hours in flight still holds the rung' \
       'comes back once it lands' "$(ctx "$out6k")"
 hasnt 'and still does not point at the stop' \
@@ -648,14 +648,14 @@ hasnt 'and still does not point at the stop' \
 # dotfiles#282: unspent is not the same as unlimited -- the in-flight line
 # still fires once per rung, not on every prompt.
 clock 125 10
-out6k2=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
+out6k2=$(payload "$TP2" "$SID6j" "$WT" | python3 "$HOOK" prompt 0 2>&1)
 t 'the in-flight line does not repeat inside its rung' '' "$(ctx "$out6k2")"
 
 # ...and the unspent offer still arrives on the prompt after the work lands,
 # at the rung that was already spoken in flight.
 git -C "$WT" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 rm -f "$WT/dirty.txt"
-out6k3=$(payload "$TP2" "$SID6j" "$WT" | bash "$HOOK" prompt 0 2>&1)
+out6k3=$(payload "$TP2" "$SID6j" "$WT" | python3 "$HOOK" prompt 0 2>&1)
 has 'and once the work lands the unspent shaping fires' \
     'past 2h00\. Write the single' "$(ctx "$out6k3")"
 clock_clear
@@ -668,7 +668,7 @@ TPt="$SCRATCH/tail.jsonl"; turn "$TPt" 1000
 tail_line() {  # tail_line <session id> [env...]
   local id=$1; shift
   sitting "$id" 61 10
-  msg "$(payload "$TPt" "$id" "$SCRATCH" | env "$@" bash "$HOOK" prompt 0 2>&1)"
+  msg "$(payload "$TPt" "$id" "$SCRATCH" | env "$@" python3 "$HOOK" prompt 0 2>&1)"
 }
 # Longitude whose local mean solar time is $1 hours right now, on the equator,
 # where the day is ~12h07 long all year.
@@ -707,7 +707,7 @@ clock_clear
 
 # --- 6b4. the stay valve ------------------------------------------------------
 TPs="$SCRATCH/stay.jsonl"; turn "$TPs" 1000
-SPROMPT() { payload "$TPs" "$1" "$SCRATCH" UserPromptSubmit "$2" | bash "$HOOK" prompt 0 2>&1; }
+SPROMPT() { payload "$TPs" "$1" "$SCRATCH" UserPromptSubmit "$2" | python3 "$HOOK" prompt 0 2>&1; }
 sitting stay1 89 2
 o=$(SPROMPT stay1 "stay 40")
 has 'stay <n> answers on screen with the quiet window' \
@@ -754,9 +754,9 @@ PIN=${BED_PIN:-1790888289}
 TPb="$SCRATCH/bed.jsonl"; turn "$TPb" 1000
 LOC="$STATE/location.json"; printf '{"tz": "UTC"}\n' > "$LOC"
 NIGHT=(METRICS_STOP_HOUR=0 METRICS_NIGHT_END_HOUR=0 METRICS_NOW="$PIN")
-BP() { payload "$TPb" "$1" "$SCRATCH" UserPromptSubmit "$2" | env "${NIGHT[@]}" bash "$HOOK" prompt 0 2>&1; }
-BT() { payload "$TPb" "$1" "$SCRATCH" PostToolUse | env "${NIGHT[@]}" bash "$HOOK" posttooluse 0 show 2>&1; }
-BD() { payload "$TPb" "$1" "$SCRATCH" UserPromptSubmit "$2" | env METRICS_NOW="$PIN" bash "$HOOK" prompt 0 2>&1; }
+BP() { payload "$TPb" "$1" "$SCRATCH" UserPromptSubmit "$2" | env "${NIGHT[@]}" python3 "$HOOK" prompt 0 2>&1; }
+BT() { payload "$TPb" "$1" "$SCRATCH" PostToolUse | env "${NIGHT[@]}" python3 "$HOOK" posttooluse 0 show 2>&1; }
+BD() { payload "$TPb" "$1" "$SCRATCH" UserPromptSubmit "$2" | env METRICS_NOW="$PIN" python3 "$HOOK" prompt 0 2>&1; }
 bedf() { jq -r "$1" "$SITF" 2>/dev/null; }
 set_bed() { jq --argjson b "$1" '.bed_at = $b' "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"; }
 kinds() { jq -r '.kind' "$STATE/metrics/crossings/${1:0:2}/$1.jsonl" 2>/dev/null | grep '^bed_' | tr '\n' ' '; }
@@ -834,7 +834,7 @@ clock_clear
 # real clock and the value is never evaluated.
 rm -f "$SCRATCH/pwned"
 payload "$TPb" bedx "$SCRATCH" UserPromptSubmit "go on" \
-  | env METRICS_NOW="a[\$(touch $SCRATCH/pwned)]" METRICS_STOP_HOUR=24 bash "$HOOK" prompt 0 >/dev/null 2>&1
+  | env METRICS_NOW="a[\$(touch $SCRATCH/pwned)]" METRICS_STOP_HOUR=24 python3 "$HOOK" prompt 0 >/dev/null 2>&1
 t 'a non-integer METRICS_NOW runs nothing' no "$([ -e "$SCRATCH/pwned" ] && echo yes || echo no)"
 t 'and the hook still records its session on the real clock' yes \
   "$([ "$(jq -r '.updated_at[0:4]' "$STATE/metrics/live/be/bedx.json" 2>/dev/null)" = "$(date -u +%Y)" ] && echo yes || echo no)"
@@ -856,13 +856,13 @@ askturn() {  # like turn(), but the assistant text is an ask
 TP6c="$SCRATCH/decmodel.jsonl"; SID6c=decmodel
 turn "$TP6c" 40000
 ctx6j=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 t 'below the first decision rung, nothing reaches the model' '' "$ctx6j"
 
 # One-entry-point §5 (2026-09-30): the decision count never nudges the model.
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do askturn "$TP6c"; done
 ctx6k=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
-        | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
+        | METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 hasnt 'past every old decision rung, nothing about decisions reaches the model' \
       'decisions pushed to the user' "$ctx6k"
 
@@ -876,7 +876,7 @@ git -C "$REPO7" init -q -b feat/nags
 git -C "$REPO7" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 TP7="$SCRATCH/sit7.jsonl"; turn "$TP7" 41000
 : > "$REPO7/scratch-file"
-o7=$(clock 61 10; payload "$TP7" sit7 "$REPO7" | METRICS_MEAL_WINDOWS='' METRICS_SUN_AFTER_HOUR=24 bash "$HOOK" prompt 0 2>&1)
+o7=$(clock 61 10; payload "$TP7" sit7 "$REPO7" | METRICS_MEAL_WINDOWS='' METRICS_SUN_AFTER_HOUR=24 python3 "$HOOK" prompt 0 2>&1)
 has 'the sitting line carries the context' '^⏱ 1h0[0-9] · context 41k' "$(msg "$o7")"
 has 'and shows the dirty tree at its end'  '^⏱ 1h0[0-9] · context 41k ⎇ 1~$' "$(msg "$o7")"
 clock_clear
@@ -890,7 +890,7 @@ REPO8="$SCRATCH/repo8"; mkdir -p "$REPO8"
 git -C "$REPO8" init -q -b feat/ahead
 git -C "$REPO8" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 TP8="$SCRATCH/repo8.jsonl"; turn "$TP8" 1000
-S8() { payload "$TP8" "$1" "$REPO8" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1; }
+S8() { payload "$TP8" "$1" "$REPO8" Stop | METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1; }
 after_box() { printf '%s\n' "$1" | awk '/📦/ { getline; print; exit }'; }
 
 plant stop8a 'not archivable: `feat/ahead` has no upstream (never pushed)'
@@ -911,12 +911,12 @@ t 'two reasons, one explanation line each' 2 "$(grep -c '^→ ' <<<"$m8c")"
 now8=$(date -u +%s)
 plant stop8d archivable $((now8 - 100))
 m8d=$(msg "$(payload "$TP8" stop8d "$REPO8" Stop \
-      | STOP_VERDICT_SINCE=$now8 METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)")
+      | STOP_VERDICT_SINCE=$now8 METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1)")
 has 'a verdict older than this Stop reads as did not finish' \
     '^📦 not archivable: the Stop hook did not finish\. ' "$m8d"
 has 'and is explained as such' '^→ no verdict this turn: ' "$(after_box "$m8d")"
 m8e=$(msg "$(payload "$TP8" stop8d "$REPO8" Stop \
-      | STOP_VERDICT_SINCE=$((now8 - 100)) METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)")
+      | STOP_VERDICT_SINCE=$((now8 - 100)) METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1)")
 has 'the same verdict at the boundary is current' '^📦 archivable\. ' "$m8e"
 
 m8f=$(msg "$(S8 stop8none)")
@@ -936,12 +936,12 @@ REPO9="$SCRATCH/repo9"; mkdir -p "$REPO9"
 git -C "$REPO9" init -q -b main
 git -C "$REPO9" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 TP9="$SCRATCH/repo9.jsonl"; turn "$TP9" 1000
-o9=$(payload "$TP9" show9 "$REPO9" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
+o9=$(payload "$TP9" show9 "$REPO9" Stop | METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1)
 has 'a clean tree still prints the turns line' '⇢ [0-9]+ ⚙ [0-9]+' "$(msg "$o9")"
 hasnt 'and says nothing about git state' '⎇' "$(msg "$o9")"
 
 : > "$REPO9/scratch-file"
-o9b=$(payload "$TP9" show9b "$REPO9" Stop | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show 2>&1)
+o9b=$(payload "$TP9" show9b "$REPO9" Stop | METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show 2>&1)
 has 'a dirty tree appends git state to the same line' '⇢ [0-9]+ ⚙ [0-9]+ ⎇ 1~' "$(msg "$o9b")"
 
 # --- 9b. the turns line is byte-identical to the jq it replaced -------------
@@ -998,7 +998,7 @@ GH
 chmod +x "$SCRATCH/bin/gh"
 OUT10="$STATE/metrics/live/ra/race.json"
 payload "$TP10" race "$REPO10" Stop \
-  | METRICS_STOP_HOUR=24 bash "$HOOK" stop 0 show > "$SCRATCH/o10.out" 2>&1 &
+  | METRICS_STOP_HOUR=24 python3 "$HOOK" stop 0 show > "$SCRATCH/o10.out" 2>&1 &
 hook_pid=$!
 until [ -f "$OUT10" ]; do :; done
 rm -f "$OUT10"
@@ -1024,7 +1024,7 @@ chmod +x "$SCRATCH/bin/gh"
 DAY=(METRICS_STOP_HOUR=24 METRICS_NIGHT_END_HOUR=0)
 rm -f "$STATE/metrics/sitting.json"
 TP11="$SCRATCH/calm.jsonl"; turn "$TP11" 1000
-o11=$(msg "$(payload "$TP11" calm "$SCRATCH" | env "${DAY[@]}" bash "$HOOK" posttooluse 0 show 2>&1)")
+o11=$(msg "$(payload "$TP11" calm "$SCRATCH" | env "${DAY[@]}" python3 "$HOOK" posttooluse 0 show 2>&1)")
 has 'friction at zero shows its calm glyph'  '🌌\(x0\)' "$o11"
 has 'decisions at zero show theirs'          '🧘\(x0\)' "$o11"
 has 'and blocked is unchanged'               '🔧✅\(x0\)' "$o11"
@@ -1033,7 +1033,7 @@ hasnt 'a calm block carries no verdict tail' ' — ' "$o11"
 # dotfiles#137: UserPromptSubmit renders the block same as every other wired
 # event now -- high frequency was the explicit ask, not a per-event opt-in.
 TP11P="$SCRATCH/calm-prompt.jsonl"; turn "$TP11P" 1000
-o11p=$(msg "$(payload "$TP11P" calmprompt "$SCRATCH" | bash "$HOOK" prompt 0 show 2>&1)")
+o11p=$(msg "$(payload "$TP11P" calmprompt "$SCRATCH" | python3 "$HOOK" prompt 0 show 2>&1)")
 has 'UserPromptSubmit renders the block too' '^(»|⛁)' "$o11p"
 
 # The sitting cluster gets louder past NAG_SIT_HOT_RUNG rungs, night or day,
@@ -1042,17 +1042,17 @@ SITF11=$STATE/metrics/sitting.json
 mkdir -p "$(dirname "$SITF11")"
 jq -nc --argjson s "$(( $(date +%s) - 9000 ))" \
   '{sitting_start: $s, last_prompt: $s}' > "$SITF11"
-o11b=$(msg "$(payload "$TP11" calm2 "$SCRATCH" | env "${DAY[@]}" bash "$HOOK" posttooluse 0 show 2>&1)")
+o11b=$(msg "$(payload "$TP11" calm2 "$SCRATCH" | env "${DAY[@]}" python3 "$HOOK" posttooluse 0 show 2>&1)")
 has 'past the hot rung the glyph changes'     '⏱2h30(⏱️|🌙){3}⏰⏰' "$o11b"
 o11c=$(msg "$(payload "$TP11" calm3 "$SCRATCH" | env "${DAY[@]}" METRICS_SIT_HOT_RUNG=9 \
-  bash "$HOOK" posttooluse 0 show 2>&1)")
+  python3 "$HOOK" posttooluse 0 show 2>&1)")
 has 'and the rung is a knob like every other' '⏱2h30(⏱️|🌙){5}' "$o11c"
 
 # dotfiles#137: the reason cluster trips on the same hot rung as the glyph
 # itself, no second threshold to keep in sync.
 has 'the sitting reason glyph trips at the hot rung' '— [^ ]*⏱️' "$o11b"
 o11d=$(msg "$(payload "$TP11" calm4 "$SCRATCH" | env "${DAY[@]}" METRICS_SIT_HOT_RUNG=9 \
-  bash "$HOOK" posttooluse 0 show 2>&1)")
+  python3 "$HOOK" posttooluse 0 show 2>&1)")
 hasnt 'and stays quiet while the rung is raised past it' ' — ' "$o11d"
 
 # The night arm of the same window, forced open rather than waited for: a
@@ -1061,7 +1061,7 @@ hasnt 'and stays quiet while the rung is raised past it' ' — ' "$o11d"
 # between 22:00 and 05:00 Pacific, as a failure.
 o11n=$(msg "$(payload "$TP11" calm5 "$SCRATCH" | env METRICS_STOP_HOUR=0 \
   METRICS_NIGHT_END_HOUR=24 METRICS_SIT_HOT_RUNG=9 \
-  bash "$HOOK" posttooluse 0 show 2>&1)")
+  python3 "$HOOK" posttooluse 0 show 2>&1)")
 has 'at night a sitting clock alone trips the night reason' '— 🌙$' "$o11n"
 rm -f "$SITF11"
 
@@ -1072,15 +1072,15 @@ rm -f "$SITF11"
 # are behaviour a prompt-only engine could not have.
 TP12="$SCRATCH/ptu.jsonl"
 turn "$TP12" 40000
-payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+payload "$TP12" ptu "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 turn "$TP12" 152000
-o12=$(payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+o12=$(payload "$TP12" ptu "$SCRATCH" | python3 "$HOOK" posttooluse 0 show 2>&1)
 has 'a rung crossed by a tool call injects on that call'     'Context at 152k' "$(ctx "$o12")"
 t   'and the injection names PostToolUse, not the prompt event' PostToolUse     "$(printf '%s' "$o12" | jq -r '.hookSpecificOutput.hookEventName // ""')"
 has 'while the block still renders in the same object' '— 💸'     "$(msg "$o12")"
 
 turn "$TP12" 153000
-o12b=$(payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1)
+o12b=$(payload "$TP12" ptu "$SCRATCH" | python3 "$HOOK" posttooluse 0 show 2>&1)
 t   'the next tool call injects nothing -- no new rung' '' "$(ctx "$o12b")"
 has 'though the block is unaffected' '— 💸' "$(msg "$o12b")"
 
@@ -1088,26 +1088,26 @@ has 'though the block is unaffected' '— 💸' "$(msg "$o12b")"
 for n in 2 3; do
   turn "$TP12" $((153000 + n))
   o12c=$(payload "$TP12" ptu "$SCRATCH" \
-         | METRICS_MODEL_CONTEXT_REPEAT=3 bash "$HOOK" posttooluse 0 show 2>&1)
+         | METRICS_MODEL_CONTEXT_REPEAT=3 python3 "$HOOK" posttooluse 0 show 2>&1)
 done
 has 'a raised rung is said again after the repeat count'     'for 3 tool calls: a stopping point is due' "$(ctx "$o12c")"
 turn "$TP12" 154000
 o12d=$(payload "$TP12" ptu "$SCRATCH" \
-       | METRICS_MODEL_CONTEXT_REPEAT=3 bash "$HOOK" posttooluse 0 show 2>&1)
+       | METRICS_MODEL_CONTEXT_REPEAT=3 python3 "$HOOK" posttooluse 0 show 2>&1)
 t   'and the counter resets, so it does not repeat every call' '' "$(ctx "$o12d")"
 
 # A Stop takes no injection: hookSpecificOutput is not a thing it may carry,
 # and its crossings reach the model through the block reason instead.
 TP12s="$SCRATCH/ptu-stop.jsonl"
 turn "$TP12s" 152000
-o12e=$(payload "$TP12s" ptustop "$SCRATCH" | bash "$HOOK" stop 0 show 2>&1)
+o12e=$(payload "$TP12s" ptustop "$SCRATCH" | python3 "$HOOK" stop 0 show 2>&1)
 t   'a Stop never carries an additionalContext' '' "$(ctx "$o12e")"
 
 # Prompts still own the counters wound by the user's rhythm: a tool call must
 # not advance the sitting clock or the decision ladder.
 SITF12=$STATE/metrics/sitting.json
 before12=$(jq -r '.sitting_start // 0' "$SITF12" 2>/dev/null || echo 0)
-payload "$TP12" ptu "$SCRATCH" | bash "$HOOK" posttooluse 0 show >/dev/null 2>&1
+payload "$TP12" ptu "$SCRATCH" | python3 "$HOOK" posttooluse 0 show >/dev/null 2>&1
 t   'a tool call leaves the sitting clock where it found it' "$before12" \
     "$(jq -r '.sitting_start // 0' "$SITF12" 2>/dev/null || echo 0)"
 
@@ -1121,7 +1121,7 @@ TP13a="$SCRATCH/day-a.jsonl"; SID13a=day-a
 turn "$TP13a" 40000
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do askturn "$TP13a"; done
 o13b=$(payload "$TP13a" "$SID13a" "$SCRATCH" \
-       | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 show 2>&1)
+       | METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 show 2>&1)
 t    'no day line on screen at any count'      '' "$(msg "$o13b" | grep -o '☀.*' || true)"
 t    'no gate line on screen at any count'     '' "$(msg "$o13b" | grep -o '⚖ [0-9].*' || true)"
 t    'and nothing about decisions reaches the model' '' \
@@ -1136,7 +1136,7 @@ jq --argjson past "$(( $(date +%s) - 200 * 60 ))" '.last_prompt = $past' "$DAYF"
 TP13d="$SCRATCH/day-c.jsonl"; SID13d=day-c
 turn "$TP13d" 40000
 payload "$TP13d" "$SID13d" "$SCRATCH" \
-  | METRICS_DECISION_GAP_MIN=180 METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 show >/dev/null 2>&1
+  | METRICS_DECISION_GAP_MIN=180 METRICS_SIT_EVERY_MIN=0 python3 "$HOOK" prompt 0 show >/dev/null 2>&1
 t    'a gap past the limit clears the day, so the store holds only the new session' \
      "$SID13d" "$(jq -r '.sessions | keys[0] // ""' "$DAYF" 2>/dev/null)"
 
@@ -1151,14 +1151,14 @@ turn "$TP14" 103000
 LOCKDIR="$STATE/metrics/live/$SID14.lock"
 mkdir -p "$LOCKDIR"
 printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$LOCKDIR/meta"
-out14=$(payload "$TP14" "$SID14" "$SCRATCH" | bash "$HOOK" posttooluse 0 show 2>&1); rc14=$?
+out14=$(payload "$TP14" "$SID14" "$SCRATCH" | python3 "$HOOK" posttooluse 0 show 2>&1); rc14=$?
 t    'a held lock never blocks the hook' 0 "$rc14"
 has  'the block still renders normally' '⛁' "$(msg "$out14")"
 t    'and the nag write is skipped while the lock is held' no \
      "$([ -f "$STATE/metrics/live/${SID14:0:2}/$SID14.nag.json" ] && echo yes || echo no)"
 
 rm -rf "$LOCKDIR"
-payload "$TP14" "$SID14" "$SCRATCH" | bash "$HOOK" posttooluse 0 show >/dev/null 2>&1
+payload "$TP14" "$SID14" "$SCRATCH" | python3 "$HOOK" posttooluse 0 show >/dev/null 2>&1
 t    'once the lock is free, the same session writes normally' yes \
      "$([ -f "$STATE/metrics/live/${SID14:0:2}/$SID14.nag.json" ] && echo yes || echo no)"
 t    'and releases the lock dir behind it' no \
@@ -1176,29 +1176,29 @@ backdate() {  # backdate <minutes> -- move every time crossing's ts that far bac
 }
 after() { jq -c 'select(.kind == "time_after") | [.at, .min, .stay, .quiet]' "$X15" 2>/dev/null; }
 sitting aft 61 5
-payload "$TP15" aft "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+payload "$TP15" aft "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 t 'the crossing prompt stamps nothing' '' "$(after)"
 backdate 3
-payload "$TP15" aft "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "  Stay."}' | bash "$HOOK" prompt 0 >/dev/null 2>&1
+payload "$TP15" aft "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "  Stay."}' | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 t 'the next prompt stamps minutes, stay, not quiet' '[60,3,true,false]' "$(after)"
-payload "$TP15" aft "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+payload "$TP15" aft "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 t 'and a crossing is stamped once' 1 "$(after | wc -l | tr -d ' ')"
 
 sitting aft2 61 5
 X15="$STATE/metrics/crossings/af/aft2.jsonl"
-payload "$TP15" aft2 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+payload "$TP15" aft2 "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 backdate 40
 payload "$TP15" aft2 "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "stay here and fix it"}' \
-  | bash "$HOOK" prompt 0 >/dev/null 2>&1
+  | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 t 'a gap past the sitting gap is quiet; a sentence is not a stay' \
   '[60,40,false,true]' "$(after)"
 
 sitting aft3 61 5
 X15="$STATE/metrics/crossings/af/aft3.jsonl"
-payload "$TP15" aft3 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+payload "$TP15" aft3 "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 backdate 1
 payload "$TP15" aft3 "$SCRATCH" UserPromptSubmit | jq -c '. + {prompt: "/stay 30"}' \
-  | bash "$HOOK" prompt 0 >/dev/null 2>&1
+  | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 t '`stay <minutes>` is a stay' '[60,1,true,false]' "$(after)"
 
 # --- 16. how a sitting rung's sitting ended -----------------------------------
@@ -1210,8 +1210,8 @@ shift_ts() {  # shift_ts <file> <kind> <minutes> -- move that kind's ts back
     then .ts = ((.ts | fromdateiso8601) - $m * 60 | todateiso8601) else . end' "$1" > "$1.t" && mv "$1.t" "$1"
 }
 said() { payload "$TP15" "$1" "$SCRATCH" UserPromptSubmit | jq -c --arg p "$2" '. + {prompt: $p}' \
-  | bash "$HOOK" prompt 0 >/dev/null 2>&1; }
-stop() { payload "$TP15" "$1" "$SCRATCH" Stop | bash "$HOOK" stop 0 >/dev/null 2>&1; }
+  | python3 "$HOOK" prompt 0 >/dev/null 2>&1; }
+stop() { payload "$TP15" "$1" "$SCRATCH" Stop | python3 "$HOOK" stop 0 >/dev/null 2>&1; }
 last() { jq -c 'select(.kind == "time_last") | [.min_to_last, .overrun]' "$STATE/metrics/crossings/${1:0:2}/$1.jsonl"; }
 
 sitting end1 61 5; said end1 go; shift_ts "$STATE/metrics/crossings/en/end1.jsonl" time 10
@@ -1237,22 +1237,22 @@ t 'the next sitting start stamps every chat, from the old last prompt' '[10,null
 mkdir -p "$STATE/curia/cx"
 sitting cur1 61 10
 printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
-out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out17=$(payload "$TP2" cur1 "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 hasnt 'a live curia names the session: no sitting line' '⏱ 1h0' "$(msg "$out17")"
 t     'and nothing reaches the model' '' "$(ctx "$out17")"
 t     'and the sitting is still counted' yes \
       "$([ -f "$STATE/metrics/sitting.json" ] && echo yes || echo no)"
 sitting cur2 61 10
-out17=$(payload "$TP2" cur2 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out17=$(payload "$TP2" cur2 "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has   'a LIVE naming another session leaves this one nagging' '⏱ 1h0[0-9]' "$(msg "$out17")"
 # Two hours must not arm the Stop hand-off block while the curia is live.
 sitting cur3 121 10
 printf 'cur3 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
-payload "$TP2" cur3 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+payload "$TP2" cur3 "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 t 'a live curia past two hours does not arm the Stop nag' false \
   "$(jq -r '.since_nag' "$STATE/metrics/live/cu/cur3.nag.json")"
 sitting cur4 121 10
-payload "$TP2" cur4 "$SCRATCH" | bash "$HOOK" prompt 0 >/dev/null 2>&1
+payload "$TP2" cur4 "$SCRATCH" | python3 "$HOOK" prompt 0 >/dev/null 2>&1
 t 'and without one it does' true \
   "$(jq -r '.since_nag' "$STATE/metrics/live/cu/cur4.nag.json")"
 # A long pause in a live sitting stays silent; only a marker past the
@@ -1260,25 +1260,25 @@ t 'and without one it does' true \
 cp "$TP2" "$SCRATCH/idle.jsonl"; touch -d '6 minutes ago' "$SCRATCH/idle.jsonl"
 sitting cur5 61 10
 printf 'cur5 %s\n' "$(date -u -d '30 minutes ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
-out17=$(payload "$SCRATCH/idle.jsonl" cur5 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out17=$(payload "$SCRATCH/idle.jsonl" cur5 "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 hasnt 'a sitting past 25 min with a 6 min pause stays silent' '⏱' "$(msg "$out17")"
 sitting cur6 61 10
 printf 'cur6 %s\n' "$(date -u -d '9 hours ago' +%FT%TZ)" > "$STATE/curia/cx/LIVE"
-out17=$(payload "$SCRATCH/idle.jsonl" cur6 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out17=$(payload "$SCRATCH/idle.jsonl" cur6 "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has 'a marker older than 8 hours no longer silences the session' '⏱ 1h0[0-9]' "$(msg "$out17")"
 # Gentle lines are held while the curia is live and said once when it is not.
 HELD17="$STATE/metrics/live/cu/cur1.held"
 t 'the sitting line was held, not dropped' yes "$([ -s "$HELD17" ] && echo yes || echo no)"
 sleep 1; printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/CLOSED"
-payload "$TP2" cur1 "$SCRATCH" Stop | bash "$HOOK" stop 0 show >/dev/null 2>&1
+payload "$TP2" cur1 "$SCRATCH" Stop | python3 "$HOOK" stop 0 show >/dev/null 2>&1
 t 'a Stop after the close leaves the held line for the next prompt' yes "$([ -s "$HELD17" ] && echo yes || echo no)"
-out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out17=$(payload "$TP2" cur1 "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 has   'at the close (CLOSED beside a fresh LIVE) the held sitting line is delivered' '⏱ 1h0[0-9]' "$(msg "$out17")"
-out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out17=$(payload "$TP2" cur1 "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 hasnt 'and not repeated on the prompt after' '⏱' "$(msg "$out17")"
 sleep 1; printf 'cur1 %s\n' "$(date -u +%FT%TZ)" > "$STATE/curia/cx/LIVE"
 sitting cur1 121 10
-out17=$(payload "$TP2" cur1 "$SCRATCH" | bash "$HOOK" prompt 0 2>&1)
+out17=$(payload "$TP2" cur1 "$SCRATCH" | python3 "$HOOK" prompt 0 2>&1)
 hasnt 'a newer LIVE supersedes the CLOSED: silent again' '⏱' "$(msg "$out17")"
 # Bedtime: held, then delivered once.
 set_bed $(( PIN + 240 )); jq --arg e "$(TZ=UTC date -d "@$PIN" +%Y-%m-%d)" ".bed_asked_eve = \$e" "$SITF" > "$SITF.t" && mv "$SITF.t" "$SITF"
