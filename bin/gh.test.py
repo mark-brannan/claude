@@ -52,6 +52,7 @@ class Shim(unittest.TestCase):
         self.assertEqual(self.gh("api", "user", "--jq", ".login")[1], "user api user --jq .login")
         self.assertEqual(self.gh("api", "/user")[1], "user api /user")
         self.assertEqual(self.gh("pr", "merge", "3")[1], "user pr merge 3")
+        self.assertEqual(self.gh("auth", "git-credential")[1], "user auth git-credential")
         self.assertEqual(self.gh("api", "users/x")[1], "agent api users/x")
 
     def test_the_real_gh_otherwise(self):

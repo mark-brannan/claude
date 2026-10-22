@@ -19,10 +19,10 @@ def real_gh():
 
 
 def as_agent(args):
-    """Asking who the user is, and merging, stay the user's."""
+    """Asking who the user is, the user's own credentials (gh auth), and merging, stay the user's."""
     return (args and os.environ.get("CLAUDECODE") == "1" and not os.environ.get("GH_TOKEN")
             and not os.environ.get("AGENT_BOT_OFF") and os.path.exists(SECRETS)
-            and args[:2] not in (["api", "user"], ["api", "/user"], ["pr", "merge"]))
+            and args[0] != "auth" and args[:2] not in (["api", "user"], ["api", "/user"], ["pr", "merge"]))
 
 
 if __name__ == "__main__":
