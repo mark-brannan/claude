@@ -127,7 +127,7 @@ user message; #74 gave tools as 12.4k or 20.3k (unresolved there), so 13k to
 #74 when not deferred.
 
 Not a start-of-session cost, but the same family: the continuity hook
-`pr-ownership-context.py` (13.8 KB) is **not** injected whole. Claude Code
+`pr-ownership-context.sh` (13.8 KB) is **not** injected whole. Claude Code
 persists a hook output over ~12 KB to a file and puts a 2.3 KB preview plus a
 path in context: 2,284 median bytes (about 0.6k tokens) across 1,400+ firings
 in these transcripts. #74 estimated 3.5k for this row; 0.6k is what the model
