@@ -415,3 +415,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t120243z
 - permission-request-log and log-gh-writes rows take jsonl.append's one form: compact separators, non-ASCII literal; readers are json.loads Undo: give those two hooks their own json.dumps line again ([#264](https://github.com/mark-brannan/claude/pull/264))
+
+### 20261022t120246z
+- stop-item.py, reply-length and spend import lib/ at the top; session-start-sync-status imports gitrun guarded and reports 0 behind without it Undo: restore their inline git call and parse ([#264](https://github.com/mark-brannan/claude/pull/264))
