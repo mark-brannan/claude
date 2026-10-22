@@ -50,12 +50,11 @@ import re
 import sys
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 import curia_words  # noqa: E402
 import lib_state  # noqa: E402
-from curia_words import AGENT_TEXT, DISMISSED, HARNESS, strip_harness  # noqa: E402,F401
+from curia_words import DISMISSED, strip_harness  # noqa: E402
 try:
     import ids  # noqa: E402
     import lock  # noqa: E402

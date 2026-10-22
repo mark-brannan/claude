@@ -30,16 +30,12 @@ GH_WRITES (gist, secret, variable, project, codespace, ssh-key, gpg-key,
 cache); a command inside a quoted string or an argument (`echo "$(gh ...)"`).
 Fails open: any error exits 0 and the call is untouched.
 """
-import json
 import os
 import re
 import shlex
-import subprocess
 import sys
-from datetime import datetime, timezone
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 # Each write verb with the flags that take a value, so that value is not
 # mistaken for the target. From `gh <group> <verb> --help` (gh 2.100). One
@@ -310,21 +306,15 @@ def is_mutation(arg):
 
 
 def repo_of(cwd):
-    try:
-        url = subprocess.run(["git", "-C", cwd, "remote", "get-url", "origin"],
-                             capture_output=True, text=True, timeout=5).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return ""
+    import gitrun
+    url = gitrun.out("-C", cwd, "remote", "get-url", "origin", timeout=5)
     m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
     return m.group(1) if m else ""
 
 
 def pushed_ref(cwd):
-    try:
-        return subprocess.run(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
-                              capture_output=True, text=True, timeout=5).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return ""
+    import gitrun
+    return gitrun.out("-C", cwd, "rev-parse", "--abbrev-ref", "HEAD", timeout=5)
 
 
 def printed_url_target(resp):
@@ -390,20 +380,14 @@ def main():
     sd = lib_state.state_dir()
     if not sd:  # no state lib here (lib_state said why on stderr): nowhere to log
         return
-    from state import state_shard_path
+    import when
+    from state import append_row
     sid = str(ev.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "unknown")
-    path = state_shard_path(os.path.join(sd, "metrics", "gh-writes"), f"{sid}.jsonl", sid)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    with open(path, "a") as f:
-        for w in found:
-            f.write(json.dumps({"ts": ts, "session_id": sid, **w}) + "\n")
+    ts = when.stamp()
+    for w in found:
+        append_row(os.path.join(sd, "metrics", "gh-writes"), sid, {"ts": ts, "session_id": sid, **w})
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # fail open: a logger never blocks a call
-        import lib_state
-        lib_state.trace_failure("log-gh-writes", "PostToolUse", e)
-    sys.exit(0)
+    import lib_state
+    lib_state.run_hook("log-gh-writes", "PostToolUse", main)

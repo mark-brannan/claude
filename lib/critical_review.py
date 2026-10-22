@@ -20,14 +20,16 @@ import importlib.util
 import json
 import os
 import re
-import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import gitrun  # noqa: E402
+import jsonl  # noqa: E402
 import lock  # noqa: E402
 import state  # noqa: E402
+import when  # noqa: E402
 
 MARK = b"<command-name>/critical-review</command-name>"
 COMMAND = re.compile(r"^\s*(?:<command-message>[^<]*</command-message>\s*)?"
@@ -55,16 +57,7 @@ def spend_gate():
 
 
 def events(path):
-    out = []
-    with open(path, "rb") as f:
-        for line in f:
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(e, dict):
-                out.append(e)
-    return out
+    return [e for e in jsonl.read(path) if isinstance(e, dict)]
 
 
 def text_of(content):
@@ -101,7 +94,7 @@ def human_prompt(e):
 
 def stamp(ts):
     try:
-        return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return when.parse(ts)
     except (AttributeError, ValueError):
         return None
 
@@ -199,11 +192,7 @@ def measure(main, subs):
 
 
 def origin_repo(cwd):
-    try:
-        p = subprocess.run(["git", "-C", cwd or ".", "remote", "get-url", "origin"],
-                           capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+    p = gitrun.run("-C", cwd or ".", "remote", "get-url", "origin", timeout=10)
     m = re.search(r"github\.com[:/]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", p.stdout.strip())
     return f"{m[1]}/{m[2]}" if p.returncode == 0 and m else None
 

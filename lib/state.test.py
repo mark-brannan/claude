@@ -90,7 +90,7 @@ class LookupTest(Base):
         # It used to shell out to hooks/lib-state.sh; a lib/ on its own must
         # answer now.
         (self.T / "lib").mkdir()
-        for f in ("state.py", "gitrun.py"):
+        for f in ("state.py", "gitrun.py", "atomic.py", "jsonl.py"):
             shutil.copy(LIB.parent / f, self.T / "lib" / f)
         repo = self.T / "repo"
         (repo / ".git").mkdir(parents=True)

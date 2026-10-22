@@ -27,7 +27,9 @@ import subprocess
 import sys
 import time
 
+import atomic
 import gitrun
+import jsonl
 
 HOOK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks")
 
@@ -80,6 +82,13 @@ def state_dir():
     return f"{os.environ.get('HOME', '')}/.claude/state/global"
 
 
+def state_dir_or_none():
+    """state_dir when the state repo is here, else None: for a tool that
+    would rather do nothing than write under ~/.claude."""
+    repo = state_repo()
+    return f"{repo}/state/global" if repo else None
+
+
 def state_is_repo():
     """True when state_dir is inside the git repo, i.e. worth committing."""
     return state_repo() is not None
@@ -96,6 +105,14 @@ def state_shard_path(d, name, sid):
     if os.path.exists(f"{d}/{name}"):
         return f"{d}/{name}"
     return f"{d}/{sid[:2] or '_'}/{name}"
+
+
+def append_row(d, sid, row):
+    """One JSON row on the end of session sid's file under d, placed as
+    state_shard_path says; the path written."""
+    path = state_shard_path(d, f"{sid}.jsonl", sid)
+    jsonl.append(path, row)
+    return path
 
 
 # Answer "does this branch hold commits that exist nowhere but here?" for a
@@ -541,10 +558,7 @@ def day_decisions(sid, total, junk, now, gap):
             if day.get("day_start") in (None, False):
                 day["day_start"] = now
             day.setdefault("sessions", {})[sid] = {"total": total, "junk": junk}
-            tmp = f"{f}.{os.getpid()}"
-            with open(tmp, "w", encoding="utf-8") as fh:
-                fh.write(json.dumps(day, indent=2, ensure_ascii=False) + "\n")
-            os.replace(tmp, f)
+            atomic.write(f, json.dumps(day, indent=2, ensure_ascii=False) + "\n")
         finally:
             state_unlock()
     if not os.path.exists(f):

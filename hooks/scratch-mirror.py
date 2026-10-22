@@ -16,16 +16,16 @@ session.
 import json
 import os
 import shutil
-import subprocess
 import sys
 
-import lib_state
+import lib_state  # puts lib/ on sys.path
+import gitrun
 
 DOCS = (".md", ".mmd", ".svg", ".html")
 
 
 def git(top, *args):
-    return subprocess.run(["git", "-C", top, *args], capture_output=True, text=True)
+    return gitrun.run("-C", top, *args)
 
 
 def main():

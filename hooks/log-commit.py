@@ -18,14 +18,11 @@ Prints nothing. Fails open: any error exits 0 and the call is untouched, but
 it is traced to the state repo's metrics/hook-errors/ (lib/hooktrace.py). A quiet exit (no cwd, not a repo, no commit yet) is
 not an error.
 """
-import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 import lib_state  # noqa: E402  (puts lib/ on sys.path; reads the state dir and the event)
 
@@ -46,6 +43,7 @@ def main():
         raise NotADirectoryError(f"cwd {cwd!r} is not a directory")
 
     import gitrun
+    import when
     if not gitrun.ok("rev-parse", "--git-dir", cwd=cwd):
         return  # not a repo: the commit was elsewhere
     head = gitrun.run("rev-parse", "HEAD", cwd=cwd)
@@ -60,7 +58,7 @@ def main():
     if not sd:  # no state lib here (lib_state said why on stderr): nowhere to log
         return
     row = {
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ts": when.stamp(),
         "session_id": str(sid),
         "remote_session_id": os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID", ""),
         "repo": os.path.basename(top or cwd),
@@ -68,15 +66,9 @@ def main():
         "commit": head.stdout.strip(),
         "claude_code_version": os.environ.get("CLAUDE_CODE_VERSION", ""),
     }
-    os.makedirs(sd, exist_ok=True)
-    with open(os.path.join(sd, "commits.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(row, separators=(",", ":"), ensure_ascii=False) + "\n")
+    import jsonl
+    jsonl.append(os.path.join(sd, "commits.jsonl"), row)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # fail open: a logger never blocks a call
-        import lib_state
-        lib_state.trace_failure("log-commit", "PostToolUse", e)
-    sys.exit(0)
+    lib_state.run_hook("log-commit", "PostToolUse", main)

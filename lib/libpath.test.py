@@ -90,7 +90,8 @@ class OneHomeTest(unittest.TestCase):
                 r = subprocess.run(cmd, capture_output=True, text=True, env=env)
                 self.assertNotIn("Traceback", r.stderr, "no state.py is handled, not a crash")
                 (t / "lib").mkdir()
-                shutil.copy(LIB / "state.py", t / "lib")  # without the gitrun.py it imports
+                for m in ("state.py", "atomic.py", "jsonl.py", "when.py"):  # without the gitrun.py state.py imports
+                    shutil.copy(LIB / m, t / "lib")
                 r = subprocess.run(cmd, capture_output=True, text=True, env=env)
                 self.assertIn("No module named 'gitrun'", r.stderr)
                 self.assertNotEqual(r.returncode, 0)

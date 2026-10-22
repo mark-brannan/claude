@@ -33,8 +33,11 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
 try:
     import gitrun  # noqa: E402
     import hooktrace  # noqa: E402
+    import jsonl  # noqa: E402
+    import state  # noqa: E402
+    import when as when_  # noqa: E402
 except ImportError:
-    print("%s: lib/gitrun.py or lib/hooktrace.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
+    print("%s: lib/ not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
     sys.exit(3)
 
 LIVE = os.path.expanduser("~/.claude")
@@ -82,17 +85,12 @@ def dirty_row():
 def hook_records(transcript):
     """Every hook attachment in the transcript, oldest first."""
     recs = []
-    with open(transcript, encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            a = entry.get("attachment") if entry.get("type") == "attachment" else None
-            if isinstance(a, dict) and a.get("hookEvent"):
-                recs.append({"ts": entry.get("timestamp", ""), "event": a["hookEvent"],
-                             "name": a.get("hookName", ""), "type": a.get("type", ""),
-                             "exit": a.get("exitCode")})
+    for entry in jsonl.read(transcript):
+        a = entry.get("attachment") if entry.get("type") == "attachment" else None
+        if isinstance(a, dict) and a.get("hookEvent"):
+            recs.append({"ts": entry.get("timestamp", ""), "event": a["hookEvent"],
+                         "name": a.get("hookName", ""), "type": a.get("type", ""),
+                         "exit": a.get("exitCode")})
     return recs
 
 
@@ -102,22 +100,17 @@ def last_event(transcript):
     A denied call fires no PostToolUse and a failed one fires PostToolUseFailure, which
     the metrics hook is not wired to, so neither counts."""
     last = None
-    with open(transcript, encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            if entry.get("type") != "user":
-                continue
-            content = (entry.get("message") or {}).get("content")
-            results = [c for c in content if isinstance(c, dict) and c.get("type") == "tool_result"] \
-                if isinstance(content, list) else []
-            if results:
-                if not entry.get("toolDenialKind") and not any(c.get("is_error") for c in results):
-                    last = entry.get("timestamp")
-            elif (entry.get("origin") or {}).get("kind") == "human":
+    for entry in jsonl.read(transcript):
+        if entry.get("type") != "user":
+            continue
+        content = (entry.get("message") or {}).get("content")
+        results = [c for c in content if isinstance(c, dict) and c.get("type") == "tool_result"] \
+            if isinstance(content, list) else []
+        if results:
+            if not entry.get("toolDenialKind") and not any(c.get("is_error") for c in results):
                 last = entry.get("timestamp")
+        elif (entry.get("origin") or {}).get("kind") == "human":
+            last = entry.get("timestamp")
     return last
 
 
@@ -130,7 +123,7 @@ CACHE_BEHIND_EVENT_SECONDS = 10
 def when(ts):
     """An ISO timestamp as an aware datetime, or None."""
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return when_.parse(ts)
     except (AttributeError, ValueError):
         return None
 
@@ -175,11 +168,7 @@ def cache_row(state_dir, sid, last_record, last_evt, now):
     return ("ok", value)
 
 
-def state_dir():
-    """lib-state.sh's state_dir(), by asking it: one home for the search order."""
-    lib = os.path.join(LIVE, "hooks", "lib-state.sh")
-    p = subprocess.run(["bash", "-c", '. "$1" && state_dir', "-", lib], capture_output=True, text=True)
-    return p.stdout.strip() if p.returncode == 0 and p.stdout.strip() else os.path.join(LIVE, "state", "global")
+state_dir = state.state_dir
 
 
 def hand_run_row(transcript, sid, cwd):
@@ -273,7 +262,7 @@ def main(argv):
     else:
         rows.append(("session", "warn", "none given; pass one of the newest below"))
 
-    print("%s  session %s  %s\n" % (NAME, (sid or "-")[:8], now.strftime("%Y-%m-%dT%H:%M:%SZ")))
+    print("%s  session %s  %s\n" % (NAME, (sid or "-")[:8], when_.stamp(now.timestamp())))
     print(table(rows))
     if not sid:
         print("\n" + "\n".join("  " + s for s in recent_sessions(now)))

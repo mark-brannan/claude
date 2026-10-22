@@ -282,7 +282,8 @@ class CuriaRollTest(unittest.TestCase):
         shutil.copy(HOOK.parent / "lib_state.py", tree / "hooks")
         shutil.copy(HOOK.parent / "curia_words.py", tree / "hooks")
         shutil.copy(HOOK.parent.parent / "lib" / "state.py", tree / "lib")
-        shutil.copy(HOOK.parent.parent / "lib" / "gitrun.py", tree / "lib")  # state.py imports it
+        for m in ("gitrun.py", "atomic.py", "jsonl.py", "when.py"):  # state.py imports them
+            shutil.copy(HOOK.parent.parent / "lib" / m, tree / "lib")
         self.sitting("one-entry-point", f"{SID} 2026-10-02T05:00:00Z\n")
         # HOME away from ~/.claude/lib, the search's fallback, which has lock.py.
         env = dict(os.environ, CLAUDE_STATE_REPO=str(self.repo), HOME=self.tmp.name)

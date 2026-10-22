@@ -38,6 +38,11 @@ import argparse, glob, json, os, re, sqlite3, subprocess, sys, tempfile, time
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import jsonl  # noqa: E402
+    import when  # noqa: E402
+except ImportError:
+    sys.exit("metrics-db: lib/ not found (looked beside the tool and in ~/.claude/lib)")
 
 def state_dir():
     """<state repo>/state/global, found by lib/state.py's state_repo (the one
@@ -49,8 +54,7 @@ def state_dir():
         if e.name != "state":
             raise  # state.py is here but broken (a partial lib/): say so
         return None
-    repo = state.state_repo()
-    return os.path.join(repo, "state", "global") if repo else None
+    return state.state_dir_or_none()
 
 SCHEMA = """
 create table if not exists sessions(
@@ -98,12 +102,12 @@ def ignored_by_git(path):
     The database holds private issue and PR titles and blocked-command text,
     and the Stop hook runs `git add state/`: an unignored file there is
     committed and pushed. Outside any checkout there is nothing to leak."""
+    import gitrun
     d = os.path.dirname(os.path.abspath(path))
-    probe = subprocess.run(["git", "-C", d, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
+    probe = gitrun.run("-C", d, "rev-parse", "--is-inside-work-tree")
     if probe.returncode != 0 or probe.stdout.strip() != "true":
         return True
-    return subprocess.run(["git", "-C", d, "check-ignore", "-q", os.path.abspath(path)],
-                          capture_output=True).returncode == 0
+    return gitrun.ok("-C", d, "check-ignore", "-q", os.path.abspath(path))
 
 def load_json(path):
     try:
@@ -112,17 +116,10 @@ def load_json(path):
     except (OSError, ValueError):
         return None
 
-def jsonl(path):
+def json_rows(path):
+    """The file's JSON rows; none when it cannot be read."""
     try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    yield json.loads(line)
-                except ValueError:
-                    continue
+        yield from jsonl.read(path, errors="strict")
     except OSError:
         return
 
@@ -175,7 +172,7 @@ def load_stream(cx, sd, sub, table, pick):
     base = os.path.join(sd, "metrics", sub)
     for p in glob.glob(os.path.join(base, "*.jsonl")) + glob.glob(os.path.join(base, "*", "*.jsonl")):  # flat or sharded
         sid = os.path.basename(p)[:-6]
-        for d in jsonl(p):
+        for d in json_rows(p):
             rows.append(pick(sid, d))
     cx.execute(f"delete from {table}")
     if rows:
@@ -213,7 +210,7 @@ def load_streams(cx, sd):
         d.get("tool"), None if d.get("input") is None else json.dumps(d.get("input")), d.get("masked")))
     n["headless_runs"] = load_stream(cx, sd, "headless-runs", "headless_runs", headless_run)
     rows = [(d.get("ts"), d.get("session_id"), d.get("repo"), d.get("branch"), d.get("commit"))
-            for d in jsonl(os.path.join(sd, "commits.jsonl"))]
+            for d in json_rows(os.path.join(sd, "commits.jsonl"))]
     cx.execute("delete from commits")
     cx.executemany("insert into commits values (?,?,?,?,?)", rows)
     n["commits"] = len(rows)
@@ -322,7 +319,7 @@ def load_input(cx, sd):
         meta = load_json(os.path.join(hd, "host.json")) or {}
         hosts.append((host, meta.get("home")))
         for p in sorted(glob.glob(os.path.join(hd, "*.jsonl"))):
-            for d in jsonl(p):
+            for d in json_rows(p):
                 m = d.get("minute")
                 if not isinstance(m, int):
                     continue
@@ -387,8 +384,7 @@ def load_github(cx):
                     do_p, pa = more, conn["pageInfo"]["endCursor"]
     cx.execute("delete from gh_items")
     cx.executemany("insert or replace into gh_items values (?,?,?,?,?,?,?,?,?,?,?)", rows)
-    cx.execute("insert or replace into meta values ('gh_refreshed_at', ?)",
-               (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),))
+    cx.execute("insert or replace into meta values ('gh_refreshed_at', ?)", (when.stamp(),))
     return len(rows), calls, len(repos)
 
 def fetch_ci_reviews(cx, sd):
@@ -481,8 +477,7 @@ def main():
         report["input"] = f"{n} minutes from {hosts} hosts"
     if a.github:
         report["gh_items"] = f"{gh_n} from {repos} repos in {calls} calls"
-    cx.execute("insert or replace into meta values ('built_at', ?)",
-               (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),))
+    cx.execute("insert or replace into meta values ('built_at', ?)", (when.stamp(),))
     cx.commit()
     if not a.quiet:
         print(f"{db}  ({time.time() - t0:.1f}s)")

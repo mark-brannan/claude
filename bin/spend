@@ -30,6 +30,13 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import jsonl  # noqa: E402
+    import when  # noqa: E402
+except ImportError:
+    sys.exit("spend: lib/ not found (looked beside the tool and in ~/.claude/lib)")
 HERE = os.path.dirname(os.path.realpath(__file__))
 NO_PR = "(no PR)"
 NO_BRANCH = {"", "HEAD", "main", "master"}
@@ -48,7 +55,7 @@ def parse_ts(s):
     if not s:
         return None
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return when.parse(s).astimezone(timezone.utc)
     except ValueError:
         return None
 
@@ -103,15 +110,10 @@ def load_headless(sd):
     root = os.path.join(sd, "metrics", "headless-runs")
     for p in glob.glob(os.path.join(root, "*.jsonl")) + glob.glob(os.path.join(root, "*", "*.jsonl")):
         try:
-            with open(p, encoding="utf-8", errors="replace") as f:
-                lines = f.read().splitlines()
+            rows = list(jsonl.read(p))
         except OSError:
             continue
-        for line in lines:
-            try:
-                d = json.loads(line)
-            except ValueError:
-                continue
+        for d in rows:
             t = parse_ts(d.get("ts")) if isinstance(d, dict) and isinstance(d.get("ts"), str) else None
             if not t:
                 continue
@@ -146,13 +148,8 @@ def load_branches(sd):
     """session id -> branches its commits were made on."""
     b = defaultdict(set)
     try:
-        with open(os.path.join(sd, "commits.jsonl")) as f:
-            for line in f:
-                try:
-                    d = json.loads(line)
-                except ValueError:
-                    continue
-                b[d.get("session_id")].add(d.get("branch") or "")
+        for d in jsonl.read(os.path.join(sd, "commits.jsonl")):
+            b[d.get("session_id")].add(d.get("branch") or "")
     except OSError:
         pass
     return b

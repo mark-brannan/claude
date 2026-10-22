@@ -4,7 +4,7 @@ run directly; stdlib only.
 flock(2) on an open descriptor: the kernel drops it when the descriptor
 closes or the process exits, so a killed writer never leaves a stale lock.
 The one home for this helper (dotfiles#517); bin/agent-decision,
-bin/work-item and hooks/curia-roll.py use it.
+bin/work-item, lib/critical_review.py and hooks/curia-roll.py use it.
 """
 import contextlib
 import fcntl

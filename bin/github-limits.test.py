@@ -104,7 +104,7 @@ class MissingLibTest(unittest.TestCase):
             r = subprocess.run([sys.executable, str(Path(t) / "bin" / "github-limits"), "--version"],
                                capture_output=True, text=True, env=env)
             self.assertEqual(r.returncode, 3)
-            self.assertIn("lib/gitrun.py not found", r.stderr)
+            self.assertIn("lib/gitrun.py or lib/when.py not found", r.stderr)
 
 
 if __name__ == "__main__":
