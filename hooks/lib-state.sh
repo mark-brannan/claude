@@ -88,7 +88,7 @@ block() { printf '{"decision":"block","reason":%s}\n' "$(json_str "$1")"; exit 0
 #
 # It lives here because three consumers have to agree on it: the PostToolUse
 # matcher in settings.json, metrics-live.sh's "is this worth recomputing"
-# filter, and measure-git-events.sh's pre-filter. When they disagreed the
+# filter, and measure-git-events.py's pre-filter. When they disagreed the
 # narrow one won by accident -- a `git push`, a `git reset`, a `git branch
 # -D`, an MCP `push_files` or a `merge_pull_request` each changed the repo
 # and none of them moved a counter until the Stop hook swept the transcript

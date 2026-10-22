@@ -184,7 +184,7 @@ case "$EVENT" in statusline) SHOW="" ;; esac
 # compute over text processing is dirt cheap...the only real cost is tokens.
 # A git event means an actual git-state change, not every Bash call: the jq
 # pass is too expensive to run after `ls` (wrong - FIXME). The set is git_event_re in
-# lib-state.sh -- shared with measure-git-events.sh so the counter and the
+# lib-state.sh -- shared with measure-git-events.py so the counter and the
 # display can never disagree about what counts. Both fields are tested, not
 # one falling back to the other: an MCP tool has no `.command`, and a Bash
 # call whose command does not match must not then match on the tool name.

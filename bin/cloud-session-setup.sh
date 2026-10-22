@@ -105,7 +105,7 @@ hooks/session-start-continuity.sh
 hooks/stop-continuity.py
 hooks/stop-sequence.py
 hooks/stop-item.py
-hooks/measure-git-events.sh
+hooks/measure-git-events.py
 hooks/no-persistent-polling.sh
 hooks/no-late-pr-subscribe.sh
 hooks/release-subagent-branch.sh
@@ -123,7 +123,7 @@ hooks/guard-add-repo.sh
 hooks/metrics-format.sh
 hooks/metrics-live.sh
 hooks/metrics-rollup.sh
-hooks/log-commit.sh
+hooks/log-commit.py
 hooks/log-gh-writes.py
 hooks/permission-request-log.py
 hooks/statusline-metrics.sh
