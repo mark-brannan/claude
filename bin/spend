@@ -88,8 +88,13 @@ def load_headless(sd):
     """Headless runs as pseudo-sessions: time, what ran, repo, pr, cost. CI lines are untrusted, so a
     cost that is not a plain number reads as 0 and a line without a time is skipped."""
     def num(v):
-        ok = isinstance(v, (int, float)) and not isinstance(v, bool)
-        return v if ok and math.isfinite(v) and v >= 0 else 0  # json.loads accepts NaN, Infinity, negatives
+        # json.loads accepts NaN, Infinity, negatives and ints past float range (10**400)
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return 0
+        try:
+            return v if math.isfinite(v) and 0 <= v < 1e15 else 0
+        except (OverflowError, ValueError):
+            return 0
 
     def clean(s):
         """Untrusted text is printed to a terminal: drop control and escape characters."""

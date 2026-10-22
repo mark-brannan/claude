@@ -181,10 +181,12 @@ class SpendTest(unittest.TestCase):
             '{"ts": "2026-10-15T01:41:00Z", "what": "a", "total_cost_usd": Infinity}',
             '{"ts": "2026-10-15T01:42:00Z", "what": "a", "total_cost_usd": -Infinity}',
             '{"ts": "2026-10-15T01:43:00Z", "what": "a", "total_cost_usd": -5}',
-            '{"ts": "2026-10-15T01:44:00Z", "what": "a", "total_cost_usd": 0.5}'])
+            '{"ts": "2026-10-15T01:44:00Z", "what": "a", "total_cost_usd": 0.5}',
+            '{"ts": "2026-10-15T01:45:00Z", "what": "a", "total_cost_usd": 1' + "0" * 400 + '}',
+            '{"ts": "2026-10-15T01:46:00Z", "what": "a", "total_cost_usd": 1e300}'])
         out = self.run_json()
         self.assertEqual(out["bot"]["a"]["cost"], 0.5)
-        self.assertEqual(out["bot"]["a"]["runs"], 5)
+        self.assertEqual(out["bot"]["a"]["runs"], 7)
 
     def test_control_characters_never_reach_the_terminal(self):
         self.write_runs([{"ts": "2026-10-15T01:40:00Z", "what": "bot\x1b[31m\nred", "repo": "x/y\x07z",
