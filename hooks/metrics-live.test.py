@@ -1337,6 +1337,22 @@ class MetricsLiveTest(unittest.TestCase):
             "yes" if (w.state / "metrics" / "hook-errors" / "ba" / "badjson.jsonl").is_file() else "no")
         return w.checks
 
+    def section_shell_checksum(self):
+        """A hand-off's saved time, stamped by the shell hook against cksum(1),
+        does not move on the first Stop after the port."""
+        w = self.world()
+        S = w.scratch
+        tp = w.turn(S / "ck.jsonl", 1000)
+        body = "next: x\nlink: https://github.com/o/r/pull/7\nmodel: sonnet\neffort: medium\n"
+        (w.state / "pickup").mkdir(parents=True)
+        (w.state / "pickup" / "2026-09-09T10-00-cksum1.md").write_text(f"status: open\nprompt: p\n---\n{body}")
+        shell_sum = subprocess.run(["cksum"], input=body, capture_output=True, text=True).stdout.split()[0]
+        w.write(w.shard("live", "cksum1", ".nag.json"), {"handoff_sum": shell_sum, "resume_ts": 1000000000})
+        w.plant("cksum1")
+        w.hook(w.payload(tp, "cksum1", S, "Stop"), "stop", show=True)
+        w.t("a body the shell hook summed keeps its saved time", 1000000000, w.nag_field("cksum1", "resume_ts"))
+        return self.done(w)
+
     def section_git_filter(self):
         """The git event recomputes only on a call that changed git state."""
         w = self.world()
