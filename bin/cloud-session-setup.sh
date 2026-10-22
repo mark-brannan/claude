@@ -115,7 +115,7 @@ hooks/no-persistent-polling.sh
 hooks/no-late-pr-subscribe.sh
 hooks/release-subagent-branch.sh
 hooks/pr-ownership-context.py
-hooks/pr-threads-gate.sh
+hooks/pr-threads-gate.py
 hooks/pr-blockers-prompt.py
 hooks/scratch-mirror.py
 hooks/npm-publish-auth.sh
