@@ -3,7 +3,7 @@
 # unresolved review thread, or cannot merge without a rebase.
 #
 # Why: the PR ownership rules say review threads are mine to reply to AND
-# resolve, and pr-ownership-context.sh puts that text in front of the session.
+# resolve, and pr-ownership-context.py puts that text in front of the session.
 # Text is not a gate. 2026-09-07, colregs-engine#25: a session twice reported
 # "all comments resolved" while a thread stayed open, with the rules in
 # context both times. So the check moves from the model's memory to here:
@@ -13,7 +13,7 @@
 # resolve it, one at a time, or say plainly in its final message which ones
 # stay open and why.
 #
-# Runs on Stop. Reads the record pr-ownership-context.sh appends to on each
+# Runs on Stop. Reads the record pr-ownership-context.py appends to on each
 # PR-shaped call (repo + number, or the cwd whose branch gh resolves to a PR).
 # No record -> nothing to do, exit 0 -- most turns never touch a PR.
 #
@@ -37,7 +37,7 @@
 # not one each.
 #
 # EXCEPTION, dotfiles#224: a "repo" record line carries a third field, read
-# or work, written by pr-ownership-context.sh (kind is empty on an older or
+# or work, written by pr-ownership-context.py (kind is empty on an older or
 # hand-written record, which this gate treats as work, same as before). A
 # read -- `gh pr view/checks/diff/list`, or a non-mutating `gh api` call --
 # is never fetched and never gates the Stop; a session working four PRs must

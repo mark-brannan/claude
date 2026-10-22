@@ -134,7 +134,7 @@ git checkout -B <short-name> origin/<the branch>
 ```
 
 Reply to and resolve the threads that need no change, read the failing
-checks, rebase or merge locally and report conflicts. Do not push. Then
+checks, merge the base in locally if it conflicts and report it. Do not push. Then
 **run the liveness check again** before stopping, and report from the
 fresh numbers: a holder that went idle while you worked is parked, and the
 push proceeds under the fixup contract.
@@ -244,11 +244,11 @@ do not paraphrase it into a second version that can drift from this one.
    unanswered comment on the PR is spending the only resource that matters on
    the lowest-priority thing there is.
 
-2. **Base second.** Run the one command `branch_brief` printed on its
-   `recommend:` line. Rebase when the branch is clean; merge when it
-   conflicts — and once you have merged, never linearize the branch
-   afterwards. A merge commit carries the hand-resolution in its tree and a
-   later rebase throws it away.
+2. **Base second.** Only a conflict needs a hand. A branch that is merely
+   behind its base is left as is: the queue brings it up to date when it
+   merges. When it conflicts, merge the base in, resolve, and never
+   linearize the branch afterwards. A merge commit carries the
+   hand-resolution in its tree and a later rebase throws it away.
 
 3. **CI third.** Fix what is red. A failure that originates in another
    repository — a reusable workflow, a dependency this PR does not own — is

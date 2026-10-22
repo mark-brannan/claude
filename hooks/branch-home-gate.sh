@@ -24,7 +24,7 @@
 #             two ways out
 #
 # Blocks at most once per session (a marker beside the notes file under
-# TMPDIR, the same convention pr-ownership-context.sh uses for its record --
+# TMPDIR, the same convention pr-ownership-context.py uses for its record --
 # NOT under the state dir, which stop-continuity.py commits and pushes, so a
 # per-session marker there would be repo churn in every session). A gate that
 # can trap a session is worse than no gate.
