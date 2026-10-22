@@ -258,7 +258,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     by = [x for x in a.by.split(",") if x]
     if not by or set(by) - {"pr", "repo", "day", "hour", "bot"}:
-        print("spend: --by takes pr, repo, day, hour, bot",file=sys.stderr)
+        print("spend: --by takes pr, repo, day, hour, bot", file=sys.stderr)
         return 2
 
     mdb = load_metrics_db()
