@@ -34,21 +34,27 @@ MAX_CHARS = 500
 
 
 def languette_record():
-    """languette's record module from the newest installed copy, or None."""
+    """languette's record module: from LANGUETTE_ROOT when set (the whole
+    search), else the newest plugin-cache copy, else the interpreter's own
+    languette; None when none imports."""
     if os.environ.get("LANGUETTE_ROOT"):
         roots = [os.environ["LANGUETTE_ROOT"]]
     else:
         base = os.path.expanduser("~/.claude/plugins")
         roots = sorted((os.path.dirname(os.path.dirname(p)) for p in
                         glob.glob(os.path.join(base, "cache", "languette", "languette", "*", "languette", "record.py"))),
-                       key=os.path.getmtime, reverse=True)
+                       key=os.path.getmtime, reverse=True) + [None]  # None: an installed package
     for root in roots:
-        sys.path.insert(0, root)
+        if root is not None:
+            if not os.path.isfile(os.path.join(root, "languette", "record.py")):
+                continue
+            sys.path.insert(0, root)
         try:
             from languette import record
             return record
         except Exception:  # noqa: BLE001 -- a broken copy is skipped
-            sys.path.remove(root)
+            if root is not None:
+                sys.path.remove(root)
             sys.modules.pop("languette", None)
     return None
 

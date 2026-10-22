@@ -84,6 +84,12 @@ class PermissionRequestLogTest(unittest.TestCase):
         self.assertIsNone(row["input"])
         self.assertEqual(row["tool"], "Bash")
 
+    def test_installed_languette_used_without_plugin_cache(self):
+        del self.env["LANGUETTE_ROOT"]
+        self.env["PYTHONPATH"] = str(self.home / "languette-stub")
+        row = self.run_hook({"command": "GH_TOKEN=SECRETVALUE git push"})[0]
+        self.assertEqual(row["input"]["command"], "GH_TOKEN=<secret> git push")
+
     def test_malformed_input_fails_open(self):
         self.assertEqual(self.run_hook(None, stdin="not json"), [])
 
