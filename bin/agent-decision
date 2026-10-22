@@ -31,7 +31,7 @@
 # a curia must already have its folder.
 #
 # The log is for pencil calls: defaults an agent took. An entry that says the
-# user (the user, the owner, the human) chose, decided, ordered or asked for it
+# user (by name, or as the user, the owner, the human) chose, decided, ordered or asked for it
 # ("the user chose", "per the user", "the owner's order", "as ordered", "ruled by
 # the human") claims provenance, and CLAIM matches it anywhere in the rendered
 # entry. It is wide on purpose: a false refusal is a reword.
