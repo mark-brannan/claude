@@ -412,3 +412,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t112526z
 - docs/work-item-lifecycle.md's two 'session's eight hex' rows stay as they are in claude#256; a doc-only PR carries the random tail Undo: none; the doc PR is the change ([#256](https://github.com/mark-brannan/claude/pull/256))
+
+### 20261022t120243z
+- permission-request-log and log-gh-writes rows take jsonl.append's one form: compact separators, non-ASCII literal; readers are json.loads Undo: give those two hooks their own json.dumps line again ([#264](https://github.com/mark-brannan/claude/pull/264))
