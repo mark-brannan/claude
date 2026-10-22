@@ -39,7 +39,9 @@ def session(sid, ago, **kw):
     return {"session_id": sid, "started_at": day(ago), "ended_at": day(ago), "repo": "acme/widgets",
             "branch": "claude/fixture", "human_seconds": 1800, "agent_seconds": 7200, "tool_calls": 10,
             "commits": 1, "user_turns": 3, "friction": {"total": 2, "correction": 2},
-            "decisions": {"total": 1, "gate": 1}, **kw}
+            "decisions": {"total": 1, "gate": 1}, "assistant_turns": 10, "elapsed_seconds": 600,
+            "cache_read_tokens": 90000, "cache_creation_tokens": 10000, "input_tokens": 0, "output_tokens": 500,
+            "cost_usd": 2.0, "cost_usd_by_model": {"claude-opus-5-5": 1.5, "claude-sonnet-5-5": 0.5}, **kw}
 
 
 class DashboardFixture(unittest.TestCase):
@@ -116,11 +118,23 @@ class RenderTest(DashboardFixture):
     def test_page_has_the_four_sections_and_their_charts(self):
         self.assertTrue(self.page.startswith("<!doctype html>"))
         self.assertIn("<title>Metrics</title>", self.page)
-        for section in ("open", "sessions", "typing", "agent"):
+        for section in ("open", "sessions", "typing", "agent", "cost"):
             self.assertIn(f'<h2 id="{section}">', self.page)
         self.assertGreaterEqual(self.page.count("<svg "), 15)
         self.assertIn("Sessions per day: headless vs interactive", self.page)
         self.assertIn("Merged PRs per week, by prompts typed on the branch", self.page)
+        self.assertIn("API-equivalent $ per week, by model", self.page)
+        self.assertIn('<span><i class="s1"></i>opus</span><span><i class="s2"></i>sonnet</span>', self.page)
+
+    def test_cost_tiles_price_the_window_and_read_the_session_shape(self):
+        self.assertEqual(self.tile("API-equivalent $, 7d"), "6")       # three sessions at $2
+        self.assertEqual(self.tile("cold context share, 7d"), "10%")   # 10k written of 100k context
+        self.assertEqual(self.tile("context per turn, 7d"), "10k")     # 100k context over 10 turns
+
+    def test_a_sessions_dollars_split_across_the_branches_it_committed_on(self):
+        # typed-a committed on one branch only, so acme/widgets#2 carries its whole $2.
+        self.assertIn("API-equivalent $ per merged PR, weekly mean", self.page)
+        self.assertRegex(self.page, r"\n\$ per merged PR: 2(\.0)?</title>")
 
     def test_tiles_count_the_last_seven_days_and_headless_sessions_count(self):
         self.assertEqual(self.tile("sessions, 7d"), "3")

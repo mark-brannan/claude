@@ -2,18 +2,20 @@
 # metrics-dashboard -- render the metrics SQLite file (see metrics-db) as one
 # self-contained HTML page: inline SVG, no scripts, no network, so it opens
 # from file://, survives being mailed to a phone, and reads the same in the
-# dark. Five sections, one per question the page exists to answer:
+# dark. Six sections, one per question the page exists to answer:
 #   open work      issues, PRs and board cards over time
 #   sessions       hours at the keyboard vs agent hours, friction, decisions
 #   typing         prompts and words the user typed, per day
 #   input          keys, clicks and presence from ActivityWatch, in and out of sessions
 #   agent work     how much lands with how few touches
+#   cost           API-equivalent dollars by model and per merged PR, and the session
+#                  shape behind them: cold context, context per turn, length
 #
 # Usage: metrics-dashboard [--db FILE] [--out FILE] [--days N]
 #   --days   the daily window (default 56); weekly series cover the whole span.
 # Writes <state>/metrics/dashboard/index.html by default and prints its path.
 # Python 3 stdlib only.
-import argparse, datetime as dt, html, os, sqlite3, sys
+import argparse, datetime as dt, html, os, re, sqlite3, sys
 from collections import defaultdict
 
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
@@ -152,6 +154,13 @@ def minute_day(m):
 def epoch_min(iso):
     return int(dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() // 60)
 
+# Context tokens a turn sends: what was re-read, what was written, what went uncached.
+CTX = "coalesce(cache_read_tokens, 0) + coalesce(cache_creation_tokens, 0) + coalesce(input_tokens, 0)"
+
+def model_name(m):
+    """'claude-opus-5-5' -> 'opus': the family, as the legend has room for."""
+    return re.sub(r"^claude-|-[\d-]+$", "", m or "unknown") or m
+
 def session_minutes(rows):
     """{host: set of UTC minutes some session on that host was open}; parallel
     sessions share a minute, counted once."""
@@ -227,19 +236,42 @@ def build(db, out, ndays):
     typing_w = q(f"select {wk('first_ts')} w, sum(prompts) p, sum(words) wd from typing group by w")
 
     # merged PRs by how many prompts the user typed into the sessions on that branch
-    touches = {}
+    touches, pr_usd, pr_n = {}, defaultdict(float), defaultdict(int)
     # commits.repo is the checkout's label: a repo's own name for a primary
     # checkout (then it must be this PR's repo), a worktree label otherwise
     # (then only the branch name can match).
+    # A session's dollars are split evenly across the branches it committed on,
+    # so a session that fed three PRs is not counted three times.
     for r in q("select g.repo||'#'||g.number pr, " + wk("g.merged_at") + " w, "
-               "case when count(s.session_id) = 0 then -1 else coalesce(sum(s.typed), 0) end t from gh_items g "
+               "case when count(s.session_id) = 0 then -1 else coalesce(sum(s.typed), 0) end t, "
+               "coalesce(sum(s.cost_usd / nb.n), 0) usd from gh_items g "
                "left join (select distinct repo, branch, session_id from commits) c on c.branch = g.head_ref "
                "and (c.repo in (g.repo, substr(g.repo, instr(g.repo, '/') + 1)) "
                "or c.repo not in (select name from rn union select repo from rn)) "
-               "left join sv s on s.session_id = c.session_id where g.kind='pr' and g.merged_at is not null group by g.repo, g.number"):
+               "left join sv s on s.session_id = c.session_id "
+               "left join (select session_id, count(distinct repo || '/' || branch) n from commits group by session_id) nb "
+               "on nb.session_id = s.session_id where g.kind='pr' and g.merged_at is not null group by g.repo, g.number"):
         b = "no session" if r["t"] < 0 else "0–1 prompts" if r["t"] <= 1 else "2–5 prompts" if r["t"] <= 5 else "6+ prompts"
         touches.setdefault(b, defaultdict(int))[r["w"]] += 1
+        if r["t"] >= 0:
+            pr_usd[r["w"]] += r["usd"] or 0; pr_n[r["w"]] += 1
     touch_order = ["0–1 prompts", "2–5 prompts", "6+ prompts", "no session"]
+    pr_cost = ("$ per merged PR", {w: round(pr_usd[w] / n, 2) for w, n in pr_n.items() if n})
+
+    # cost: the Stop hook's list-price estimate per session, and the shape behind it ---
+    costw = q(f"select {wk('started_at')} w, count(*) n, sum(cost_usd) usd, sum(cache_creation_tokens) cw, "
+              f"sum(cache_read_tokens) cr, sum({CTX}) ctx, sum(assistant_turns) turns, "
+              "sum(elapsed_seconds < 300) short, sum(elapsed_seconds between 300 and 3599) mid, "
+              "sum(elapsed_seconds >= 3600) long from sessions group by w")
+    mtot, mweek = defaultdict(float), defaultdict(lambda: defaultdict(float))
+    for r in q(f"select {wk('s.started_at')} w, c.model m, sum(c.cost_usd) usd from session_cost c "
+               "join sessions s on s.session_id = c.session_id group by w, m"):
+        m = model_name(r["m"]); mtot[m] += r["usd"] or 0; mweek[m][r["w"]] += r["usd"] or 0
+    ranked = sorted(mtot, key=lambda m: -mtot[m])  # fixed order by spend; a 5th model folds into other
+    for m in ranked[3:]:
+        for w, v in mweek[m].items(): mweek["other"][w] += v
+    model_series = [(m, {w: round(v, 2) for w, v in mweek[m].items()}) for m in ranked[:3] + (["other"] if len(ranked) > 3 else [])]
+    ratio = lambda num, den, scale=1: {r["w"]: round(scale * (r[num] or 0) / r[den], 1) for r in costw if r[den]}
 
     # input: one row per host-minute the host's ActivityWatch covered -------------
     lo = epoch_min(start + "T00:00:00Z")
@@ -261,6 +293,7 @@ def build(db, out, ndays):
     cover = sorted({minute_day(r["minute"]) for r in inp})
     r1 = lambda dd: {k: round(v, 1) for k, v in dd.items()}
     def in7(dd, a, b): return sum(v for k, v in dd.items() if dkeys[a] <= k <= dkeys[b])
+    r0 = lambda v: None if v is None else round(v)
 
     # tiles: last 7 days vs the 7 before ---------------------------------------
     def win(sql, a, b):
@@ -271,6 +304,12 @@ def build(db, out, ndays):
     # chars only from sessions on a host that exports keys, to match keys_in
     TH7 = ("select sum(t.chars) from typing t join sessions s on s.session_id = t.session_id "
            "where s.host is not null and substr(t.first_ts,1,10) between ? and ?")
+    def cold(a, b):
+        ctx = win(S7 % "sum(cache_creation_tokens + cache_read_tokens)", a, b)
+        return 100.0 * win(S7 % "sum(cache_creation_tokens)", a, b) / ctx if ctx else None
+    def per_turn(a, b):
+        turns = win(S7 % "sum(assistant_turns)", a, b)
+        return win(S7 % f"sum({CTX})", a, b) / turns / 1000 if turns else None
     tiles = [
         tile("sessions, 7d", win(S7 % "count(*)", a7, b7), win(S7 % "count(*)", a14, b14), good="up"),
         tile("of them headless, 7d", win(S7 % "sum(typed=0)", a7, b7), win(S7 % "sum(typed=0)", a14, b14), good="up"),
@@ -288,6 +327,9 @@ def build(db, out, ndays):
         tile("open issues", open_on("issue", dkeys[-1]), open_on("issue", dkeys[-8]), good="down"),
         tile("open PRs", open_on("pr", dkeys[-1]), open_on("pr", dkeys[-8]), good="down"),
         tile("rulings waiting", cards_open(dkeys[-1], "human-ruling"), cards_open(dkeys[-8], "human-ruling") if dkeys[-8] >= card_first else None, good="down"),
+        tile("API-equivalent $, 7d", round(win(S7 % "sum(cost_usd)", a7, b7)), round(win(S7 % "sum(cost_usd)", a14, b14)), good="down"),
+        tile("cold context share, 7d", r0(cold(a7, b7)), r0(cold(a14, b14)), unit="%", good="down"),
+        tile("context per turn, 7d", r0(per_turn(a7, b7)), r0(per_turn(a14, b14)), unit="k", good="down"),
     ]
 
     figs = {
@@ -325,12 +367,21 @@ def build(db, out, ndays):
             lines("Agent hours per keyboard hour, weekly", wkeys, [("agent h / keyboard h", {r["w"]: round(r["ah"] / r["hh"], 2) for r in weekly if r["hh"]})], every=4),
             lines("Commits per prompt, weekly", wkeys, [("commits/prompt", {r["w"]: round(r["cm"] / r["ut"], 2) for r in weekly if r["ut"]})], every=4),
         ],
+        "cost": [
+            bars("API-equivalent $ per week, by model", wkeys, model_series, every=4),
+            lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
+            lines("Cold context share, weekly", wkeys, [("cold %", {r["w"]: round(100.0 * (r["cw"] or 0) / ((r["cw"] or 0) + (r["cr"] or 0)), 1) for r in costw if r["cw"] or r["cr"]})], every=4, unit="%"),
+            lines("Context per turn, weekly mean", wkeys, [("k tokens/turn", ratio("ctx", "turns", 0.001))], every=4, unit="k"),
+            lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio("turns", "n"))], every=4),
+            bars("Sessions per week, by length", wkeys, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
+        ],
     }
     sections = [("open", "Open work", "Issues and PRs are reconstructed from GitHub timestamps, so the history is complete; board cards start when the item store did."),
                 ("sessions", "Sessions and friction", f"Daily series cover the last {ndays} days; weekly series the whole record."),
                 ("typing", "Typing", "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing. Each transcript is counted on the day its first prompt was typed, so a session that runs past midnight or is resumed later keeps all its prompts on that first day."),
                 ("input", "Input", f"Per-minute counts from ActivityWatch on each host that exports them (input-export); counts and app categories only. A minute is active input at {ACTIVE_KEYS_PER_MIN}+ key presses; present is time ActivityWatch did not call away. A session's minutes are those between its start and end on the host whose home holds its cwd. Days with no data are gaps, never zeros; the coverage tile says how many there were."),
-                ("agent", "Agent work vs touches", "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch.")]
+                ("agent", "Agent work vs touches", "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch."),
+                ("cost", "Cost", "Dollars are the Stop hook's estimate at API list price, pricing each session's four token counts per model (hooks/session-metrics.jq): a weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. Cold context is the share of context tokens written to the cache instead of re-read from it; a write is priced far above a re-read, and a gap past the cache window makes the next turn cold for the whole context. A merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session are left out of the mean.")]
     body = "".join(f'<h2 id="{k}">{html.escape(t)}</h2><p class="note">{html.escape(n)}</p><div class="grid">{"".join(figs[k])}</div>' for k, t, n in sections)
     page = PAGE.format(tiles="".join(tiles), body=body,
                        built=html.escape(meta.get("built_at", "?")), gh=html.escape(meta.get("gh_refreshed_at", "never")),
