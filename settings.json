@@ -363,7 +363,7 @@
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/session-start-continuity.py\"; [ -f \"$h\" ] && python3 \"$h\" || true"
           },
           {
             "type": "command",
