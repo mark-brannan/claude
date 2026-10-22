@@ -7,7 +7,8 @@ and a line nobody reads is no better than stderr. This puts one sentence in
 front of the session when any hook traced since yesterday, and stays silent
 when none did. bin/self-check shows the same rows on demand.
 
-CONVENIENCE: never blocks a session, always exits 0; a crash goes to stderr.
+CONVENIENCE: never blocks a session, always exits 0; a crash is traced to
+the state repo's metrics/hook-errors/ (lib/hooktrace.py).
 """
 import json
 import os
@@ -50,8 +51,5 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # fail open: a convenience hook never stops a session
-        print(f"session-start-hook-errors: {type(e).__name__}: {e}", file=sys.stderr)
-    sys.exit(0)
+    import lib_state  # beside this file
+    lib_state.run_hook("session-start-hook-errors", "SessionStart", main)

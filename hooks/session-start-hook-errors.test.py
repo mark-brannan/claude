@@ -74,6 +74,34 @@ class HookErrors(unittest.TestCase):
         self.env["CLAUDE_STATE_REPO"] = str(self.home / "nowhere")
         self.assertEqual(self.run_hook(), "")
 
+# Runs the hook named by argv[1] as Claude Code would, after the patch in
+# argv[2], so a test can make it crash where no input could.
+# The patch can name boom, which raises RuntimeError("boom").
+WRAP = """import os, runpy, sys
+def boom(*a, **k):
+    raise RuntimeError("boom")
+hook, patch = sys.argv.pop(1), sys.argv.pop(1)
+sys.path.insert(0, os.path.dirname(hook))
+exec(patch)
+runpy.run_path(hook, run_name="__main__")
+"""
+
+
+class CrashIsTraced(unittest.TestCase):
+    setUp, row = HookErrors.setUp, HookErrors.row
+
+    def test_a_crash_is_traced_not_sent_to_stderr(self):
+        self.row("log-commit")
+        lib = HOOK.parent.parent / "lib"
+        env = {**self.env, "CLAUDE_CODE_SESSION_ID": "ab4"}
+        r = subprocess.run([sys.executable, "-c", WRAP, str(HOOK),
+                            f"sys.path.insert(0, {str(lib)!r}); import hooktrace; hooktrace.summary = boom"],
+                           capture_output=True, text=True, env=env)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+        row = json.loads((self.dir / "ab4.jsonl").read_text())
+        self.assertEqual((row["hook"], row["event"], row["stage"], row["error"]),
+                         ("session-start-hook-errors", "SessionStart", "main", "RuntimeError: boom"))
+
 
 if __name__ == "__main__":
     unittest.main()

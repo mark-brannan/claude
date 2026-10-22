@@ -96,6 +96,33 @@ class ScratchMirrorTest(unittest.TestCase):
         self.assertEqual(self.run_hook(self.doc, tracked), "")
         self.assertFalse((tracked / ".scratch" / NAME).exists())
 
+# Runs the hook named by argv[1] as Claude Code would, after the patch in
+# argv[2], so a test can make it crash where no input could.
+# The patch can name boom, which raises RuntimeError("boom").
+WRAP = """import os, runpy, sys
+def boom(*a, **k):
+    raise RuntimeError("boom")
+hook, patch = sys.argv.pop(1), sys.argv.pop(1)
+sys.path.insert(0, os.path.dirname(hook))
+exec(patch)
+runpy.run_path(hook, run_name="__main__")
+"""
+
+
+class CrashIsTraced(unittest.TestCase):
+    setUp, tearDown = ScratchMirrorTest.setUp, ScratchMirrorTest.tearDown
+
+    def test_a_failed_copy_is_traced_not_sent_to_stderr(self):
+        payload = json.dumps({"session_id": "ab5", "tool_name": "Write",
+                              "tool_input": {"file_path": str(self.doc)}, "cwd": str(self.work)})
+        env = {**os.environ, "CLAUDE_STATE_REPO": str(self.state)}
+        r = subprocess.run([sys.executable, "-c", WRAP, str(HOOK), "import shutil; shutil.copyfile = boom"],
+                           input=payload, capture_output=True, text=True, env=env)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+        row = json.loads((self.state / "state/global/metrics/hook-errors/ab/ab5.jsonl").read_text())
+        self.assertEqual((row["hook"], row["event"], row["stage"], row["session_id"], row["error"]),
+                         ("scratch-mirror", "PostToolUse", "main", "ab5", "RuntimeError: boom"))
+
 
 if __name__ == "__main__":
     unittest.main()

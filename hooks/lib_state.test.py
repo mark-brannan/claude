@@ -45,5 +45,27 @@ class ShimTest(unittest.TestCase):
             self.assertEqual((p.returncode, p.stdout), (0, ""), "a hook on the shim still exits 0")
 
 
+class TraceFailureTest(unittest.TestCase):
+    def test_stage_and_session_reach_the_row(self):
+        with tempfile.TemporaryDirectory() as t:
+            (Path(t) / ".git").mkdir()
+            old = os.environ.get("CLAUDE_STATE_REPO")
+            os.environ["CLAUDE_STATE_REPO"] = t
+            lib_state.LAST["session_id"] = "ab6"
+            try:
+                lib_state.trace_failure("some-hook", "Stop", ValueError("x"), "read")
+                lib_state.trace_failure("some-hook", "Stop", ValueError("y"))
+            finally:
+                lib_state.LAST.clear()
+                if old is None:
+                    os.environ.pop("CLAUDE_STATE_REPO")
+                else:
+                    os.environ["CLAUDE_STATE_REPO"] = old
+            rows = [json.loads(ln) for ln in
+                    (Path(t) / "state/global/metrics/hook-errors/ab/ab6.jsonl").read_text().splitlines()]
+            self.assertEqual([(r["hook"], r["event"], r["stage"], r["error"]) for r in rows],
+                             [("some-hook", "Stop", "read", "ValueError: x"), ("some-hook", "Stop", "main", "ValueError: y")])
+
+
 if __name__ == "__main__":
     unittest.main()

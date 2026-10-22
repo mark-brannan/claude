@@ -83,7 +83,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except OSError:
-        pass
+    lib_state.run_hook("scratch-mirror", "PostToolUse", main)

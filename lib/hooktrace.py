@@ -21,18 +21,35 @@ SUBDIR = "metrics/hook-errors"
 ERROR_MAX = 500
 
 
-def trace(hook, stage, err, session_id="", event=""):
-    """Record one swallowed error. stderr only when that write fails too.
+def _seen(path, hook, stage, error):
+    """True when the file already holds a row for this hook, stage and error."""
+    try:
+        for r in jsonl.read(path):
+            if isinstance(r, dict) and (r.get("hook"), r.get("stage"), r.get("error")) == (hook, stage, error):
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def trace(hook, stage, err, session_id="", event="", once=False):
+    """Record one swallowed error. once: skip it when the session already
+    traced the same hook, stage and error, for an error that would repeat on
+    every call (a bad setting). stderr only when the write fails too.
     Never raises."""
     sid = str(session_id or os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+    error = f"{type(err).__name__}: {err}"[:ERROR_MAX]
     row = {"ts": when.stamp(), "hook": hook, "event": event, "session_id": sid,
-           "stage": stage, "error": f"{type(err).__name__}: {err}"[:ERROR_MAX]}
+           "stage": stage, "error": error}
     line = jsonl.dumps(row)
     try:
         sd = state.state_dir()
         if not sd:
             raise OSError("no state dir")
-        state.append_row(f"{sd}/{SUBDIR}", sid or "unknown", row)
+        d = f"{sd}/{SUBDIR}"
+        if once and _seen(state.state_shard_path(d, f"{sid or 'unknown'}.jsonl", sid), hook, stage, error):
+            return
+        state.append_row(d, sid or "unknown", row)
     except Exception as e2:  # noqa: BLE001 -- the last place left to say it
         print(f"{hook}: {line} (trace not written: {e2})", file=sys.stderr)
 

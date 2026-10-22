@@ -359,5 +359,19 @@ class FailureIsLoud(Base):
         self.assertIn("bad \ufffd byte", self.inject(bash("s15", "gh pr view")))
 
 
+class CrashIsTraced(Base):
+    def test_a_crash_is_traced_not_sent_to_stderr(self):
+        state = Path(self.tmp.name) / "state"
+        (state / ".git").mkdir(parents=True)
+        self.env["CLAUDE_STATE_REPO"] = str(state)
+        self.rules.chmod(0)
+        self.addCleanup(self.rules.chmod, 0o644)
+        self.assertEqual(self.run_hook(bash("ab2", "gh pr view")), "")
+        (path,) = state.glob("state/global/metrics/hook-errors/ab/ab2.jsonl")
+        row = json.loads(path.read_text())
+        self.assertEqual((row["hook"], row["event"], row["stage"]), ("pr-ownership-context", "PreToolUse", "main"))
+        self.assertIn("PermissionError", row["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

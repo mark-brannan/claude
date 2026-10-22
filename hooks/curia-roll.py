@@ -40,8 +40,9 @@ folder is moved to the roll/digest layout, roll.md is still the curated
 document, so a folder without digest.md is skipped.
 
 Always exits 0 and prints nothing to stdout: a roll failure must never block a
-prompt, and UserPromptSubmit stdout would land in the model's context. The one
-message, a missing lib/lock.py, goes to stderr.
+prompt, and UserPromptSubmit stdout would land in the model's context. A swallowed
+error, a missing lib/lock.py among them, is traced to the state repo's
+metrics/hook-errors/ (lib/hooktrace.py).
 """
 import datetime
 import glob
@@ -137,7 +138,8 @@ def main():
     if not state_dir:
         return
     if lock is None:
-        print("curia-roll: lib/lock.py not found; this prompt was not added to the roll", file=sys.stderr)
+        lib_state.trace_failure("curia-roll", "UserPromptSubmit",
+                                ImportError("lib/lock.py not found; this prompt was not added to the roll"), "lock")
         return
     now = datetime.datetime.now(datetime.timezone.utc)
     # A set: a resumed session can both type `/curia <id>` and be in its LIVE.
@@ -148,8 +150,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception:  # noqa: BLE001 -- never block a prompt
-        pass
-    sys.exit(0)
+    lib_state.run_hook("curia-roll", "UserPromptSubmit", main)
