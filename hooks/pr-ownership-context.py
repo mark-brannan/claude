@@ -68,7 +68,8 @@ the gate itself) is work, and so is `gh-resolve-thread`. Reading someone
 else's PR for evidence must not put its threads on this session's Stop. A
 `cwd` line is unaffected: it resolves to the PR of the branch this session's
 worktree holds, which is gate-worthy on identity alone, whatever call
-produced it.
+produced it. A sub-agent's call (the payload carries agent_id) writes no
+`cwd` line: its cwd is the sub-agent's checkout, not the parent's.
 """
 import json
 import os
@@ -222,7 +223,13 @@ def append(record, line):
 
 
 def record_bash(cmd, ev, record):
-    cwd = jq_str(ev.get("cwd"))
+    # A sub-agent's tool call carries agent_id and the PARENT's session_id,
+    # so its cwd -- often a worktree of its own -- would land in the
+    # parent's record, and the parent's Stop would gate on a branch only the
+    # sub-agent holds. Seen 2026-10-20, mark-brannan/claude#188: every
+    # orchestrator turn blocked on its reviewers' PRs. The sub-agent's cwd
+    # stays out; a call naming repo and number is still recorded.
+    cwd = "" if jq_str(ev.get("agent_id")) else jq_str(ev.get("cwd"))
     if MERGIFY.search(cmd):
         # mergify never names owner/repo/number on the command line -- it
         # infers the PR from the current branch, so cwd is the only handle.

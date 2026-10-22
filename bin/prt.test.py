@@ -33,6 +33,8 @@ import json, os, re, subprocess, sys
 S = os.environ["PRT_STUB"]
 a = sys.argv[1:]
 open(S + "/calls", "a").write(" ".join(a) + "\n")
+if a[:2] == ["pr", "comment"]:
+    open(S + "/comment-env", "a").write(os.environ.get("AGENT_BOT_OFF", "") + "\n")
 def arg(flag):
     return a[a.index(flag) + 1] if flag in a else None
 def fixture(name, default):
@@ -376,6 +378,8 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(self.writes()[before:], [])
         self.prt("queue", f"{REPO}#9", "--merge")
         self.assertEqual(self.writes()[before:], [f"pr comment 9 --repo {REPO} --body @mergifyio queue"])
+        self.assertEqual((self.T / "stub" / "comment-env").read_text().splitlines()[-1], "1",
+                         "the queue post goes as the user (AGENT_BOT_OFF=1): Mergify refuses the App")
 
     def test_08b_queue_names_what_pr_blockers_finds(self):
         stub = self.T / "stub" / "commits-pr-1.json"
