@@ -36,7 +36,7 @@ except ImportError:
     sys.exit(3)
 
 LIVE = os.path.expanduser("~/.claude")
-HOOK = os.path.join(LIVE, "hooks", "metrics-live.sh")
+HOOK = os.path.join(LIVE, "hooks", "metrics-live.py")
 
 
 def git(*args, timeout=None):
@@ -181,7 +181,7 @@ def state_dir():
 
 
 def hand_run_row(transcript, sid, cwd):
-    """metrics-live.sh as PostToolUse wires it, against a scratch state repo, stderr kept."""
+    """metrics-live.py as PostToolUse wires it, against a scratch state repo, stderr kept."""
     if not os.path.isfile(HOOK):
         return ("bad", "%s missing" % HOOK)
     payload = json.dumps({"session_id": sid, "transcript_path": transcript, "cwd": cwd,
@@ -191,7 +191,7 @@ def hand_run_row(transcript, sid, cwd):
         os.mkdir(os.path.join(scratch, ".git"))
         env = dict(os.environ, CLAUDE_STATE_REPO=scratch)
         try:
-            p = subprocess.run(["bash", HOOK, "posttooluse", "0", "show"], input=payload, env=env,
+            p = subprocess.run([sys.executable, HOOK, "posttooluse", "0", "show"], input=payload, env=env,
                                capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:
             return ("bad", "timed out after 60s")

@@ -101,11 +101,11 @@ def state_shard_path(d, name, sid):
 # Answer "does this branch hold commits that exist nowhere but here?" for a
 # repo root and the branch name (`HEAD` or empty when detached).
 #
-# It lives here because two hooks have to agree on the answer: metrics-live.sh
+# It lives here because two hooks have to agree on the answer: metrics-live.py
 # draws the ⎇ nag and the archival verdict from it, stop-continuity.py's
 # set_verdict decides from it whether the session is safe to kill. When each
 # had its own copy they drifted -- #148 had to port two carve-outs back into
-# metrics-live.sh that the Stop hook had grown in #126 and #128/#143.
+# metrics-live that the Stop hook had grown in #126 and #128/#143.
 #
 # One word, plus a count for the first:
 #   ahead <n>     an upstream exists; n commits are on no origin branch (n may be 0)
@@ -202,10 +202,10 @@ def _live_claim_names(names, self8, hook_dir):
 # archivable, comma-joined; empty when it is. Order: worktree dirty,
 # unpushed commits, branch home, session live.
 #
-# Lives here for the same reason unpushed_state does: metrics-live.sh's live
+# Lives here for the same reason unpushed_state does: metrics-live.py's live
 # nag and stop-continuity.py's Stop-hook verdict must never disagree about
 # what "archivable" means (dotfiles#149). Before this they didn't even
-# agree on what a "home" is -- metrics-live.sh re-checked PR-or-card
+# agree on what a "home" is -- metrics-live re-checked PR-or-card
 # inline and never looked for a pointer issue, the one branch-home-gate.sh
 # already finds.
 #
@@ -283,7 +283,7 @@ def archivable_reasons(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
 # state_lock / state_unlock -- mkdir atomic test-and-set, the same protocol
 # and the same `meta` file as lib-state.sh's (copied there from grind's
 # per-repo lock; no flock: macOS has none), so a lock taken here holds
-# against metrics-live.sh, abandon-branch.sh and claim-stamp.sh taking it
+# against abandon-branch.sh and claim-stamp.sh taking it
 # from bash, and the other way round. meta carries pid+host; a same-host
 # dead pid is reclaimed via rename-then-rm. A dir with no meta at all (a
 # kill between mkdir and the meta write) has no pid to check; one older

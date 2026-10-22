@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# statusLine: the always-on readout. Reads the cache `metrics-live.sh` wrote;
+# statusLine: the always-on readout. Reads the cache `metrics-live.py` wrote;
 # recomputes only when that cache has gone stale, so the jq pass over the
 # transcript happens on the order of once per 15s rather than per render.
 #
@@ -18,7 +18,7 @@ IFS=$'\t' read -r sid model <<<"$(printf '%s' "$input" \
   | jq -r '[(.session_id // ""), (.model.display_name // "")] | @tsv' 2>/dev/null)"
 [ -n "${sid:-}" ] || exit 0
 
-printf '%s' "$input" | bash "$HOOK_DIR/metrics-live.sh" statusline 15
+printf '%s' "$input" | python3 "$HOOK_DIR/metrics-live.py" statusline 15
 
 # A custom statusline replaces the default row, so the model name it used to
 # carry has to come back from here.

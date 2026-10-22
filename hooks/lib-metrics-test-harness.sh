@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Shared harness for anything that drives metrics-live.sh with a synthetic
-# transcript: metrics-live.test.sh (assertions) and metrics-live.examples.sh
-# (rendered output, no assertions). Kept in one place so a transcript-shape
-# change is fixed once, not in two scripts that quietly drift.
+# Shared harness for anything that drives metrics-live.py with a synthetic
+# transcript: metrics-live.test.py (assertions, through turn()) and
+# metrics-live.examples.sh (rendered output, no assertions). Kept in one place
+# so a transcript-shape change is fixed once, not in two scripts that quietly
+# drift.
 #
 # Caller sets HOME/CLAUDE_STATE_REPO/SCRATCH before sourcing this.
 

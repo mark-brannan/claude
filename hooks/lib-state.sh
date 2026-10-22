@@ -87,11 +87,12 @@ block() { printf '{"decision":"block","reason":%s}\n' "$(json_str "$1")"; exit 0
 # Answer "does this branch hold commits that exist nowhere but here?" for a
 # repo root ($1) and the branch name ($2, `HEAD` or empty when detached).
 #
-# It lives here because two hooks have to agree on the answer: metrics-live.sh
+# It lives here because two hooks have to agree on the answer: metrics-live.py
+# (through lib/state.py, its twin)
 # draws the ⎇ nag and the archival verdict from it, stop-continuity.sh's
 # set_verdict decides from it whether the session is safe to kill. When each
 # had its own copy they drifted -- #148 had to port two carve-outs back into
-# metrics-live.sh that stop-continuity.sh had grown in #126 and #128/#143.
+# metrics-live that stop-continuity.sh had grown in #126 and #128/#143.
 #
 # Prints one word, plus a count for the first:
 #   ahead <n>     an upstream exists; n commits are on no origin branch (n may be 0)
@@ -143,10 +144,11 @@ dirty_paths() {
 # a session on this branch is not yet archivable, comma-joined; empty when
 # it is. Order: worktree dirty, unpushed commits, branch home, session live.
 #
-# Lives here for the same reason unpushed_state does: metrics-live.sh's live
+# Lives here for the same reason unpushed_state does: metrics-live.py's live
+# (through lib/state.py, its twin)
 # nag and stop-continuity.sh's Stop-hook verdict must never disagree about
 # what "archivable" means (dotfiles#149). Before this they didn't even
-# agree on what a "home" is -- metrics-live.sh re-checked PR-or-card
+# agree on what a "home" is -- metrics-live re-checked PR-or-card
 # inline and never looked for a pointer issue, the one branch-home-gate.sh
 # already finds.
 #

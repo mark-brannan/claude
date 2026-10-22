@@ -278,11 +278,11 @@ Edit that file, not the scripts.
 | File | What it owns |
 | --- | --- |
 | `session-metrics.jq` | the measurement — tokens, turns, decisions, time |
-| `metrics-live.sh` | writes the cache; prints the two-line event block |
+| `metrics-live.py` | writes the cache; prints the two-line event block |
 | `statusline-metrics.sh` | prints the one-line statusline row |
 | `lib-metrics-fmt.jq` | **every field and both layouts** |
 
-The decision count is measured, never alarmed: `metrics-live.sh` has no
+The decision count is measured, never alarmed: `metrics-live.py` has no
 decision line on screen or to the model. The decisions-per-session-hour ratio
 (session clock, first prompt to last) appears in exactly two places, the
 session-start "Decision load, last 7 days" block and the Stop checkpoint's

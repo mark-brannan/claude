@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 # Parity of lib/state.py with hooks/lib-state.sh. Run: python3 lib/state-parity.test.py
 #
-# What matters: the two languages give one answer. metrics-live.sh's live
-# nag takes "archivable" from the shell functions and stop-continuity.py's
-# Stop verdict from the Python ones; if they ever disagreed the 📦 notice
-# and the checkpoint would answer the same question two ways
+# What matters: the two languages give one answer. If they ever disagreed,
+# a shell caller and a Python one would answer "archivable" two ways
 # (dotfiles#149). So each ported function runs in both over the same
 # fixture repos and inputs, and the outputs must be equal, byte for byte.
 # The locks are checked both ways round as well: each side must refuse a

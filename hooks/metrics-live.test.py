@@ -42,6 +42,7 @@ sys.dont_write_bytecode = True
 HOOKS = Path(__file__).resolve().parent
 HOOK = HOOKS / "metrics-live.py"
 FIX = HOOKS / "fixtures" / "friction-contentious.jsonl"
+HARNESS = HOOKS / "lib-metrics-test-harness.sh"
 ORDERS = HOOKS.parent / "CLAUDE.md"
 # 2026-10-01 20:58:09Z, the instant the bedtime case was last red in CI under
 # the shell hook, two minutes short of the hour. BED_PIN probes another.
@@ -102,21 +103,10 @@ class World:
 
     # -- transcripts and payloads ------------------------------------------------
     def turn(self, path, n):
-        """One human turn plus one assistant turn carrying the context number."""
-        path = Path(path)
-        with open(path, "a") as fh:
-            fh.write(json.dumps({"type": "queue-operation", "operation": "enqueue",
-                                 "timestamp": "2026-09-09T10:00:00.000Z", "sessionId": "t",
-                                 "content": "go on"}) + "\n")
-        lines = len(path.read_text().splitlines())
-        with open(path, "a") as fh:
-            fh.write(json.dumps({"type": "assistant", "timestamp": "2026-09-09T10:00:00.000Z",
-                                 "requestId": f"req-{lines}",
-                                 "message": {"model": "claude-opus-5", "role": "assistant",
-                                             "content": [{"type": "text", "text": "ok"}],
-                                             "usage": {"input_tokens": n, "output_tokens": 10,
-                                                       "cache_read_input_tokens": 0,
-                                                       "cache_creation_input_tokens": 0}}}) + "\n")
+        """One human turn plus one assistant turn carrying the context number,
+        from lib-metrics-test-harness.sh: the one home for the transcript shape."""
+        subprocess.run(["bash", "-c", '. "$1"; turn "$2" "$3"', "_", str(HARNESS), str(path), str(n)],
+                       check=True)
         return str(path)
 
     def askturn(self, path):
