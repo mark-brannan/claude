@@ -70,7 +70,7 @@ def main():
         "claude_code_version": os.environ.get("CLAUDE_CODE_VERSION", ""),
     }
     os.makedirs(sd, exist_ok=True)
-    with open(os.path.join(sd, "commits.jsonl"), "a") as f:
+    with open(os.path.join(sd, "commits.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps(row, separators=(",", ":"), ensure_ascii=False) + "\n")
 
 

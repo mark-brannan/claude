@@ -74,6 +74,12 @@ class LogCommitTest(unittest.TestCase):
         self.assertTrue(line.endswith("}\n") and line.count("\n") == 1)
         self.assertIsNone(re.search(r'[,:] ', line))
 
+    def test_non_ascii_branch_survives_a_c_locale(self):
+        self.git("checkout", "-q", "-b", "feat/caf\u00e9")
+        self.run_hook(extra_env={"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"})
+        (row,) = self.rows()
+        self.assertEqual(row["branch"], "feat/caf\u00e9")
+
     def test_remote_session_and_version_come_from_env(self):
         self.run_hook(extra_env={"CLAUDE_CODE_REMOTE_SESSION_ID": "remote-9", "CLAUDE_CODE_VERSION": "9.9.9"})
         (row,) = self.rows()
