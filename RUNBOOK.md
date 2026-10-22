@@ -462,7 +462,7 @@ pickup-list find <word>
 ```
 
 To continue an item, `/pickup` in a new session, or `pickup-list take <id>`
-by hand. A question for Solace is a board card (`/card-write`); Solace's
+by hand. A question for the user is a board card (`/card-write`); the user's
 words in a curia sitting land in that curia's `roll.md`, by `curia-roll.py`.
 
 Verify: `pickup-list` lists the session's own item within a minute of its
