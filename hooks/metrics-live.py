@@ -18,7 +18,7 @@ is first crossed, then nothing until the next one. One file per session, keyed
 by session_id: parallel sessions are normal here.
 
 A failure never blocks a tool call: it is swallowed, and leaves one line in
-<state>/metrics/hook-errors/<sid>.jsonl (see trace()), so a silent readout can
+<state>/metrics/hook-errors/ (lib/hooktrace.py, through trace()), so a silent readout can
 be told from a broken one (#206).
 
 FROZEN -- THAW CAREFULLY. Every block tagged with that phrase (the ⛁ context,
@@ -54,6 +54,11 @@ except ImportError as e:  # a seed without lib/: lib_state has said so on stderr
     print(f"metrics-live: lib/state.py not importable ({e})", file=sys.stderr)
     state = None
 
+try:
+    import hooktrace  # noqa: E402
+except ImportError:  # a seed without lib/hooktrace.py: stderr is all there is
+    hooktrace = None
+
 JQPROG = os.path.join(HOOK_DIR, "session-metrics.jq")
 FORMAT_SH = os.path.join(HOOK_DIR, "metrics-format.sh")
 PACIFIC = "America/Los_Angeles"
@@ -67,22 +72,11 @@ class Failed(Exception):
 
 
 def trace(stage, err):
-    """Record one swallowed error: a JSON line per error in the state repo's
-    metrics/hook-errors/, sharded by session like the other metrics files.
-    stderr only when that write fails too."""
-    sid = WHERE["session_id"]
-    line = json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                       "hook": "metrics-live", "event": WHERE["event"], "session_id": sid,
-                       "stage": stage, "error": f"{type(err).__name__}: {err}"[:500]},
-                      ensure_ascii=False, separators=(",", ":"))
-    try:
-        d = f"{lib_state.state_dir()}/metrics/hook-errors"
-        path = state.state_shard_path(d, f"{sid or 'unknown'}.jsonl", sid)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-    except Exception as e2:  # noqa: BLE001 -- the last place left to say it
-        print(f"metrics-live: {line} (trace not written: {e2})", file=sys.stderr)
+    """Record one swallowed error through lib/hooktrace.py (metrics/hook-errors/)."""
+    if hooktrace is None:
+        print(f"metrics-live: {stage}: {type(err).__name__}: {err}", file=sys.stderr)
+        return
+    hooktrace.trace("metrics-live", stage, err, WHERE["session_id"], WHERE["event"])
 
 
 def soft(stage, fn, *args, default=None):

@@ -143,6 +143,16 @@ class LogCommitTest(unittest.TestCase):
         self.run_hook()
         self.assertEqual(len(self.rows()), 2)
 
+    def test_a_swallowed_error_is_traced_not_sent_to_stderr(self):
+        self.log.mkdir(parents=True)  # the append fails: commits.jsonl is a directory
+        r = self.run_hook()
+        self.assertEqual(r.stderr, "")
+        (path,) = self.log.parent.glob("metrics/hook-errors/*/sess-1.jsonl")
+        row = json.loads(path.read_text())
+        self.assertEqual((row["hook"], row["stage"], row["event"], row["session_id"]),
+                         ("log-commit", "main", "PostToolUse", "sess-1"))
+        self.assertIn("Directory", row["error"])
+
     def test_malformed_input_is_harmless(self):
         for raw in ("", "not json", "[]", "{}"):
             with self.subTest(raw=raw):
