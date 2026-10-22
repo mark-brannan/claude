@@ -20,7 +20,8 @@ CREATE_PR = "mcp__github__create_pull_request"
 
 
 def git(repo, *args):
-    r = subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgsign=false", *args],
+    r = subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgsign=false",
+                        "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     return r.stdout.strip()
