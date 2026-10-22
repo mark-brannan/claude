@@ -14,10 +14,11 @@
 #   card-id roll-stamp [<epoch>]  print the curia roll's stamp for now (or for
 #                                 <epoch> seconds), e.g. 20261002t054107z
 #
-# No lock, no ledger. Two sessions never share a hex; one session minting
+# No ledger. Two sessions never share a hex; one session minting
 # twice in the same second is the only collision, and `new` steps to the next
-# second past any id already filed in the store. Two calls before the first
-# item is written can still match; file the item between calls.
+# second past any id already filed in the store or already handed out (a marker
+# file per id, under $CARD_ID_CLAIMS, default a per-user dir in $TMPDIR), so
+# back-to-back calls never match even before the item is filed.
 set -u
 
 self=$0
@@ -43,7 +44,19 @@ case "${1:-}" in
     # is the one collision left, so take the next second until the id is free.
     dir=$(items_dir)
     t=$(date -u +%s)
-    while [ -e "$dir/$t$hex.md" ]; do t=$((t + 1)); done
+    # Two calls before the first item is filed: each id is also claimed by
+    # creating a marker file (noclobber is atomic), so a second call in the
+    # same second steps on. Markers older than a day are swept.
+    claims=${CARD_ID_CLAIMS:-${TMPDIR:-/tmp}/card-id-claims-$(id -u)}
+    mkdir -p "$claims" 2>/dev/null && find "$claims" -type f -mmin +1440 -delete 2>/dev/null
+    while :; do
+      if [ ! -e "$dir/$t$hex.md" ]; then
+        if [ -d "$claims" ]; then
+          ( set -C; : > "$claims/$t$hex" ) 2>/dev/null && break
+        else break; fi
+      fi
+      t=$((t + 1))
+    done
     printf '%s%s\n' "$t" "$hex" ;;
   show)
     is_card_id "${2:-}" || die "not a card id: ${2:-<id>}"

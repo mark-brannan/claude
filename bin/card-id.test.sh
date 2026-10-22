@@ -8,6 +8,7 @@ pass=0; fail=0
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 unset CLAUDE_CODE_SESSION_ID
 export WORK_ITEM_DIR="$T/items"
+export CARD_ID_CLAIMS="$T/claims"
 ok() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi; }
 
 now=$(date -u +%s)
@@ -20,6 +21,8 @@ t=$(date -u +%s)
 : > "$T/items/${t}077c62eb.md"; : > "$T/items/$((t + 1))077c62eb.md"
 d=$(sh "$CID" new 077c62eb); ok 'new steps past ids already filed' 1 "$(printf '%s' "$d" | grep -cE "^($((t + 2))|$((t + 3)))077c62eb$")"
 rm -rf "$T/items"
+ids=$(for _ in 1 2 3 4 5 6 7; do sh "$CID" new f7a66884; done)
+ok 'seven back-to-back calls give seven distinct ids' 7 "$(printf '%s\n' "$ids" | sort -u | wc -l)"
 sh "$CID" new "" >/dev/null 2>&1; ok 'no session id refuses' 2 $?
 sh "$CID" new zzzzzzzz >/dev/null 2>&1; ok 'a non-hex session refuses' 2 $?
 
