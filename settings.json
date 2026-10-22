@@ -58,7 +58,6 @@
     "/root/CLAUDE.md",
     "**/claude/CLAUDE.md",
     "**/claude/.claude/worktrees/*/CLAUDE.md",
-    "**/claude/.claude/worktrees/*/.claude/CLAUDE.md",
     "**/grind-worktrees/claude/*/CLAUDE.md"
   ],
   "disableClaudeAiConnectors": true,
