@@ -25,6 +25,9 @@ READMEs say where things are and how to view them; they do not define.
 | Week | Monday to Sunday, from the date part of the timestamp. |
 | Project | The repo's `project-*` GitHub topic with the prefix removed; `other` if none. |
 | Open card | A board card whose latest status is not `done` or `closed`. |
+| API-equivalent $ | The Stop hook's estimate of a session's cost at API list price, pricing its four token counts per model. A weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. |
+| Cold context | Context tokens written to the cache instead of re-read from it. A write is priced far above a re-read; a gap past the cache window makes the next turn cold for the whole context. |
+| Context tokens | Cache-read + cache-creation + uncached input tokens. |
 
 ## Windows
 
@@ -49,6 +52,9 @@ Delta colour: green when the change moves in the wanted direction.
 | open issues | issues created on or before the day and not closed by it | down | Is the backlog shrinking? |
 | open PRs | same, for pull requests | down | Is review keeping up? |
 | rulings waiting | open cards owned `human-ruling` | down | Is my decision queue draining? |
+| API-equivalent $, 7d | sum of session `cost_usd`, rounded | down | What does the work cost? |
+| cold context share, 7d | 100 x cache-creation / (cache-creation + cache-read) tokens | down | How much context is paid for at the write price? |
+| context per turn, 7d | context tokens / assistant turns, in thousands | down | How heavy is each turn? |
 
 ## Sections and charts
 
@@ -96,6 +102,17 @@ history is complete. Board cards start when the item store did.
 | Commits per prompt, weekly | commits / typed prompts | How much lands per touch? |
 
 A session counts toward a branch when it committed on the head branch.
+
+### Cost
+
+| Chart | Formula | Question |
+|---|---|---|
+| API-equivalent $ per week, by model | session cost by week and model; the three biggest spenders named, the rest as `other` when more than four | Which models carry the spend? |
+| API-equivalent $ per merged PR, weekly mean | each merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session left out | What does landed work cost? |
+| Cold context share, weekly | 100 x cache-creation / (cache-creation + cache-read) tokens | Is the cache doing its job? |
+| Context per turn, weekly mean | context tokens / assistant turns, in thousands | Are turns getting heavier? |
+| Turns per session, weekly mean | assistant turns / sessions | Are sessions getting longer? |
+| Sessions per week, by length | elapsed under 5 min, 5 min to 1 h, over 1 h | What is the mix of short and long sessions? |
 
 ## Open for ruling
 
