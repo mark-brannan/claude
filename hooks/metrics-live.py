@@ -37,7 +37,6 @@ import math
 import os
 import random
 import re
-import shutil
 import string
 import subprocess
 import sys
@@ -156,7 +155,7 @@ def pretty(v):
     return json.dumps(v, ensure_ascii=False, indent=2) + "\n"
 
 
-def run_out(argv, stdin=b"", stage=""):
+def run_out(argv, stdin=b""):
     """argv's stdout as text; Failed, with the first line of stderr, when it
     exits non-zero."""
     p = subprocess.run(argv, input=stdin, capture_output=True)
@@ -760,83 +759,103 @@ class Hook:
         sys.stdout.buffer.write((compact(out) + "\n").encode("utf-8"))
 
     def run_engine(self, is_prompt, can_inject):
-        k = self.k
+        self.can_inject = can_inject
         self.curia_live = self.in_curia()
-        if not self.curia_live and can_inject and os.path.isfile(self.heldf) and os.path.getsize(self.heldf):
-            with open(self.heldf, encoding="utf-8") as fh:
-                for ln in fh.read().split("\n"):
-                    _, _, t = ln.partition("\t")
-                    if t:
-                        self.sys_lines.append(t)
-            os.remove(self.heldf)
-
-        # The local clock the bedtime reads: location.json's tz, else Pacific.
-        # An hour before night_end_hour still belongs to last night's evening.
-        self.ltz = text(self.location().get("tz")) or PACIFIC
-        local = at(self.now_ts, self.ltz)
-        self.l_midnight = self.now_ts - local.hour * 3600 - local.minute * 60 - local.second
-        bed_night = local.hour >= k.stop_hour or local.hour < k.night_end_hour
-        l_eve = local.strftime("%Y-%m-%d")
-        if local.hour < k.night_end_hour:
-            l_eve = at(self.now_ts - 86400, self.ltz).strftime("%Y-%m-%d")
-
-        # The sitting clock is wound by prompts and nothing else: a Stop fires
-        # on the agent's schedule, so a session whose first wired event is a
-        # Stop must not start a clock nobody sat down at. The gap that resets it
-        # is between prompts anywhere on the machine.
+        if not self.curia_live and can_inject:
+            self.deliver_held()
+        self.local_clock()
         if is_prompt:
-            soft("time_after", self.stamp_time_after)
-            if self.last_prompt > 0 and self.now_ts - self.last_prompt > k.sit_gap_min * 60:
-                self.stamp_time_last(self.recent_crossing_files(), self.last_prompt, self.sit_start)
-                self.sit_start = self.now_ts
-                self.time_line = 0
-            self.last_prompt = self.now_ts
-            if self.sit_start <= 0:
-                self.sit_start = self.now_ts
-            self.tl_sitting = self.sit_start
-            # The stay valve: `stay` or `stay <minutes>`, exactly, quiets the
-            # sitting line and its injection until then. Machine-wide.
-            m = re.fullmatch(r"[ \t\n\r\f\v]*stay(?:[ \t\n\r\f\v]+([0-9]+))?[ \t\n\r\f\v]*", self.prompt)
-            if m:
-                stay_min = int(m.group(1)) if m.group(1) else k.stay_default_min
-                self.quiet_until = self.now_ts + stay_min * 60
-                sit_min = (self.now_ts - self.sit_start) // 60
-                t = f"⏱ {hm(sit_min)} · staying {stay_min}, quiet until {hm(sit_min + stay_min)}"
-                self.sys_lines.append(t)
-                self.crossing("stay", stay_min, t)
-                self.model_lines.append("The user said stay: acknowledge in one line, nothing else.")
-            # Bedtime: the question goes on screen once per evening, machine-
-            # wide, on the first prompt after the night hour, never repeated.
-            # A bare clock time typed after it, and nothing else, is the reply.
-            b = re.fullmatch(r"[ \t\n\r\f\v]*([0-9]{1,2})(?::([0-9]{2}))?[ \t\n\r\f\v]*", self.prompt)
-            if (self.bed_asked_eve and self.bed_asked_eve == l_eve and b
-                    and int(b.group(1)) <= 23 and int(b.group(2) or 0) <= 59):
-                self.bed_at = self.bed_resolve(int(b.group(1)), int(b.group(2) or 0))
-                t = f"bed at {self.lhhmm(self.bed_at)} noted"
-                self.sys_lines.append(t)
-                self.crossing("bed_set", self.bed_at, t)
-                self.model_lines.append(f"The user named a bedtime, {self.lhhmm(self.bed_at)}: "
-                                        "acknowledge in one line, nothing else.")
-            elif bed_night and self.bed_asked_eve != l_eve:
-                self.bed_asked_eve, self.bed_at = l_eve, 0
-                t = "what time would you like to go to bed?"
-                self.sys_lines.append(t)
-                self.crossing("bed_ask", 0, t)
-            soft("sitting", self.save_sitting)
+            self.wind_clock()
         elif self.event == "stop":
             self.stamp_time_last([self.crossf] if os.path.isfile(self.crossf) else [],
                                  self.last_prompt, self.sit_start)
-        sit_quiet = self.quiet_until > self.now_ts
+        self.sit_quiet = self.quiet_until > self.now_ts
 
         sess = obj(self.metrics.get("session"))
-        turns = num(sess.get("user_turns"))
-        self.ctx = ctx = num(sess.get("context_peak"))
-        decisions = num(obj(sess.get("decisions")).get("total"))
-        fric = self.metrics.get("friction")
-        fric_win = sum(1 for f in (fric if isinstance(fric, list) else [])
-                       if obj(f).get("type") in ("correction", "rebuke")
-                       and num(obj(f).get("turn_ordinal")) > turns - k.friction_turns)
+        ctx = num(sess.get("context_peak"))
+        self.context_crossings(ctx)
+        if is_prompt:
+            self.sitting_line(ctx)
+            self.sitting_model()
+        if can_inject:
+            self.bedtime()
+        if is_prompt:
+            # The machine-wide day counter (#301): measured, never alarmed.
+            soft("day_decisions", state.day_decisions, self.sid,
+                 num(obj(sess.get("decisions")).get("total")), 0, self.now_ts,
+                 self.k.decision_gap_min * 60)
+            self.friction(num(sess.get("user_turns")))
 
+    def deliver_held(self):
+        if not (os.path.isfile(self.heldf) and os.path.getsize(self.heldf)):
+            return
+        with open(self.heldf, encoding="utf-8") as fh:
+            for ln in fh.read().split("\n"):
+                _, _, t = ln.partition("\t")
+                if t:
+                    self.sys_lines.append(t)
+        os.remove(self.heldf)
+
+    def local_clock(self):
+        """The clock the bedtime reads: location.json's tz, else Pacific. An
+        hour before night_end_hour still belongs to last night's evening."""
+        k = self.k
+        self.ltz = text(self.location().get("tz")) or PACIFIC
+        local = at(self.now_ts, self.ltz)
+        self.l_midnight = self.now_ts - local.hour * 3600 - local.minute * 60 - local.second
+        self.bed_night = local.hour >= k.stop_hour or local.hour < k.night_end_hour
+        self.l_eve = local.strftime("%Y-%m-%d")
+        if local.hour < k.night_end_hour:
+            self.l_eve = at(self.now_ts - 86400, self.ltz).strftime("%Y-%m-%d")
+
+    def wind_clock(self):
+        """The sitting clock is wound by prompts and nothing else: a Stop fires
+        on the agent's schedule, so a session whose first wired event is a
+        Stop must not start a clock nobody sat down at. The gap that resets it
+        is between prompts anywhere on the machine."""
+        k = self.k
+        soft("time_after", self.stamp_time_after)
+        if self.last_prompt > 0 and self.now_ts - self.last_prompt > k.sit_gap_min * 60:
+            self.stamp_time_last(self.recent_crossing_files(), self.last_prompt, self.sit_start)
+            self.sit_start = self.now_ts
+            self.time_line = 0
+        self.last_prompt = self.now_ts
+        if self.sit_start <= 0:
+            self.sit_start = self.now_ts
+        self.tl_sitting = self.sit_start
+        # The stay valve: `stay` or `stay <minutes>`, exactly, quiets the
+        # sitting line and its injection until then. Machine-wide.
+        m = re.fullmatch(r"[ \t\n\r\f\v]*stay(?:[ \t\n\r\f\v]+([0-9]+))?[ \t\n\r\f\v]*", self.prompt)
+        if m:
+            stay_min = int(m.group(1)) if m.group(1) else k.stay_default_min
+            self.quiet_until = self.now_ts + stay_min * 60
+            sit_min = (self.now_ts - self.sit_start) // 60
+            t = f"⏱ {hm(sit_min)} · staying {stay_min}, quiet until {hm(sit_min + stay_min)}"
+            self.sys_lines.append(t)
+            self.crossing("stay", stay_min, t)
+            self.model_lines.append("The user said stay: acknowledge in one line, nothing else.")
+        # Bedtime: the question goes on screen once per evening, machine-wide,
+        # on the first prompt after the night hour, never repeated: no answer
+        # is an answer. A bare clock time typed after it, and nothing else, is
+        # the reply, any number of times.
+        b = re.fullmatch(r"[ \t\n\r\f\v]*([0-9]{1,2})(?::([0-9]{2}))?[ \t\n\r\f\v]*", self.prompt)
+        if (self.bed_asked_eve and self.bed_asked_eve == self.l_eve and b
+                and int(b.group(1)) <= 23 and int(b.group(2) or 0) <= 59):
+            self.bed_at = self.bed_resolve(int(b.group(1)), int(b.group(2) or 0))
+            t = f"bed at {self.lhhmm(self.bed_at)} noted"
+            self.sys_lines.append(t)
+            self.crossing("bed_set", self.bed_at, t)
+            self.model_lines.append(f"The user named a bedtime, {self.lhhmm(self.bed_at)}: "
+                                    "acknowledge in one line, nothing else.")
+        elif self.bed_night and self.bed_asked_eve != self.l_eve:
+            self.bed_asked_eve, self.bed_at = self.l_eve, 0
+            t = "what time would you like to go to bed?"
+            self.sys_lines.append(t)
+            self.crossing("bed_ask", 0, t)
+        soft("sitting", self.save_sitting)
+
+    def context_crossings(self, ctx):
+        k = self.k
         # FROZEN -- THAW CAREFULLY. See the module docstring for the rule this tags.
         # context -- rungs ascending, so a jump past several reports each in
         # order. Counted, never spoken: one notice per event, and that notice is
@@ -848,132 +867,148 @@ class Hook:
                     self.ctx_stop_line = L
                 self.crossing("context", L, "")
                 self.ctx_line, self.since_nag = L, True
+        if not self.can_inject:
+            return
         # The model's context ladder, edge-triggered: once per rung, on the
         # event that crossed it (dotfiles#282). On can_inject, not is_prompt:
         # context climbs while the model works, and a rung crossed mid-turn is
         # the moment worth saying so.
-        if can_inject:
-            r = rung_of(k.model_context_lines, k.model_context_step, ctx)
-            if r > self.m_ctx_at:
-                if self.m_ctx_at == 0:
-                    self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)}: a stopping point is due.")
-                else:
-                    self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)} "
-                                            f"(last offered at {kfmt(self.m_ctx_at)}).")
-                self.m_ctx_at, self.m_ctx_tools = r, 0
-            elif self.event == "posttooluse" and self.m_ctx_at > 0 and k.model_context_repeat > 0:
-                # The one deliberate repeat: a rung raised and not acted on is
-                # said again after model_context_repeat tool calls, since a long
-                # autonomous run can burn a rung without reaching a prompt.
-                self.m_ctx_tools += 1
-                if self.m_ctx_tools >= k.model_context_repeat:
-                    self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(self.m_ctx_at)} for "
-                                            f"{self.m_ctx_tools} tool calls: a stopping point is due.")
-                    self.m_ctx_tools = 0
+        r = rung_of(k.model_context_lines, k.model_context_step, ctx)
+        if r > self.m_ctx_at:
+            if self.m_ctx_at == 0:
+                self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)}: a stopping point is due.")
+            else:
+                self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)} "
+                                        f"(last offered at {kfmt(self.m_ctx_at)}).")
+            self.m_ctx_at, self.m_ctx_tools = r, 0
+        elif self.event == "posttooluse" and self.m_ctx_at > 0 and k.model_context_repeat > 0:
+            # The one deliberate repeat: a rung raised and not acted on is said
+            # again after model_context_repeat tool calls, since a long
+            # autonomous run can burn a rung without ever reaching a prompt.
+            self.m_ctx_tools += 1
+            if self.m_ctx_tools >= k.model_context_repeat:
+                self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(self.m_ctx_at)} for "
+                                        f"{self.m_ctx_tools} tool calls: a stopping point is due.")
+                self.m_ctx_tools = 0
 
+    def sitting_line(self, ctx):
         # FROZEN -- THAW CAREFULLY.
         # sitting clock -- read on a prompt and nowhere else. Elapsed time and an
         # outward tail, no verdict. Quiet after `stay` leaves the rung unspent.
-        if is_prompt and k.sit_every_min > 0 and self.sit_start > 0 and not sit_quiet:
-            sit_min = (self.now_ts - self.sit_start) // 60
-            n = sit_min // k.sit_every_min * k.sit_every_min
-            if n >= k.sit_every_min and n > self.time_line:
-                # Two hours arms the Stop block's hand-off, unless work is in
-                # flight: landing it comes first.
-                if n >= k.sit_every_min * 2 and not self.in_flight() and not self.curia_live:
-                    self.since_nag = True
-                t = f"⏱ {hm(sit_min)} · context {kfmt(ctx)}"
-                tail = self.sit_tail()
-                if tail:
-                    t = f"{t} · {tail}"
-                w = self.work_str()
-                if w:
-                    t = f"{t} {w}"
-                if not self.curia_live:
-                    self.sys_lines.append(t)
-                    self.crossing("time", n, t)
-                else:
-                    self.hold("time", t)
-                self.time_line = n
+        k = self.k
+        if not (k.sit_every_min > 0 and self.sit_start > 0 and not self.sit_quiet):
+            return
+        sit_min = (self.now_ts - self.sit_start) // 60
+        n = sit_min // k.sit_every_min * k.sit_every_min
+        if not (n >= k.sit_every_min and n > self.time_line):
+            return
+        # Two hours arms the Stop block's hand-off, unless work is in flight:
+        # landing it comes first.
+        if n >= k.sit_every_min * 2 and not self.in_flight() and not self.curia_live:
+            self.since_nag = True
+        t = f"⏱ {hm(sit_min)} · context {kfmt(ctx)}"
+        tail = self.sit_tail()
+        if tail:
+            t = f"{t} · {tail}"
+        w = self.work_str()
+        if w:
+            t = f"{t} {w}"
+        if not self.curia_live:
+            self.sys_lines.append(t)
+            self.crossing("time", n, t)
+        else:
+            self.hold("time", t)
+        self.time_line = n
 
+    @property
+    def pickup_duty(self):
         # The file is named by its suffix: the Stop hook keys it on the
         # session's short id, and a model that has to guess picks another's.
-        pickup_duty = (f"Write the single next step as the body (below `---`) of this session's "
-                       f"pickup item, {self.sdir}/pickup/*-{self.sid[:8]}.md, without showing it.")
-        # A pointer, not a procedure: the orders say how to stop. The test
-        # checks the lead still exists in the standing orders.
-        sit_orders = 'Standing orders: "At a sitting rung".'
+        return (f"Write the single next step as the body (below `---`) of this session's "
+                f"pickup item, {self.sdir}/pickup/*-{self.sid[:8]}.md, without showing it.")
 
-        # Model side of the sitting clock, on the screen line's thresholds. A
-        # rung of 0 means the clock restarted, which spends the injection.
-        # m_sit_said gates the repeat (dotfiles#282); m_sit_at is the last
-        # rung whose stop was shaped, left unspent by work in flight.
-        if is_prompt and k.sit_every_min > 0 and self.sit_start > 0 and not self.curia_live:
-            m_min = (self.now_ts - self.sit_start) // 60
-            r = rung_of([k.sit_every_min], k.sit_every_min, m_min)
-            if r == 0:
-                self.m_sit_at = self.m_sit_said = 0
-            elif not sit_quiet and self.in_flight() and r > self.m_sit_said:
-                self.model_lines.append(
-                    f"Sitting {hm(m_min)} at this machine, past {hm(r)}, with work in flight "
-                    f"({self.in_flight_memo}). Don't raise the time yet: land this first, without "
-                    f"asking -- commit, push, open the PR. This rung comes back once it lands. {sit_orders}")
-                self.m_sit_said = r
-            elif not sit_quiet and not self.in_flight() and r > self.m_sit_at:
-                self.model_lines.append(f"Sitting {hm(m_min)} at this machine, past {hm(r)}. "
-                                        f"{pickup_duty} {sit_orders}")
-                self.m_sit_at = self.m_sit_said = r
+    # A pointer, not a procedure: the orders say how to stop. The test checks
+    # the lead still exists in the standing orders.
+    SIT_ORDERS = 'Standing orders: "At a sitting rung".'
 
-        # Bedtime, after the reply: the warning bed_warn_min before it, and the
-        # hour itself, each said once per bedtime set. Gated on the night, so a
-        # bedtime left from last night is not read out this morning. On
-        # can_inject: the hour arrives on the wall clock, not the user's rhythm.
-        if can_inject and self.bed_at > 0 and bed_night:
-            now, bed = self.now_ts, self.bed_at
-            if now >= bed and self.bed_past_at != bed:
-                t = f"ok, it's {self.lhhmm(now)}, you said {self.lhhmm(bed)}"
-                if not self.curia_live:
-                    self.sys_lines.append(t)
-                    self.crossing("bed_past", (now - bed) // 60, t)
-                    self.model_lines.append(f"It's {self.lhhmm(now)}; the user said bed at {self.lhhmm(bed)}. "
-                                            f"Say that once. {pickup_duty} {sit_orders}")
-                else:
-                    self.hold("bed", t)
-                self.bed_past_at = self.bed_warn_at = bed
-            elif now >= bed - k.bed_warn_min * 60 and self.bed_warn_at != bed:
-                bed_left = (bed - now + 59) // 60
-                t = f"{bed_left} min to {self.lhhmm(bed)}"
-                if not self.curia_live:
-                    self.sys_lines.append(t)
-                    self.crossing("bed_warn", bed_left, t)
-                    self.model_lines.append(f"Bedtime {self.lhhmm(bed)} is {bed_left} minutes away. "
-                                            f"{pickup_duty} {sit_orders}")
-                elif not self.held("bed"):
-                    self.hold("bed", t)
-                self.bed_warn_at = bed
+    def sitting_model(self):
+        """The model side of the sitting clock, on the screen line's
+        thresholds. A rung of 0 means the clock restarted, which spends the
+        injection. m_sit_said gates the repeat (dotfiles#282); m_sit_at is the
+        last rung whose stop was shaped, left unspent by work in flight."""
+        k = self.k
+        if not (k.sit_every_min > 0 and self.sit_start > 0 and not self.curia_live):
+            return
+        m_min = (self.now_ts - self.sit_start) // 60
+        r = rung_of([k.sit_every_min], k.sit_every_min, m_min)
+        if r == 0:
+            self.m_sit_at = self.m_sit_said = 0
+        elif not self.sit_quiet and self.in_flight() and r > self.m_sit_said:
+            self.model_lines.append(
+                f"Sitting {hm(m_min)} at this machine, past {hm(r)}, with work in flight "
+                f"({self.in_flight_memo}). Don't raise the time yet: land this first, without "
+                f"asking -- commit, push, open the PR. This rung comes back once it lands. {self.SIT_ORDERS}")
+            self.m_sit_said = r
+        elif not self.sit_quiet and not self.in_flight() and r > self.m_sit_at:
+            self.model_lines.append(f"Sitting {hm(m_min)} at this machine, past {hm(r)}. "
+                                    f"{self.pickup_duty} {self.SIT_ORDERS}")
+            self.m_sit_at = self.m_sit_said = r
 
-        # The machine-wide day counter (#301): measured, never alarmed.
-        if is_prompt:
-            soft("day_decisions", state.day_decisions, self.sid, decisions, 0, self.now_ts,
-                 k.decision_gap_min * 60)
-
-        # FROZEN -- THAW CAREFULLY.
-        # friction -- measured in human turns, so only a prompt trips it, and
-        # addressed to the model. Work in flight gets the land-it redirect and
-        # leaves fric_tripped unset, so the capacity line still fires, unspent,
-        # once the work lands. No crossing for the in-flight repeats.
-        if is_prompt and not self.fric_tripped and not self.curia_live and fric_win >= k.friction_n:
-            if self.in_flight():
-                self.model_lines.append(
-                    f"{fric_win} corrections or rebukes in the last {k.friction_turns} turns, with work "
-                    "in flight. Do not raise capacity or offer a stopping point yet: land this without "
-                    "asking -- commit, push, open the PR -- then apply the capacity rule.")
+    def bedtime(self):
+        """After the reply: the warning bed_warn_min before it, and the hour
+        itself, each said once per bedtime set. Gated on the night, so a
+        bedtime left from last night is not read out this morning. On
+        can_inject: the hour arrives on the wall clock, not the user's rhythm."""
+        if not (self.bed_at > 0 and self.bed_night):
+            return
+        now, bed = self.now_ts, self.bed_at
+        if now >= bed and self.bed_past_at != bed:
+            t = f"ok, it's {self.lhhmm(now)}, you said {self.lhhmm(bed)}"
+            if not self.curia_live:
+                self.sys_lines.append(t)
+                self.crossing("bed_past", (now - bed) // 60, t)
+                self.model_lines.append(f"It's {self.lhhmm(now)}; the user said bed at {self.lhhmm(bed)}. "
+                                        f"Say that once. {self.pickup_duty} {self.SIT_ORDERS}")
             else:
-                fm = (f"{fric_win} corrections or rebukes in the last {k.friction_turns} turns. "
-                      "Apply the capacity rule from the standing orders, once.")
-                self.model_lines.append(fm)
-                self.crossing("friction", fric_win, fm)
-                self.fric_tripped = self.since_nag = True
+                self.hold("bed", t)
+            self.bed_past_at = self.bed_warn_at = bed
+        elif now >= bed - self.k.bed_warn_min * 60 and self.bed_warn_at != bed:
+            bed_left = (bed - now + 59) // 60
+            t = f"{bed_left} min to {self.lhhmm(bed)}"
+            if not self.curia_live:
+                self.sys_lines.append(t)
+                self.crossing("bed_warn", bed_left, t)
+                self.model_lines.append(f"Bedtime {self.lhhmm(bed)} is {bed_left} minutes away. "
+                                        f"{self.pickup_duty} {self.SIT_ORDERS}")
+            elif not self.held("bed"):
+                self.hold("bed", t)
+            self.bed_warn_at = bed
+
+    def friction(self, turns):
+        # FROZEN -- THAW CAREFULLY.
+        # friction -- corrections and rebukes inside a window of human turns,
+        # so only a prompt trips it, and addressed to the model. Work in flight
+        # gets the land-it redirect and leaves fric_tripped unset, so the
+        # capacity line still fires, unspent, once the work lands. No crossing
+        # for the in-flight repeats.
+        k = self.k
+        rows = self.metrics.get("friction")
+        fric_win = sum(1 for f in (rows if isinstance(rows, list) else [])
+                       if obj(f).get("type") in ("correction", "rebuke")
+                       and num(obj(f).get("turn_ordinal")) > turns - k.friction_turns)
+        if self.fric_tripped or self.curia_live or fric_win < k.friction_n:
+            return
+        if self.in_flight():
+            self.model_lines.append(
+                f"{fric_win} corrections or rebukes in the last {k.friction_turns} turns, with work "
+                "in flight. Do not raise capacity or offer a stopping point yet: land this without "
+                "asking -- commit, push, open the PR -- then apply the capacity rule.")
+            return
+        fm = (f"{fric_win} corrections or rebukes in the last {k.friction_turns} turns. "
+              "Apply the capacity rule from the standing orders, once.")
+        self.model_lines.append(fm)
+        self.crossing("friction", fric_win, fm)
+        self.fric_tripped = self.since_nag = True
 
     # -- Stop ------------------------------------------------------------------
     def archivable(self):
