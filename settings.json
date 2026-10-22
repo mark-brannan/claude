@@ -273,7 +273,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" posttooluse 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.py\"; [ -f \"$h\" ] && python3 \"$h\" posttooluse 0 show || true"
           }
         ]
       },
@@ -337,7 +337,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" subagentstop 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.py\"; [ -f \"$h\" ] && python3 \"$h\" subagentstop 0 show || true"
           },
           {
             "type": "command",
@@ -377,7 +377,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/metrics-live.sh\"; [ -f \"$h\" ] && bash \"$h\" prompt 0 show 2>/dev/null || true"
+            "command": "h=\"$HOME/.claude/hooks/metrics-live.py\"; [ -f \"$h\" ] && python3 \"$h\" prompt 0 show || true"
           },
           {
             "type": "command",

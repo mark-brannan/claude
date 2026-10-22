@@ -2,7 +2,7 @@
 # On-demand breakdown of one session's decision/friction triples and git-event
 # counts -- the detail dotfiles#132 explicitly dropped from the nag display
 # (⚖0[0/0/0], ⚡0[0/0/0], tool-call/git-event counts) rather than bring back.
-# The data was never deleted: metrics-live.sh already caches it in
+# The data was never deleted: metrics-live.py already caches it in
 # metrics/live/<sid>.json and measure-git-events.py already logs it to
 # metrics/git-events/<sid>.jsonl. This just reads both, on request, from a
 # terminal -- not the statusline, not a hook.
@@ -19,7 +19,7 @@ HOOKS="${METRICS_HOOKS:-$HOME/.claude/hooks}"
 LIVE="$(state_dir)/metrics/live"
 GITEV="$(state_dir)/metrics/git-events"
 
-# Excludes *.nag.json: metrics-live.sh's own crossing state, not the cache.
+# Excludes *.nag.json: metrics-live.py's own crossing state, not the cache.
 F=""
 if [ $# -ge 1 ]; then
   for c in "$LIVE/$1"*.json "$LIVE"/*/"$1"*.json; do

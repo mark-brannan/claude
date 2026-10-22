@@ -70,7 +70,7 @@ tp=$(ls -t "$HOME"/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
 sid=$(basename "$tp" .jsonl)
 
 # The payload every hook entry point receives. `cmd` decides whether the git
-# filter in metrics-live.sh lets the event through.
+# filter in metrics-live.py lets the event through.
 payload() {
   jq -nc --arg tp "$tp" --arg sid "$sid" --arg cwd "$PWD" --arg cmd "$1" \
     '{transcript_path:$tp, session_id:$sid, cwd:$cwd, tool_input:{command:$cmd}}'
@@ -88,10 +88,10 @@ else
 fi
 
 # Populate the cache both readouts print from, through the real producer.
-payload "git commit -m preview" | bash "$HOOKS/metrics-live.sh" git 0 >/dev/null
+payload "git commit -m preview" | python3 "$HOOKS/metrics-live.py" git 0 >/dev/null
 
 F=$(state_shard_path "$(state_dir)/metrics/live" "$sid.json" "$sid")
-[ -f "$F" ] || { echo "metrics-live.sh wrote no cache at $F" >&2; exit 1; }
+[ -f "$F" ] || { echo "metrics-live.py wrote no cache at $F" >&2; exit 1; }
 
 # --- silence ---------------------------------------------------------------
 # These two must stay silent. A regression here is invisible in a session:
@@ -104,21 +104,21 @@ F=$(state_shard_path "$(state_dir)/metrics/live" "$sid.json" "$sid")
 out=$(payload "git commit -m preview" \
       | METRICS_CONTEXT_LINES=999999999 METRICS_SIT_EVERY_MIN=0 \
         METRICS_FRICTION_N=999999 \
-        bash "$HOOKS/metrics-live.sh" prompt 0 show 2>&1)
+        python3 "$HOOKS/metrics-live.py" prompt 0 show 2>&1)
 if [ -z "$out" ]; then ok "prompt event prints nothing (would become model context)"
 else bad "prompt event printed: $out"; fi
 
-out=$(payload "ls -la" | bash "$HOOKS/metrics-live.sh" git 0 show 2>&1)
+out=$(payload "ls -la" | python3 "$HOOKS/metrics-live.py" git 0 show 2>&1)
 if [ -z "$out" ]; then ok "non-git Bash command is filtered out"
 else bad "non-git command printed: $out"; fi
 
 # --- block -----------------------------------------------------------------
-# Straight from metrics-live.sh, including the SHOW guard and the
+# Straight from metrics-live.py, including the SHOW guard and the
 # systemMessage envelope -- not a local re-render of `block`.
 for ev in git question stop; do
   say ""
-  say "--- metrics-live.sh $ev 0 show"
-  out=$(payload "git commit -m preview" | bash "$HOOKS/metrics-live.sh" "$ev" 0 show 2>&1)
+  say "--- metrics-live.py $ev 0 show"
+  out=$(payload "git commit -m preview" | python3 "$HOOKS/metrics-live.py" "$ev" 0 show 2>&1)
   msg=$(printf '%s' "$out" | jq -r '.systemMessage // empty' 2>/dev/null)
   if [ -n "$msg" ]; then
     say "$msg"
@@ -140,7 +140,7 @@ esac
 
 # --- friction ----------------------------------------------------------
 # Runs session-metrics.jq directly against a transcript -- not through
-# metrics-live.sh -- since these are checking the counts, not the display.
+# metrics-live.py -- since these are checking the counts, not the display.
 # check_friction FIXTURE LABEL want_total want_correction want_override
 #                 want_rebuke want_repeat want_pushback
 #

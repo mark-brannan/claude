@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tests for the lib-state.sh functions that have no Python twin: day_decisions
-# (dotfiles#301), work_record and the work-item store, ruling_readiness,
-# buffered_state and verdict_explain -- plus the shell-only mechanics of the
+# Tests for the lib-state.sh functions that have no Python twin: work_record
+# and the work-item store, and ruling_readiness -- plus the shell-only mechanics of the
 # functions that do: state_lock arming no trap of its own and leaking no
 # age-reference file, and archivable_reasons handing its home line back
 # through ARCHIVABLE_HOME_FILE.
@@ -87,106 +86,6 @@ else
 fi
 rm -rf "$LOCKDIR" "$SCRATCH"/x.lock.age.*
 
-
-# --- day_decisions -----------------------------------------------------------
-# The machine-wide decision store (dotfiles#301). CLAUDE_STATE_REPO points
-# state_dir at a scratch tree so nothing here touches the real state repo, and
-# so the fallback path (a machine without the repo) never gets picked up on a
-# runner that happens to have /workspace/claude_prompts_scratch.
-DAYREPO="$SCRATCH/state-repo"; mkdir -p "$DAYREPO/.git"
-DAYF="$DAYREPO/state/global/metrics/day-decisions.json"
-export CLAUDE_STATE_REPO="$DAYREPO"
-
-day() {  # day <sid> <total> <junk> <now> <gap-seconds>
-  bash -c '. "'"$HOOKS"'/lib-state.sh"; day_decisions "$@"' _ "$@"
-}
-
-dcheck() {  # dcheck <name> <want-total> <want-junk> <got-tsv>
-  name=$1; want=$(printf '%s\t%s' "$2" "$3"); got=$4
-  if [ "$got" = "$want" ]; then pass=$((pass+1)); else
-    fail=$((fail+1)); printf 'FAIL %s: want [%s], got [%s]\n' "$name" "$want" "$got"
-  fi
-}
-
-# an empty store: this session's counts are the day's
-dcheck "first call seeds the day" 7 1 "$(day sess-a 7 1 1000 10800)"
-
-# a second session in the same day sums in
-dcheck "a second session sums" 20 3 "$(day sess-b 13 2 1100 10800)"
-
-# the same session again replaces its own contribution rather than adding to it:
-# the hook fires on every prompt, so a running total would multiply
-dcheck "same session is idempotent" 24 3 "$(day sess-a 11 1 1200 10800)"
-
-# a gap under the limit keeps the day
-dcheck "gap under the limit keeps the day" 25 3 "$(day sess-b 14 2 11000 10800)"
-
-# a gap past the limit starts a fresh day: only the calling session is left
-dcheck "gap past the limit resets" 4 0 "$(day sess-b 4 0 30000 10800)"
-if [ "$(jq -r '.sessions | keys | join(",")' "$DAYF")" = "sess-b" ]; then
-  pass=$((pass+1))
-else
-  fail=$((fail+1)); echo "FAIL reset drops the other sessions' contributions"
-fi
-
-# junk is carried, never subtracted from the total
-dcheck "junk rides beside the total" 9 5 "$(day sess-c 5 5 30100 10800)"
-
-# a lock held by a live process: prints the store as it stands, writes nothing
-mkdir -p "$DAYF.lock"
-printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$DAYF.lock/meta"
-dcheck "contended lock writes nothing" 9 5 "$(day sess-d 99 0 30200 10800)"
-rm -rf "$DAYF.lock"
-
-# state_lock installs no trap of its own (#361), so day_decisions has to release
-# the lock on its own way out: nothing may be left behind after a normal call.
-if [ ! -d "$DAYF.lock" ]; then pass=$((pass+1)); else
-  fail=$((fail+1)); echo "FAIL day_decisions left its lock dir behind"
-fi
-
-# and it must not arm a trap either -- a hook that already has one (stop-
-# continuity.sh arms `trap restore_board EXIT`) would have it silently clobbered
-got=$(bash -c '. "'"$HOOKS"'/lib-state.sh"; trap "echo CALLER_TRAP" EXIT
-  day_decisions sess-e 1 0 30300 10800 >/dev/null' 2>&1)
-if [ "$got" = "CALLER_TRAP" ]; then pass=$((pass+1)); else
-  fail=$((fail+1)); printf "FAIL caller's EXIT trap clobbered: got [%s]\n" "$got"
-fi
-
-# The read has to happen after the lock is taken, not before (the review on
-# #364). A stand-in state_lock writes another session's entry at the moment the
-# lock is acquired: a day_decisions that had already snapshotted the file would
-# overwrite that entry, where one that reads inside the lock folds both in.
-rm -f "$DAYF"
-got=$(bash -c '. "'"$HOOKS"'/lib-state.sh"
-  state_lock() { jq -n "{last_prompt: 40000, sessions: {\"sess-x\": {total: 6, junk: 1}}}" > "'"$DAYF"'"; }
-  state_unlock() { :; }
-  day_decisions sess-y 2 0 40100 10800')
-dcheck "the read happens inside the lock" 8 1 "$got"
-
-# Two interleaved callers: the second finds the lock held, writes nothing, and
-# once it is free lands its total on top of the first's rather than over it.
-rm -f "$DAYF"
-day sess-p 6 1 41000 10800 >/dev/null
-mkdir -p "$DAYF.lock"
-printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$DAYF.lock/meta"
-dcheck "lock held: the second caller writes nothing" 6 1 "$(day sess-q 9 2 41100 10800)"
-rm -rf "$DAYF.lock"
-dcheck "lock free: the second caller lands on top" 15 3 "$(day sess-q 9 2 41200 10800)"
-
-# no store at all and the lock unavailable: a usable pair, not empty output
-rm -f "$DAYF"
-mkdir -p "$DAYF.lock"
-printf 'pid=%s\nhostname=%s\n' "$$" "$(uname -n)" > "$DAYF.lock/meta"
-dcheck "no store, no lock -> 0 0" 0 0 "$(day sess-r 3 0 41300 10800)"
-rm -rf "$DAYF.lock"
-
-# no metrics dir can be made (a file squats on its path): still a usable pair,
-# not empty output -- PR B's caller splits this on a tab
-BADREPO="$SCRATCH/bad-repo"; mkdir -p "$BADREPO/.git" "$BADREPO/state/global"
-: > "$BADREPO/state/global/metrics"
-dcheck "no metrics dir -> 0 0" 0 0 "$(CLAUDE_STATE_REPO="$BADREPO" day sess-s 3 0 41400 10800)"
-
-unset CLAUDE_STATE_REPO
 
 # --- the home line comes back through a file, from inside $(...) ----------------
 # Every caller captures archivable_reasons with $(...), so a variable it sets
@@ -320,43 +219,6 @@ for sh_ in bash sh; do
   eq_ust "$sh_: past the TTL gh is asked again" ready   "$(RULING_REF_TTL=0 rr 'x until: o/r#2 risk: y')"
   rm -f "$RR"/state.*
 done
-
-# --- buffered_state names what the state repo has not committed yet ----------
-# A state repo whose state/ holds one hook-written metrics file, uncommitted.
-SR="$SCRATCH/state-repo"; gitq "$SCRATCH" init -q -b main "$SR"
-mkdir -p "$SR/state/global/metrics"; : > "$SR/README"
-gitq "$SR" add README; gitq "$SR" commit -q -m init
-: > "$SR/state/global/metrics/live.json"
-bs() { CLAUDE_STATE_REPO="$SR" bash -c '. "$0/lib-state.sh"; buffered_state "$1"' "$HOOKS" "$1"; }
-mkdir -p "$SR/state/global/pickup"; : > "$SR/state/global/pickup/h.md"
-eq_ust 'buffered_state: names the hand-off, counts the metrics' \
-  '→ buffered in the state repo, not committed yet (the next Stop commits it): pickup/h.md, + 1 metrics file' \
-  "$(bs "$SR")"
-rm -f "$SR/state/global/pickup/h.md"; : > "$SR/state/global/metrics/two.json"
-eq_ust 'buffered_state: metrics alone are a count' \
-  '→ buffered in the state repo, not committed yet (the next Stop commits it): + 2 metrics files' \
-  "$(bs "$SR")"
-mkdir -p "$WT/state"; : > "$WT/state/x"
-eq_ust 'buffered_state: silent outside the state repo' '' "$(bs "$WT")"
-rm -rf "$WT/state" "$SR/state/global/metrics/two.json" "$SR/state/global/pickup"
-gitq "$SR" add state/; gitq "$SR" commit -q -m state
-eq_ust 'buffered_state: silent when state/ is committed' '' "$(bs "$SR")"
-
-# --- verdict_explain names the dirty files when given the tree ---------------
-ve() { CLAUDE_STATE_REPO="$SR" bash -c '. "$0/lib-state.sh"; verdict_explain "$@"' "$HOOKS" "$@"; }
-: > "$WT/a"; : > "$WT/b"; : > "$WT/c"; : > "$WT/d"
-eq_ust 'verdict_explain: names three files and counts the rest' \
-  '→ worktree dirty: 4 uncommitted file(s) (a, b, c, +1 more). Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
-  "$(ve 'not archivable: worktree dirty' "$WT")"
-rm -f "$WT/a" "$WT/b" "$WT/c" "$WT/d"
-: > "$WT/my file"
-eq_ust 'verdict_explain: a name with a space prints unquoted' \
-  '→ worktree dirty: 1 uncommitted file(s) (my file). Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
-  "$(ve 'not archivable: worktree dirty' "$WT")"
-rm -f "$WT/my file"
-eq_ust 'verdict_explain: without the tree, no file list' \
-  '→ worktree dirty: uncommitted files in this worktree. Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that.' \
-  "$(ve 'not archivable: worktree dirty')"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

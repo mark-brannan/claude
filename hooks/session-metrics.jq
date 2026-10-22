@@ -472,7 +472,7 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
         turn_index: .i,
         # Position among human turns, 1-based. turn_index is an index into the
         # whole event stream, so it cannot answer "how many turns ago" -- and
-        # the friction counter in metrics-live.sh is defined as a window of
+        # the friction counter in metrics-live.py is defined as a window of
         # turns, not of events. Computed here because $humans lives here.
         turn_ordinal: (.i as $ii | ($humans | map(select(. <= $ii)) | length)),
         type: .type,

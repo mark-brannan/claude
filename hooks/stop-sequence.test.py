@@ -29,9 +29,6 @@ class StopSequenceTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def stub(self, name, body):
-        (self.dir / name).write_text("#!/bin/bash\n" + body + "\n")
-
     def stub_py(self, name, body):
         (self.dir / name).write_text("import os, subprocess, sys\n" + body + "\n")
 
@@ -46,9 +43,11 @@ class StopSequenceTest(unittest.TestCase):
         self.stub_py("stop-continuity.py",
                      'open(os.environ["LOG"], "a").write("continuity " + sys.stdin.read() + "\\n")\n'
                      'print("noise")')
-        self.stub("metrics-live.sh",
-                  'echo "readout $* since=$STOP_VERDICT_SINCE $(cat)" >> "$LOG"; '
-                  'echo \'{"systemMessage":"📦"}\'')
+        self.stub_py("metrics-live.py",
+                     'line = " ".join(["readout", *sys.argv[1:], "since=" + os.environ["STOP_VERDICT_SINCE"],'
+                     ' sys.stdin.read()])\n'
+                     'open(os.environ["LOG"], "a").write(line + "\\n")\n'
+                     'print(\'{"systemMessage":"📦"}\')')
         before = int(time.time())
         r = self.run_seq()
         self.assertEqual(r.returncode, 0)
@@ -66,7 +65,7 @@ class StopSequenceTest(unittest.TestCase):
                      'p = subprocess.Popen(["sleep", "60"])\n'
                      f'open({str(pidfile)!r}, "w").write(str(p.pid))\n'
                      'p.wait()')
-        self.stub("metrics-live.sh", 'echo readout >> "$LOG"; echo out')
+        self.stub_py("metrics-live.py", 'open(os.environ["LOG"], "a").write("readout\\n")\nprint("out")')
         t0 = time.time()
         r = self.run_seq(STOP_CONTINUITY_SECS="2")
         self.assertLess(time.time() - t0, 15)
@@ -88,7 +87,7 @@ class StopSequenceTest(unittest.TestCase):
                      '    p.kill(); os._exit(0)\n'
                      'signal.signal(signal.SIGTERM, bye)\n'
                      'time.sleep(60)')
-        self.stub("metrics-live.sh", 'echo out')
+        self.stub_py("metrics-live.py", 'print("out")')
         r = self.run_seq(STOP_CONTINUITY_SECS="2")
         self.assertEqual(r.returncode, 0)
         child = int(pidfile.read_text())

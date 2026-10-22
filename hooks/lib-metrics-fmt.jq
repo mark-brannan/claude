@@ -1,5 +1,5 @@
 # Shared field vocabulary for the two metrics readouts: the statusline row
-# (`statusline-metrics.sh`) and the event block (`metrics-live.sh`).
+# (`statusline-metrics.sh`) and the event block (`metrics-live.py`).
 #
 # Why a module: the two say the same things in different layouts, and when
 # each owned its own copy of the glyphs they drifted -- the statusline read
@@ -14,7 +14,7 @@ def k: if . >= 1000 then "\(. / 1000 | floor)k" else "\(.)" end;
 # other UTF-8 single width chars for consideration:
 # § ¶ ◊ ⁂ ‽ ⸎ ❖ ⌖ ◎ ⊙ ⦾ ⎊ • · ✦  ‖ ⁄ ⁞ ┄ — . ¤ ✎ ⚙  ⚑ ⚠
 #
-# emoji from 2026-09-10's mockup session, all now wired into metrics-live.sh's
+# emoji from 2026-09-10's mockup session, all now wired into metrics-live.py's
 # event block (#137): 🧘 decisions at zero, 🌌 friction at zero, ✅ blocked
 # at zero, ⏰ the sitting cluster past its hot rung. Nothing is held in
 # reserve here any more -- the next candidate goes on this list before it
