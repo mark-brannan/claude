@@ -383,7 +383,9 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.verdict('{"verdict":"consistent","source":"","quote":""}')
         self.assertEqual(self.run_ad("a call with a big record").returncode, 0)
         shown = self.seen.read_text()
-        self.assertLess(len(shown), 125_000)
+        record = shown.split("\n\nThe record:\n\n", 1)[1][:-1]
+        self.assertLessEqual(len(record), 120_000)
+        self.assertGreater(record.count("A"), 60_000)
         self.assertIn("short item stays whole", shown)
 
     def test_part_of_issues_are_read_and_a_record_that_cannot_be_read_refuses(self):

@@ -247,10 +247,16 @@ def pr_record(root, tag):
     return out
 
 
+def frame(label, body):
+    return f"--- {label} ---\n{body}"
+
+
 def fit(record, cap):
-    """The record's items trimmed so their bodies total at most cap chars: short
-    items stay whole, the long ones share what is left equally."""
-    left, todo, out = cap, sorted(range(len(record)), key=lambda i: len(record[i][1])), {}
+    """The record's items trimmed so the assembled text, labels and separators
+    included, is at most cap chars: short items stay whole, the long ones share
+    what is left equally."""
+    left = cap - sum(len(frame(label, "")) for label, _ in record) - 2 * max(len(record) - 1, 0)
+    todo, out = sorted(range(len(record)), key=lambda i: len(record[i][1])), {}
     for k, i in enumerate(todo):
         share = left // (len(todo) - k)
         out[i] = record[i][1][:share]
@@ -280,7 +286,7 @@ def ask_judge(prompt):
 def judged(call, undo, record):
     """None when the judge reads the call as consistent with the record, else
     the refusal. The record is handed over on stdin; nothing else is."""
-    text = "\n\n".join(f"--- {label} ---\n{body}" for label, body in fit(record, RECORD_CAP))
+    text = "\n\n".join(frame(label, body) for label, body in fit(record, RECORD_CAP))
     prompt = f"Call: {call}\nUndo: {undo or '(none given)'}\n\nThe record:\n\n{text}\n"
     why = ""
     try:
