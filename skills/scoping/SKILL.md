@@ -256,9 +256,10 @@ the 2026-10-22 rulings:
   `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
   the spend facts' shape, pencil). The walk reports each child's actual,
   and the batch's, against them.
-- **Reviews.** A critical review per PR as it opens, and one final pass on
-  the stack. The arete check runs once, on the batch; on a single PR only
-  where this scoping deems it important and says so in the brief.
+- **Reviews.** A critical review per PR as it opens, less deep, and one
+  final pass on the stack before the walk. The arete check runs once, on
+  the batch, at that final pass; on a single PR only where this scoping
+  deems it important and says so in the brief.
 - **Who merges.** In the autonomous lane the driver puts the `merge` label
   on each PR in stack order once the final reviews are clean, and the
   queue lands them; the user's gate is the batch after the fact, with a
