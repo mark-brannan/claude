@@ -576,7 +576,7 @@ work_claims_load() {
 }
 
 # is_card_id <word> -- true for a work item's identifier: epoch seconds, then
-# the minting session's eight hex, no separator (the user, 2026-10-01).
+# eight hex, no separator (the user, 2026-10-01; random hex since claude#256).
 is_card_id() {
   case "${1:-}" in *[!0-9a-f]*|'') return 1 ;; esac
   [ ${#1} -eq 18 ] && case "$1" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*) return 0 ;; esac

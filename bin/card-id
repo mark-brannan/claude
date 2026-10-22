@@ -4,22 +4,18 @@
 # this script formats no id of its own. SOFT SHOULD: the command itself is
 # still shell; rewrite it in Python when convenient, no deadline.
 #
-# A work item's identifier is epoch seconds then the minting session's eight
-# hex, no separator -- 1790836842077c62eb -- never edited, never reused. A
+# A work item's identifier is epoch seconds then eight random hex, no
+# separator -- 1790836842077c62eb -- opaque, never edited, never reused. A
 # work item's file is named by it, and its card line carries it as `id: <id>`.
 #
-#   card-id new [<session-id>]    print a fresh id (session from
-#                                 $CLAUDE_CODE_SESSION_ID when not given)
+#   card-id new                   print a fresh id
 #   card-id show <id>             the item: `<section>\t<group>\t<card>`
 #   card-id roll-stamp [<epoch>]  print the curia roll's stamp for now (or for
 #                                 <epoch> seconds), e.g. 20261002t054107z
 #
-# Two sessions never share a hex; one session asking twice in the same second
-# is the only collision, and `new` never repeats: the id's seconds are the
-# clock, or the next second past this session's last id (one counter per
-# session under $CARD_ID_STATE, default ~/.local/state/card-id, advanced under
-# a lock), stepped past any id already filed in the store. Without a usable
-# counter dir, `new` says so on stderr and only steps past the store.
+# `new` consults nothing: no session, no lock, no ledger, no look at the
+# store. The seconds are the clock and the hex are the OS's randomness, so
+# any number of calls in one second differ (lib/ids.py has the odds).
 set -u
 
 self=$0
@@ -46,15 +42,8 @@ $code" "$ids_dir" "$@"
 
 case "${1:-}" in
   new)
-    sid=${2:-${CLAUDE_CODE_SESSION_ID:-}}
-    py 'h = ids.session_hex(sys.argv[2])
-if not h:
-    print("card-id: no session id, or not one that starts with eight hex: %s (pass one, or run inside a session)" % (sys.argv[2] or "<empty>"), file=sys.stderr)
-    sys.exit(2)
-i, note = ids.new_item_id(h, int(sys.argv[3]), sys.argv[4], ids.card_id_state_dir())
-if note:
-    print("card-id:", note, file=sys.stderr)
-print(i)' "$sid" "$(date -u +%s)" "$(items_dir)" ;;
+    [ $# -eq 1 ] || die "new takes no argument"
+    py 'print(ids.new_item_id(int(sys.argv[2])))' "$(date -u +%s)" ;;
   show)
     is_card_id "${2:-}" || die "not a card id: ${2:-<id>}"
     board_card "$2" || { printf 'card-id: no item %s in %s\n' "$2" "$(items_dir)" >&2; exit 1; } ;;
