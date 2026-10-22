@@ -54,23 +54,23 @@ def text(value):
     return value if isinstance(value, str) else json.dumps(value)
 
 
-def last_line(path):
+def already_logged(path, commit):
+    """The file's latest cherry_pick row is this commit, so a later git command
+    on the same HEAD does not count it again -- even when a pr or branch row
+    was appended after it."""
+    last = None
     try:
         with open(path, "rb") as f:
-            lines = f.read().splitlines()
+            for raw in f:
+                try:
+                    row = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and row.get("kind") == "cherry_pick":
+                    last = row.get("commit")
     except OSError:
-        return ""
-    return lines[-1].decode("utf-8", "replace") if lines else ""
-
-
-def already_logged(path, commit):
-    """The file's last line is this commit's cherry_pick, so a later git
-    command on the same HEAD does not count it again."""
-    try:
-        row = json.loads(last_line(path))
-    except ValueError:
         return False
-    return isinstance(row, dict) and row.get("kind") == "cherry_pick" and row.get("commit") == commit
+    return last == commit
 
 
 def main():

@@ -196,6 +196,12 @@ class MeasureGitEventsTest(unittest.TestCase):
         self.run_hook("git commit -m q")
         self.assertEqual([r["original_commit"] for r in self.rows()], ["abc123def", "0123abc"])
 
+    def test_a_branch_row_between_picks_does_not_hide_the_dedupe(self):
+        git(self.repo, "commit", "-q", "--allow-empty", "-m", "p\n\n(cherry picked from commit abc123def)")
+        self.run_hook("git commit -m p")
+        self.run_hook("git branch foo")
+        self.assertEqual([r["kind"] for r in self.rows()], ["cherry_pick", "branch"])
+
     def test_session_id_defaults_to_unknown(self):
         self.run_hook("git checkout -b x", sid=None)
         (r,) = self.rows(self.events / "un/unknown.jsonl")
