@@ -224,7 +224,8 @@ waive.
    earlier session are a record, not an order.
 2. **The question petitioned the agora first.** An agent that finds a
    question too hard for the one-way-door test writes a `## Needs ruling`
-   card in the house format — default, undo, until, risk, judgment — per
+   card in the house format — default, undo, until, risk, evidence,
+   judgment — per
    `/card-write`. That card is the petition, and it must carry enough
    pre-work to fit the format; the agora is cheap, not free.
    The card also names the open curia the question folds into, or says

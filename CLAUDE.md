@@ -276,7 +276,10 @@ Hooks handle the mechanics unprompted.
   have seen: undoing it is a reversal, never a default, however cheap the
   revert. Only a failure
   earns a `## Needs ruling` card, and the card carries your evaluation —
-  default, undo, until, risk — so my answer is one word.
+  default, undo, until, risk, evidence — so my answer is one word. The
+  agora does not consider an item whose evidence for the ruling is not
+  attached: a visual call carries the picture, a storage call the
+  inventory, and a scope default is not pre-narrowed.
 - **Sort decisions by kind, not size.** *Toil* — how to do the thing:
   names, structure, order, tooling — is yours; the one-way-door test
   decides, and a small reversible one never reaches me however unsure you
