@@ -403,3 +403,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t102036z
 - Scoping's last line is /pickup <parent-id>: the driver brief is written as the parent card's brief, since /pickup already takes a card id, rather than /pickup learning a file path (the second exit the ledger's 2026-10-22 pencil line names) Undo: teach /pickup a file path and have scoping write the plan there; the parent card's brief then carries only the link ([#252](https://github.com/mark-brannan/claude/pull/252))
+
+### 20261022t112519z
+- card-id new: the id's eight hex are 32 random bits, the seconds the plain clock, and there is no store step or counter; a same-second collision is the store's refusal, at 2^-32 per pair Undo: restore the loop stepping the seconds past an id already filed ([#256](https://github.com/mark-brannan/claude/pull/256))
