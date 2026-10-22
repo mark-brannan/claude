@@ -267,8 +267,7 @@ the 2026-10-22 rulings:
   same way, `actual=<n>usd`.
 - **Reviews.** One critical review per PR, as it opens, at the depth the
   work's criticality warrants; this scoping estimates that criticality
-  and the child's card carries the depth. No final-pass critical review
-  on the stack (2026-10-22).
+  and the child's card carries the depth (2026-10-22).
 - **Arete.** A separate action from the critical review, which is why it
   comes last: the arete check runs once, on the batch, at the end before
   the walk; on a single PR only where this scoping deems it important and
