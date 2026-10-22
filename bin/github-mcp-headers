@@ -5,6 +5,15 @@
 # Reads the first GITHUB_PERSONAL_ACCESS_TOKEN= line; tolerates an `export `
 # prefix, one pair of surrounding quotes and CRLF line endings.
 set -euo pipefail
+# When the agent App's secret is there, the App's token instead, so what the
+# MCP server posts reads as the App. A failed mint fails here, never falls back
+# to the user. Claude Code re-runs this helper on a 401 or 403 and retries the
+# call, so the one-hour token renews mid-session. AGENT_BOT_OFF=1 keeps the PAT.
+if [ -z "${AGENT_BOT_OFF:-}" ] && [ -e "${AGENT_BOT_SECRETS:-$HOME/.config/secrets/agent-bot.env}" ]; then
+  tok=$("$(dirname "$0")/gh-agent" auth token) || tok=""
+  [ -n "$tok" ] || { echo "github-mcp-headers: the agent App's token mint failed" >&2; exit 1; }
+  printf '{"Authorization":"Bearer %s"}\n' "$tok"; exit 0
+fi
 f="$HOME/.config/secrets/github-token.env"
 [ -r "$f" ] || { echo "no readable $f" >&2; exit 1; }
 tok=$(tr -d '\r' < "$f" | sed -n \

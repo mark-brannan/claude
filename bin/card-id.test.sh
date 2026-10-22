@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for card-id. Run: bash bin/card-id.test.sh
-# What matters: an id is epoch seconds then the session's eight hex, minted
-# with nothing consulted; show resolves an item's id from any section and nothing else.
+# What matters: an id is epoch seconds then eight random hex, made with nothing
+# consulted; show resolves an item's id from any section and nothing else.
 set -uo pipefail
 CID="$(cd "$(dirname "$0")" && pwd)/card-id"
 pass=0; fail=0
@@ -11,17 +11,13 @@ export WORK_ITEM_DIR="$T/items"
 ok() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL: %s\n  want [%s]\n  got  [%s]\n' "$1" "$2" "$3"; fi; }
 
 now=$(date -u +%s)
-a=$(sh "$CID" new 077c62eb-2979-4277-b798-0d0fd9e9bb8d); ok 'epoch seconds then the session hex' 1 "$(printf '%s' "$a" | grep -cE "^(${now}|$((now + 1)))077c62eb$")"
-b=$(sh "$CID" new 077C62EB); ok 'the hex is lowercased' 077c62eb "${b#??????????}"
-c=$(CLAUDE_CODE_SESSION_ID=d654192b-0000 sh "$CID" new); ok 'the session comes from the environment' d654192b "${c#??????????}"
-ok 'no store is needed to make one' 18 "${#a}"
-mkdir -p "$T/items"
-t=$(date -u +%s)
-: > "$T/items/${t}077c62eb.md"; : > "$T/items/$((t + 1))077c62eb.md"
-d=$(sh "$CID" new 077c62eb); ok 'new steps past ids already filed' 1 "$(printf '%s' "$d" | grep -cE "^($((t + 2))|$((t + 3)))077c62eb$")"
-rm -rf "$T/items"
-sh "$CID" new "" >/dev/null 2>&1; ok 'no session id refuses' 2 $?
-sh "$CID" new zzzzzzzz >/dev/null 2>&1; ok 'a non-hex session refuses' 2 $?
+a=$(sh "$CID" new); ok 'epoch seconds then eight hex' 1 "$(printf '%s' "$a" | grep -cE "^(${now}|$((now + 1)))[0-9a-f]{8}$")"
+ok 'no session is needed to make one' 18 "${#a}"
+ok 'no store is needed to make one' 1 "$([ -e "$T/items" ] && echo 0 || echo 1)"
+ids=$(for _ in 1 2 3 4 5 6 7; do sh "$CID" new; done)
+ok 'seven back-to-back calls give seven distinct ids' 7 "$(printf '%s\n' "$ids" | sort -u | wc -l)"
+ok 'each of the same shape' 7 "$(printf '%s\n' "$ids" | grep -cE '^[0-9]{10}[0-9a-f]{8}$')"
+sh "$CID" new 077c62eb >/dev/null 2>&1; ok 'new takes no argument' 2 $?
 
 ok 'roll-stamp of a given second' 20261002t060107z "$(sh "$CID" roll-stamp 1790920867)"
 ok 'roll-stamp of now has the stamp shape' 1 "$(sh "$CID" roll-stamp | grep -cE '^[0-9]{8}t[0-9]{6}z$')"
