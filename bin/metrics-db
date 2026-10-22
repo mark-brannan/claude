@@ -375,11 +375,10 @@ def load_github(cx):
 def fetch_ci_reviews(cx, sd):
     """Rewrite each recent claude-review run's `headless-run` artifact as
     metrics/headless-runs/ci-review-<run id>.jsonl, where the loader picks it
-    up; a run already written is skipped. Only the last 10 runs of repos with a
-    PR opened in the last 14 days (gh_items) are looked at, and only runs of the
-    repo's own branches. The artifact is untrusted: read capped, only the known
-    keys of the right types kept. A missing gh, no network, a fork run or a
-    malformed artifact is skipped quietly."""
+    up (a run already written is skipped). Looks at the last 10 runs of repos
+    with a PR from the last 14 days, own-branch runs only; the artifact is
+    untrusted, so only known keys of the right types are kept. gh missing,
+    offline, a fork run or a malformed artifact: skipped quietly."""
     for (repo,) in cx.execute("select distinct repo from gh_items where kind = 'pr' and created_at > date('now', '-14 days')").fetchall():
         try:
             runs = gh(["api", f"repos/{repo}/actions/workflows/claude-code-review.yml/runs?per_page=10"])["workflow_runs"]
@@ -395,8 +394,7 @@ def fetch_ci_reviews(cx, sd):
                                    check=True, capture_output=True)
                     with open(os.path.join(tmp, "headless-run.jsonl"), encoding="utf-8") as f:
                         d = json.loads(f.read(65536).strip().splitlines()[-1])
-                    u = d["usage"]
-                    rec = {"what": "claude-review", "repo": repo, "usage": {k: u[k] for k in u if type(u[k]) in (int, float)},
+                    rec = {"what": "claude-review", "repo": repo, "usage": {k: v for k, v in d["usage"].items() if type(v) in (int, float)},
                            **{k: d[k] for k in ("ts", "model", "outcome") if isinstance(d.get(k), str)},
                            **{k: d[k] for k in ("pr", "total_cost_usd") if type(d.get(k)) in (int, float)}}
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
