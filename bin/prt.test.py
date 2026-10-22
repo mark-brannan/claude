@@ -24,7 +24,7 @@ import unittest
 from pathlib import Path
 
 PRT = Path(__file__).resolve().parent / "prt"
-CS = Path(__file__).resolve().parent.parent / "hooks" / "claim-stamp.sh"
+CS = Path(__file__).resolve().parent.parent / "hooks" / "claim-stamp.py"
 SID = "abcdef12-0000-0000-0000-000000000000"
 REPO = "o/r"
 
@@ -297,7 +297,7 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(self.writes(), [])
 
     def test_05_launch_claims_first_and_a_second_run_finds_them_claimed(self):
-        subprocess.run(["sh", str(CS), "card-claim", f"https://github.com/{REPO}/pull/1", "f" * 32],
+        subprocess.run([sys.executable, str(CS), "card-claim", f"https://github.com/{REPO}/pull/1", "f" * 32],
                        env=self.env, check=True, capture_output=True)
         before = len(self.writes())
         first = self.plan("--repo", REPO)

@@ -120,12 +120,12 @@ if [ "$card" = 1 ]; then
     case "$cmd" in
       take) sid=${3:-${CLAUDE_CODE_SESSION_ID:-}}
             [ -n "$sid" ] || { printf 'pickup-list take: no session id (pass one, or run inside a session)\n' >&2; exit 1; }
-            sh "$HOOK_DIR/claim-stamp.sh" card-claim "$link" "$sid" || exit 1
+            python3 "$HOOK_DIR/claim-stamp.py" card-claim "$link" "$sid" || exit 1
             printf 'taken %s\n' "$handle" ;;
-      open) sh "$HOOK_DIR/claim-stamp.sh" card-release "$link" || exit 1
+      open) python3 "$HOOK_DIR/claim-stamp.py" card-release "$link" || exit 1
             printf 'open %s\n' "$handle" ;;
       done) printf 'pickup-list done: an item is done by work-item log <id> status=done\n' >&2; exit 1 ;;
-      show) printf '%s\n' "$c"; [ -z "$link" ] || sh "$HOOK_DIR/claim-stamp.sh" card-claims "$link" ;;
+      show) printf '%s\n' "$c"; [ -z "$link" ] || python3 "$HOOK_DIR/claim-stamp.py" card-claims "$link" ;;
     esac
     exit 0 ;;
   esac

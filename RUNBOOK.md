@@ -717,7 +717,7 @@ can read.
 From a checkout of the branch:
 
 ```bash
-~/.claude/hooks/claim-stamp.sh read -C .
+~/.claude/hooks/claim-stamp.py read -C .
 ```
 
 One line per claim: `live` or `stale`, the session, the machine, the age, the
@@ -736,7 +736,7 @@ is one where no session has ever claimed a card, not one missing setup.
 
 Verify the whole loop by hand: open a second session on the same branch and it
 prints a warning naming the first at start-up; `/wrapup` the first and
-`claim-stamp.sh read -C .` no longer lists it.
+`claim-stamp.py read -C .` no longer lists it.
 
 ## Waive the churn gate on a PR
 

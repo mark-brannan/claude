@@ -372,7 +372,7 @@ find_beside() {  # find_beside <path relative to the Claude layer's tree>
 audit_bin=$(find_beside bin/pr-label-audit) || audit_bin=""
 lib_state=$(find_beside hooks/lib-state.sh) || lib_state=""
 contract_file=$(find_beside skills/pickup/SKILL.md) || contract_file=""
-claim_stamp=$(find_beside hooks/claim-stamp.sh) || claim_stamp=""
+claim_stamp=$(find_beside hooks/claim-stamp.py) || claim_stamp=""
 work_item_bin=${GRIND_WORK_ITEM:-$(command -v work-item 2>/dev/null || find_beside bin/work-item || true)}
 # Where a `carded` worker is expected to have written, and where a card is
 # claimed and retired: the work-item store, named by work-item itself so the
@@ -1394,12 +1394,12 @@ stop_rule_for_worker() {
 # release_worker_claim: the worker is gone whatever it reported, and its
 # session claimed the branch at start. A stamp it never released says a dead
 # session holds the PR for two hours. Uses the loop's worker_sid and wt_path.
-# Returns 1 only when a session ran and there is no claim-stamp.sh to
+# Returns 1 only when a session ran and there is no claim-stamp.py to
 # release it with.
 release_worker_claim() {
   [ -n "$worker_sid" ] || return 0
   [ -n "$claim_stamp" ] || return 1
-  sh "$claim_stamp" release -C "$wt_path" --scan "$worker_sid" >/dev/null 2>&1 || true
+  python3 "$claim_stamp" release -C "$wt_path" --scan "$worker_sid" >/dev/null 2>&1 || true
 }
 
 # keep_unpushed <wip branch> -- before an earlier attempt's worktree or

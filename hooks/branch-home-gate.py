@@ -51,7 +51,7 @@ exactly one line:
   branch-home-gate.py --card [dir]
 
 Third entry point, read-only, same lookup: the machine-readable *card* this
-branch belongs to, for claim-stamp.sh (dotfiles#287). Exactly one line:
+branch belongs to, for claim-stamp.py (dotfiles#287). Exactly one line:
   pr <url>             an open or closed PR has this head
   issue <url>          an open issue names the branch
   none                 no remote card -- including every quiet-path exit

@@ -559,13 +559,13 @@ work_records() {
 }
 
 # work_claims_load -- set $WORK_CLAIMS to every card claim on record, one
-# `live|stale <sid8> <machine> <age>m <url>` line each (claim-stamp.sh owns
+# `live|stale <sid8> <machine> <age>m <url>` line each (claim-stamp.py owns
 # the ledger and its format), then each item's live holder with the item's id
 # for <url>. Empty when neither has one.
 work_claims_load() {
-  local cs="${HOOK_DIR:-$HOME/.claude/hooks}/claim-stamp.sh"
+  local cs="${HOOK_DIR:-$HOME/.claude/hooks}/claim-stamp.py"
   WORK_CLAIMS=""
-  [ -f "$cs" ] && WORK_CLAIMS=$(sh "$cs" card-claims 2>/dev/null)
+  [ -f "$cs" ] && WORK_CLAIMS=$(python3 "$cs" card-claims 2>/dev/null)
   # An item's claim is in its own log (work-item claim), keyed by its id.
   local held
   item_rows >/dev/null

@@ -25,7 +25,7 @@ set -u
 OWNER=${PR_LABEL_AUDIT_OWNER:-mark-brannan}
 LABEL=awaiting-human
 FIXUP_LABEL=fixup-hard
-# Written by claim-stamp.sh alongside the claim stamp on the card
+# Written by claim-stamp.py alongside the claim stamp on the card
 # (dotfiles#287). Reported, never acted on: the label is the cheap filter --
 # one search across the fleet, where reading every card's comments is one call
 # per card -- and the stamp under it is the truth. A `claimed` PR with no

@@ -15,7 +15,7 @@ buffered_state, verdict_explain and day_decisions have no shell twin: only
 metrics-live.py reads them.
 
 The locks are the shell's mkdir protocol, not lib/lock.py: abandon-branch.sh
-and claim-stamp.sh take the same directories from bash.
+takes the same directories from bash, claim-stamp.py through this module.
 
 The one home for this lookup (dotfiles#517). hooks/lib_state.py re-exports
 it; bin tools put this directory on sys.path and `import state`.
@@ -341,8 +341,8 @@ def archivable_reasons(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
 # state_lock / state_unlock -- mkdir atomic test-and-set, the same protocol
 # and the same `meta` file as lib-state.sh's (copied there from grind's
 # per-repo lock; no flock: macOS has none), so a lock taken here holds
-# against abandon-branch.sh and claim-stamp.sh taking it
-# from bash, and the other way round. meta carries pid+host; a same-host
+# against abandon-branch.sh taking it from bash, and the other way
+# round. meta carries pid+host; a same-host
 # dead pid is reclaimed via rename-then-rm. A dir with no meta at all (a
 # kill between mkdir and the meta write) has no pid to check; one older
 # than STATE_LOCK_STALE_SECS (default 5) is reclaimed regardless. One lock

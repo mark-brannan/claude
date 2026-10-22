@@ -357,7 +357,7 @@
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/claim-stamp.sh\"; [ -f \"$h\" ] && sh \"$h\" session-start || true",
+            "command": "h=\"$HOME/.claude/hooks/claim-stamp.py\"; [ -f \"$h\" ] && python3 \"$h\" session-start || true",
             "timeout": 30,
             "statusMessage": "Claiming this branch on its card"
           },

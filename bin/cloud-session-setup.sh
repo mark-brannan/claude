@@ -101,6 +101,7 @@ lib/when.py
 lib/jsonl.py
 lib/hookio.py
 lib/atomic.py
+lib/cksum.py
 hooks/curia-roll.py
 hooks/curia_words.py
 hooks/session-metrics.jq
@@ -137,7 +138,7 @@ hooks/session-start-sync-status.py
 hooks/session-start-hook-errors.py
 hooks/prose-budget-edit.sh
 hooks/branch-home-gate.py
-hooks/claim-stamp.sh
+hooks/claim-stamp.py
 hooks/fixtures
 bin/metrics-preview.sh
 bin/self-check
