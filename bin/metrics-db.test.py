@@ -128,7 +128,8 @@ class Fixture:
              "model": "claude-sonnet-5-5", "total_cost_usd": 0.0123, "outcome": "success",
              "usage": {"input_tokens": 5, "output_tokens": 6, "cache_creation_input_tokens": 7, "cache_read_input_tokens": 8},
              "num_turns": 3},
-            {"ts": "2026-10-01T10:08:00Z", "what": "claude-review", "usage": "junk", "total_cost_usd": {"x": 1}}])
+            {"ts": "2026-10-01T10:08:00Z", "what": "claude-review", "usage": "junk", "total_cost_usd": {"x": 1}},
+            ["not", "an", "object"]])
         write_jsonl(m / "crossings" / "sess-typed-1.jsonl", [
             {"ts": "2026-10-01T11:30:00Z", "kind": "sitting", "at": 90, "min": 30, "stay": True, "overrun": 0},
             {"ts": "2026-10-01T11:40:00Z", "kind": "sitting", "at": 100, "min": 40, "stay": False, "overrun": 1},
@@ -225,9 +226,10 @@ class SourcesTest(FixtureTest):
         self.assertEqual(self.fx.q("select kind, created_branch, draft from git_events"),
                          [("pr-create", "claude/fixture", 0)])
         self.assertEqual(self.fx.q("select what, repo, pr, cost_usd, input_tokens, cache_read_tokens, outcome,"
-                                   " json_extract(raw, '$.num_turns') from headless_runs order by ts"),
+                                   " json_extract(raw, '$.num_turns') from headless_runs where ts is not null order by ts"),
                          [("agent-decision judge", "acme/widgets", 7, 0.0123, 5, 8, "success", 3),
                           ("claude-review", None, None, '{"x": 1}', None, None, None, None)])
+        self.assertEqual(self.fx.q("select raw from headless_runs where ts is null"), [('["not", "an", "object"]',)])
         self.assertEqual(self.fx.q("select stay from crossings order by at"), [(1,), (0,), (None,)])
         self.assertEqual(self.fx.q("select count(*), count(distinct commit_sha) from commits"), [(2, 2)])
 

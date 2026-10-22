@@ -169,11 +169,12 @@ def load_stream(cx, sd, sub, table, pick):
 def headless_run(s, d):
     """The columns a query needs, and the whole line in raw for json_extract on what nobody planned
     for. A line comes from CI too, so a value of the wrong shape is stored as text, never fatal."""
+    raw, d = json.dumps(d), d if isinstance(d, dict) else {}
     u = d.get("usage") if isinstance(d.get("usage"), dict) else {}
     cell = lambda v: v if v is None or isinstance(v, (str, int, float)) else json.dumps(v)
     return (*(cell(d.get(k)) for k in ("ts", "what", "repo", "pr", "model", "total_cost_usd")),
             *(cell(u.get(k)) for k in ("input_tokens", "output_tokens", "cache_creation_input_tokens",
-              "cache_read_input_tokens")), cell(d.get("outcome")), json.dumps(d))
+              "cache_read_input_tokens")), cell(d.get("outcome")), raw)
 
 def load_streams(cx, sd):
     n = {}
