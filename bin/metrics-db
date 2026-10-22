@@ -92,7 +92,7 @@ create view if not exists pr_cost_guess as
   from session_pr p
   join (select session_id, count(*) k from session_pr group by session_id) n using(session_id)
   join sessions s using(session_id)
-  join gh_items g on g.repo = p.repo and g.number = p.number and g.kind = 'pr'
+  join gh_items g on lower(g.repo) = lower(p.repo) and g.number = p.number and g.kind = 'pr'
   where g.merged_at is not null
   group by p.repo, p.number;
 create table if not exists input(host text, minute int, keys int, clicks int, scroll int, move int,
