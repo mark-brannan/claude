@@ -27,6 +27,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 sys.dont_write_bytecode = True
 
+import lib_state  # noqa: E402
+
 MAX_PRS = 3
 TIMEOUT_S = 20
 REF = re.compile(
@@ -98,10 +100,7 @@ def render(results):
 
 
 def main():
-    try:
-        ev = json.load(sys.stdin)
-    except (ValueError, OSError):
-        return
+    ev = lib_state.event()
     refs = pr_refs(ev.get("prompt") or "")
     if not refs:
         return
@@ -118,5 +117,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # convenience hook: a crash must not block the prompt
-        sys.stderr.write(f"pr-blockers-prompt: {e}\n")
+        lib_state.trace_failure("pr-blockers-prompt", "UserPromptSubmit", e)
     sys.exit(0)

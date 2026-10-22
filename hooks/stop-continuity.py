@@ -1237,8 +1237,14 @@ if __name__ == "__main__":
         import gitrun
         import state
         main()
-    except BaseException:
+    except SystemExit:
         pass
+    except BaseException as e:
+        try:
+            import lib_state  # beside this file
+            lib_state.trace_failure("stop-continuity", "Stop", e)
+        except BaseException:
+            pass
     finally:
         try:
             state.state_unlock()

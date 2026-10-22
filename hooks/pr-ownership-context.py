@@ -30,7 +30,8 @@ in the injected note rather than exit quietly -- a convenience hook that
 does nothing looks identical to one that never ran.
 
 CONVENIENCE: never denies, always exits 0. A crash or an odd payload must
-not stop a `gh` command; it is reported on stderr.
+not stop a `gh` command; a crash is traced to the state repo's
+metrics/hook-errors/ (lib/hooktrace.py).
 
 Which commands count: only what runs. languette's scanner (the plugin's, at
 its user-scope install in installed_plugins.json -- a settings.json hook gets
@@ -327,5 +328,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # fail open: a convenience hook never stops a call
-        print(f"pr-ownership-context: {type(e).__name__}: {e}", file=sys.stderr)
+        import lib_state
+        lib_state.trace_failure("pr-ownership-context", "PreToolUse", e)
     sys.exit(0)

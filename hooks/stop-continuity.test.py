@@ -210,7 +210,31 @@ def body(item):
 CLOUD = ("/home/user/claude_prompts_scratch", "/workspace/claude_prompts_scratch")
 
 
+# Runs the hook named by argv[1] as Claude Code would, after the patch in
+# argv[2], so a test can make it crash where no input could.
+# The patch can name boom, which raises RuntimeError("boom").
+WRAP = """import os, runpy, sys
+def boom(*a, **k):
+    raise RuntimeError("boom")
+hook, patch = sys.argv.pop(1), sys.argv.pop(1)
+sys.path.insert(0, os.path.dirname(hook))
+exec(patch)
+runpy.run_path(hook, run_name="__main__")
+"""
+
+
 class StopContinuityTest(unittest.TestCase):
+    def test_a_crash_is_traced_not_swallowed(self):
+        w = self.world("crash")
+        _, work = w.make_work()
+        r = subprocess.run([sys.executable, "-c", WRAP, str(HOOK), "import shutil; shutil.which = boom"],
+                           input=w.payload(SID, work).encode(), env=w.env(CLAUDE_CODE_SESSION_ID="ab7"),
+                           capture_output=True)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, b"", b""), r.stderr.decode())
+        row = json.loads((w.GS / "metrics/hook-errors/ab/ab7.jsonl").read_text())
+        self.assertEqual((row["hook"], row["event"], row["stage"], row["error"]),
+                         ("stop-continuity", "Stop", "main", "RuntimeError: boom"))
+
     def setUp(self):
         if any(os.path.isdir(d + "/.git") for d in CLOUD):
             self.skipTest("a cloud path holds a state repo here; the hook would commit to it")

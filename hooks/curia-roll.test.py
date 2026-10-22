@@ -290,8 +290,19 @@ class CuriaRollTest(unittest.TestCase):
                            input=json.dumps({"session_id": SID, "prompt": "x"}),
                            capture_output=True, text=True, env=env)
         self.assertEqual((r.returncode, r.stdout), (0, ""))
-        self.assertIn("lib/lock.py not found", r.stderr, "says why, on stderr")
+        self.assertIn("lib/lock.py not found", r.stderr, "no lib/hooktrace.py either: says why, on stderr")
         self.assertFalse((self.curia / "one-entry-point" / "roll.md").exists())
+
+        # With lib/hooktrace.py there, the same miss is a traced row, not stderr.
+        shutil.copy(HOOK.parent.parent / "lib" / "hooktrace.py", tree / "lib")
+        r = subprocess.run([sys.executable, str(tree / "hooks" / "curia-roll.py")],
+                           input=json.dumps({"session_id": SID, "prompt": "x"}),
+                           capture_output=True, text=True, env=env)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+        (path,) = self.repo.glob(f"state/global/metrics/hook-errors/*/{SID}.jsonl")
+        row = json.loads(path.read_text())
+        self.assertEqual((row["hook"], row["event"], row["stage"]), ("curia-roll", "UserPromptSubmit", "lock"))
+        self.assertIn("lib/lock.py not found", row["error"])
 
 
 class FoldTest(unittest.TestCase):

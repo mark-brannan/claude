@@ -21,8 +21,8 @@ the session's cwd is allowed and everything else is denied, Bash included. Read
 is open because the Write tool refuses to overwrite a file the session has not
 read, and a retried item starts with the last attempt's hand-off already on
 disk (grind snapshots untracked files); without Read the retry could neither
-read nor replace it. A line that is not a number is ignored, with a note on
-stderr.
+read nor replace it. A line that is not a number is ignored, and traced to
+the state repo's metrics/hook-errors/ (lib/hooktrace.py).
 
 In an interactive session the gate is just as blunt: the line comes from the
 environment `claude` was launched from and cannot be lifted from inside (even
@@ -39,8 +39,8 @@ to the session's, so the spend judged is always the whole session's. Context
 is the main transcript's last call: its input plus cache tokens.
 
 Two failures, two answers; neither locks the hand-off out:
-  - The hook runs but cannot read the transcript: it allows, with a one-line
-    note on stderr (claude#69 names this case). It has no figure to judge by,
+  - The hook runs but cannot read the transcript: it allows, and traces why
+    to metrics/hook-errors/ (claude#69 names this case, claude#241 the trace). It has no figure to judge by,
     and --max-budget-usd stays the backstop.
   - The hook cannot run at all (file missing, python3 missing, a crash)
     while a line is set: the settings.json wrapper denies every call but the
@@ -165,14 +165,30 @@ def measure(path):
     return price(msgs), ctx
 
 
-def line_from_env(name):
+SEEN = {}  # the hook input once read, so a trace can name its session
+
+
+def trace(stage, err):
+    """Record an error the gate swallows to allow the call, through
+    hooks/lib_state.py; stderr from a hook that exits 0 reaches no one. Once
+    per session: each of these repeats on every tool call until fixed."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import lib_state
+    lib_state.LAST.update(SEEN)
+    lib_state.trace_failure("spend-gate", "PreToolUse", err, stage, once=True)
+
+
+def line_from_env(name, bad):
+    """The line in env var name, or None; a value that is not a number is
+    ignored and its error added to bad, for main to trace once the session
+    is known."""
     raw = os.environ.get(name, "").strip()
     if not raw:
         return None
     try:
         v = float(raw)
     except ValueError:
-        print(f"spend-gate: {name}={raw!r} is not a number; ignoring it", file=sys.stderr)
+        bad.append(ValueError(f"{name}={raw!r} is not a number; ignoring it"))
         return None
     return v if v > 0 else None
 
@@ -192,22 +208,29 @@ def fmt_tokens(n):
 
 
 def main():
-    usd_line = line_from_env("SPEND_GATE_USD")
-    tok_line = line_from_env("SPEND_GATE_TOKENS")
-    if usd_line is None and tok_line is None:
+    bad = []
+    usd_line = line_from_env("SPEND_GATE_USD", bad)
+    tok_line = line_from_env("SPEND_GATE_TOKENS", bad)
+    if usd_line is None and tok_line is None and not bad:
         return 0
     handoff = os.environ.get("SPEND_GATE_HANDOFF", "").strip() or "HANDOFF.md"
     try:
         inp = json.load(sys.stdin)
-    except ValueError:
-        print("spend-gate: hook input is not JSON; allowing", file=sys.stderr)
+    except ValueError as e:
+        trace("input", ValueError(f"hook input is not JSON ({e}); allowing"))
+        return 0
+    if isinstance(inp, dict) and inp.get("session_id"):
+        SEEN["session_id"] = inp["session_id"]
+    for err in bad:
+        trace("line", err)
+    if usd_line is None and tok_line is None:
         return 0
     path = inp.get("transcript_path") or ""
     try:
         spend, ctx = measure(path)
     except OSError as e:
-        print(f"spend-gate: cannot read the transcript ({path or 'no path'}: "
-              f"{e.strerror or e}); allowing", file=sys.stderr)
+        trace("transcript", OSError(f"cannot read the transcript ({path or 'no path'}: "
+                                    f"{e.strerror or e}); allowing"))
         return 0
     past_usd = usd_line is not None and spend >= usd_line
     past_tok = tok_line is not None and ctx >= tok_line

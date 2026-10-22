@@ -24,12 +24,31 @@ def _ts(t=None):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 
 
-def trace(hook, stage, err, session_id="", event=""):
-    """Record one swallowed error. stderr only when that write fails too.
+def _seen(path, hook, stage, error):
+    """True when the file already holds a row for this hook, stage and error."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for ln in fh:
+                try:
+                    r = json.loads(ln)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and (r.get("hook"), r.get("stage"), r.get("error")) == (hook, stage, error):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def trace(hook, stage, err, session_id="", event="", once=False):
+    """Record one swallowed error. once: skip it when the session already
+    traced the same hook, stage and error, for an error that would repeat on
+    every call (a bad setting). stderr only when the write fails too.
     Never raises."""
     sid = str(session_id or os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+    error = f"{type(err).__name__}: {err}"[:ERROR_MAX]
     line = json.dumps({"ts": _ts(), "hook": hook, "event": event, "session_id": sid,
-                       "stage": stage, "error": f"{type(err).__name__}: {err}"[:ERROR_MAX]},
+                       "stage": stage, "error": error},
                       ensure_ascii=False, separators=(",", ":"))
     try:
         sd = state.state_dir()
@@ -37,6 +56,8 @@ def trace(hook, stage, err, session_id="", event=""):
             raise OSError("no state dir")
         d = f"{sd}/{SUBDIR}"
         path = state.state_shard_path(d, f"{sid or 'unknown'}.jsonl", sid)
+        if once and _seen(path, hook, stage, error):
+            return
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
