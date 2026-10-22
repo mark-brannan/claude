@@ -391,3 +391,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t073014z
 - GIT_EVENT_RE, buffered_state, verdict_explain and day_decisions move to lib/state.py and leave lib-state.sh, which had no other caller Undo: restore the four functions and their cases from main's history ([#240](https://github.com/mark-brannan/claude/pull/240))
+
+### 20261022t073031z
+- settings.json runs metrics-live.py without 2>/dev/null: its stderr is empty by design Undo: put 2>/dev/null back on the three entries ([#240](https://github.com/mark-brannan/claude/pull/240))
