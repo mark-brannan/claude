@@ -35,13 +35,16 @@ what a sitting loads.
 - **A loop over sessions, not a session.** The user's last words carry over
   by reference to the roll; every unsettled question carries over. Fresh
   context each time; what is settled lands at once.
-- **A dialogue, not a walk.** The user brings a problem; the sitting
-  returns one proposal with at most three judgment questions batched at
-  its end, then waits. A Fable sitting never walks closed questions one at
-  a time. A question that can carry a default, an undo and an until goes
+- **A dialogue, not a walk.** What the user types after `/curia <id>`
+  picks how the sitting opens ([step 6](#opening-curia-id)): status only
+  by default, a reply when the user opens with a statement, two opposed
+  proposals on `propose`. A reply or a proposal carries at most three
+  judgment questions, batched at its end; status carries none. Then the
+  sitting waits. A Fable sitting never walks closed questions one at a
+  time. A question that can carry a default, an undo and an until goes
   to the agora docket, briefed by a cheaper model; one that cannot stays
-  here and reaches the next sitting inside the proposal. The proposal is
-  the opening move, not a one-shot: the exchange after it is the point.
+  here and reaches the next sitting inside a proposal. The opening is the
+  first move, not a one-shot: the exchange after it is the point.
   Refer to things by concept and domain word, never a bare number; put the
   ancestor concept beside every design term.
 - **The user stops it, not the agent.** If a clock or nag fires, name it
@@ -378,12 +381,14 @@ the three sections 1,356 words that day; cost is context × turns.
    folder from here, whatever the prompt, pickup item or hand-off that
    carried the id said; a new curia passes the gates above or does not
    exist.
-2. **Read the rest of the argument.** Facet names only — `lint`, `edit`,
-   `status`, in any order — spawn the runner in the background with those
-   facets, told they were started by hand, say so in one line, and
-   return: no sitting, no `LIVE`. Free text is the topic the sitting
-   opens on; facet names beside it spawn the runner and the sitting opens
-   on the text. A PR, a diff,
+2. **Read the rest of the argument.** It picks the opening's form
+   (step 6). Nothing: status only. The one word `propose`: two opposed
+   proposals. Facet names only — `lint`, `edit`, `status`, in any order —
+   spawn the runner in the background with those facets, told they were
+   started by hand, say so in one line, and return: no sitting, no
+   `LIVE`. Any other text is the user's statement, of any length, and the
+   sitting opens by replying to it. Facet names beside `propose` or a
+   statement spawn the runner, and the sitting opens on the rest. A PR, a diff,
    a log or a hand-off the argument points at goes, in this same step, to
    its own read-only sub-agent (Sonnet, no worktree, no sub-agents of its
    own), run beside the sitting; never read into the sitting's context.
@@ -400,15 +405,37 @@ the three sections 1,356 words that day; cost is context × turns.
    most 250 words), agent-notes **Working memory** (750) and **Open
    questions** (500), 1,500 words together. No lint, no facet, no roll,
    no ledger, no Design section before the first exchange. Deeper history
-   only as the proposal needs it, and the append-only files only from
+   only as a reply or a proposal needs it, and the append-only files only from
    their `read-from:` stamps. Note the words read and the context at this
    point: `status` records both against the caps. Record the context
    again at the first question, from the transcript, and pass it on at
    close; every sitting leaves the number.
-6. **Open with the proposal.** `/curia <id>` alone: the one big thing
-   **Where this stands** names, as a proposal with at most three judgment
-   questions at its end. `/curia <id>` with a topic: the proposal on the
-   user's topic, read against that state. Then wait.
+6. **Open in the form step 2 picked,** then wait.
+   - **Status only** (`/curia <id>` alone, the default). From the three
+     sections and nothing more: where we left off, what was on the table,
+     the count of open questions, and the user's last words by reference,
+     `<id>/roll.md#<stamp>`. No proposal and no question. It ends by
+     noting that the user may make a statement or ask for proposals
+     (`propose`); a line, never a question.
+   - **A reply** (`/curia <id>` followed by a statement). The statement is
+     the sitting's first move, and the hook has already written it to the
+     roll. Reply to it first, read against the state; only then, and only
+     if the reply calls for one, propose.
+   - **Two opposed proposals** (`/curia <id> propose`, or `propose` typed
+     after a status opening). A trial, current thinking. Ancestors:
+     nominal group technique and Delphi, where each position is formed
+     before anyone sees another's, and the council order in which the
+     junior speaks first and the senior last. The reason: one persuasive
+     proposal lowers a judge's accuracy, two opposed ones raise it (the
+     debate studies, Khan et al.). First a cheap model drafts, unexposed:
+     one read-only sub-agent (the Agent tool, Haiku, low effort, no
+     worktree, no sub-agents of its own) reads the same three sections
+     from the folder and returns a naive proposal on the one big thing
+     **Where this stands** names, in at most 300 words. Then the sitting's
+     model writes the opposed proposal, refuting the naive one or
+     extending it, and says which. Show both, the naive one first and
+     labelled as the cheap model's, then at most three questions for the
+     pair.
 
 ## During
 
