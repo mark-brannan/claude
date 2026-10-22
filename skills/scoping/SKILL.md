@@ -215,11 +215,16 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe),
   then `~/.claude/bin/work-item log <parent-id> status=ready`; `ready` because `/pickup` finds an agent
   item only when it is ready or claimed (`claude_cards`, hooks/lib-state.sh);
+  and `~/.claude/bin/work-item log <parent-id> lane=autonomous`: the lane
+  lives on the parent and its children inherit it (2026-10-22), so `/pickup`
+  lets the driver label `merge`;
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
   `--parent <parent-id> [--model <m>] [--effort <e>]`, then
   `~/.claude/bin/work-item log <id> status=ready` so it is claimable; a
   child that plans an issue gets `~/.claude/bin/work-item log <id> home=<owner/repo#n>`;
+  a child the plan marks gated gets `~/.claude/bin/work-item log <id> lane=gated`,
+  an exception, never the reverse: no gated parent with autonomous children;
 - an item proposed as an issue (§4.4) is filed as the shown draft, the
   sub-issue first and then its child card with `home=`; a tick is not a
   yes to issue text the user has not seen (2026-10-10): show the draft
