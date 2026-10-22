@@ -2252,17 +2252,21 @@ said 1 0.80 'Opened https://github.com/o/dotgithub/pull/50.
 GRIND_STATUS: done'
 KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
 has 'a PR on the item branch verifies done' '^o/alpha#17: Cross-repo item -- sonnet'
-# a PR the agent App opened is grind's own work; with no App it is a stranger's
-pv https___github.com_o_dotgithub_pull_51 2999-01-01T00:00:00Z app/agent-bot fix-it 'Grind item: o/alpha#17'
-printf '#!/bin/sh\n[ "$1" = --login ] && [ -f "%s/agent-on" ] && echo "agent-bot[bot]"\n' "$S" > "$S/bin/gh-agent"; chmod +x "$S/bin/gh-agent"
-for app in on off; do
+# a PR the agent App opened is grind's own work, whichever way its login is
+# spelled and whichever way gh-agent --login spells it; a look-alike login, or
+# any bot with no App set up, is a stranger's
+for case in 'app/agent-bot|agent-bot[bot]|ok' 'agent-bot[bot]|agent-bot|ok' 'agent-bot|agent-bot[bot]|ok' \
+            'app/agent-bot-evil|agent-bot[bot]|no' 'xagent-bot|agent-bot|no' 'agent-bot[bot]x|agent-bot[bot]|no' 'app/agent-bot||no'; do
+  au=${case%%|*}; rest=${case#*|}; lg=${rest%%|*}; want=${rest#*|}
+  pv https___github.com_o_dotgithub_pull_51 2999-01-01T00:00:00Z "$au" fix-it 'Grind item: o/alpha#17'
+  printf '#!/bin/sh\n[ "$1" = --login ] && [ -n "%s" ] && echo "%s"\n' "$lg" "$lg" > "$S/bin/gh-agent"; chmod +x "$S/bin/gh-agent"
   git -C "$S/repo" worktree remove -f "$TMPDIR/grind-worktrees/17" >/dev/null 2>&1; git -C "$S/repo" branch -D grind-17 >/dev/null 2>&1
-  rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json "$S/agent-on"; [ "$app" = off ] || : > "$S/agent-on"
+  rm -f "$S/state/grind"/*.json "$S/claude-replies"/*.json
   said 1 0.80 'Opened https://github.com/o/dotgithub/pull/51.
 GRIND_STATUS: done'
   KEEP_RECORDS=1 run --session-budget 100 --pause-every 1
-  if [ "$app" = on ]; then has 'a PR by the agent App verifies done' '^o/alpha#17: Cross-repo item -- sonnet'
-  else has 'with no App, a bot PR does not verify done' '^UNVERIFIED: o/alpha#17'; fi
+  if [ "$want" = ok ]; then has "PR by $au with login $lg verifies done" '^o/alpha#17: Cross-repo item -- sonnet'
+  else has "PR by $au with login '$lg' does not verify done" '^UNVERIFIED: o/alpha#17'; fi
 done
 rm -f "$S/bin/gh-agent"
 # an account grind cannot read counts no named PR, and says so

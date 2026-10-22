@@ -1250,13 +1250,6 @@ last_status() {
   printf '%s\n' "$1" | grep -oE "$status_line_re" | tail -n 1 | sed 's/.*: //'
 }
 
-# prs_opened_since <ISO 8601> <urls, one per line> <branch> <item ref> -> the
-# ones that are this item's work: opened at or after then, by the account grind
-# runs as or the agent App, and either on the item's branch or carrying a `Grind item: <ref>`
-# line in the body (the worker is told to write one for a PR in another repo).
-# A PR another session opened during the run, or one the worker merely names,
-# fails the author or the relation test. A lookup that fails drops that URL: a
-# PR grind cannot see is not one it can vouch for.
 # agent_logins -> a JSON array of the agent App's login in each spelling GitHub
 # gives it (slug[bot] in REST, slug in GraphQL, app/slug in gh --json); [] with
 # no App, when `gh-agent --login` fails.
@@ -1265,6 +1258,13 @@ agent_logins() {
   jq -cn --arg s "${al%\[bot\]}" 'if $s == "" then [] else [$s + "[bot]", $s, "app/" + $s] end'
 }
 
+# prs_opened_since <ISO 8601> <urls, one per line> <branch> <item ref> -> the
+# ones that are this item's work: opened at or after then, by the account grind
+# runs as or the agent App, and either on the item's branch or carrying a `Grind item: <ref>`
+# line in the body (the worker is told to write one for a PR in another repo).
+# A PR another session opened during the run, or one the worker merely names,
+# fails the author or the relation test. A lookup that fails drops that URL: a
+# PR grind cannot see is not one it can vouch for.
 prs_opened_since() {
   printf '%s' "$2" | awk 'NF' | grep -q . || return 0
   me=$(gh api user --jq .login 2>/dev/null) || me=""
