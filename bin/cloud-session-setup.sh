@@ -125,6 +125,7 @@ hooks/metrics-live.sh
 hooks/metrics-rollup.sh
 hooks/log-commit.sh
 hooks/log-gh-writes.py
+hooks/permission-request-log.py
 hooks/statusline-metrics.sh
 hooks/connector-budget.sh
 hooks/prose-budget-edit.sh
