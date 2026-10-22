@@ -11,6 +11,7 @@ CONVENIENCE: never blocks a session, always exits 0; a crash goes to stderr.
 """
 import json
 import os
+import re
 import sys
 
 sys.dont_write_bytecode = True
@@ -18,6 +19,7 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 
 WINDOW = 86400
+NAME = re.compile(r"[A-Za-z0-9_.-]{1,40}")
 
 
 def main():
@@ -29,10 +31,21 @@ def main():
     rows = hooktrace.recent(sd, WINDOW)
     if not rows:
         return
-    text = (f"Hooks traced {len(rows)} swallowed error(s) in the last day: {hooktrace.summary(rows)}. "
-            f"Rows: {sd}/metrics/hook-errors/. `self-check` shows them too.")
-    print(json.dumps({"systemMessage": text,
-                      "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}},
+    # Rows are data a hook wrote from its own failure, so they may carry text
+    # an attacker chose. The model sees only names that match NAME and counts;
+    # the fuller detail goes to the user's systemMessage and self-check.
+    counts = {}
+    for r in rows:
+        h = str(r.get("hook", ""))
+        if NAME.fullmatch(h):
+            counts[h] = counts.get(h, 0) + 1
+    named = ", ".join(f"{h} x{n}" for h, n in sorted(counts.items())) or "unnamed hooks"
+    context = (f"Hooks traced {len(rows)} swallowed error(s) in the last day ({named}). "
+               f"Run `self-check` to read them.")
+    shown = (f"Hooks traced {len(rows)} swallowed error(s) in the last day: {hooktrace.summary(rows)}. "
+             f"Rows: {sd}/metrics/hook-errors/. `self-check` shows them too.")
+    print(json.dumps({"systemMessage": shown,
+                      "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}},
                      ensure_ascii=False))
 
 
