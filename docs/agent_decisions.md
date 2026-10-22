@@ -376,3 +376,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t032610z
 - agent-decision caps the whole record handed to the judge at 120,000 chars, shared equally among long items, inside the $0.25 judge budget Undo: change RECORD_CAP in bin/agent-decision ([#218](https://github.com/mark-brannan/claude/pull/218))
+
+### 20261022t033033z
+- self-check: hooks are stopped when a tool result or typed prompt lands over 10 s after the metrics cache was written; the hook-record order check from the thread reply was not used because records land on only 85.5% of tool results Undo: revert 6f19e24 ([#211](https://github.com/mark-brannan/claude/pull/211))
