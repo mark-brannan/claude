@@ -123,7 +123,7 @@ hooks/guard-add-repo.sh
 hooks/metrics-format.sh
 hooks/metrics-live.sh
 hooks/metrics-rollup.sh
-hooks/log-commit.sh
+hooks/log-commit.py
 hooks/log-gh-writes.py
 hooks/permission-request-log.py
 hooks/statusline-metrics.sh
