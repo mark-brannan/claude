@@ -265,11 +265,12 @@ def fit(record, cap):
 
 
 def log_run(tag, out, rc):
-    """One line per judge run, failed ones too, in the state repo's metrics/headless-runs (claude#219)."""
+    """One line per judge run, failed ones too, in the state repo's metrics/headless-runs (claude#219).
+    The CLI's whole result message is kept: what it reports is mined later, not picked now."""
     pr = PR_REF.search(tag)
-    rec = {"ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "what": "agent-decision judge",
-           "repo": pr and pr.group(1).split("github.com/")[1], "pr": pr and int(pr.group(2)), "model": ",".join(out.get("modelUsage") or [JUDGE[JUDGE.index("--model") + 1]]),
-           "total_cost_usd": out.get("total_cost_usd"), "usage": out.get("usage"), "outcome": out.get("subtype") or f"exit {rc}"}
+    rec = {**out, "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "what": "agent-decision judge",
+           "repo": pr and pr.group(1).split("github.com/")[1], "pr": pr and int(pr.group(2)), "exit": rc,
+           "model": ",".join(out.get("modelUsage") or [JUDGE[JUDGE.index("--model") + 1]]), "outcome": out.get("subtype") or f"exit {rc}"}
     d = os.path.join(lib_state.state_dir(), "metrics", "headless-runs")
     try:
         os.makedirs(d, exist_ok=True)

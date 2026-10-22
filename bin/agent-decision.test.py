@@ -365,7 +365,7 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         self.said("repos/o/r/issues/3")
         log = self.state / "state/global/metrics/headless-runs/agent-decision.jsonl"
         ok = json.dumps({"result": '{"verdict":"consistent","source":"","quote":""}', "total_cost_usd": 0.05,
-                         "usage": {"input_tokens": 9, "output_tokens": 4}})
+                         "usage": {"input_tokens": 9, "output_tokens": 4}, "num_turns": 1})
         self.stub_claude(f"echo '{ok}'\n")
         self.assertEqual(self.run_ad("a call with a record").returncode, 0)
         self.stub_claude("echo '{\"subtype\": \"error_max_budget_usd\", \"total_cost_usd\": 0.26}'\nexit 1\n")
@@ -375,6 +375,8 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
                          ("agent-decision judge", "o/r", 0.05, 9, "exit 0"))
         self.assertEqual((b["total_cost_usd"], b["outcome"]), (0.26, "error_max_budget_usd"))
         self.assertIsInstance(a["pr"], int)
+        self.assertEqual((a["num_turns"], a["exit"], b["exit"]), (1, 0, 1))  # the whole result message, unpicked
+        self.assertIn("verdict", a["result"])
 
     def test_a_rejected_model_is_retried_once(self):
         self.pr(issues=[3])
