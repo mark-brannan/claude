@@ -376,9 +376,10 @@ def fetch_ci_reviews(cx, sd):
     """Rewrite each recent claude-review run's `headless-run` artifact as
     metrics/headless-runs/ci-review-<run id>.jsonl, where the loader picks it
     up (a run already written is skipped). Looks at the last 10 runs of repos
-    with a PR from the last 14 days, own-branch runs only; the artifact is
-    untrusted, so it must parse as a JSON object. gh missing,
-    offline, a fork run or a malformed artifact: skipped quietly."""
+    with a PR from the last 14 days. The artifact is untrusted: every run gets
+    a line carrying its head_repository and whether that is the repo itself
+    (trusted); a file over 1 MiB is only sized, one that is not a JSON object
+    is kept as text. gh missing or offline, or no artifact: skipped quietly."""
     for (repo,) in cx.execute("select distinct repo from gh_items where kind = 'pr' and created_at > date('now', '-14 days')").fetchall():
         try:
             runs = gh(["api", f"repos/{repo}/actions/workflows/claude-code-review.yml/runs?per_page=10"])["workflow_runs"]
@@ -386,20 +387,28 @@ def fetch_ci_reviews(cx, sd):
             continue
         for run in runs:
             dest = os.path.join(sd, "metrics", "headless-runs", f"ci-review-{run['id']}.jsonl")
-            if os.path.exists(dest) or (run.get("head_repository") or {}).get("full_name") != repo:
+            if os.path.exists(dest):
                 continue
+            head = (run.get("head_repository") or {}).get("full_name")
             with tempfile.TemporaryDirectory() as tmp:
                 try:
                     subprocess.run(["gh", "run", "download", str(run["id"]), "-R", repo, "-n", "headless-run", "-D", tmp],
                                    check=True, capture_output=True)
-                    with open(os.path.join(tmp, "headless-run.jsonl"), encoding="utf-8") as f:
-                        d = json.loads(f.read(65536).strip().splitlines()[-1])
-                    rec = {**d, "what": "claude-review", "repo": repo}  # TypeError unless d is an object
+                    path = os.path.join(tmp, "headless-run.jsonl")
+                    size = os.path.getsize(path)
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        text = f.read(1 << 20)
+                    try:
+                        d = {"oversize": size} if size > 1 << 20 else json.loads(text.strip().splitlines()[-1])
+                    except (ValueError, IndexError):
+                        d = None
+                    rec = {**(d if isinstance(d, dict) else {"unparsed": True, "text": text[:4096]}), "what": "claude-review",
+                           "repo": repo, "run": run["id"], "head_repository": head, "trusted": head == repo}
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
                     with open(dest + ".part", "w", encoding="utf-8") as f:  # whole or absent, never torn
                         f.write(json.dumps(rec) + "\n")
                     os.replace(dest + ".part", dest)
-                except (OSError, subprocess.CalledProcessError, ValueError, LookupError, TypeError):
+                except (OSError, subprocess.CalledProcessError, LookupError):
                     continue
 
 def main():

@@ -448,7 +448,7 @@ class GithubTest(FixtureTest):
         # The fixture's PR is made recent; run 43 is a fork's, run 44's artifact is junk.
         gh.write_text(f"""#!/bin/sh
 case "$1" in
-  api) case "$2" in repos/*) echo '{runs}';; *) gh-real "$@" | sed "s/2026-09-02T10:00:00Z/$(date -u +%Y-%m-%dT%H:%M:%SZ)/";; esac;;
+  api) case "$2" in repos/acme/widgets/*) echo '{runs}';; repos/*) echo '{{"workflow_runs": []}}';; *) gh-real "$@" | sed "s/2026-09-02T10:00:00Z/$(date -u +%Y-%m-%dT%H:%M:%SZ)/";; esac;;
   run) id=$3; while [ "$1" != -D ]; do shift; done
        if [ "$id" = 44 ]; then echo '[1, "junk"' > "$2/headless-run.jsonl"; else echo '{good}' > "$2/headless-run.jsonl"; fi;;
   *) exec gh-real "$@";;
@@ -457,12 +457,16 @@ esac
         gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
         for _ in range(2):
             self.build("--github", "--quiet")
-            self.assertEqual(self.fx.q("select what, repo, pr, cost_usd, output_tokens from headless_runs where what = 'claude-review'"),
-                             [("claude-review", "acme/widgets", 2, 0.5, 4)])
-        self.assertEqual(sorted(p.name for p in (self.fx.sd / "metrics" / "headless-runs").glob("ci-review-*")),
-                         ["ci-review-42.jsonl"])
-        kept = json.loads((self.fx.sd / "metrics" / "headless-runs" / "ci-review-42.jsonl").read_text())
-        self.assertEqual((kept["num_turns"], kept["what"], kept["repo"]), (7, "claude-review", "acme/widgets"))
+            self.assertEqual(self.fx.q("select what, repo, pr, cost_usd, output_tokens from headless_runs "
+                                       "where what = 'claude-review' and pr is not null"),
+                             [("claude-review", "acme/widgets", 2, 0.5, 4)] * 2)
+        runs = self.fx.sd / "metrics" / "headless-runs"
+        self.assertEqual(sorted(p.name for p in runs.glob("ci-review-*")),
+                         ["ci-review-42.jsonl", "ci-review-43.jsonl", "ci-review-44.jsonl"])
+        got = {n: json.loads((runs / f"ci-review-{n}.jsonl").read_text()) for n in (42, 43, 44)}
+        self.assertEqual((got[42]["num_turns"], got[42]["what"], got[42]["repo"], got[42]["trusted"]), (7, "claude-review", "acme/widgets", True))
+        self.assertEqual((got[43]["trusted"], got[43]["head_repository"]), (False, "fork/widgets"))
+        self.assertEqual((got[44]["unparsed"], got[44]["text"]), (True, '[1, "junk"\n'))
 
     def test_a_failing_gh_is_a_failed_build(self):
         (self.fx.bin / "gh").write_text("#!/bin/sh\necho nope >&2\nexit 9\n")
