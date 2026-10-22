@@ -92,8 +92,18 @@ jobs:
           mkdir -p "$HOME/.claude/plugins"
           jq -n --arg p "$d" '{version:2,plugins:{"languette@languette":[{scope:"user",installPath:$p}]}}' \
             > "$HOME/.claude/plugins/installed_plugins.json"
+      # Four at a time, like the suites below: one at a time they took 89s.
       - name: Python test suites
-        run: for t in bin/*.test.py hooks/*.test.py lib/*.test.py; do echo "== $t"; python3 "$t"; done
+        run: |
+          set -euo pipefail
+          printf '%s\n' bin/*.test.py hooks/*.test.py lib/*.test.py \
+            | xargs -P 4 -I{} bash -c '
+                t="$1"
+                # buffered, so parallel output does not interleave
+                rc=0; out=$(python3 "$t" 2>&1) || rc=$?
+                echo "::group::$t"; echo "$out"; echo "::endgroup::"
+                if [ "$rc" -ne 0 ]; then echo "::error::$t failed"; exit 1; fi
+              ' _ {}
       - name: Run every other test suite in parallel
         run: |
           set -euo pipefail
