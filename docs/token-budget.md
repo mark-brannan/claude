@@ -47,7 +47,7 @@ returns a paragraph. A 60-line directory dump should have been one.
 **5. Connectors: on for remote sessions, off for local ones.** In a managed
 remote session MCP tools arrive *deferred* — ~110 tool names, no schemas
 until one is requested. In a local CLI they load in full. That asymmetry is
-the whole rule. `.claude/hooks/connector-budget.sh` warns above 5.
+the whole rule. `.claude/hooks/connector-budget.py` warns above 5.
 
 ### Dead end, tested and rejected
 

@@ -71,7 +71,7 @@ CLOUD_SESSION=1 sh "$HOME/.local/share/claude-seed/bin/cloud-session-setup.sh" |
 [`cloud-session-setup-tailscale.sh`](bin/cloud-session-setup-tailscale.sh).
 
 Re-paste only when that block or that file changes. A rule edited in this repo
-reaches the next session on its own; `session-start-seed-refresh.sh` re-runs the
+reaches the next session on its own; `session-start-seed-refresh.py` re-runs the
 seed at every SessionStart.
 
 **2 — Sources.** Add **both**:
@@ -940,7 +940,7 @@ git -C ~/.local/share/claude-seed log --oneline -1
 ```
 
 Behind `origin/main` means the refresh is not running. Either the container
-predates it — `ls ~/.claude/hooks/session-start-seed-refresh.sh` — or the pull
+predates it — `ls ~/.claude/hooks/session-start-seed-refresh.py` — or the pull
 failed, which the installer reports rather than swallowing:
 `CLOUD_SESSION=1 sh ~/.local/share/claude-seed/bin/cloud-session-setup.sh`
 prints the reason. A blocked proxy leaves the last-known-good seed in place on
