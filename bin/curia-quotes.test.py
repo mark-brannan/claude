@@ -51,7 +51,7 @@ class QuoteCheckTest(unittest.TestCase):
         return out
 
     def test_exact_quote_passes(self):
-        self.ok('Solace (`a/roll.md#20261003t030503z`): "I want all our claude stuff together in one place."\n')
+        self.ok('the user (`a/roll.md#20261003t030503z`): "I want all our claude stuff together in one place."\n')
 
     def test_case_punctuation_and_whitespace_ignored(self):
         self.ok('(a/roll.md#20261003t030107z) "initially a reference implementation but in a later stage"\n')

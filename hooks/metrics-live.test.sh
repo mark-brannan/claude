@@ -864,7 +864,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do askturn "$
 ctx6k=$(payload "$TP6c" "$SID6c" "$SCRATCH" \
         | METRICS_SIT_EVERY_MIN=0 bash "$HOOK" prompt 0 2>&1 | jq -r '.hookSpecificOutput.additionalContext // ""')
 hasnt 'past every old decision rung, nothing about decisions reaches the model' \
-      'decisions pushed to Solace' "$ctx6k"
+      'decisions pushed to the user' "$ctx6k"
 
 # --- 7. the sitting line carries context and git state ----------------------
 # 2026-10-01: the rung line keeps the context and the ⎇ git

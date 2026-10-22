@@ -521,7 +521,7 @@ JQ_IDFIRST='def idfirst: (capture("^(?<t>.*?)[[:space:]]+id:[[:space:]]*(?<id>[0
 # global are shown, with a count of what was hidden; --all-rulings, or no
 # project at all, shows every group and prefixes each card with its group.
 # Each card is ready or waiting (ruling_readiness in lib-state.sh); only the
-# ready ones are listed unless --waiting or --all asks (Solace, 2026-10-01).
+# ready ones are listed unless --waiting or --all asks (the user, 2026-10-01).
 # The counts line is printed on every run, and each count names its drill
 # path. Printed first because it is the one thing here waiting on the user.
 ruling_section() {

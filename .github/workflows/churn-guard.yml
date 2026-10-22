@@ -23,7 +23,7 @@ name: Churn guard
 #   - BUDGET changed lines.
 # BUDGET is deliberately not fitted to what has already been written: a
 # budget set to pass the existing history cannot make the next PR smaller.
-# Raising the ceiling is Solace's call, not a session's.
+# Raising the ceiling is the user's call, not a session's.
 #
 # Bypass is the `churn-ok` label, applied by a human. A session cannot apply
 # it: the languette plugin's guard-bypass-labels denies the label by name. A gate whose
@@ -133,6 +133,6 @@ jobs:
           echo "Split it. One script, one concern, smallest piece first."
           echo "The ruling, in full:"
           echo "https://github.com/mark-brannan/dotfiles/issues/149"
-          echo "Raising the ceiling is Solace's call, not a session's."
+          echo "Raising the ceiling is the user's call, not a session's."
           echo "Never ask for churn-ok, by card or question: state the overrun in the PR body."
           exit 1

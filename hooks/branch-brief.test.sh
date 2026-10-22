@@ -47,7 +47,7 @@ fake_signed() {  # <repo> <subject>
 # Every test repo answers only from its own config. Without this the real
 # machine's global user.signingkey leaks in and the "no key here" case -- the
 # one that must not recommend a rebase it cannot sign -- passes on a cloud VM
-# and fails on Solace's laptop.
+# and fails on the user's laptop.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 
 SCRATCH=$(mktemp -d); trap 'rm -rf "$SCRATCH"' EXIT
