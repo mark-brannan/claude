@@ -492,6 +492,24 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(of("o/r", paths=("docs/adr.md",))["score"], 3)
         self.assertEqual(of("o/r", paths=("docs/agent_decisions.md",))["score"], 0)
 
+    def test_11_agent_app_pr_is_worked_not_skipped(self):
+        """A PR the agent App opened is an agent's, not a regenerating bot's."""
+        loader = importlib.machinery.SourceFileLoader("prt_mod", str(PRT))
+        mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("prt_mod", loader))
+        loader.exec_module(mod)
+        mod.claims = lambda url: []
+        mod._agent = {"agent[bot]", "agent", "app/agent"}
+
+        def why(login):
+            pr = node(1, repo="o/r")
+            pr.update(commits=pr["commits"], mergeable="MERGEABLE", author={"login": login, "__typename": "Bot"})
+            pr["files"]["nodes"] = [{"path": "bin/x"}]
+            return mod.facts("o/r", pr)["handoff"]
+
+        self.assertEqual(why("agent"), "")
+        self.assertEqual(why("agent[bot]"), "")
+        self.assertEqual(why("renovate"), "bot-authored: it regenerates its own branch")
+
 
     def test_11_fixer_prompt_turns_a_bot_finding_on_a_governing_doc_into_a_decide(self):
         root = Path(__file__).resolve().parent.parent / "skills"
