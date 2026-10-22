@@ -268,9 +268,14 @@ the 2026-10-22 rulings:
 - **Reviews.** One critical review per PR, as it opens, at the depth the
   work's criticality warrants; this scoping estimates that criticality
   and the child's card carries the depth. No final-pass critical review
-  on the stack (2026-10-22). The arete check runs once, on the batch,
-  before the walk; on a single PR only where this scoping deems it
-  important and says so in the brief.
+  on the stack (2026-10-22).
+- **Arete.** A separate action from the critical review, which is why it
+  comes last: the arete check runs once, on the batch, at the end before
+  the walk; on a single PR only where this scoping deems it important and
+  says so in the brief. Its findings go to the user with the walk, the
+  user's to decide on and act on. It never blocks the autonomous lane's
+  work; a finding the driver judges must hold something is escalated to
+  the agora, parked on a card, and nothing else holds (2026-10-22).
 - **Who merges.** In the autonomous lane the driver puts the `merge` label
   on each PR in stack order once every PR's review is clean, and the
   queue lands them; the user's gate is the batch after the fact, with a
