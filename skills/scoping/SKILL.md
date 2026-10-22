@@ -10,9 +10,10 @@ it: it picks an ordering, fills in the details, and proposes session-sized
 items in that order. The umbrella's own items (issues, cards, rulings,
 tickets in any work system) are the input to plan, never pre-sorted as "in
 flight". It is the seam between judgment and toil. The design lives in
-`curia/one-entry-point/digest.md` and is a work in progress: where this file
-and the digest disagree, the digest is the newer word, and either may be the
-one that reads wrong.
+`curia/one-entry-point/digest.md` and, for the batch the yes files and the
+driver that grinds it, `curia/easy-grind/digest.md`; both are works in
+progress: where this file and a digest disagree, the digest is the newer
+word, and either may be the one that reads wrong.
 
 **Words.** Use the record's words. A word or idea the record does not
 hold is a new one, and step 5 counts it. Agent-drafted words are avoided.
@@ -49,7 +50,7 @@ deduped by its issue link. The lock folder stays the named target's, so
 `/scoping <curia>` and `/scoping <repo>` hold different locks over the same
 umbrella and two sessions can plan the same issues. That is accepted: a
 scoping files nothing before the yes, so the cost of the overlap is a
-duplicate proposal to rule on, not a duplicate issue.
+duplicate proposal to rule on, not a duplicate card.
 
 A repo's README states aims, but both loops change it. Its lines are pencil
 unless a decisions file holds them. A line not yet true in the code is in
@@ -92,7 +93,7 @@ that could not be taken: show the reason and stop. Never work around
 either. The lock is `LOCK`, beside a curia's `LIVE`; `LIVE` is the soft
 sitting marker and this run never touches it.
 
-**The clock is toil, and it is yours** (Solace, 2026-10-01). A scoping runs
+**The clock is toil, and it is yours** (the user, 2026-10-01). A scoping runs
 10 to 25 minutes. The lock lapses 25 minutes after it was taken; the lapse
 is the release, whether or not this session is still talking, because
 nothing of yours runs between turns. Re-taking your own live lock never
@@ -106,7 +107,7 @@ extends it. At the top of every turn and before every write:
 - **22m:** write and commit the proposal as it stands, unasked.
 - **Exit 3:** re-run the `take` line silently and say only "lock retaken".
   Write nothing before it succeeds. Then record any decision made, and
-  propose releasing at once; if Solace carries on, the retake is a fresh
+  propose releasing at once; if the user carries on, the retake is a fresh
   25 minutes.
 - **Exit 1, or a retake refused:** another session holds the target. Write
   nothing into it. Put any decision not yet recorded in this session's
@@ -134,8 +135,8 @@ taken; never overwrite an earlier one. Commit it. Shape:
 
 1. **Header,** a brief: read [brief.md](../agora/brief.md), which
    `/agora` shares, and write to it. It adds: target and why; what was
-   read, a `read_at` stamp and its links; what Solace decides, the yes below; "Nothing edited,
-   nothing filed. Nothing here is claimable until Solace says yes"; the
+   read, a `read_at` stamp and its links; what the user decides, the yes below; "Nothing edited,
+   nothing filed. Nothing here is claimable until the user says yes"; the
    homes the items touch.
 2. **Ambiguity named, not guessed.** A ruling that reads two ways: both
    readings, the default if it is a standing ruling, held out of the items.
@@ -156,20 +157,19 @@ taken; never overwrite an earlier one. Commit it. Shape:
    dependencies named, and why that order in one line. Every open item
    of the umbrella lands in the plan: as a work item, folded into one
    (named), or set aside with its reason. Each work item: the umbrella
-   items or rulings it plans, its files, its home, and every default the doer will
+   items or rulings it plans, its files, the worker model and effort it
+   carries, an estimate of its spend, and every default the doer will
    pick that carries medium risk or more, as a table of default, undo,
-   risk. Home by target (§5, 2026-10-01): a curia, cards, or issues when an
-   item stands on its own without the curia or a future ADR; an ADR,
-   issues or cards in a mix; an issue or epic, sub-issues; a parent card, child
-   cards (`--parent <id>`); a repo, issues or cards, as a curia. An
-   epic's children: one sub-issue per separable item; a careful sequence
-   is one sub-issue whose body holds the sequence; anything uncertain is
-   a research sub-issue with its questions and its output, and the epic
-   carries only its line; a later phase is named in the epic, never left
-   out of it. An
-   umbrella item already one session in size is its own work item, homed
-   on itself, and files nothing; a bigger one splits into children in its
-   own system.
+   risk. The plan's home is one parent card, the batch, with one child
+   card per work item, whatever the umbrella (2026-10-22): scoping files
+   no GitHub issue, ever, and adds no label; an issue the plan covers is
+   named by its child card's `home=`, and an epic's sub-issues are read
+   as items, never written. An umbrella item already one session in size
+   is its own work item and its child card carries only the link; a
+   bigger one splits into children of the batch. A careful sequence is
+   one work item whose brief holds the sequence; anything uncertain is a
+   research item with its questions and its output. The estimates
+   summed are the batch's allocation, on the parent.
 5. **Pencil and new words.** How many items rest on pencil, and which
    pencil; whether any item needs a new word or idea. If one does, name
    it and its two exits, a veto here or back to the curia or agora; that
@@ -178,7 +178,7 @@ taken; never overwrite an earlier one. Commit it. Shape:
 
 ## 5. Stop and show
 
-Show the proposal and stop. Nothing is claimable before Solace's yes.
+Show the proposal and stop. Nothing is claimable before the user's yes.
 
 The yes scales with size. Pencil thresholds, the agent's default until
 ruled: up to 3 work items and 400 words in the work-items section, one
@@ -192,26 +192,25 @@ item's own `###` heading counts inside the section, not as its end. Count as
 
 Re-run the `take` line first; a refusal now stops the filing, and a
 `read moved:` line means the record moved since the proposal. Then file
-each yes'd item exactly as proposed (an issue's text first needs its own yes, below):
+the batch exactly as proposed, cards only:
 
-- a card owned `agent`, worded as `/card-write` words one (a link to the
-  target in it), written to the item store with
-  `~/.claude/bin/work-item create --id "$(~/.claude/bin/card-id new)" --owner agent [--repo <r>] [--parent <id>] [--model <m>] [--effort <e>] --brief - "$title"`
+- the parent first, a card owned `agent` whose brief is the proposal's
+  header and the batch's allocation (a link to the target in it), written
+  to the item store with
+  `~/.claude/bin/work-item create --id "$(~/.claude/bin/card-id new)" --owner agent [--repo <r>] --brief - "$title"`
   (the card text on stdin; it prints the new id; `$title` is read from a
-  quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe), then
-  `~/.claude/bin/work-item log <id> status=ready` so it is claimable;
-- at most one GitHub issue this session, never a batch (Solace,
-  2026-10-01, pen); further issue-homed items stay in the proposal, marked
-  unfiled, and the hand-off names them;
-- a tick is not a yes to an issue whose text Solace has not seen
-  (2026-10-10): show the draft and ask before filing;
-- an item a single line of the parent's body states in full stays that
-  line, not a sub-issue; this is the exception to §4's one sub-issue per
-  separable item.
+  quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe);
+- then one child per yes'd item, worded as `/card-write` words one, by the
+  same line with `--parent <parent-id> [--model <m>] [--effort <e>]`, then
+  `~/.claude/bin/work-item log <id> status=ready` so it is claimable; a
+  child that plans an issue gets `~/.claude/bin/work-item log <id> home=<owner/repo#n>`;
+- an item vetoed, or held on a new word (§4.5), is not filed, and the
+  proposal says so.
 
-An item that rests on pencil says which, in the record's words, on its
-card or issue. Record what was filed in the proposal file (each card by its
-printed id), then:
+The parent stays `open`: it is the batch, not a session's work, and the
+driver below is what reads it. An item that rests on pencil says which, in
+the record's words, on its card. Record what was filed in the proposal file
+(the parent and each child by its printed id), then:
 
 ```bash
 ~/.claude/bin/scoping-lock release <lock-folder> ${CLAUDE_SESSION_ID}
@@ -221,8 +220,9 @@ A run that ends without a yes releases the same way. A dead session's lock
 lapses at 25 minutes like any other.
 
 **The driver prompt.** The run ends with one prompt for one outer session,
-the driver, which runs every yes'd item through worker sub-agents: the
-order, which items run in parallel, which worker model and effort each
-item gets, the review points, who merges, the exits (park the item, or
-pull the andon cord), and the walk it hands back. Never a list of prompts
-for Solace to paste one at a time.
+the driver, which grinds the batch through workers: the parent's id, the
+order, which children run in parallel, the review points, who merges, the
+exits (park the child on a card for the agora, or pull the andon cord), and
+the walk it hands back. Each child's card carries its worker model and
+effort; the prompt repeats neither. Never a list of prompts for the user to
+paste one at a time.
