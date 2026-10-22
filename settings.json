@@ -220,7 +220,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/pr-ownership-context.sh\"; [ -f \"$h\" ] && sh \"$h\" || true",
+            "command": "h=\"$HOME/.claude/hooks/pr-ownership-context.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
             "statusMessage": "Loading the PR ownership rules"
           }
         ]
