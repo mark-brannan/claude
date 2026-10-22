@@ -56,7 +56,9 @@ kind, read to work, never lower it (`gh pr diff 42 -R o/r; gh pr comment 42
 
 dotfiles#224: kind is read or work. A bare `gh pr view/checks/diff/list`, or
 a `gh api` call that isn't a mutating HTTP method (-X/--method
-POST|PUT|PATCH|DELETE) or a graphql `mutation`, is a read -- it goes in the
+POST|PUT|PATCH|DELETE), a graphql `mutation`, or a field/body flag (-f, -F,
+--field, --raw-field, --input: gh switches to POST) not overridden by
+-X GET, is a read -- it goes in the
 record (so the reminder text still fires, and the call is not invisible) but
 pr-threads-gate.sh does not gate the Stop on it. Everything else naming `gh
 pr` (create, edit, comment, merge, ready, review, close, reopen, ... -- an
@@ -100,6 +102,12 @@ GH_READ = re.compile(rf"(^|{NOT_WORD})gh{SP}+pr{SP}+(view|checks|diff|list)({SP}
 GH_PR = re.compile(rf"(^|{NOT_WORD})gh{SP}+pr({SP}|$)")
 MUTATING_METHOD = re.compile(rf"(^|{SP})(-X|--method)[ \t=]+(POST|PUT|PATCH|DELETE)", re.I)
 MUTATION = re.compile(rf"mutation{SP}*\(", re.I)
+# gh api turns a POST on its own once it gets a field or body flag.
+# -f/-F may carry the value attached (-fbody=x).
+FIELD_FLAG = re.compile(rf"(^|{SP})(-[fF]|--field|--raw-field|--input)")
+# graphql always POSTs its -f query; only a mutation writes.
+GRAPHQL = re.compile(rf"(^|{SP})api{SP}+graphql({SP}|$)")
+GET_METHOD = re.compile(rf"(^|{SP})(-X|--method)[ \t=]+GET\b", re.I)
 
 
 def jq_str(v):
@@ -167,7 +175,13 @@ def clause_kind(clause):
     if GH_PR.search(clause):
         return "work"
     # Only a `gh api` call is left to supply a repo and number.
-    return "work" if MUTATING_METHOD.search(clause) or MUTATION.search(clause) else "read"
+    if MUTATING_METHOD.search(clause) or MUTATION.search(clause):
+        return "work"
+    if GRAPHQL.search(clause):
+        return "read"
+    if FIELD_FLAG.search(clause) and not GET_METHOD.search(clause):
+        return "work"
+    return "read"
 
 
 def first(patterns, clause):
