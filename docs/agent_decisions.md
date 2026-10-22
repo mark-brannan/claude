@@ -379,3 +379,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t033033z
 - self-check: hooks are stopped when a tool result or typed prompt lands over 10 s after the metrics cache was written; the hook-record order check from the thread reply was not used because records land on only 85.5% of tool results Undo: revert 6f19e24 ([#211](https://github.com/mark-brannan/claude/pull/211))
+
+### 20261022t071650z
+- permission-request-log masks input with languette's built-in secret rules only, not a project's own Undo: pass project rules into record.mask ([#235](https://github.com/mark-brannan/claude/pull/235))
