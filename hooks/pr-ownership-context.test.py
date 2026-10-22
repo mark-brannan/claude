@@ -245,6 +245,25 @@ class Records(Base):
         self.inject(bash("rw8", "gh-resolve-thread PRRT_abc", cwd="/repo/checkout"))
         self.assertEqual(self.last("rw8"), "cwd\t/repo/checkout")
 
+    def test_subagent_cwd_stays_out_of_the_parent_record(self):
+        # Real-shaped PreToolUse payloads: a sub-agent's carries agent_id and
+        # agent_type beside the parent's session_id and its own worktree cwd.
+        sid = "a4ab7805-1111-2222-3333-444455556666"
+        common = {"hook_event_name": "PreToolUse", "permission_mode": "bypassPermissions",
+                  "transcript_path": f"/home/u/.claude/projects/-home-u-claude/{sid}.jsonl"}
+        sub = {**common, "agent_id": "a1b2c3d4e5f6", "agent_type": "general-purpose",
+               "tool_use_id": "toolu_sub"}
+        wt = "/home/u/claude/.claude/worktrees/agent-a1b2c3d4"
+        # The text fires once per session, so later calls only add to the record.
+        for cmd in ("git push -u origin fix/x", "mergify stack push", "gh-resolve-thread PRRT_abc"):
+            self.run_hook(bash(sid, cmd, cwd=wt, **sub))
+        # A sub-agent call that names its PR is still recorded.
+        self.run_hook(bash(sid, "gh pr comment 188 -R mark-brannan/claude -b hi", cwd=wt, **sub))
+        # The main session's own push still records its cwd.
+        self.run_hook(bash(sid, "git push", cwd="/home/u/claude", tool_use_id="toolu_main", **common))
+        self.assertEqual(self.record(sid), ["repo\tmark-brannan/claude\t188\twork",
+                                            "cwd\t/home/u/claude"])
+
     def test_no_pr_and_no_cwd_records_nothing(self):
         self.inject(bash("nc1", "gh pr list"))
         self.assertEqual(self.record("nc1"), [])
