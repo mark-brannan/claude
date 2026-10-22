@@ -18,7 +18,6 @@ refs as context, not as work.
 CONVENIENCE: never blocks a prompt, always exits 0. A missing pr-blockers, a
 timeout or an unreadable PR becomes a line saying so, never silence.
 """
-import json
 import os
 import re
 import subprocess
@@ -108,9 +107,8 @@ def main():
     with ThreadPoolExecutor(len(refs)) as pool:
         results = list(pool.map(lambda r: run(r, exe), refs))
     ctx, notice = render(results)
-    print(json.dumps({"systemMessage": notice,
-                      "hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
-                                             "additionalContext": ctx}}))
+    import hookio  # lib/, on sys.path once lib_state is in
+    hookio.emit(hookio.context("UserPromptSubmit", ctx, system=notice))
 
 
 if __name__ == "__main__":

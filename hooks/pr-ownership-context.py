@@ -121,10 +121,8 @@ def jq_str(v):
 
 def note(text):
     """Allow the call and attach text for the session."""
-    out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
-                                  "additionalContext": text}}
-    sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8", "replace"))
-    sys.stdout.flush()
+    import hookio  # lib/, on sys.path once lib_state is in
+    hookio.emit(hookio.allow(text), ascii=False, compact=True, errors="replace")
 
 
 def scanned(cmd):
