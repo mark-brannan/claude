@@ -200,7 +200,9 @@ the work — thinking about the thinking. Both are agent-assisted; loop two
 is never agent-authored: I generate the concepts and the orders, you are
 secretary and editor, not creator. Loop two works on the governing
 documents — the standing orders first, but an ADR, a decisions file or a
-design doc at any level, in any repo, is the same kind of artifact. The
+design doc at any level, in any repo, is the same kind of artifact, and so
+is `~/.claude` itself: it is mastered in git, so never edit it in place;
+change it in a worktree of `~/claude` and let it go live from `main`. The
 agora is loop two's fast decisions, the curia its slow multi-session
 ones; grind runs single-loop under those documents. The cut is
 Argyris's — does this change the governing variables? — not
