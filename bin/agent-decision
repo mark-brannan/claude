@@ -264,7 +264,23 @@ def fit(record, cap):
     return [(label, out[i]) for i, (label, _) in enumerate(record)]
 
 
-def ask_judge(prompt):
+def log_run(tag, out, rc):
+    """One line per judge run, failed ones too, in the state repo's metrics/headless-runs (claude#219).
+    The CLI's whole result message is kept: what it reports is mined later, not picked now."""
+    pr = PR_REF.search(tag)
+    rec = {**out, "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "what": "agent-decision judge",
+           "repo": pr and pr.group(1).split("github.com/")[1], "pr": pr and int(pr.group(2)), "exit": rc,
+           "model": ",".join(out.get("modelUsage") or [JUDGE[JUDGE.index("--model") + 1]]), "outcome": out.get("subtype") or f"exit {rc}"}
+    d = os.path.join(lib_state.state_dir(), "metrics", "headless-runs")
+    try:
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "agent-decision.jsonl"), "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass  # the cost log never blocks a decision
+
+
+def ask_judge(prompt, tag=""):
     """(reply text, why it failed). A failed run says why from stderr, else from
     the JSON on stdout, which is where the CLI reports a spent budget."""
     for attempt in range(2):
@@ -273,6 +289,7 @@ def ask_judge(prompt):
             out = json.loads(p.stdout)
         except ValueError:
             out = None
+        log_run(tag, out if isinstance(out, dict) else {}, p.returncode)
         if p.returncode == 0 and isinstance(out, dict):
             return out["result"], ""
         why = (p.stderr.strip().splitlines() or [""])[-1]
@@ -283,14 +300,14 @@ def ask_judge(prompt):
         return "", why or f"exit {p.returncode}"
 
 
-def judged(call, undo, record):
+def judged(call, undo, record, tag=""):
     """None when the judge reads the call as consistent with the record, else
     the refusal. The record is handed over on stdin; nothing else is."""
     text = "\n\n".join(frame(label, body) for label, body in fit(record, RECORD_CAP))
     prompt = f"Call: {call}\nUndo: {undo or '(none given)'}\n\nThe record:\n\n{text}\n"
     why = ""
     try:
-        result, why = ask_judge(prompt)
+        result, why = ask_judge(prompt, tag)
         verdict = json.loads(result.strip().strip("`").removeprefix("json").strip())
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as e:
         return f"the judge could not read the record ({why or e}); nothing logged"
@@ -451,7 +468,7 @@ def main(argv):
                 return 1
             record.append(words)
         record += pr_record(root, tag)
-        refusal = judged(call, a.undo, record) if record else None
+        refusal = judged(call, a.undo, record, tag) if record else None
         if refusal:
             print(f"agent-decision: refused: {refusal}", file=sys.stderr)
             return 1
