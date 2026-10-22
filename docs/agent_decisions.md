@@ -394,3 +394,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t073031z
 - settings.json runs metrics-live.py without 2>/dev/null: its stderr is empty by design Undo: put 2>/dev/null back on the three entries ([#240](https://github.com/mark-brannan/claude/pull/240))
+
+### 20261022t073106z
+- A non-numeric METRICS_* knob falls back to its default with a trace line Undo: raise in Knobs.number and Knobs.ladder ([#240](https://github.com/mark-brannan/claude/pull/240))
