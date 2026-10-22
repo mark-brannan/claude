@@ -6,10 +6,9 @@ session, emits valid JSON whatever the rules file contains, records the PR a
 call touched (and whether it read or worked it) for the Stop gate, and says so
 out loud when the rules file or the heading is missing instead of going quiet.
 
-The hook reads commands through the languette plugin's scanner. LANGUETTE_ROOT
-is the languette checkout to test against (ci.yml clones it); unset, the
-user-scope plugin install this machine has. The scratch HOME's
-installed_plugins.json points there.
+The hook reads commands through the languette plugin's scanner: the user-scope
+install this machine's installed_plugins.json records (ci.yml clones languette
+and records it). The scratch HOME's installed_plugins.json points there.
 
 Cost per push: about 90 hook runs of ~100 ms each, a few seconds.
 """
@@ -39,7 +38,7 @@ def real_languette():
     return ""
 
 
-ROOT = os.environ.get("LANGUETTE_ROOT") or real_languette()
+ROOT = real_languette()
 RULES = (
     "# Code\n\n## Git\n\n- git stuff, not wanted\n\n"
     "## PR ownership: never red\n\n"
@@ -113,7 +112,7 @@ def setUpModule():
     r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "languette", "__main__.py"), "scan"],
                        input="x", capture_output=True, text=True) if ROOT else None
     if not r or r.returncode:
-        raise SystemExit(f"FAIL: no languette with `scan` at '{ROOT}' (set LANGUETTE_ROOT to a languette checkout)")
+        raise SystemExit(f"FAIL: no languette with `scan` at '{ROOT}' (install the languette plugin)")
 
 
 class Fires(Base):
@@ -223,6 +222,10 @@ class Records(Base):
             ("gh pr close: unrecognized subcommand fails closed", "gh pr close 25 -R o/r", "repo\to/r\t25\twork"),
             ("gh api GET on pulls", "gh api repos/o/r/pulls/25/comments", "repo\to/r\t25\tread"),
             ("gh api -X PATCH on pulls", "gh api repos/o/r/pulls/25 -X PATCH -f state=closed", "repo\to/r\t25\twork"),
+            ("gh api -f is a POST", "gh api repos/o/r/pulls/25/comments/9/replies -f body=fixed", "repo\to/r\t25\twork"),
+            ("gh api -X GET with -f stays a read", "gh api -X GET repos/o/r/pulls/25/comments -f per_page=5", "repo\to/r\t25\tread"),
+            ("gh api -fkey=val attached is a POST", "gh api repos/o/r/pulls/25/comments/9/replies -fbody=fixed", "repo\to/r\t25\twork"),
+            ("gh api graphql query via -f stays a read", "gh api graphql -f query='{x}' -R o/r", "cwd\t/w"),
             ("read then work on one PR upgrades to work",
              'gh pr diff 42 -R o/r --patch; gh pr comment 42 -R o/r --body "fixed in latest push"',
              "repo\to/r\t42\twork"),
