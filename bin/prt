@@ -926,7 +926,9 @@ def queue(args):
         return 0
     if no:
         refuse("not queued: " + "; ".join(no))
-    sh(["gh", "pr", "comment", str(n), "--repo", repo, "--body", "@mergifyio queue"])
+    # As the user, not the agent App: Mergify refuses a command from a sender
+    # without write access, and arming a merge stays the user's.
+    sh(["env", "AGENT_BOT_OFF=1", "gh", "pr", "comment", str(n), "--repo", repo, "--body", "@mergifyio queue"])
     print(f"queued {args[0]}")
     return 0
 
