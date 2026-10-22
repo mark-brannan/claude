@@ -29,7 +29,7 @@
 # Exit 0 on success, 2 on usage, 3 when the state repo cannot be found, 4 when
 # the database path is inside a git checkout and not gitignored (it is private).
 # Python 3 stdlib only.
-import argparse, glob, json, os, re, sqlite3, subprocess, sys, time
+import argparse, glob, json, os, re, shutil, sqlite3, subprocess, sys, tempfile, time
 
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
@@ -372,6 +372,31 @@ def load_github(cx):
                (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),))
     return len(rows), calls, len(repos)
 
+def fetch_ci_reviews(cx, sd):
+    """Copy each recent claude-review run's `headless-run` artifact into
+    metrics/headless-runs/ci-review-<run id>.jsonl, where the loader picks it
+    up; a run already copied is skipped. Only the last 10 runs of repos with a
+    PR opened in the last 14 days (gh_items) are looked at. A missing gh, an
+    offline network or a run with no artifact is skipped quietly."""
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 14 * 86400))
+    for (repo,) in cx.execute("select distinct repo from gh_items where kind = 'pr' and created_at > ?", (since,)).fetchall():
+        try:
+            runs = gh(["run", "list", "-R", repo, "--workflow", "claude-code-review.yml", "--limit", "10", "--json", "databaseId"])
+        except (OSError, RuntimeError, ValueError):
+            continue
+        for run in runs:
+            dest = os.path.join(sd, "metrics", "headless-runs", f"ci-review-{run['databaseId']}.jsonl")
+            if os.path.exists(dest):
+                continue
+            with tempfile.TemporaryDirectory() as tmp:
+                try:
+                    subprocess.run(["gh", "run", "download", str(run["databaseId"]), "-R", repo, "-n", "headless-run",
+                                    "-D", tmp], check=True, capture_output=True)
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    shutil.copy(os.path.join(tmp, "headless-run.jsonl"), dest)
+                except (OSError, subprocess.CalledProcessError):
+                    continue
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db")
@@ -405,6 +430,8 @@ def main():
         cx.execute("drop table sessions")
     cx.executescript(SCHEMA)
     t0 = time.time()
+    if a.github:
+        fetch_ci_reviews(cx, sd)  # before the streams load, from the gh_items of the last --github run
     report = {"sessions": load_sessions(cx, sd), **load_streams(cx, sd), "item_events": load_items(cx, sd)}
     cx.commit()
     if not a.no_typing:

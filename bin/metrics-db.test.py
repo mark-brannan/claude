@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -435,6 +436,26 @@ class GithubTest(FixtureTest):
         (self.fx.bin / "gh").write_text("#!/bin/sh\nexit 9\n")
         self.build("--quiet")
         self.assertEqual(self.fx.q("select count(*) from gh_items"), [(4,)])
+
+    def test_a_ci_review_artifact_lands_as_one_row_and_a_refetch_adds_none(self):
+        self.build("--github", "--quiet")
+        cx = sqlite3.connect(self.fx.db)
+        cx.execute("update gh_items set created_at = ?", (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),))
+        cx.commit()
+        cx.close()
+        line = json.dumps({"ts": "2026-10-20T10:00:00Z", "what": "claude-review", "repo": "acme/widgets", "pr": 2,
+                           "model": "claude-sonnet-5-5", "total_cost_usd": 0.5, "outcome": "success",
+                           "usage": {"input_tokens": 3, "output_tokens": 4}})
+        gh = self.fx.bin / "gh"
+        gh.rename(self.fx.bin / "gh-real")
+        gh.write_text(
+            '#!/bin/sh\n[ "$1" = run ] || exec gh-real "$@"\n[ "$2" = list ] && { echo \'[{"databaseId": 42}]\'; exit 0; }\n'
+            f'while [ "$1" != -D ]; do shift; done; echo \'{line}\' > "$2/headless-run.jsonl"\n')
+        gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+        for _ in range(2):
+            self.build("--github", "--quiet")
+            self.assertEqual(self.fx.q("select what, pr, cost_usd, output_tokens from headless_runs where what = 'claude-review'"),
+                             [("claude-review", 2, 0.5, 4)])
 
     def test_a_failing_gh_is_a_failed_build(self):
         (self.fx.bin / "gh").write_text("#!/bin/sh\necho nope >&2\nexit 9\n")
