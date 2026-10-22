@@ -103,7 +103,10 @@ GH_PR = re.compile(rf"(^|{NOT_WORD})gh{SP}+pr({SP}|$)")
 MUTATING_METHOD = re.compile(rf"(^|{SP})(-X|--method)[ \t=]+(POST|PUT|PATCH|DELETE)", re.I)
 MUTATION = re.compile(rf"mutation{SP}*\(", re.I)
 # gh api turns a POST on its own once it gets a field or body flag.
-FIELD_FLAG = re.compile(rf"(^|{SP})(-f|-F|--field|--raw-field|--input)([ \t=]|$)")
+# -f/-F may carry the value attached (-fbody=x).
+FIELD_FLAG = re.compile(rf"(^|{SP})(-[fF]|--field|--raw-field|--input)")
+# graphql always POSTs its -f query; only a mutation writes.
+GRAPHQL = re.compile(rf"(^|{SP})api{SP}+graphql({SP}|$)")
 GET_METHOD = re.compile(rf"(^|{SP})(-X|--method)[ \t=]+GET\b", re.I)
 
 
@@ -174,6 +177,8 @@ def clause_kind(clause):
     # Only a `gh api` call is left to supply a repo and number.
     if MUTATING_METHOD.search(clause) or MUTATION.search(clause):
         return "work"
+    if GRAPHQL.search(clause):
+        return "read"
     if FIELD_FLAG.search(clause) and not GET_METHOD.search(clause):
         return "work"
     return "read"

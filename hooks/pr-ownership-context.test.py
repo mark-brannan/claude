@@ -225,6 +225,8 @@ class Records(Base):
             ("gh api -X PATCH on pulls", "gh api repos/o/r/pulls/25 -X PATCH -f state=closed", "repo\to/r\t25\twork"),
             ("gh api -f is a POST", "gh api repos/o/r/pulls/25/comments/9/replies -f body=fixed", "repo\to/r\t25\twork"),
             ("gh api -X GET with -f stays a read", "gh api -X GET repos/o/r/pulls/25/comments -f per_page=5", "repo\to/r\t25\tread"),
+            ("gh api -fkey=val attached is a POST", "gh api repos/o/r/pulls/25/comments/9/replies -fbody=fixed", "repo\to/r\t25\twork"),
+            ("gh api graphql query via -f stays a read", "gh api graphql -f query='{x}' -R o/r", "cwd\t/w"),
             ("read then work on one PR upgrades to work",
              'gh pr diff 42 -R o/r --patch; gh pr comment 42 -R o/r --body "fixed in latest push"',
              "repo\to/r\t42\twork"),
