@@ -90,6 +90,15 @@ create table if not exists gh_repos(repo text primary key, topics text, archived
 create table if not exists gh_items(repo text, number int, kind text, created_at text, closed_at text,
   merged_at text, state text, draft int, head_ref text, author text, title text,
   primary key(repo, number, kind));
+create table if not exists session_pr(session_id text, repo text, number int, primary key(session_id, repo, number));
+create view if not exists pr_cost_guess as
+  select p.repo, p.number, g.merged_at, sum(s.cost_usd / n.k) as cost_usd_guess, count(*) as sessions
+  from session_pr p
+  join (select session_id, count(*) k from session_pr group by session_id) n using(session_id)
+  join sessions s using(session_id)
+  join gh_items g on lower(g.repo) = lower(p.repo) and g.number = p.number and g.kind = 'pr'
+  where g.merged_at is not null
+  group by p.repo, p.number;
 create table if not exists input(host text, minute int, keys int, clicks int, scroll int, move int,
   afk int, seen int, primary key(host, minute));
 create table if not exists input_win(host text, minute int, category text, seconds int);
@@ -215,6 +224,22 @@ def load_streams(cx, sd):
     cx.executemany("insert into commits values (?,?,?,?,?)", rows)
     n["commits"] = len(rows)
     return n
+
+PR_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
+
+def load_session_pr(cx, sd):
+    """The session-to-PR edge: gh-writes `pr create` rows, repo and number read from the target URL.
+    A row without a pull URL is skipped. pr_cost_guess splits a session's cost evenly over its PRs."""
+    base = os.path.join(sd, "metrics", "gh-writes")
+    rows = set()
+    for p in glob.glob(os.path.join(base, "*.jsonl")) + glob.glob(os.path.join(base, "*", "*.jsonl")):
+        for d in jsonl(p):
+            m = PR_URL.search(str(d.get("target") or "")) if d.get("verb") == "pr create" else None
+            if m:
+                rows.add((d.get("session_id") or os.path.basename(p)[:-6], m.group(1), int(m.group(2))))
+    cx.execute("delete from session_pr")
+    cx.executemany("insert into session_pr values (?,?,?)", sorted(rows))
+    return len(rows)
 
 LOG_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T[\d:]+Z)\s+(\S+)\s+(.*)$")
 
@@ -463,7 +488,8 @@ def main():
         gh_n, calls, repos = load_github(cx)
         cx.commit()
         fetch_ci_reviews(cx, sd)  # before the streams load, so this run's rows are in headless_runs
-    report = {"sessions": load_sessions(cx, sd), **load_streams(cx, sd), "item_events": load_items(cx, sd)}
+    report = {"sessions": load_sessions(cx, sd), **load_streams(cx, sd), "item_events": load_items(cx, sd),
+              "session_pr": load_session_pr(cx, sd)}
     cx.commit()
     if not a.no_typing:
         if a.rescan_typing:
