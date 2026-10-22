@@ -1337,6 +1337,38 @@ class MetricsLiveTest(unittest.TestCase):
             "yes" if (w.state / "metrics" / "hook-errors" / "ba" / "badjson.jsonl").is_file() else "no")
         return w.checks
 
+    def section_one_part_fails(self):
+        """A part that fails is traced under its own stage, and the rest of
+        the run still happens: the block prints and the nag file is saved."""
+        w = self.world()
+        S = w.scratch
+        tp = w.turn(S / "part.jsonl", 120000)
+        nomeal = {"METRICS_SUN_AFTER_HOUR": "24"}
+        (w.state / "outside.txt").mkdir(parents=True)  # sit_tail's open() raises
+        w.sitting("part1", 61, 10)
+        w.write(w.shard("live", "part1", ".nag.json"), {"time_line_sitting": w.sit_start()})
+        out, rc = w.run(w.payload(tp, "part1", S, "UserPromptSubmit", "hi"), "prompt", show=True,
+                        env=dict(nomeal, METRICS_MEAL_WINDOWS=""))
+        stages = [json.loads(ln)["stage"] for ln in w.errors()]
+        w.t("a part that raises exits 0", 0, rc)
+        w.t("and is traced under its own stage", ["sitting_line"], stages)
+        w.has("and the block still prints", r"^⛁ ", w.msg(out))
+        w.t("and the nag file is still saved", 100000, w.nag_field("part1", "context_line"))
+        (w.state / "outside.txt").rmdir()
+
+        w.sitting("part2", 61, 10)
+        out = w.hook(w.payload(tp, "part2", S, "UserPromptSubmit", "hi"), "prompt", show=True,
+                     env=dict(nomeal, METRICS_MEAL_WINDOWS="12 0-24"))
+        w.has("a malformed meal window is skipped, the good one kept", "what did you eat today", w.msg(out))
+        w.t("and traced once, as a knob", 1,
+            sum(1 for ln in w.errors() if '"stage":"knobs"' in ln and '"part2"' in ln))
+
+        (w.state / "location.json").write_text('{"tz": "Not/AZone"}\n')
+        out = w.hook(w.payload(tp, "part3", S, "UserPromptSubmit", "hi"), "prompt", show=True)
+        w.has("a time zone that does not exist still prints the block", r"^(⛁|») ", w.msg(out))
+        w.t("and is traced once", 1, sum(1 for ln in w.errors() if '"stage":"zone"' in ln))
+        return w.checks
+
     def section_shell_checksum(self):
         """A hand-off's saved time, stamped by the shell hook against cksum(1),
         does not move on the first Stop after the port."""

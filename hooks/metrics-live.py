@@ -127,8 +127,13 @@ def read_json(path, stage):
 
 
 def read_bytes(path):
-    with open(path, "rb") as fh:
-        return fh.read()
+    """A file's bytes, or b"" when it has gone since it was listed: a
+    sub-agent transcript can be removed between the glob and the read."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return b""
 
 
 def obj(v):
@@ -170,11 +175,17 @@ def git_out(*args):
     return p.stdout.decode("utf-8", "surrogateescape").strip()
 
 
+_BAD_ZONES = set()
+
+
 def zone(name):
     import zoneinfo
     try:
         return zoneinfo.ZoneInfo(name)
-    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError) as e:
+        if name not in _BAD_ZONES:  # one trace line per run, not per clock read
+            _BAD_ZONES.add(name)
+            trace("zone", Failed(f"time zone {name!r} unknown ({e}); using UTC"))
         return datetime.timezone.utc  # what date(1) does with a TZ it does not know
 
 
@@ -199,7 +210,9 @@ def stamp_epoch(s):
     """A LIVE/CLOSED stamp (ISO 8601) as an epoch, or 0 when it is not one."""
     try:
         d = datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
-    except ValueError:
+    except ValueError as e:
+        if s:  # "" is a marker line with no stamp, not a bad one
+            trace("curia", Failed(f"stamp {s!r} is not ISO 8601 ({e}); read as 0"))
         return 0
     if d.tzinfo is None:
         d = d.astimezone()
@@ -262,7 +275,7 @@ class Knobs:
         self.sit_hot_rung = self.number("METRICS_SIT_HOT_RUNG", 3)
         # The sitting line's tail, picked by the clock first and the list second.
         # Meal windows are local hours, start inclusive, end exclusive; "" disables.
-        self.meal_windows = os.environ.get("METRICS_MEAL_WINDOWS", "12-14 18-20")
+        self.meal_windows = self.windows("METRICS_MEAL_WINDOWS", "12-14 18-20")
         self.sun_after_hour = self.number("METRICS_SUN_AFTER_HOUR", 13)
         self.stay_default_min = self.number("METRICS_STAY_DEFAULT_MIN", 30)
         self.friction_n = self.number("METRICS_FRICTION_N", 3)
@@ -291,6 +304,19 @@ class Knobs:
         except ValueError:
             trace("knobs", Failed(f"{name}={v!r} is not a number; using {default}"))
             return default
+
+    @staticmethod
+    def windows(name, default):
+        """Hour windows "lo-hi" as (lo, hi) pairs; a malformed one is traced
+        and skipped, the rest kept."""
+        out = []
+        for w in os.environ.get(name, default).split():
+            lo, _, hi = w.partition("-")
+            try:
+                out.append((int(lo), int(hi)))
+            except ValueError:
+                trace("knobs", Failed(f"{name}: {w!r} is not a window like 12-14; skipped"))
+        return out
 
     @staticmethod
     def ladder(name, default):
@@ -356,7 +382,7 @@ class Hook:
         self.work_branch = git_out("-C", self.cwd, "rev-parse", "--abbrev-ref", "HEAD")
 
         self.metrics = self.compute()
-        self.git_state()
+        soft("git", self.git_state)
         os.makedirs(os.path.dirname(self.out), exist_ok=True)
         soft("cache", self.write_cache)
         self.engine()
@@ -568,9 +594,8 @@ class Hook:
         """The sitting line's tail: outward, never an instruction. Clock first
         (a meal window, then the daylight left), the list second."""
         h = at(self.now_ts).hour
-        for w in self.k.meal_windows.split():
-            lo, _, hi = w.partition("-")
-            if int(lo) <= h < int(hi):
+        for lo, hi in self.k.meal_windows:
+            if lo <= h < hi:
                 return "what did you eat today?"
         if h >= self.k.sun_after_hour:
             left = soft("sunset", self.sunset_min)
@@ -758,13 +783,16 @@ class Hook:
         sys.stdout.buffer.write((compact(out) + "\n").encode("utf-8"))
 
     def run_engine(self, is_prompt, can_inject):
+        """Each part under soft(): one that raises is traced under its own
+        stage, and the rest still run, so the nag file and the block that
+        follow are never lost to it."""
         self.can_inject = can_inject
-        self.curia_live = self.in_curia()
+        self.curia_live = soft("curia", self.in_curia, default=False)
         if not self.curia_live and can_inject:
-            self.deliver_held()
-        self.local_clock()
+            soft("held", self.deliver_held)
+        soft("clock", self.local_clock)
         if is_prompt:
-            self.wind_clock()
+            soft("wind", self.wind_clock)
         elif self.event == "stop":
             self.stamp_time_last([self.crossf] if os.path.isfile(self.crossf) else [],
                                  self.last_prompt, self.sit_start)
@@ -772,18 +800,18 @@ class Hook:
 
         sess = obj(self.metrics.get("session"))
         ctx = num(sess.get("context_peak"))
-        self.context_crossings(ctx)
+        soft("context", self.context_crossings, ctx)
         if is_prompt:
-            self.sitting_line(ctx)
-            self.sitting_model()
+            soft("sitting_line", self.sitting_line, ctx)
+            soft("sitting_model", self.sitting_model)
         if can_inject:
-            self.bedtime()
+            soft("bedtime", self.bedtime)
         if is_prompt:
             # The machine-wide day counter (#301): measured, never alarmed.
             soft("day_decisions", state.day_decisions, self.sid,
                  num(obj(sess.get("decisions")).get("total")), 0, self.now_ts,
                  self.k.decision_gap_min * 60)
-            self.friction(num(sess.get("user_turns")))
+            soft("friction", self.friction, num(sess.get("user_turns")))
 
     def deliver_held(self):
         if not (os.path.isfile(self.heldf) and os.path.getsize(self.heldf)):
@@ -799,6 +827,9 @@ class Hook:
         """The clock the bedtime reads: location.json's tz, else Pacific. An
         hour before night_end_hour still belongs to last night's evening."""
         k = self.k
+        # Pacific and not night until read, so a failure here leaves the
+        # parts that read the clock running on a sane one.
+        self.ltz, self.l_midnight, self.bed_night, self.l_eve = PACIFIC, self.now_ts, False, ""
         self.ltz = text(self.location().get("tz")) or PACIFIC
         local = at(self.now_ts, self.ltz)
         self.l_midnight = self.now_ts - local.hour * 3600 - local.minute * 60 - local.second
@@ -1086,7 +1117,7 @@ class Hook:
             return ""
         # Headless (claude -p, the SDK) is never asked: nobody reads a pickup
         # item there, and the demanded turn buries the worker's final status.
-        if os.environ.get("CLAUDE_CODE_ENTRYPOINT", "").startswith("sdk-") or not self.archivable():
+        if os.environ.get("CLAUDE_CODE_ENTRYPOINT", "").startswith("sdk-") or self.reasons:
             return ""
         late = at(time.time()).hour >= self.k.stop_hour
         # since_nag is armed by a context or time crossing and by friction, and
