@@ -1,9 +1,8 @@
 """Run git from the Python tools and hooks. Imported, never run directly;
 stdlib only.
 
-The one home for this helper (dotfiles#517); bin/scoping-lock,
-bin/github-limits, bin/prose-budget, bin/agent-decision,
-bin/prune-worktrees, lib/state.py and hooks/stop-continuity.py use it.
+The one home for this helper (dotfiles#517): every Python tool and hook
+that runs git goes through it, bar stop-continuity's own bounded runner.
 Output is captured as UTF-8 text and never reaches the caller's terminal; a
 byte that is not UTF-8 is replaced by default, or kept losslessly with
 errors="surrogateescape" (for paths). Text mode also turns \\r\\n and a lone

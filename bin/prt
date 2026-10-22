@@ -58,8 +58,9 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import ghrest  # noqa: E402
+    import gitrun  # noqa: E402
 except ImportError:
-    sys.exit("prt: lib/ghrest.py not found (looked beside the tool and in ~/.claude/lib)")
+    sys.exit("prt: lib/ghrest.py or lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)")
 
 HERE = Path(__file__).resolve().parent
 CAP = 15
@@ -115,6 +116,15 @@ def sh(args, stdin=None, check=True):
     if check and p.returncode != 0:
         tail = ((p.stderr or p.stdout).strip().splitlines() or ["failed"])[-1]
         refuse(f"{Path(str(args[0])).name} {' '.join(map(str, args[1:3]))}: {tail}")
+    return p
+
+
+def git(*args, check=True):
+    """git through lib/gitrun; with check, a failure refuses with its last line."""
+    p = gitrun.run(*[str(a) for a in args])
+    if check and p.returncode != 0:
+        tail = ((p.stderr or p.stdout).strip().splitlines() or ["failed"])[-1]
+        refuse(f"git {' '.join(map(str, args[:2]))}: {tail}")
     return p
 
 
@@ -255,7 +265,7 @@ def clone_of(repo):
     """(path, present): ~/<name> when it is a clone of repo, else prt's cache."""
     home = Path.home() / repo.split("/")[1]
     if (home / ".git").is_dir():
-        p = sh(["git", f"--git-dir={home}/.git", "config", "--get", "remote.origin.url"], check=False)
+        p = git(f"--git-dir={home}/.git", "config", "--get", "remote.origin.url", check=False)
         if norm_url(p.stdout) == f"github.com/{repo}".lower():
             return home, True
     cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "prt" / repo
@@ -756,7 +766,7 @@ def clean(args):
         if not present:
             continue
         gd = f"--git-dir={path}/.git"
-        listing = sh(["git", gd, "worktree", "list", "--porcelain"]).stdout
+        listing = git(gd, "worktree", "list", "--porcelain").stdout
         for wt in (l[len("worktree "):] for l in listing.splitlines() if l.startswith("worktree ")):
             m = re.fullmatch(r"prt-.+-(\d+)", Path(wt).name)
             if not m:
@@ -766,21 +776,20 @@ def clean(args):
             # An agent that hit its budget pushed what it had; if the lease
             # refused it, the work is only here. Nothing with uncommitted files
             # or commits no remote has is removed.
-            if not held and sh(["git", "-C", wt, "status", "--porcelain"], check=False).stdout.strip():
+            if not held and git("-C", wt, "status", "--porcelain", check=False).stdout.strip():
                 held = ["uncommitted files"]
-            if not held and not sh(["git", "-C", wt, "branch", "-r", "--contains", "HEAD"],
-                                   check=False).stdout.strip():
+            if not held and not git("-C", wt, "branch", "-r", "--contains", "HEAD", check=False).stdout.strip():
                 held = ["commits no remote branch has"]
             if held:
                 print(f"kept {wt}: {held[0].strip()}")
             elif o["dry"]:
                 print(f"would remove {wt}")
             else:
-                p = sh(["git", gd, "worktree", "remove", "--force", wt], check=False)
+                p = git(gd, "worktree", "remove", "--force", wt, check=False)
                 print(f"removed {wt}" if p.returncode == 0 else
                       f"could not remove {wt}: {(p.stderr.strip().splitlines() or ['failed'])[-1]}")
         if not o["dry"]:
-            sh(["git", gd, "worktree", "prune"])
+            git(gd, "worktree", "prune")
     return 0
 
 

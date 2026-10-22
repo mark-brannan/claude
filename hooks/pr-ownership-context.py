@@ -127,28 +127,12 @@ def note(text):
     sys.stdout.flush()
 
 
-def languette_root():
-    """The user-scope languette install from installed_plugins.json, or ""."""
-    path = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
-                        "plugins", "installed_plugins.json")
-    try:
-        with open(path, encoding="utf-8") as f:
-            plugins = json.load(f)["plugins"]
-        for key, installs in plugins.items():
-            if key.startswith("languette@"):
-                for i in installs:
-                    if i.get("scope") == "user":
-                        return i.get("installPath") or ""
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        pass
-    return ""
-
-
 def scanned(cmd):
     """The command reduced to what runs, one line per segment, or None when
     there is no scanner to ask (the caller then over-matches on the raw
     command)."""
-    root = languette_root()
+    import lib_state
+    root = lib_state.languette_root()
     main = os.path.join(root, "languette", "__main__.py") if root else ""
     if not main or not os.path.isfile(main):
         return None
@@ -325,9 +309,5 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # fail open: a convenience hook never stops a call
-        import lib_state
-        lib_state.trace_failure("pr-ownership-context", "PreToolUse", e)
-    sys.exit(0)
+    import lib_state
+    lib_state.run_hook("pr-ownership-context", "PreToolUse", main)

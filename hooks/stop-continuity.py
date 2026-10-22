@@ -335,9 +335,9 @@ def git_bounded(secs, *args):
 class Stop:
     def __init__(self, sid, tp, cwd):
         self.sid, self.tp, self.cwd = sid, tp, cwd
-        t = time.gmtime()
-        self.now = time.strftime("%Y-%m-%dT%H:%M:%SZ", t)
-        self.today = time.strftime("%Y-%m-%d", t)
+        t = time.time()
+        self.now = when.stamp(t)
+        self.today = time.strftime("%Y-%m-%d", time.gmtime(t))
         self.verdict = ""
         self.reasons = None  # archivable's answer, cached across set_verdict calls
         self.home = None     # and the home line it read, for the pickup item
@@ -1236,6 +1236,7 @@ if __name__ == "__main__":
     try:
         import gitrun
         import state
+        import when
         main()
     except SystemExit:
         pass

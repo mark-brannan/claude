@@ -33,6 +33,11 @@ import argparse, datetime, json, os, re, socket, sys, time, urllib.error, urllib
 sys.dont_write_bytecode = True
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import atomic  # noqa: E402
+    import when  # noqa: E402
+except ImportError:
+    sys.exit("input-export: lib/ not found (looked beside the tool and in ~/.claude/lib)")
 
 # First match wins: (app pattern, title pattern or None, category). Titles are
 # read only to pick a category and never written. App patterns match whole
@@ -66,16 +71,14 @@ def state_dir():
         if e.name != "state":
             raise
         return None
-    repo = state.state_repo()
-    return os.path.join(repo, "state", "global") if repo else None
+    return state.state_dir_or_none()
 
 def get(base, path, **q):
     url = base.rstrip("/") + path + ("?" + urllib.parse.urlencode(q) if q else "")
     with urllib.request.urlopen(url, timeout=10) as r:
         return json.load(r)
 
-def ts(s):
-    return datetime.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+ts = when.epoch
 
 def iso(t):
     return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
@@ -138,18 +141,15 @@ def write_if_changed(path, text):
                 return False
     except OSError:
         pass
-    tmp = os.path.join(os.path.dirname(path), f".{os.path.basename(path)}.tmp.{os.getpid()}")
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    atomic.write(path, text)
     return True
 
 def host_of(buckets):
     """The hostname the buckets carry, lowercased: the directory name."""
     for k, v in buckets.items():
         if k.startswith("aw-watcher-afk_") or k.startswith("aw-watcher-input_"):
-            return k, (v.get("hostname") or k.split("_", 1)[1])
-    return None, None
+            return v.get("hostname") or k.split("_", 1)[1]
+    return None
 
 def main():
     ap = argparse.ArgumentParser()
@@ -168,7 +168,7 @@ def main():
         if not a.quiet:
             print(f"input-export: no ActivityWatch at {a.url}; nothing to export")
         return 0
-    _, hostname = host_of(buckets)
+    hostname = host_of(buckets)
     if not hostname:
         if not a.quiet:
             print("input-export: ActivityWatch has no afk or input bucket; nothing to export")

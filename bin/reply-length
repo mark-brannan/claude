@@ -18,7 +18,14 @@
 # --dump writes one row per pair (with 300/200-char reply/prompt excerpts) to
 # FILE; the printed reports carry no excerpts, ids or paths.
 import argparse, glob, json, math, os, re, statistics as st, sys, time
-from datetime import datetime
+
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import jsonl  # noqa: E402
+    import when  # noqa: E402
+except ImportError:
+    sys.exit("reply-length: lib/ not found (looked beside the tool and in ~/.claude/lib)")
 
 HUMAN_EP = {"claude-desktop", "cli", "claude-vscode", "claude-code"}
 NONPROMPT = ("<task-notification", "<system-reminder", "<local-command",
@@ -38,8 +45,7 @@ TYPE_S = 1.5     # assumed seconds per typed word (~40 wpm); inference
 EDGES = [0, 25, 50, 75, 100, 150, 200, 300, 500, 10**6]
 
 
-def ts(s):
-    return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+ts = when.epoch
 
 
 def words(t):
@@ -86,15 +92,10 @@ def prompt_text(rec):
 def load_friction(d):
     f = {}
     for p in glob.glob(os.path.join(d, "*.jsonl")) if d else []:
-        with open(p, errors="replace") as fh:
-            for line in fh:
-                try:
-                    r = json.loads(line)
-                except Exception:
-                    continue
-                if r.get("retracted") or not r.get("session_id"):
-                    continue
-                f.setdefault(r["session_id"], []).append((r.get("excerpt") or "")[:40].strip())
+        for r in jsonl.read(p):
+            if r.get("retracted") or not r.get("session_id"):
+                continue
+            f.setdefault(r["session_id"], []).append((r.get("excerpt") or "")[:40].strip())
     return f
 
 
@@ -106,15 +107,10 @@ def collect(days, root, fric_dir):
     for p in files:
         sid = os.path.basename(p)[:-6]
         recs, human = [], False
-        with open(p, errors="replace") as fh:
-            for line in fh:
-                try:
-                    r = json.loads(line)
-                except Exception:
-                    continue
-                if r.get("entrypoint") in HUMAN_EP and r.get("type") == "user":
-                    human = True
-                recs.append(r)
+        for r in jsonl.read(p):
+            if r.get("entrypoint") in HUMAN_EP and r.get("type") == "user":
+                human = True
+            recs.append(r)
         if not human:
             continue
         last_text, last_ts, turn_text, after_tool = None, None, [], False

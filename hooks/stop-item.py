@@ -26,15 +26,18 @@ What it writes (pencil):
     Stop, and `home=` the PR only while it has no home of its own.
 
 Fails open: prints one outcome line for the checkpoint and exits 0, whatever
-happens. A refused mint is never retried under another id. Stdlib only.
+happens. A refused mint is never retried under another id. lib/ is found
+the way lib_state finds it.
 """
 import argparse
-import calendar
 import os
 import re
 import subprocess
 import sys
-import time
+
+import lib_state  # noqa: F401  (puts lib/ on sys.path)
+import gitrun
+import when
 
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 WORK_ITEM = os.path.join(os.path.dirname(HOOK_DIR), "bin", "work-item")
@@ -59,10 +62,7 @@ def work_item(env, *args, stdin=None):
 
 
 def git(path, *args):
-    try:
-        p = subprocess.run(["git", "-C", path, *args], capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return ""
+    p = gitrun.run("-C", path, *args, timeout=10)
     return p.stdout.strip() if p.returncode == 0 else ""
 
 
@@ -116,7 +116,7 @@ def stop_lines(path, sid8):
 
 def epoch(iso):
     try:
-        return calendar.timegm(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))
+        return when.unstamp(iso[:19] + "Z")
     except (ValueError, TypeError):
         return None
 

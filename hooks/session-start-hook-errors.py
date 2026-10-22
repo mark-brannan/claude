@@ -51,9 +51,5 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # fail open: a convenience hook never stops a session
-        import lib_state  # beside this file
-        lib_state.trace_failure("session-start-hook-errors", "SessionStart", e)
-    sys.exit(0)
+    import lib_state  # beside this file
+    lib_state.run_hook("session-start-hook-errors", "SessionStart", main)

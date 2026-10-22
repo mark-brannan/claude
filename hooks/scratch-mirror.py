@@ -16,16 +16,16 @@ session.
 import json
 import os
 import shutil
-import subprocess
 import sys
 
-import lib_state
+import lib_state  # puts lib/ on sys.path
+import gitrun
 
 DOCS = (".md", ".mmd", ".svg", ".html")
 
 
 def git(top, *args):
-    return subprocess.run(["git", "-C", top, *args], capture_output=True, text=True)
+    return gitrun.run("-C", top, *args)
 
 
 def main():
@@ -83,7 +83,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # noqa: BLE001 -- a copy that fails never fails the Write
-        lib_state.trace_failure("scratch-mirror", "PostToolUse", e)
+    lib_state.run_hook("scratch-mirror", "PostToolUse", main)

@@ -32,8 +32,9 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import gitrun  # noqa: E402
+    import when  # noqa: E402
 except ImportError:
-    print("%s: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
+    print("%s: lib/gitrun.py or lib/when.py not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
     sys.exit(3)
 
 MIB = 1024 * 1024
@@ -162,7 +163,7 @@ def main(argv=None):
         print(f"github-limits: could not measure: {detail.strip().splitlines()[-1] if detail.strip() else e}", file=sys.stderr)
         return 3
     if a.json:
-        print(json.dumps({"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": rows}))
+        print(json.dumps({"at": when.stamp(), "rows": rows}))
     else:
         print(render(rows))
     return 1 if any(r["status"] == "over" for r in rows) else 0

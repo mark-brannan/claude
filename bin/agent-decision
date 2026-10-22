@@ -77,6 +77,7 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 import gitrun  # noqa: E402
 import lib_state  # noqa: E402
+import when  # noqa: E402
 import lock  # noqa: E402
 import ids  # noqa: E402
 
@@ -271,7 +272,7 @@ def log_run(tag, out, rc):
     """One line per judge run, failed ones too, in the state repo's metrics/headless-runs (claude#219).
     The CLI's whole result message is kept: what it reports is mined later, not picked now."""
     pr = PR_REF.search(tag)
-    rec = {**out, "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "what": "agent-decision judge",
+    rec = {**out, "ts": when.stamp(), "what": "agent-decision judge",
            "repo": pr and pr.group(1).split("github.com/")[1], "pr": pr and int(pr.group(2)), "exit": rc,
            "model": ",".join(out.get("modelUsage") or [JUDGE[JUDGE.index("--model") + 1]]), "outcome": out.get("subtype") or f"exit {rc}"}
     d = os.path.join(lib_state.state_dir(), "metrics", "headless-runs")
@@ -336,7 +337,7 @@ def seed(root):
     """A new branch's first log: main's, under the branch's own header."""
     old = b""
     if gitrun.run("-C", root, "fetch", "-q", "origin", "main").returncode == 0:
-        r = subprocess.run(["git", "-C", root, "show", f"FETCH_HEAD:{LOG}"], capture_output=True)
+        r = gitrun.run("-C", root, "show", f"FETCH_HEAD:{LOG}", binary=True)
         old = r.stdout if r.returncode == 0 else b""
     cut = old.find(b"\n### ")
     return HEADER.encode() + (old[cut:] if cut >= 0 else b"")
@@ -345,7 +346,7 @@ def seed(root):
 def commit_log(root, tip, entries, msg):
     """A commit on tip (or a root commit) whose log is edited by entries(old)."""
     if tip:
-        r = subprocess.run(["git", "-C", root, "show", f"{tip}:{LOG}"], capture_output=True)
+        r = gitrun.run("-C", root, "show", f"{tip}:{LOG}", binary=True)
         old = r.stdout if r.returncode == 0 else b""
     else:
         old = seed(root)
@@ -387,8 +388,8 @@ def read_log(root):
     tip = fetch_tip(root)
     if not tip:
         return ""
-    r = subprocess.run(["git", "-C", root, "show", f"{tip}:{LOG}"], capture_output=True)
-    return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else ""
+    r = gitrun.run("-C", root, "show", f"{tip}:{LOG}")
+    return r.stdout if r.returncode == 0 else ""
 
 
 def entries_after_read_from(text):

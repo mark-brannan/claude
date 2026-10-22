@@ -43,6 +43,34 @@ def event():
     return {}
 
 
+def run_hook(hook, event, main):
+    """A hook's whole __main__: run main, trace the error it did not
+    catch under hook's name, exit 0 either way. A hook never blocks a
+    call on its own bug; the trace is how the bug is seen."""
+    try:
+        main()
+    except Exception as e:  # noqa: BLE001 -- fail open, by design
+        trace_failure(hook, event, e)
+    sys.exit(0)
+
+
+def languette_root():
+    """The user-scope languette install from installed_plugins.json, or ""."""
+    path = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
+                        "plugins", "installed_plugins.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            plugins = json.load(f)["plugins"]
+        for key, installs in plugins.items():
+            if key.startswith("languette@"):
+                for i in installs:
+                    if i.get("scope") == "user":
+                        return i.get("installPath") or ""
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass
+    return ""
+
+
 def trace_failure(hook, event, err, stage="main", once=False):
     """A hook's handler for an error it swallows: trace it through
     lib/hooktrace.py under the session last read, or say it on stderr when

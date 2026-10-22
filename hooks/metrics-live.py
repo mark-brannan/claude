@@ -49,9 +49,12 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
 import lib_state  # noqa: E402
 
 try:
+    import atomic  # noqa: E402
+    import gitrun  # noqa: E402
     import state  # noqa: E402
+    import when  # noqa: E402
 except ImportError as e:  # a seed without lib/: lib_state has said so on stderr
-    print(f"metrics-live: lib/state.py not importable ({e})", file=sys.stderr)
+    print(f"metrics-live: lib/ not importable ({e})", file=sys.stderr)
     state = None
 
 try:
@@ -135,14 +138,7 @@ def obj(v):
 
 
 def write_atomic(path, data):
-    tmp = f"{path}.{os.getpid()}"
-    try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(data)
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+    atomic.write(path, data)
 
 
 def compact(v):
@@ -165,8 +161,7 @@ def run_out(argv, stdin=b""):
 
 def git_out(*args):
     """git's stdout, stripped, whatever its exit: what $(git ... 2>/dev/null) held."""
-    p = subprocess.run(["git", *args], capture_output=True)
-    return p.stdout.decode("utf-8", "surrogateescape").strip()
+    return gitrun.exact(*args).stdout.strip()
 
 
 _BAD_ZONES = set()
@@ -191,19 +186,18 @@ def at(ts, tz=None):
 
 
 def utc_iso(ts):
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+    return when.stamp(ts)
 
 
 def from_iso(s):
     """A ts this hook wrote ("...Z") as an epoch; ValueError otherwise."""
-    return int(datetime.datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
-               .replace(tzinfo=datetime.timezone.utc).timestamp())
+    return when.unstamp(s)
 
 
 def stamp_epoch(s):
     """A LIVE/CLOSED stamp (ISO 8601) as an epoch, or 0 when it is not one."""
     try:
-        d = datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+        d = when.parse(s)
     except ValueError as e:
         if s:  # "" is a marker line with no stamp, not a bad one
             trace("curia", Failed(f"stamp {s!r} is not ISO 8601 ({e}); read as 0"))

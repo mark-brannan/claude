@@ -27,8 +27,8 @@ lint facet's list for the next open; it always exits 0.
 Exits 1 and names each mismatch as `file:line: reason: "quote"`; 0 when all
 match; 2 on a usage error.
 
-The stamp pattern and roll-entry parse are kept local: lib/ids.py and
-hooks/curia-roll.py own the stamp format and are being refactored.
+The stamp pattern and roll-entry parse are kept local; lib/ids.py owns
+the stamp format and hooks/curia-roll.py the entry.
 """
 import re
 import sys

@@ -27,10 +27,8 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 GIT_OR_PR = re.compile(r"\bgit\b.*\b(commit|cherry-pick|checkout|switch|branch|worktree)\b"
                        r"|\bgh\b.*\bpr\b.*\bcreate\b")
@@ -59,16 +57,12 @@ def already_logged(path, commit):
     """The file's latest cherry_pick row is this commit, so a later git command
     on the same HEAD does not count it again -- even when a pr or branch row
     was appended after it."""
+    import jsonl
     last = None
     try:
-        with open(path, "rb") as f:
-            for raw in f:
-                try:
-                    row = json.loads(raw)
-                except ValueError:
-                    continue
-                if isinstance(row, dict) and row.get("kind") == "cherry_pick":
-                    last = row.get("commit")
+        for row in jsonl.read(path):
+            if isinstance(row, dict) and row.get("kind") == "cherry_pick":
+                last = row.get("commit")
     except OSError:
         return False
     return last == commit
@@ -84,20 +78,19 @@ def main():
     if not sd:  # no state lib here (lib_state said why on stderr): nowhere to log
         return
     import gitrun
-    from state import state_shard_path
+    import when
+    from state import append_row, state_shard_path
 
     ti = ev.get("tool_input")
     ti = ti if isinstance(ti, dict) else {}
     cwd = text(alt(ev.get("cwd"), ""))
     sid = text(alt(ev.get("session_id"), "unknown"))
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    path = state_shard_path(os.path.join(sd, "metrics", "git-events"), f"{sid}.jsonl", sid)
+    ts = when.stamp()
+    events = os.path.join(sd, "metrics", "git-events")
+    path = state_shard_path(events, f"{sid}.jsonl", sid)
 
     def emit(kind, repo, branch, detail):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        row = {"ts": ts, "session_id": sid, "kind": kind, "repo": repo, "branch": branch, **detail}
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+        append_row(events, sid, {"ts": ts, "session_id": sid, "kind": kind, "repo": repo, "branch": branch, **detail})
 
     if tool != "Bash":
         emit("pr", text(alt(ti.get("repo"), "")), text(alt(ti.get("head"), "")),
@@ -133,9 +126,5 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # fail open: a logger never blocks a call
-        import lib_state
-        lib_state.trace_failure("measure-git-events", "PostToolUse", e)
-    sys.exit(0)
+    import lib_state
+    lib_state.run_hook("measure-git-events", "PostToolUse", main)

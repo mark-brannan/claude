@@ -21,6 +21,10 @@ from collections import defaultdict
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import when  # noqa: E402
+except ImportError:
+    sys.exit("metrics-dashboard: lib/ not found (looked beside the tool and in ~/.claude/lib)")
 
 def state_dir():
     """<state repo>/state/global, found by lib/state.py's state_repo (the one
@@ -32,8 +36,7 @@ def state_dir():
         if e.name != "state":
             raise  # state.py is here but broken (a partial lib/): say so
         return None
-    repo = state.state_repo()
-    return os.path.join(repo, "state", "global") if repo else None
+    return state.state_dir_or_none()
 
 # --- SVG ---------------------------------------------------------------------
 # Categorical slots in fixed order (the dataviz reference palette, validated):
@@ -152,7 +155,7 @@ def minute_day(m):
     return dt.datetime.fromtimestamp(m * 60, dt.timezone.utc).date().isoformat()
 
 def epoch_min(iso):
-    return int(dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() // 60)
+    return int(when.epoch(iso) // 60)
 
 # Context tokens a turn sends: what was re-read, what was written, what went uncached.
 CTX = "coalesce(cache_read_tokens, 0) + coalesce(cache_creation_tokens, 0) + coalesce(input_tokens, 0)"

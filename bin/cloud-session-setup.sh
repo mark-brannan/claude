@@ -97,6 +97,9 @@ lib/hooktrace.py
 lib/libpath.py
 lib/critical_review.py
 lib/ghrest.py
+lib/when.py
+lib/jsonl.py
+lib/atomic.py
 hooks/curia-roll.py
 hooks/curia_words.py
 hooks/session-metrics.jq

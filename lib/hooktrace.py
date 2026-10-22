@@ -9,32 +9,24 @@ The one home for the writer (claude#241); every ported hook calls trace().
 
 Row: {"ts", "hook", "event", "session_id", "stage", "error"}.
 """
-import json
 import os
 import sys
 import time
 
+import jsonl
 import state
+import when
 
 SUBDIR = "metrics/hook-errors"
 ERROR_MAX = 500
 
 
-def _ts(t=None):
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
-
-
 def _seen(path, hook, stage, error):
     """True when the file already holds a row for this hook, stage and error."""
     try:
-        with open(path, encoding="utf-8") as fh:
-            for ln in fh:
-                try:
-                    r = json.loads(ln)
-                except ValueError:
-                    continue
-                if isinstance(r, dict) and (r.get("hook"), r.get("stage"), r.get("error")) == (hook, stage, error):
-                    return True
+        for r in jsonl.read(path):
+            if isinstance(r, dict) and (r.get("hook"), r.get("stage"), r.get("error")) == (hook, stage, error):
+                return True
     except OSError:
         pass
     return False
@@ -47,20 +39,17 @@ def trace(hook, stage, err, session_id="", event="", once=False):
     Never raises."""
     sid = str(session_id or os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
     error = f"{type(err).__name__}: {err}"[:ERROR_MAX]
-    line = json.dumps({"ts": _ts(), "hook": hook, "event": event, "session_id": sid,
-                       "stage": stage, "error": error},
-                      ensure_ascii=False, separators=(",", ":"))
+    row = {"ts": when.stamp(), "hook": hook, "event": event, "session_id": sid,
+           "stage": stage, "error": error}
+    line = jsonl.dumps(row)
     try:
         sd = state.state_dir()
         if not sd:
             raise OSError("no state dir")
-        d = f"{sd}/{SUBDIR}"
-        path = state.state_shard_path(d, f"{sid or 'unknown'}.jsonl", sid)
+        path = state.state_shard_path(f"{sd}/{SUBDIR}", f"{sid or 'unknown'}.jsonl", sid)
         if once and _seen(path, hook, stage, error):
             return
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
+        jsonl.append(path, row)
     except Exception as e2:  # noqa: BLE001 -- the last place left to say it
         print(f"{hook}: {line} (trace not written: {e2})", file=sys.stderr)
 
@@ -77,7 +66,7 @@ def recent(state_dir, since_seconds=86400, now=None):
     """Rows traced in the last since_seconds, oldest first; unreadable files
     and lines are skipped."""
     now = time.time() if now is None else now
-    cutoff = _ts(now - since_seconds)
+    cutoff = when.stamp(now - since_seconds)
     d = f"{state_dir}/{SUBDIR}"
     rows = []
     for sub in (d, *(f"{d}/{n}" for n in _list(d, True))):
@@ -86,14 +75,9 @@ def recent(state_dir, since_seconds=86400, now=None):
             try:
                 if os.path.getmtime(path) < now - since_seconds:
                     continue
-                with open(path, encoding="utf-8") as fh:
-                    for ln in fh:
-                        try:
-                            row = json.loads(ln)
-                        except ValueError:
-                            continue
-                        if isinstance(row, dict) and str(row.get("ts", "")) >= cutoff:
-                            rows.append(row)
+                for row in jsonl.read(path):
+                    if isinstance(row, dict) and str(row.get("ts", "")) >= cutoff:
+                        rows.append(row)
             except OSError:
                 continue
     return sorted(rows, key=lambda r: str(r.get("ts", "")))

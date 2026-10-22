@@ -24,6 +24,13 @@ import os
 import subprocess
 import sys
 
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import gitrun  # noqa: E402
+except ImportError:  # a seed without lib/: how far behind is unknown
+    gitrun = None
+
 sys.dont_write_bytecode = True
 
 TIMEOUT = 5
@@ -40,8 +47,11 @@ def run(args):
 
 def behind(clone):
     """Commits on origin/main the clone's HEAD lacks, 0 when unknown."""
-    n = run(["git", "-C", clone, "rev-list", "--count", "HEAD..origin/main"])
-    return int(n) if n and n.isdigit() else 0
+    if gitrun is None:
+        return 0
+    p = gitrun.run("-C", clone, "rev-list", "--count", "HEAD..origin/main", timeout=TIMEOUT)
+    n = p.stdout.strip()
+    return int(n) if p.returncode == 0 and n.isdigit() else 0
 
 
 def claude_part(status):
@@ -72,9 +82,5 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # fail open: a convenience hook never stops a session
-        import lib_state  # beside this file
-        lib_state.trace_failure("session-start-sync-status", "SessionStart", e)
-    sys.exit(0)
+    import lib_state  # beside this file
+    lib_state.run_hook("session-start-sync-status", "SessionStart", main)

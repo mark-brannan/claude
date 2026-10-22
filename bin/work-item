@@ -52,6 +52,11 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import atomic  # noqa: E402
+    import when  # noqa: E402
+except ImportError:
+    sys.exit("work-item: lib/ not found (looked beside the tool and in ~/.claude/lib)")
 
 STATUSES = ("open", "ready", "claimed", "blocked", "done", "closed")
 OWNERS = ("agent", "human-ruling", "human-click")
@@ -89,10 +94,7 @@ def state_dir():
         if e.name != "state":
             raise  # state.py is here but broken (a partial lib/): say so
         die("lib/state.py not found (looked beside the tool and in ~/.claude/lib)")
-    d = state.state_dir()
-    if not d:
-        die("lib/state.py could not name the state dir")
-    return Path(d)
+    return Path(state.state_dir())
 
 
 def items_dir():
@@ -101,7 +103,7 @@ def items_dir():
 
 
 def iso(t):
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+    return when.stamp(t)
 
 
 def is_item_id(s):
@@ -290,10 +292,8 @@ class Item:
             lines = self.path.read_text().splitlines(keepends=True)
             head = next(i for i, l in enumerate(lines) if re.fullmatch(r"## Brief[ \t]*\n?", l))
             log = next(i for i, l in enumerate(lines) if re.fullmatch(r"## Log[ \t]*\n?", l))
-            tmp = self.path.with_name(f"{self.path.name}.tmp.{os.getpid()}")
-            tmp.write_text("".join(lines[:head]) + brief_section(brief, points)
-                           + "".join(lines[log:]))
-            os.replace(tmp, self.path)
+            atomic.write(self.path, "".join(lines[:head]) + brief_section(brief, points)
+                         + "".join(lines[log:]))
         except (OSError, StopIteration):
             refuse(f"could not write {self.path}")
 

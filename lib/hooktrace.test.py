@@ -48,6 +48,14 @@ class HooktraceTest(unittest.TestCase):
         self.assertEqual([r["error"] for r in rows], ["ValueError: bad line", "ValueError: other", "ValueError: bad line"])
         self.assertTrue(Path(f"{self.sd}/metrics/hook-errors/ab/abd0.jsonl").exists())
 
+    def test_no_session_id_shards_under_underscore_and_once_still_holds(self):
+        os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        for _ in range(3):
+            hooktrace.trace("spend-gate", "line", ValueError("bad line"), session_id="", once=True)
+        path = os.path.join(self.tmp.name, "state", "global", hooktrace.SUBDIR, "_", "unknown.jsonl")
+        with open(path, encoding="utf-8") as fh:
+            self.assertEqual(len(fh.read().splitlines()), 1)
+
     def test_a_flat_file_is_still_appended_to(self):
         d = f"{self.sd}/metrics/hook-errors"
         os.makedirs(d)

@@ -114,8 +114,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:  # convenience hook: a crash must not block the prompt
-        lib_state.trace_failure("pr-blockers-prompt", "UserPromptSubmit", e)
-    sys.exit(0)
+    lib_state.run_hook("pr-blockers-prompt", "UserPromptSubmit", main)

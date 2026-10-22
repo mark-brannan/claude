@@ -46,7 +46,6 @@ state/global/curia/<id> for a curia, state/global/scoping/<key> otherwise.
 import os
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
@@ -71,10 +70,10 @@ def state_repo():
 SR = state_repo()
 try:
     import gitrun
+    import when
 except ImportError:  # main() says so after the usage line, which needs no git
-    gitrun = None
+    gitrun = when = None
 LEASE = int(os.environ.get("SCOPING_LOCK_STALE_SECS") or 1500)
-STAMP = "%Y-%m-%dT%H:%M:%SZ"
 
 
 def die(msg):
@@ -108,7 +107,7 @@ def describe(line):
     if len(f) < 2:
         return "stale", "?", "?", "?", "?"
     try:
-        at = datetime.strptime(f[1], STAMP).replace(tzinfo=timezone.utc).timestamp()
+        at = when.unstamp(f[1])
     except ValueError:
         at = 0
     age = int(time.time() - at)
@@ -157,7 +156,7 @@ def take(lock, sid, read_at):
     if rf.is_file():
         read_at = read_of(rf)
     path = SR / lock
-    at, done = datetime.now(timezone.utc).strftime(STAMP), "taken"
+    at, done = when.stamp(), "taken"
     if path.is_file():
         state, holder, held_at, held_read, age = describe(path.read_text())
         if holder != sid:
