@@ -23,6 +23,17 @@ the two repo docs copied from dotfiles' own `docs/`. The rest of the root,
 this README, `.github/` and the editor and merge config, is repo
 scaffolding; in `~/.claude` Claude Code ignores it.
 
+`~/.claude` is mastered here: change it in a worktree of `~/claude` and let
+it go live from `main`, never by editing the live clone in place.
+
+| In the repo | Live | Loads |
+|---|---|---|
+| `CLAUDE.md` | `~/.claude/CLAUDE.md` | the standing orders, in every session |
+| `.claude/CLAUDE.md` | `~/.claude/.claude/CLAUDE.md` | the repo map, only in this repo, its worktrees and `~/.claude` |
+| `settings.json`, `hooks/` | `~/.claude/settings.json`, `~/.claude/hooks/` | every session; hooks always run from the live clone |
+| `rules/`, `skills/` | `~/.claude/rules/`, `~/.claude/skills/` | every session, by path or by name |
+| `bin/` | `~/.claude/bin/` | when a hook, skill or person calls a tool |
+
 Pull requests here meet the same bar as dotfiles: one required check
 (`ci-gate / gate`), both secret scanners, a signed-commit, squash-only `main`,
 and an advisory Claude review.
