@@ -412,7 +412,11 @@ class Hook:
     def git_state(self):
         """The part that decides whether the chat is safe to kill."""
         self.dirty = self.unpushed = self.no_upstream = self.ncommits = 0
-        self.start_sha = ""
+        # Read the cached start SHA before anything here can raise: write_cache
+        # saves self.start_sha whatever happened, and an empty one would
+        # overwrite the session's real start, so `commits` would count from
+        # the current HEAD for the rest of the session.
+        self.start_sha = text(obj(read_json(self.out, "cache")).get("start_sha"))
         if not self.work_root:
             return
         self.dirty = state.dirty_paths(self.work_root).count("\n")
@@ -425,8 +429,7 @@ class Hook:
             self.no_upstream = 1
         # Commits counted from the SHA this session started at, not by time:
         # `--since` counts a fresh clone's whole history as this session's.
-        cached = obj(read_json(self.out, "cache"))
-        self.start_sha = text(cached.get("start_sha")) or git_out("-C", self.work_root, "rev-parse", "HEAD")
+        self.start_sha = self.start_sha or git_out("-C", self.work_root, "rev-parse", "HEAD")
         if self.start_sha:
             self.ncommits = num(git_out("-C", self.work_root, "rev-list", "--count",
                                         f"{self.start_sha}..HEAD"))

@@ -1400,6 +1400,30 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("a commit recomputes the cache", "yes", "yes" if cache.exists() else "no")
         return self.done(w)
 
+    def test_git_state_failure_keeps_the_start_sha(self):
+        """git_state raises partway (traced by soft() in the run): the cached
+        start SHA still reaches write_cache, so `commits` keeps counting from
+        where the session began rather than from the current HEAD."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("metrics_live_under_test", HOOK)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        tmp = tempfile.mkdtemp(prefix="metrics-live-test-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        cache = Path(tmp) / "cache.json"
+        cache.write_text(json.dumps({"start_sha": "abc123"}) + "\n")
+        h = mod.Hook.__new__(mod.Hook)
+        h.out, h.work_root, h.work_branch = str(cache), tmp, "main"
+
+        def boom(_root):
+            raise RuntimeError("dirty_paths failed")
+        real = mod.state.dirty_paths
+        mod.state.dirty_paths = boom
+        self.addCleanup(setattr, mod.state, "dirty_paths", real)
+        with self.assertRaises(RuntimeError):
+            h.git_state()
+        self.assertEqual("abc123", h.start_sha)
+
     SECTIONS = [n for n in list(locals()) if n.startswith("section_")]
 
     def test_sections(self):
