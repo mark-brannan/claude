@@ -252,7 +252,7 @@ def load_session_pr(cx, sd):
     base = os.path.join(sd, "metrics", "gh-writes")
     rows = set()
     for p in glob.glob(os.path.join(base, "*.jsonl")) + glob.glob(os.path.join(base, "*", "*.jsonl")):
-        for d in jsonl(p):
+        for d in json_rows(p):
             m = PR_URL.search(str(d.get("target") or "")) if d.get("verb") == "pr create" else None
             if m:
                 rows.add((d.get("session_id") or os.path.basename(p)[:-6], m.group(1), int(m.group(2))))
