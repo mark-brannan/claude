@@ -409,3 +409,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t112523z
 - card-id new refuses an argument; no caller passed a session id Undo: accept and ignore one ([#256](https://github.com/mark-brannan/claude/pull/256))
+
+### 20261022t112526z
+- docs/work-item-lifecycle.md's two 'session's eight hex' rows stay as they are in claude#256; a doc-only PR carries the random tail Undo: none; the doc PR is the change ([#256](https://github.com/mark-brannan/claude/pull/256))
