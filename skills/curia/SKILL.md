@@ -102,13 +102,13 @@ it and prunes one that has stopped earning its place. One a later ruling
 contradicts is removed and shown, since a reversal is a finding, not an
 error. A reference into another curia's roll takes the same form.
 
-<!-- pen (Solace, 2026-10-02): roll.md for the words, digest.md for the
+<!-- pen (the user, 2026-10-02): roll.md for the words, digest.md for the
      document, the reference form `<curia>/roll.md#<stamp>` (amended by
-     Solace the same day from `:<stamp>`, with the session id dropped from
+     the user the same day from `:<stamp>`, with the session id dropped from
      the heading: the anchor must be the bare stamp). pencil: the
      rest of the layout and private-deliberation/public-produce are
      assumed, not ruled (design doc, open question on /curia <id>
-     mechanics). pen (Solace, 2026-10-02, session 4d6d005a): "References
+     mechanics). pen (the user, 2026-10-02, session 4d6d005a): "References
      plus cleaned, edited, curated quotes. The linting agent may make
      minor edits for typos, readability, or to cut unnecessary sections
      of a long quote." It replaces "agents never quote" (#489). There is
@@ -166,7 +166,7 @@ an agent reads the spec, whose row cites the decisions line, not the log
 that produced it. `decided.md` takes no read-from point: it is pruned by
 moving lines out ([The ledger as a queue](#the-ledger-as-a-queue)).
 
-<!-- pen (Solace, 2026-10-07): prune what agents load, never the record;
+<!-- pen (the user, 2026-10-07): prune what agents load, never the record;
      a stored starting point per append-only file, read from there to
      the end; the curia's ledger holds the stamp. pencil: the
      field's name and form, `read-from:`, that lint is what moves it, and
@@ -355,7 +355,7 @@ at most 1,500 words at open** — Where this stands ≤ 250, Working memory
 70k tokens**. Measured basis: the harness floor was 59k before any read;
 the three sections 1,356 words that day; cost is context × turns.
 
-<!-- pen (Solace, 2026-10-07): facets lint, edit, status; the by-hand
+<!-- pen (the user, 2026-10-07): facets lint, edit, status; the by-hand
      line; spawned at close, run by a routine, never only at close; the
      caps and their basis; status not gauge; the curia's ledger
      holds the stamps. pencil: a facet commits its own fixes instead of

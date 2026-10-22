@@ -8,15 +8,15 @@ An entry the web could not confirm is marked unverified, never dropped.
 
 ## Framing
 
-Solace's, verbatim.
+The user's, name neutralised.
 
 - Two loops. Loop one is the work (grind). Loop two is questioning the governing
   ideas behind the work (confer). Both are agent-assisted; loop two is never
-  agent-authored. Solace generates the concepts and the orders; the agent is
+  agent-authored. The user generates the concepts and the orders; the agent is
   secretary and editor, not creator. Prose-budget, the colregs ADR proposal
   mechanism and churn-guard are earlier attempts at agent-assisted loop two.
-- The agora is fast decisions, wholly Solace's; the agent brings them, Solace rules.
-  The confer is slow decisions, still Solace's, with the agent bringing information
+- The agora is fast decisions, wholly the user's; the agent brings them, the user rules.
+  The confer is slow decisions, still the user's, with the agent bringing information
   and practising reflection, expansion and refinement.
 - The autonomy slider (Karpathy) has a useful kernel, not fully embraced: model and
   effort are chosen per task, and the terms that move the slider up are being
