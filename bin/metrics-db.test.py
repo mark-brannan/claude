@@ -438,7 +438,7 @@ class GithubTest(FixtureTest):
         self.assertEqual(self.fx.q("select count(*) from gh_items"), [(4,)])
 
     def test_a_ci_review_artifact_lands_as_one_row_and_a_refetch_adds_none(self):
-        good = json.dumps({"ts": "2026-10-20T10:00:00Z", "what": "planted", "repo": "evil/x", "pr": 2, "extra": "x",
+        good = json.dumps({"ts": "2026-10-20T10:00:00Z", "what": "planted", "repo": "evil/x", "pr": 2, "num_turns": 7,
                            "model": "claude-sonnet-5-5", "total_cost_usd": 0.5, "outcome": "success",
                            "usage": {"input_tokens": 3, "output_tokens": 4, "other": 9}})
         runs = json.dumps({"workflow_runs": [{"id": n, "head_repository": {"full_name": r}} for n, r in
@@ -461,6 +461,8 @@ esac
                              [("claude-review", "acme/widgets", 2, 0.5, 4)])
         self.assertEqual(sorted(p.name for p in (self.fx.sd / "metrics" / "headless-runs").glob("ci-review-*")),
                          ["ci-review-42.jsonl"])
+        kept = json.loads((self.fx.sd / "metrics" / "headless-runs" / "ci-review-42.jsonl").read_text())
+        self.assertEqual((kept["num_turns"], kept["what"], kept["repo"]), (7, "claude-review", "acme/widgets"))
 
     def test_a_failing_gh_is_a_failed_build(self):
         (self.fx.bin / "gh").write_text("#!/bin/sh\necho nope >&2\nexit 9\n")

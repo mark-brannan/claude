@@ -377,7 +377,7 @@ def fetch_ci_reviews(cx, sd):
     metrics/headless-runs/ci-review-<run id>.jsonl, where the loader picks it
     up (a run already written is skipped). Looks at the last 10 runs of repos
     with a PR from the last 14 days, own-branch runs only; the artifact is
-    untrusted, so only known keys of the right types are kept. gh missing,
+    untrusted, so it must parse as a JSON object. gh missing,
     offline, a fork run or a malformed artifact: skipped quietly."""
     for (repo,) in cx.execute("select distinct repo from gh_items where kind = 'pr' and created_at > date('now', '-14 days')").fetchall():
         try:
@@ -394,14 +394,12 @@ def fetch_ci_reviews(cx, sd):
                                    check=True, capture_output=True)
                     with open(os.path.join(tmp, "headless-run.jsonl"), encoding="utf-8") as f:
                         d = json.loads(f.read(65536).strip().splitlines()[-1])
-                    rec = {"what": "claude-review", "repo": repo, "usage": {k: v for k, v in d["usage"].items() if type(v) in (int, float)},
-                           **{k: d[k] for k in ("ts", "model", "outcome") if isinstance(d.get(k), str)},
-                           **{k: d[k] for k in ("pr", "total_cost_usd") if type(d.get(k)) in (int, float)}}
+                    rec = {**d, "what": "claude-review", "repo": repo}  # TypeError unless d is an object
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
                     with open(dest + ".part", "w", encoding="utf-8") as f:  # whole or absent, never torn
                         f.write(json.dumps(rec) + "\n")
                     os.replace(dest + ".part", dest)
-                except (OSError, subprocess.CalledProcessError, ValueError, LookupError, AttributeError):
+                except (OSError, subprocess.CalledProcessError, ValueError, LookupError, TypeError):
                     continue
 
 def main():
