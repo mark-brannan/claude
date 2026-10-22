@@ -310,9 +310,15 @@ item_terms() {
   ip_kind=$(printf '%s' "$1" | jq -r .kind)
   case $ip_kind in
     pr)   ip_me=$(gh api user --jq .login 2>/dev/null) || ip_me=""
-          ip_text=""; ip_ok=$(jq -cn --arg me "$ip_me" --argjson a "$(agent_logins)" '[$me] + $a.bot')
-          [ -z "$ip_me" ] || ip_text=$(gh pr view "$(printf '%s' "$1" | jq -r .number)" --repo "$(printf '%s' "$1" | jq -r .repo)" --json author,body,comments \
-            --jq "$ip_ok as \$ok | [(if (.author.login | IN(\$ok[])) then .body // \"\" else \"\" end), ([.comments[]? | select(.author.login | IN(\$ok[]))] | last | .body // \"\")] | join(\"\\n\")" 2>/dev/null || true) ;;
+          ip_text=""; ip_a=$(agent_logins); ip_n=$(printf '%s' "$1" | jq -r .number); ip_r=$(printf '%s' "$1" | jq -r .repo)
+          if [ -n "$ip_me" ]; then
+            ip_body=$(gh pr view "$ip_n" --repo "$ip_r" --json author,body \
+              --jq "$(jq -cn --arg me "$ip_me" --argjson a "$ip_a" '{ok: ([$me] + $a.bot), bare: $a.bare}') as \$ok | if (.author.login | IN(\$ok.ok[])) or (.author.is_bot == true and \$ok.bare != \"\" and .author.login == \$ok.bare) then .body // \"\" else \"\" end" 2>/dev/null || true)
+            # comments come from REST, whose user.type is the bot signal gh's own comment authors lack
+            ip_last=$(gh api --paginate "repos/$ip_r/issues/$ip_n/comments" \
+              --jq ".[] | select(.user.login == \"$ip_me\" or ((.user.type == \"Bot\") and (.user.login | IN($(printf '%s' "$ip_a" | jq -c .bot)[]))))  | .body // \"\" | @json" 2>/dev/null | tail -n 1 | jq -r . 2>/dev/null || true)
+            ip_text=$(printf '%s\n%s' "$ip_body" "$ip_last")
+          fi ;;
     card) ip_text=$(printf '%s' "$1" | jq -r .text) ;;
     *)    ip_text=$(printf '%s' "$1" | jq -r .body) ;;
   esac
