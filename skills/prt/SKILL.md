@@ -95,7 +95,12 @@ claim as its last step. When an agent never ran, release it yourself:
 `~/.claude/bin/prt release <owner/repo#n> <sid>`. A claim nobody releases
 goes stale after 2h, and the next claim on that PR collects it.
 
-Then one agent per worked PR, the model from the table, in the
+This session is critical-review's driver, and each prt run is one of
+its rounds. Per worked PR, first spawn its reviewer: a read-only
+sub-agent on the model `python3 ~/.claude/lib/critical_review.py reviewer
+<url>` names, told to read ~/.claude/skills/critical-review/SKILL.md and
+only comment. When it returns, one fixer agent per worked PR, the model
+from the table, in the
 background, five at a time, and no `isolation`: the agent makes its own
 worktree, since the guard-worktrees hook lets an agent work only in one it
 made. Each prompt is this text, verbatim, with the blanks filled.
@@ -114,8 +119,9 @@ you under sid <sid>; you release that claim at the end.
    If `git rev-parse HEAD` is not <start sha>, someone pushed since the
    plan: go to step 7 and report that, pushing nothing. If a guard
    refuses a step, report its exact message and go to step 7.
-2. Do a critical review of <url>: read ~/.claude/skills/critical-review/SKILL.md
-   and do what it says. Work every fix to the fixup contract,
+2. You are critical-review's fixer for one round: read
+   ~/.claude/skills/critical-review/SKILL.md; its reviewer's threads are
+   on <url>, and `~/.claude/bin/pr-blockers <url>` lists the rest. Work every fix to the fixup contract,
    ~/.claude/skills/pickup/SKILL.md section 6, read in full. Its stop
    rule, "one honest attempt or about $1", is 1.5M transcript tokens
    here: past that, label the PR `fixup-hard`, leave its one comment and
