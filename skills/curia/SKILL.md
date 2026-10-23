@@ -219,20 +219,22 @@ names it by path.
 
 A ruling is effective when the count it named at pen time has moved from
 `<from>` to `<to>` by the date it named. For a tested spec row the
-measure is the test's pass rate and its git history showing no drift,
-both already collected. The counters that exist today are the metrics
+measure is the test's pass rate and its git history showing no drift.
+The counters that exist today are the metrics
 readouts' decisions by kind, corrections, rebukes, overrides and
 pushback; a ruling that names a count none of them keeps names the
 counter it needs, or it has no effective state to reach. A review whose
 count did not move is a finding for the sitting, never lint's fix.
 
-<!-- pen (the user, 2026-10-22, outside a sitting, the curia-loop input
-     2026-10-22-embedded-effective-measure.md): the three rungs, a spec
+<!-- pen (the user, 2026-10-22, outside a sitting; the curia-loop
+     ledger holds the line and its link): the three rungs, a spec
      row as partially embedded, a tested spec row as embedded, and pass
      rate with no-drift history as its effective measure; also that pen
      stays unconditional on either state. pencil (the secretary): the
      field names `embedded` and `effective when`, the pending form, and
-     that lint owns the review rather than the agora. -->
+     that lint owns the review rather than the agora, the table row
+     named as the steering rung, and a failed review as the sitting's
+     finding. -->
 
 <!-- pencil (2026-10-07): the table is the agent's, from its proposal in
      a curia sitting of that day, not yet ruled; the user's
