@@ -19,7 +19,6 @@ No clone, or no sync script: silent; there is nothing to report on.
 CONVENIENCE: never blocks a session, always exits 0; a crash is traced to
 the state repo's metrics/hook-errors/ (lib/hooktrace.py).
 """
-import json
 import os
 import subprocess
 import sys
@@ -76,9 +75,8 @@ def main():
     lag = f"~/.claude is {n} commit(s) behind origin/main" if n else "~/.claude was skipped by the last sync"
     text = (f"{lag}, so this session may run stale hooks and skills. "
             f"Last sync (`dotfiles-sync.sh --status`): {status or 'no output'}")
-    out = {"systemMessage": text,
-           "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
-    print(json.dumps(out, ensure_ascii=False))
+    import hookio  # lib/, on sys.path above
+    hookio.emit(hookio.context("SessionStart", text, system=text), ascii=False)
 
 
 if __name__ == "__main__":
