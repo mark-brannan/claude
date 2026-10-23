@@ -69,6 +69,10 @@ which.
    - **scoping stack** — the parent's PRs, read together. Kind `stack`.
      Read-set: each PR's, as above.
 
+   Every read-set adds what the chain of aims climbs: the parent the
+   item names (an issue, card, curia or PR), the repo's README, and the
+   standing orders' "What this is for" (`~/.claude/CLAUDE.md`).
+
    Anything else, or a target that does not resolve cleanly: say in one
    line how you read it, take the nearest kind and the read-set the words
    point at, and continue.
