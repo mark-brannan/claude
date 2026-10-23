@@ -1,6 +1,6 @@
 ---
 name: critical-review
-description: Fire the critical-review prompt at one pull request — review, fix, hand over ready. Use on "/critical-review <PR> [--merge]" or "critical review of #N". The reviewer runs on a model unlike the PR's coder. Merges only on --merge, and only when nothing needs the user.
+description: Fire the critical-review prompt at one pull request — review, fix, hand over ready: a reviewer that only argues, a fixer that only fixes. Use on "/critical-review <PR> [--merge]" or "critical review of #N". The reviewer runs on a model unlike the PR's coder. Merges only on --merge, and only when nothing needs the user.
 ---
 
 Do a critical review of $ARGUMENTS. `--merge` is not part of the PR
@@ -18,23 +18,36 @@ sub-agent on the reviewer's model. The metrics row records this line.
 Then run `~/.claude/bin/pr-blockers <PR>`. Its lines are the first
 action items, in its order: open conversations before anything else.
 
-You may ask questions or comment directly on the PR; every comment you
-post is signed as an agent's, the way the code rules say. Then, without
-waiting for answers, switch gears: fix any open issues and get the PR
-ready for my review.
+**The reviewer argues and never pushes.** Its only output is review
+comments on the PR, inline, signed as an agent's, the way the code rules
+say. Each opens with a tag, `[blocker]`, `[should]` or `[nit]`, then the
+failure scenario (what breaks, for whom, when) and the wanted fix. No
+commit, no push, no resolving a thread, no edit to the branch.
+
+**The fixer fixes.** The driver spawns a fresh sub-agent, never the
+reviewer and never the PR's coder, and hands it the PR and the reviewer's
+open threads. It works each thread: changes the code or answers why not,
+replies, resolves the ones it settled, and pushes. A Reversed or Decide
+thread stays open, as below.
+
+**Rounds.** Review, then fix, repeated, at most three. A round with no
+`[blocker]` or `[should]` left open ends the loop. Past three, the driver
+parks the PR on an agora card (`human-ruling`, through card-write) naming
+the threads still open, and stops; it neither merges nor fixes further.
 
 Before the summary may call the PR ready to merge, run
 `~/.claude/bin/pr-blockers <PR>` again, after the review bots have had
-their pass on your last push. Any line it prints is fixed (an unsigned
+their pass on the fixer's last push. Any line it prints is fixed (an unsigned
 commit by `~/.claude/bin/resign-branch.sh`) or reported, never assumed:
 "awaiting approval" is a guess until it has said nothing else blocks.
 
-Then summarize. Open with one line, before any heading: what the PR does
+The driver writes the roll-up after the last round, from the threads,
+replies and commits; the reviewer and the fixer write none. Open with one line, before any heading: what the PR does
 in your words and whether it is ready to merge. That sentence stands in
 for my reading the diff. Then five headings, each shown even when empty.
 One line per item. Reading is my toil; deciding is dearer still.
 
-**Fixed** — what you changed, with the commit.
+**Fixed** — what the fixer changed, with the commit.
 
 **Look at** — a diff a human must read: where (file and lines), and why a
 machine couldn't settle it. Never a question; a question belongs under
