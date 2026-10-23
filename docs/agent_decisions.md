@@ -439,3 +439,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t070151z
 - arete-check change stacked on #281, the skill the old agreement test measured Undo: retarget to main after #281 merges ([#282](https://github.com/mark-brannan/claude/pull/282))
+
+### 20261023t070157z
+- harm flags a − finding the reader would not let land as it stands Undo: reword one line in areas.md ([#282](https://github.com/mark-brannan/claude/pull/282))
