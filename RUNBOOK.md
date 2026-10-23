@@ -23,6 +23,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Open the metrics dashboard](#open-the-metrics-dashboard)
 - [Read the pickup items](#read-the-pickup-items)
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
+- List the pen rulings with no embedded or effective state, and overdue reviews: `~/.claude/bin/ledger-review` (`--json` for machines)
 
 **GitHub repository**
 - [Set the auth token for the PR review workflows](#set-the-auth-token-for-the-pr-review-workflows)
