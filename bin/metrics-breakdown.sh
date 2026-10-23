@@ -13,8 +13,10 @@ set -u
 
 HOOKS="${METRICS_HOOKS:-$HOME/.claude/hooks}"
 [ -d "$HOOKS" ] || { echo "no hooks at $HOOKS" >&2; exit 1; }
-# shellcheck source=hooks/lib-state.sh
-. "$HOOKS/lib-state.sh"
+STATE_PY="$HOOKS/../lib/state.py"
+[ -f "$STATE_PY" ] || { echo "no lib/state.py beside $HOOKS" >&2; exit 1; }
+state_dir() { python3 "$STATE_PY" state_dir; }
+state_shard_path() { python3 "$STATE_PY" state_shard_path "$@"; }
 
 LIVE="$(state_dir)/metrics/live"
 GITEV="$(state_dir)/metrics/git-events"

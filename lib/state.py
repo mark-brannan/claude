@@ -608,3 +608,34 @@ def day_decisions(sid, total, junk, now, gap):
         sessions = (json.load(fh).get("sessions") or {}).values()
     return (sum(s.get("total") or 0 for s in sessions),
             sum(s.get("junk") or 0 for s in sessions))
+
+
+# The command line, for the shell scripts that still need an answer from
+# here: `state.py <fn> [args]` prints what the shell function of the same
+# name printed (no trailing newline) and exits the way it did. To expose
+# another function, add a line to CLI: a callable taking the argv strings
+# and returning the text to print, or None for "no answer" (exit 1).
+CLI = {
+    "state_repo": lambda a: state_repo(),
+    "state_dir": lambda a: state_dir(),
+    "state_shard_path": lambda a: state_shard_path(*a),
+}
+
+
+def main(argv):
+    if not argv or argv[0] not in CLI:
+        print("usage: state.py <%s> [args]" % "|".join(CLI), file=sys.stderr)
+        return 2
+    try:
+        out = CLI[argv[0]](argv[1:])
+    except TypeError:
+        print("state.py %s: wrong number of arguments" % argv[0], file=sys.stderr)
+        return 2
+    if out is None:
+        return 1
+    sys.stdout.write(out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
