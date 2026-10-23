@@ -20,6 +20,7 @@ takes the same directories from bash, claim-stamp.py through this module.
 The one home for this lookup (dotfiles#517). hooks/lib_state.py re-exports
 it; bin tools put this directory on sys.path and `import state`.
 """
+import inspect
 import json
 import os
 import re
@@ -613,27 +614,29 @@ def day_decisions(sid, total, junk, now, gap):
 # The command line, for the shell scripts that still need an answer from
 # here: `state.py <fn> [args]` prints what the shell function of the same
 # name printed (no trailing newline) and exits the way it did. To expose
-# another function, add a line to CLI: a callable taking the argv strings
-# and returning the text to print, or None for "no answer" (exit 1).
-CLI = {
-    "state_repo": lambda a: state_repo(),
-    "state_dir": lambda a: state_dir(),
-    "state_shard_path": lambda a: state_shard_path(*a),
-}
+# another function, add its name to CLI. A str result is printed, exit 0;
+# None is "no answer" (exit 1); a bool is a predicate, no output, exit 0 for
+# True and 1 for False. Argument counts are checked against the signature
+# before the call, so an error raised inside a function is never mistaken
+# for a usage error.
+CLI = {f.__name__: f for f in (state_repo, state_dir, state_is_repo, state_shard_path)}
 
 
 def main(argv):
     if not argv or argv[0] not in CLI:
         print("usage: state.py <%s> [args]" % "|".join(CLI), file=sys.stderr)
         return 2
+    fn, args = CLI[argv[0]], argv[1:]
     try:
-        out = CLI[argv[0]](argv[1:])
+        inspect.signature(fn).bind(*args)
     except TypeError:
         print("state.py %s: wrong number of arguments" % argv[0], file=sys.stderr)
         return 2
-    if out is None:
+    out = fn(*args)
+    if out is None or out is False:
         return 1
-    sys.stdout.write(out)
+    if out is not True:
+        sys.stdout.write(out)
     return 0
 
 

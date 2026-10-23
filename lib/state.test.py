@@ -127,6 +127,28 @@ class LookupTest(Base):
         self.assertEqual(self.cli("nope")[0], 2)
         self.assertEqual(self.cli("state_shard_path", "/d")[0], 2)
 
+    def test_cli_predicate_exit_codes(self):
+        repo = self.T / "repo"
+        (repo / ".git").mkdir(parents=True)
+        os.environ["CLAUDE_STATE_REPO"] = str(repo)
+        self.assertEqual(self.cli("state_is_repo")[:2], (0, ""))
+        os.environ["CLAUDE_STATE_REPO"] = str(self.T / "none")
+        if not any(os.path.isdir(d + "/.git") for d in CLOUD):
+            self.assertEqual(self.cli("state_is_repo")[:2], (1, ""))
+        self.assertEqual(self.cli("state_is_repo", "extra")[0], 2)
+
+    def test_cli_error_inside_a_function_is_not_a_usage_error(self):
+        mod = self.state
+        def boom(a):
+            raise TypeError("inner")
+        mod.CLI["boom"] = boom
+        try:
+            with self.assertRaises(TypeError):
+                mod.main(["boom", "x"])
+            self.assertEqual(mod.main(["boom"]), 2)
+        finally:
+            del mod.CLI["boom"]
+
     # --- state_shard_path: per-session files split by the id's first two chars
     def test_shard_path(self):
         sp, SH = self.state.state_shard_path, str(self.T / "shard")

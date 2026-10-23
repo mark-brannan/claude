@@ -46,6 +46,7 @@ HOOKS="${METRICS_HOOKS:-$HOME/.claude/hooks}"
 STATE_PY="$HOOKS/../lib/state.py"
 [ -f "$STATE_PY" ] || { echo "no lib/state.py beside $HOOKS" >&2; exit 1; }
 state_dir() { python3 "$STATE_PY" state_dir; }
+[ -n "$(state_dir)" ] || { echo "state.py gave no state dir (python3 or $STATE_PY failed)" >&2; exit 1; }
 state_shard_path() { python3 "$STATE_PY" state_shard_path "$@"; }
 
 WIDTH=75
