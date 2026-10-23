@@ -14,8 +14,8 @@ and fails on any difference. Change one, change both. GIT_EVENT_RE,
 buffered_state, verdict_explain and day_decisions have no shell twin: only
 metrics-live.py reads them.
 
-The locks are the shell's mkdir protocol, not lib/lock.py: abandon-branch.sh
-takes the same directories from bash, claim-stamp.py through this module.
+The locks are the shell's mkdir protocol, not lib/lock.py: abandon-branch.py
+takes the same directories, claim-stamp.py through this module.
 
 The one home for this lookup (dotfiles#517). hooks/lib_state.py re-exports
 it; bin tools put this directory on sys.path and `import state`.
@@ -341,7 +341,7 @@ def archivable_reasons(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
 # state_lock / state_unlock -- mkdir atomic test-and-set, the same protocol
 # and the same `meta` file as lib-state.sh's (copied there from grind's
 # per-repo lock; no flock: macOS has none), so a lock taken here holds
-# against abandon-branch.sh taking it from bash, and the other way
+# against abandon-branch.py taking it, and the other way
 # round. meta carries pid+host; a same-host
 # dead pid is reclaimed via rename-then-rm. A dir with no meta at all (a
 # kill between mkdir and the meta write) has no pid to check; one older
@@ -432,7 +432,7 @@ def state_unlock():
 # state_lock_wait -- state_lock, retried once a second for up to secs: the
 # portable `flock -w`. A bare `flock` here silently exited every Stop hook
 # on macOS before the state-repo push. STATE_PUSH_LOCK is the push lock
-# stop-continuity.py and abandon-branch.sh share, fixed at import as the
+# stop-continuity.py and abandon-branch.py share, fixed at import as the
 # shell fixes it when sourced.
 STATE_PUSH_LOCK = f"{os.environ.get('TMPDIR') or '/tmp'}/claude-state-push.lock.d"
 

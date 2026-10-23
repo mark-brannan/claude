@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for junk-decision tagging (dotfiles#301): session-metrics.jq marks a
 # decision junk when a non-retracted friction record lands within 30 index
-# units after it, and metrics-rollup.sh reports the count and rate per day.
+# units after it, and metrics-rollup.py reports the count and rate per day.
 # Run: bash hooks/metrics-junk.test.sh
 set -uo pipefail
 HOOKS="$(cd "$(dirname "$0")" && pwd)"
@@ -38,7 +38,7 @@ jq -nc '{session_id:"c", started_at:"2026-09-22T09:00:00Z", decisions:{total:2,g
 # lib-state resolves the state dir from the repo; give it a fake one.
 mkdir -p "$S/repo/.git" "$S/repo/state/global/metrics"
 cp -r "$ST/metrics/sessions" "$S/repo/state/global/metrics/"
-CLAUDE_STATE_REPO="$S/repo" bash "$HOOKS/metrics-rollup.sh"
+CLAUDE_STATE_REPO="$S/repo" python3 "$HOOKS/metrics-rollup.py"
 R="$S/repo/state/global/metrics/metrics.json"
 eq "total junk" '3' "$(jq -c '.totals.junk' "$R")"
 eq "overall junk rate" '25' "$(jq -c '.totals.junk_rate' "$R")"

@@ -294,7 +294,7 @@ after a session with two or more prompts.
 
 A decision is tagged `junk` in the session record when a non-retracted human
 friction record lands within 30 transcript entries after it
-(`session-metrics.jq`; self-reports do not count). `metrics-rollup.sh` reports
+(`session-metrics.jq`; self-reports do not count). `metrics-rollup.py` reports
 `totals.junk`, `totals.junk_rate` and `totals.junk_by_day` (by session start
 date). Test: `bash hooks/metrics-junk.test.sh`.
 

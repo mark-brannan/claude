@@ -16,7 +16,7 @@ HEAD on the default branch, a detached HEAD, no origin, or no commits ahead
 and the hook exits before any network call.
 
 Read-only: detects and blocks, never deletes. Abandon lives in its own
-script, abandon-branch.sh; see dotfiles#115.
+script, abandon-branch.py; see dotfiles#115.
 
 Two outcomes:
   pass      a PR, a board card or an open issue names the branch

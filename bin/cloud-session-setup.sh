@@ -128,7 +128,7 @@ hooks/session-start-seed-refresh.py
 hooks/guard-add-repo.sh
 hooks/metrics-format.sh
 hooks/metrics-live.py
-hooks/metrics-rollup.sh
+hooks/metrics-rollup.py
 hooks/log-commit.py
 hooks/log-gh-writes.py
 hooks/permission-request-log.py
