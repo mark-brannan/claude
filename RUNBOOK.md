@@ -23,6 +23,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Open the metrics dashboard](#open-the-metrics-dashboard)
 - [Read the pickup items](#read-the-pickup-items)
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
+- List the pen decision with no embedded or effective state, and overdue reviews: `~/.claude/bin/ledger-review` (`--json` for machines)
 
 **GitHub repository**
 - [Set the auth token for the PR review workflows](#set-the-auth-token-for-the-pr-review-workflows)
@@ -227,7 +228,7 @@ Back on: `claude plugin enable languette@languette`.
 What to run by hand when there is no session to ask.
 
 ```bash
-worklist                      # the board: rulings, click work, the queue
+worklist                      # the board: decisions, click work, the queue
 ```
 
 ```bash
