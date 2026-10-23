@@ -1,5 +1,4 @@
 #!/bin/sh
-# ruling: none on record
 # Stops unsigned commits from leaving a checkout unnoticed. Repos with a
 # signed-commits ruleset grey out the merge button when any commit on the
 # PR is unsigned, and nobody finds out until merge time — days later, in a

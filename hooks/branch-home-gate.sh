@@ -1,5 +1,4 @@
 #!/bin/sh
-# ruling: none on record
 # Blocks the end of a session on a branch that is ahead of the default branch
 # with neither a PR nor a pointer -- a card on the global board or an open
 # issue that names it.

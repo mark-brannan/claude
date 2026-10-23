@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ruling: easy-grind/roll.md#20261022t074012z
+# A runaway worker is bounded by context size and by spend: easy-grind/roll.md#20261022t074012z
 """PreToolUse, every tool: past a spend line or a context line, deny every tool
 call but the hand-off write.
 

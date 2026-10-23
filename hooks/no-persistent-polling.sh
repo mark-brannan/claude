@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# ruling: none on record
 # Blocks scheduled wakeups that are bound to a live session.
 #
 # Why: a trigger bound to a persistent session re-sends that session's ENTIRE
