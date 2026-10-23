@@ -83,6 +83,11 @@ class NoLatePrSubscribeTest(unittest.TestCase):
         self.assertIn("~4k watch threshold.", reason)
         self.assertNotIn("window)", reason)
 
+    def test_token_limit_wins_over_a_non_numeric_window(self):
+        p = self.run_hook([usage_line(0, 5000, 0)], CLAUDE_PR_WATCH_TOKEN_LIMIT="4000",
+                          CLAUDE_PR_WATCH_CONTEXT_WINDOW="abc")
+        self.assertIn("~4k watch threshold.", self.denied(p))
+
     def test_zero_limit_disables(self):
         self.allowed(self.run_hook([usage_line(0, 999999, 0)], CLAUDE_PR_WATCH_TOKEN_LIMIT="0"))
 

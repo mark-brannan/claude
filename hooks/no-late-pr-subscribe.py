@@ -56,20 +56,22 @@ def limit():
     """(tokens, basis): the threshold and the words saying where it came from."""
     # Override any of these per-session. WINDOW must be raised by hand for a 1M
     # session -- the hook payload does not carry the model's context window.
+    # An explicit absolute limit wins outright, before the other vars are parsed,
+    # so a malformed WINDOW cannot mask a valid TOKEN_LIMIT (as in the old .sh).
+    if os.environ.get("CLAUDE_PR_WATCH_TOKEN_LIMIT"):
+        return int(os.environ["CLAUDE_PR_WATCH_TOKEN_LIMIT"]), ""
     window = env_int("CLAUDE_PR_WATCH_CONTEXT_WINDOW", 200000)
     percent = env_int("CLAUDE_PR_WATCH_CONTEXT_PERCENT", 60)
     floor = env_int("CLAUDE_PR_WATCH_MIN_HEADROOM", 60000)
     # Whichever binds first: the fraction, or the headroom floor.
     lim = min(window * percent // 100, window - floor)
-    # An explicit absolute limit still wins outright.
-    if os.environ.get("CLAUDE_PR_WATCH_TOKEN_LIMIT"):
-        return int(os.environ["CLAUDE_PR_WATCH_TOKEN_LIMIT"]), ""
     return lim, f" ({percent}% of a {window // 1000}k window)"
 
 
 def context_tokens(transcript):
     """The largest input + cache_read + cache_creation among the assistant
-    usage blocks in the transcript's last 500 lines; None when unreadable."""
+    usage blocks in the transcript's last 500 lines (0 when there are none).
+    Raises OSError/ValueError/TypeError when unreadable; main() fails open."""
     with open(transcript, "rb") as f:
         tail = collections.deque(f, 500)
     best = 0
