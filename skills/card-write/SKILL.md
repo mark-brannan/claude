@@ -167,8 +167,29 @@ A ruling card carries your evaluation, so that the ruling is one word. Owner
 `human-ruling`; the brief:
 
 ```markdown
-the question ([link](https://...)) default: <what you would do> undo: <the reversal and its cost> until: <event or date it can wait for> risk: <consequence if the default is wrong> judgment: <values | risk | direction | legal | people>
+the question ([link](https://...)) default: <what you would do> undo: <the reversal and its cost> until: <event or date it can wait for> risk: <consequence if the default is wrong> evidence: <link to what the ruling rests on> judgment: <values | risk | direction | legal | people>
 ```
+
+`evidence:` is gathered when the card is filed, while the context is
+cheap: the files are open, the build runs, the question is fresh. A later
+session pays to rebuild all of it. Link it from the card. A screenshot,
+a rendering or an inventory is saved to the private state repo, under
+`state/global/agora/evidence/`, and linked; a page that already exists is
+linked where it is. The evidence is what the ruling rests on: a visual
+call carries the picture, a storage call the inventory of what is stored
+and where, and a scope default shows the whole scope, not one already
+narrowed to the default. The agora returns a card without it.
+
+What filing it looks like, in the agent's head:
+
+> The question is whether small islands on the overview map are filled or
+> outlined. That is a look, and nobody can rule on a look from a sentence.
+> The dev server is up and the two styles are one flag apart, so I render
+> both at the three zooms the issue names, save the six crops under
+> `state/global/agora/evidence/`, and link the folder in `evidence:`. Two
+> tool calls now; later it is a rebuild and a fresh read of the issue. My
+> default goes in `default:` as usual, but the pictures go in whole, not
+> just the one I prefer.
 
 `judgment:` is the gate. A call you cannot file under one of those five
 kinds is toil however unsure you feel: take the default, record it where
@@ -214,7 +235,7 @@ Nothing lints a card at write time; these are yours to hold. A card:
 2. has no state word: merged, awaiting, not merged, CI green, open as;
 3. has a link;
 4. if `human-ruling`, has all of `default:`, `undo:`, `until` (in the brief, or logged as a date), `risk:`,
-   `judgment:`, and a `judgment:` that is one of the five kinds (a
+   `evidence:`, `judgment:`, and a `judgment:` that is one of the five kinds (a
    `kind: tentative ADR` card has `until:`, `settle:`, `repos:`, `judgment:`
    instead, and the same `judgment:` rule);
 5. if `human-click`, has `why you:`, and `why this:` unless `why you:` is
