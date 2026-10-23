@@ -447,7 +447,7 @@ class Stop:
         rm_f(state.state_shard_path(LIVE, f"{sid}.json", sid))
         state.state_unlock()
         try:
-            subprocess.run(["bash", f"{HOOK_DIR}/metrics-rollup.sh"], stderr=subprocess.DEVNULL)
+            subprocess.run([sys.executable, f"{HOOK_DIR}/metrics-rollup.py"], stderr=subprocess.DEVNULL)
         except OSError:
             pass
 
@@ -712,7 +712,7 @@ class Stop:
 
         # Re-read the branch: the value captured at hook start can be stale by
         # now if anything detached HEAD since (e.g. a hand-run
-        # abandon-branch.sh), and pushing the name it used to have would put
+        # abandon-branch.py), and pushing the name it used to have would put
         # an abandoned branch straight back on the remote.
         self.work_branch = work_branch = git("-C", work_root, "rev-parse", "--abbrev-ref", "HEAD")[1]
 
