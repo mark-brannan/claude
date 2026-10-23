@@ -70,6 +70,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks"))
@@ -179,9 +180,15 @@ def pr_view(root, target, fields):
     """gh pr view as JSON; where it fails (a cloud session answers GraphQL with
     HTTP 403) the same facts over REST, shaped like gh's. target is a PR number,
     a PR url, or None for the branch's PR."""
-    view = gh(root, "pr", "view", *([str(target)] if target else []), "--json", fields)
-    if view is not None:
-        return view
+    try:
+        v = subprocess.run(["gh", "pr", "view", *([str(target)] if target else []), "--json", fields],
+                           cwd=root, capture_output=True, text=True, timeout=60)
+        if v.returncode == 0:
+            return json.loads(v.stdout)
+        if ghrest.NO_GRAPHQL not in v.stderr + v.stdout:  # only the cloud refusal falls back, as in pr-blockers
+            return None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
     m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", str(target))
     o = SLUG.search(gitrun.out("-C", root, "config", "--get", "remote.origin.url") or "")
     slug = m.group(1) if m else (o.group(1) if o else None)
@@ -189,18 +196,22 @@ def pr_view(root, target, fields):
         return None
 
     def run(a):
-        return subprocess.run(["gh", *a], cwd=root, capture_output=True, text=True, timeout=60).stdout
+        p = subprocess.run(["gh", *a], cwd=root, capture_output=True, text=True, timeout=60)
+        if p.returncode != 0:  # an error body (404, rate limit) is not a PR
+            raise OSError(((p.stderr or p.stdout).strip().splitlines() or ["gh failed"])[-1])
+        return p.stdout
     try:
         if not target:
             branch = gitrun.out("-C", root, "branch", "--show-current")
-            found = ghrest.rest(run, f"repos/{slug}/pulls?head={slug.split('/')[0]}:{branch}&state=open") if branch else []
-            pr = found[0] if found else None
+            found = ghrest.rest(run, f"repos/{slug}/pulls?head={slug.split('/')[0]}:{urllib.parse.quote(branch)}&state=all") if branch else []
+            pr = next((f for f in found if f.get("state") == "open"), found[0] if found else None)
         else:
             pr = ghrest.rest(run, f"repos/{slug}/pulls/{m.group(2) if m else target}")
         if not isinstance(pr, dict):
             return None
         files = ghrest.rest_pages(run, f"repos/{slug}/pulls/{pr['number']}/files") if "files" in fields else []
-    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as e:
+        print(f"agent-decision: REST fallback failed: {e}", file=sys.stderr)
         return None
     state = "MERGED" if pr.get("merged_at") or pr.get("merged") else pr.get("state", "").upper()
     # REST has no closingIssuesReferences; pr_record's scan of the body's #n covers the issues it names.
