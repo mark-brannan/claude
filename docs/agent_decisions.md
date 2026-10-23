@@ -445,3 +445,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t070203z
 - the owner's rung is the chain's top for this household; no fifth rung Undo: add a rung row ([#282](https://github.com/mark-brannan/claude/pull/282))
+
+### 20261023t070210z
+- terminal print: lead finding, delta/chain/indication, recommendation, excellent/devolves, + then − findings Undo: reorder step 4 ([#282](https://github.com/mark-brannan/claude/pull/282))
