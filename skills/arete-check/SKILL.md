@@ -74,7 +74,8 @@ which.
 
    Every read-set adds what the chain of aims climbs: the parent the
    item names (an issue, card, curia or PR), the repo's README, and the
-   standing orders' "What this is for" (`~/.claude/CLAUDE.md`). A file
+   standing orders' "What this is for" (`~/.claude/CLAUDE.md`, that
+   section only, not the file). A file
    that is missing is a rung reading `not readable`, never `no aim stated`,
    and never filled from memory.
 

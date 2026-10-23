@@ -58,9 +58,10 @@ Every finding carries two record-words, each one of two values or `mu`:
   the standing orders. A − finding that is one-way is the one you would
   not let the item land with as it stands; a + finding that is one-way
   is a good that stays.
-- **seen** — `before`: something catches it before it lands, a test, a
-  guard, a review, this check; or `after`: the person it touches finds
-  it in use.
+- **seen** — `before`: something already in place catches it before it
+  lands, a test, a guard, a required review; or `after`: the person it
+  touches finds it in use. This check is not a catcher; it would make
+  every unlanded item read `before`.
 
 Magnitude and likelihood go in the finding's own words: for whom, how
 often, how many. The two words are never multiplied into a score.
