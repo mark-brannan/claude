@@ -101,6 +101,54 @@ class LookupTest(Base):
         finally:
             sys.path.remove(str(self.T / "lib"))
 
+    # --- the command line: stdout and exit codes the shell functions had -----
+    def cli(self, *args):
+        p = subprocess.run([sys.executable, str(LIB), *args], capture_output=True, text=True,
+                           env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        return p.returncode, p.stdout, p.stderr
+
+    def test_cli_with_a_repo(self):
+        repo = self.T / "repo"
+        (repo / ".git").mkdir(parents=True)
+        os.environ["CLAUDE_STATE_REPO"] = str(repo)
+        self.assertEqual(self.cli("state_repo")[:2], (0, str(repo)), "no trailing newline")
+        self.assertEqual(self.cli("state_dir")[:2], (0, f"{repo}/state/global"))
+        self.assertEqual(self.cli("state_shard_path", "/d", "ab1.json", "ab1")[:2], (0, "/d/ab/ab1.json"))
+        self.assertEqual(self.cli("state_shard_path", "/d", "x.json", "")[:2], (0, "/d/_/x.json"))
+
+    def test_cli_without_a_repo(self):
+        if any(os.path.isdir(d + "/.git") for d in CLOUD):
+            self.skipTest("a cloud path holds a state repo here")
+        self.assertEqual(self.cli("state_repo")[:2], (1, ""), "state_repo returned 1 and printed nothing")
+        self.assertEqual(self.cli("state_dir")[:2], (0, f"{self.T}/home/.claude/state/global"))
+
+    def test_cli_usage_errors(self):
+        self.assertEqual(self.cli()[0], 2)
+        self.assertEqual(self.cli("nope")[0], 2)
+        self.assertEqual(self.cli("state_shard_path", "/d")[0], 2)
+
+    def test_cli_predicate_exit_codes(self):
+        repo = self.T / "repo"
+        (repo / ".git").mkdir(parents=True)
+        os.environ["CLAUDE_STATE_REPO"] = str(repo)
+        self.assertEqual(self.cli("state_is_repo")[:2], (0, ""))
+        os.environ["CLAUDE_STATE_REPO"] = str(self.T / "none")
+        if not any(os.path.isdir(d + "/.git") for d in CLOUD):
+            self.assertEqual(self.cli("state_is_repo")[:2], (1, ""))
+        self.assertEqual(self.cli("state_is_repo", "extra")[0], 2)
+
+    def test_cli_error_inside_a_function_is_not_a_usage_error(self):
+        mod = self.state
+        def boom(a):
+            raise TypeError("inner")
+        mod.CLI["boom"] = boom
+        try:
+            with self.assertRaises(TypeError):
+                mod.main(["boom", "x"])
+            self.assertEqual(mod.main(["boom"]), 2)
+        finally:
+            del mod.CLI["boom"]
+
     # --- state_shard_path: per-session files split by the id's first two chars
     def test_shard_path(self):
         sp, SH = self.state.state_shard_path, str(self.T / "shard")
