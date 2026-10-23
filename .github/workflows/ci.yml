@@ -99,10 +99,16 @@ jobs:
           printf '%s\n' bin/*.test.py hooks/*.test.py lib/*.test.py \
             | xargs -P 4 -I{} bash -c '
                 t="$1"
-                # buffered, so parallel output does not interleave
-                rc=0; out=$(python3 "$t" 2>&1) || rc=$?
-                echo "::group::$t"; echo "$out"; echo "::endgroup::"
-                if [ "$rc" -ne 0 ]; then echo "::error::$t failed"; exit 1; fi
+                # slowest suite took 23s locally, 4 at a time; a hang still names its suite
+                rc=0; out=$(timeout 90 python3 "$t" 2>&1) || rc=$?
+                # buffered and locked, so parallel output does not interleave
+                {
+                  flock 9
+                  printf "::group::%s\n%s\n::endgroup::\n" "$t" "$out"
+                  if [ "$rc" -eq 124 ]; then echo "::error::$t timed out after 90s"
+                  elif [ "$rc" -ne 0 ]; then echo "::error::$t failed"; fi
+                } 9>"$RUNNER_TEMP/py-suites.lock"
+                [ "$rc" -eq 0 ]
               ' _ {}
       - name: Run every other test suite in parallel
         run: |
