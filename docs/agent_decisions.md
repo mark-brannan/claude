@@ -430,3 +430,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t035406z
 - The ledger fields are named embedded and effective when, with effective: pending, review <date> until the review Undo: rename in forms/decided.md, SKILL.md and ledger-review's two string matches ([#277](https://github.com/mark-brannan/claude/pull/277))
+
+### 20261023t035412z
+- The effectiveness review belongs to the lint facet, not the agora Undo: move the lint bullet to the agora skill ([#277](https://github.com/mark-brannan/claude/pull/277))
