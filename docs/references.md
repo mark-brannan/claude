@@ -316,9 +316,10 @@ The user's, name neutralised.
     defect nobody had fixed, and the Andon cord that let a rep pull a product
     from sale. The Bar Raiser, the six-pager and the PR/FAQ are mechanisms in
     the same sense.
-  - Maps to: the arete check as a gate before a document is adopted, not a
-    reminder to think about harm. The rubric is the intention; the gate is
-    the mechanism, and each framework spells out its own gate.
+  - Maps to: the arete check as a mechanism, not a reminder to think about
+    harm: it runs at fixed points (on demand, on a scoping stack, on an ADR
+    promotion) and never blocks. The rubric is the intention; the fixed run
+    is the mechanism, and each caller says what it does with the findings.
 - **Kindel, C. (2019).** "Good Intentions are Never Enough." *blog.kindel.com*,
   9 May 2019; "Mechanisms", 6 March 2020.
   [blog.kindel.com](https://blog.kindel.com/2019/05/09/good-intentions-are-never-enough/),
@@ -390,7 +391,8 @@ Checked against the web on 2026-10-02.
     full and the people are not served.
   - Maps to: "A flourishing life, not throughput" and "Refuse the
     technically-available when it's wrong" in the standing orders; arete-check
-    grades a governing document on harm and flourishing, not on obedience.
+    assesses a governing document on human flourishing, the good it does
+    and the good it diminishes, not on obedience.
 - **Asimov, I. (1942).** "Runaround." *Astounding Science Fiction*, March 1942;
   collected in *I, Robot*, Gnome Press, 1950.
   [wikipedia](https://en.wikipedia.org/wiki/I,_Robot)
