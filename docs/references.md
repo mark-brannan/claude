@@ -390,7 +390,8 @@ Checked against the web on 2026-10-02.
     full and the people are not served.
   - Maps to: "A flourishing life, not throughput" and "Refuse the
     technically-available when it's wrong" in the standing orders; arete-check
-    assesses a governing document on harm and flourishing, not on obedience.
+    assesses a governing document on human flourishing, the good it does
+    and the good it diminishes, not on obedience.
 - **Asimov, I. (1942).** "Runaround." *Astounding Science Fiction*, March 1942;
   collected in *I, Robot*, Gnome Press, 1950.
   [wikipedia](https://en.wikipedia.org/wiki/I,_Robot)

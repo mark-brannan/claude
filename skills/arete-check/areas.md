@@ -2,12 +2,18 @@
 
 Read by the assessing sub-agent. The brief leads with the good: first
 the lead (does the item excel at being what it is, and what is it for),
-then the twelve areas, each asked two signed questions, then where the
+then the thirteen areas, each asked two signed questions, then where the
 item is excellent and where it devolves, then a recommendation with its
 reasons. What is done with it is the caller's. Every finding carries its
-evidence, how it was reached and who it touches; no row is given a
-grade word. How measured: `count`, `grep`, `gh` (a GitHub query), `git`
-(history) or `read` (judgment on reading).
+evidence, how it was reached, who it touches, and two record-words,
+whether it can be undone and whether it is seen before it lands; no row
+is given a grade word, no scale, no score. How measured: `count`,
+`grep`, `gh` (a GitHub query), `git` (history) or `read` (judgment on
+reading).
+
+`mu` is an answer to any question here: zero, the question does not
+apply, with its reason. It is not `nothing found`, which says you looked
+and found nothing.
 
 ## The lead
 
@@ -25,24 +31,46 @@ purpose, and does that purpose serve the next rung's.
    and whether it serves the rung above. A rung that names no aim is
    work to do: the first such rung is the lead finding, printed before
    anything else; the chain still climbs to the top.
-3. **Indication** — is there any indication the item fulfils its
-   purpose: `measured` (a number, with its query), `observed` (a
-   qualitative or binary sign someone saw: a test that passes, a person
-   who used it), `hoped` (an aim stated, no sign yet), or `none`.
+3. **Indication**, in two parts. First, is there any indication the
+   item fulfils its purpose: `measured` (a number, with its query),
+   `observed` (a qualitative or binary sign someone saw: a test that
+   passes, a person who used it), `hoped` (an aim stated, and a sign
+   named that would show it, not yet seen), `none` (an aim stated, and
+   no indicator at all, not even a speculative one: a gap, printed as a
+   finding beside the lead finding), or `mu` (the item's rung names no
+   aim, so nothing can indicate it; the lead finding has said so). Then
+   the **indicators**: the specific signs that gave that answer, each in
+   the record's words with where it is stated. An indicator that does
+   not yet exist, or is speculative, counts, named as such.
 
 ## Areas
 
 Each area asks two questions, the good first: **+** in what way does the
 item have the capacity to increase human flourishing here, and **−** in
-what way does it have the capacity to harm it. Answer both. Where you
-looked and found nothing, say `nothing found`; where the area does not
-apply, one `n/a` row with its reason. Flag a − finding `harm` when you
-would not let the item land with it as it stands.
+what way does it have the capacity to diminish it. Answer both. Where
+you looked and found nothing, say `nothing found`; where the area does
+not apply, one `mu` row with its reason.
+
+Every finding carries two record-words, each one of two values or `mu`:
+
+- **undo** — `reversible`: a revert in a repo its owner controls, before
+  anyone has seen or built on it; or `one-way`: the one-way-door test of
+  the standing orders. A − finding that is one-way is the one you would
+  not let the item land with as it stands; a + finding that is one-way
+  is a good that stays.
+- **seen** — `before`: something catches it before it lands, a test, a
+  guard, a review, this check; or `after`: the person it touches finds
+  it in use.
+
+Magnitude and likelihood go in the finding's own words: for whom, how
+often, how many. The two words are never multiplied into a score.
 
 The order is the anchor's. Flourishing, the good itself, leads; truth
 and elegance, which is beauty's name here, follow, with well-formedness
 close behind: beauty, goodness and truth were one idea of excellence
-before they were three. The rest come after.
+before they were three. The rest come after; judgment kept and consent
+and agency sit together, the first asking about the person who asked
+for the item, the second about the people it touches who did not.
 
 1. **flourishing** — + does this increase quality of life, and for
    whom? What good does it make possible that was not possible before?
@@ -78,7 +106,11 @@ before they were three. The rest come after.
    whether it assists the doing that builds judgment; − which it moves
    from a person to an agent, or replaces; for both, how many decisions
    it adds to a person's day, how often, and of which kind.
-12. **cost** — + the tokens, water and screen hours it saves per run;
+12. **consent and agency** — + what it lets the people it touches
+   choose, refuse or leave, and what it asks before it acts on them;
+   − what it does to or about a person who did not ask, cannot see it
+   coming, or cannot step out.
+13. **cost** — + the tokens, water and screen hours it saves per run;
    − what it spends, and a read-set or a loop with no ceiling is a cost
    with none.
 
@@ -98,36 +130,42 @@ five minutes (§1).
 | project | no aim stated                           | README.md:1-20                   | —               |
 | owner   | "a flourishing life, not throughput"    | standing orders, What this is for | the top        |
 
-Indication: hoped — the aim is stated; no count of triage time before
-or after (§1).
+Indication: hoped — the aim is stated and names its sign; no count yet (§1).
+Indicators: triage time per week before and after, not yet counted (§1,
+"the triage hour"); the user's PR queue under ten, speculative, the
+parent's words (issue #88).
 
-| area            | ± | finding                                     | evidence             | how   | touches      |
-|-----------------|---|---------------------------------------------|----------------------|-------|--------------|
-| flourishing     | + | frees the weekly triage hour                | §1, stated aim       | read  | the user     |
-| flourishing     | − | nothing found                               |                      | read  |              |
-| well-formedness | + | nothing found                               |                      | read  |              |
-| well-formedness | − | harm: §3 and §5 disagree on the default     | §3:12, §5:40         | read  | maintainers  |
-| privacy         | + | nothing found                               |                      | read  |              |
-| privacy         | − | the log keeps the hostnames it prints       | docs/adr/0026.md:41  | read  | the operator |
-| security        |   | n/a: reads only, runs nothing               |                      | grep  |              |
-| accountability  | + | merge stays with the user                   | §2                   | read  | the user     |
-| accountability  | − | no owner for a wrong automatic label        | §3, no owner named   | read  | maintainers  |
-| …               |   |                                             |                      |       |              |
-| judgment kept   | + | adds no decision; the merge is the user's   | §2                   | count | the user     |
-| judgment kept   | − | nothing found                               |                      | read  |              |
-| cost            | + | one read a week instead of five             | §1                   | read  | the user     |
-| cost            | − | read-set has no ceiling                     | §4, "every repo"     | read  | the user     |
+| area                | ± | finding                                     | evidence             | how   | touches      | undo       | seen   |
+|---------------------|---|---------------------------------------------|----------------------|-------|--------------|------------|--------|
+| flourishing         | + | frees the weekly triage hour                | §1, stated aim       | read  | the user     | reversible | after  |
+| flourishing         | − | nothing found                               |                      | read  |              |            |        |
+| well-formedness     | + | nothing found                               |                      | read  |              |            |        |
+| well-formedness     | − | §3 and §5 disagree on the default           | §3:12, §5:40         | read  | maintainers  | one-way    | before |
+| privacy             | + | nothing found                               |                      | read  |              |            |        |
+| privacy             | − | the log keeps the hostnames it prints       | docs/adr/0026.md:41  | read  | the operator | reversible | after  |
+| security            |   | mu: reads only, runs nothing                |                      | grep  |              |            |        |
+| accountability      | + | merge stays with the user                   | §2                   | read  | the user     | one-way    | before |
+| accountability      | − | no owner for a wrong automatic label        | §3, no owner named   | read  | maintainers  | reversible | after  |
+| …                   |   |                                             |                      |       |              |            |        |
+| judgment kept       | + | adds no decision; the merge is the user's   | §2                   | count | the user     | reversible | before |
+| judgment kept       | − | nothing found                               |                      | read  |              |            |        |
+| consent and agency  | + | nothing found                               |                      | read  |              |            |        |
+| consent and agency  | − | labels a contributor's PR without asking    | §3                   | read  | contributors | reversible | after  |
+| cost                | + | one read a week instead of five             | §1                   | read  | the user     | reversible | after  |
+| cost                | − | read-set has no ceiling                     | §4, "every repo"     | read  | the user     | reversible | after  |
 
 Excellent in: frees the weekly triage hour for the user, and keeps the
 merge theirs.
 Devolves in: maintainers lose a clear owner for a wrong label, and the
 default reads two ways.
 
-Recommendation: not yet, as far as this reader saw — name the project's
-aim, and settle §3 against §5; the rest can follow.
+Recommendation: not yet, as far as this reader saw — settle §3 against
+§5, the one − that is one-way, and name the project's aim; the rest can
+follow.
 
 Not looked at: the hook the ADR names, and its CI history.
 ```
 
 Every area gets its rows; `…` stands for the ones this example leaves
-out. A `harm` flag opens its finding's text.
+out. A `mu` row and a `nothing found` row leave the two record-words
+blank.
