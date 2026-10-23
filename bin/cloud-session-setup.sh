@@ -101,12 +101,13 @@ lib/when.py
 lib/jsonl.py
 lib/hookio.py
 lib/atomic.py
+lib/cksum.py
 hooks/curia-roll.py
 hooks/curia_words.py
 hooks/session-metrics.jq
 hooks/lib-metrics-fmt.jq
 hooks/lib-metrics-test-harness.sh
-hooks/session-start-continuity.sh
+hooks/session-start-continuity.py
 hooks/stop-continuity.py
 hooks/stop-sequence.py
 hooks/stop-item.py
@@ -137,7 +138,7 @@ hooks/session-start-sync-status.py
 hooks/session-start-hook-errors.py
 hooks/prose-budget-edit.sh
 hooks/branch-home-gate.py
-hooks/claim-stamp.sh
+hooks/claim-stamp.py
 hooks/fixtures
 bin/metrics-preview.sh
 bin/self-check
@@ -181,7 +182,7 @@ OWNED_NEVER='. state projects todos plugins'
 # credentials for a private repo at setup time -- so it must be added as a
 # SECOND SOURCE on the cloud environment alongside claude. Without it the
 # hooks still run, but they write to ~/.claude/state/global, which dies with
-# the container. session-start-continuity.sh says so at the top of every
+# the container. session-start-continuity.py says so at the top of every
 # session rather than failing quietly.
 
 # --- what must never be installed ----------------------------------------
@@ -663,7 +664,7 @@ COMPLETE=true
 if [ "$DRY_RUN" = yes ]; then
   say "would write $STATUS_FILE (complete: $COMPLETE)"
 else
-  # Staged and renamed, not truncated in place: session-start-continuity.sh
+  # Staged and renamed, not truncated in place: session-start-continuity.py
   # reads this file, and a parallel session catching it mid-write would parse
   # an empty document and announce a DEGRADED session that isn't one.
   # The rename is gated on the write: `mv` only cares that its source

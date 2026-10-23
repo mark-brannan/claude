@@ -146,7 +146,7 @@ pr_view() { gh pr view "$2" --repo "$1" --json number,state,url,labels,commits \
   --jq '{number, state, url, labels: [.labels[].name], dates: [.commits[].committedDate],
          head: (.commits | last // {} | {oid, committedDate})}'; }
 commit_verified() { gh api "repos/$1/commits/$2" --jq '.commit.verification.verified'; }
-read_stamps() {  # read_stamps <repo> <number> -- id sid8 epoch, claim-stamp.sh's marker
+read_stamps() {  # read_stamps <repo> <number> -- id sid8 epoch, claim-stamp.py's marker
   gh api "repos/$1/issues/$2/comments" --paginate --jq '
     .[] | select(.body | test("<!-- claim-stamp "))
     | [ (.id|tostring), ((.body | capture("sid=(?<v>[A-Za-z0-9_-]+)").v) // "?"),

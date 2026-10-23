@@ -47,7 +47,7 @@ is under Interfaces.
   `claude-branch-home.*` (the gate's own), `claude-pickup-pr-miss.*`
   (job 9's 10-minute miss).
 - Scripts called: `branch-home-gate.py --check` prints `home:<…>` or
-  `unverified:<…>`, else nothing; `claim-stamp.sh refresh|release`;
+  `unverified:<…>`, else nothing; `claim-stamp.py refresh|release`;
   `metrics-rollup.sh`. The transcript's fields are whatever
   `session-metrics.jq` emits, which is the contract for job 2.
 - The push stamp is the literal `$SR/.git/claude-last-state-push` in the
@@ -367,8 +367,8 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 7.13 | no `origin` remote | Stop | refused, `no origin remote` | code |
 | 7.14 | a shallow clone that cannot unshallow | Stop | refused, `repo is shallow` | code |
 | 7.15 | `CLAUDE_STOP_COMMIT=off`, a dirty tree | Stop | no commit, no `## Stop-commit` note | code |
-| 8.1 | archivable, the session holds a stamp | Stop | `claim-stamp.sh release` for this session | code |
-| 8.2 | not archivable, the session holds a stamp | Stop | `claim-stamp.sh refresh` for this session | code |
+| 8.1 | archivable, the session holds a stamp | Stop | `claim-stamp.py release` for this session | code |
+| 8.2 | not archivable, the session holds a stamp | Stop | `claim-stamp.py refresh` for this session | code |
 | 9.1 | a fresh session | Stop | one `pickup/<start-minute>-<id8>.md`, `status: open`, body the last prompt | test |
 | 9.2 | a body a model wrote | Stop again | the body survives | test |
 | 9.3 | an `until:` header; or none | Stop again | carried; or no `until:` line | test |

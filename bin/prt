@@ -28,7 +28,7 @@
 #                                         post it only with --merge
 #
 # The lock is per PR. Before anything else is written for a worked PR, prt
-# claims it (claim-stamp.sh card-claim) under a sid made for that PR in this
+# claims it (claim-stamp.py card-claim) under a sid made for that PR in this
 # run, and the PR's agent releases it. A sid shared across runs would let a
 # second run patch the first one's stamp as its own; a fresh one makes the
 # second run's claim fail, so two runs over one repo split its PRs between
@@ -431,11 +431,11 @@ def pencil_lines(body):
 
 
 def claim_stamp(*args):
-    return sh(["sh", tool("hooks/claim-stamp.sh"), *args], check=False)
+    return sh([sys.executable, tool("hooks/claim-stamp.py"), *args], check=False)
 
 
 def claims(url):
-    """Live or unverified claim stamps on the PR, read by claim-stamp.sh.
+    """Live or unverified claim stamps on the PR, read by claim-stamp.py.
     Fails closed: a healthy read always prints a line, so silence or a
     non-zero exit is an unread claim, and that hands the PR off."""
     p = claim_stamp("read", url)
@@ -452,7 +452,7 @@ def claims(url):
 
 
 def ledger_claims(url):
-    """Live card claims on url in this machine's ledger (claim-stamp.sh card-claims)."""
+    """Live card claims on url in this machine's ledger (claim-stamp.py card-claims)."""
     return [l for l in claim_stamp("card-claims", url).stdout.splitlines() if l.startswith("live\t")]
 
 

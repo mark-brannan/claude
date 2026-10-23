@@ -94,7 +94,7 @@ decision, not a default.
 seed script reads are set inline by the paste blob (`CLOUD_SESSION=1`) or by the
 harness (`CLAUDE_CODE_REMOTE=true`), so the field stays empty.
 
-**Verify** on the next session: `session-start-continuity.sh` prints a
+**Verify** on the next session: `session-start-continuity.py` prints a
 `config: <channel>@<sha> (installed <timestamp>)` line, then the worklist brief. A
 `config: DEGRADED` line means the installer never ran or didn't finish —
 see [a deleted hook keeps running](#a-deleted-hook-keeps-running) for the
@@ -718,7 +718,7 @@ can read.
 From a checkout of the branch:
 
 ```bash
-~/.claude/hooks/claim-stamp.sh read -C .
+~/.claude/hooks/claim-stamp.py read -C .
 ```
 
 One line per claim: `live` or `stale`, the session, the machine, the age, the
@@ -737,7 +737,7 @@ is one where no session has ever claimed a card, not one missing setup.
 
 Verify the whole loop by hand: open a second session on the same branch and it
 prints a warning naming the first at start-up; `/wrapup` the first and
-`claim-stamp.sh read -C .` no longer lists it.
+`claim-stamp.py read -C .` no longer lists it.
 
 ## Waive the churn gate on a PR
 
