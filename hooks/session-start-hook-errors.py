@@ -10,7 +10,6 @@ when none did. bin/self-check shows the same rows on demand.
 CONVENIENCE: never blocks a session, always exits 0; a crash is traced to
 the state repo's metrics/hook-errors/ (lib/hooktrace.py).
 """
-import json
 import os
 import re
 import sys
@@ -24,6 +23,7 @@ NAME = re.compile(r"[A-Za-z0-9_.-]{1,40}")
 
 
 def main():
+    import hookio
     import hooktrace
     import state
     sd = state.state_dir()
@@ -45,9 +45,7 @@ def main():
                f"Run `self-check` to read them.")
     shown = (f"Hooks traced {len(rows)} swallowed error(s) in the last day: {hooktrace.summary(rows)}. "
              f"Rows: {sd}/metrics/hook-errors/. `self-check` shows them too.")
-    print(json.dumps({"systemMessage": shown,
-                      "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}},
-                     ensure_ascii=False))
+    hookio.emit(hookio.context("SessionStart", context, system=shown), ascii=False)
 
 
 if __name__ == "__main__":

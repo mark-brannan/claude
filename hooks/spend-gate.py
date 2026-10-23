@@ -248,10 +248,12 @@ def main():
     reason = (f"Past the line: {' / '.join(where)}. Every tool is denied except a "
               f"Read or Write of {handoff}. Write the hand-off (what is done, what is "
               f"next, how to resume) there and end the turn.")
-    print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "deny",
-        "permissionDecisionReason": reason}}))
+    # Imported here, past the line, so a seed without lib/ fails only where
+    # a denial was due, and the settings.json wrapper denies in its place.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import lib_state  # noqa: F401  (puts lib/ on sys.path)
+    import hookio
+    hookio.emit(hookio.deny(reason))
     return 0
 
 

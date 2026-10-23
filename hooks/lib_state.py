@@ -6,8 +6,9 @@ keep working unchanged. lib/ is found the way lib/libpath.py says.
 
 Fails open: if lib/ is missing from both places (a seed whose INSTALL
 lacks it) the import fails, state_repo and state_dir return None, and a
-hook reads that as "no state here" and exits 0 rather than breaking. One
-line on stderr says why.
+hook reads that as "no state here" and exits 0 rather than breaking; with
+lib/hookio.py missing too, event() reads nothing and returns {}. A line on
+stderr says why.
 """
 import json
 import os
@@ -27,20 +28,22 @@ except ImportError as e:
     def state_dir():
         return None
 
+try:
+    import hookio
+except ImportError as e:
+    print(f"lib_state: lib/hookio.py not importable ({e}); no hook input", file=sys.stderr)
+    hookio = None
+
 
 LAST = {}  # the event last read, so a trace can name its session after a crash
 
 
 def event():
-    """The hook's event JSON from stdin, or {} when it is absent or malformed."""
-    try:
-        data = json.load(sys.stdin)
-    except (ValueError, OSError):
-        return {}
-    if isinstance(data, dict):
-        LAST.update(data)
-        return data
-    return {}
+    """The hook's event JSON from stdin (lib/hookio.py), or {} when it is
+    absent or malformed, or lib/ is missing."""
+    data = hookio.read() if hookio else {}
+    LAST.update(data)
+    return data
 
 
 def run_hook(hook, event, main):
