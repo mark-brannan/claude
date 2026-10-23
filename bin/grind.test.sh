@@ -1673,6 +1673,7 @@ PROMPT=$(cat "$S/prompt.txt")
 prompt_has 'the GitHub brief is in the prompt'  'AUDIT BRIEF'
 prompt_has 'the local brief is in the prompt'   'recommend: git merge origin/main'
 prompt_has 'the contract is the skill section'  '## 6. The fixup contract'
+if grep -Fq -- '## Writing the hand-off' <<<"$PROMPT"; then bad 'the contract stops at the next header (the hand-off section is not in it)'; else ok; fi
 prompt_has 'its stop rule came with it'         'label the PR `fixup-hard`'
 prompt_has 'the worker is told the head branch' 'on fix-11 -- the PR'
 prompt_has 'done is offered'                    'GRIND_STATUS: done'
