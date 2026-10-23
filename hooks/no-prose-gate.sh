@@ -2,7 +2,7 @@
 # Stop: blocks a turn whose closing line asks permission to do what was
 # ordered ("Want me to...?", "Shall I...?", "Proceed?", "Go?", "Merge it?")
 # when no AskUserQuestion ran since the human last spoke. Once per turn:
-# stop_hook_active on the retry exits 0, as in pr-threads-gate.sh. On
+# stop_hook_active on the retry exits 0, as in pr-threads-gate.py. On
 # 2026-10-01 it matched 328 of 1116 prose asks in state metrics/decisions.
 # CONVENIENCE: no jq or no transcript -> exit 0; it nags, it never traps.
 set -u

@@ -12,7 +12,7 @@ hook is the mechanical version: the text arrives because a PR-shaped tool
 call happened, not because anyone remembered.
 
 Also, on every matching call, records the PR touched (see below) so
-pr-threads-gate.sh can block the Stop while review threads are still open.
+pr-threads-gate.py can block the Stop while review threads are still open.
 
 Fires once per session, on the first matching call:
   - Bash: `gh pr ...`, or `gh api ...` naming pulls / graphql / reviewThreads
@@ -61,7 +61,7 @@ POST|PUT|PATCH|DELETE), a graphql `mutation`, or a field/body flag (-f, -F,
 --field, --raw-field, --input: gh switches to POST) not overridden by
 -X GET, is a read -- it goes in the
 record (so the reminder text still fires, and the call is not invisible) but
-pr-threads-gate.sh does not gate the Stop on it. Everything else naming `gh
+pr-threads-gate.py does not gate the Stop on it. Everything else naming `gh
 pr` (create, edit, comment, merge, ready, review, close, reopen, ... -- an
 unrecognized subcommand defaults to work, the same fail-closed instinct as
 the gate itself) is work, and so is `gh-resolve-thread`. Reading someone
