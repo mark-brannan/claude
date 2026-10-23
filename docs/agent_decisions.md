@@ -427,3 +427,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t024134z
 - pr-threads-gate.sh's ruling line cites the easy-grind confer input path, since the pencil ruling it serves has no roll stamp Undo: set the line to none on record ([#275](https://github.com/mark-brannan/claude/pull/275))
+
+### 20261023t035406z
+- The ledger fields are named embedded and effective when, with effective: pending, review <date> until the review Undo: rename in forms/decided.md, SKILL.md and ledger-review's two string matches ([#277](https://github.com/mark-brannan/claude/pull/277))
