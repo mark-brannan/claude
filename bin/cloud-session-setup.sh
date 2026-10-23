@@ -112,7 +112,7 @@ hooks/stop-continuity.py
 hooks/stop-sequence.py
 hooks/stop-item.py
 hooks/measure-git-events.py
-hooks/no-persistent-polling.sh
+hooks/no-persistent-polling.py
 hooks/no-late-pr-subscribe.sh
 hooks/release-subagent-branch.sh
 hooks/pr-ownership-context.py
@@ -125,7 +125,7 @@ hooks/no-unsigned-push.sh
 hooks/no-update-branch.sh
 hooks/spend-gate.py
 hooks/session-start-seed-refresh.py
-hooks/guard-add-repo.sh
+hooks/guard-add-repo.py
 hooks/metrics-format.sh
 hooks/metrics-live.py
 hooks/metrics-rollup.sh
@@ -136,7 +136,7 @@ hooks/statusline-metrics.py
 hooks/connector-budget.py
 hooks/session-start-sync-status.py
 hooks/session-start-hook-errors.py
-hooks/prose-budget-edit.sh
+hooks/prose-budget-edit.py
 hooks/branch-home-gate.py
 hooks/claim-stamp.py
 hooks/fixtures
