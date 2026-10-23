@@ -6,8 +6,8 @@ description: "Measure how settled one governing document is — a curia, an ADR,
 # Settledness check
 
 **Run as:** one sub-agent, `Explore`, Sonnet, effort medium: Explore
-has no Edit, Write or Agent in this build, so its tool roster holds the
-read-only line and only Bash is left to this prose.
+has no Edit, Write or Agent, so its tool roster holds the read-only line
+and only Bash is left to this prose.
 The caller spawns it with the prompt `/doc-settledness-check <target>
 [context]` plus "read every file in the read-set whole", since Explore
 reads excerpts unless told, and may pick another model or effort for the
