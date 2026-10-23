@@ -454,3 +454,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t081554z
 - mu replaces n/a everywhere; on the Indication line none is the gap (aim, no indicator) and mu is no aim Undo: two words back ([#282](https://github.com/mark-brannan/claude/pull/282))
+
+### 20261023t081609z
+- consent and agency sits beside judgment kept as area 12, cost 13 Undo: move one list item ([#282](https://github.com/mark-brannan/claude/pull/282))
