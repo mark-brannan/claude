@@ -433,3 +433,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t035412z
 - The effectiveness review belongs to the lint facet, not the agora Undo: move the lint bullet to the agora skill ([#277](https://github.com/mark-brannan/claude/pull/277))
+
+### 20261023t035417z
+- The curia skill says a guard's header states the ruling it serves Undo: drop the sentence in The ledger as a queue ([#277](https://github.com/mark-brannan/claude/pull/277))
