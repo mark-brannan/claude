@@ -442,3 +442,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t070157z
 - harm flags a − finding the reader would not let land as it stands Undo: reword one line in areas.md ([#282](https://github.com/mark-brannan/claude/pull/282))
+
+### 20261023t070203z
+- the owner's rung is the chain's top for this household; no fifth rung Undo: add a rung row ([#282](https://github.com/mark-brannan/claude/pull/282))
