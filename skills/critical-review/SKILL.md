@@ -7,12 +7,13 @@ Do a critical review of $ARGUMENTS. `--merge` is not part of the PR
 ref; it is my word to merge, read at the end.
 
 First, learn the models: run `python3 ~/.claude/lib/critical_review.py
-reviewer <owner/repo#n>`. It reads the coder's model from the PR's commit
-trailers and prints `coder=<family> reviewer=<family>`; the coder is
-`unknown` when no trailer names one, and the reviewer is then opus. Run the
-review on that reviewer's model (name it when you start any sub-agent) and
-refuse to run it on the coder's family; if you are that family, hand the
-review to a sub-agent on the reviewer's model.
+reviewer <PR> [--coder <model>]`, with `--coder` when the driver's hand-off
+names the coder. Otherwise it reads every model named in the PR's commit
+trailers and prints `coder=<families> reviewer=<family>`, the reviewer a
+family that coded none of it. A note after the line (coder unknown, or every
+family coded it) goes into your summary. Run the review on that reviewer's
+model and never on a coder's family; if you are one, hand the review to a
+sub-agent on the reviewer's model. The metrics row records this line.
 
 Then run `~/.claude/bin/pr-blockers <PR>`. Its lines are the first
 action items, in its order: open conversations before anything else.
