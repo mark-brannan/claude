@@ -1,6 +1,6 @@
 ---
 name: arete-check
-description: Assess one target — a governing document first (a curia, an ADR, a design doc), but also any PR, file, directory or script — for its effect on people, harm and flourishing both, and print graded findings with a recommendation and its reasons; the user decides. Runs on demand, on a scoping stack, and on an ADR promotion; it never blocks. Use on "/arete-check <target>", "what could this harm", "is this good for people", "arete check before we promote", "arete check this PR". Never refuse a target because it is not a governing document. Not for whether the ink is dry (/doc-settledness-check), running a sitting (/curia) or a batch of decisions (/agora).
+description: Assess one target — a governing document first (a curia, an ADR, a design doc), but also any PR, file, directory or script — for its effect on people, harm and flourishing both, and print graded findings with a recommendation and its reasons; what the caller does with them depends on where it runs. Runs on demand, on a scoping stack, and on an ADR promotion. Use on "/arete-check <target>", "what could this harm", "is this good for people", "arete check before we promote", "arete check this PR". Never refuse a target because it is not a governing document. Not for whether the ink is dry (/doc-settledness-check), running a sitting (/curia) or a batch of decisions (/agora).
 ---
 
 # Arete check
@@ -18,11 +18,14 @@ that touches people: a PR of code, a hook, a script, a workflow, a
 README. Any reasonable target is in scope; an area that does not
 apply to it reads `n/a` with its reason.
 
-**It grades and recommends; the user decides.** Each area gets a grade,
-its findings, their evidence and how the grade was reached; the brief
-ends in a one-line recommendation, whether the item meets the standard
-as far as this reader saw, and why. One reader's risk read is a first
-pass, never a clearance: the brief says what it did not look at.
+**It grades, finds and recommends, and acts on nothing.** Like a pure
+function, the same target gives the same kind of brief wherever it is
+called. Each area gets a grade, its findings, their evidence and how the
+grade was reached. The brief then says where the item is excellent and
+where it devolves, for whom, and ends in a one-line recommendation:
+whether it meets the standard as far as this reader saw, and why. One
+reader's read is a first pass, never a clearance: the brief says what it
+did not look at.
 
 ## When it runs
 
@@ -30,8 +33,10 @@ pass, never a clearance: the brief says what it did not look at.
 - on a scoping stack, once, on the stack as a whole;
 - on an ADR promotion, before the PR opens.
 
-It never blocks. A `harm` the caller judges must hold something goes to
-a card for the agora; nothing else holds.
+What happens next is the caller's, not the check's: a promotion may wait
+on the brief, a scoping run may turn a finding into a card or a ledger
+item, an on-demand run may only print it. The caller's own skill says
+which.
 
 ## Never
 
@@ -78,7 +83,8 @@ a card for the agora; nothing else holds.
    > reached the grade (count, grep, gh, git or read), and who the item
    > touches there. Evidence is a line you opened, cited by path; where
    > none exists, write `no evidence found`, never an inferred one.
-   > Where an area does not apply, say why in one line. Look hardest
+   > Where an area does not apply, say why in one line. Then say where
+   > the item is excellent and where it devolves, and for whom. Look hardest
    > where the user's own reversals of agent picks have come from: a
    > default that chose narrowly for the user; a privacy or legal fact
    > the user had not been told; a taste or visual call made without the
@@ -89,24 +95,11 @@ a card for the agora; nothing else holds.
    holds one, mark each finding that persists from it, in the report
    only. No ask, no line in the terminal about it.
 
-4. **Print the brief, short.** The recommendation first; then the rows
-   graded `harm` or `concern`, worst first; the `good` and `n/a` rows as
-   one line naming their areas; then the not-looked-at line. Then the
-   decision line, only where the brief has one (below). The full table
-   goes in the report.
-
-   **The decision line.** Each finding takes one of three exits:
-   - **omit** — `good` and `n/a`, and a `concern` that gates nothing:
-     no line for the user;
-   - **card** — a `concern` that gates later work goes to a card through
-     `/card-write`, with its evidence; a `concern` that is toil the
-     caller can fix now is fixed and reported, no card;
-   - **ask** — a `harm`, or a finding in judgment kept that moves a
-     decision of values, risk or direction off the user: the brief ends
-     in `Decision:` for the user, and the decision lands as a dated
-     statement.
-
-   A brief with no ask ends at the not-looked-at line.
+4. **Print the brief, short.** The recommendation first; then the
+   excellent and devolves lines; then the rows graded `harm` or
+   `concern`, worst first; the `good` and `n/a` rows as one line naming
+   their areas; then the not-looked-at line. The full table goes in the
+   report.
 
 5. **Write the report, whole.** Every run, to the state repo at
    `~/claude_prompts_scratch/state/global/arete/<slug>/<date>.md`, where
@@ -114,9 +107,8 @@ a card for the agora; nothing else holds.
    `skills-arete-check`); commit it there by path. Never the scratchpad;
    never a pointer to a brief held elsewhere. Header: target, kind,
    revision (the PR head, the file's last commit, or the state repo's
-   `HEAD`), date, model, "a recommendation; the user decides". Then the
-   full brief as returned, with the persisting findings marked, and the
-   decision line if there is one; the report adds no second one.
+   `HEAD`), date, model, "a recommendation; the caller acts on it". Then the
+   full brief as returned, with the persisting findings marked.
 
    A caller may name another destination in the state repo; never a
    public repo.

@@ -2,7 +2,8 @@
 
 Read by the assessing sub-agent. Each area gets a grade, its finding,
 the evidence, how the grade was reached and who it touches; the brief
-ends in a recommendation with its reasons. The user decides. Grades:
+says where the item is excellent and where it devolves, then ends in a
+recommendation with its reasons. What is done with it is the caller's. Grades:
 `good`, `concern`, `harm`, `n/a`. How measured: `count`, `grep`, `gh`
 (a GitHub query), `git` (history) or `read` (judgment on reading).
 
@@ -57,15 +58,14 @@ ends in a recommendation with its reasons. The user decides. Grades:
 | elegance        | concern | two sections say the skip rule twice     | §3, §5                       | grep  | the reader   |
 | well-formedness | harm    | §3 and §5 disagree on the default        | §3:12, §5:40                 | read  | maintainers  |
 
+Excellent in: frees the weekly triage hour for the user; every count
+cites its query.
+Devolves in: maintainers lose a clear owner for a wrong merge, and the
+default reads two ways.
+
 Recommendation: not yet, as far as this reader saw — §3 and §5 contradict
 each other on the default; fix that and name a merge owner, the rest can
 follow.
 
 Not looked at: the hook the ADR names, and its CI history.
-
-Decision:
 ```
-
-The `Decision:` line appears only when a finding is a `harm` or moves a
-judgment call off the user (SKILL.md step 4); otherwise the brief ends
-at the not-looked-at line.
