@@ -92,7 +92,7 @@ which.
    > the format in areas.md.
 
 3. **Find the earlier report.** If the target's report folder (step 5)
-   holds one, mark each finding that persists from it, in the report
+   holds one, read the latest and mark each finding that persists from it, in the report
    only. No ask, no line in the terminal about it.
 
 4. **Print the brief, short.** The recommendation first; then the
@@ -102,10 +102,14 @@ which.
    report.
 
 5. **Write the report, whole.** Every run, to the state repo at
-   `~/claude_prompts_scratch/state/global/arete/<slug>/<date>.md`, where
+   `~/claude_prompts_scratch/state/global/arete/<slug>/<time>.md`, where
    `<slug>` names the target (`claude-264`, `curia-loop`,
-   `skills-arete-check`); commit it there by path. Never the scratchpad;
-   never a pointer to a brief held elsewhere. Header: target, kind,
+   `skills-arete-check`, a stack's parent id) and `<time>` is UTC
+   `YYYY-MM-DDTHHMMZ`, so a same-day rerun keeps the earlier report;
+   commit it there by path. Never the scratchpad; never a pointer to a
+   brief held elsewhere. With no state repo on the machine, print the
+   full table instead of the short form and say in one line that no
+   report was written. Header: target, kind,
    revision (the PR head, the file's last commit, or the state repo's
    `HEAD`), date, model, "a recommendation; the caller acts on it". Then the
    full brief as returned, with the persisting findings marked.
