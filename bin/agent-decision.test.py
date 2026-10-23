@@ -25,7 +25,10 @@ AD = Path(__file__).resolve().parent / "agent-decision"
 STAMP = re.compile(r"^### \d{8}t\d{6}z$")
 GH = """#!/bin/sh
 f="$GH_STUB/$(printf '%s_%s' "$1" "$2" | tr '/' '_').json"
-[ -f "$f" ] && cat "$f" || exit 1
+[ -f "$f.err" ] && { cat "$f.err" >&2; exit 1; }
+[ -f "$f" ] && cat "$f" && exit 0
+[ "$1 $2" = "pr view" ] && echo "GraphQL is not available" >&2
+exit 1
 """
 CLAUDE = """#!/bin/sh
 cat > "$CLAUDE_SEEN"
@@ -170,6 +173,43 @@ class AgentDecisionTest(unittest.TestCase):
         p = self.run_ad("--pr", "4", "from origin")
         self.assertEqual((p.returncode, "cannot read" in p.stderr), (1, True), p.stderr)
         self.assertEqual(self.bullets(self.branch_log())[-1][:8], "- both (", "gh down logged an unjudged entry")
+
+    def test_cloud_403_falls_back_to_rest_at_every_pr_view_site(self):
+        """No pr_view.json: the stub gh fails like the cloud's GraphQL 403, so only REST answers."""
+        pull = {"number": 7, "html_url": "https://github.com/o/r/pull/7", "state": "open", "merged_at": None,
+                "body": "Closes #3", "base": {"ref": "main"}}
+        (self.stub / "api_repos_o_r_pulls_7.json").write_text(json.dumps(pull))
+        (self.stub / "api_repos_o_r_pulls_7_files?per_page=100&page=1.json").write_text('[{"filename": "x.py"}]')
+        (self.stub / "api_repos_o_r_issues_3.json").write_text('{"title": "t", "body": "the issue"}')
+        self.verdict('{"verdict":"consistent","source":"","quote":""}')
+        git("config", "remote.origin.url", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
+        git("config", "url." + str(self.origin) + ".insteadOf", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
+        p = self.run_ad("--pr", "7", "cloud call")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.bullets(self.branch_log())[-1], "- cloud call ([#7](https://github.com/o/r/pull/7))")
+        self.assertIn("the issue", self.seen.read_text(), "pr_record read the body's issue over REST")
+        (self.stub / "api_repos_o_r_pulls_5.json").write_text(json.dumps({**pull, "number": 5, "merged_at": "x", "state": "closed"}))
+        self.run_ad("--link", "https://github.com/o/r/pull/5", "seeded")
+        self.assertRegex(self.run_ad("list").stdout, r"in force\s+seeded")
+
+    def test_rest_error_and_branch_lookup(self):
+        git("config", "remote.origin.url", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
+        git("config", "url." + str(self.origin) + ".insteadOf", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
+        (self.stub / "api_repos_o_r_pulls_4.json").write_text('{"message": "Not Found"}')
+        (self.stub / "api_repos_o_r_pulls_4.json.err").write_text("gh: Not Found (HTTP 404)")
+        p = self.run_ad("--pr", "4", "missing")
+        self.assertEqual((p.returncode, "Not Found" in p.stderr), (1, True), p.stderr)
+        (self.stub / "pr_view.json.err").write_text("HTTP 401")  # not the cloud refusal: no REST round
+        self.assertEqual(self.run_ad("--pr", "4", "auth").returncode, 1)
+        (self.stub / "pr_view.json.err").unlink()
+        pull = {"number": 8, "html_url": "https://github.com/o/r/pull/8", "state": "closed", "merged_at": "x", "body": ""}
+        (self.stub / "api_repos_o_r_pulls?head=o:main&state=all.json").write_text(json.dumps([pull]))
+        (self.stub / "api_repos_o_r_pulls_8.json").write_text(json.dumps(pull))
+        (self.stub / "api_repos_o_r_pulls_8_files?per_page=100&page=1.json").write_text("[]")
+        self.verdict('{"verdict":"consistent","source":"","quote":""}')
+        p = self.run_ad("on branch")  # no --pr/--link: the branch's merged PR still tags it
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(self.bullets(self.branch_log())[-1].endswith("([#8](https://github.com/o/r/pull/8))"))
 
     def test_list_looks_up_prs_past_the_list(self):
         self.pr(2000)
