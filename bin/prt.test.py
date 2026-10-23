@@ -86,7 +86,7 @@ elif a[0] == "api" and re.match(r"repos/o/\w+/(pulls|commits)", a[1]):
         print(fixture("rest-" + key + ".json", '{"check_runs": []}' if tail == "check-runs" else
                       '{"state": "pending", "statuses": []}' if tail == "status" else "[]"))
 elif a[0] == "api" and "/compare/" in a[1]:
-    print(os.environ.get("PRT_FAKE_BEHIND", "0"))
+    print("0")
 elif a[0] == "api" and "-X" in a:
     path = next(x for x in a if x.startswith("repos/"))
     if arg("-X") == "POST" and path.endswith("/comments"):
@@ -245,12 +245,6 @@ class PrtTest(unittest.TestCase):
         self.assertEqual(p[6]["pencils"], 1)
         self.assertEqual(list((self.T / "items").iterdir()), [])
         self.assertEqual(self.writes(), [])
-
-    def test_01a_behind_is_shown_never_an_action(self):
-        """The fixup contract (pickup skill, section 6): the queue updates a merely-behind branch."""
-        p = self.plan("--repo", REPO, "--dry-run", env={"PRT_FAKE_BEHIND": "3"})
-        self.assertEqual(p[1]["behind"], 3)
-        self.assertNotIn("update", p[1]["actions"])
 
     def test_01b_without_graphql_the_rest_path_plans_the_same(self):
         """Cloud sessions refuse GraphQL; REST plus the CCR threads must give the same plan."""

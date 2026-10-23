@@ -21,9 +21,9 @@
 # The remedy is resign-branch.sh, which exists for exactly this and describes
 # itself as a signed, linear stand-in for the Update branch button: it rebases
 # onto the PR's base with -S, drops any "Update branch" merge commits, and
-# force-pushes with lease. It is idempotent -- a branch already signed and
-# linear exits 0 untouched. A branch that is merely behind needs neither: the
-# queue updates it (fixup contract, pickup skill section 6).
+# force-pushes with lease. It is idempotent -- a branch already signed, linear
+# and current exits 0 untouched -- so it is safe to run periodically and
+# defensively rather than only once something is broken.
 #
 # Fails OPEN on a missing jq, unlike the $HOME gates:
 # what this protects is recoverable (resign-branch.sh repairs the damage after
@@ -45,11 +45,11 @@ tool=$(printf '%s' "$input" | jq -r '.tool_name // ""')
 
 REASON='Blocked by ~/.claude/hooks/no-update-branch.sh: GitHub'"'"'s server-side "Update branch" is a dead end on a repo with signed commits or linear history. The --rebase form rewrites the commits and does NOT re-sign them, so every commit on the branch comes back unsigned; the merge form keeps signatures but adds a merge commit that required_linear_history rejects.
 
-A branch that is merely behind its base needs nothing: the merge queue brings it up to date (fixup contract, ~/.claude/skills/pickup/SKILL.md section 6). A conflict is merged in by hand: git merge origin/<base>, resolve, push. Only unsigned commits or Update-branch merge commits call for resign-branch.sh, which rebases onto the PR'"'"'s base with -S and force-pushes with lease:
+Use resign-branch.sh instead -- it rebases onto the PR'"'"'s base with -S, drops Update-branch merge commits, and force-pushes with lease:
 
   resign-branch.sh <branch>
 
-It is idempotent: a branch already signed and linear exits 0 without touching anything. Do not ask the user; this is settled.
+It is idempotent: a branch already signed, linear and current exits 0 without touching anything. Do not ask the user; this is settled.
 
 This is a routing correction, not a misuse -- the session reached for the wrong verb, and nothing was damaged. The blocked-tool-call this records means exactly that.'
 

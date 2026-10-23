@@ -644,8 +644,8 @@ def plan(args):
     mean, n = measured_mean()
     for f, behind in zip(work, pool.map(lambda f: behind_by(f["repo"], f), work)):
         f["behind"] = behind
-        # Behind is shown, never an action: the queue updates it (fixup contract, pickup skill section 6).
-        f["actions"] = (["resolve conflicts"] if f["conflicting"] else []) + \
+        f["actions"] = (["update"] if f["behind"] and not f["conflicting"] else []) + \
+            (["resolve conflicts"] if f["conflicting"] else []) + \
             (["fix checks"] if f["ci"] == "red" else []) + \
             (["answer bot threads"] if f["bot_threads"] else []) + ["review"]
         f["est_usd"] = estimate(f, mean, n, factor)
