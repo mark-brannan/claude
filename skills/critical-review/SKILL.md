@@ -1,55 +1,33 @@
 ---
 name: critical-review
-description: Fire the critical-review prompt at one pull request — a reviewer comments, a fresh fixer fixes, at most three rounds, then a roll-up. Use on "/critical-review <PR> [--merge]" or "critical review of #N". The reviewer runs on a model unlike the PR's coder. Merges only on --merge, and only when nothing needs the user.
+description: Review one pull request and comment on it — read the diff, post tagged findings, print a summary. It never edits, pushes or resolves; whoever owns the PR works the comments. Use on "/critical-review <PR>" or "critical review of #N". The reviewer runs on a model unlike the PR's coder.
 ---
 
-Do a critical review of $ARGUMENTS. `--merge` is not part of the PR
-ref; it is my word to merge, read at the end.
-
-**Roles.** The driver is the session that invoked this skill. It spawns
-the reviewer, then the fixer, counts rounds and writes the roll-up; it
-never pushes. The reviewer comments and never pushes. The fixer is a
-fresh sub-agent on any model, never the reviewer's session: it fixes,
-replies, resolves and pushes, then reports to the driver what it fixed
-and declined. In the rules below, the reviewer flags, the fixer acts and
-the driver writes the line.
+Do a critical review of $ARGUMENTS. You comment; you never edit, push
+or resolve a thread.
 
 First, learn the models: run `python3 ~/.claude/lib/critical_review.py
-reviewer <PR> [--coder <model>]`, with `--coder` when the driver's hand-off
-names the coder. Otherwise it reads every model named in the PR's commit
+reviewer <PR> [--coder <model>]`, with `--coder` when the hand-off names
+the coder. Otherwise it reads every model named in the PR's commit
 trailers and prints `coder=<families> reviewer=<family>`, the reviewer a
 family that coded none of it. A note after the line (coder unknown, or every
-family coded it) goes into the roll-up. The reviewer runs on that model,
-never on a coder's family. The metrics row records this line.
+family coded it) goes into your summary. Run the review on that reviewer's
+model and never on a coder's family; if you are one, hand the review to a
+sub-agent on the reviewer's model. The metrics row records this line.
 
-Then run `~/.claude/bin/pr-blockers <PR>`. Its lines are the fixer's
-first work, in its order: open conversations before anything else.
+Then run `~/.claude/bin/pr-blockers <PR>`. Its lines are findings, in its
+order: open conversations before anything else.
 
-**Rounds.** A round is a review, then a fix. The review body opens with
-`round N/3`; its inline comments are signed as an agent's, the way the
-code rules say, each tagged `[blocker]`, `[should]` or `[nit]`, with the
-failure scenario and the wanted fix. The fixer replies on each thread
-with what changed or why not, and resolves it, except a Reversed or
-Decide thread, which stays open; the next review re-raises a declined one
-that still stands. The rounds end when a review raises no `[blocker]` or
-`[should]`. A review after round 3/3 that still raises one
-parks the PR: the driver files an agora card (`human-ruling`, through
-card-write) naming those threads, opens the roll-up with "parked:
-<card>", and nothing more is fixed.
+Read the PR and comment on it. Every comment is signed as an agent's, the
+way the code rules say, tagged `[blocker]`, `[should]` or `[nit]`, with
+the failure scenario and the wanted fix.
 
-Before the roll-up may call the PR ready to merge, run
-`~/.claude/bin/pr-blockers <PR>` again, after the review bots have had
-their pass on the fixer's last push. Any line it prints goes to the fixer
-(an unsigned commit: `~/.claude/bin/resign-branch.sh`) or is reported,
-never assumed: "awaiting approval" is a guess until it has said nothing
-else blocks.
-
-Then the driver writes the roll-up. Open with one line, before any
-heading: what the PR does in your words and whether it is ready to merge.
-That sentence stands in for my reading the diff. Then five headings, each
-shown even when empty. One line per item. Reading is my toil; deciding is dearer still.
-
-**Fixed** — what the fixer changed, with the commit.
+Then summarize. Open with one line, before any heading: what the PR does
+in your words and whether it is ready to merge, which it is only when you
+raised no `[blocker]` or `[should]` and pr-blockers printed nothing. That
+sentence stands in for my reading the diff. Then four headings, each shown
+even when empty. One line per item. Reading is my toil; deciding is
+dearer still.
 
 **Look at** — a diff a human must read: where (file and lines), and why a
 machine couldn't settle it. Never a question; a question belongs under
@@ -76,7 +54,7 @@ the curia) before you reply, and write the line in those words:
 
 A reversal already on the branch when you arrive — an earlier commit, a
 reply that says "that is the intent", a Pencil line that contradicts the
-issue — is the same line with `you did: restored in <sha>`; if the PR
+issue — is the same line with a `[blocker]` asking to restore it; if the PR
 cannot be right without the reversal, it is a Decide line and the thread
 is its home. Plain words, no shorthand: I read this cold to see whether
 we undid a decision on a bot's say-so.
@@ -123,30 +101,17 @@ first that fits:
 5. **Decide.** Nothing above fit, and you can name which of the five
    kinds of judgment it is. Post
    it as a PR thread first; the thread is its home and stays open until I
-   answer. A bot thread that lands here stays open the same way: it is
-   the thread, and you do not resolve it.
+   answer. A bot thread that lands here stays open the same way.
 
 Empty is the usual Decide. A question whose answer would be obvious to me
 is the dearest thing a review can produce.
 
-**Waffling.** A review thread is not a new order. When a comment argues
-against a default you took, change it at most once, on evidence, and
-write the Pencil line; when it argues against what the issue, the design
-or I said, the instruction wins and the thread stays open (exit 1).
-Changing a thing, then changing it back on the next comment, then again
-on the one after, is waffling: each flip lands as a commit, the last
-comment wins instead of the right one, and the code ends worse than
-either side. Scar: claude#82 on 2026-10-07, where a header's figures
-moved on bot comments until I asked what the doc said; then languette#110,
-#112 and #116 on 2026-10-08, my instruction undone on a thread three
-times in one night. Before you change anything a second time: find the
-record, write the Reversed or Decide line, stop.
-
-**With `--merge`:** when Look at, Reversed and Decide are all empty, run
-`~/.claude/bin/prt queue <owner/repo#n> --merge`. It queues the PR with
-Mergify after its own checks, and dequeue is the undo. Never `gh pr
-merge`. If it refuses, its reasons go under Look at, nothing else is
-tried, and the opening line says not merged. Without the flag, nothing
-merges.
+**Waffling.** A review thread is not a new order. Before asking for a
+change, find the record: when your ask argues against what the issue, the
+design or I said, the instruction wins (exit 1), and you never ask to undo
+what an earlier thread changed on evidence. Scar: claude#82 on 2026-10-07,
+where a header's figures moved on bot comments until I asked what the doc
+said; then languette#110, #112 and #116 on 2026-10-08, my instruction
+undone on a thread three times in one night.
 
 End with the PR link.
