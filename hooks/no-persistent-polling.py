@@ -17,7 +17,9 @@ What is still allowed:
     from a clean context instead of compounding
   - CronCreate / /loop -- session-scoped, 7-day expiry, self-terminating
 
-Fails closed. This guard exists only to deny; its job is safety, not
+Fails closed, and where it differs from the shell hook it differs toward deny
+(create_new_session_on_fire="true", a string, now denies; the shell allowed it).
+This guard exists only to deny; its job is safety, not
 function. The settings.json matcher ends in `|| true`, so a crash (an
 unreadable lib/, say) would be silently swallowed into an ALLOW. Any error
 here therefore answers with an explicit deny, in hand-written JSON that does
@@ -28,6 +30,8 @@ import os
 import sys
 
 sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 
 SEND_LATER = (
     "Blocked by ~/.claude/hooks/no-persistent-polling.py: send_later binds a wakeup to this "
@@ -58,15 +62,16 @@ def verdict(ev):
         return SEND_LATER
     if tool.endswith("__create_trigger"):
         fresh = ti.get("create_new_session_on_fire")
-        persist = ti.get("persistent_session_id") or ""  # jq's `// ""`: null and false mean absent
-        if fresh is not True or persist != "":
+        persist = ti.get("persistent_session_id")
+        # Only null, false and "" mean absent (jq's `// ""`, then -n). 0, {} and [] are
+        # falsy in Python but present to the shell hook, which denied them; so do we.
+        absent = persist is None or persist is False or (isinstance(persist, str) and persist == "")
+        if fresh is not True or not absent:
             return TRIGGER
     return None
 
 
 def main():
-    sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
-                    os.path.expanduser("~/.claude/lib")]
     import hookio
     reason = verdict(hookio.read())
     if reason:

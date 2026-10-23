@@ -62,6 +62,9 @@ class NoPersistentPollingTest(unittest.TestCase):
         self.check("deny", call(t, create_new_session_on_fire=None))
         self.check("deny", call(t, create_new_session_on_fire="true"))
         self.check("deny", call(t, create_new_session_on_fire=True, persistent_session_id="abc123"))
+        for bound in (0, {}, [], "0", "x", True, 1.5):
+            with self.subTest(persistent_session_id=bound):
+                self.check("deny", call(t, create_new_session_on_fire=True, persistent_session_id=bound))
         self.check("deny", {"tool_name": t})
         self.check("deny", {"tool_name": t, "tool_input": None})
 
@@ -70,6 +73,7 @@ class NoPersistentPollingTest(unittest.TestCase):
         self.check("allow", call(t, create_new_session_on_fire=True))
         self.check("allow", call(t, create_new_session_on_fire=True, persistent_session_id=""))
         self.check("allow", call(t, create_new_session_on_fire=True, persistent_session_id=None))
+        self.check("allow", call(t, create_new_session_on_fire=True, persistent_session_id=False))
 
     def test_other_tools_are_not_gated(self):
         self.check("allow", call("mcp__symphony__subscribe_pr_activity"))
