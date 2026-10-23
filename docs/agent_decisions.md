@@ -451,3 +451,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t081529z
 - undo and seen are the two record-words on every finding (reversible Undo: drop the two columns from areas.md and the sub-agent prompt ([#282](https://github.com/mark-brannan/claude/pull/282))
+
+### 20261023t081554z
+- mu replaces n/a everywhere; on the Indication line none is the gap (aim, no indicator) and mu is no aim Undo: two words back ([#282](https://github.com/mark-brannan/claude/pull/282))
