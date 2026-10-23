@@ -42,11 +42,11 @@ prt prt-20261009T015357Z · project dotfiles · 13 open in 3 repos, cap 15 · dr
 
   PR             state                             score     action                                             model   est
   mark-brannan/languette · clone ~/languette
-  languette#108  behind 1, green                   0 low     update, review                                     sonnet  $0.52
-  languette#105  behind 1, green, 2 pencil         4 medium  update, review                                     sonnet  $0.52
+  languette#108  behind 1, green                   0 low     review                                             sonnet  $0.52
+  languette#105  behind 1, green, 2 pencil         4 medium  review                                             sonnet  $0.52
 
   mark-brannan/claude · clone ~/claude
-  claude#121     behind 1, green, 1 bot thread(s)  5 medium  update, answer bot threads, review · desk: hooks/  sonnet  $0.52
+  claude#121     behind 1, green, 1 bot thread(s)  5 medium  answer bot threads, review · desk: hooks/          sonnet  $0.52
   claude#119     current, green, 3 pencil          6 high    review                                             opus    $1.31
   claude#110     -                                 2 low     hand off: labelled blocked                         -       -
 
