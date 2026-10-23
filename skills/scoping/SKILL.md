@@ -217,7 +217,7 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   item only when it is ready or claimed (`claude_cards`, hooks/lib-state.sh);
   and `~/.claude/bin/work-item log <parent-id> lane=autonomous`: the lane
   lives on the parent and its children inherit it (2026-10-22), so `/pickup`
-  lets the driver label `merge`;
+  lets the driver label its PRs;
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
   `--parent <parent-id> [--model <m>] [--effort <e>]`, then
@@ -256,12 +256,12 @@ worker model, effort and estimate; the brief repeats none of them. Never a
 list of prompts for the user to paste one at a time. The brief holds, from
 the 2026-10-22 rulings:
 
-- **The plan's order.** Serial or parallel is scoping's
-  call, made in the proposal before anything launches (§4: dependencies
-  named, and why that order), never the driver's mid-run. Children the
-  plan names no dependency between run in parallel, one worker each; a
-  child the plan makes wait starts once the PR it waits on is up, and
-  works on top of it.
+- **The plan's order.** Serial or parallel is scoping's call, made in
+  the proposal before anything launches (§4: dependencies named, and why
+  that order), never the driver's mid-run. Children the plan names no
+  dependency between run in parallel, one worker each; a child the plan
+  makes wait starts once the PR it waits on has landed on main, and is
+  cut from main. No git stacks: each PR lands on main alone.
 - **Estimate and actual.** Each child carries its estimate; the parent
   carries the batch's allocation, logged at filing as
   `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
@@ -279,11 +279,13 @@ the 2026-10-22 rulings:
   the agora, parked on a card, and nothing else holds (2026-10-22). A −
   finding that is `one-way` and seen only `after`, one the item should
   not land with as it stands, always counts as one.
-- **Who merges.** In the autonomous lane the driver puts the `merge` label
-  on each PR in stack order once every PR's review is clean, and the
-  queue lands them; the user's gate is the batch after the fact, with a
-  revert as the undo. This replaces "only I merge" (2026-10-01) for the
-  autonomous lane. The gated lane keeps the user's merge.
+- **Who merges.** In the autonomous lane, where a PR's diff stays inside
+  this brief, the driver puts `merge`, `churn-ok` and `mixed-loops-ok` on
+  it once its own review is clean, names the brief in the PR body, and
+  the queue lands it on main alone; the user's gate is the batch after
+  the fact, with a revert as the undo. This replaces "only I merge"
+  (2026-10-01) for the autonomous lane. The gated lane keeps the user's
+  merge.
 
 The run's last line is the one line that starts the driver:
 

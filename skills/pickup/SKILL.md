@@ -274,10 +274,11 @@ do not paraphrase it into a second version that can drift from this one.
    session never applies that label and never merges the PR.
    One exception: a driver session whose parent card's log carries
    `lane=autonomous` adds `merge`, `churn-ok` and `mixed-loops-ok`
-   itself, where the diff stays inside its brief, once the final reviews
-   are clean, and names the brief in the PR body; a gated child, or a parent logging
-   `lane=gated`, keeps the user's merge, and every other session keeps
-   the rule above.
+   itself, where the diff stays inside the parent's driver brief, once
+   the final reviews are clean, and names that brief by the parent's id
+   in the PR body. A diff outside it gets none of the three and waits
+   for the user. A gated child, or a parent logging `lane=gated`, keeps
+   the user's merge, and every other session keeps the rule above.
 
    After **one honest attempt**, or about **$1 of spend**, stop instead:
    label the PR `fixup-hard`, leave exactly one comment saying what was
