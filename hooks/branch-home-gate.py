@@ -217,15 +217,9 @@ def gate(ev):
         work_root, branch, base, ahead = where(cwd)
     except Quiet:
         return None
-    # One file per session: the once-per-session marker (a line beginning
-    # "blocked"), which stop-continuity.py copies into the checkpoint.
-    rec = os.path.join(os.environ.get("TMPDIR") or "/tmp", f"claude-branch-home.{tr_name(sid)}")
-    try:
-        with open(rec, encoding="utf-8", errors="replace") as f:
-            if any(ln.startswith("blocked") for ln in f):
-                return None
-    except OSError:
-        pass
+    rec = marker(sid)
+    if blocked(rec):
+        return None
     found, _, unverified = find_home(work_root, branch, board=True)
     if found:
         return None
@@ -253,6 +247,20 @@ def gate(ev):
             "were lost. This gate fires once per session.")
 
 
+def marker(sid):
+    """One file per session: the once-per-session marker (a line beginning
+    "blocked"), which stop-continuity.py copies into the checkpoint."""
+    return os.path.join(os.environ.get("TMPDIR") or "/tmp", f"claude-branch-home.{tr_name(sid)}")
+
+
+def blocked(rec):
+    try:
+        with open(rec, encoding="utf-8", errors="replace") as f:
+            return any(ln.startswith("blocked") for ln in f)
+    except OSError:
+        return False
+
+
 def note(rec, line):
     try:
         with open(rec, "a", encoding="utf-8") as f:
@@ -278,8 +286,15 @@ def main(argv):
         reason = gate(ev)
     except Exception as e:  # noqa: BLE001 -- a gate fails closed, once
         lib_state.trace_failure(HOOK, "Stop", e)
-        if hookio.stop_hook_active(ev):
+        sid = ev.get("session_id")
+        if hookio.stop_hook_active(ev) or not isinstance(sid, str) or not sid:
             return
+        # The same marker as the gate's own: a crash that repeats every turn
+        # still blocks once per session, not once per turn.
+        rec = marker(sid)
+        if blocked(rec):
+            return
+        note(rec, f"blocked: crashed ({type(e).__name__})")
         reason = (f"branch-home-gate: crashed ({type(e).__name__}: {e}), so the branch this session worked could "
                   "not be checked for a PR or a pointer card. This is a gate and fails closed: open the PR, or file "
                   "a pointer card (/card-write) naming the branch and what it holds, then end the turn again.")

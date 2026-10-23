@@ -88,6 +88,14 @@ class NoProseGateTest(unittest.TestCase):
         meta = dict(human("ctx"), isMeta=True)
         self.assertEqual(self.go([human("a"), asked(), meta, said("Want me to push?")]), "")
 
+    def test_reads_only_the_tail(self):
+        # A turn past the 400-line tail starts at a cut-off row; it is skipped.
+        filler = [json.dumps(result())] * 450
+        rows = [json.dumps(human("a")), json.dumps(asked())] + filler + [json.dumps(said("Want me to push?"))]
+        self.assertBlocks(self.go(None, raw_lines=rows))
+        cut = ['"message": {"content": "half a row"}}'] + [json.dumps(r) for r in (human("b"), said("Merge it?"))]
+        self.assertBlocks(self.go(None, raw_lines=cut))
+
     def test_missing_input_is_silent(self):
         self.assertEqual(self.run_hook({"transcript_path": str(self.dir / "none.jsonl")}), "")
         self.assertEqual(self.run_hook(""), "")

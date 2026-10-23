@@ -237,6 +237,10 @@ class Gate(unittest.TestCase):
         out, _ = self.crashed(payload=json.dumps({"session_id": "c4", "cwd": str(self.WORK),
                                                   "stop_hook_active": True}))
         self.assertEqual(out, "", "the retry after a crash block is quiet")
+        # A crash that repeats on the next turn's Stop, same session, no
+        # stop_hook_active: still once per session.
+        out, _ = self.crashed(payload=json.dumps({"session_id": "c3", "cwd": str(self.WORK), "turn": 2}))
+        self.assertEqual(out, "", "a repeated crash blocks once per session")
         out, _ = self.crashed("--card", str(self.WORK))
         self.assertEqual(out, "unverified: branch-home-gate crashed (RuntimeError)\n")
 
