@@ -5,9 +5,10 @@ the lead (does the item excel at being what it is, and what is it for),
 then the thirteen areas, each asked two signed questions, then where the
 item is excellent and where it devolves, then a recommendation with its
 reasons. What is done with it is the caller's. Every finding carries its
-evidence, how it was reached, who it touches, and two record-words,
-whether it can be undone and whether it is seen before it lands; no row
-is given a grade word, no scale, no score. How measured: `count`,
+evidence and that evidence's kind, how it was reached, who it touches,
+and two record-words, whether it can be undone and whether it is seen
+before it lands; no row is given a grade word, no scale, no score. How
+measured: `count`,
 `grep`, `gh` (a GitHub query), `git` (history) or `read` (judgment on
 reading).
 
@@ -42,6 +43,10 @@ purpose, and does that purpose serve the next rung's.
    the **indicators**: the specific signs that gave that answer, each in
    the record's words with where it is stated. An indicator that does
    not yet exist, or is speculative, counts, named as such.
+4. **If not done** — the opportunity cost: what harm arises by not
+   doing the item. It is the inversion of the item's claim, asked on its
+   own because it does not follow from the claim. One line, in the
+   record's words, one step from a cited line, the step written out.
 
 ## Areas
 
@@ -62,6 +67,12 @@ Every finding carries two record-words, each one of two values:
   lands, a test, a guard, a required review; or `after`: the person it
   touches finds it in use. This check is not a catcher; it would make
   every unlanded item read `before`.
+
+Every finding's evidence is one of three kinds, the first word of its
+evidence cell: `opened`, a line you opened, cited by path; `inferred`,
+one step from a cited line, the step written out in the row; or `no
+evidence found`. Either sign may use `inferred`: a good the author did
+not claim is found the same way as a harm the author did not state.
 
 Magnitude and likelihood go in the finding's own words: for whom, how
 often, how many. The two words are never multiplied into a score.
@@ -136,24 +147,28 @@ Indicators: triage time per week before and after, not yet counted (§1,
 "the triage hour"); the user's PR queue under ten, speculative, the
 parent's words (issue #88).
 
+If not done: contributors' PRs keep waiting for the triage hour —
+one step from §1, which names the hour as the bottleneck.
+
 | area                | ± | finding                                     | evidence             | how   | touches      | undo       | seen   |
 |---------------------|---|---------------------------------------------|----------------------|-------|--------------|------------|--------|
-| flourishing         | + | frees the weekly triage hour                | §1, stated aim       | read  | the user     | reversible | after  |
+| flourishing         | + | frees the weekly triage hour                | opened: §1           | read  | the user     | reversible | after  |
+| flourishing         | + | no PR waits past a week; all are listed     | inferred: §1         | read  | contributors | reversible | after  |
 | flourishing         | − | nothing found                               |                      | read  |              |            |        |
 | well-formedness     | + | nothing found                               |                      | read  |              |            |        |
-| well-formedness     | − | §3 and §5 disagree on the default           | §3:12, §5:40         | read  | maintainers  | one-way    | before |
+| well-formedness     | − | §3 and §5 disagree on the default           | opened: §3:12, §5:40 | read  | maintainers  | one-way    | before |
 | privacy             | + | nothing found                               |                      | read  |              |            |        |
-| privacy             | − | the log keeps the hostnames it prints       | docs/adr/0026.md:41  | read  | the operator | reversible | after  |
+| privacy             | − | the log keeps the hostnames it prints       | opened: 0026.md:41   | read  | the operator | reversible | after  |
 | security            |   | mu: reads only, runs nothing                |                      | grep  |              |            |        |
-| accountability      | + | merge stays with the user                   | §2                   | read  | the user     | one-way    | before |
-| accountability      | − | no owner for a wrong automatic label        | §3, no owner named   | read  | maintainers  | reversible | after  |
+| accountability      | + | merge stays with the user                   | opened: §2           | read  | the user     | one-way    | before |
+| accountability      | − | no owner for a wrong automatic label        | opened: §3, none     | read  | maintainers  | reversible | after  |
 | …                   |   |                                             |                      |       |              |            |        |
-| judgment kept       | + | adds no decision; the merge is the user's   | §2                   | count | the user     | reversible | before |
+| judgment kept       | + | adds no decision; the merge is the user's   | opened: §2           | count | the user     | reversible | before |
 | judgment kept       | − | nothing found                               |                      | read  |              |            |        |
 | consent and agency  | + | nothing found                               |                      | read  |              |            |        |
-| consent and agency  | − | labels a contributor's PR without asking    | §3                   | read  | contributors | reversible | after  |
-| cost                | + | one read a week instead of five             | §1                   | read  | the user     | reversible | after  |
-| cost                | − | read-set has no ceiling                     | §4, "every repo"     | read  | the user     | reversible | after  |
+| consent and agency  | − | labels a contributor's PR without asking    | opened: §3           | read  | contributors | reversible | after  |
+| cost                | + | one read a week instead of five             | opened: §1           | read  | the user     | reversible | after  |
+| cost                | − | read-set has no ceiling                     | opened: §4           | read  | the user     | reversible | after  |
 
 Excellent in: frees the weekly triage hour for the user, and keeps the
 merge theirs.

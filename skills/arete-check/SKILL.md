@@ -22,11 +22,13 @@ apply to it reads `mu` with its reason.
 function, the same target gives the same kind of brief wherever it is
 called. The brief leads with the good: whether the item changes
 anything, the chain of aims from it up to its owner's, and any
-indication it fulfils its purpose with the indicators that gave it; a
-rung that names no aim is the lead finding. Then each area is asked two
+indication it fulfils its purpose with the indicators that gave it,
+and what is lost if it is not done; a rung that names no aim is the
+lead finding. Then each area is asked two
 signed questions, its capacity to increase human flourishing and its
 capacity to diminish it, each
-finding with its evidence, how it was reached, and two record-words,
+finding with its evidence and that evidence's kind, how it was
+reached, and two record-words,
 whether it can be undone and whether it is seen before it lands; no row
 is given a grade word, no scale, no score.
 The brief then says where the item is excellent and
@@ -98,23 +100,27 @@ which.
    > read-only: no edits, no commits, no worktree, no agents, no
    > comments, no `gh` call that writes. Lead with the good: the
    > delta, the chain of aims rung by rung with where each is stated,
-   > the indication and the indicators that gave it, as areas.md says;
+   > the indication and the indicators that gave it, and what is lost
+   > if it is not done, as areas.md says;
    > the first rung that names no aim is the lead finding. Then for each
    > area answer both questions,
    > + first: each finding, the evidence for it with a path or line, how
    > you reached it (count, grep, gh, git or read), who the item
    > touches there, and its two record-words: undo (reversible,
    > one-way or mu) and seen (before, after or mu), as areas.md defines
-   > them. Evidence is a line you opened, cited by path; where
-   > none exists, write `no evidence found`, never an inferred one.
+   > them. Evidence is one of three kinds, named in the row: `opened`,
+   > a line you opened, cited by path; `inferred`, one step from a
+   > cited line, the step written out; or `no evidence found`. Either
+   > sign may use `inferred`.
    > Where an area does not apply, one `mu` row with its reason. Then
    > say where the item is excellent and where it devolves, and for
    > whom. Look hardest
    > where the user's own reversals of agent picks have come from: a
    > default that chose narrowly for the user; a privacy or legal fact
    > the user had not been told; a taste or visual call made without the
-   > picture. Name what you did not look at. Return only the brief in
-   > the format in areas.md.
+   > picture. Look as hard where the author under-claims: a mechanism
+   > whose downstream good is not named. Name what you did not look
+   > at. Return only the brief in the format in areas.md.
 
 3. **Find the earlier report.** If the target's report folder (step 5)
    holds one, read the latest and mark each finding that persists from it, in the report
@@ -122,8 +128,8 @@ which.
 
 4. **Print the brief, short.** The lead finding, if there is one; then
    the delta, the chain of aims on one line, the indication and its
-   indicators; then the recommendation; then the excellent and devolves
-   lines; then the + findings and the − findings, one line each with
+   indicators, the if-not-done line; then the recommendation; then the
+   excellent and devolves lines; then the + findings and the − findings, one line each with
    their two record-words, one-way first among the −; the areas with
    nothing found either side and the `mu` areas as one line naming them;
    then the not-looked-at line. The full brief goes in
