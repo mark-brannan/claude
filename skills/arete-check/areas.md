@@ -24,7 +24,7 @@ purpose, and does that purpose serve the next rung's.
    Each rung gives the aim in the record's words, where it is stated,
    and whether it serves the rung above. A rung that names no aim is
    work to do: the first such rung is the lead finding, printed before
-   anything else, not a reason to read on past it.
+   anything else; the chain still climbs to the top.
 3. **Indication** — is there any indication the item fulfils its
    purpose: `measured` (a number, with its query), `observed` (a
    qualitative or binary sign someone saw: a test that passes, a person
@@ -39,41 +39,48 @@ looked and found nothing, say `nothing found`; where the area does not
 apply, one `n/a` row with its reason. Flag a − finding `harm` when you
 would not let the item land with it as it stands.
 
-1. **privacy** — + what it keeps private, or gives a person control
+The order is the anchor's. Flourishing, the good itself, leads; truth
+and elegance, which is beauty's name here, follow, with well-formedness
+close behind: beauty, goodness and truth were one idea of excellence
+before they were three. The rest come after.
+
+1. **flourishing** — + does this increase quality of life, and for
+   whom? What good does it make possible that was not possible before?
+   − what quality of life does it take away or crowd out?
+2. **truth** — + which claims it makes verifiable and which sources it
+   names; − where it could state the plausible as the present.
+3. **elegance** — + the smallest form that carries the whole meaning;
+   − the form that carries more than the meaning, or less.
+4. **well-formedness** — + one home per fact, agreement with itself and
+   with what it governs; − a fact with two homes, or a contradiction.
+5. **privacy** — + what it keeps private, or gives a person control
    over; − what it collects, keeps, moves or exposes about a person, and
    whether any of it lands somewhere public.
-2. **security** — + what it closes, checks or refuses; − what it opens,
+6. **security** — + what it closes, checks or refuses; − what it opens,
    trusts or runs, and what an attacker or a prompt injection could do
    through it.
-3. **accountability** — + who it makes answerable, and which decision it
+7. **accountability** — + who it makes answerable, and which decision it
    makes traceable to an owner; − who answers when it goes wrong, any
    liability it takes on; for both, who stands behind a rule, how
    firmly, and whether the item changes either.
-4. **bias and fairness** — + who it serves that was served less well
-   before; − who it serves less well, and whether a default in it
-   favours one group, voice or way of working.
-5. **transparency** — + what it lets the people it touches see of what
+8. **bias and fairness** — fairness reads two ways, as equal treatment
+   and as reward in proportion to what was given; answer for both. + who
+   it serves that was served less well before, and what it rewards that
+   was earned: merit, or prosocial behaviour; − who it serves less well,
+   whether a default in it favours one group, voice or way of working,
+   and what it rewards that was not earned.
+9. **transparency** — + what it lets the people it touches see of what
    it does and why; − where it hides its working.
-6. **social and economic impact** — + the work, time, money, attention
+10. **social and economic impact** — + the work, time, money, attention
    or relationships it gives back, beyond the person who asked for it;
    − what it takes from them.
-7. **flourishing** — + does this increase quality of life, and for
-   whom? What good does it make possible that was not possible before?
-   − what quality of life does it take away or crowd out?
-8. **judgment kept** — + which decisions it leaves with a person, and
+11. **judgment kept** — + which decisions it leaves with a person, and
    whether it assists the doing that builds judgment; − which it moves
    from a person to an agent, or replaces; for both, how many decisions
    it adds to a person's day, how often, and of which kind.
-9. **cost** — + the tokens, water and screen hours it saves per run;
+12. **cost** — + the tokens, water and screen hours it saves per run;
    − what it spends, and a read-set or a loop with no ceiling is a cost
    with none.
-10. **truth** — + which claims it makes verifiable and which sources it
-   names; − where it could state the plausible as the present.
-11. **elegance** — + the smallest form that carries the whole meaning;
-   beauty, goodness and truth were one idea of excellence before they
-   were three; − the form that carries more than the meaning, or less.
-12. **well-formedness** — + one home per fact, agreement with itself and
-   with what it governs; − a fact with two homes, or a contradiction.
 
 ## Format
 
@@ -96,20 +103,20 @@ or after (§1).
 
 | area            | ± | finding                                     | evidence             | how   | touches      |
 |-----------------|---|---------------------------------------------|----------------------|-------|--------------|
+| flourishing     | + | frees the weekly triage hour                | §1, stated aim       | read  | the user     |
+| flourishing     | − | nothing found                               |                      | read  |              |
+| well-formedness | + | nothing found                               |                      | read  |              |
+| well-formedness | − | harm: §3 and §5 disagree on the default     | §3:12, §5:40         | read  | maintainers  |
 | privacy         | + | nothing found                               |                      | read  |              |
 | privacy         | − | the log keeps the hostnames it prints       | docs/adr/0026.md:41  | read  | the operator |
 | security        |   | n/a: reads only, runs nothing               |                      | grep  |              |
 | accountability  | + | merge stays with the user                   | §2                   | read  | the user     |
 | accountability  | − | no owner for a wrong automatic label        | §3, no owner named   | read  | maintainers  |
 | …               |   |                                             |                      |       |              |
-| flourishing     | + | frees the weekly triage hour                | §1, stated aim       | read  | the user     |
-| flourishing     | − | nothing found                               |                      | read  |              |
 | judgment kept   | + | adds no decision; the merge is the user's   | §2                   | count | the user     |
 | judgment kept   | − | nothing found                               |                      | read  |              |
 | cost            | + | one read a week instead of five             | §1                   | read  | the user     |
 | cost            | − | read-set has no ceiling                     | §4, "every repo"     | read  | the user     |
-| well-formedness | + | nothing found                               |                      | read  |              |
-| well-formedness | − | harm: §3 and §5 disagree on the default     | §3:12, §5:40         | read  | maintainers  |
 
 Excellent in: frees the weekly triage hour for the user, and keeps the
 merge theirs.
