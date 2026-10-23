@@ -309,10 +309,10 @@ fi
 # the staged settings.json, so those are content too: a release staged before
 # the state repo was cloned, reused once it sits elsewhere, would keep a terms
 # path that no longer exists. Their checksum is the name's third part.
-# The state repo is found by lib-state.sh's own search, the one every hook
+# The state repo is found by lib/state.py's own search, the one every hook
 # uses; not cloned yet, it is /workspace, the path the SessionStart brief
 # tells a session to clone it to.
-STATE_REPO=$(bash -c '. "$1" && state_repo' _ "$SEED/hooks/lib-state.sh" 2>/dev/null)
+STATE_REPO=$(python3 "$SEED/lib/state.py" state_repo 2>/dev/null)
 [ -n "$STATE_REPO" ] || STATE_REPO=/workspace/claude_prompts_scratch
 LOCAL_REV=$(printf '%s\n%s\n' "$HOME" "$STATE_REPO" | cksum | cut -d' ' -f1)
 CLAUDE_REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null)
