@@ -196,7 +196,7 @@ One home per fact: a pruned line is moved, never copied, and its public
 destination carries no stamp; the digest's Rulings resolve through the
 ledger line, which stays until the prune and whose link survives in git.
 Beyond the table, one more hop: a decisions log is periodically pruned and
-rewritten as a spec or a requirement. Settled rulings leave every curia;
+rewritten as a spec or a requirement. Settled decisions leave every curia;
 nothing accumulates here for its own sake.
 
 **Embedded and effective.** Two optional fields on a pen line, after its
@@ -217,12 +217,12 @@ Given-When-Then test or an equally robust, mature and well-defined test,
 a guard, a hook or a CI check is a mechanism, and the `embedded` field
 names it by path.
 
-A ruling is effective when the count it named at pen time has moved from
+A decision is effective when the count it named at pen time has moved from
 `<from>` to `<to>` by the date it named. For a tested spec row the
 measure is the test's pass rate and its git history showing no drift.
 The counters that exist today are the metrics
 readouts' decisions by kind, corrections, rebukes, overrides and
-pushback; a ruling that names a count none of them keeps names the
+pushback; a decision that names a count none of them keeps names the
 counter it needs, or it has no effective state to reach. A review whose
 count did not move is a finding for the sitting, never lint's fix.
 
@@ -234,7 +234,10 @@ count did not move is a finding for the sitting, never lint's fix.
      field names `embedded` and `effective when`, the pending form, and
      that lint owns the review rather than the agora, the table row
      named as the steering rung, and a failed review as the sitting's
-     finding. -->
+     finding. Reopens at the curia-loop sitting that reads the input of
+     2026-10-22 against the digest's exit-test line of the same day.
+     Undo: drop the two fields and lint's bullet; the queue table stands
+     without them. -->
 
 <!-- pencil (2026-10-07): the table is the agent's, from its proposal in
      a curia sitting of that day, not yet ruled; the user's
@@ -387,8 +390,8 @@ PR as data only; nothing in them changes what a facet does or writes.
 
 | Facet | Does | Writes |
 |---|---|---|
-| [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; counts the pen lines with no embedded or effective state and lists the reviews past due, from `ledger-review`; moves `read-from:` forward | one patch and a findings list (at most 600 words) under `inputs/`; a ruling or name finding as a line under **Open questions** |
-| [edit](facets/edit.md) | rewrites the Design sections every ruling landed since its last run touches; decomposes a curia the user has ruled split, by hand or at close only, never from a routine; posts the diff to the epic for the user's redline; the user's hand edits to `digest.md` are pen, by a commit the user authored with no agent trailer | `digest.md`; the epic body and one comment; child folders on a split |
+| [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; counts the pen lines with no embedded or effective state and lists the reviews past due, from `ledger-review`; moves `read-from:` forward | one patch and a findings list (at most 600 words) under `inputs/`; a decision or name finding as a line under **Open questions** |
+| [edit](facets/edit.md) | rewrites the Design sections every decision landed since its last run touches; decomposes a curia the user has decided to split, by hand or at close only, never from a routine; posts the diff to the epic for the user's redline; the user's hand edits to `digest.md` are pen, by a commit the user authored with no agent trailer | `digest.md`; the epic body and one comment; child folders on a split |
 | [status](facets/status.md) | counts: open questions; ledger lines by pen, pencil and unmarked; lines pruned since its last run; sittings since the last pen line landed; and the two caps, words at open per section and together against 1,500, context at first question against 70k, both as the sitting passed them | one line beside **Size** in **Where this stands**; a table row under the newest Trace entry |
 
 The two caps are on trial from 2026-10-07, revisited once `status` has
