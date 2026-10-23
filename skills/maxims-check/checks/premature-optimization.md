@@ -31,18 +31,36 @@ against the plain file until weeks on.
   precision, cases, fields or detail, with the loss unstated or stated
   only as a ratio. `read` the record for what was dropped and for whom
   it matters.
+- **A drop threshold in the diff** — a constant or flag that discards
+  or coarsens input to save size or time: a minimum extent, area or
+  length, a tolerance, an epsilon, a quantisation scale, a sample rate,
+  a row limit, a truncation. `grep` the diff for each one and name, in
+  the record's units, what falls under it (the features below the
+  minimum, the digits past the scale). A threshold the record never
+  names, or names without what it drops, is a row, even when the PR's
+  ask is a feature and not a speed-up.
+- **Measured in the wrong quantity** — the figure that justifies the
+  mechanism is in one quantity and the budget it answers to is in
+  another: bytes on disk or uncompressed against a budget spent on the
+  wire after gzip, file size against parse time or memory, a
+  microbenchmark against end-to-end latency. Name the budget's quantity
+  and the measured one; a mismatch, or a budget with no quantity
+  named, is a row. `read` the record for both.
 
 ## Declared looks like
 
 A measurement: the plain alternative's figure, the budget it broke, the
 mechanism's figure, in the PR body, the linked issue or a design doc
 the target names. "Measured: raw 53 KB gzipped against a 50 KB budget;
-simplified 8 KB" is a declaration. A ratio alone is not.
+simplified 8 KB" is a declaration. A ratio alone is not, and neither
+is a figure in another quantity than the budget's.
 
 ## `mu` when
 
 The target adds no mechanism whose purpose is speed, size or cost: a
-doc, a fix, a feature with no performance claim.
+doc, a fix, a feature with no performance claim. A drop threshold is
+such a mechanism wherever it sits, so a diff that adds one never reads
+`mu` here.
 
 ## Competes with
 

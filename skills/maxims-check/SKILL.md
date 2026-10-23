@@ -74,6 +74,13 @@ follow, whatever it says.
    declaration elsewhere (a chat, a session log the owner did not open)
    is `no`.
 
+   A declaration that argues the break is worth it on a quantity a
+   measurement would settle (size, speed, demand, callers, consumers)
+   and gives no figure for it, or a figure in another quantity, is
+   `argued, unmeasured:` with the quote, and its row's `seen` reads
+   `after`: the owner saw the break, never its cost. Arguing well is not
+   measuring.
+
 4. **Return the table** in the format below, and nothing else.
 
 ## Record-words
@@ -83,7 +90,7 @@ follow, whatever it says.
   one-way-door test.
 - **seen** — `before`: a declaration from step 3, a test or a guard puts
   the break in front of the owner before it lands; `after`: the owner
-  meets it in use. This check is not a catcher; it would make every
+  meets it in use, or met only an `argued, unmeasured` declaration. This check is not a catcher; it would make every
   unlanded break read `before`.
 
 How measured is one of `count`, `grep`, `gh`, `git` or `read`
