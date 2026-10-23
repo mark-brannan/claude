@@ -275,7 +275,7 @@ Hooks handle the mechanics unprompted.
   made — in an issue, a design doc, a decisions line, a thread — is one I
   have seen: undoing it is a reversal, never a default, however cheap the
   revert. Only a failure
-  earns a `## Needs decision` card, and the card carries your evaluation —
+  earns a card for me to decide, and the card carries your evaluation —
   default, undo, until, risk, evidence — so my answer is one word. The
   agora does not consider an item whose evidence for the decision is not
   attached: a visual call carries the picture, a storage call the
@@ -302,11 +302,11 @@ Hooks handle the mechanics unprompted.
 - **A judgment call has three exits,** preferred in this order: **omit**
   (it gates nothing, so say nothing and leave the question visibly open),
   **card** (it gates later work), **ask** (it gates this turn).
-- **Before any exit, check it isn't already decided,** wherever decisions
-  live by then, not where one was first written. An inherited card's
-  options are its writer's guess: one that crosses a decision or a guard is
-  a wrong card. Fix it; don't relay it.
-- **Closing an option is a ruling.** In anything read later as settled,
+- **Before any exit, check I haven't already decided it,** wherever my
+  decisions live by then, not where one was first written. An inherited card's
+  options are its writer's guess: one that crosses a decision of mine or a guard
+  is a wrong card. Fix it; don't relay it.
+- **Closing an option is my call.** In anything read later as settled,
   "rejected", "ruled out" or "we will not" stands only if I made that
   call; otherwise it goes. Provenance is a line in the repo's decisions
   file, never a stamp in the prose.
@@ -316,7 +316,7 @@ Hooks handle the mechanics unprompted.
   file's header says once whose the lines are; a line says only what is
   not that default: deferred, current thinking, paraphrase.
 - **My words go public at the weight I gave them.** Most of my opinions
-  are lightly held and read that way out there: "current thinking", rarely 
+  are lightly held and read that way out there: "current thinking", rarely
   "settled", "decided", "we will not" or "must stay". Those words go out
   only once a decisions-file line carries them, by an agora or my hand.
   Filing work, a question or a scope, hardens nothing; the issue rule above
