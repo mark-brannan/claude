@@ -457,3 +457,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t081609z
 - consent and agency sits beside judgment kept as area 12, cost 13 Undo: move one list item ([#282](https://github.com/mark-brannan/claude/pull/282))
+
+### 20261023t211649z
+- principles-check writes no report; it returns the table and the caller keeps it Undo: add a report step like arete-check's ([#297](https://github.com/mark-brannan/claude/pull/297))
