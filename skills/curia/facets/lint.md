@@ -38,6 +38,10 @@ Find and fix, mechanically, in one commit of the derived files:
   deleted here; a refused name or discarded idea becomes part
   of the one *refused:* line in Working memory; a Superseded line is
   deleted. Show every move in the diff;
+- the queue's embedded and effective findings: run `ledger-review` and
+  list its rows for this curia in the findings, the pen lines with
+  neither `embedded:` nor `effective when:` and the reviews past due; fix
+  nothing;
 - a ledger line stamped before the last words **Where this stands**
   cites (by its date where it cites no roll stamp) that no section of the
   digest carries — a Design section, **The problem** or **Vocabulary** —

@@ -185,7 +185,7 @@ so — with its stamp, and moves on:
 | From | To | Trigger | Who |
 |---|---|---|---|
 | pencil | pen, marked as lint's | the line's link resolves to a merged commit, spec row or decisions line and the user has not reversed it | lint, shown in its diff and listed in its findings |
-| pen, governs code | a spec row in the public repo beside the code, citing its repo's decisions line; the ledger line links the row | the spec PR merges | the spec PR's author; lint deletes the ledger line |
+| pen, governs code | a spec row in the public repo beside the code (the steering rung, below), citing its repo's decisions line; the ledger line links the row | the spec PR merges | the spec PR's author; lint deletes the ledger line |
 | pen, governs how we work, not code | the standing orders or `rules/code.md` | the user's hand | the user |
 | pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line | an agora or the user's hand | lint deletes the ledger line |
 | pen, private, no work to file | stays | scoping promotes it when it files the work | scoping |
@@ -198,6 +198,32 @@ ledger line, which stays until the prune and whose link survives in git.
 Beyond the table, one more hop: a decisions log is periodically pruned and
 rewritten as a spec or a requirement. Settled rulings leave every curia;
 nothing accumulates here for its own sake.
+
+**Embedded and effective.** Two states a pen ruling reaches after the
+sitting, each a field on its ledger line
+([forms/decided.md](forms/decided.md)). *Embedded* means a mechanism
+fires on the governed action, and it has three rungs, in the record's
+words: prose is a good intention; a spec row alone is steering,
+probabilistic, defence in depth and not a safety rule; a spec row backed
+by a Given-When-Then or equally mature test, a guard, a hook or a CI
+check is a mechanism. The table's spec-row step is the steering rung and
+stays; `embedded: <guard, hook, test or CI check, by path> (<date>)`
+names the mechanism, and the mechanism's header states the ruling it
+serves, so embedded is a grep both ways. *Effective* means the number
+the ruling named at pen time moved by the date it named: `effective
+when: <count> <from> → <to> by <date>`, with `effective: pending, review
+<date>` until the review. For a tested spec row the evidence is the
+test's pass rate and a git history with no drift on the test. A pen line
+with neither field is legal; lint lists those lines and the reviews past
+due, read from `ledger-review`, so the review is scheduled, not
+remembered.
+
+<!-- pencil (2026-10-22): the two fields, their names and that lint owns
+     the review are the agent's, from its measure of the ledgers that day
+     in the curia-loop inputs; the three rungs of embedded and what counts
+     as effective are the user's words in that input, read by the agent,
+     not yet ruled in a sitting. Undo: drop the two fields; the queue
+     table stands without them. -->
 
 <!-- pencil (2026-10-07): the table is the agent's, from its proposal in
      a curia sitting of that day, not yet ruled; the user's
