@@ -27,7 +27,7 @@ is under Interfaces.
   group (`SIGKILL`) past that: no trap runs, and the next Stop reclaims any
   lock the dead hook held, its pid gone.
 - Every file it writes under the state dir is the session's own, except
-  `metrics-rollup.py`'s untracked rollup (job 3), a curia digest (job 10)
+  `metrics-rollup.sh`'s untracked rollup (job 3), a curia digest (job 10)
   and the state commit (jobs 12, 13). The metrics and the checkpoint are
   sharded by `state_shard_path` (`lib-state.sh`). Two parallel sessions
   never write the same session file.
@@ -48,7 +48,7 @@ is under Interfaces.
   (job 9's 10-minute miss).
 - Scripts called: `branch-home-gate.py --check` prints `home:<…>` or
   `unverified:<…>`, else nothing; `claim-stamp.py refresh|release`;
-  `metrics-rollup.py`. The transcript's fields are whatever
+  `metrics-rollup.sh`. The transcript's fields are whatever
   `session-metrics.jq` emits, which is the contract for job 2.
 - The push stamp is the literal `$SR/.git/claude-last-state-push` in the
   state repo, on purpose: a worktree's git dir would not do.
@@ -78,7 +78,7 @@ the transcript.
 
 Deletes `metrics/live/<id>.json` under the session's lock, the one
 `metrics-live.sh` takes. A lock it cannot take still gets the delete. Then
-runs `metrics-rollup.py`; a failure there is ignored.
+runs `metrics-rollup.sh`; a failure there is ignored.
 
 ## 4. Rewrite the checkpoint
 

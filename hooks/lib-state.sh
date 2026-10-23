@@ -290,7 +290,7 @@ state_unlock() {
 # state_lock_wait <dir> <secs> -- state_lock, retried once a second for up to
 # <secs>: the portable `flock -w`. A bare `flock` here silently exited every
 # Stop hook on macOS before the state-repo push.
-# shellcheck disable=SC2034 # read by stop-continuity.sh
+# shellcheck disable=SC2034 # read by stop-continuity.sh and abandon-branch.sh
 STATE_PUSH_LOCK="${TMPDIR:-/tmp}/claude-state-push.lock.d"
 state_lock_wait() {
   local dir="$1" n="${2:-90}"
