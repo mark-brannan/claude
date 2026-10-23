@@ -25,3 +25,9 @@ named, reads `declared: yes`, not a break.
 
 The target adds nothing new to call: a deletion, a fix inside an
 existing path.
+
+## Competes with
+
+SOLID (OCP) and GRASP (protected variations): the extension point YAGNI
+rows as uncalled is the one they ask for. Premature pessimization: the
+simple form chosen now may be the one that cannot be made fast later.

@@ -31,3 +31,9 @@ a comment at the site saying why the name and behaviour differ.
 
 The target changes no behaviour a reader could expect anything of: a
 typo fix, a pure deletion of dead code.
+
+## Competes with
+
+Robustness: a reader that accepts what the spec forbids does more than
+its name says. Fail fast: an early abort where a neighbour degrades is
+itself a surprise.

@@ -21,3 +21,10 @@ the commit or a comment at the site.
 
 The target adds no parts: a deletion, a rename, a doc that governs no
 mechanism.
+
+## Competes with
+
+SOLID (DIP, OCP) and GRASP (protected variations, indirection): the
+layer KISS rows as indirection with one user is the seam they row as
+missing when it is absent. Robustness: the tolerant reader is a moving
+part.

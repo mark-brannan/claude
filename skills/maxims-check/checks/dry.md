@@ -22,3 +22,9 @@ or a comment at the site.
 ## `mu` when
 
 The target adds nothing: a deletion, a move with no copy left behind.
+
+## Competes with
+
+WET and AHA. A copy that DRY rows as a second home, WET may row as
+still under three and AHA as an abstraction not yet earned; the same
+lines then carry a row under each, paired on the `Tensions:` line.
