@@ -448,3 +448,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t070210z
 - terminal print: lead finding, delta/chain/indication, recommendation, excellent/devolves, + then − findings Undo: reorder step 4 ([#282](https://github.com/mark-brannan/claude/pull/282))
+
+### 20261023t081529z
+- undo and seen are the two record-words on every finding (reversible Undo: drop the two columns from areas.md and the sub-agent prompt ([#282](https://github.com/mark-brannan/claude/pull/282))
