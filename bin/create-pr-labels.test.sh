@@ -12,7 +12,7 @@ out=$(HOME="$S/home" PATH="$S/bin:$PATH" sh "$SCRIPT")
 
 for label in merge queued mixed-loops-ok epic slop blocked; do
   for repo in dotfiles repoa; do
-    echo "$out" | grep -q "^label create $label -R mark-brannan/$repo " || { echo "FAIL $label on $repo"; exit 1; }
+    grep -q "^label create $label -R mark-brannan/$repo " <<<"$out" || { echo "FAIL $label on $repo"; exit 1; }
   done
 done
 echo ok
