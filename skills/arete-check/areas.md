@@ -44,9 +44,11 @@ purpose, and does that purpose serve the next rung's.
    the record's words with where it is stated. An indicator that does
    not yet exist, or is speculative, counts, named as such.
 4. **If not done** — the opportunity cost: what harm arises by not
-   doing the item. It is the inversion of the item's claim, asked on its
-   own because it does not follow from the claim. One line, in the
-   record's words, one step from a cited line, the step written out.
+   doing the item, and, as squarely, what good arises by not doing it;
+   doing nothing is the null hypothesis. It is the inversion of the
+   item's claim, asked on its own because it does not follow from the
+   claim. One line each way, in the record's words, one step from a
+   cited line, the step written out.
 
 ## Areas
 
@@ -60,9 +62,9 @@ Every finding carries two record-words, each one of two values:
 
 - **undo** — `reversible`: a revert in a repo its owner controls, before
   anyone has seen or built on it; or `one-way`: the one-way-door test of
-  the standing orders. A − finding that is one-way is the one you would
-  not let the item land with as it stands; a + finding that is one-way
-  is a good that stays.
+  the standing orders. A − finding that is one-way and seen only after
+  is the one you would not let the item land with as it stands; a +
+  finding that is one-way is a good that stays.
 - **seen** — `before`: something already in place catches it before it
   lands, a test, a guard, a required review; or `after`: the person it
   touches finds it in use. This check is not a catcher; it would make
@@ -76,6 +78,15 @@ not claim is found the same way as a harm the author did not state.
 
 Magnitude and likelihood go in the finding's own words: for whom, how
 often, how many. The two words are never multiplied into a score.
+
+The recommendation rests on one row and names it. `not yet` names the
+− row that blocks and what would unblock it, and only a row that is
+one-way and seen after can block on its own; a − row that is
+reversible, or caught before it lands, is a row to watch, never the
+reason to hold. With no blocking row the recommendation reads `meets
+the standard`, as far as this reader saw, with the rows to watch. A
+rung with no aim is the lead finding and names work to do; it is not a
+− row.
 
 The order is the anchor's. Flourishing, the good itself, leads; truth
 and elegance, which is beauty's name here, follow, with well-formedness
@@ -175,9 +186,11 @@ merge theirs.
 Devolves in: maintainers lose a clear owner for a wrong label, and the
 default reads two ways.
 
-Recommendation: not yet, as far as this reader saw — settle §3 against
-§5, the one − that is one-way, and name the project's aim; the rest can
-follow.
+Recommendation: meets the standard, as far as this reader saw — it
+rests on the flourishing + row, the triage hour comes back to the user
+and the merge stays theirs; §3 against §5 is one-way but caught before
+it lands, so it is the row to watch; the project's aim is the work to
+do.
 
 Not looked at: the hook the ADR names, and its CI history.
 ```

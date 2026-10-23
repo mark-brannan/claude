@@ -119,8 +119,10 @@ which.
    > default that chose narrowly for the user; a privacy or legal fact
    > the user had not been told; a taste or visual call made without the
    > picture. Look as hard where the author under-claims: a mechanism
-   > whose downstream good is not named. Name what you did not look
-   > at. Return only the brief in the format in areas.md.
+   > whose downstream good is not named, a practice whose good the text
+   > takes for granted. The recommendation cites the one row it rests
+   > on, as areas.md says. Name what you did not look at. Return only
+   > the brief in the format in areas.md.
 
 3. **Find the earlier report.** If the target's report folder (step 5)
    holds one, read the latest and mark each finding that persists from it, in the report
