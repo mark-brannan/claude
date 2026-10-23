@@ -51,7 +51,7 @@ what way does it have the capacity to diminish it. Answer both. Where
 you looked and found nothing, say `nothing found`; where the area does
 not apply, one `mu` row with its reason.
 
-Every finding carries two record-words, each one of two values or `mu`:
+Every finding carries two record-words, each one of two values:
 
 - **undo** — `reversible`: a revert in a repo its owner controls, before
   anyone has seen or built on it; or `one-way`: the one-way-door test of

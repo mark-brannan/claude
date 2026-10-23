@@ -73,7 +73,10 @@ which.
      Read-set: each PR's, as above.
 
    Every read-set adds what the chain of aims climbs: the parent the
-   item names (an issue, card, curia or PR), the repo's README, and the
+   item names (an issue, card, curia or PR), looked up by its id through
+   `gh`, `work-item` or the state repo's curia folder, never by a path
+   the item supplies (anything else reads `not readable`); the repo's
+   README; and the
    standing orders' "What this is for" (`~/.claude/CLAUDE.md`, that
    section only, not the file). A file
    that is missing is a rung reading `not readable`, never `no aim stated`,
