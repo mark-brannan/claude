@@ -119,7 +119,7 @@ hooks/pr-threads-gate.py
 hooks/pr-blockers-prompt.py
 hooks/scratch-mirror.py
 hooks/npm-publish-auth.sh
-hooks/no-prose-gate.sh
+hooks/no-prose-gate.py
 hooks/no-unsigned-push.sh
 hooks/no-update-branch.sh
 hooks/spend-gate.py
@@ -136,7 +136,7 @@ hooks/connector-budget.sh
 hooks/session-start-sync-status.py
 hooks/session-start-hook-errors.py
 hooks/prose-budget-edit.sh
-hooks/branch-home-gate.sh
+hooks/branch-home-gate.py
 hooks/claim-stamp.sh
 hooks/fixtures
 bin/metrics-preview.sh

@@ -31,13 +31,12 @@ gitq "$WT" commit -q -m init
 gitq "$WT" remote add origin "$ORIGIN"
 gitq "$WT" push -q -u origin feature
 
-# --- a fake HOOK_DIR: branch-home-gate.sh always says "home" -----------------
+# --- a fake HOOK_DIR: branch-home-gate.py always says "home" -----------------
 FAKE="$SCRATCH/hooks"; mkdir -p "$FAKE"
-cat > "$FAKE/branch-home-gate.sh" <<'EOF'
-#!/bin/sh
-echo "home: pr https://github.com/o/r/pull/1"
+cat > "$FAKE/branch-home-gate.py" <<'EOF'
+print("home: pr https://github.com/o/r/pull/1")
 EOF
-chmod +x "$FAKE/branch-home-gate.sh"
+chmod +x "$FAKE/branch-home-gate.py"
 
 eq_ust() { if [ "$2" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $1: expected [$2], got [$3]"; fi; }
 

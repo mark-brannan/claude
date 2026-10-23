@@ -25,7 +25,7 @@
 # CONVENIENCE, NOT A GATE: every path exits 0. No gh, no jq, gh
 # unauthenticated, no card, a failed API call -- all are silent no-ops. A
 # session must never be unable to start or end because a claim could not be
-# written. The gates (branch-home-gate.sh here, the languette plugin's
+# written. The gates (branch-home-gate.py here, the languette plugin's
 # guard-private-terms) fail closed; this one does not, deliberately.
 #
 # Never runs under CI: the shared PR reviewer runs Claude Code inside GitHub
@@ -98,7 +98,7 @@ machine_id() {
 # Per-session record: the card this session claimed, the comment it owns and
 # when it last refreshed. Under TMPDIR, never under the state dir --
 # stop-continuity.py commits and pushes that, so a per-session file there
-# would be repo churn in every session (the convention branch-home-gate.sh
+# would be repo churn in every session (the convention branch-home-gate.py
 # and pr-ownership-context.py already use).
 record_path() {
   printf '%s/claude-claim-stamp.%s' "${TMPDIR:-/tmp}" \
@@ -108,11 +108,11 @@ record_path() {
 sid8() { printf '%s' "$1" | cut -c1-8; }
 
 # ---------------------------------------------------------------- the card
-# `pr <url>`, `issue <url>`, `none`, or `unverified: <why>` -- branch-home-gate.sh
+# `pr <url>`, `issue <url>`, `none`, or `unverified: <why>` -- branch-home-gate.py
 # owns the lookup, so a claim and the Stop gate can never disagree about which
 # card a branch belongs to. It is read-only in this mode and touches no marker.
 card_of() {
-  run_to 25 sh "$HERE/branch-home-gate.sh" --card "$1" 2>/dev/null
+  run_to 25 python3 "$HERE/branch-home-gate.py" --card "$1" 2>/dev/null
 }
 
 # owner repo number, from a github.com issue or pull URL. Both kinds of card

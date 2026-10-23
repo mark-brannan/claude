@@ -116,6 +116,32 @@ class Parity(unittest.TestCase):
             self.same('state_shard_path "$@"', (str(d), name, sid),
                       self.state.state_shard_path(str(d), name, sid), f"shard {name} {sid!r}")
 
+    # --- names_branch and board_union, branch-home-gate.py's board lookup ------
+    def test_names_branch(self):
+        for text, branch in (("on claude/homed.", "claude/homed"), ("on claude/homed-extra", "claude/homed"),
+                             ("`claude/homed`, then", "claude/homed"), ("x claude/homedy", "claude/homed"),
+                             ("a\nclaude/a+b@c\nb", "claude/a+b@c"), ("", "claude/x"), ("claude", "claude")):
+            with self.subTest(text=text, branch=branch):
+                st = shell('printf %s "$1" | names_branch "$2"', text, branch)[0]
+                self.assertEqual(self.state.names_branch(text, branch), st == 0)
+
+    def test_board_union(self):
+        sl = self.T / "board-items"
+        e = dict(os.environ, WORK_ITEM_DIR=str(sl), WORK_ITEM_BIN=str(LIB.parent / "bin" / "work-item"))
+        log = "2026-10-03T05:00:00Z 1d68120b status=open owner={o} repo={r} parent=- model=- effort=-\n"
+        for label, items in (("absent", None), ("empty", []),
+                             ("all three", [("agent", "-", "Fix `claude/x`."), ("human-click", "-", "Click."),
+                                            ("human-ruling", "o/claude", "Rule."),
+                                            ("human-ruling", "-", "Rule globally.")])):
+            shutil.rmtree(sl, ignore_errors=True)
+            if items is not None:
+                sl.mkdir()
+                for n, (owner, repo, brief) in enumerate(items):
+                    (sl / f"179000000{n}aaaaaaaa.md").write_text(
+                        f"# T\n\n## Brief\n{brief}\n\n## Log\n" + log.format(o=owner, r=repo))
+            with self.subTest(label):
+                self.assertEqual(py("state.board_union()", env=e)[1], shell("board_union", env=e)[1])
+
     # --- unpushed_state, dirty_paths, archivable_reasons over one set of repos --
     def fixtures(self, pre=""):
         """(label, root, branch) for every git shape the verdict tells apart."""
@@ -178,12 +204,12 @@ class Parity(unittest.TestCase):
         return out
 
     def gate(self, hooks, home, items):
-        """The fake hook dir: branch-home-gate.sh prints home, and the card
+        """The fake hook dir: branch-home-gate.py prints home, and the card
         for --card; the item store holds one item per (status, holder, age,
         brief) in items, or is absent for None."""
-        g = hooks / "branch-home-gate.sh"
-        g.write_text("#!/bin/sh\nif [ \"$1\" = --card ]; then echo 'pr https://github.com/o/r/pull/1'; "
-                     f"else printf '%s\\n' '{home}'; fi\n")
+        g = hooks / "branch-home-gate.py"
+        g.write_text("import sys\nprint('pr https://github.com/o/r/pull/1' if sys.argv[1] == '--card' "
+                     f"else {home!r})\n")
         g.chmod(0o755)
         sl = self.T / "items"
         shutil.rmtree(sl, ignore_errors=True)

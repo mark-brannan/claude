@@ -573,7 +573,7 @@ class Stop:
 
         text = "\n".join(o) + "\n"
 
-        # branch-home-gate.sh writes one line per outcome to a per-session
+        # branch-home-gate.py writes one line per outcome to a per-session
         # file under TMPDIR; this is where it becomes durable. The checkpoint
         # is rewritten on every Stop, so the gate cannot append to it directly.
         bh = f"{tmpdir()}/claude-branch-home.{tr_name(sid)}"
@@ -628,7 +628,7 @@ class Stop:
     # up only when the session holds something no issue, PR or card carries.
     # Four conditions, reasons named in this order:
     #   1. the branch has a home -- an open PR, or a pointer card/issue (#108).
-    #      branch-home-gate.sh --check answers it, so this verdict and that
+    #      branch-home-gate.py --check answers it, so this verdict and that
     #      gate can never disagree about what counts as a home;
     #   2. the worktree is clean;
     #   3. nothing is unpushed;
@@ -971,7 +971,7 @@ class Stop:
             dirty = "dirty" if state.dirty_paths(work_root).rstrip("\n") else "clean"
             self.pi_branch_line = f"{self.work_repo} {self.work_branch} ({ust_desc}, {dirty})"
             miss = f"{tmpdir()}/claude-pickup-pr-miss.{tr_name(sid)}"
-            gate = f"{HOOK_DIR}/branch-home-gate.sh"
+            gate = f"{HOOK_DIR}/branch-home-gate.py"
             try:
                 fresh_miss = time.time() - os.stat(miss).st_mtime < 600
             except OSError:
@@ -980,7 +980,7 @@ class Stop:
                 # The verdict's own home check (archivable, lib/state.py) kept
                 # its line; reuse it rather than paying the gh round trip
                 # twice in one Stop.
-                home = self.home or cap(["sh", gate, "--check", work_root])[1]
+                home = self.home or cap([sys.executable, gate, "--check", work_root])[1]
                 if home.startswith("home: https://"):
                     found = []
                     for ln in home.split("\n"):

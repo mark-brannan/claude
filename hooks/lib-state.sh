@@ -64,7 +64,7 @@ state_shard_path() {
 # character git allows in a branch name (no `~^:?*[\`, no non-ASCII): it
 # exists to strip prose punctuation (a trailing period or comma) off a
 # branch mention in a sentence, and `+`/`@` are the two git allows that
-# never show up as that kind of padding. Shared by branch-home-gate.sh and
+# never show up as that kind of padding. Shared by branch-home-gate.py and
 # worklist so a branch counts as pointed-at the same way in both.
 names_branch() {
   grep -oE '[A-Za-z0-9._/+@-]+' | grep -qxF -- "$1"
@@ -149,15 +149,15 @@ dirty_paths() {
 # nag and stop-continuity.sh's Stop-hook verdict must never disagree about
 # what "archivable" means (dotfiles#149). Before this they didn't even
 # agree on what a "home" is -- metrics-live re-checked PR-or-card
-# inline and never looked for a pointer issue, the one branch-home-gate.sh
+# inline and never looked for a pointer issue, the one branch-home-gate.py
 # already finds.
 #
-# Requires $HOOK_DIR set by the caller: branch-home-gate.sh lives beside
+# Requires $HOOK_DIR set by the caller: branch-home-gate.py lives beside
 # this file and is shelled out to, not sourced, so its own state (the
 # once-per-session gate) never leaks into this read-only check.
 #
 # Home is checked before session-live, and both only when dirty/unpushed are
-# already clean: both can shell out to `gh` (branch-home-gate.sh up to two
+# already clean: both can shell out to `gh` (branch-home-gate.py up to two
 # 30s calls per mode, and session-live asks for its --card after the home
 # check has), so a dirty mid-work tree -- the common
 # case, and the one Stop fires on every turn -- never pays that cost.
@@ -197,11 +197,11 @@ archivable_reasons() {
   esac
 
   if [ -z "$reasons" ]; then
-    home=$(sh "$HOOK_DIR/branch-home-gate.sh" --check "$work_root" 2>/dev/null)
+    home=$(python3 "$HOOK_DIR/branch-home-gate.py" --check "$work_root" 2>/dev/null)
     # Handed back through a file, never a variable: every caller runs this
     # function inside $(...), where a variable dies with the subshell.
     # stop-continuity.sh's pickup item wants the same home line and must
-    # not pay branch-home-gate.sh's gh round trip a second time in one Stop.
+    # not pay branch-home-gate.py's gh round trip a second time in one Stop.
     [ -z "${ARCHIVABLE_HOME_FILE:-}" ] \
       || printf '%s\n' "$home" > "$ARCHIVABLE_HOME_FILE" 2>/dev/null
     case "$home" in
@@ -211,10 +211,10 @@ archivable_reasons() {
     esac
   fi
 
-  if [ -z "$reasons" ] && [ -x "$HOOK_DIR/branch-home-gate.sh" ]; then
+  if [ -z "$reasons" ] && [ -x "$HOOK_DIR/branch-home-gate.py" ]; then
     local card url slug
     self8=$(printf '%s' "$self_sid" | cut -c1-8)
-    card=$(sh "$HOOK_DIR/branch-home-gate.sh" --card "$work_root" 2>/dev/null)
+    card=$(python3 "$HOOK_DIR/branch-home-gate.py" --card "$work_root" 2>/dev/null)
     url=${card#* }
     case "$card" in
       "pr "*|"issue "*)
