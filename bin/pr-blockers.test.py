@@ -141,11 +141,19 @@ class Test(unittest.TestCase):
         for want in ("merge conflict", "check failing: lint", "check pending: slow", "check pending: legacy"):
             self.assertIn(want, out)
 
+    def test_only_behind_is_clean(self):
+        # The fixup contract (pickup skill, section 6): a branch merely behind
+        # its base is the queue's to update, so it is not a blocker line, and
+        # never falls into the unexplained-BLOCKED fallback either.
+        ok = {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}
+        code, out = self.run_tool(view("BEHIND", checks=[ok]), page(commit("a")))
+        self.assertEqual((code, out), (0, ""))
+
     def test_behind_and_paginated_commits(self):
         pages = page(commit("a")) + page(commit("c", verified=False, reason="GPGVERIFY_UNAVAILABLE"))
         code, out = self.run_tool(view("BEHIND"), pages, ref="https://github.com/o/r/pull/5")
         self.assertEqual(code, 1)
-        self.assertIn("behind its base", out)
+        self.assertNotIn("behind", out, "merely behind is the queue's to fix (fixup contract 6.2)")
         self.assertIn("ccccccc", out)
 
     def test_unknown_mergeability_is_not_clean(self):

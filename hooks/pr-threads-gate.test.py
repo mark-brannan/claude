@@ -212,12 +212,14 @@ class MergeState(Base):
         self.record("m1", "repo", "o/r", "25")
         self.assertBlocks("m1", "conflicting")
         self.says("o/r#25 conflicts with its base")
-        self.says(r"git rebase origin/<base>")
+        self.says("fixup contract")
+        self.says("never linearize")
 
-    def test_behind(self):
+    def test_behind_is_left_alone(self):
+        # The fixup contract (pickup skill, section 6): only a conflict needs a
+        # hand; a branch merely behind its base is the queue's to update.
         self.record("m2", "repo", "o/r", "25")
-        self.assertBlocks("m2", "behind")
-        self.says("o/r#25 is behind its base")
+        self.assertSilent("m2", "behind")
 
     def test_unknown_after_reask(self):
         for sid, mode in (("m3", "unknown"), ("m5", "mergeable_unknown_mstate"),

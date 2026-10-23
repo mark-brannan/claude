@@ -95,10 +95,18 @@ claim as its last step. When an agent never ran, release it yourself:
 `~/.claude/bin/prt release <owner/repo#n> <sid>`. A claim nobody releases
 goes stale after 2h, and the next claim on that PR collects it.
 
-Then one agent per worked PR, the model from the table, in the
-background, five at a time, and no `isolation`: the agent makes its own
-worktree, since the guard-worktrees hook lets an agent work only in one it
-made. Each prompt is this text, verbatim, with the blanks filled.
+This session drives one round per worked PR: a review, then a fix.
+First run critical-review's models step yourself and spawn a reviewer
+sub-agent on the family it prints, briefed to run /critical-review on the
+PR. A PR's earlier rounds are the `prt estimate` lines on its item from
+earlier runs. After three, the reviewer runs alone; if it still raises a
+`[blocker]` or `[should]`, park the PR on a `human-ruling` card through
+card-write naming those threads, list it under Not ready as `parked:
+<card>`, and spawn no fixer. Otherwise, when the reviewer returns, one
+fresh fixer agent, never the reviewer's session, the model from the
+table, in the background, five at a time, and no `isolation`: the agent
+makes its own worktree, since the guard-worktrees hook lets an agent
+work only in one it made. Each prompt is this text, verbatim, with the blanks filled.
 `<scratchpad>` is this session's scratchpad directory, absolute; `<repo>`
 is the repo's name without its owner:
 
@@ -114,16 +122,17 @@ you under sid <sid>; you release that claim at the end.
    If `git rev-parse HEAD` is not <start sha>, someone pushed since the
    plan: go to step 7 and report that, pushing nothing. If a guard
    refuses a step, report its exact message and go to step 7.
-2. Do a critical review of <url>: read ~/.claude/skills/critical-review/SKILL.md
-   and do what it says. Work every fix to the fixup contract,
+2. A reviewer's threads are on <url>, and
+   `~/.claude/bin/pr-blockers <url>` lists the rest. Work every fix to
+   the fixup contract,
    ~/.claude/skills/pickup/SKILL.md section 6, read in full. Its stop
    rule, "one honest attempt or about $1", is 1.5M transcript tokens
    here: past that, label the PR `fixup-hard`, leave its one comment and
    go to step 7. Your context budget is 110k, hard; past about 95k, push
    what you have and report.
-3. Bot threads: read each unresolved one, fix it or state why not, reply
-   on it with the evidence (commit, file and line), then resolve it by
-   id, one at a time:
+3. Threads, the reviewer's and the bots': read each unresolved one, fix
+   it or state why not, reply on it with the evidence (commit, file and
+   line), then resolve it by id, one at a time:
    `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id>`
    In a Claude Code cloud session GraphQL is refused with a 403; use the
    GitHub MCP server's `resolve_review_thread` with the thread id from
@@ -153,7 +162,7 @@ you under sid <sid>; you release that claim at the end.
    Leave your worktree where it is; the triage session removes it.
 7. Last step, whatever happened before it:
    `~/.claude/hooks/claim-stamp.py card-release <url> <sid>`
-8. Report critical-review's summary, then this record, filled:
+8. Report what you fixed and declined, then this record, filled:
 
 ```prt
 pr: <owner/repo#n>
@@ -164,9 +173,9 @@ fixup-hard: yes | no
 pushed: <shas, or none>
 threads_resolved: <thread ids, or none>
 decide:
-- <each Decide line exactly as in the summary, or: none>
+- <each Decide line, in critical-review's summary form, or: none>
 reversed:
-- <each Reversed line exactly as in the summary, or: none>
+- <each Reversed line, in critical-review's summary form, or: none>
 ```
 ````
 
