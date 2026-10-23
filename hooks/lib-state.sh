@@ -369,8 +369,9 @@ default_branch() {
 # The recommendation ladder is ordered by what is unrecoverable, not by what
 # is common, and follows code.md's "Green before it is handed over":
 # merge commits outrank everything (a rebase drops whatever lives only in a
-# hand-resolved merge's tree), then conflicts, then signing, then the plain
-# rebase that a clean branch wants.
+# hand-resolved merge's tree), then conflicts, then signing. A clean branch
+# gets no base work: the fixup contract (pickup skill, section 6) leaves a
+# branch that is merely behind to the queue.
 branch_brief() {
   local root="$1" br="$2" bases nb base wts lr ahead behind conf revs uns mg mb
   _bb() { git -C "$root" "$@"; }
@@ -451,7 +452,7 @@ branch_brief() {
   elif [ "$uns" -gt 0 ]; then
     printf 'recommend: cannot sign on this machine (no user.signingkey) -- %s unsigned commit(s) will block the PR; hand over saying resign-branch.sh %s has to run where the key is\n' "$uns" "$br"
   else
-    printf 'recommend: git fetch origin %s && git rebase origin/%s\n' "$base" "$base"
+    printf 'recommend: nothing on the base -- signed, no conflict; a branch merely behind origin/%s is left as is, the queue updates it (fixup contract, pickup skill section 6)\n' "$base"
   fi
 }
 
