@@ -51,6 +51,7 @@ import lib_state  # noqa: E402
 try:
     import atomic  # noqa: E402
     import gitrun  # noqa: E402
+    import hookio  # noqa: E402
     import state  # noqa: E402
     import when  # noqa: E402
 except ImportError as e:  # a seed without lib/: lib_state has said so on stderr
@@ -768,10 +769,10 @@ class Hook:
         elif not (model_line or block_reason):
             return
         if block_reason:
-            out.update(decision="block", reason=block_reason)
+            out.update(hookio.block(block_reason))
         if model_line:
-            out["hookSpecificOutput"] = {"hookEventName": inject_event, "additionalContext": model_line}
-        sys.stdout.buffer.write((compact(out) + "\n").encode("utf-8"))
+            out.update(hookio.context(inject_event, model_line))
+        hookio.emit(out, ascii=False, compact=True)
 
     def run_engine(self, is_prompt, can_inject):
         """Each part under soft(): one that raises is traced under its own

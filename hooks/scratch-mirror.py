@@ -13,13 +13,13 @@ ours to write into: a copy there could land outside the repo or be
 committed. Silent on the quiet path: every line printed is charged to the
 session.
 """
-import json
 import os
 import shutil
 import sys
 
 import lib_state  # puts lib/ on sys.path
 import gitrun
+import hookio
 
 DOCS = (".md", ".mmd", ".svg", ".html")
 
@@ -75,11 +75,10 @@ def main():
     rel = os.path.relpath(dest, cwd)
     # Angle brackets keep a space or parenthesis in the name from ending the link.
     name = os.path.basename(path).replace("[", "\\[").replace("]", "\\]")
-    print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PostToolUse",
-        "additionalContext": f"Copied for the user to open: {rel}. Link the user to [{name}](<{rel}>), "
-                             "never to the state-repo path; the copy refreshes on each Write or Edit of the original.",
-    }}))
+    hookio.emit(hookio.context(
+        "PostToolUse",
+        f"Copied for the user to open: {rel}. Link the user to [{name}](<{rel}>), "
+        "never to the state-repo path; the copy refreshes on each Write or Edit of the original."))
 
 
 if __name__ == "__main__":
