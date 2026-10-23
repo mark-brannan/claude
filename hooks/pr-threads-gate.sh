@@ -1,4 +1,5 @@
 #!/bin/sh
+# Open review threads are checked when an agent finishes with a PR: easy-grind/inputs/2026-10-22-confer-sub-agent-stop-gate.md
 # Blocks the end of a turn while a PR this session touched still has an
 # unresolved review thread, or cannot merge without a rebase.
 #
