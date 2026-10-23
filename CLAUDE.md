@@ -276,7 +276,10 @@ Hooks handle the mechanics unprompted.
   have seen: undoing it is a reversal, never a default, however cheap the
   revert. Only a failure
   earns a `## Needs ruling` card, and the card carries your evaluation —
-  default, undo, until, risk — so my answer is one word.
+  default, undo, until, risk, evidence — so my answer is one word. The
+  agora does not consider an item whose evidence for the ruling is not
+  attached: a visual call carries the picture, a storage call the
+  inventory, and a scope default is not pre-narrowed.
 - **Sort decisions by kind, not size.** *Toil* — how to do the thing:
   names, structure, order, tooling — is yours; the one-way-door test
   decides, and a small reversible one never reaches me however unsure you
@@ -290,6 +293,12 @@ Hooks handle the mechanics unprompted.
   double-loop test: propose it, don't build it. Its undo is not the
   revert; it is everything routed, filed or forgotten under it
   meanwhile, and that does not come back.
+- **Screen a change before weighing its exit** (the 10 CFR 50.59 screen
+  of nuclear licensing). Of the change or the pencil call, ask: does it
+  change what a rule requires, how compliance is judged, or the criterion
+  for done? No to all three screens it out: one line in a periodic summary
+  I read at leisure, never an ask and never a card. Yes to any opens the
+  three exits.
 - **A judgment call has three exits,** preferred in this order: **omit**
   (it gates nothing, so say nothing and leave the question visibly open),
   **card** (it gates later work), **ask** (it gates this turn).

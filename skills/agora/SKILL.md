@@ -50,11 +50,18 @@ reuses it. A card whose question events have overtaken never reaches the
 user: restate the live question under it, or route it
 to `/sweep`. "May I delete this?" is never the item. The docket is counted
 after admission; a card routed away leaves the count.
-A visual item (how something looks: a drawing, a crop, a sprite, a
-picture, a layout) is admitted only with its visual evidence attached or
-linked in the question itself: goldens, a before/after, or a rendered
-example. With none, the brief's subagent renders it first, or the item
-does not reach the user.
+A card without its evidence (`evidence:` per `/card-write`: the picture
+for a visual call, the inventory for a storage call, the whole scope
+behind a scope default) is returned to the filer as work, not put on the
+docket: `~/.claude/bin/work-item log <id> owner=agent 'needs evidence: <what>'`
+sends it to the agent's queue, and the agent that gathers the evidence
+logs `owner=human-ruling` to send it back. It leaves the count.
+A visual or taste item (how something looks or reads: a drawing, a crop,
+a sprite, a picture, a layout, a colour) carries its visual evidence in
+the question itself: goldens, a before/after, or a rendered example. It
+is offered as a toggle to try, both options built behind a switch with
+the default on, rather than as a ruling; the user tries them and keeps
+one when ready.
 A question never cites a label by its code alone (R1, D5, Q-nn, §7); it
 gives the label's words, in one or two sentences.
 
@@ -79,8 +86,8 @@ A fold also carries the curia's question in one line.
 Every item this skill touches gets, and keeps:
 
 - **Input** — the exact question, one sentence, answerable yes / no / a
-  number / a named choice, plus the four fields `default`, `undo`,
-  `until`, `risk`. Not "figure out X"; that is unscoped work, sent back
+  number / a named choice, plus the five fields `default`, `undo`,
+  `until`, `risk`, `evidence`. Not "figure out X"; that is unscoped work, sent back
   to be scoped.
 - **Output** — exactly one of:
   - **Ruling** — the user answers; the ruling is written at once where
@@ -142,7 +149,7 @@ a PR or comments on an issue just to record a private ruling.
 1. A fresh subagent gathers the item's context, starting from
    `~/.claude/bin/work-item show <id>` (a confer mark or an unblocked note lives in its
    log, not on the docket row), and returns the typed
-   question with its four fields and a **direct link** to the stored
+   question with its five fields and a **direct link** to the stored
    context, readable by the user. It also lists the open curiae exactly as
    the curia skill's bare `/curia` does (`status: open` in the header; a
    header-less digest is open) and says whether the item is a
