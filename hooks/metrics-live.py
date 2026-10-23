@@ -47,6 +47,7 @@ sys.path.insert(0, HOOK_DIR)
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 import lib_state  # noqa: E402
+import metrics_format  # noqa: E402
 
 try:
     import atomic  # noqa: E402
@@ -64,7 +65,6 @@ except ImportError:  # a seed without lib/hooktrace.py: stderr is all there is
     hooktrace = None
 
 JQPROG = os.path.join(HOOK_DIR, "session-metrics.jq")
-FORMAT_SH = os.path.join(HOOK_DIR, "metrics-format.sh")
 PACIFIC = "America/Los_Angeles"
 
 # Who and where, for trace(): filled in as soon as the payload is read.
@@ -1250,11 +1250,10 @@ def item_field(path, key):
 
 
 def fmt_lines(turns, tools, commits, dirty, unpushed):
-    """The block's second line, from metrics-format.sh: display text stays
-    plain shell printf the user can edit unassisted."""
-    out = run_out(["bash", "-c", '. "$1"; fmt_turns "$2" "$3"; printf "\\n"; fmt_work "$4" "$5" "$6"',
-                   "_", FORMAT_SH, str(turns), str(tools), str(commits), str(dirty), str(unpushed)])
-    turns_line, _, work = out.partition("\n")
+    """The block's second line, from metrics_format.py: display text stays
+    plain f-strings the user can edit unassisted."""
+    turns_line = metrics_format.fmt_turns(turns, tools)
+    work = metrics_format.fmt_work(commits, dirty, unpushed)
     return f"{turns_line} {work}" if work else turns_line
 
 

@@ -173,7 +173,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/guard-add-repo.sh\"; [ -f \"$h\" ] && bash \"$h\"; true"
+            "command": "h=\"$HOME/.claude/hooks/guard-add-repo.py\"; [ -f \"$h\" ] && python3 \"$h\"; true"
           }
         ]
       },
@@ -182,7 +182,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/no-persistent-polling.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/no-persistent-polling.py\"; [ -f \"$h\" ] && python3 \"$h\" || true"
           }
         ]
       },
@@ -211,7 +211,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/no-late-pr-subscribe.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/no-late-pr-subscribe.py\"; [ -f \"$h\" ] && python3 \"$h\" || true"
           }
         ]
       },
@@ -291,7 +291,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/prose-budget-edit.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/prose-budget-edit.py\"; [ -f \"$h\" ] && python3 \"$h\" || true"
           },
           {
             "type": "command",
@@ -341,7 +341,7 @@
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/release-subagent-branch.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
+            "command": "h=\"$HOME/.claude/hooks/release-subagent-branch.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null || true",
             "timeout": 10
           }
         ]
