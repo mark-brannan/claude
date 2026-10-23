@@ -211,7 +211,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/no-late-pr-subscribe.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/no-late-pr-subscribe.py\"; [ -f \"$h\" ] && python3 \"$h\" || true"
           }
         ]
       },
@@ -341,7 +341,7 @@
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/release-subagent-branch.sh\"; [ -f \"$h\" ] && bash \"$h\" 2>/dev/null || true",
+            "command": "h=\"$HOME/.claude/hooks/release-subagent-branch.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null || true",
             "timeout": 10
           }
         ]

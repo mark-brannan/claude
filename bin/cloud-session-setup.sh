@@ -113,8 +113,8 @@ hooks/stop-sequence.py
 hooks/stop-item.py
 hooks/measure-git-events.py
 hooks/no-persistent-polling.sh
-hooks/no-late-pr-subscribe.sh
-hooks/release-subagent-branch.sh
+hooks/no-late-pr-subscribe.py
+hooks/release-subagent-branch.py
 hooks/pr-ownership-context.py
 hooks/pr-threads-gate.py
 hooks/pr-blockers-prompt.py
@@ -126,7 +126,7 @@ hooks/no-update-branch.sh
 hooks/spend-gate.py
 hooks/session-start-seed-refresh.py
 hooks/guard-add-repo.sh
-hooks/metrics-format.sh
+hooks/metrics_format.py
 hooks/metrics-live.py
 hooks/metrics-rollup.sh
 hooks/log-commit.py

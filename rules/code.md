@@ -302,7 +302,7 @@ public" section.
   Max. 60% leaves room for ~6-10 wakes at 5-15k each and stops short of the
   band where cloud sessions start compacting — and compaction drops exactly
   the reasoning behind the diff under review. Enforced by
-  `~/.claude/hooks/no-late-pr-subscribe.sh`, which reads current context
+  `~/.claude/hooks/no-late-pr-subscribe.py`, which reads current context
   from the transcript and denies `subscribe_pr_activity` at or above the
   threshold. Knobs: `CLAUDE_PR_WATCH_CONTEXT_WINDOW` (raise it by hand for
   a 1M session — the hook can't see the model's window),
