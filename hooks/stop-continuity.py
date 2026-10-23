@@ -477,10 +477,10 @@ class Stop:
         # per-session record under TMPDIR first and return without a network
         # call when there is none, and the refresh is debounced besides. Stop
         # fires on every turn, so that has to stay true.
-        cs = f"{HOOK_DIR}/claim-stamp.sh"
+        cs = f"{HOOK_DIR}/claim-stamp.py"
         if self.work_root and os.access(cs, os.X_OK):
             verb = "release" if self.verdict == "archivable" else "refresh"
-            quiet(["sh", cs, verb, "-C", self.work_root, sid])
+            quiet([sys.executable, cs, verb, "-C", self.work_root, sid])
 
         self.pickup_item()
         self.session_item()

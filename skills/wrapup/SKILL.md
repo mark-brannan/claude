@@ -149,7 +149,7 @@ asks.
 
 ## 4. Release the branch
 
-`~/.claude/hooks/claim-stamp.sh release -C . --scan <this session id>` — it deletes
+`~/.claude/hooks/claim-stamp.py release -C . --scan <this session id>` — it deletes
 this session's claim stamp from the card, drops any board card it took, and
 costs nothing when there is none.
 Skip it only when the session is *pausing* mid-work and keeping its worktree;

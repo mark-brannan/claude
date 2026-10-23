@@ -293,7 +293,7 @@ class StopContinuityTest(unittest.TestCase):
         GH_LOG = w.S / "gh.log"
         GH_LOG.write_text("")
         w.run_hook("ghlog000-1111-2222-3333", WORK, GH_LOG=GH_LOG, GH_PRS=PR7)
-        # claim-stamp.sh's own `--card` lookup is a separate, deliberate call
+        # claim-stamp.py's own `--card` lookup is a separate, deliberate call
         # and is not counted here; the verdict's `--check` is what must run once.
         n = sum(1 for ln in read(GH_LOG).splitlines()
                 if re.match(r"pr list --head.*branch-home-gate\.py --check", ln))

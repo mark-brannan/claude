@@ -1424,9 +1424,9 @@ cp "$(cd "$(dirname "$GRIND")/.." && pwd)/skills/pickup/SKILL.md" \
 cat > "$prroot/hooks/lib-state.sh" <<'LS'
 branch_brief() { printf 'base: main (open PR)\nconflicts: yes\nrecommend: git merge origin/main   # fixture\n'; }
 LS
-cat > "$prroot/hooks/claim-stamp.sh" <<STAMP
-#!/bin/sh
-echo "\$*" >> "$S/stamp.log"
+cat > "$prroot/hooks/claim-stamp.py" <<STAMP
+import sys
+open("$S/stamp.log", "a").write(" ".join(sys.argv[1:]) + "\\n")
 STAMP
 cat > "$prroot/bin/pr-label-audit" <<AUDIT
 #!/bin/sh

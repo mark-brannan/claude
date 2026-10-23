@@ -77,7 +77,7 @@ Show the plan; under a bare `/prt` nothing gates the launch.
 ```
 
 The same plan and flags, and now it writes. For each worked PR, first the
-claim: `claim-stamp.sh card-claim` under a sid made for that PR in this
+claim: `claim-stamp.py card-claim` under a sid made for that PR in this
 run. A PR already claimed is handed off `claimed: …` and nothing else is
 written for it. Then its work item (the one whose `home=` is the PR, else
 a new one) and one `prt estimate` line on it. A repo with no clone at
@@ -152,7 +152,7 @@ you under sid <sid>; you release that claim at the end.
    File no cards or issues: anything card-shaped goes in your report.
    Leave your worktree where it is; the triage session removes it.
 7. Last step, whatever happened before it:
-   `~/.claude/hooks/claim-stamp.sh card-release <url> <sid>`
+   `~/.claude/hooks/claim-stamp.py card-release <url> <sid>`
 8. Report critical-review's summary, then this record, filled:
 
 ```prt

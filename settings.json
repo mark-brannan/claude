@@ -352,22 +352,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/session-start-seed-refresh.sh\"; [ -f \"$h\" ] && bash \"$h\" || true",
+            "command": "h=\"$HOME/.claude/hooks/session-start-seed-refresh.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
             "timeout": 60
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/claim-stamp.sh\"; [ -f \"$h\" ] && sh \"$h\" session-start || true",
+            "command": "h=\"$HOME/.claude/hooks/claim-stamp.py\"; [ -f \"$h\" ] && python3 \"$h\" session-start || true",
             "timeout": 30,
             "statusMessage": "Claiming this branch on its card"
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/session-start-continuity.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/session-start-continuity.py\"; [ -f \"$h\" ] && python3 \"$h\" || true"
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/connector-budget.sh\"; [ -f \"$h\" ] && bash \"$h\" || true"
+            "command": "h=\"$HOME/.claude/hooks/connector-budget.py\"; [ -f \"$h\" ] && python3 \"$h\" || true"
           },
           {
             "type": "command",

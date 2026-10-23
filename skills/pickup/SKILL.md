@@ -108,7 +108,7 @@ read off the card by its link, since `read -C .` would read your own fork's
 branch, which has no card):
 
 ```
-~/.claude/hooks/claim-stamp.sh card-claims <the PR or issue link the item names>
+~/.claude/hooks/claim-stamp.py card-claims <the PR or issue link the item names>
 for p in /proc/[0-9]*; do case $(readlink "$p/cwd" 2>/dev/null) in */<name> | */<name>/*) echo "live: pid ${p#/proc/}" ;; esac; done
 cat ~/.claude/sessions/<pid>.json          # name, status, statusUpdatedAt (needs a pid)
 ls -lt --time-style=full-iso ~/.claude/projects/<worktree path with / and . as ->/*.jsonl | head -1
@@ -162,7 +162,7 @@ Then claim it on the card, so a session on *another machine* — which git
 cannot see — knows too:
 
 ```
-~/.claude/hooks/claim-stamp.sh claim -C . <this session id>
+~/.claude/hooks/claim-stamp.py claim -C . <this session id>
 ```
 
 It prints nothing when the branch is free. When it prints a warning, another
@@ -223,7 +223,7 @@ item still listed open after two sessions took it is worse than none.
 
 `pickup-list` drops it from the default view from then on; the file keeps
 the record (`--closed` shows it). On a card, `take` is a claim through
-`claim-stamp.sh`, keyed by the link: a second session reads it taken, and a
+`claim-stamp.py`, keyed by the link: a second session reads it taken, and a
 refusal names the session that holds it. Relay that and pick again.
 
 ## 5. Then work

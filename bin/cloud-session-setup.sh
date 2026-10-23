@@ -101,12 +101,13 @@ lib/when.py
 lib/jsonl.py
 lib/hookio.py
 lib/atomic.py
+lib/cksum.py
 hooks/curia-roll.py
 hooks/curia_words.py
 hooks/session-metrics.jq
 hooks/lib-metrics-fmt.jq
 hooks/lib-metrics-test-harness.sh
-hooks/session-start-continuity.sh
+hooks/session-start-continuity.py
 hooks/stop-continuity.py
 hooks/stop-sequence.py
 hooks/stop-item.py
@@ -123,7 +124,7 @@ hooks/no-prose-gate.py
 hooks/no-unsigned-push.sh
 hooks/no-update-branch.sh
 hooks/spend-gate.py
-hooks/session-start-seed-refresh.sh
+hooks/session-start-seed-refresh.py
 hooks/guard-add-repo.sh
 hooks/metrics-format.sh
 hooks/metrics-live.py
@@ -132,12 +133,12 @@ hooks/log-commit.py
 hooks/log-gh-writes.py
 hooks/permission-request-log.py
 hooks/statusline-metrics.py
-hooks/connector-budget.sh
+hooks/connector-budget.py
 hooks/session-start-sync-status.py
 hooks/session-start-hook-errors.py
 hooks/prose-budget-edit.sh
 hooks/branch-home-gate.py
-hooks/claim-stamp.sh
+hooks/claim-stamp.py
 hooks/fixtures
 bin/metrics-preview.sh
 bin/self-check
@@ -181,7 +182,7 @@ OWNED_NEVER='. state projects todos plugins'
 # credentials for a private repo at setup time -- so it must be added as a
 # SECOND SOURCE on the cloud environment alongside claude. Without it the
 # hooks still run, but they write to ~/.claude/state/global, which dies with
-# the container. session-start-continuity.sh says so at the top of every
+# the container. session-start-continuity.py says so at the top of every
 # session rather than failing quietly.
 
 # --- what must never be installed ----------------------------------------
@@ -261,7 +262,7 @@ fi
 # freezes at whatever it was when the environment was provisioned. A rule
 # edited upstream then reaches only the sessions that happen to get a cold
 # VM, which look identical to the ones that do. Hence this pull, and
-# hooks/session-start-seed-refresh.sh re-running the installer at every
+# hooks/session-start-seed-refresh.py re-running the installer at every
 # SessionStart: live rather than pinned, because a stale standing order in an
 # interactive session is worse than a changed one.
 #
@@ -401,7 +402,7 @@ fi
 # this script targets) is load-bearing here -- plain `mv src dst` treats an
 # existing symlink-to-directory `dst` as that directory and moves `src`
 # *into* it instead of replacing it.
-# One installer at a time from here on. session-start-seed-refresh.sh runs
+# One installer at a time from here on. session-start-seed-refresh.py runs
 # this on every SessionStart and a checkpointed container can host several
 # sessions at once, so two runs on different SHAs can reach the flip
 # together -- and the GC below deletes every release but its own, which
@@ -494,7 +495,7 @@ elif [ ! -d "$STAGE_TMP" ]; then
   warn "staging produced nothing usable — leaving the previous release in place"
   failed=$((failed + 1))
 elif [ -d "$STAGE" ]; then
-  # The common path, not an edge case: session-start-seed-refresh.sh runs
+  # The common path, not an edge case: session-start-seed-refresh.py runs
   # this installer on EVERY SessionStart, and the seed's SHA only moves when
   # a commit lands upstream. $REV pins the content, so an existing release
   # under that name already holds exactly what was just staged -- and
@@ -663,7 +664,7 @@ COMPLETE=true
 if [ "$DRY_RUN" = yes ]; then
   say "would write $STATUS_FILE (complete: $COMPLETE)"
 else
-  # Staged and renamed, not truncated in place: session-start-continuity.sh
+  # Staged and renamed, not truncated in place: session-start-continuity.py
   # reads this file, and a parallel session catching it mid-write would parse
   # an empty document and announce a DEGRADED session that isn't one.
   # The rename is gated on the write: `mv` only cares that its source
