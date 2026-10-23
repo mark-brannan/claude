@@ -11,6 +11,8 @@
 #
 # Cost per push: well under a second, a step in CI's existing tool-tests job,
 # so no new job and nothing drawn from the account's concurrent-job cap.
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -53,9 +55,9 @@ def assistant(mid, ts, out=0, read=0, text="", tools=(), model="claude-opus-5-5"
     return e
 
 
-def tool_result(ts):
+def tool_result(ts, content="ok"):
     return {"type": "user", "timestamp": ts, "message": {"role": "user", "content": [
-        {"type": "tool_result", "tool_use_id": "x", "content": "ok"}]}}
+        {"type": "tool_result", "tool_use_id": "x", "content": content}]}}
 
 
 def write_jsonl(path, lines):
@@ -72,8 +74,11 @@ class CriticalReviewTest(unittest.TestCase):
         self.saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_STATE_REPO")}
         os.environ["HOME"], os.environ["CLAUDE_STATE_REPO"] = str(self.T / "home"), ""
         self.tp = self.T / "proj" / f"{SID}.jsonl"
+        self.pr_text, self.text = cr.pr_text, ""  # no network: the PR's text is whatever a test sets
+        cr.pr_text = lambda pr: self.text
 
     def tearDown(self):
+        cr.pr_text = self.pr_text
         for k, v in self.saved.items():
             if v is None:
                 os.environ.pop(k, None)
@@ -127,6 +132,44 @@ class CriticalReviewTest(unittest.TestCase):
         # Opus $5/$25: 150 out + 1000 read; Haiku $1/$5: 11 out.
         self.assertAlmostEqual(row["usd"], round((150 * 25 + 1000 * 0.5 + 11 * 5) / 1e6, 4))
         self.assertEqual([row[k] for k in ("fixed", "look_at", "pencil", "decide")], [2, 0, 1, 0])
+
+    def reviewer(self, *argv):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            cr.main(["reviewer", "o/r#1", *argv])
+        return out.getvalue().strip()
+
+    def test_the_reviewer_is_no_family_that_coded_the_pr(self):
+        trailer = "Co-Authored-By: Claude {} <noreply@anthropic.com>"
+        for coders, line in ((("Sonnet 5.5",), "coder=sonnet reviewer=opus"),
+                             (("Opus 5.5",), "coder=opus reviewer=fable"),
+                             # mixed: a fixer's commits outnumber the coder's; both are excluded
+                             (("Opus 5.5", "Fable 1", "Fable 1"), "coder=fable,opus reviewer=sonnet")):
+            self.text = "body\n" + "\n".join(trailer.format(m) for m in coders)
+            self.assertEqual(self.reviewer(), line)
+        self.text = "\n".join(trailer.format(m) for m in ("Opus", "Opus", "Fable", "Sonnet", "Haiku"))
+        self.assertEqual(self.reviewer(), "coder=fable,haiku,opus,sonnet reviewer=fable "
+                         "(every family coded this PR; fable is the least present)")
+        self.text = "Co-Authored-By: Pat <pat@example.com>"
+        self.assertIn("coder=unknown reviewer=opus (no trailer names", self.reviewer())
+
+    def test_the_drivers_coder_adds_to_trailers_and_gh_failure_exits(self):
+        self.text = "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+        self.assertEqual(self.reviewer("--coder", "claude-opus-5-5"), "coder=opus,sonnet reviewer=fable")
+        # an Opus fix, then a re-review with --coder sonnet: Opus must not review its own fix
+        self.text = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+        self.assertEqual(self.reviewer("--coder", "sonnet"), "coder=opus,sonnet reviewer=fable")
+        self.assertRaises(SystemExit, self.reviewer, "--coder", "gpt")
+        self.text = None
+        self.assertRaises(SystemExit, self.reviewer)
+
+    def test_the_row_records_the_models_the_review_chose(self):
+        self.session()
+        evs = cr.events(str(self.tp))
+        evs.insert(4, tool_result("2026-10-09T07:10:05Z", "coder=sonnet reviewer=opus"))
+        write_jsonl(self.tp, evs)
+        self.text = None  # a later Stop with gh down changes nothing: the row never asks gh
+        [row] = cr.session_rows(SID, str(self.tp), "/w")
+        self.assertEqual((row["coder_model"], row["reviewer_model"]), ("sonnet", "opus"))
 
     def test_a_heading_the_summary_lacks_is_null_and_no_effort_is_null(self):
         write_jsonl(self.tp, [command("c", "o/r#3", "2026-10-09T07:00:00Z"),
