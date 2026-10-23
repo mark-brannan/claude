@@ -101,7 +101,7 @@ new_repo() {  # <name> -> prints the worktree path
 # shellcheck source=lib-state.sh
 . "$HOOKS/lib-state.sh"
 
-# --- clean: signed, no conflict, no merges -> the rebase line ---------------
+# --- clean: signed, no conflict, no merges -> nothing to do on the base -----
 r=$(new_repo clean)
 printf 'base\nfeat\n' > "$r/f"; git -C "$r" add f; fake_signed "$r" "feat work"
 git -C "$r" checkout -q main   # the brief is about a branch, not about HEAD
@@ -113,8 +113,8 @@ want_line "$out" 'conflicts: no' 'clean: no conflicts'
 want_line "$out" 'unsigned: 0' 'clean: gpgsig header counts as signed'
 want_line "$out" 'merges: 0' 'clean: no merge commits'
 want_line "$out" 'worktrees: none' 'clean: branch held by no worktree'
-want_grep "$out" '^recommend: git fetch origin main && git rebase origin/main$' \
-  'clean: ends with the rebase line'
+want_grep "$out" '^recommend: nothing on the base -- .*behind origin/main is left as is' \
+  'clean: no rebase; a behind branch is the queue\x27s (fixup contract 6.2)'
 
 # --- conflicting against the base ------------------------------------------
 r=$(new_repo conflict)
@@ -164,7 +164,7 @@ git -C "$r" fetch -q origin
 printf 'base\nfeat\n' > "$r/f"; git -C "$r" add f; fake_signed "$r" "feat work"
 out=$(export GH_MODE=pr; branch_brief "$r" feat)
 want_line "$out" 'base: release (open PR)' 'stacked: the PR base wins over the default branch'
-want_grep "$out" 'rebase origin/release$' 'stacked: the recommendation uses the PR base'
+want_grep "$out" 'behind origin/release is left as is' 'stacked: the recommendation uses the PR base'
 out=$(export GH_MODE=fail; branch_brief "$r" feat)
 want_grep "$out" '^base: main \(assumed' \
   'lookup failed: say the base is assumed, do not pass it off as known'

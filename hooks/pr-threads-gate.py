@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Open review threads are checked when an agent finishes with a PR: easy-grind/inputs/2026-10-22-confer-sub-agent-stop-gate.md
 """Stop: block the end of a turn while a PR this session touched still has an
-unresolved review thread, or cannot merge without a rebase.
+unresolved review thread, or conflicts with its base branch.
 
 Why: the PR ownership rules say review threads are mine to reply to AND
 resolve, and pr-ownership-context.py puts that text in front of the session.
@@ -80,10 +80,10 @@ FIX_STEPS = (
     "(a wrapper around the resolveReviewThread mutation; it is allowlisted, a raw gh api graphql call is not). "
     "One thread at a time, never a loop over all unresolved ids. A thread only the user can close (a decision, "
     "a question to them) stays open: say so in your final message, by id, with what they need to decide. Never "
-    "report 'all threads resolved' unless this check passes. Any PR listed as conflicting or behind is rebased, "
-    "not reported as green: git fetch origin <base> && git rebase origin/<base>, resolve, then force-push your "
-    "own branch. Never say a PR is ready while this check names it. Then end the turn again; this gate does not "
-    "fire twice in one turn.")
+    "report 'all threads resolved' unless this check passes. A PR listed as conflicting is worked to the fixup "
+    "contract, ~/.claude/skills/pickup/SKILL.md section 6 (merge the base in, resolve, never linearize "
+    "afterwards), not reported as green. Never say a PR is ready while this check names it. Then end the turn "
+    "again; this gate does not fire twice in one turn.")
 
 
 class Blocked(Exception):
@@ -316,9 +316,11 @@ def check(prs):
                 continue
             threads = open_threads(pr)
             # Merge state, from the same fetch. `gh pr checks` is green on a
-            # branch that conflicts with main. CONFLICTING and BEHIND are both
-            # a rebase. GitHub computes mergeability lazily, so UNKNOWN means
-            # "ask again": one re-ask, then reported as unverified.
+            # branch that conflicts with main. Only CONFLICTING gates: the
+            # fixup contract (pickup skill, section 6) leaves a branch that
+            # is merely BEHIND alone, the queue updates it when it merges.
+            # GitHub computes mergeability lazily, so UNKNOWN means "ask
+            # again": one re-ask, then reported as unverified.
             mergeable, mstate = merge_state(pr)
             if "UNKNOWN" in (mergeable, mstate):
                 time.sleep(seconds(os.environ.get("PR_THREADS_GATE_RECHECK_SLEEP"), 2.0))
@@ -331,8 +333,6 @@ def check(prs):
             # computed apart and don't resolve in lockstep.
             if mergeable == "CONFLICTING":
                 stale += f"\n- {repo}#{num} conflicts with its base branch (mergeable=CONFLICTING)"
-            elif mstate == "BEHIND":
-                stale += f"\n- {repo}#{num} is behind its base branch (mergeStateStatus=BEHIND)"
             elif "UNKNOWN" in (mergeable, mstate):
                 failed += f"\n- {repo}#{num}: merge state still UNKNOWN (GitHub had not finished computing it)"
             if threads:
