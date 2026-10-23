@@ -119,7 +119,7 @@ hooks/pr-threads-gate.py
 hooks/pr-blockers-prompt.py
 hooks/scratch-mirror.py
 hooks/npm-publish-auth.sh
-hooks/no-prose-gate.sh
+hooks/no-prose-gate.py
 hooks/no-unsigned-push.sh
 hooks/no-update-branch.sh
 hooks/spend-gate.py
