@@ -1,6 +1,6 @@
 # The arete areas
 
-Read by the assessing sub-agent. The brief leads with the good: first
+Read by whoever runs the check. The brief leads with the good: first
 the lead (does the item excel at being what it is, and what is it for),
 then the thirteen areas, each asked two signed questions, then where the
 item is excellent and where it devolves, then a recommendation with its
