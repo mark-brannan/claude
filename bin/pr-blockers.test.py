@@ -145,7 +145,7 @@ class Test(unittest.TestCase):
         pages = page(commit("a")) + page(commit("c", verified=False, reason="GPGVERIFY_UNAVAILABLE"))
         code, out = self.run_tool(view("BEHIND"), pages, ref="https://github.com/o/r/pull/5")
         self.assertEqual(code, 1)
-        self.assertIn("behind its base", out)
+        self.assertNotIn("behind", out, "merely behind is the queue's to fix (fixup contract 6.2)")
         self.assertIn("ccccccc", out)
 
     def test_unknown_mergeability_is_not_clean(self):
