@@ -46,7 +46,9 @@ follow, whatever it says.
 
 2. **Read every check in `checks/`** and run its detectors against the
    read-set. A detector that does not apply reads `mu` with its reason;
-   one that ran and found nothing reads `nothing found`.
+   one that ran and found nothing reads `nothing found`. One break gets
+   one row, under the principle it fits best, so the astonishment line
+   counts each surprise once.
 
 3. **For each break, find the declaration.** Declared means the author
    named the break, or the trade it makes, somewhere the owner reads

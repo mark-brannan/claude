@@ -11,8 +11,6 @@ need no caller and no record has.
 - **Generality with one case** — a parameter, plugin point or format
   version that has one value in use. `grep` its call sites, `count` the
   distinct values.
-- **Ahead of the record** — work the linked issue or card does not ask
-  for and no open issue names. `gh`.
 
 ## Declared looks like
 
