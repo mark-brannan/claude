@@ -38,6 +38,14 @@ Find and fix, mechanically, in one commit of the derived files:
   deleted here; a refused name or discarded idea becomes part
   of the one *refused:* line in Working memory; a Superseded line is
   deleted. Show every move in the diff;
+- embedded and effective (SKILL.md, The ledger as a queue): run
+  `ledger-review --json`, take this curia's entries, and list under
+  *Embedded and effective* in the findings the pen lines with neither
+  `embedded:` nor `effective when:` and those whose `effective: pending,
+  review <date>` has passed, each past-due line with the count it named
+  and the count now where a counter gives it; a list, never a fix and
+  never an ask, since a pen line with neither field stays legal, and a
+  review whose count did not move is a finding for the sitting;
 - a ledger line stamped before the last words **Where this stands**
   cites (by its date where it cites no roll stamp) that no section of the
   digest carries — a Design section, **The problem** or **Vocabulary** —
