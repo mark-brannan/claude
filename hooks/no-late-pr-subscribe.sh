@@ -31,7 +31,7 @@
 # Sources: code.claude.com/docs/en/{model-config,costs,context-window}.
 #
 # Token count is not passed to hooks directly. It is derived the same way
-# statusline-metrics.sh derives it: the last assistant `usage` block in the
+# statusline-metrics.py derives it: the last assistant `usage` block in the
 # transcript, whose input + cache_read + cache_creation is the context that
 # request actually carried. Only the tail is scanned -- transcripts run to
 # tens of MB and the newest usage record is always near the end.

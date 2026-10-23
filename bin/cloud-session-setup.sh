@@ -131,7 +131,7 @@ hooks/metrics-rollup.sh
 hooks/log-commit.py
 hooks/log-gh-writes.py
 hooks/permission-request-log.py
-hooks/statusline-metrics.sh
+hooks/statusline-metrics.py
 hooks/connector-budget.sh
 hooks/session-start-sync-status.py
 hooks/session-start-hook-errors.py

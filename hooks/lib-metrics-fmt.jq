@@ -1,5 +1,5 @@
 # Shared field vocabulary for the two metrics readouts: the statusline row
-# (`statusline-metrics.sh`) and the event block (`metrics-live.py`).
+# (`statusline-metrics.py`) and the event block (`metrics-live.py`).
 #
 # Why a module: the two say the same things in different layouts, and when
 # each owned its own copy of the glyphs they drifted -- the statusline read
