@@ -23,32 +23,32 @@ spec.loader.exec_module(lr)
 
 TODAY = date(2026, 10, 22)
 
-# hooks-guards: date, who, mark, then the ruling in bold.
+# The hooks-guards form: date, who, mark, then the ruling in bold.
 HEAD = """\
-**Guard names**
+**Widget names**
 
-- 2026-10-07, Solace, pen, twelfth sitting ([roll.md#20261007t082113z](roll.md#20261007t082113z)): **the guard naming scheme.**
-- 2026-10-07, Solace, pencil, twelfth sitting: **held names as pencil defaults**, the pen ruling above stands.
-- 2026-10-01, Solace, sixth sitting (pen, "pen...but add a research item"): **six guards default on**.
-- 2026-09-30, Solace (neither pen nor pencil stated), fifth sitting: **the README lede is two lines**.
+- 2026-10-07, the user, pen, third sitting ([roll.md#20261007t082113z](roll.md#20261007t082113z)): **widgets are named noun-first.**
+- 2026-10-07, the user, pencil, third sitting: **held names as pencil defaults**, the pen ruling above stands.
+- 2026-10-01, the user, second sitting (pen, "pen, and a note"): **six widgets ship on**.
+- 2026-09-30, the user (neither pen nor pencil stated), first sitting: **the README lede is two lines**.
 """
 
-# easy-grind's older lines: the ruling, then the mark after the last em dash.
+# The easy-grind form: the ruling, then the mark after the last em dash.
 TAIL = """\
 **Opening (2026-10-08)**
 
-- The problem statement, the original thesis. — pen, 2026-10-08, [one-entry-point/roll.md#20261008t231732z](../one-entry-point/roll.md#20261008t231732z)
-- A ledger is a queue: pencil nears pen with every commit. — pencil, 2026-10-07, [roll.md#20261007t000000z](roll.md#20261007t000000z)
-- Planning is a pass inside grind, "in pen if you like". — unmarked, 2026-09-27, [roll.md#20260927t203312z](roll.md#20260927t203312z)
+- The widget queue drains nightly. — pen, 2026-10-08, [other/roll.md#20261008t231732z](../other/roll.md#20261008t231732z)
+- A queue: pencil nears pen with every commit. — pencil, 2026-10-07, [roll.md#20261007t000000z](roll.md#20261007t000000z)
+- Sorting is a pass inside the drain, "in pen if you like". — unmarked, 2026-09-27, [roll.md#20260927t203312z](roll.md#20260927t203312z)
 """
 
-# chart-data: the mark first, who and date in brackets.
+# The chart-data form: the mark first, who and date in brackets.
 LEAD = """\
-**What coastlines vends**
+**What the widget vends**
 
-- pen (Solace, 2026-10-15): one generic GeoJSON-collection resource type. [chart-data/roll.md#20261015t034318z](roll.md#20261015t034318z)
-- pencil (Solace, 2026-10-15): the IADA ranking is next (the dependency question is settled, pen above).
-- pencil, tentatively pen (Solace, 2026-10-22): the three escalation tiers.
+- pen (the user, 2026-10-15): one widget resource type. [roll.md#20261015t034318z](roll.md#20261015t034318z)
+- pencil (the user, 2026-10-15): the ranking is next (the question it waited on is settled, pen above).
+- pencil, tentatively pen (the user, 2026-10-22): three widget tiers.
 """
 
 
@@ -66,8 +66,8 @@ class MarkTest(unittest.TestCase):
         self.assertEqual(self.marks(LEAD), ["pen", "pencil", "pencil"])
 
     def test_mark_before_a_date(self):
-        self.assertEqual(lr.mark("- A label on grade *large*. pen (lint, 2026-10-17), the user; built in #77."), "pen")
-        self.assertIsNone(lr.mark("- The agora named → agora is in pen — [digest](inputs/2026-10-03-digest.md)"))
+        self.assertEqual(lr.mark("- A label on large widgets. pen (lint, 2026-10-17), the user; built in #7."), "pen")
+        self.assertIsNone(lr.mark("- The widget named → widget is in pen — [digest](inputs/2026-10-03-digest.md)"))
 
     def test_pen_only_in_a_quote_is_not_a_mark(self):
         self.assertIsNone(lr.mark('- The user said "this is pen" and moved on.'))
@@ -81,25 +81,25 @@ class ReviewTest(unittest.TestCase):
         self.assertEqual([f["line"] for f in found], [3, 5, 10, 16])
 
     def test_superseded_lines_are_skipped_until_the_next_heading(self):
-        text = ("**Superseded**\n\n- pen (Solace, 2026-10-01): replaced by the line above.\n\n"
-                "## Context budget (2026-10-21)\n\n- pen (Solace, 2026-10-21): the budget is higher.\n")
+        text = ("**Superseded**\n\n- pen (the user, 2026-10-01): replaced by the line above.\n\n"
+                "## Widget budget (2026-10-21)\n\n- pen (the user, 2026-10-21): the budget is higher.\n")
         pens, found = lr.review(text, TODAY)
         self.assertEqual((pens, [f["line"] for f in found]), (1, [7]))
 
     def test_comment_block_is_not_read(self):
-        text = "<!-- The ledger.\n- pen (Solace, 2026-10-01): an example in a comment.\n-->\n"
+        text = "<!-- The ledger.\n- pen (the user, 2026-10-01): an example in a comment.\n-->\n"
         self.assertEqual(lr.review(text, TODAY), (0, []))
 
     def test_either_field_clears_missing(self):
-        text = ("- pen (Solace, 2026-10-15): a guard. embedded: hooks/no-x.sh (2026-10-20)\n"
-                "- pen (Solace, 2026-10-15): a count. effective when: 3 reversals 5 → 1 by 2027-01-01;"
+        text = ("- pen (the user, 2026-10-15): a guard. embedded: hooks/no-x.sh (2026-10-20)\n"
+                "- pen (the user, 2026-10-15): a count. effective when: 3 reversals 5 → 1 by 2027-01-01;"
                 " effective: pending, review 2027-01-01\n")
         self.assertEqual(lr.review(text, TODAY), (2, []))
 
     def test_overdue_review(self):
-        text = ("- pen (Solace, 2026-09-01): a count. effective when: 9 asks 300 → 100 by 2026-10-01;"
+        text = ("- pen (the user, 2026-09-01): a count. effective when: 9 asks 300 → 100 by 2026-10-01;"
                 " effective: pending, review 2026-10-01\n"
-                "- pen (Solace, 2026-09-01): another. effective when: 2 x 4 → 1 by 2026-10-22;"
+                "- pen (the user, 2026-09-01): another. effective when: 2 x 4 → 1 by 2026-10-22;"
                 " effective: pending, review 2026-10-22\n")
         pens, found = lr.review(text, TODAY)
         self.assertEqual(pens, 2)

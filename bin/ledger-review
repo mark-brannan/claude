@@ -12,7 +12,7 @@ then a one-line total. Lines under a **Superseded** heading are skipped.
 
 A pen line is a top-level `- ` bullet whose mark, read with quoted text cut,
 is pen. The mark is where the line's format puts it: after the date and who
-(`- 2026-10-07, Solace, pen, ...: **...**`), first (`- pen (Solace,
+(`- 2026-10-07, the user, pen, ...: **...**`), first (`- pen (the user,
 2026-10-15): ...`), or after the last em dash (`... — pen, 2026-10-08, [ref]`).
 A line in none of these is pen when a mark word stands just before a date
 (`... merged. pen, 2026-10-17, the user`). The first of pen, pencil and
