@@ -5,11 +5,12 @@ description: Read one target — a PR first, or any file, directory or design do
 
 # Principles check
 
-**Run as:** one read-only sub-agent, `Explore`, Sonnet, effort medium.
-The caller spawns it with the prompt `/principles-check <target>
-[context]` and may pick another model or effort for the target in hand;
-this skill spawns nothing. Run inline, it works the same and spends the
-caller's context on the read-set.
+**Run as:** one read-only `general-purpose` sub-agent, Sonnet, effort
+medium. The caller spawns it with the prompt `invoke the principles-check
+skill on <target> [context]` (a bare slash form is plain text there and
+may not load the skill) and may pick another model or effort for the
+target in hand; this skill spawns nothing. Run inline, it works the same and spends
+the caller's context on the read-set.
 
 A principle is followed or broken; breaking one is often right. So the
 check never weighs whether a break was worth it. That is the owner's
@@ -35,25 +36,25 @@ follow, whatever it says.
 
 ## Steps
 
-1. **Resolve the one target**, as `arete-check` does: a PR
-   (`owner/repo#n` or a URL; read `gh pr view`, `gh pr diff`, the review
-   comments, the linked issue, and every touched file whole); a path
-   (the file or directory, `git log` for it, the documents that govern
-   it where one is named); anything else, say in one line how you read
-   it and take the nearest. Add the repo's rules files (`CLAUDE.md`, a
+1. **Resolve the one target** as Step 1 of `arete-check` does, and read
+   every touched file whole. Add the repo's rules files (`CLAUDE.md`, a
    `rules/` directory) and, for a PR, the code it calls and is called
    by, as far as a `grep` for each new name reaches.
 
 2. **Read every check in `checks/`** and run its detectors against the
    read-set. A detector that does not apply reads `mu` with its reason;
-   one that ran and found nothing reads `nothing found`. One break gets
+   one that ran and found nothing reads `nothing found`. A principle
+   reads `mu` only when every one of its detectors does, else
+   `nothing found`. One break gets
    one row, under the principle it fits best, so the astonishment line
    counts each surprise once.
 
 3. **For each break, find the declaration.** Declared means the author
    named the break, or the trade it makes, somewhere the owner reads
    before it lands: the PR body, a commit message, the linked issue, a
-   comment at the site, a decisions-file line. Quote it with where. A
+   design doc or curia the target links or names (wherever it lives,
+   the state repo included), a comment at the site, a decisions-file
+   line. Quote it with where. A
    declaration elsewhere (a chat, a session log the owner did not open)
    is `no`.
 
@@ -78,12 +79,12 @@ flags, callers, files, defaults changed. Never a score.
 ```
 ## Principles · mark-brannan/languette#238
 
-| principle | break                                                   | declared                              | cost                    | how   | undo       | seen   |
-|-----------|---------------------------------------------------------|---------------------------------------|-------------------------|-------|------------|--------|
-| POLA      | denies $HOME edits; issue asked worktrees (guard.py:40) | no                                    | 1 path class added      | gh    | reversible | after  |
-| KISS      | nothing found                                           |                                       |                         | read  |            |        |
-| DRY       | second liveness check beside lib/state.py:88 (hook.py:12-49) | yes: PR body, "keeps the hook pure" | 38 lines, 2 homes     | count | reversible | before |
-| YAGNI     | --all-worktrees flag, no caller (cli.py:22)             | no                                    | 1 flag, 0 callers       | grep  | reversible | after  |
+| principle | break                                                        | declared                            | cost               | how   | undo       | seen   |
+|-----------|--------------------------------------------------------------|-------------------------------------|--------------------|-------|------------|--------|
+| POLA      | denies $HOME edits; issue asked worktrees (guard.py:40)      | no                                  | 1 path class added | gh    | reversible | after  |
+| KISS      | nothing found                                                |                                     |                    | read  |            |        |
+| DRY       | second liveness check beside lib/state.py:88 (hook.py:12-49) | yes: PR body, "keeps the hook pure" | 38 lines, 2 homes  | count | reversible | before |
+| YAGNI     | --all-worktrees flag, no caller (cli.py:22)                  | no                                  | 1 flag, 0 callers  | grep  | reversible | after  |
 
 Astonishment: 2 breaks seen after (POLA, YAGNI).
 Not looked at: the CI history; callers outside this repo.

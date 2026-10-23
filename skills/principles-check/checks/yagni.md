@@ -16,7 +16,10 @@ need no caller and no record has.
 
 The author naming the hope it is built for: "intentionally ahead of
 need, because ...", a linked issue for the future use, a comment at the
-site.
+site, or a design doc, curia or issue in any repo (the state repo
+included) that names the stub, flag or parameter as the seam for a
+planned feature. A placeholder ahead of a cross-repo interface, so
+named, reads `declared: yes`, not a break.
 
 ## `mu` when
 

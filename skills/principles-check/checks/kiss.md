@@ -8,8 +8,6 @@ need does not call for.
 - **Indirection with one user** — a new layer, interface, registry,
   base class or config file with one implementation and one caller.
   `grep` for each new name's uses.
-- **Parts against the ask** — new files, functions, parameters and
-  branches, set against what the linked record asked for. `count`.
 - **A hand-built thing the platform has** — code that re-does what the
   language, a library already in the manifest or a tool the repo uses
   provides. `grep` the manifest and the repo for it.
