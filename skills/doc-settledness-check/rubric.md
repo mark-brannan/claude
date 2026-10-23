@@ -1,6 +1,6 @@
 # The settledness rubric — twelve rows
 
-Read by the measuring sub-agent. Each row gets a measured value and a mark:
+Read by whoever runs the check. Each row gets a measured value and a mark:
 `ok`, `--` (a gap to declare), or a short word when neither fits
 (`choose at PR`). A row that does not apply reads `n/a` in the measured
 column and leaves the mark blank. A mark is a reading, not a gate.
