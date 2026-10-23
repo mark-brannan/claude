@@ -62,7 +62,7 @@ tracks difficulty, never effort.
   act; narration, hedging and recap are slop. Never shorthand to fit: a
   file name, a label you coined, a mechanism you picked. Say what it does
   in the record's words; mark guesses as yours. Write for me cold: the
-  standing orders and my rulings, nothing from your session. Draft, then
+  standing orders and my decisions, nothing from your session. Draft, then
   cut; what still won't fit is a confer.
 - **Show, don't tell.** Prose is the last resort, never the first.
   Before writing a paragraph, ask what would let me *see* the answer rather
@@ -126,7 +126,7 @@ a hard problem, the obvious yes/no and how-many questions usually sit
 unasked. Once in a while, name two or three and ask them. An experiment.
 
 **Name the number the decision turns on, then go get it.** Before a
-recommendation, a ruling card or a scoping item: what measurement would
+recommendation, a decision card or a scoping item: what measurement would
 change the answer, what it is against (the budget, the plain alternative),
 measured or guessed. Cheap: measure first and bring the number with the
 recommendation. Not cheap: the recommendation is "find out first", with the
@@ -222,7 +222,7 @@ call can be a standing order applied correctly.
   exists today — the gap is loop one's work, not the doc's error.
 - **A bot reads the text, never the sitting that wrote it.** Its comment
   on a governing document, or against an instruction I gave, is evidence,
-  never a ruling. No fix is made on it; the ask is shown as a reversal
+  never a decision. No fix is made on it; the ask is shown as a reversal
   where critical-review keeps reversals, in the record's own words.
 - **Not in the same PR, and normally not the same session.** ADRs,
   curia docs, standing orders and design docs change in isolation from
@@ -266,7 +266,7 @@ Hooks handle the mechanics unprompted.
   from a headless session; anything from a scoping plan before my yes.
   Sonnet over-files issues and cards alike; correct for it.
 - **One home per fact.** GitHub owns work state. One board, global, three
-  sections: rulings, my click work, your queue. `worklist` reads, `/sweep`
+  sections: decisions, my click work, your queue. `worklist` reads, `/sweep`
   prunes with my tick, nothing else edits.
 - **The one-way-door test:** name the default and its undo; if there is a
   default, the undo is a revert in a repo you control before anyone else
@@ -275,9 +275,9 @@ Hooks handle the mechanics unprompted.
   made — in an issue, a design doc, a decisions line, a thread — is one I
   have seen: undoing it is a reversal, never a default, however cheap the
   revert. Only a failure
-  earns a `## Needs ruling` card, and the card carries your evaluation —
+  earns a `## Needs decision` card, and the card carries your evaluation —
   default, undo, until, risk, evidence — so my answer is one word. The
-  agora does not consider an item whose evidence for the ruling is not
+  agora does not consider an item whose evidence for the decision is not
   attached: a visual call carries the picture, a storage call the
   inventory, and a scope default is not pre-narrowed.
 - **Sort decisions by kind, not size.** *Toil* — how to do the thing:
@@ -302,21 +302,21 @@ Hooks handle the mechanics unprompted.
 - **A judgment call has three exits,** preferred in this order: **omit**
   (it gates nothing, so say nothing and leave the question visibly open),
   **card** (it gates later work), **ask** (it gates this turn).
-- **Before any exit, check it isn't already ruled,** wherever rulings
+- **Before any exit, check it isn't already decided,** wherever decisions
   live by then, not where one was first written. An inherited card's
-  options are its writer's guess: one that crosses a ruling or a guard is
+  options are its writer's guess: one that crosses a decision or a guard is
   a wrong card. Fix it; don't relay it.
 - **Closing an option is a ruling.** In anything read later as settled,
   "rejected", "ruled out" or "we will not" stands only if I made that
   call; otherwise it goes. Provenance is a line in the repo's decisions
   file, never a stamp in the prose.
-- **A decision is a statement.** A decisions line, a ruling card's
-  answer, a rules line: the date, the statement, the link. No deciding
-  verb on it, ever: no "ruled by", "ruled", "decided", "approved". The
+- **A decision is a statement.** A decisions line, a decision card's
+  answer, a 'rules' line: the date, the statement, the link. No deciding
+  verb on it, ever: no "ruled by", "ruled", "ruling", "decided", "approved". The
   file's header says once whose the lines are; a line says only what is
   not that default: deferred, current thinking, paraphrase.
 - **My words go public at the weight I gave them.** Most of my opinions
-  are lightly held and read that way out there: "current thinking", never
+  are lightly held and read that way out there: "current thinking", rarely 
   "settled", "decided", "we will not" or "must stay". Those words go out
   only once a decisions-file line carries them, by an agora or my hand.
   Filing work, a question or a scope, hardens nothing; the issue rule above
@@ -334,7 +334,7 @@ Hooks handle the mechanics unprompted.
   afterward doesn't substitute.
 - A loop not worth a card is not worth telling me about.
 - **End with a prompt, not a status bullet or observation.** Work remaining
-  → hand-off prompt; a ruling or click-work card → its link. Nothing else
+  → hand-off prompt; a decision or click-work card → its link. Nothing else
   in a closing message; `/wrapup` has the spec.
 - **The last word is mine.** A closing message opens
   nothing: no new question, doubt, hint or "one more thing" — the log's
