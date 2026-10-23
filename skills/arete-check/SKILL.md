@@ -9,9 +9,10 @@ description: Assess one target — a governing document first (a curia, an ADR, 
 has no Edit, Write or Agent in this build, so its tool roster holds the
 read-only line and only Bash is left to this prose.
 The caller spawns it with the prompt `/arete-check <target> [context]`
-and may pick another model or effort for the target in hand; this skill
-spawns nothing. Run inline, it works the same and spends the caller's
-context on the read-set.
+plus "read every file in the read-set whole", since Explore reads
+excerpts unless told, and may pick another model or effort for the
+target in hand; this skill spawns nothing. Run inline, it works the
+same and spends the caller's context on the read-set.
 
 **For callers.** The check writes nothing; the brief it returns is its
 whole output. A caller that wants the brief kept across runs writes it
@@ -140,7 +141,7 @@ which.
    none named, skip this step and say so in one line of the brief:
    `Earlier brief: none named.` Never search for one.
 
-4. **Print the brief, short.** The lead finding, if there is one; then
+4. **Lead with the short form.** The lead finding, if there is one; then
    the delta, the chain of aims on one line, the indication and its
    indicators, the if-not-done line; then the recommendation; then the
    excellent and devolves lines; then the + findings and the − findings, one line each with

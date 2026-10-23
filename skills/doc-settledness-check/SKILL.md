@@ -9,9 +9,10 @@ description: "Measure how settled one governing document is — a curia, an ADR,
 has no Edit, Write or Agent in this build, so its tool roster holds the
 read-only line and only Bash is left to this prose.
 The caller spawns it with the prompt `/doc-settledness-check <target>
-[context]` and may pick another model or effort for the target in hand;
-this skill spawns nothing. Run inline, it works the same and spends the
-caller's context on the read-set.
+[context]` plus "read every file in the read-set whole", since Explore
+reads excerpts unless told, and may pick another model or effort for the
+target in hand; this skill spawns nothing. Run inline, it works the
+same and spends the caller's context on the read-set.
 
 **For callers.** The check writes nothing; the brief it returns is its
 whole output. A caller that wants the brief kept across runs writes it
