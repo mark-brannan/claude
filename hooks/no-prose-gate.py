@@ -16,7 +16,6 @@ traced (lib/hooktrace.py).
 import json
 import re
 import sys
-from collections import deque
 
 sys.dont_write_bytecode = True
 
@@ -51,11 +50,18 @@ def _is_human(row):
     return isinstance(c, str) or any(b.get("type") == "text" for b in _blocks(row))
 
 
-def tail_rows(path):
-    with open(path, encoding="utf-8", errors="replace") as f:
-        lines = deque(f, TAIL)
+def tail_rows(path, chunk=1 << 16):
+    """The last TAIL rows, read back from the end so the cost stays flat as
+    the session grows."""
+    with open(path, "rb") as f:
+        end = f.seek(0, 2)
+        pos, buf = end, b""
+        while pos and buf.count(b"\n") <= TAIL:
+            pos = max(0, pos - chunk)
+            f.seek(pos)
+            buf = f.read(end - pos)
     rows = []
-    for ln in lines:
+    for ln in buf.decode("utf-8", "replace").splitlines()[-TAIL:]:
         try:
             r = json.loads(ln)
         except ValueError:

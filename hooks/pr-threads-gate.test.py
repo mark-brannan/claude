@@ -260,6 +260,11 @@ class CannotVerify(Base):
         self.assertBlocks("s10", "hang", PR_THREADS_GATE_TIMEOUT="1")
         self.says("o/r#1: fetch timed out")
 
+    def test_timeout_zero_is_no_bound(self):
+        # timeout(1) reads a duration of 0 as no bound; so does the gate.
+        self.record("s10z", "repo", "o/r", "25")
+        self.assertSilent("s10z", "resolved", PR_THREADS_GATE_TIMEOUT="0")
+
 
 class NotFoundRepo(Base):
     """NOT_FOUND drops an entry only once `gh repo view` confirms a 404

@@ -133,8 +133,9 @@ def tmpdir():
 
 def bounded(argv, out_path, limit, stderr=subprocess.STDOUT):
     """Run argv with stdout (and stderr, unless told otherwise) into out_path, killed (with anything it
-    started) past limit seconds. The exit code, TIMED_OUT when killed. A file,
-    not a pipe, so a grandchild still holding the pipe cannot hang the wait."""
+    started) past limit seconds; 0 means no bound, as for timeout(1). The exit
+    code, TIMED_OUT when killed. A file, not a pipe, so a grandchild still
+    holding the pipe cannot hang the wait."""
     with open(out_path, "wb") as out:
         try:
             p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=stderr,
@@ -143,7 +144,7 @@ def bounded(argv, out_path, limit, stderr=subprocess.STDOUT):
             out.write(f"{argv[0]}: {e}\n".encode())
             return 127
         try:
-            return p.wait(timeout=limit)
+            return p.wait(timeout=limit or None)
         except subprocess.TimeoutExpired:
             for sig in (signal.SIGTERM, signal.SIGKILL):
                 try:
@@ -229,16 +230,16 @@ def not_found_on_repository(reply):
 
 
 def fetch(work, i, repo, num, limit):
-    """One PR's threads into work/i.out and its exit code into i.rc; on
-    NOT_FOUND for the repository, the confirming `gh repo view` too (i.view.*)."""
+    """One PR's threads as (rc, out, view). view is None, or, when the reply
+    is NOT_FOUND on the repository, the confirming `gh repo view` as (rc, out)."""
     base = os.path.join(work, str(i))
     rc = bounded(graphql(repo, num, THREADS_QUERY), base + ".out", limit)
-    with open(base + ".rc", "w") as f:
-        f.write(str(rc))
-    if not_found_on_repository(first_json(read_text(base + ".out"))):
+    out = read_text(base + ".out")
+    view = None
+    if not_found_on_repository(first_json(out)):
         vrc = bounded(["gh", "repo", "view", repo], base + ".view.out", limit)
-        with open(base + ".view.rc", "w") as f:
-            f.write(str(vrc))
+        view = (vrc, read_text(base + ".view.out"))
+    return rc, out, view
 
 
 def first_lines(text, n):
@@ -279,22 +280,19 @@ def check(prs):
         # than the list by count: a fan-out over eight PRs still gets every
         # one checked, and a fetch that hangs is reported as unverified.
         with ThreadPoolExecutor(max_workers=len(prs)) as pool:
-            for f in [pool.submit(fetch, work, i, r, n, limit) for i, (r, n) in enumerate(prs, 1)]:
-                f.result()
-        for i, (repo, num) in enumerate(prs, 1):
-            base = os.path.join(work, str(i))
-            out = read_text(base + ".out")
-            rc = read_text(base + ".rc")
-            if rc == str(TIMED_OUT):
+            futures = [pool.submit(fetch, work, i, r, n, limit) for i, (r, n) in enumerate(prs, 1)]
+        for i, ((repo, num), f) in enumerate(zip(prs, futures), 1):
+            rc, out, view = f.result()
+            if rc == TIMED_OUT:
                 failed += f"\n- {repo}#{num}: fetch timed out"
                 continue
             # `gh api graphql` exits non-zero whenever the reply carries an
             # `errors` array, though the body is still valid JSON up to it.
-            # A view.rc means the fetch saw NOT_FOUND on `repository` and went
+            # A view means the fetch saw NOT_FOUND on `repository` and went
             # looking; any other error is the failed-closed case below.
-            if os.path.exists(base + ".view.rc"):
-                view_out = read_text(base + ".view.out")
-                if read_text(base + ".view.rc") == "0":
+            if view is not None:
+                vrc, view_out = view
+                if vrc == 0:
                     failed += (f"\n- {repo}#{num}: GraphQL reported repository NOT_FOUND but `gh repo view` can see "
                                "it -- an access problem, not a missing repo; not dropped")
                 elif re.search(r"HTTP 404|Could not resolve to a Repository", view_out, re.I):
@@ -305,7 +303,7 @@ def check(prs):
                     failed += (f"\n- {repo}#{num}: repository NOT_FOUND over GraphQL, and `gh repo view` failed "
                                f"without confirming it is gone ({view_out.split(chr(10))[0]}) -- unverified, not dropped")
                 continue
-            if rc != "0":
+            if rc != 0:
                 failed += f"\n- {repo}#{num}: {first_lines(out, 3)}"
                 continue
             pr = dig(first_json(out), "data", "repository", "pullRequest")
