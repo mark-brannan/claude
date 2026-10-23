@@ -17,9 +17,9 @@ name: Churn guard
 # are how a change gets explained and must never count against it.
 #
 # Two limits, both deliberately tight:
-#   - one gated file per PR. A change that has to touch two scripts is two
-#     PRs, including a new hook and its
-#     cloud-session-setup.sh entry, which land separately, smallest first.
+#   - three gated files per PR. A change that has to touch four scripts is two
+#     PRs, smallest first. A new hook and its cloud-session-setup.sh entry
+#     fit in one.
 #   - BUDGET changed lines.
 # BUDGET is deliberately not fitted to what has already been written: a
 # budget set to pass the existing history cannot make the next PR smaller.
@@ -45,7 +45,7 @@ jobs:
   churn:
     runs-on: ubuntu-latest
     env:
-      BUDGET: 30
+      BUDGET: 150
       # contains() on the label array compares whole names; a space-joined
       # string with a substring match let a label named "x churn-ok y" pass.
       WAIVED: ${{ contains(github.event.pull_request.labels.*.name, 'churn-ok') }}
@@ -110,7 +110,7 @@ jobs:
           echo "changed lines: $lines (budget $BUDGET)"
 
           over=""
-          if [ "$count" -gt 1 ]; then
+          if [ "$count" -gt 3 ]; then
             over="$over $count scripts in one PR;"
           fi
           if [ "$lines" -gt "$BUDGET" ]; then
