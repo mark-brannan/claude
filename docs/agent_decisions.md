@@ -463,3 +463,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t211652z
 - scope beyond the linked issue is a POLA detector, not a fifth principle Undo: move it to its own check file ([#297](https://github.com/mark-brannan/claude/pull/297))
+
+### 20261023t211744z
+- arete-check's recommended runner is general-purpose, not Explore, because the runner writes the report Undo: make the caller write the report and recommend Explore ([#298](https://github.com/mark-brannan/claude/pull/298))
