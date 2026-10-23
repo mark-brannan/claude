@@ -466,3 +466,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t211744z
 - arete-check's recommended runner is general-purpose, not Explore, because the runner writes the report Undo: make the caller write the report and recommend Explore ([#298](https://github.com/mark-brannan/claude/pull/298))
+
+### 20261023t211806z
+- doc-settledness-check's recommended runner is general-purpose, not Explore, because the runner writes the report Undo: make the caller write the report and recommend Explore ([#299](https://github.com/mark-brannan/claude/pull/299))
