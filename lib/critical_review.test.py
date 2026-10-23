@@ -72,8 +72,11 @@ class CriticalReviewTest(unittest.TestCase):
         self.saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_STATE_REPO")}
         os.environ["HOME"], os.environ["CLAUDE_STATE_REPO"] = str(self.T / "home"), ""
         self.tp = self.T / "proj" / f"{SID}.jsonl"
+        self.pr_text, self.text = cr.pr_text, ""  # no network: the PR's text is whatever a test sets
+        cr.pr_text = lambda pr: self.text
 
     def tearDown(self):
+        cr.pr_text = self.pr_text
         for k, v in self.saved.items():
             if v is None:
                 os.environ.pop(k, None)
@@ -127,6 +130,30 @@ class CriticalReviewTest(unittest.TestCase):
         # Opus $5/$25: 150 out + 1000 read; Haiku $1/$5: 11 out.
         self.assertAlmostEqual(row["usd"], round((150 * 25 + 1000 * 0.5 + 11 * 5) / 1e6, 4))
         self.assertEqual([row[k] for k in ("fixed", "look_at", "pencil", "decide")], [2, 0, 1, 0])
+
+    def test_the_reviewer_is_never_the_coders_family(self):
+        for coder, reviewer in (("sonnet", "opus"), ("haiku", "opus"), ("opus", "fable"),
+                                ("fable", "opus"), (None, "opus")):
+            self.assertEqual(cr.pick_reviewer(coder), reviewer)
+            self.assertNotEqual(cr.pick_reviewer(coder), coder)
+
+    def test_the_coder_is_read_from_trailers_and_unknown_when_absent(self):
+        trailer = "Co-Authored-By: Claude {} <noreply@anthropic.com>"
+        text = "body\n\n" + "\n".join(trailer.format(m) for m in ("Sonnet 5.5", "Sonnet 5.5", "Opus 5.5"))
+        self.assertEqual(cr.coder_model(text), "sonnet")
+        self.assertEqual(cr.coder_model(trailer.format("Fable 1")), "fable")
+        self.assertIsNone(cr.coder_model("Co-Authored-By: Pat <pat@example.com>"))
+        self.assertIsNone(cr.coder_model(""))
+        self.assertEqual(cr.family("claude-opus-5-5"), "opus")
+
+    def test_the_row_records_both_models(self):
+        self.text = "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+        self.session()
+        [row] = cr.session_rows(SID, str(self.tp), "/w")
+        self.assertEqual((row["coder_model"], row["reviewer_model"]), ("sonnet", "opus"))
+        self.text = ""
+        [row] = cr.session_rows(SID, str(self.tp), "/w")
+        self.assertIsNone(row["coder_model"], "unknown is recorded as null")
 
     def test_a_heading_the_summary_lacks_is_null_and_no_effort_is_null(self):
         write_jsonl(self.tp, [command("c", "o/r#3", "2026-10-09T07:00:00Z"),

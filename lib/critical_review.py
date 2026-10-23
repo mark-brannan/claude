@@ -11,8 +11,9 @@ Rows land in <state>/metrics/critical-review/<xx>/<session_id>.jsonl,
 sharded like sessions/ (lib/state.py state_shard_path). The Stop
 hook recomputes its rows (by=user) from the transcript every time it fires;
 prt's rows are keyed by agent id. Either rewrite replaces its own rows and
-keeps the other's, under a lock on the file. Imported, never run directly;
-stdlib only.
+keeps the other's, under a lock on the file. Imported; its one direct use is
+`critical_review.py reviewer <owner/repo#n>`, which the skill runs to learn the
+coder's model and the reviewer's, which is never the same family. Stdlib only.
 """
 import collections
 import datetime
@@ -20,6 +21,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +47,47 @@ HEADING = re.compile(rf"^\s{{0,3}}(?:#{{1,6}}\s*)?(?:\*\*\s*({_NAMES})\s*:?\s*\*
 ITEM = re.compile(r"^\s?(?:[-*+]|\d+[.)])\s+(.*\S)")
 NONE = re.compile(r"^[\W_]*(none|nothing|n/a)\b[\W_]*$", re.I)
 USAGE = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+
+
+FAMILIES = ("fable", "opus", "sonnet", "haiku")
+# The reviewer for each coder family: always another family. Unknown gets opus.
+REVIEWER = {"sonnet": "opus", "haiku": "opus", "opus": "fable", "fable": "opus"}
+DEFAULT_REVIEWER = "opus"
+# `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
+TRAILER = re.compile(r"^co-authored-by:\s*(.*?)\s*<[^>]*anthropic[^>]*>", re.I | re.M)
+
+
+def family(name):
+    """sonnet, opus, fable or haiku from a model id or trailer name; else None."""
+    low = (name or "").lower()
+    return next((f for f in FAMILIES if f in low), None)
+
+
+def coder_model(text):
+    """The coder's family from Co-Authored-By trailers in text (the commit
+    messages and PR body); the most common wins. None when none names one."""
+    return most_common(family(m) for m in TRAILER.findall(text or ""))
+
+
+def pick_reviewer(coder):
+    """The reviewer's family: never the coder's. An unknown coder gets the default."""
+    return REVIEWER.get(coder, DEFAULT_REVIEWER)
+
+
+def pr_text(pr):
+    """Commit messages and body of owner/repo#n via gh; "" when unreadable."""
+    m = re.match(r"([\w.-]+/[\w.-]+)#(\d+)$", pr or "")
+    if not m:
+        return ""
+    try:
+        p = subprocess.run(["gh", "pr", "view", m[2], "-R", m[1], "--json", "body,commits"],
+                           capture_output=True, text=True, timeout=15)
+        d = json.loads(p.stdout) if p.returncode == 0 else {}
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return ""
+    return (d.get("body") or "") + "\n" + "\n".join(
+        (c.get("messageHeadline") or "") + "\n" + (c.get("messageBody") or "")
+        for c in d.get("commits") or [])
 
 
 def spend_gate():
@@ -180,7 +223,8 @@ def measure(main, subs):
         calls |= tool_ids(evs)
     times = [t for t in (stamp(e.get("timestamp")) for e in main) if t]
     asst = [e for e in main if e.get("type") == "assistant"]
-    row = {"model": most_common((e.get("message") or {}).get("model") for e in asst),
+    model = most_common((e.get("message") or {}).get("model") for e in asst)
+    row = {"model": model, "reviewer_model": family(model),
            # Claude Code stamps each assistant event with the session's effort level.
            "effort": most_common(e.get("effort") for e in asst)}
     for k in USAGE:
@@ -226,7 +270,8 @@ def session_rows(sid, transcript, cwd):
         meta = {"ts": cmd.get("timestamp"), "session_id": sid, "review_id": cmd.get("uuid"),
                 "pr": pr, "pr_guessed": guessed, "by": "user", "run": None}
         subs = subagents(transcript, tool_ids(window))
-        rows.append({**meta, **measure(window, subs), **last_summary(window)})
+        rows.append({**meta, "coder_model": coder_model(pr_text(pr)),
+                     **measure(window, subs), **last_summary(window)})
     return rows
 
 
@@ -241,7 +286,8 @@ def agent_row(transcript, pr, run, sid=""):
             "session_id": sid, "review_id": name, "pr": pr, "pr_guessed": False,
             "by": "prt", "run": run}
     subs = subagents(parent + ".jsonl", tool_ids(evs)) if parent != transcript else []
-    return {**meta, **measure(evs, subs), **last_summary(evs)}
+    return {**meta, "coder_model": coder_model(pr_text(pr)),
+            **measure(evs, subs), **last_summary(evs)}
 
 
 def path_for(sid):
@@ -289,3 +335,10 @@ def save_agent(row):
     """prt's half: write (or replace) the row agent_row built for one review."""
     merge(path_for(row["session_id"]), [row],
           lambda r: r.get("by") == "prt" and r.get("review_id") == row["review_id"])
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3 or sys.argv[1] != "reviewer":
+        sys.exit("usage: critical_review.py reviewer <owner/repo#n>")
+    coder = coder_model(pr_text(sys.argv[2]))
+    print(f"coder={coder or 'unknown'} reviewer={pick_reviewer(coder)}")
