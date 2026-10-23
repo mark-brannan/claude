@@ -264,6 +264,14 @@ class Brief(unittest.TestCase):
         self.assertIn("Sitting ends, last 28 days: 60m: median 35m to sitting end, 1/4 ended it, "
                       "stay median 25m, 1/2 overrun", c)
 
+    def test_a_zero_minute_stay_counts(self):
+        n = now()
+        self.put("metrics/crossings/c.jsonl", jl(
+            {"session_id": "s", "ts": n, "kind": "time_after", "at": 60, "crossing_ts": "c1", "stay_min": 0},
+            {"session_id": "s", "ts": n, "kind": "time_last", "at": 60, "crossing_ts": "c1", "min_to_last": 5,
+             "overrun": True}))
+        self.assertIn("60m: median 5m to sitting end, 1/1 ended it, stay median 0m, 1/1 overrun", self.run_hook())
+
     def test_no_stamps_no_lines(self):
         c = self.run_hook()
         self.assertNotIn("Sitting rungs", c)

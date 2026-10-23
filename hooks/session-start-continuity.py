@@ -96,6 +96,12 @@ def is_num(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
+def truthy(v):
+    """jq's truth: only null and false are false. Not `v not in (None,
+    False)`, which drops 0 too, since 0 == False in Python."""
+    return v is not None and v is not False
+
+
 def sync_status_line(home):
     """One line on the config sync, cloud sessions only: a real machine
     is yadm-managed and never has the file, so DEGRADED there would be a
@@ -359,7 +365,7 @@ def rungs_line(rows, since):
     """One line per rung: median minutes to the next prompt, and stays."""
     parts = []
     for g in group_by_at([r for r in rows if r.get("kind") == "time_after" and ts_ge(r.get("ts"), since)]):
-        stay = sum(1 for r in g if r.get("stay") not in (None, False))
+        stay = sum(1 for r in g if truthy(r.get("stay")))
         parts.append(f"{jq_str(g[0].get('at'))}m: median {med([r.get('min') for r in g])}m "
                      f"to next prompt, {stay}/{len(g)} stay")
     return "\nSitting rungs, last 28 days: " + " \u00b7 ".join(parts) + "\n" if parts else ""
@@ -374,13 +380,13 @@ def ends_line(rows, since):
     ends = {key(r): r for r in rows if r.get("kind") == "time_last" and ts_ge(r.get("ts"), since)}
     parts = []
     for g in group_by_at(list(ends.values())):
-        s = [x for x in ((stays.get(key(r)) or {}).get("stay_min") for r in g) if x not in (None, False)]
+        s = [x for x in ((stays.get(key(r)) or {}).get("stay_min") for r in g) if truthy(x)]
         o = [r.get("overrun") for r in g if r.get("overrun") is not None]
         ended = sum(1 for r in g if r.get("min_to_last") <= 10)
         t = (f"{jq_str(g[0].get('at'))}m: median {med([r.get('min_to_last') for r in g])}m "
              f"to sitting end, {ended}/{len(g)} ended it")
         if s:
-            over = sum(1 for x in o if x is not False)
+            over = sum(1 for x in o if truthy(x))
             t += f", stay median {med(s)}m, {over}/{len(o)} overrun"
         parts.append(t)
     return "Sitting ends, last 28 days: " + " \u00b7 ".join(parts) + "\n" if parts else ""
