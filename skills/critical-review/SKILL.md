@@ -1,12 +1,21 @@
 ---
 name: critical-review
-description: Fire the critical-review prompt at one pull request — review, fix, hand over ready. Use on "/critical-review <PR> [--merge]" or "critical review of #N". Merges only on --merge, and only when nothing needs the user.
+description: Fire the critical-review prompt at one pull request — review, fix, hand over ready. Use on "/critical-review <PR> [--merge]" or "critical review of #N". The reviewer runs on a model unlike the PR's coder. Merges only on --merge, and only when nothing needs the user.
 ---
 
 Do a critical review of $ARGUMENTS. `--merge` is not part of the PR
 ref; it is my word to merge, read at the end.
 
-First, run `~/.claude/bin/pr-blockers <PR>`. Its lines are the first
+First, learn the models: run `python3 ~/.claude/lib/critical_review.py
+reviewer <PR> [--coder <model>]`, with `--coder` when the driver's hand-off
+names the coder. Otherwise it reads every model named in the PR's commit
+trailers and prints `coder=<families> reviewer=<family>`, the reviewer a
+family that coded none of it. A note after the line (coder unknown, or every
+family coded it) goes into your summary. Run the review on that reviewer's
+model and never on a coder's family; if you are one, hand the review to a
+sub-agent on the reviewer's model. The metrics row records this line.
+
+Then run `~/.claude/bin/pr-blockers <PR>`. Its lines are the first
 action items, in its order: open conversations before anything else.
 
 You may ask questions or comment directly on the PR; every comment you
