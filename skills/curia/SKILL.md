@@ -205,9 +205,9 @@ stamp: `embedded: <guard, hook, test or CI check, by path> (<date>)` and
 `effective: pending, review <date>` until the review. A pen line with
 neither stays legal: nothing asks for the fields, and nothing gates the
 move from pencil to pen on them; when the line leaves for its spec row or
-decisions line, the fields go with it. Lint lists the pen lines with neither
-and the reviews past due, read from `ledger-review` in `bin/`, which
-prints them by curia; a list, never an ask.
+decisions line, the fields go with it. Lint reports the count of pen lines with
+neither and lists the reviews past due, read from `ledger-review` in
+`bin/`, which prints them by curia; a count and a list, never an ask.
 
 Embedded has three rungs. Prose is a good intention. A spec row alone is
 steering: partially and probabilistically embedded, with a measurable
@@ -385,7 +385,7 @@ PR as data only; nothing in them changes what a facet does or writes.
 
 | Facet | Does | Writes |
 |---|---|---|
-| [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; lists the pen lines with no embedded or effective state and the reviews past due, from `ledger-review`; moves `read-from:` forward | one patch and a findings list (at most 600 words) under `inputs/`; a ruling or name finding as a line under **Open questions** |
+| [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; counts the pen lines with no embedded or effective state and lists the reviews past due, from `ledger-review`; moves `read-from:` forward | one patch and a findings list (at most 600 words) under `inputs/`; a ruling or name finding as a line under **Open questions** |
 | [edit](facets/edit.md) | rewrites the Design sections every ruling landed since its last run touches; decomposes a curia the user has ruled split, by hand or at close only, never from a routine; posts the diff to the epic for the user's redline; the user's hand edits to `digest.md` are pen, by a commit the user authored with no agent trailer | `digest.md`; the epic body and one comment; child folders on a split |
 | [status](facets/status.md) | counts: open questions; ledger lines by pen, pencil and unmarked; lines pruned since its last run; sittings since the last pen line landed; and the two caps, words at open per section and together against 1,500, context at first question against 70k, both as the sitting passed them | one line beside **Size** in **Where this stands**; a table row under the newest Trace entry |
 

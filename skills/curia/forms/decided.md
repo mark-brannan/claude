@@ -13,7 +13,7 @@
      CI check, by path> (<date>)` and `effective when: <count> <from> →
      <to> by <date>`, with `effective: pending, review <date>` until the
      review (SKILL.md, The ledger as a queue, Embedded and effective); a
-     pen line with neither stays legal, and lint lists them from
+     pen line with neither stays legal, and lint counts them from
      `ledger-review`. A line a later ruling replaces
      moves under Superseded, prefixed with what replaced it, and is
      deleted at the next prune; git and the roll keep it. -->
