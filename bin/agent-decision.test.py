@@ -171,6 +171,24 @@ class AgentDecisionTest(unittest.TestCase):
         self.assertEqual((p.returncode, "cannot read" in p.stderr), (1, True), p.stderr)
         self.assertEqual(self.bullets(self.branch_log())[-1][:8], "- both (", "gh down logged an unjudged entry")
 
+    def test_cloud_403_falls_back_to_rest_at_every_pr_view_site(self):
+        """No pr_view.json: the stub gh fails like the cloud's GraphQL 403, so only REST answers."""
+        pull = {"number": 7, "html_url": "https://github.com/o/r/pull/7", "state": "open", "merged_at": None,
+                "body": "Closes #3", "base": {"ref": "main"}}
+        (self.stub / "api_repos_o_r_pulls_7.json").write_text(json.dumps(pull))
+        (self.stub / "api_repos_o_r_pulls_7_files?per_page=100&page=1.json").write_text('[{"filename": "x.py"}]')
+        (self.stub / "api_repos_o_r_issues_3.json").write_text('{"title": "t", "body": "the issue"}')
+        self.verdict('{"verdict":"consistent","source":"","quote":""}')
+        git("config", "remote.origin.url", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
+        git("config", "url." + str(self.origin) + ".insteadOf", "git@github.com:o/r.git", cwd=self.repo, env=self.env)
+        p = self.run_ad("--pr", "7", "cloud call")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.bullets(self.branch_log())[-1], "- cloud call ([#7](https://github.com/o/r/pull/7))")
+        self.assertIn("the issue", self.seen.read_text(), "pr_record read the body's issue over REST")
+        (self.stub / "api_repos_o_r_pulls_5.json").write_text(json.dumps({**pull, "number": 5, "merged_at": "x", "state": "closed"}))
+        self.run_ad("--link", "https://github.com/o/r/pull/5", "seeded")
+        self.assertRegex(self.run_ad("list").stdout, r"in force\s+seeded")
+
     def test_list_looks_up_prs_past_the_list(self):
         self.pr(2000)
         self.run_ad("old call")

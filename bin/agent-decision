@@ -75,6 +75,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks"))
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+import ghrest  # noqa: E402
 import gitrun  # noqa: E402
 import lib_state  # noqa: E402
 import when  # noqa: E402
@@ -174,12 +175,46 @@ def gh(root, *args):
         return None
 
 
+def pr_view(root, target, fields):
+    """gh pr view as JSON; where it fails (a cloud session answers GraphQL with
+    HTTP 403) the same facts over REST, shaped like gh's. target is a PR number,
+    a PR url, or None for the branch's PR."""
+    view = gh(root, "pr", "view", *([str(target)] if target else []), "--json", fields)
+    if view is not None:
+        return view
+    m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", str(target))
+    o = SLUG.search(gitrun.out("-C", root, "config", "--get", "remote.origin.url") or "")
+    slug = m.group(1) if m else (o.group(1) if o else None)
+    if not slug:
+        return None
+
+    def run(a):
+        return subprocess.run(["gh", *a], cwd=root, capture_output=True, text=True, timeout=60).stdout
+    try:
+        if not target:
+            branch = gitrun.out("-C", root, "branch", "--show-current")
+            found = ghrest.rest(run, f"repos/{slug}/pulls?head={slug.split('/')[0]}:{branch}&state=open") if branch else []
+            pr = found[0] if found else None
+        else:
+            pr = ghrest.rest(run, f"repos/{slug}/pulls/{m.group(2) if m else target}")
+        if not isinstance(pr, dict):
+            return None
+        files = ghrest.rest_pages(run, f"repos/{slug}/pulls/{pr['number']}/files") if "files" in fields else []
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+        return None
+    state = "MERGED" if pr.get("merged_at") or pr.get("merged") else pr.get("state", "").upper()
+    # REST has no closingIssuesReferences; pr_record's scan of the body's #n covers the issues it names.
+    return {"number": pr["number"], "url": pr["html_url"], "body": pr.get("body") or "", "state": state,
+            "baseRefName": (pr.get("base") or {}).get("ref"), "closingIssuesReferences": [],
+            "files": [{"path": f["filename"]} for f in files]}
+
+
 def pr_tag(root, pr, link):
     """The PR reference every bullet carries: --pr, a PR link, or the branch's PR."""
     m = PR_URL.fullmatch(" ".join((link or "").split()))
     if m and not pr:
         return f"([#{m.group(1)}]({m.group(0)}))"
-    view = gh(root, "pr", "view", *([str(pr)] if pr else []), "--json", "number,url")
+    view = pr_view(root, pr, "number,url")
     if isinstance(view, dict) and view.get("number") and view.get("url"):
         return f"([#{view['number']}]({view['url']}))"
     if pr:  # the caller named it; gh is down, so build the URL from origin
@@ -228,7 +263,7 @@ def pr_record(root, tag):
             raise OSError(f"cannot read PR {tag[4:-1]} with gh")
         return []
     slug, url = m.group(1).rpartition("github.com/")[2], f"{m.group(1)}/pull/{m.group(2)}"
-    view = gh(root, "pr", "view", url, "--json", "body,closingIssuesReferences,files,baseRefName")
+    view = pr_view(root, url, "body,closingIssuesReferences,files,baseRefName")
     if not isinstance(view, dict):
         raise OSError(f"cannot read {url} with gh")
     out = []
@@ -415,7 +450,7 @@ def list_entries(root, show_all):
         if n.isdigit():
             state[(base.lower(), int(n))] = p.get("state")
     for base, n in refs - state.keys():  # past the limit, or another repo's PR
-        view = gh(root, "pr", "view", f"{base}/pull/{n}", "--json", "state")
+        view = pr_view(root, f"{base}/pull/{n}", "state")
         state[(base, n)] = view.get("state") if isinstance(view, dict) else None
     label = {"OPEN": "pending", "MERGED": "in force", "CLOSED": "void"}
     for stamp, bullet, fresh in entries:
