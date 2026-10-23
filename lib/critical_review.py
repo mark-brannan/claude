@@ -357,18 +357,18 @@ def save_agent(row):
 
 def main(argv):
     """`reviewer <PR> [--coder <model>]`: print the coder's families and the reviewer's.
-    --coder is the driver's word; the PR's trailers are the fallback."""
+    The excluded set is --coder plus the PR's trailer families."""
     if len(argv) not in (2, 4) or argv[0] != "reviewer" or argv[2:3] not in ([], ["--coder"]):
         sys.exit("usage: critical_review.py reviewer <PR> [--coder <model>]")
+    present = collections.Counter()
     if len(argv) == 4:
         if not family(argv[3]):
             sys.exit(f"--coder {argv[3]}: not a model family ({', '.join(FAMILIES)})")
-        present = collections.Counter([family(argv[3])])
-    else:
-        text = pr_text(argv[1])
-        if text is None:
-            sys.exit(f"gh could not read {argv[1]}")
-        present = coders(text)
+        present[family(argv[3])] += 1
+    text = pr_text(argv[1])
+    if text is None and len(argv) == 2:
+        sys.exit(f"gh could not read {argv[1]}")
+    present += coders(text)
     reviewer, note = pick_reviewer(present)
     print(f"coder={','.join(sorted(present)) or 'unknown'} reviewer={reviewer}"
           + (f" ({note})" if note else ""))

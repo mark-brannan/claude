@@ -152,9 +152,12 @@ class CriticalReviewTest(unittest.TestCase):
         self.text = "Co-Authored-By: Pat <pat@example.com>"
         self.assertIn("coder=unknown reviewer=opus (no trailer names", self.reviewer())
 
-    def test_the_drivers_coder_wins_over_trailers_and_gh_failure_exits(self):
+    def test_the_drivers_coder_adds_to_trailers_and_gh_failure_exits(self):
         self.text = "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
-        self.assertEqual(self.reviewer("--coder", "claude-opus-5-5"), "coder=opus reviewer=fable")
+        self.assertEqual(self.reviewer("--coder", "claude-opus-5-5"), "coder=opus,sonnet reviewer=fable")
+        # an Opus fix, then a re-review with --coder sonnet: Opus must not review its own fix
+        self.text = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+        self.assertEqual(self.reviewer("--coder", "sonnet"), "coder=opus,sonnet reviewer=fable")
         self.assertRaises(SystemExit, self.reviewer, "--coder", "gpt")
         self.text = None
         self.assertRaises(SystemExit, self.reviewer)
