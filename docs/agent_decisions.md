@@ -421,3 +421,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261022t120250z
 - one hidden temp name (.name.tmp.pid) for every atomic writer Undo: none needed; nothing reads the temp name ([#264](https://github.com/mark-brannan/claude/pull/264))
+
+### 20261023t024130z
+- ledger-review reads a ledger line's firmness mark where its format puts it (after date and who, first, or after the last em dash, else a mark word just before a date), not any word pen outside a quote Undo: match \bpen\b on the quote-stripped line in mark() ([#275](https://github.com/mark-brannan/claude/pull/275))
