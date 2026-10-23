@@ -1,34 +1,8 @@
 name: Churn guard
 
-# Every script in this repo is read line by line by a human before it lands,
-# and the ones that stayed readable stayed small. The failure mode this
-# catches is the one that actually happened across the metrics hooks: a PR
-# that changes a displayed line, a threshold and the code that formats both,
-# 80 to 474 lines at a time, unreviewable in the only way that matters -- the
-# reader cannot tell which hunk changed what they see on screen.
-# A display change and a threshold change are separate PRs
-# (https://github.com/mark-brannan/dotfiles/issues/149). This is that line as a
-# check, repo wide, because nothing about the failure was specific to metrics.
-#
-# Gated: any changed file with a `#!` line -- .sh, the extensionless scripts
-# in bin/, hooks, anything scripty added later --
-# plus every .jq and .py file (lib/ modules carry no shebang).
-# Tests, examples and docs alongside them are free: they
-# are how a change gets explained and must never count against it.
-#
-# Two limits, both deliberately tight:
-#   - three gated files per PR. A change that has to touch four scripts is two
-#     PRs, smallest first. A new hook and its cloud-session-setup.sh entry
-#     fit in one.
-#   - BUDGET changed lines.
-# BUDGET is deliberately not fitted to what has already been written: a
-# budget set to pass the existing history cannot make the next PR smaller.
-# Raising the ceiling is the user's call, not a session's.
-#
-# Bypass is the `churn-ok` label, applied by a human. A session cannot apply
-# it: the languette plugin's guard-bypass-labels denies the label by name. A gate whose
-# bypass the gated party can reach is not a gate. Nor does a session ask for
-# it: the overrun goes in the PR body, and work-item refuses it as a card.
+# Fails a PR that changes more scripts, or more script lines, than a reviewer
+# can read in one sitting. Tests and docs don't count. A human's `churn-ok`
+# label waives it.
 
 on:
   pull_request:
@@ -46,48 +20,32 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUDGET: 150
-      # contains() on the label array compares whole names; a space-joined
-      # string with a substring match let a label named "x churn-ok y" pass.
+      # Whole-name match: a substring match let "x churn-ok y" pass.
       WAIVED: ${{ contains(github.event.pull_request.labels.*.name, 'churn-ok') }}
-      # Through env, never interpolated into the script: a context expression
-      # pasted into shell is the standard injection hole, whoever owns the ref.
+      # Through env, never interpolated into shell: injection.
       BASE_REF: ${{ github.base_ref }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: One script, under the line budget
+      - name: Script count and line budget
         run: |
           set -euo pipefail
           git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
           base="origin/$BASE_REF"
-          # A temp file, never a path in the checkout: running this script by
-          # hand must not leave an untracked artefact in the worktree.
           gated=$(mktemp)
           changed=$(mktemp)
 
-          # A script is a file with a shebang, read out of the commit rather
-          # than the worktree so this is exact wherever it runs; .jq and .py
-          # files may have no shebang and are named instead. Deletions are skipped --
-          # there is nothing left to read.
-          # The diff is written to a file first so its own failure stops the
-          # guard instead of reading as "no script touched". grep exits 1 on
-          # no match, which is fine; anything else is a failure.
+          # Gated: any file with a shebang, plus every .jq and .py.
           git diff --name-only --diff-filter=d "$base...HEAD" > "$changed"
-          # Tests ride free under both naming styles: `x.test.sh` beside the
-          # script, and pytest's tests/ and test_*.py.
           { grep -vE '\.test\.[a-z]+$|\.examples\.sh$|(^|/)tests/|(^|/)test_[^/]*\.py$' "$changed" \
               || [ $? -eq 1 ]; } \
             | while IFS= read -r f; do
                 case "$f" in
                   *.jq|*.py) printf '%s\n' "$f"; continue ;;
                 esac
-                # `|| true` inside the substitution, not after it: head closes
-                # the pipe after two bytes, and under pipefail git's SIGPIPE
-                # fails the whole assignment, so an outer `|| sig=` blanked the
-                # signature of every script over the pipe buffer (~64 KiB) --
-                # the biggest ones were the ones the gate never saw (dotfiles#409).
+                # `|| true` inside: head's early close SIGPIPEs git under pipefail.
                 sig=$(git show "HEAD:$f" 2>/dev/null | head -c 2 || true)
                 case "$sig" in
                   '#!') printf '%s\n' "$f" ;;
@@ -101,8 +59,6 @@ jobs:
 
           count=$(wc -l < "$gated")
           mapfile -t paths < "$gated"
-          # --literal-pathspecs: a path with a glob character is that path,
-          # not a pattern that could widen or narrow what is measured.
           lines=$(git --literal-pathspecs diff --numstat "$base...HEAD" -- "${paths[@]}" \
             | awk '{ a += $1 + $2 } END { print a + 0 }')
           echo "scripts touched ($count):"
@@ -121,18 +77,12 @@ jobs:
             exit 0
           fi
 
-          # Before the ::error::, not after: a labelled PR is a deliberate,
-          # human allowance and must not carry an error annotation on a
-          # green step.
           if [ "$WAIVED" = true ]; then
             echo "::notice::over budget ($over ) -- allowed by the churn-ok label"
             exit 0
           fi
 
           echo "::error::churn over budget:$over"
-          echo "Split it. One script, one concern, smallest piece first."
-          echo "The ruling, in full:"
+          echo "Split it, smallest piece first, or state the overrun in the PR body."
           echo "https://github.com/mark-brannan/dotfiles/issues/149"
-          echo "Raising the ceiling is the user's call, not a session's."
-          echo "Never ask for churn-ok, by card or question: state the overrun in the PR body."
           exit 1
