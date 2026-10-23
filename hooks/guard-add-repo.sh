@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ruling: none on record
 # PreToolUse guard for mcp__Claude_Code_Remote__add_repo.
 #
 # The continuity state repo must attach silently in every cold cloud session,

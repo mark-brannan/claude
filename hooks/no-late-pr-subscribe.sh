@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ruling: none on record
 # Blocks subscribe_pr_activity once this session's context has grown past the
 # point where watching is cheaper than starting fresh.
 #

@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""ledger-review: the pen rulings in the curia ledgers that have no embedded or
+effective state, and the effectiveness reviews that are overdue.
+
+Usage: ledger-review [--json]
+
+Reads every state/global/curia/*/decided.md in the state repo and prints one
+table, grouped by curia, of two findings:
+  missing   a pen line carrying neither `embedded:` nor `effective when:`
+  overdue   a pen line whose `effective: pending, review <date>` has passed
+then a one-line total. Lines under a **Superseded** heading are skipped.
+
+A pen line is a top-level `- ` bullet whose mark, read with quoted text cut,
+is pen. The mark is where the line's format puts it: after the date and who
+(`- 2026-10-07, Solace, pen, ...: **...**`), first (`- pen (Solace,
+2026-10-15): ...`), or after the last em dash (`... — pen, 2026-10-08, [ref]`).
+A line in none of these is pen when a mark word stands just before a date
+(`... merged. pen, 2026-10-17, the user`). The first of pen, pencil and
+unmarked there decides, so "pencil, tentatively pen" is pencil, and a mark
+after neither, nor or not counts for nothing.
+
+Exits 0; 2 on usage; 3 when the state repo cannot be found.
+"""
+import argparse
+import glob
+import json
+import os
+import re
+import sys
+from datetime import date
+
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+
+QUOTE = re.compile(r'"[^"\n]*"|“[^”\n]*”')
+MARK = re.compile(r"(?<!neither )(?<!nor )(?<!not )\b(pen|pencil|unmarked)\b")
+HEAD = re.compile(r"^- \d{4}-\d\d-\d\d\b([^:]*)")
+LEAD = re.compile(r"^- (?=(?:pen|pencil|unmarked)\b)([^(:]*)")
+TAIL = re.compile(r" — ([^—]*)$")
+DATED = re.compile(r"\b(?:pen|pencil|unmarked)\b,? \(?(?:[\w ]+, )?\d{4}-\d\d-\d\d")
+HEADING = re.compile(r"^(?:\*\*(.+?)\*\*|#{1,6} +(.+))")
+REVIEW = re.compile(r"effective: pending, review (\d{4}-\d\d-\d\d)")
+
+
+def mark(line):
+    """The line's mark, 'pen', 'pencil' or 'unmarked', or None when it has none."""
+    s = QUOTE.sub("", line.rstrip("\n"))
+    m = HEAD.match(s) or LEAD.match(s)
+    region = m.group(1) if m else None
+    if region is None:
+        t = TAIL.search(s)
+        if t and MARK.search(t.group(1)):
+            region = t.group(1)
+    if region is None:
+        d = DATED.search(s)
+        region = d.group(0) if d else ""
+    found = MARK.search(region)
+    return found.group(1) if found else None
+
+
+def review(text, today):
+    """(pen count, findings) for one ledger's text: each finding a dict of
+    line, kind ('missing' or 'overdue'), text and, for overdue, review."""
+    pens, out, superseded, comment = 0, [], False, False
+    for n, line in enumerate(text.splitlines(), 1):
+        if comment or line.lstrip().startswith("<!--"):
+            comment = "-->" not in line
+            continue
+        h = HEADING.match(line)
+        if h:
+            superseded = (h.group(1) or h.group(2)).strip().startswith("Superseded")
+            continue
+        if superseded or not line.startswith("- ") or mark(line) != "pen":
+            continue
+        pens += 1
+        snippet = " ".join(line[2:].split())
+        snippet = snippet if len(snippet) <= 90 else snippet[:89] + "…"
+        if "embedded:" not in line and "effective when:" not in line:
+            out.append({"line": n, "kind": "missing", "text": snippet})
+        r = REVIEW.search(line)
+        if r and r.group(1) < today.isoformat():
+            out.append({"line": n, "kind": "overdue", "review": r.group(1), "text": snippet})
+    return pens, out
+
+
+def collect(root, today):
+    """{curia: (pen count, findings)} for every ledger under root, by name."""
+    paths = sorted(glob.glob(os.path.join(root, "state", "global", "curia", "*", "decided.md")))
+    return {os.path.basename(os.path.dirname(p)): review(open(p, encoding="utf-8", errors="replace").read(), today)
+            for p in paths}
+
+
+def totals(by_curia):
+    found = [f for _, fs in by_curia.values() for f in fs]
+    return {"pen": sum(p for p, _ in by_curia.values()),
+            "missing": sum(f["kind"] == "missing" for f in found),
+            "overdue": sum(f["kind"] == "overdue" for f in found)}
+
+
+def render(by_curia):
+    rows = [(c if i == 0 else "", str(f["line"]), f["kind"] + (" " + f["review"] if "review" in f else ""), f["text"])
+            for c, (_, fs) in by_curia.items() for i, f in enumerate(fs)]
+    head = ("curia", "line", "finding", "ruling")
+    w = [max(len(r[i]) for r in rows + [head]) for i in range(3)]
+    lines = ["  ".join([head[0].ljust(w[0]), head[1].rjust(w[1]), head[2].ljust(w[2]), head[3]])]
+    lines += ["  ".join([r[0].ljust(w[0]), r[1].rjust(w[1]), r[2].ljust(w[2]), r[3]]) for r in rows]
+    t = totals(by_curia)
+    lines.append(f"total: {t['pen']} pen lines in {len(by_curia)} ledgers; {t['missing']} with neither "
+                 f"embedded nor effective when; {t['overdue']} reviews overdue")
+    return "\n".join(lines)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="ledger-review", description=__doc__.split("\n\n")[0])
+    ap.add_argument("--json", action="store_true", help="print the findings as JSON")
+    args = ap.parse_args(argv)
+    try:
+        import state  # noqa: E402
+    except ImportError:
+        sys.exit("ledger-review: lib/ not found (looked beside the tool and in ~/.claude/lib)")
+    root = state.state_repo()
+    if root is None:
+        print("ledger-review: state repo not found", file=sys.stderr)
+        return 3
+    by_curia = collect(root, date.today())
+    if args.json:
+        print(json.dumps({"curiae": {c: {"pen": p, "findings": fs} for c, (p, fs) in by_curia.items()},
+                          "total": totals(by_curia)}, ensure_ascii=False, indent=1))
+    else:
+        print(render(by_curia))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

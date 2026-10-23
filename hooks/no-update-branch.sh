@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ruling: none on record
 # Denies GitHub's server-side "Update branch", whichever tool asks for it.
 #
 # Why: on a repo whose ruleset requires signed commits, `gh pr update-branch

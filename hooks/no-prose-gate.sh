@@ -1,4 +1,5 @@
 #!/bin/sh
+# ruling: none on record
 # Stop: blocks a turn whose closing line asks permission to do what was
 # ordered ("Want me to...?", "Shall I...?", "Proceed?", "Go?", "Merge it?")
 # when no AskUserQuestion ran since the human last spoke. Once per turn:
