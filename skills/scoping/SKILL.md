@@ -279,8 +279,8 @@ the 2026-10-22 rulings:
   user's to decide on and act on. It never blocks the autonomous lane's
   work; a finding the driver judges must hold something is escalated to
   the agora, parked on a card, and nothing else holds (2026-10-22). A −
-  finding marked `one-way`, one the item should not land with as it
-  stands, always counts as one.
+  finding that is `one-way` and seen only `after`, one the item should
+  not land with as it stands, always counts as one.
 - **Who merges.** In the autonomous lane the driver puts the `merge` label
   on each PR in stack order once every PR's review is clean, and the
   queue lands them; the user's gate is the batch after the fact, with a
