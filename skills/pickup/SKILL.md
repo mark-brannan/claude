@@ -273,8 +273,9 @@ do not paraphrase it into a second version that can drift from this one.
    The report opens with what it prints, conversations first. The
    session never applies that label and never merges the PR.
    One exception: a driver session whose parent card's log carries
-   `lane=autonomous` may add the `merge` label, in stack order, once the
-   final reviews are clean; a gated child, or a parent logging
+   `lane=autonomous` adds `merge`, `churn-ok` and `mixed-loops-ok`
+   itself, where the diff stays inside its brief, once the final reviews
+   are clean, and names the brief in the PR body; a gated child, or a parent logging
    `lane=gated`, keeps the user's merge, and every other session keeps
    the rule above.
 

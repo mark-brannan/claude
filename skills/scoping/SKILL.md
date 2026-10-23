@@ -256,14 +256,12 @@ worker model, effort and estimate; the brief repeats none of them. Never a
 list of prompts for the user to paste one at a time. The brief holds, from
 the 2026-10-22 rulings:
 
-- **The plan's order, then one stack.** Serial or parallel is scoping's
+- **The plan's order.** Serial or parallel is scoping's
   call, made in the proposal before anything launches (§4: dependencies
   named, and why that order), never the driver's mid-run. Children the
   plan names no dependency between run in parallel, one worker each; a
   child the plan makes wait starts once the PR it waits on is up, and
-  works on top of it. Once all the PRs are up, the driver serializes them
-  into one merge order, each rebased onto the one before, since the queue
-  updates one PR at a time and cannot resolve a conflict.
+  works on top of it.
 - **Estimate and actual.** Each child carries its estimate; the parent
   carries the batch's allocation, logged at filing as
   `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
