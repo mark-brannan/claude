@@ -399,7 +399,9 @@ handoff_file=HANDOFF.md
 
 fixup_contract() {
   [ -n "$contract_file" ] || return 1
-  awk '/^## 6\. The fixup contract/ { f = 1 } f && /^## Writing a block/ { exit } f' "$contract_file"
+  # Ends at the next `## ` header, whatever it is called: a named end marker
+  # went stale once and handed every worker the hand-off section too.
+  awk '/^## 6\. The fixup contract/ { f = 1; print; next } f && /^## / { exit } f' "$contract_file"
 }
 
 if [ "$prs" -eq 1 ]; then

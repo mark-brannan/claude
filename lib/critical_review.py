@@ -11,8 +11,10 @@ Rows land in <state>/metrics/critical-review/<xx>/<session_id>.jsonl,
 sharded like sessions/ (lib/state.py state_shard_path). The Stop
 hook recomputes its rows (by=user) from the transcript every time it fires;
 prt's rows are keyed by agent id. Either rewrite replaces its own rows and
-keeps the other's, under a lock on the file. Imported, never run directly;
-stdlib only.
+keeps the other's, under a lock on the file. Imported; its one direct use is
+`critical_review.py reviewer <PR> [--coder <model>]`, which the skill runs to
+learn the coder's families and a reviewer outside them; the rows read that
+printed line back from the transcript. Stdlib only.
 """
 import collections
 import datetime
@@ -20,6 +22,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +48,67 @@ HEADING = re.compile(rf"^\s{{0,3}}(?:#{{1,6}}\s*)?(?:\*\*\s*({_NAMES})\s*:?\s*\*
 ITEM = re.compile(r"^\s?(?:[-*+]|\d+[.)])\s+(.*\S)")
 NONE = re.compile(r"^[\W_]*(none|nothing|n/a)\b[\W_]*$", re.I)
 USAGE = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+
+
+FAMILIES = ("fable", "opus", "sonnet", "haiku")
+# The reviewer is the first of these that coded none of the PR.
+PREFERENCE = ("opus", "fable", "sonnet", "haiku")
+# `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
+TRAILER = re.compile(r"^co-authored-by:\s*(.*?)\s*<[^>]*anthropic[^>]*>", re.I | re.M)
+# The line `reviewer` prints, which the row reads back from the review's window.
+CHOSEN = re.compile(r"^coder=(\S+) reviewer=(\w+)", re.M)
+
+
+def family(name):
+    """sonnet, opus, fable or haiku from a model id or trailer name; else None."""
+    low = (name or "").lower()
+    return next((f for f in FAMILIES if f in low), None)
+
+
+def coders(text):
+    """How often each family is named in the Co-Authored-By trailers of text."""
+    return collections.Counter(f for f in map(family, TRAILER.findall(text or "")) if f)
+
+
+def pick_reviewer(present):
+    """(reviewer, note): the first family in PREFERENCE not in present. When
+    every family is present, the least present one, and a note saying so."""
+    free = [f for f in PREFERENCE if not present.get(f)]
+    if free:
+        return free[0], "" if present else "no trailer names the coder; pass --coder"
+    least = min(PREFERENCE, key=lambda f: present[f])
+    return least, f"every family coded this PR; {least} is the least present"
+
+
+def pr_text(pr):
+    """Body and commit messages of the PR named by a URL, owner/repo#n, #n or n
+    (repo from the cwd), via gh; None when gh cannot read it."""
+    m = re.match(r"([\w.-]+/[\w.-]+)#(\d+)$", pr or "")
+    args = [m[2], "-R", m[1]] if m else [(pr or "").lstrip("#")]
+    try:
+        p = subprocess.run(["gh", "pr", "view", *args, "--json", "body,commits"],
+                           capture_output=True, text=True, timeout=15)
+        d = json.loads(p.stdout) if p.returncode == 0 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    return (d.get("body") or "") + "\n" + "\n".join(
+        (c.get("messageHeadline") or "") + "\n" + (c.get("messageBody") or "")
+        for c in d.get("commits") or [])
+
+
+def chosen(evs):
+    """{coder_model, reviewer_model} from the last `reviewer` line the review
+    printed: fixed when the review started, no network. Null without one."""
+    found = (None, None)
+    for e in evs:
+        content = (e.get("message") or {}).get("content") if e.get("type") == "user" else None
+        for b in content if isinstance(content, list) else []:
+            if isinstance(b, dict) and b.get("type") == "tool_result":
+                m = CHOSEN.search(text_of(b.get("content")))
+                found = (m[1], m[2]) if m else found
+    return dict(zip(("coder_model", "reviewer_model"), found))
 
 
 def spend_gate():
@@ -226,7 +290,7 @@ def session_rows(sid, transcript, cwd):
         meta = {"ts": cmd.get("timestamp"), "session_id": sid, "review_id": cmd.get("uuid"),
                 "pr": pr, "pr_guessed": guessed, "by": "user", "run": None}
         subs = subagents(transcript, tool_ids(window))
-        rows.append({**meta, **measure(window, subs), **last_summary(window)})
+        rows.append({**meta, **chosen(window), **measure(window, subs), **last_summary(window)})
     return rows
 
 
@@ -241,7 +305,7 @@ def agent_row(transcript, pr, run, sid=""):
             "session_id": sid, "review_id": name, "pr": pr, "pr_guessed": False,
             "by": "prt", "run": run}
     subs = subagents(parent + ".jsonl", tool_ids(evs)) if parent != transcript else []
-    return {**meta, **measure(evs, subs), **last_summary(evs)}
+    return {**meta, **chosen(evs), **measure(evs, subs), **last_summary(evs)}
 
 
 def path_for(sid):
@@ -289,3 +353,26 @@ def save_agent(row):
     """prt's half: write (or replace) the row agent_row built for one review."""
     merge(path_for(row["session_id"]), [row],
           lambda r: r.get("by") == "prt" and r.get("review_id") == row["review_id"])
+
+
+def main(argv):
+    """`reviewer <PR> [--coder <model>]`: print the coder's families and the reviewer's.
+    The excluded set is --coder plus the PR's trailer families."""
+    if len(argv) not in (2, 4) or argv[0] != "reviewer" or argv[2:3] not in ([], ["--coder"]):
+        sys.exit("usage: critical_review.py reviewer <PR> [--coder <model>]")
+    present = collections.Counter()
+    if len(argv) == 4:
+        if not family(argv[3]):
+            sys.exit(f"--coder {argv[3]}: not a model family ({', '.join(FAMILIES)})")
+        present[family(argv[3])] += 1
+    text = pr_text(argv[1])
+    if text is None and len(argv) == 2:
+        sys.exit(f"gh could not read {argv[1]}")
+    present += coders(text)
+    reviewer, note = pick_reviewer(present)
+    print(f"coder={','.join(sorted(present)) or 'unknown'} reviewer={reviewer}"
+          + (f" ({note})" if note else ""))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

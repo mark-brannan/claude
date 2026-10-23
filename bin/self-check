@@ -147,7 +147,7 @@ def hook_rows(recs, now):
 
 
 def cache_row(state_dir, sid, last_record, last_evt, now):
-    """The file the statusline prints from; state_shard_path in hooks/lib-state.sh."""
+    """The file the statusline prints from; state.state_shard_path (lib/state.py)."""
     live = os.path.join(state_dir, "metrics", "live")
     path = os.path.join(live, sid + ".json")
     if not os.path.exists(path):
