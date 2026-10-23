@@ -93,7 +93,7 @@ decision, not a default.
 seed script reads are set inline by the paste blob (`CLOUD_SESSION=1`) or by the
 harness (`CLAUDE_CODE_REMOTE=true`), so the field stays empty.
 
-**Verify** on the next session: `session-start-continuity.sh` prints a
+**Verify** on the next session: `session-start-continuity.py` prints a
 `config: <channel>@<sha> (installed <timestamp>)` line, then the worklist brief. A
 `config: DEGRADED` line means the installer never ran or didn't finish —
 see [a deleted hook keeps running](#a-deleted-hook-keeps-running) for the
