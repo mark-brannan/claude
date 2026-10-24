@@ -472,3 +472,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261023t235102z
 - arete-check and doc-settledness-check return the brief and write nothing; the caller keeps it where it chooses, and Explore is the recommended runner Undo: revert #301 ([#301](https://github.com/mark-brannan/claude/pull/301))
+
+### 20261024t002049z
+- scoping's driver keeps the arete brief at arete-check's For-callers home, the parent's id as slug, linked from the walk; it passes no earlier: brief Undo: drop the keep clause from scoping's Arete paragraph ([#301](https://github.com/mark-brannan/claude/pull/301))
