@@ -226,9 +226,10 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   when the user typed `--workflow` in this run, `subagents` otherwise;
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
-  `--parent <parent-id> [--model <m>] [--effort <e>]`, then
+  `--parent <parent-id> [--model <m>] [--effort <e>]`, plus `--home <owner/repo#n>`
+  for a child that plans an issue, so the create refuses a home another open card
+  already carries, then
   `~/.claude/bin/work-item log <id> status=ready` so it is claimable; a
-  child that plans an issue gets `~/.claude/bin/work-item log <id> home=<owner/repo#n>`;
   a child the plan marks gated gets `~/.claude/bin/work-item log <id> lane=gated`,
   an exception, never the reverse: no gated parent with autonomous children;
 - an item proposed as an issue (§4.4) is filed as the shown draft, the

@@ -43,7 +43,10 @@ class WorkItemTest(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         T = Path(cls.tmp.name)
         cls.dir = T / "items"
-        os.environ.update(WORK_ITEM_DIR=str(cls.dir), TMPDIR=str(T))
+        quiet = T / "quiet-stamp.py"  # offline by default: no stamp read reaches gh
+        quiet.write_text("#!/usr/bin/env python3\n")
+        os.environ.update(WORK_ITEM_DIR=str(cls.dir), TMPDIR=str(T),
+                          WORK_ITEM_CLAIM_STAMP=str(quiet))
         cls.id = ok(A, "create", "--id", "1690000000077c62eb", "--repo", "mark-brannan/dotfiles", "--model", "sonnet",
                     "--effort", "medium", "--points", "3",
                     "--brief", f"Measure growth per day. {LINK}", "Size the store")
@@ -310,8 +313,9 @@ class WorkItemTest(unittest.TestCase):
     def stamp_stub(self, out):
         stub = Path(self.tmp.name) / "cs.py"
         stub.write_text(f"#!/usr/bin/env python3\nprint({out!r}, end='')\n")
+        prior = os.environ["WORK_ITEM_CLAIM_STAMP"]
         os.environ["WORK_ITEM_CLAIM_STAMP"] = str(stub)
-        self.addCleanup(os.environ.pop, "WORK_ITEM_CLAIM_STAMP", None)
+        self.addCleanup(os.environ.__setitem__, "WORK_ITEM_CLAIM_STAMP", prior)
 
     def test_15_card_claim_reads_the_stamp_on_its_home(self):
         # one session through the issue (a stamp), one through the card

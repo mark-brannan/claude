@@ -533,8 +533,8 @@ def main(argv):
         print(items_dir())
         return 0
     if cmd not in ("brief", "log", "claim", "release", "show", "fold"):
-        sys.stderr.write("".join(l[4:] + "\n" for l in
-                                 Path(__file__).read_text().splitlines()[4:15]))
+        head = Path(__file__).read_text().splitlines()[4:]
+        sys.stderr.write("".join(l[4:] + "\n" for l in head[:head.index("#")]))
         return 2
     it = Item(args[0] if args else "").need()
     args = args[1:]
@@ -585,11 +585,13 @@ def main(argv):
         it.append(sid, line)
     elif cmd == "claim":
         sid = me()
-        it.lock()
+        # the stamp read is a network call: it stays outside the write lock
+        # (advisory, so the small race costs nothing the lock was buying)
         held = stamp_holder(it.facts()["home"], sid)
         if held:
             refuse(f"{it.id}: its home {it.facts()['home']} carries a live claim stamp "
                    f"from session {held}")
+        it.lock()
         it.move(sid, "claimed")
         it.append(sid, "status=claimed")
     elif cmd == "release":
