@@ -487,3 +487,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t002102z
 - no guard for Bash writes by an Explore check runner; the Never line stands alone until one is reviewed Undo: none; nothing built ([#301](https://github.com/mark-brannan/claude/pull/301))
+
+### 20261024t002104z
+- the shared contract file for the checks waits for easy-grind's point 1; no shared note in this PR Undo: none; nothing built ([#301](https://github.com/mark-brannan/claude/pull/301))
