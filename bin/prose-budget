@@ -141,6 +141,17 @@ def glob_re(pattern):
     return re.compile("^" + out + "$")
 
 
+def section_cap(cfg, path):
+    """The section word cap for one file: its first matching `sections.files`
+    glob, in config order, else `sections.max_words`. A per-file cap is for
+    the one document whose sections are legitimately long, so the shared cap
+    stays where it is for everything else."""
+    for g, cap in cfg.get("files", {}).items():
+        if glob_re(g).match(path):
+            return cap
+    return cfg["max_words"]
+
+
 def matches(globs, path):
     positive = [g for g in globs if not g.startswith("!")]
     negative = [g[1:] for g in globs if g.startswith("!")]
@@ -395,7 +406,13 @@ def parse_config(cfg):
         r["lines"] = {"files": files, "required": bool(lines.get("required", False)),
                       "must_budget": list(lines.get("must_budget", [])), "pending": list(lines.get("pending", []))}
     r["sections"] = _rule(cfg, "sections", {"targets": RUNBOOK_TARGETS, "max_words": 140,
-                                             "exempt": ["Where things are"]}, True)
+                                             "exempt": ["Where things are"], "files": {}}, True)
+    if r["sections"]:
+        if not isinstance(r["sections"]["files"], dict):
+            raise ConfigError("sections.files: expected {glob: max_words}")
+        for k, v in r["sections"]["files"].items():
+            if not isinstance(v, int):
+                raise ConfigError(f"sections.files.{k}: expected an integer")
     r["delta"] = _rule(cfg, "delta", {"targets": None, "max_words": 40}, True)
     if r["delta"] and r["delta"]["targets"] is None:
         r["delta"]["targets"] = MD_TARGETS
@@ -487,6 +504,17 @@ def relaxations(old, new):
             if dropped:
                 out.append(f"{path}: -{len(dropped)} ({', '.join(_label(k) for k in dropped[:3])}"
                            + (", ..." if len(dropped) > 3 else "") + ")")
+    a, b = _dig(old_r, "sections.files"), _dig(new_r, "sections.files")
+    shared = _dig(old_r, "sections.max_words")
+    if isinstance(b, dict):
+        for k, v in b.items():
+            if not isinstance(v, int):
+                continue
+            if isinstance(a, dict) and isinstance(a.get(k), int):
+                if v > a[k]:
+                    out.append(f"sections.files.{k}: {a[k]} -> {v}")
+            elif isinstance(shared, int) and v > shared:
+                out.append(f"sections.files.{k}: {v} (new, above max_words {shared})")
     a, b = _dig(old_r, "lines.files"), _dig(new_r, "lines.files")
     if isinstance(a, dict) and isinstance(b, dict):
         for k, v in b.items():
@@ -670,10 +698,10 @@ class Checker:
             text = self.read(f)
             if text is None:
                 continue
+            cap = section_cap(cfg, f)
             for title, n, hline in section_word_counts(text, tuple(cfg["exempt"])):
-                if n > cfg["max_words"]:
-                    self.add("sections", f, f"section '{title}' has {n} prose words (max {cfg['max_words']})",
-                             line=hline)
+                if n > cap:
+                    self.add("sections", f, f"section '{title}' has {n} prose words (max {cap})", line=hline)
 
     def _json_targets(self, cfg):
         files = self.targets(cfg["targets"])
