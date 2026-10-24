@@ -275,12 +275,18 @@ yadm `$HOME` step, on every machine the dotfiles install reaches. A session
 start never pulls; two writers on one clone would race, and a network call
 would land in every start for nothing the cron has not already done.
 
-The cron never stashes, rebases or merges. Unattended, an autostash whose
-re-apply conflicts on `settings.json` leaves invalid JSON live and a stash no
-one sees, and a hook file that fails to parse denies every tool call (dotfiles
-README, "Why the cron sync is ff-only"). So a dirty file the incoming commits
-also touch, a local commit, or a merge in progress is a skip, and the skip
-names its cause.
+The cron never rebases or merges histories. A dirty file the incoming
+commits also touch is carried over by autostash, but only after the cron has
+rehearsed the re-apply off-tree: the same three-way merge per file, then a
+parse of the result where the file is one the layer executes from (JSON,
+Python, shell). A conflict or a result that does not parse is a skip that
+names the file, and the live tree is not touched. The rehearsal is what the
+boat incident lacked: an unattended autostash whose re-apply conflicted on
+`settings.json` left invalid JSON live and a stash no one saw, and a hook
+file that fails to parse denies every tool call (dotfiles README, "Why the
+cron sync merges only what it has already checked"). A local commit, an
+untracked file in the way, or a merge in progress is still a skip, and the
+skip names its cause.
 
 A skip is only worth something if a person sees it. SessionStart reads the
 cron's last result (`dotfiles-sync.sh --status`, local, no network) and the
@@ -288,9 +294,13 @@ brief carries it whenever the clone is behind or skipped (§6.7).
 
 A clean clone keeps the skips rare. The clone is written by two things that
 are not a merge to `main`: an agent editing in place (#215 warns), and Claude
-Code's own UI saving a toggle into the tracked `settings.json`. Where
-machine-local settings live, so that the second one stops dirtying the clone,
-is open (#166).
+Code's own UI saving a toggle into the tracked `settings.json`. The second is
+what the rehearsed autostash is for: the UI's keys and a merge to `main`
+touch different hunks of the file, so the carry-over is clean (measured
+2026-10-24 against the 22 upstream `settings.json` commits since 7 Oct that
+the local edits apply to: 22 clean, 0 conflicts). Claude Code writes those
+keys to the user `settings.json`, not `settings.local.json`, so moving them
+is not in our hands (#166).
 
 ### 6.7 The brief (R6)
 
