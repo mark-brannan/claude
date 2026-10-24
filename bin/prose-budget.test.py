@@ -313,6 +313,27 @@ class SectionsTest(RepoCase):
         self.git("add", "RUNBOOK.md")
         self.assertEqual(self.findings("--staged"), [])
 
+    def test_a_per_file_cap_overrides_the_shared_one_for_that_file_only(self):
+        self.config({"delta": False, "sections": {"targets": ["docs/*.md"], "max_words": 5,
+                                                   "files": {"docs/long.md": 20}}})
+        self.write("docs/long.md", "## A\n\n" + ("word " * 10) + "\n")
+        self.write("docs/short.md", "## A\n\n" + ("word " * 10) + "\n")
+        f = self.findings("--tree")
+        self.assertEqual([(x["rule"], x["file"]) for x in f], [("sections", "docs/short.md")])
+        self.assertIn("(max 5)", f[0]["message"])
+
+    def test_a_per_file_cap_matches_a_glob_in_config_order(self):
+        self.config({"delta": False, "sections": {"targets": ["docs/**/*.md"], "max_words": 5,
+                                                   "files": {"docs/design/*.md": 20}}})
+        self.write("docs/design/x.md", "## A\n\n" + ("word " * 10) + "\n")
+        self.assertEqual(self.findings("--tree"), [])
+
+    def test_a_per_file_cap_must_be_an_integer(self):
+        self.config({"sections": {"files": {"docs/x.md": "lots"}}})
+        code, out, err = self.cli("--tree")
+        self.assertEqual(code, 2, err)
+        self.assertIn("sections.files.docs/x.md", err)
+
     def test_prose_in_a_fence_costume_still_counts(self):
         self.config({"sections": {"max_words": 5}})
         self.write("RUNBOOK.md", "## A\n\n```sh\n# one two three four five six\nls\n```\n")
@@ -542,6 +563,34 @@ class ConfigRelaxTest(RepoCase):
         self.stage_config({"lines": {"README.md": 10}, "sections": {"max_words": 5000}}, "docs/x.md")
         f = self.config_findings("--staged")
         self.assertIn("sections.max_words: 140 -> 5000", f[0]["message"])
+
+    def test_a_new_per_file_section_cap_above_the_shared_cap_is_a_relaxation(self):
+        self.start({"lines": {"README.md": 10}, "sections": {"max_words": 300}})
+        self.stage_config({"lines": {"README.md": 10},
+                           "sections": {"max_words": 300, "files": {"docs/design/x.md": 625}}}, "docs/x.md")
+        f = self.config_findings("--staged")
+        self.assertIn("sections.files.docs/design/x.md: 625 (new, above max_words 300)", f[0]["message"])
+
+    def test_a_raised_per_file_section_cap_is_a_relaxation(self):
+        self.start({"lines": {"README.md": 10}, "sections": {"files": {"docs/x.md": 200}}})
+        self.stage_config({"lines": {"README.md": 10}, "sections": {"files": {"docs/x.md": 400}}}, "docs/x.md")
+        self.assertIn("sections.files.docs/x.md: 200 -> 400", self.config_findings("--staged")[0]["message"])
+
+    def test_an_earlier_key_that_raises_a_files_effective_cap_is_a_relaxation(self):
+        self.start({"lines": {"README.md": 10}, "sections": {"max_words": 300, "files": {"docs/*.md": 100}}})
+        self.stage_config({"lines": {"README.md": 10},
+                           "sections": {"max_words": 300, "files": {"docs/x.md": 250, "docs/*.md": 100}}}, "docs/x.md")
+        self.assertIn("docs/x.md cap 100 -> 250", self.config_findings("--staged")[0]["message"])
+
+    def test_a_boolean_per_file_section_cap_is_rejected(self):
+        with self.assertRaises(pb.ConfigError):
+            pb.parse_config({"sections": {"files": {"docs/x.md": True}}})
+
+    def test_a_per_file_section_cap_below_the_shared_cap_is_not_a_relaxation(self):
+        self.start({"lines": {"README.md": 10}, "sections": {"max_words": 300}})
+        self.stage_config({"lines": {"README.md": 10},
+                           "sections": {"max_words": 300, "files": {"docs/x.md": 100}}}, "docs/x.md")
+        self.assertEqual(self.config_findings("--staged"), [])
 
     def test_a_raised_cap_without_headroom_fails_even_alone(self):
         self.start({"lines": {"README.md": 10}})
