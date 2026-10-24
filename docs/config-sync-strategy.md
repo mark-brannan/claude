@@ -275,12 +275,17 @@ yadm `$HOME` step, on every machine the dotfiles install reaches. A session
 start never pulls; two writers on one clone would race, and a network call
 would land in every start for nothing the cron has not already done.
 
-The cron never stashes, rebases or merges. Unattended, an autostash whose
-re-apply conflicts on `settings.json` leaves invalid JSON live and a stash no
-one sees, and a hook file that fails to parse denies every tool call (dotfiles
-README, "Why the cron sync is ff-only"). So a dirty file the incoming commits
-also touch, a local commit, or a merge in progress is a skip, and the skip
-names its cause.
+The cron runs `pull --ff-only --autostash` on each repo, the same command
+the `claudesync` alias runs by hand: it never rebases or merges histories,
+and a dirty file the incoming commits also touch is carried over by the
+autostash. One guard makes that safe with nobody watching. When the
+autostash re-apply conflicts, git exits 0 and leaves the markers live
+(verified on git 2.53), which on the boat left `settings.json` invalid and
+every fail-closed hook denying; so a pull that ends with unmerged paths gets
+upstream's copy of those files checked out, the local edits stay in the
+stash, and the status line names them. A local commit or an untracked file
+in the way is still a skip (dotfiles README, "Why the cron sync is the
+aliases, plus one guard").
 
 A skip is only worth something if a person sees it. SessionStart reads the
 cron's last result (`dotfiles-sync.sh --status`, local, no network) and the
@@ -288,9 +293,13 @@ brief carries it whenever the clone is behind or skipped (§6.7).
 
 A clean clone keeps the skips rare. The clone is written by two things that
 are not a merge to `main`: an agent editing in place (#215 warns), and Claude
-Code's own UI saving a toggle into the tracked `settings.json`. Where
-machine-local settings live, so that the second one stops dirtying the clone,
-is open (#166).
+Code's own UI saving a toggle into the tracked `settings.json`. The second is
+what the autostash is for: the UI's keys and a merge to `main` touch
+different hunks, so the carry-over is clean. Measured 2026-10-24 with
+`git merge-file` against the last 30 upstream `settings.json` commits: 22
+applied, 22 clean, 0 conflicts. Claude Code writes those keys to the user
+`settings.json`, not `settings.local.json`, so moving them is not in our
+hands (#166).
 
 ### 6.7 The brief (R6)
 
@@ -299,7 +308,7 @@ hook would double the fixed context tax:
 
 - `config: main@1a2b3c4 (current)` — healthy.
 - `config: main@1a2b3c4, origin 4 ahead` — refresh pending or failed quietly.
-- `config: 2 behind, cron skipped: dirty settings.json` — the cron's last skip, cause named.
+- `config: 2 behind, cron skipped your edits to settings.json: they conflicted with upstream and are in git stash` — the cron's last skip, cause named.
 - `config: DEGRADED — <reason>` — no status file, incomplete install, fetch
   failure.
 
@@ -363,8 +372,8 @@ gitignored by default); `~/.claude/.credentials.json` holds OAuth tokens on
 Linux, so whole-directory `git init ~/.claude` without an allowlist commits
 them; `CLAUDE_CONFIG_DIR` is ignored inside devcontainers (#26623); chezmoi's
 bolt-on autoPull (SessionStart `chezmoi update --force`) blocks session start
-on rebase conflicts. These justify R7-as-tripwire and the notify-only default
-in §6.6.
+on rebase conflicts. These justify R7-as-tripwire and §6.6's guard that a
+conflicted re-apply never stays live.
 
 **Nobody has solved** (recurring across every source): user config into cloud
 sessions at all (official answer is "commit it to each repo"); atomic
