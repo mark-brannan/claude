@@ -64,6 +64,14 @@ class DashboardFixture(unittest.TestCase):
              "commit": "deadbeef"},
             {"ts": day(20), "session_id": "unknown-d", "repo": "acme/widgets", "branch": "claude/nulls",
              "commit": "cafef00d"})))
+        # CI check rows as metrics-db --github writes them: one file per run, sharded; run 7 is a fork's.
+        (sd / "metrics" / "headless-runs" / "41").mkdir(parents=True)
+        (sd / "metrics" / "headless-runs" / "41" / "ci-41.jsonl").write_text("".join(json.dumps(r) + "\n" for r in (
+            {"ts": day(2), "what": "claude-review", "repo": "acme/widgets", "run": 41, "trusted": True, "model": "claude-opus-5-5", "total_cost_usd": 1.0},
+            {"ts": day(2), "what": "claude-maxims", "repo": "acme/widgets", "run": 41, "trusted": True, "model": "claude-sonnet-5-5", "total_cost_usd": 0.5},
+            {"ts": day(2), "repo": "acme/widgets", "run": 41, "trusted": True, "model": "claude-opus-5-5", "total_cost_usd": 1.0})))  # no `what`, same run: a second review
+        (sd / "metrics" / "headless-runs" / "41" / "ci-77.jsonl").write_text(json.dumps(
+            {"ts": day(2), "what": "claude-arete", "repo": "acme/widgets", "run": 77, "trusted": False, "total_cost_usd": 99}) + "\n")
         (sd / "items").mkdir()
         (sd / "items" / "card-one.md").write_text(
             f"# Fixture card\n\n## Log\n{day(5)} abcd1234 status=open owner=human-ruling\n")
@@ -125,6 +133,14 @@ class RenderTest(DashboardFixture):
         self.assertIn("Merged PRs per week, by prompts typed on the branch", self.page)
         self.assertIn("API-equivalent $ per week, by model", self.page)
         self.assertIn('<span><i class="s1"></i>opus</span><span><i class="s2"></i>sonnet</span>', self.page)
+
+    def test_ci_checks_section_totals_runs_and_means_per_check(self):
+        self.assertIn('<h2 id="ci">', self.page)
+        # The two reviews on one run dedupe to one; the fork's $99 is left out.
+        self.assertIn("<tr><td>claude-review</td><td class=num>$1.00</td><td class=num>1</td><td class=num>$1.00</td></tr>", self.page)
+        self.assertIn("<tr><td>claude-maxims</td><td class=num>$0.500</td><td class=num>1</td><td class=num>$0.500</td></tr>", self.page)
+        self.assertNotIn("claude-arete", self.page)
+        self.assertIn("CI check $ per week, by check", self.page)
 
     def test_cost_tiles_price_the_window_and_read_the_session_shape(self):
         self.assertEqual(self.tile("API-equivalent $, 7d"), "6")       # three sessions at $2
