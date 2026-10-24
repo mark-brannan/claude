@@ -523,7 +523,7 @@ for line in sys.stdin:
 '
 stranded_rows() {
   jq -c "$STRANDED_CANDIDATES" "$1" 2>/dev/null \
-    | KB="$kb" python3 -c "$STRANDED_FILTER" "$(dirname "${state_py:-/nonexistent/x}")" | jq -R -s '
+    | KB="$kb" python3 -I -c "$STRANDED_FILTER" "$(dirname "${state_py:-/nonexistent/x}")" | jq -R -s '
     split("\n") | map(select(length > 0) | split("\t") | {ref:.[0], item:.[1], notes:""})
   '
 }
