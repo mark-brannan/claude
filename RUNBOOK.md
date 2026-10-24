@@ -432,6 +432,15 @@ calls). `--rescan-typing` rereads every transcript, after changing what counts
 as a typed prompt in `metrics-db`. A typed slash command counts as a touch;
 headless sessions count in the sessions tile and are listed apart.
 
+`--github` also collects the CI review checks' `headless-run` artifacts (claude-review,
+claude-maxims, claude-arete: one row per check per run) from every non-archived repo
+into `metrics/headless-runs/<run id prefix>/ci-<run id>.jsonl`, incrementally (a run already
+collected is skipped), because Actions expires artifacts after 90 days. The dashboard's
+"CI review checks" section reads view `ci_checks` (deduped by repo, run and check, trusted
+runs only): total, runs and mean per check, dollars per week, and cuts by repo and model.
+The cost is `total_cost_usd` from the CLI, not an estimate. Cold backfill: one list call per
+repo plus one download per artifact, about 130 calls for 79 artifacts; warm, one call per repo.
+
 A timer rebuilds both every four hours. Install once:
 
 ```bash
