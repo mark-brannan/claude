@@ -76,6 +76,7 @@ st() { python3 "$state_py" "$@"; }
 # call lists (and fails) again.
 rows_file=""; kb_tmp=""
 prime_rows() {
+  [ -n "$rows_file" ] && rm -f "$rows_file"
   rows_file=$(mktemp "${TMPDIR:-/tmp}/item-rows.XXXXXX") || { store_err="no temp file"; return 0; }
   trap 'rm -f "$kb_tmp" "$rows_file"' EXIT
   if e=$(st item_rows 2>&1 >"$rows_file"); then
