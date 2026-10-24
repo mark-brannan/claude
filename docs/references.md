@@ -416,7 +416,7 @@ Checked against the web on 2026-10-02.
   - Idea: be "quite sure that the purpose put into the machine is the purpose
     which we really desire and not merely a colorful imitation of it"; a
     machine faster than we are may leave us not knowing "when to turn it off".
-  - Maps to: the guards and hooks, such as `no-unsigned-push.sh`, which stop
+  - Maps to: the guards and hooks, such as `no-unsigned-push.py`, which stop
     an action before it lands instead of reporting afterwards.
 - **Russell, S. (2019).** *Human Compatible: Artificial Intelligence and the
   Problem of Control.* Viking.

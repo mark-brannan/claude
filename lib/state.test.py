@@ -4,11 +4,11 @@
 # What matters: the lookup's search path (an explicit CLAUDE_STATE_REPO
 # wins, a machine with no repo gets the local fallback); the archivable
 # answer's session-live gate (dotfiles#167), its carve-outs and its home
-# line; the mkdir locks (dotfiles#161) that bash takes too; and the small
-# formatters. These are the cases lib-state.test.sh held for the functions
-# that moved here; lib/state-parity.test.py holds the two languages equal.
+# line; the mkdir locks (dotfiles#161) that bash takes too; the small
+# formatters; and, through the command line the shell tools call, work
+# records, the work-item store, ruling readiness and branch_brief.
 #
-# Cost per push: about a second and a half (one deliberate lock wait), a
+# Cost per push: a few seconds (one deliberate lock wait, real git repos), a
 # step in CI's existing tool-tests job, so no new job and nothing drawn
 # from the account's concurrent-job cap.
 import importlib.util
@@ -86,9 +86,7 @@ class LookupTest(Base):
         self.assertFalse(self.state.state_is_repo())
         self.assertEqual(self.state.state_dir(), f"{self.T}/home/.claude/state/global")
 
-    def test_answers_without_lib_state_sh(self):
-        # It used to shell out to hooks/lib-state.sh; a lib/ on its own must
-        # answer now.
+    def test_a_lib_dir_on_its_own_answers(self):
         (self.T / "lib").mkdir()
         for f in ("state.py", "gitrun.py", "atomic.py", "jsonl.py"):
             shutil.copy(LIB.parent / f, self.T / "lib" / f)
@@ -516,6 +514,379 @@ class GitEventTest(Base):
             self.assertTrue(hit(s), s)
         for s in ("git status", "git add -A", "ls -la", "git log", "gitcommit"):
             self.assertFalse(hit(s), s)
+
+
+# --- through the command line, as the shell tools call it ---------------------
+def cli(*args, env=None, stdin=None, lib=LIB):
+    p = subprocess.run([sys.executable, str(lib), *args], capture_output=True, text=True, input=stdin,
+                       env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **(env or {})})
+    return p.returncode, p.stdout, p.stderr
+
+
+def script(path, text):
+    path.write_text(text)
+    path.chmod(0o755)
+    return path
+
+
+class WorkRecordTest(Base):
+    """A pickup item and a card read into one record shape: kind title status
+    until claim model effort link id updated."""
+
+    def wr(self, *args, claims=""):
+        return cli("work_record", *args, env={"WORK_CLAIMS": claims})[1].rstrip("\n").replace("\x1f", "|")
+
+    def test_pickup_item_body_lines_win(self):
+        f = self.T / "2026-09-09T10-00-abcd1234.md"
+        f.write_text("status: open\nupdated: 2026-09-09T10:00:00Z\nmodel: claude-sonnet-5\n"
+                     "pr: https://github.com/o/r/pull/7\n---\n\nFinish the thing\n"
+                     "link: https://github.com/o/r/issues/3\nmodel: Opus\neffort: high\n")
+        self.assertEqual(self.wr(str(f)), "pickup|Finish the thing|open|||opus|high|https://github.com/o/r/issues/3"
+                                          "|2026-09-09T10-00-abcd1234|2026-09-09T10:00:00Z")
+
+    def test_bare_item_falls_back_to_the_header_model(self):
+        f = self.T / "2026-09-10T10-00-00000000.md"
+        f.write_text("status: taken\nupdated: 2026-09-10T10:00:00Z\nmodel: claude-sonnet-5\npr: none\n---\n")
+        self.assertEqual(self.wr(str(f)), "pickup||taken|||sonnet|||2026-09-10T10-00-00000000|2026-09-10T10:00:00Z")
+
+    def test_card_fields(self):
+        self.assertEqual(
+            self.wr("- [ ] **Fix the gate** -- see [o/r#8](https://github.com/o/r/issues/8) model: opus effort: high"
+                    " until: o/r#9 merges", "2026-09-11T00:00:00Z"),
+            "card|Fix the gate|open|o/r#9 merges||opus|high|https://github.com/o/r/issues/8"
+            "|https://github.com/o/r/issues/8|2026-09-11T00:00:00Z")
+        self.assertEqual(self.wr("- [ ] tidy the docs ([log](log/2026-09-01.md))"),
+                         "card|tidy the docs (log)|open|||||log/2026-09-01.md|log/2026-09-01.md|",
+                         "title from its link text, absent fields empty")
+
+    def test_claims(self):
+        card = "- [ ] **Held** ([x](https://example.invalid/h))"
+        live = "live\tabcd1234\thost-x\t3m\thttps://example.invalid/h\nlive\teeeeeeee\thost-y\t1m\thttps://example.invalid/other"
+        self.assertEqual(self.wr(card, claims=live),
+                         "card|Held|taken||abcd1234|||https://example.invalid/h|https://example.invalid/h|")
+        self.assertEqual(self.wr(card, claims="stale\tabcd1234\thost-x\t300m\thttps://example.invalid/h").split("|")[2],
+                         "open", "a stale claim leaves it open")
+
+    def test_same_field_count_for_both_kinds(self):
+        f = self.T / "a.md"
+        f.write_text("status: open\n---\nT\n")
+        self.assertEqual(len(self.wr(str(f)).split("|")), 10)
+        self.assertEqual(len(self.wr("- [ ] **A** ([x](https://example.invalid/a))").split("|")), 10)
+
+    def test_work_records_reads_cards_from_stdin_then_files(self):
+        f = self.T / "p.md"
+        f.write_text("status: open\n---\nPicked\n")
+        out = cli("work_records", "--cards", str(f), env={"WORK_CLAIMS": ""},
+                  stdin="2026-01-01T00:00:00Z\t- [ ] **C** ([x](https://example.invalid/c))\n")[1]
+        self.assertEqual([ln.split("\x1f")[0] for ln in out.splitlines()], ["card", "pickup"])
+        self.assertEqual(out.splitlines()[0].split("\x1f")[9], "2026-01-01T00:00:00Z")
+
+
+class StoreTest(Base):
+    """The work-item store is the whole board: a kanban.md beside it is never
+    opened, and an item's claim is its log's."""
+    WI = str(LIB.parent.parent / "bin" / "work-item")
+
+    def setUp(self):
+        super().setUp()
+        self.items = self.T / "ki" / "items"
+        self.items.mkdir(parents=True)
+        (self.T / "ki" / "kanban.md").write_text(
+            "# Board\n\n## Claude's\n\n- [ ] **Old** ([x](https://example.invalid/o)) id: 1790836860aaaaaaaa\n")
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        for args in (("1790836861aaaaaaaa", "Old moved", "agent", "-", "ready", "**Old moved** -- an item id: 1790836861aaaaaaaa"),
+                     ("1790836862aaaaaaaa", "Stored ruling", "human-ruling", "o/colregs", "ready", "Decide it."),
+                     ("1790836863aaaaaaaa", "Blocked one", "agent", "-", "blocked", "Waits."),
+                     ("1790836864aaaaaaaa", "Held one", "agent", "-", "claimed", "Held.", now, "abcd1234"),
+                     ("1790836865aaaaaaaa", "Stale hold", "agent", "-", "claimed", "Let go.", "2026-09-01T00:00:00Z", "eeeeeeee"),
+                     ("1790836866aaaaaaaa", "Done one", "agent", "-", "done", "Over."),
+                     ("1790836867aaaaaaaa", "Click it", "human-click", "-", "ready", "In the UI.")):
+            self.item(*args)
+
+    def item(self, id_, title, owner, repo, status, brief, at="2026-10-03T05:00:00Z", holder="1d68120b"):
+        (self.items / f"{id_}.md").write_text(
+            f"# {title}\n\n## Brief\n{brief}\n\n## Log\n{at} 1d68120b status=open owner={owner} repo={repo} "
+            f"parent=- model=- effort=-\n{at} {holder} status={status}\n")
+
+    def st(self, *args, items=None, stdin=None, **env):
+        return cli(*args, stdin=stdin, env={"WORK_ITEM_DIR": str(items or self.items), "WORK_ITEM_BIN": self.WI,
+                                            "HOOK_DIR": "/nonexistent", **env})
+
+    def test_claude_cards_are_the_agents_ready_and_claimed_items(self):
+        out = self.st("claude_cards")[1]
+        titles = [re.sub(r"^(- \[ \] )?(\*\*[^*]+\*\*).*", r"\2", ln.split("\t", 1)[1]) for ln in out.splitlines()]
+        self.assertEqual(titles, ["**Old moved**", "**Held one**", "**Stale hold**"])
+        self.assertEqual(out.splitlines()[0].split("\t")[0], "2026-10-03T05:00:00Z", "updated is the newest log line")
+
+    def test_board_card(self):
+        self.assertEqual(self.st("board_card", "1790836862aaaaaaaa")[1],
+                         "Needs ruling\tcolregs\t- [ ] **Stored ruling**: Decide it. repo: o/colregs id: 1790836862aaaaaaaa\n")
+        self.assertEqual(self.st("board_card", "1790836861aaaaaaaa")[1].split("\t")[0], "Claude's")
+        self.assertEqual(self.st("board_card", "1790836866aaaaaaaa")[1].split("\t")[0], "Done", "the done queue too")
+        self.assertEqual(self.st("board_card", "1790836860aaaaaaaa")[:2], (1, ""), "a kanban.md card is not found")
+
+    def test_board_union_is_the_items_by_section(self):
+        heads = [ln for ln in self.st("board_union")[1].splitlines() if ln.startswith("##")]
+        self.assertEqual(heads, ["## Needs ruling", "### colregs", "## Human's", "## Claude's"])
+
+    def test_an_items_claim_is_its_logs(self):
+        def rec(title):
+            cards = "".join(ln + "\n" for ln in self.st("claude_cards")[1].splitlines() if title in ln)
+            os.environ.pop("WORK_CLAIMS", None)  # unset: work_records loads the claims itself
+            return self.st("work_records", "--cards", stdin=cards)[1].split("\x1f")
+        self.assertEqual(rec("Held one")[2:5:2], ["taken", "abcd1234"])
+        self.assertEqual(rec("Stale hold")[2:5:2], ["open", ""])
+
+    def test_done_rows_are_the_done_items_only(self):
+        self.assertEqual([ln.split("\t")[0] for ln in self.st("done_rows")[1].splitlines()], ["1790836866aaaaaaaa"])
+
+    def test_no_items_dir_is_an_empty_board(self):
+        none = self.T / "none"
+        for fn in ("claude_cards", "board_union", "item_rows"):
+            self.assertEqual(self.st(fn, items=none)[:2], (0, ""), fn)
+
+    def test_an_empty_store_is_healthy(self):
+        empty = self.T / "empty"
+        empty.mkdir()
+        self.assertEqual(self.st("item_rows", items=empty), (0, "", ""))
+        self.assertEqual(self.st("done_rows", items=empty), (0, "", ""))
+
+    def test_a_store_that_cannot_be_read_exits_3_with_the_cause(self):
+        broken = script(self.T / "broken", "import sys\nprint('python exploded', file=sys.stderr)\nsys.exit(4)\n")
+        for fn in ("item_rows", "done_rows", "done_board"):
+            rc, out, err = self.st(fn, WORK_ITEM_BIN=str(broken))
+            self.assertEqual((rc, out), (3, ""), fn)
+            self.assertEqual(err, f"BROKEN STORE -- work-item list failed (exit 4): python exploded\n", fn)
+
+    def test_a_missing_work_item_is_a_broken_store(self):
+        lib = self.T / "lib"
+        lib.mkdir()
+        for f in ("state.py", "gitrun.py", "atomic.py", "jsonl.py"):
+            shutil.copy(LIB.parent / f, lib / f)
+        rc, _, err = cli("item_rows", lib=lib / "state.py",
+                         env={"WORK_ITEM_DIR": str(self.items), "WORK_ITEM_BIN": "", "HOOK_DIR": "", "HOME": "/nonexistent"})
+        self.assertEqual((rc, err), (3, "BROKEN STORE -- work-item not found\n"))
+
+    def test_primed_rows_are_read_instead_of_listing(self):
+        f = self.T / "rows"
+        f.write_text("1790836899aaaaaaaa\tagent\tready\t\t2026-01-01T00:00:00Z\t-\t- [ ] **Primed**\n")
+        self.assertEqual(self.st("claude_cards", ITEM_ROWS_FILE=str(f))[1], "2026-01-01T00:00:00Z\t- [ ] **Primed**\n")
+
+    def test_the_default_store_is_items_in_the_state_dir(self):
+        repo = self.T / "repo"
+        (repo / ".git").mkdir(parents=True)
+        self.assertEqual(cli("items_dir", env={"WORK_ITEM_DIR": "", "CLAUDE_STATE_REPO": str(repo)})[1],
+                         f"{repo}/state/global/items")
+
+
+class RulingReadinessTest(Base):
+    """gh is faked: the reply for ref n is read from state.<n>, every call logged."""
+
+    def setUp(self):
+        super().setUp()
+        self.rr = self.T / "rr"
+        (self.rr / "bin").mkdir(parents=True)
+        script(self.rr / "bin" / "gh", '#!/bin/sh\nn=""; for a in "$@"; do case $a in n=*) n=${a#n=} ;; esac; done\n'
+               f'echo "$n" >> "{self.rr}/gh.log"\n[ -f "{self.rr}/state.$n" ] && cat "{self.rr}/state.$n" || exit 1\n')
+        (self.rr / "gh.log").write_text("")
+
+    def ready(self, card, **env):
+        return cli("ruling_readiness", card, env={"PATH": f"{self.rr}/bin:{os.environ['PATH']}",
+                                                  "XDG_CACHE_HOME": str(self.rr / "cache"),
+                                                  "RULING_TODAY": "2026-10-01", **env})[1].strip()
+
+    def test_dates_and_words(self):
+        for card, want in (("x until: 2026-09-12 (2.2, before 1.8 risk: y", "ready"),
+                           ("x until: 2026-10-01. risk: y", "ready"),
+                           ("x until: 2026-10-05 risk: y", "waiting"),
+                           ("x until: M6 card, 2026-09-30 judgment: risk", "ready"),
+                           ("x until: the next session rooted in dotfiles risk: z", "waiting"),
+                           ("x until: before #15 or #16 is picked up risk: z", "waiting"),
+                           ("x kind: tentative ADR settle: y", "ready"),
+                           ("x until: next week risk: 2026-01-01 outage", "waiting")):
+            self.assertEqual(self.ready(card), want, card)
+
+    def test_links(self):
+        for n, st in ((1, "pr-open"), (2, "issue-open"), (3, "issue-inflight"), (4, "issue-closed")):
+            (self.rr / f"state.{n}").write_text(st)
+        for card, want in (("x until: https://github.com/o/r/pull/1 risk: y", "ready"),
+                           ("x until: [o/r#2](https://github.com/o/r/issues/2) risk: y", "waiting"),
+                           ("x until: o/r#3 risk: y", "ready"),
+                           ("x until: o/r#4 risk: y", "ready"),
+                           ("x until: o/r#5 risk: y", "ready")):
+            self.assertEqual(self.ready(card), want, card)
+        (self.rr / "state.2").write_text("pr-merged")
+        self.assertEqual(self.ready("x until: o/r#2 risk: y"), "waiting", "a cached state is reused within the TTL")
+        self.ready("x until: o/r#5 risk: y")
+        self.assertEqual((self.rr / "gh.log").read_text().split(), ["1", "2", "3", "4", "5", "5"],
+                         "gh asked once per ref, failures not cached")
+        (self.rr / "gh.log").write_text("")
+        self.assertEqual(self.ready("x until: o/r#2 risk: y", RULING_REF_TTL="0", RULING_REF_CACHE_ONLY="1"),
+                         "waiting", "cache-only takes a stale entry")
+        self.assertEqual(self.ready("x until: o/r#6 risk: y", RULING_REF_CACHE_ONLY="1"), "ready")
+        self.assertEqual((self.rr / "gh.log").read_text(), "", "cache-only never calls gh")
+        self.assertEqual(self.ready("x until: o/r#2 risk: y", RULING_REF_TTL="0"), "ready", "past the TTL gh is asked again")
+
+    def test_until_on_a_later_line(self):
+        self.assertEqual(self.ready("x risk: y\n  until: 2026-10-05"), "waiting")
+
+    def test_rulings_ready_many_in_one_call(self):
+        out = cli("rulings_ready", stdin="global\tx until: 2026-10-05 risk: y\n\ncolregs\tx kind: z\n",
+                  env={"RULING_TODAY": "2026-10-01", "RULING_REF_CACHE_ONLY": "1"})[1]
+        self.assertEqual(out, "waiting\tglobal\tx until: 2026-10-05 risk: y\nready\tcolregs\tx kind: z\n")
+
+
+class BranchBriefTest(Base):
+    """Every case builds a real repo with a real bare remote: branch_brief
+    reports what git says. gh is stubbed (GH_MODE none, pr -> one open PR on
+    `release`, fail), and git fails one count on demand, so the "git could
+    not answer" branches are tested rather than asserted."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["GIT_CONFIG_SYSTEM"] = "/dev/null"
+        b = self.T / "bin"
+        b.mkdir()
+        script(b / "gh", '#!/bin/sh\ncase "${GH_MODE:-none}" in pr) echo release ;; fail) exit 1 ;; *) : ;; esac\n')
+        script(b / "git", '#!/bin/sh\n'
+               'if [ -n "${GIT_FAIL_MERGES:-}" ]; then case " $* " in *" --merges "*) exit 128 ;; esac; fi\n'
+               'if [ -n "${GIT_FAIL_LEFTRIGHT:-}" ]; then case " $* " in *" --left-right "*) exit 128 ;; esac; fi\n'
+               'if [ -n "${GIT_FAIL_RANGE:-}" ]; then case " $* " in *" rev-list origin/"*) exit 128 ;; esac; fi\n'
+               f'exec {shutil.which("git")} "$@"\n')
+        os.environ["PATH"] = f"{b}:{os.environ['PATH']}"
+
+    def g(self, r, *args):
+        return subprocess.run(["git", "-C", str(r), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+    def new_repo(self, name):
+        r = self.T / name
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", f"{r}.git"], check=True)
+        subprocess.run(["git", "clone", "-q", f"{r}.git", str(r)], check=True, capture_output=True)
+        for k, v in (("user.email", "t@e"), ("user.name", "T"), ("commit.gpgsign", "false")):
+            self.g(r, "config", k, v)
+        self.commit(r, "base\n", "base")
+        self.g(r, "push", "-q", "origin", "main")
+        self.g(r, "remote", "set-head", "origin", "-a")
+        self.g(r, "checkout", "-qb", "feat")
+        return r
+
+    def commit(self, r, text, msg, path="f"):
+        (r / path).write_text(text)
+        self.g(r, "add", path)
+        self.g(r, "commit", "-qm", msg)
+
+    def fake_signed(self, r, subject, text=None):
+        """A commit carrying a gpgsig header: presence is what branch_brief
+        tests, validity is GitHub's job."""
+        if text is not None:
+            (r / "f").write_text(text)
+            self.g(r, "add", "f")
+        obj = subprocess.run(["git", "-C", str(r), "hash-object", "-t", "commit", "-w", "--stdin"], check=True,
+                             capture_output=True, text=True, input=(
+            f"tree {self.g(r, 'write-tree')}\nparent {self.g(r, 'rev-parse', 'HEAD')}\n"
+            "author T <t@e> 1700000000 +0000\ncommitter T <t@e> 1700000000 +0000\n"
+            "gpgsig -----BEGIN SSH SIGNATURE-----\n Zm9v\n -----END SSH SIGNATURE-----\n\n" f"{subject}\n")).stdout.strip()
+        self.g(r, "update-ref", "HEAD", obj)
+
+    def brief(self, r, br="feat", **env):
+        rc, out, _ = cli("branch_brief", str(r), br, env=env)
+        return rc, out.splitlines()
+
+    def rec(self, lines):
+        return next(ln for ln in lines if ln.startswith("recommend: "))
+
+    def test_clean_branch_needs_nothing_on_the_base(self):
+        r = self.new_repo("clean")
+        self.fake_signed(r, "feat work", "base\nfeat\n")
+        self.g(r, "checkout", "-q", "main")  # the brief is about a branch, not HEAD
+        rc, out = self.brief(r)
+        self.assertEqual(rc, 0)
+        for ln in ("base: main (default branch, no open PR)", "ahead: 1", "behind: 0", "conflicts: no",
+                   "unsigned: 0", "merges: 0", "worktrees: none"):
+            self.assertIn(ln, out)
+        self.assertRegex(self.rec(out), r"^recommend: nothing on the base -- .*behind origin/main is left as is")
+
+    def test_conflicting_branch_merges_and_never_linearizes(self):
+        r = self.new_repo("conflict")
+        self.fake_signed(r, "feat work", "base\ntheirs\n")
+        self.g(r, "push", "-q", "origin", "HEAD:refs/heads/scratch")
+        self.g(r, "checkout", "-q", "main")
+        self.commit(r, "base\nours\n", "main moves")
+        self.g(r, "push", "-q", "origin", "main")
+        self.g(r, "checkout", "-q", "feat")
+        out = self.brief(r)[1]
+        self.assertIn("conflicts: yes", out)
+        self.assertIn("behind: 1", out)
+        self.assertRegex(self.rec(out), r"^recommend: git merge origin/main .*never linearize")
+
+    def test_merge_commits_outrank_everything(self):
+        r = self.new_repo("merged")
+        self.g(r, "checkout", "-q", "main")
+        self.commit(r, "base\nmain\n", "main moves")
+        self.g(r, "push", "-q", "origin", "main")
+        self.g(r, "checkout", "-q", "feat")
+        self.commit(r, "other\n", "feat work", path="g")
+        self.g(r, "merge", "-q", "--no-edit", "origin/main")
+        out = self.brief(r)[1]
+        self.assertIn("merges: 1", out)
+        self.assertRegex(self.rec(out), r"^recommend: do not rebase and do not resign")
+
+    def test_unsigned_with_and_without_a_key(self):
+        r = self.new_repo("unsigned")
+        self.commit(r, "base\nfeat\n", "feat work")
+        out = self.brief(r)[1]
+        self.assertIn("unsigned: 1", out)
+        self.assertRegex(self.rec(out), r"^recommend: cannot sign on this machine")
+        self.g(r, "config", "user.signingkey", "/dev/null")
+        out = self.brief(r)[1]
+        self.assertRegex(self.rec(out), r"^recommend: git rebase -S --force-rebase [0-9a-f]{7,}")
+        self.assertIn("resign-branch.sh feat instead", self.rec(out))
+
+    def test_the_base_comes_from_the_open_pr(self):
+        r = self.new_repo("stacked")
+        self.g(r, "push", "-q", "origin", "main:refs/heads/release")
+        self.g(r, "fetch", "-q", "origin")
+        self.fake_signed(r, "feat work", "base\nfeat\n")
+        out = self.brief(r, GH_MODE="pr")[1]
+        self.assertIn("base: release (open PR)", out)
+        self.assertIn("behind origin/release is left as is", self.rec(out))
+        out = self.brief(r, GH_MODE="fail")[1]
+        self.assertTrue(any(ln.startswith("base: main (assumed") for ln in out), out)
+
+    def test_no_base_ref_is_unknown_never_zero(self):
+        r = self.new_repo("nobase")
+        self.fake_signed(r, "feat work")
+        self.g(r, "update-ref", "-d", "refs/remotes/origin/main")
+        self.g(r, "remote", "set-head", "-d", "origin")
+        out = self.brief(r)[1]
+        self.assertIn("behind: unknown", out)
+        self.assertRegex(self.rec(out), r"^recommend: no base to compare against here")
+
+    def test_a_failed_count_is_unknown_and_never_recommends_a_rebase(self):
+        r = self.new_repo("failcount")
+        self.fake_signed(r, "feat work")
+        out = self.brief(r, GIT_FAIL_MERGES="1")[1]
+        self.assertIn("merges: unknown", out)
+        self.assertRegex(self.rec(out), r"^recommend: count the merge commits by hand")
+        out = self.brief(r, GIT_FAIL_LEFTRIGHT="1")[1]
+        self.assertIn("ahead: unknown", out)
+        self.assertIn("behind: unknown", out)
+        out = self.brief(r, GIT_FAIL_RANGE="1")[1]
+        self.assertIn("unsigned: unknown", out)
+        self.assertRegex(self.rec(out), r"^recommend: check the signatures by hand")
+
+    def test_worktrees_holding_the_branch_are_named(self):
+        r = self.new_repo("held")
+        self.g(r, "checkout", "-q", "main")
+        self.g(r, "worktree", "add", "-q", str(self.T / "held wt"), "feat")
+        out = self.brief(r)[1]
+        self.assertTrue(any(ln.startswith(f"worktrees: {self.T}/held wt ") for ln in out), out)
+
+    def test_a_missing_branch_is_an_error(self):
+        r = self.new_repo("missing")
+        rc, out = self.brief(r, br="nope")
+        self.assertEqual(rc, 1)
+        self.assertTrue(out[0].startswith("error: no branch nope"), out)
 
 
 if __name__ == "__main__":

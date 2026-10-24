@@ -66,6 +66,22 @@ done
 self=$0
 case $self in */*) ;; *) self=$(command -v "$self" 2>/dev/null || printf '%s' "$self") ;; esac
 self_dir=$(cd "$(dirname "$self")" 2>/dev/null && pwd)
+state_py=""
+for c in "$self_dir/../lib/state.py" "$HOME/.claude/lib/state.py"; do
+  [ -f "$c" ] && { state_py=$c; break; }
+done
+st() { python3 "$state_py" "$@"; }
+# prime_rows -- list the store once into $ITEM_ROWS_FILE for every later
+# state.py call; when it cannot be read, $store_err is the cause and every
+# call lists (and fails) again.
+rows_file=""; kb_tmp=""
+prime_rows() {
+  rows_file=$(mktemp "${TMPDIR:-/tmp}/item-rows.XXXXXX") || { store_err="no temp file"; return 0; }
+  trap 'rm -f "$kb_tmp" "$rows_file"' EXIT
+  if e=$(st item_rows 2>&1 >"$rows_file"); then
+    store_err=""; ITEM_ROWS_FILE=$rows_file; export ITEM_ROWS_FILE
+  else store_err=${e#BROKEN STORE -- }; store_err=${store_err:-state.py item_rows failed}; fi
+}
 cache_root=${XDG_CACHE_HOME:-$HOME/.cache}/worklist
 mkdir -p "$cache_root" 2>/dev/null
 TIMEOUT=$(command -v timeout 2>/dev/null || :)
@@ -221,16 +237,12 @@ do_fetch() {
 # `worklist card <id>`: one board read, no fetch. Printed as the section (and
 # group) the card sits under, then the card on one line.
 if [ -n "$card_id" ]; then
-  for c in "$self_dir/../hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
-    # shellcheck disable=SC1090
-    [ -f "$c" ] && { . "$c"; break; }
-  done
-  command -v board_card >/dev/null 2>&1 || { printf 'worklist card: lib-state.sh not found\n' >&2; exit 2; }
-  is_card_id "$card_id" || { printf 'worklist card: not a card id: %s (epoch seconds then eight hex)\n' "$card_id" >&2; exit 2; }
-  # Primed here, outside $(...), so a broken store is named, never "no item".
-  item_rows >/dev/null
-  [ -z "${ITEM_ROWS_ERR:-}" ] || { printf 'worklist card: BROKEN STORE -- %s\n' "$ITEM_ROWS_ERR" >&2; exit 3; }
-  hit=$(board_card "$card_id") || { printf 'worklist card: no item %s in %s\n' "$card_id" "$(items_dir)" >&2; exit 1; }
+  [ -n "$state_py" ] || { printf 'worklist card: lib/state.py not found\n' >&2; exit 2; }
+  st is_card_id "$card_id" || { printf 'worklist card: not a card id: %s (epoch seconds then eight hex)\n' "$card_id" >&2; exit 2; }
+  # Listed first, so a broken store is named, never "no item".
+  prime_rows
+  [ -z "$store_err" ] || { printf 'worklist card: BROKEN STORE -- %s\n' "$store_err" >&2; exit 3; }
+  hit=$(st board_card "$card_id") || { printf 'worklist card: no item %s in %s\n' "$card_id" "$(st items_dir)" >&2; exit 1; }
   printf '%s\n' "$hit" | awk -F '\t' '{ printf "## %s%s\n", $1, ($2 != "" ? " / " $2 : ""); print substr($0, length($1) + length($2) + 3) }'
   exit 0
 fi
@@ -418,32 +430,30 @@ def ready_rows: . as $b
 '
 
 # board_path -- sets $kb to the board this view reads: the store's items/ as
-# one text (board_union in lib-state.sh), written once to a file every section
+# one text (board_union in lib/state.py), written once to a file every section
 # view below parses. Returns 1 with $board_err set and $kb empty when there
 # is no items/.
-board_err=""; kb=""; kb_tmp=""; store_broken=0
+board_err=""; kb=""; store_broken=0
 board_path() {
   board_err=""; kb=""
   [ -n "$kb_tmp" ] && [ -f "$kb_tmp" ] && { kb=$kb_tmp; return 0; }
-  lib=""
-  for c in "$self_dir/../hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
-    [ -f "$c" ] && { lib=$c; break; }
-  done
-  [ -n "$lib" ] || { board_err="Board: unavailable (lib-state.sh not found)"; return 1; }
-  # shellcheck disable=SC1090
-  . "$lib"
-  [ -d "$(items_dir)" ] || { board_err="Board: no items/ at $(dirname "$(items_dir)")"; return 1; }
+  [ -n "$state_py" ] || { board_err="Board: unavailable (lib/state.py not found)"; return 1; }
+  d=$(st items_dir)
+  [ -d "$d" ] || { board_err="Board: no items/ at $(dirname "$d")"; return 1; }
   # A store that cannot be read is an error, never an empty board: say so,
   # show no board, and let the caller exit non-zero (store_broken).
-  item_rows >/dev/null; done_rows
-  if [ -n "${ITEM_ROWS_ERR:-}" ]; then
+  prime_rows
+  kb_tmp=$(mktemp "${TMPDIR:-/tmp}/worklist-board.XXXXXX") || { board_err="Board: no temp file"; return 1; }
+  if [ -z "$store_err" ]; then
+    st board_union > "$kb_tmp"
+    e=$(st done_board 2>&1 >>"$kb_tmp") || store_err=${e#BROKEN STORE -- }
+  fi
+  if [ -n "$store_err" ]; then
+    rm -f "$kb_tmp"; kb_tmp=""
     store_broken=1
-    board_err="Board: BROKEN STORE -- $ITEM_ROWS_ERR; this is not an empty board"
+    board_err="Board: BROKEN STORE -- $store_err; this is not an empty board"
     return 1
   fi
-  kb_tmp=$(mktemp "${TMPDIR:-/tmp}/worklist-board.XXXXXX") || { board_err="Board: no temp file"; return 1; }
-  trap 'rm -f "$kb_tmp"' EXIT
-  { board_union; done_board; } > "$kb_tmp"
   kb=$kb_tmp
   return 0
 }
@@ -483,28 +493,37 @@ STRANDED_CANDIDATES='
 # a work item (names_branch against $kb, set by board_path) or an open
 # issue in the same repo (whole-token match against title+body). Same
 # names_branch as branch-home-gate.py (dotfiles#114), shared via
-# lib-state.sh so a branch counts as pointed-at the same way in both
+# lib/state.py so a branch counts as pointed-at the same way in both
 # places. Only the first 100 open issues are ever fetched (see $trunc), so
 # a pointer past that page is missed the same way every other issue-derived
-# bucket already accepts. When lib-state.sh could not be found at all
-# (board_path never sourced it, so names_branch is undefined) every no-PR
-# branch is still listed -- "could not check for a pointer" is not the same
-# as "checked, found none".
+# bucket already accepts. When lib/state.py could not be imported every
+# no-PR branch is still listed -- "could not check for a pointer" is not the
+# same as "checked, found none".
+# shellcheck disable=SC2016  # Python program, not shell
+STRANDED_FILTER='
+import json, os, sys
+nb = None
+try:
+    sys.path.insert(0, sys.argv[1]); import state; nb = state.names_branch
+except Exception:
+    pass
+kb = ""
+if os.environ.get("KB"):
+    try:
+        with open(os.environ["KB"], encoding="utf-8", errors="replace") as fh: kb = fh.read()
+    except OSError:
+        pass
+for line in sys.stdin:
+    for r in (json.loads(line) if line.strip() else []):
+        issues = "\n".join(r["issues"])
+        for b in r["branches"]:
+            if nb and ((kb and nb(kb, b)) or (issues and nb(issues, b))):
+                continue
+            print(r["repo"] + "\t" + b)
+'
 stranded_rows() {
-  have_nb=1; command -v names_branch >/dev/null 2>&1 || have_nb=0
-  jq -c "$STRANDED_CANDIDATES" "$1" 2>/dev/null | jq -c '.[]' 2>/dev/null | while IFS= read -r robj; do
-    repo=$(printf '%s' "$robj" | jq -r '.repo')
-    issues_text=$(printf '%s' "$robj" | jq -r '.issues[]' 2>/dev/null)
-    printf '%s' "$robj" | jq -r '.branches[]' | while IFS= read -r branch; do
-      pointed=0
-      if [ "$have_nb" = 1 ]; then
-        if [ -n "$kb" ] && names_branch "$branch" < "$kb"; then pointed=1
-        elif [ -n "$issues_text" ] && printf '%s\n' "$issues_text" | names_branch "$branch"; then pointed=1
-        fi
-      fi
-      [ "$pointed" = 0 ] && printf '%s\t%s\n' "$repo" "$branch"
-    done
-  done | jq -R -s '
+  jq -c "$STRANDED_CANDIDATES" "$1" 2>/dev/null \
+    | KB="$kb" python3 -c "$STRANDED_FILTER" "$(dirname "${state_py:-/nonexistent/x}")" | jq -R -s '
     split("\n") | map(select(length > 0) | split("\t") | {ref:.[0], item:.[1], notes:""})
   '
 }
@@ -520,12 +539,11 @@ JQ_IDFIRST='def idfirst: (capture("^(?<t>.*?)[[:space:]]+id:[[:space:]]*(?<id>[0
 # what no project owns. Inside a project's repo only that project's group and
 # global are shown, with a count of what was hidden; --all-rulings, or no
 # project at all, shows every group and prefixes each card with its group.
-# Each card is ready or waiting (ruling_readiness in lib-state.sh); only the
+# Each card is ready or waiting (ruling_readiness in lib/state.py); only the
 # ready ones are listed unless --waiting or --all asks (the user, 2026-10-01).
 # The counts line is printed on every run, and each count names its drill
 # path. Printed first because it is the one thing here waiting on the user.
 ruling_section() {
-  command -v ruling_readiness >/dev/null 2>&1 || ruling_readiness() { echo ready; }
   [ "$brief" = 1 ] && RULING_REF_CACHE_ONLY=1 && export RULING_REF_CACHE_ONLY
   # A card spans its indented continuation lines; until: may sit on one.
   rows=$(awk '
@@ -537,9 +555,7 @@ ruling_section() {
     /^[ \t]+[^ \t]/ { if (t != "") { l = $0; sub(/^[ \t]+/, "", l); t = t " " l }; next }
     { out() }
     END { out() }
-  ' "$1" | while IFS= read -r r; do
-    [ -n "$r" ] && printf '%s\t%s\n' "$(ruling_readiness "${r#*	}")" "$r"
-  done)
+  ' "$1" | if [ -n "$state_py" ]; then st rulings_ready; else awk 'NF { print "ready\t" $0 }'; fi)
   showall=$all_rulings
   [ -n "$2" ] || showall=1
   if [ "$showall" = 1 ]; then

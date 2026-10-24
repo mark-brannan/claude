@@ -18,7 +18,7 @@ from pathlib import Path
 
 SL = Path(__file__).resolve().parent / "scoping-lock"
 D = "state/global/curia/q"
-# lib-state.sh searches these before $HOME. Where one holds a repo, a test
+# lib/state.py searches these before $HOME. Where one holds a repo, a test
 # with no state repo of its own would find that one, the real one.
 CLOUD_REPO = any(os.path.isdir(d + "/.git") for d in
                  ("/home/user/claude_prompts_scratch", "/workspace/claude_prompts_scratch"))
@@ -138,7 +138,7 @@ class ScopingLockTest(unittest.TestCase):
         self.assertEqual(0, rc)
 
     def test_10_fails_closed(self):
-        # A missing $CLAUDE_STATE_REPO falls through to lib-state.sh's search
+        # A missing $CLAUDE_STATE_REPO falls through to lib/state.py's search
         # path; where a cloud path holds the real state repo, `take` would
         # lock and push there. Never run that case on such a machine.
         if not CLOUD_REPO:
@@ -146,8 +146,8 @@ class ScopingLockTest(unittest.TestCase):
         git("remote", "set-url", "origin", str(self.S / "gone.git"), cwd=self.S / "a")
         self.assertEqual(2, self.run_sl("a", "take", D, "sid-four", "x")[0], "an unreachable origin")
 
-    def test_11_finds_the_repo_where_lib_state_sh_does(self):
-        # $HOME/src is on lib-state.sh's search path, never on the old
+    def test_11_finds_the_repo_where_state_py_does(self):
+        # $HOME/src is on lib/state.py's search path, never on the old
         # private one ($CLAUDE_STATE_REPO or ~/claude_prompts_scratch only).
         if CLOUD_REPO:
             self.skipTest("a cloud path holds a state repo here; read would prove nothing")

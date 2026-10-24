@@ -121,15 +121,15 @@ assert 'show of an unknown item fails' bash -c "! sh '$PL' show 1790836859aaaaaa
 
 # A store that cannot be read is named and exits 1, never "Pickup: none"
 # (card 179101773919cb0a62). The pickup items themselves still list.
-mkdir -p "$S/fakebin"; printf '#!/bin/sh\necho "python exploded" >&2\nexit 4\n' > "$S/fakebin/python3"; chmod +x "$S/fakebin/python3"
-out=$(PATH="$S/fakebin:$PATH" sh "$PL" --all); rc=$?
+printf 'import sys\nprint("python exploded", file=sys.stderr)\nsys.exit(4)\n' > "$S/broken-work-item"
+out=$(WORK_ITEM_BIN="$S/broken-work-item" sh "$PL" --all); rc=$?
 eq 'a broken store exits 1' 1 "$rc"
 assert 'and names the cause' bash -c "printf '%s' '$out' | grep -q 'Pickup: BROKEN STORE -- work-item list failed (exit 4): python exploded'"
 assert 'and still lists the pickup items' bash -c "printf '%s' '$out' | grep -q 'newest work'"
-assert 'show on a broken store names it, not "no item"' bash -c "PATH='$S/fakebin:$PATH' sh '$PL' show 1790836851aaaaaaaa 2>&1 >/dev/null | grep -q 'pickup-list show: BROKEN STORE -- work-item list failed (exit 4)'"
-assert 'and fails' bash -c "! PATH='$S/fakebin:$PATH' sh '$PL' show 1790836851aaaaaaaa 2>/dev/null"
+assert 'show on a broken store names it, not "no item"' bash -c "WORK_ITEM_BIN='$S/broken-work-item' sh '$PL' show 1790836851aaaaaaaa 2>&1 >/dev/null | grep -q 'pickup-list show: BROKEN STORE -- work-item list failed (exit 4)'"
+assert 'and fails' bash -c "! WORK_ITEM_BIN='$S/broken-work-item' sh '$PL' show 1790836851aaaaaaaa 2>/dev/null"
 rm -rf "$I"
-out=$(PATH="$S/fakebin:$PATH" sh "$PL" --all); rc=$?
+out=$(WORK_ITEM_BIN="$S/broken-work-item" sh "$PL" --all); rc=$?
 eq 'no items/ at all is not a broken store' 0 "$rc"
 assert 'and prints no error' bash -c "! printf '%s' '$out' | grep -q BROKEN"
 
