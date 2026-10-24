@@ -33,6 +33,6 @@ with total inputs.
 
 ## Competes with
 
-Robustness. A hook that must never block the harness is a declared
-robustness break and a declared fail-fast break at once; row both. The
-`Tensions:` line pairs them.
+Robustness, directly. A hook that defaults a missing field so it never
+blocks the harness keeps Postel's law and breaks fail fast: one row
+here, and the `Tensions:` line names robustness kept at the site.

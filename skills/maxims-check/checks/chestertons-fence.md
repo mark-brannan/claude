@@ -31,6 +31,7 @@ The target removes, loosens or bypasses nothing.
 
 ## Competes with
 
-YAGNI and KISS, which row the fence as a part with no caller; this
-check rows its removal as unexplained. Both stand; the owner reads the
+YAGNI and KISS, which a removal keeps: the fence they would call a part
+with no caller is the one this check rows as gone unexplained. The
+`Tensions:` line names the pair at the removal; the owner reads the
 commit that built it.

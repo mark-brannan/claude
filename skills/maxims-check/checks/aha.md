@@ -31,5 +31,7 @@ The target adds no shared code: a leaf change, a deletion.
 
 ## Competes with
 
-DRY, from the WET side; SOLID (OCP, DIP) and GRASP (polymorphism,
-protected variations), which ask for the seam AHA says to wait for.
+DRY, from the WET side: a hasty abstraction AHA rows keeps DRY. SOLID
+(OCP, DIP) and GRASP (polymorphism, protected variations), which ask
+for the seam AHA says to wait for. WET, KISS and YAGNI agree with AHA
+on a one-caller helper; each rows it.

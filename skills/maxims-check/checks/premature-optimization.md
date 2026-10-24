@@ -58,7 +58,8 @@ is a figure in another quantity than the budget's.
 ## `mu` when
 
 The target adds no mechanism whose purpose is speed, size or cost: a
-doc, a fix, a feature with no performance claim. A drop threshold is
+doc, a fix. A claim is not needed; a cache added in silence is such a
+mechanism. A drop threshold is
 such a mechanism wherever it sits, so a diff that adds one never reads
 `mu` here.
 
@@ -66,4 +67,4 @@ such a mechanism wherever it sits, so a diff that adds one never reads
 
 Premature pessimization, directly: the simple form chosen now may be
 the one that cannot be made fast later. Robustness and fail fast, where
-an optimization removes a check. Both rows stand.
+an optimization removes a check; a row under each, which agree.

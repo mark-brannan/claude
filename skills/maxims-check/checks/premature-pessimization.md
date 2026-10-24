@@ -36,11 +36,12 @@ the commit or a comment at the site.
 
 ## `mu` when
 
-The target has no path that runs more than once, or the record names no
-budget and no frequency.
+The target has no path that runs more than once. Detector 2 alone
+reads `mu` when the record names no hot path; detectors 1 and 3 need no
+record.
 
 ## Competes with
 
-Premature optimization, directly. A loop may carry a row under each:
-optimised before a measurement, or left slow where the fast form was
-free. KISS, where the efficient form is a moving part.
+Premature optimization, directly: a loop left in its plain form keeps
+it, and an efficient form chosen before a measurement may break it.
+KISS, where the efficient form is a moving part.

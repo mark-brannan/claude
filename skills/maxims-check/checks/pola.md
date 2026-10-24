@@ -2,7 +2,7 @@
 
 The item does what its name, its record and its neighbours lead a
 reader to expect. Every other check's undeclared, seen-after break is
-also an astonishment; this check is for the ones no other principle
+also an astonishment; this check is for the ones no other maxim
 names.
 
 ## Detectors

@@ -29,6 +29,6 @@ The target adds no shared code and no copy.
 
 ## Competes with
 
-DRY. The same lines may carry a DRY row (a second home) and a WET row
-(an abstraction before three); both stand, paired on the `Tensions:`
-line. Which was right is the owner's call.
+DRY. A second copy DRY rows keeps WET; an abstraction before three WET
+rows keeps DRY. The `Tensions:` line names the pair at the site. Which
+was right is the owner's call.

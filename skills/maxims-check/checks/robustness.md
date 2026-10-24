@@ -7,7 +7,8 @@ take, or a receiver that rejects what the spec allows.
 The rival reading, RFC 9413 (the harmful consequences of the robustness
 principle), rows the tolerant receiver itself as a break under
 `fail-fast`: tolerance hides the sender's defect and freezes it into
-the protocol. Both rows stand.
+the protocol. That row is fail fast's; a tolerant receiver rows here
+only when it repairs in silence.
 
 ## Detectors
 
@@ -37,6 +38,7 @@ a pure doc, an internal refactor of one function.
 
 ## Competes with
 
-Fail fast, directly; POLA, where tolerance means the unit does more
-than its contract says. The same receiver may carry a row under each,
-paired on the `Tensions:` line.
+Fail fast, directly: a strict receiver rowed here keeps fail fast, and a
+tolerant one fail fast rows keeps this. POLA, where tolerance means the
+unit does more than its contract says. The `Tensions:` line names the
+pair at the site.

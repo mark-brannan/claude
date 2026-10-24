@@ -25,6 +25,7 @@ The target adds nothing: a deletion, a move with no copy left behind.
 
 ## Competes with
 
-WET and AHA. A copy that DRY rows as a second home, WET may row as
-still under three and AHA as an abstraction not yet earned; the same
-lines then carry a row under each, paired on the `Tensions:` line.
+WET and AHA. A copy that DRY rows as a second home keeps WET while it
+is under three and AHA while no abstraction is earned; a shared home
+WET or AHA rows as hasty keeps DRY. The `Tensions:` line names the pair
+at the site.

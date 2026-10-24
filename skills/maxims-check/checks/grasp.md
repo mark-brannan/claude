@@ -39,7 +39,8 @@ assign anything to.
 
 ## Competes with
 
-KISS, YAGNI and AHA, on indirection and protected variations: the seam
-GRASP rows as missing is the one they row as unneeded. DRY, where
+KISS, YAGNI and AHA, on indirection and protected variations: a seam
+GRASP rows as missing keeps them, and one they row as unneeded keeps
+GRASP. DRY, where
 information expert moves logic to the unit that holds the data and
 leaves a copy behind.

@@ -7,7 +7,8 @@ over units that each do a bit of it.
 
 Overlaps SOLID's S: S reads reasons to change, SoC reads kinds of
 work. A unit that mixes rendering with storage rows here; a unit
-changed for two unrelated asks rows under S. One break, one row.
+changed for two unrelated asks rows under S; a unit that does both rows
+under each.
 
 ## Detectors
 

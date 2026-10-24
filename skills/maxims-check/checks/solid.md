@@ -41,6 +41,6 @@ one-line fix inside one function.
 
 ## Competes with
 
-KISS, YAGNI and AHA. The seam D or O rows as missing is the layer KISS
-rows as indirection with one user and YAGNI as uncalled; the same lines
-carry both, paired on the `Tensions:` line.
+KISS, YAGNI and AHA. A seam D or O rows as missing keeps them, and a
+layer KISS rows as indirection with one user, or YAGNI as uncalled,
+keeps D and O. The `Tensions:` line names the pair at the site.
