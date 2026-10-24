@@ -1141,7 +1141,10 @@ class MetricsLiveTest(unittest.TestCase):
         w.has("the block still renders normally", "⛁", w.msg(out14))
         nag = w.shard("live", "lockcase", ".nag.json")
         w.t("and the nag write is skipped while the lock is held", "no", "yes" if nag.is_file() else "no")
+        w.t("and the wait that gave way is traced", 1,
+            sum(1 for ln in w.errors() if '"stage":"nag_lock"' in ln))
         shutil.rmtree(lockdir)
+        shutil.rmtree(w.state / "metrics" / "hook-errors")
         w.hook(w.payload(tp, "lockcase", S), "posttooluse", show=True)
         w.t("once the lock is free, the same session writes normally", "yes", "yes" if nag.is_file() else "no")
         w.t("and releases the lock dir behind it", "no", "yes" if lockdir.is_dir() else "no")
@@ -1438,7 +1441,10 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("a run that waited out the lock still finishes", "yes", "yes" if time.monotonic() - t0 < 30 else "no")
         w.t("and leaves the holder's nag file alone", "1", w.nag_field(sid, "marker"))
         w.t("and the holder's lock in place", "yes", "yes" if lock.exists() else "no")
+        w.t("and traces the wait that gave way", 1,
+            sum(1 for ln in w.errors() if '"stage":"nag_lock"' in ln))
         shutil.rmtree(lock)
+        shutil.rmtree(w.state / "metrics" / "hook-errors")
 
         # A prompt takes the day counter's lock too: never inside the nag lock,
         # since state.py holds one lock at a time, so neither is left behind.
@@ -1471,6 +1477,7 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("and the prompt still winds the sitting clock", "yes", "yes" if w.sit_start() else "no")
         w.t("the transcript itself is untouched", "yes",
             "yes" if Path(tp).read_text().endswith('"role":"us') else "no")
+
         return self.done(w)
 
     def test_git_state_failure_keeps_the_start_sha(self):
@@ -1496,6 +1503,25 @@ class MetricsLiveTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             h.git_state()
         self.assertEqual("abc123", h.start_sha)
+
+    def test_compute_raises_on_a_vanished_transcript(self):
+        """A transcript gone between run()'s check and compute() is no torn
+        line: compute raises, so the event drops and the cache stays, rather
+        than parse an empty file as a session with no turns."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("metrics_live_under_test", HOOK)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        tmp = tempfile.mkdtemp(prefix="metrics-live-test-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        h = mod.Hook.__new__(mod.Hook)
+        h.tp, h.sid, h.now = f"{tmp}/gone.jsonl", "gone1", "2026-01-01T00:00:00Z"
+        h.work_repo = h.work_branch = h.cwd = ""
+        real = mod.time.sleep
+        mod.time.sleep = lambda _s: None
+        self.addCleanup(setattr, mod.time, "sleep", real)
+        with self.assertRaises(mod.Failed):
+            h.compute()
 
     SECTIONS = [n for n in list(locals()) if n.startswith("section_")]
 

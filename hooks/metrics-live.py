@@ -408,7 +408,8 @@ class Hook:
         clock never heard it. One retry after 50 ms; a second refusal re-reads
         the files and parses them with each one's unterminated last line left
         off (a complete file parses as it is), and an error that is not a torn
-        line raises from that last parse, as before."""
+        line raises from that last parse, as before; so does a transcript
+        that is not there."""
         base = self.tp[:-len(".jsonl")] if self.tp.endswith(".jsonl") else self.tp
         sub_files = sorted(glob.glob(f"{base}/subagents/agent-*.jsonl"))
         try:
@@ -419,6 +420,10 @@ class Hook:
         try:
             return self.slurp(self.tp, b"".join(s + b"\n" for s in subs))
         except Failed:
+            # A missing transcript is no torn line: it raises as on main,
+            # rather than parse as an empty session over the cache.
+            if not os.path.isfile(self.tp):
+                raise
             main = read_bytes(self.tp)
         fd, tmp = tempfile.mkstemp(prefix="metrics-live-", suffix=".jsonl")
         try:
@@ -556,6 +561,7 @@ class Hook:
         deadline = time.monotonic() + max(self.k.nag_lock_wait_ms, 0) / 1000
         while not state.state_lock(d):
             if time.monotonic() >= deadline:
+                trace("nag_lock", Failed(f"held past {self.k.nag_lock_wait_ms} ms; running unlocked"))
                 return False
             time.sleep(0.05)
         return True
