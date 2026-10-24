@@ -510,7 +510,7 @@ class GithubTest(FixtureTest):
     def test_ci_check_artifacts_land_once_per_check_and_a_refetch_adds_none(self):
         rows = [{"ts": "2026-10-20T10:00:00Z", "what": "claude-review", "repo": "evil/x", "pr": 2, "num_turns": 7,
                  "model": "claude-sonnet-5-5", "total_cost_usd": 0.5, "outcome": "success", "usage": {"input_tokens": 3, "output_tokens": 4}},
-                {"ts": "2026-10-20T10:05:00Z", "what": "claude-maxims", "pr": 2, "model": "claude-opus-5-5", "total_cost_usd": 1.5},
+                {"ts": "2026-10-20T10:05:00Z", "what": "claude-maxims", "pr": 2, "model": "claude-opus-5-5", "total_cost_usd": 1.5, "head_sha": "rowsha", "tier": "deep"},
                 {"ts": "2026-10-20T10:09:00Z", "pr": 2, "model": "claude-sonnet-5-5", "total_cost_usd": 0.25}]  # no `what`: a review
         # Run 42 is acme/widgets' own; run 43 is a fork's; run 44's file is junk; run 45 is expired.
         def art(aid, rid, own=True, expired=False):
@@ -544,9 +544,9 @@ esac
         gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
         for _ in range(2):
             self.build("--github", "--quiet")
-            self.assertEqual(self.fx.q("select what, repo, run, cost_usd, head_sha from ci_checks order by what"),
-                             [("claude-maxims", "acme/widgets", 42, 1.5, "abc123"),
-                              ("claude-review", "acme/widgets", 42, 0.5, "abc123")])  # dedupe by repo, run and check
+            self.assertEqual(self.fx.q("select what, repo, run, cost_usd, head_sha, tier from ci_checks order by what"),
+                             [("claude-maxims", "acme/widgets", 42, 1.5, "rowsha", "deep"),
+                              ("claude-review", "acme/widgets", 42, 0.5, "abc123", None)])  # falls back to the run's  # dedupe by repo, run and check
         runs = list((self.fx.sd / "metrics" / "headless-runs").glob("*/ci-*.jsonl"))  # sharded by run id
         self.assertEqual(sorted(p.name for p in runs), ["ci-42.jsonl", "ci-43.jsonl", "ci-44.jsonl"])
         got = {p.name: [json.loads(l) for l in p.read_text().splitlines()] for p in runs}

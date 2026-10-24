@@ -10,9 +10,7 @@
 #   agent work     how much lands with how few touches
 #   cost           API-equivalent dollars by model and per merged PR, and the session
 #                  shape behind them: cold context, context per turn, length
-#   ci checks      what the CI review checks (claude-review, claude-maxims,
-#                  claude-arete) cost: total, runs and mean per check, by week,
-#                  by repo and by model; from the headless-run artifacts
+#   ci checks      the CI review checks' cost per check, week, repo and model
 #
 # Usage: metrics-dashboard [--db FILE] [--out FILE] [--days N]
 #   --days   the daily window (default 56); weekly series cover the whole span.
@@ -128,7 +126,6 @@ def card(title, svg_body, legend):
             f'{"<div class=leg>" + leg + "</div>" if leg else ""}</figure>')
 
 def table_card(title, head, rows, labels=1):
-    """A figure holding a table. rows: lists of cells, the first `labels` of them text, the rest numbers."""
     th = "".join(f'<th{"" if i < labels else " class=num"}>{html.escape(h)}</th>' for i, h in enumerate(head))
     tr = "".join("<tr>" + f"<td>{html.escape(str(r[0]))}</td>" + "".join(f'<td{"" if i < labels else " class=num"}>{html.escape(str(c))}</td>' for i, c in enumerate(r[1:], 1)) + "</tr>" for r in rows)
     return f'<figure class="wide"><figcaption>{html.escape(title)}</figcaption><table><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table></figure>'
@@ -303,8 +300,7 @@ def build(db, out, ndays):
             for acc, k in ((by_repo, r["repo"]), (by_model, model_name(r["model"]))):
                 acc[(r["what"], k)][0] += r["cost_usd"]; acc[(r["what"], k)][1] += 1
             d = dt.date.fromisoformat(r["ts"][:10]); ci_week[r["what"]][(d - dt.timedelta(days=d.weekday())).isoformat()] += r["cost_usd"]
-        order = CI_CHECKS + sorted(set(tot) - set(CI_CHECKS))
-        order = [c for c in order if c in tot]
+        order = [c for c in CI_CHECKS + sorted(set(tot) - set(CI_CHECKS)) if c in tot]
         cikeys = mondays(dt.date.fromisoformat(min(r["ts"][:10] for r in ci)), today)
         ci_figs.append(table_card("Cost per check, all collected runs", ["check", "total", "runs", "mean per run"],
             [[c, usd(tot[c]), cnt[c], usd(tot[c] / cnt[c])] for c in order] +

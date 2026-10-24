@@ -84,16 +84,14 @@ create table if not exists permission_requests(ts text, session_id text, cwd tex
   tool text, input text, masked int);
 create table if not exists headless_runs(ts text, what text, repo text, pr int, model text, cost_usd real,
   input_tokens int, output_tokens int, cache_creation_tokens int, cache_read_tokens int, outcome text, raw text);
--- One row per CI check per workflow run, from the headless-run artifacts (fetch_ci_reviews):
--- deduped by repo, run and check, trusted runs only (a fork PR writes its own artifact).
--- A row with no `what` is claude-review.
+-- One row per CI check per run (fetch_ci_reviews): deduped by repo, run and check, trusted runs only.
 drop view if exists ci_checks;  -- a view is cheap; redefine it on every build
 create view ci_checks as
   select min(ts) as ts, what, repo, run, max(pr) as pr, max(model) as model, max(cost_usd) as cost_usd,
-         max(head_sha) as head_sha from (
+         max(head_sha) as head_sha, max(tier) as tier from (
     select ts, coalesce(json_extract(raw, '$.what'), 'claude-review') as what, repo,
            json_extract(raw, '$.run') as run, pr, model, cost_usd,
-           json_extract(raw, '$.head_sha') as head_sha
+           json_extract(raw, '$.head_sha') as head_sha, json_extract(raw, '$.tier') as tier
     from headless_runs
     where json_extract(raw, '$.run') is not null and json_extract(raw, '$.unparsed') is null and json_extract(raw, '$.oversize') is null and json_extract(raw, '$.trusted') = 1)
   group by repo, run, what;
@@ -453,17 +451,13 @@ def load_github(cx):
     return len(rows), calls, len(repos)
 
 def fetch_ci_reviews(cx, sd):
-    """Collect the CI review checks' `headless-run` artifacts into metrics/headless-runs/,
-    one file per workflow run, sharded by run id (lib/state.py state_shard_path), where the
-    loader picks them up. Actions artifacts expire, so this is the only copy that lasts.
-    Incremental: a run whose file exists is skipped, and paging stops at a page with
-    nothing new. Every repo that is not archived is asked; one with no such artifact costs
-    one call. The file holds a line per check (claude-review, claude-maxims, claude-arete;
-    a row with no `what` is claude-review), each stamped with the run id, artifact id, head
-    sha and whether the run's head repository is the repo itself (trusted: a fork PR
-    writes its own artifact). The artifact is untrusted data: a file over 1 MiB is only
-    sized, a line that is not a JSON object is kept as text. gh missing, offline or
-    refused: skipped quietly."""
+    """Collect the CI review checks' `headless-run` artifacts (a line per check) into
+    metrics/headless-runs/, one file per workflow run, sharded by run id. Actions expires
+    artifacts, so this is the copy that lasts. Incremental: a run with a file is skipped and
+    paging stops at a page with nothing new. Each line is stamped with run, artifact id,
+    repo (from the API) and whether the run's head repository is the repo itself (trusted);
+    the row's own head_sha wins over the run's. The artifact is untrusted: over 1 MiB it is
+    only sized, a non-object line is kept as text. gh missing or refused: skipped quietly."""
     import state
     base = os.path.join(sd, "metrics", "headless-runs")
     for (repo,) in cx.execute("select repo from gh_repos where archived = 0 order by repo").fetchall():
@@ -500,11 +494,10 @@ def fetch_ci_reviews(cx, sd):
                         d = json.loads(line)
                     except ValueError:
                         d = None
-                    if line.strip():
-                        recs.append(d if isinstance(d, dict) else {"unparsed": True, "text": line[:4096]})
+                    recs += [d if isinstance(d, dict) else {"unparsed": True, "text": line[:4096]}] if line.strip() else []
                 if size > 1 << 20:
                     recs = [{"oversize": size}]
-                rows = [{**d, "what": d.get("what") or "claude-review", **stamp} for d in recs] or [{"unparsed": True, "text": "", **stamp, "what": "claude-review"}]
+                rows = [{**d, "what": d.get("what") or "claude-review", **stamp, "head_sha": d.get("head_sha") or stamp["head_sha"]} for d in recs]
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with open(dest + ".part", "w", encoding="utf-8") as f:  # whole or absent, never torn
                     f.write("".join(json.dumps(r) + "\n" for r in rows))
