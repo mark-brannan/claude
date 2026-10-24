@@ -456,7 +456,9 @@ def fetch_ci_reviews(cx, sd):
     artifacts, so this is the copy that lasts. Incremental: a run with a file is skipped and
     paging stops at a page with nothing new. Each line is stamped with run, artifact id,
     repo (from the API) and whether the run's head repository is the repo itself (trusted);
-    the row's own head_sha wins over the run's. The artifact is untrusted: over 1 MiB (by listing or content) it is
+    the row's own head_sha wins over the run's. The run's maxims table and arete brief, if
+    it carries them, are kept beside it as ci-<run id>-{maxims,arete}.md, each capped at 1 MiB and
+    kept as text. The artifact is untrusted: over 1 MiB (by listing or content) it is
     only sized, a non-object line is kept as text. gh missing or refused: skipped quietly."""
     import state
     base = os.path.join(sd, "metrics", "headless-runs")
@@ -476,6 +478,7 @@ def fetch_ci_reviews(cx, sd):
                 if os.path.exists(dest):
                     continue
                 new += 1
+                reports = {}
                 if (art.get("size_in_bytes") or 0) > 1 << 20:  # sized from the listing, never downloaded
                     text, size = "", art["size_in_bytes"]
                 else:
@@ -486,6 +489,9 @@ def fetch_ci_reviews(cx, sd):
                             info = zf.getinfo("headless-run.jsonl")
                             text = zf.open(info).read(1 << 20).decode("utf-8", "replace")
                         size = info.file_size
+                        for kind in ("maxims", "arete"):  # text from the run: kept as bytes, never parsed
+                            if f".claude-{kind}.md" in zf.namelist():
+                                reports[kind] = zf.open(f".claude-{kind}.md").read(1 << 20)
                     except (OSError, subprocess.CalledProcessError, LookupError, zipfile.BadZipFile):
                         continue
                 stamp = {"repo": repo, "run": rid, "artifact": art["id"], "head_sha": run.get("head_sha"),
@@ -503,6 +509,11 @@ def fetch_ci_reviews(cx, sd):
                     recs = [{"oversize": size}]
                 rows = [{**d, "what": d.get("what") or "claude-review", **stamp, "head_sha": d.get("head_sha") or stamp["head_sha"]} for d in recs]
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
+                for kind, data in reports.items():  # before the .jsonl, so a run with one is fully harvested
+                    md = dest[:-len(".jsonl")] + f"-{kind}.md"
+                    with open(md + ".part", "wb") as f:
+                        f.write(data)
+                    os.replace(md + ".part", md)
                 with open(dest + ".part", "w", encoding="utf-8") as f:  # whole or absent, never torn
                     f.write("".join(json.dumps(r) + "\n" for r in rows))
                 os.replace(dest + ".part", dest)
