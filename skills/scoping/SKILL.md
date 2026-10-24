@@ -31,6 +31,10 @@ when none matches, ask. Empty means the most recently touched open curia:
 list the open curiae as bare `/curia` does and take the newest. Say which
 target, and why, in the first line.
 
+One flag may ride with the target: `--subagents` (the default) or
+`--workflow`, the driver mode the batch runs in. It is a trial (pencil,
+2026-10-24): §6 logs it on the parent, and the driver reads it there.
+
 | Target | Its items, the input to plan | Lock folder |
 |---|---|---|
 | curia `<id>` | `decided.md`'s lines and `digest.md`'s Open questions (a digest from before the ledger split: its own Decided) | `state/global/curia/<id>` |
@@ -217,7 +221,9 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   item only when it is ready or claimed (`claude_cards`, hooks/lib-state.sh);
   and `~/.claude/bin/work-item log <parent-id> lane=autonomous`: the lane
   lives on the parent and its children inherit it (2026-10-22), so `/pickup`
-  lets the driver label its PRs;
+  lets the driver label its PRs; and
+  `~/.claude/bin/work-item log <parent-id> driver=<mode>`, `subagents`
+  unless §1's flag said `workflow`;
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
   `--parent <parent-id> [--model <m>] [--effort <e>]`, then
@@ -254,7 +260,7 @@ merges, the exits (park the child on a card for the agora, or pull the
 andon cord), and the walk it hands back. Each child's card carries its
 worker model, effort and estimate; the brief repeats none of them. Never a
 list of prompts for the user to paste one at a time. The brief holds, from
-the 2026-10-22 rulings:
+the rulings to date:
 
 - **The plan's order.** Serial or parallel is scoping's call, made in
   the proposal before anything launches (§4: dependencies named, and why
@@ -268,24 +274,49 @@ the 2026-10-22 rulings:
   the spend facts' shape, pencil). The walk reports each child's actual,
   and the batch's, against them, and logs the batch's on the parent the
   same way, `actual=<n>usd`.
-- **Reviews.** One critical review per PR, as it opens, at the depth the
-  work's criticality warrants; this scoping estimates that criticality
-  and the child's card carries the depth (2026-10-22).
+- **Reviews,** after the PR opens, as the human cycle runs (2026-10-23).
+  The worker builds, tests, gets the gates green, posts the PR, sees CI
+  green and marks it ready. The driver then spawns `/critical-review` on
+  it as a sub-agent; it only comments, on a model unlike the coder's, at
+  the depth the child's card carries (this scoping estimates the work's
+  criticality). A fresh fixer, never the coder, works the comments to
+  `/pickup` §6. Three refine rounds at most; a PR past the third is
+  parked on an agora card and the driver moves on. The cap and the park
+  are pencil and short-term (2026-10-24): what a PR past the cap should
+  do is open, and it is never an andon pull.
 - **Arete.** A separate action from the critical review, which is why it
-  comes last: the arete check runs once, on the stack as a whole, at the
-  end before the walk. Its findings go to the user with the walk, the
+  comes last: the arete check runs once, on the batch as a whole, at the
+  end before the walk, as an `Explore` sub-agent that returns the brief
+  and writes nothing. The driver keeps the brief beside the walk, under
+  the batch parent. Its findings go to the user with the walk, the
   user's to decide on and act on. It never blocks the autonomous lane's
   work; a finding the driver judges must hold something is escalated to
   the agora, parked on a card, and nothing else holds (2026-10-22). A −
   finding that is `one-way` and seen only `after`, one the item should
   not land with as it stands, always counts as one.
+- **Maxims.** `/maxims-check` runs once on the batch, as an `Explore`
+  sub-agent, beside the arete check. Its table goes to the walk, never to
+  a PR thread (pencil, 2026-10-24). Rival maxims pull against each other,
+  so a run is expected to find something: a run with no findings is
+  flagged in the walk as suspect.
+- **Driver mode.** The parent's log says `driver=subagents` or
+  `driver=workflow`; `/pickup` reads it, and the mode is a trial
+  (2026-10-24).
 - **Who merges.** In the autonomous lane, where a PR's diff stays inside
   this brief, the driver puts `merge`, `churn-ok` and `mixed-loops-ok` on
-  it once its own review is clean, names the brief in the PR body, and
+  it once its last review round is clean, names the brief in the PR body, and
   the queue lands it on main alone; the user's gate is the batch after
   the fact, with a revert as the undo. This replaces "only I merge"
   (2026-10-01) for the autonomous lane. The gated lane keeps the user's
   merge.
+- **The walk.** What the driver hands back, kept under the batch parent:
+  written beside the proposal as `<date>-walk-<parent-id>.md`, the arete
+  brief beside it as `<date>-arete-<parent-id>.md`, and logged on the parent
+  as `walk=<path>`. It holds each child's PR and actual, the batch's
+  actual against its allocation, the arete brief and the maxims table,
+  and per batch: hours from `/pickup` to the last merge on main, idle
+  hours, sessions used, the user's turns, and dollars per merged PR
+  (2026-10-24).
 
 The run's last line is the one line that starts the driver:
 

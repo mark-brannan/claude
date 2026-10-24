@@ -51,6 +51,13 @@ and the card text is the whole hand-off. A hand-off that says `card <id>` names
 one: `pickup-list show <id>` prints it, `pickup-list take <id>` claims it.
 Skip §3's checkout; the link is where the work starts.
 
+A batch parent, filed by `/scoping`, is a card its children name in their
+`parent=` log fact: its brief is the driver's whole prompt, and the session
+that takes it is the driver. `work-item show <id>` prints its log; read it
+for `driver=`. On `driver=workflow`, run the batch with the
+Workflow tool; that fact on the parent is the user's opt-in to it. On
+`driver=subagents`, or none, run it with sub-agents.
+
 ## 2. Restate it, in three lines
 
 Before touching anything, three lines and no more:
