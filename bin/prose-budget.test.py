@@ -576,6 +576,16 @@ class ConfigRelaxTest(RepoCase):
         self.stage_config({"lines": {"README.md": 10}, "sections": {"files": {"docs/x.md": 400}}}, "docs/x.md")
         self.assertIn("sections.files.docs/x.md: 200 -> 400", self.config_findings("--staged")[0]["message"])
 
+    def test_an_earlier_key_that_raises_a_files_effective_cap_is_a_relaxation(self):
+        self.start({"lines": {"README.md": 10}, "sections": {"max_words": 300, "files": {"docs/*.md": 100}}})
+        self.stage_config({"lines": {"README.md": 10},
+                           "sections": {"max_words": 300, "files": {"docs/x.md": 250, "docs/*.md": 100}}}, "docs/x.md")
+        self.assertIn("docs/x.md cap 100 -> 250", self.config_findings("--staged")[0]["message"])
+
+    def test_a_boolean_per_file_section_cap_is_rejected(self):
+        with self.assertRaises(pb.ConfigError):
+            pb.parse_config({"sections": {"files": {"docs/x.md": True}}})
+
     def test_a_per_file_section_cap_below_the_shared_cap_is_not_a_relaxation(self):
         self.start({"lines": {"README.md": 10}, "sections": {"max_words": 300}})
         self.stage_config({"lines": {"README.md": 10},

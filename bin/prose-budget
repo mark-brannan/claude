@@ -411,8 +411,8 @@ def parse_config(cfg):
         if not isinstance(r["sections"]["files"], dict):
             raise ConfigError("sections.files: expected {glob: max_words}")
         for k, v in r["sections"]["files"].items():
-            if not isinstance(v, int):
-                raise ConfigError(f"sections.files.{k}: expected an integer")
+            if type(v) is not int or v <= 0:
+                raise ConfigError(f"sections.files.{k}: expected a positive integer")
     r["delta"] = _rule(cfg, "delta", {"targets": None, "max_words": 40}, True)
     if r["delta"] and r["delta"]["targets"] is None:
         r["delta"]["targets"] = MD_TARGETS
@@ -515,6 +515,14 @@ def relaxations(old, new):
                     out.append(f"sections.files.{k}: {a[k]} -> {v}")
             elif isinstance(shared, int) and v > shared:
                 out.append(f"sections.files.{k}: {v} (new, above max_words {shared})")
+    # The cap a file gets is first-match-in-order, so a new earlier key or a reorder
+    # can raise it with no key's own value rising: compare effective caps per probe path.
+    if isinstance(a, dict) and isinstance(b, dict) and old_r.get("sections") and new_r.get("sections"):
+        flagged = " ".join(out)
+        for probe in sorted({k.replace("*", "x").replace("?", "x") for k in [*a, *b]}):
+            before, after = section_cap(old_r["sections"], probe), section_cap(new_r["sections"], probe)
+            if after > before and f"sections.files.{probe}" not in flagged:
+                out.append(f"sections.files: {probe} cap {before} -> {after} (key order or overlap)")
     a, b = _dig(old_r, "lines.files"), _dig(new_r, "lines.files")
     if isinstance(a, dict) and isinstance(b, dict):
         for k, v in b.items():
