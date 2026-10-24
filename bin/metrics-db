@@ -26,15 +26,17 @@
 #   --github     refresh gh_items (about one GraphQL call per 100 items per
 #                repo; ~70 calls for the current account, well inside the
 #                5000/hour limit). Without it the table is left as it was.
-#                Also fetches recent claude-review runs' cost artifacts into
-#                metrics/headless-runs/.
+#                Also collects the CI review checks' `headless-run` artifacts (one
+#                row per check: claude-review, claude-maxims, claude-arete) into
+#                metrics/headless-runs/, incrementally; they expire, so this is
+#                the copy that lasts. View ci_checks reads them, deduped.
 #   --no-typing  skip the transcript scan (the one slow source on first run).
 #   --rescan-typing  rescan every transcript (after changing what counts as typed).
 #   --no-input   leave the input tables as they were.
 # Exit 0 on success, 2 on usage, 3 when the state repo cannot be found, 4 when
 # the database path is inside a git checkout and not gitignored (it is private).
 # Python 3 stdlib only.
-import argparse, glob, json, os, re, sqlite3, subprocess, sys, tempfile, time
+import argparse, glob, io, json, os, re, sqlite3, subprocess, sys, tempfile, time, zipfile
 
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
@@ -82,6 +84,17 @@ create table if not exists permission_requests(ts text, session_id text, cwd tex
   tool text, input text, masked int);
 create table if not exists headless_runs(ts text, what text, repo text, pr int, model text, cost_usd real,
   input_tokens int, output_tokens int, cache_creation_tokens int, cache_read_tokens int, outcome text, raw text);
+-- One row per CI check per run (fetch_ci_reviews): deduped by repo, run and check, trusted runs only.
+drop view if exists ci_checks;  -- a view is cheap; redefine it on every build
+create view ci_checks as
+  select min(ts) as ts, what, repo, run, max(pr) as pr, max(model) as model, max(cost_usd) as cost_usd,
+         max(head_sha) as head_sha, max(tier) as tier from (
+    select ts, coalesce(json_extract(raw, '$.what'), 'claude-review') as what, repo,
+           json_extract(raw, '$.run') as run, pr, model, cost_usd,
+           json_extract(raw, '$.head_sha') as head_sha, json_extract(raw, '$.tier') as tier
+    from headless_runs
+    where ts glob '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' and json_extract(raw, '$.run') is not null and json_extract(raw, '$.unparsed') is null and json_extract(raw, '$.oversize') is null and json_extract(raw, '$.trusted') = 1)
+  group by repo, run, what;
 create table if not exists commits(ts text, session_id text, repo text, branch text, commit_sha text);
 create table if not exists item_events(item_id text, ts text, session8 text, status text, owner text,
   repo text, parent text, model text, effort text, home text, title text);
@@ -438,58 +451,74 @@ def load_github(cx):
     return len(rows), calls, len(repos)
 
 def fetch_ci_reviews(cx, sd):
-    """Rewrite each recent claude-review run's `headless-run` artifact as
-    metrics/headless-runs/ci-review-<run id>.jsonl, one line per row, where the
-    loader picks it up (a run already written is skipped), and its maxims table
-    and arete brief, if it carries them, as ci-review-<run id>-{maxims,arete}.md
-    (each capped at 1 MiB, kept as text). Looks at the last 10 runs of repos
-    with a PR from the last 14 days. The artifact is untrusted: every run gets
-    a line carrying its head_repository and whether that is the repo itself
-    (trusted); a file over 1 MiB is only sized, a line that is not a JSON object
-    is kept as text. gh missing or offline, or no artifact: skipped quietly."""
-    for (repo,) in cx.execute("select distinct repo from gh_items where kind = 'pr' and created_at > date('now', '-14 days')").fetchall():
-        try:
-            runs = gh(["api", f"repos/{repo}/actions/workflows/claude-code-review.yml/runs?per_page=10"])["workflow_runs"]
-        except (OSError, RuntimeError, ValueError, LookupError):
-            continue
-        for run in runs:
-            dest = os.path.join(sd, "metrics", "headless-runs", f"ci-review-{run['id']}.jsonl")
-            if os.path.exists(dest):
-                continue
-            head = (run.get("head_repository") or {}).get("full_name")
-            with tempfile.TemporaryDirectory() as tmp:
-                try:
-                    subprocess.run(["gh", "run", "download", str(run["id"]), "-R", repo, "-n", "headless-run", "-D", tmp],
-                                   check=True, capture_output=True)
-                    path = os.path.join(tmp, "headless-run.jsonl")
-                    size = os.path.getsize(path)
-                    with open(path, encoding="utf-8", errors="replace") as f:
-                        text = f.read(1 << 20)
-                    lines = [l for l in text.splitlines() if l.strip()]
-                    rows = [{"oversize": size}] if size > 1 << 20 else []
-                    for line in ([] if rows else lines):
-                        try:
-                            d = json.loads(line)
-                        except ValueError:
-                            d = None
-                        rows.append(d if isinstance(d, dict) else {"unparsed": True, "text": line[:4096]})
-                    out = "".join(json.dumps({"what": "claude-review", **r, "repo": repo, "run": run["id"],
-                                              "head_repository": head, "trusted": head == repo}) + "\n"
-                                  for r in rows or [{"unparsed": True, "text": ""}])
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    # The reports are text from the run, kept as text: copied, never parsed or run.
-                    for kind in ("maxims", "arete"):
-                        src = os.path.join(tmp, f".claude-{kind}.md")
-                        if os.path.isfile(src):
-                            md = dest[:-len(".jsonl")] + f"-{kind}.md"
-                            with open(src, "rb") as f, open(md + ".part", "wb") as g:
-                                g.write(f.read(1 << 20))
-                            os.replace(md + ".part", md)
-                    with open(dest + ".part", "w", encoding="utf-8") as f:  # whole or absent, never torn
-                        f.write(out)  # last, so a run with a .jsonl is a run fully harvested
-                    os.replace(dest + ".part", dest)
-                except (OSError, subprocess.CalledProcessError, LookupError):
+    """Collect the CI review checks' `headless-run` artifacts (a line per check) into
+    metrics/headless-runs/, one file per workflow run, sharded by run id. Actions expires
+    artifacts, so this is the copy that lasts. Incremental: a run with a file is skipped and
+    paging stops at a page with nothing new. Each line is stamped with run, artifact id,
+    repo (from the API) and whether the run's head repository is the repo itself (trusted);
+    the row's own head_sha wins over the run's. The run's maxims table and arete brief, if
+    it carries them, are kept beside it as ci-<run id>-{maxims,arete}.md, each capped at 1 MiB and
+    kept as text. The artifact is untrusted: over 1 MiB (by listing or content) it is
+    only sized, a non-object line is kept as text. gh missing or refused: skipped quietly."""
+    import state
+    base = os.path.join(sd, "metrics", "headless-runs")
+    for (repo,) in cx.execute("select repo from gh_repos where archived = 0 order by repo").fetchall():
+        for page in range(1, 31):
+            try:
+                got = gh(["api", f"repos/{repo}/actions/artifacts?name=headless-run&per_page=100&page={page}"])["artifacts"]
+            except (OSError, RuntimeError, ValueError, LookupError):
+                break
+            new = 0
+            for art in got:
+                run = art.get("workflow_run") or {}
+                rid = run.get("id")
+                if art.get("expired") or rid is None:
                     continue
+                dest = state.state_shard_path(base, f"ci-{rid}.jsonl", str(rid))
+                if os.path.exists(dest):
+                    continue
+                new += 1
+                reports = {}
+                if (art.get("size_in_bytes") or 0) > 1 << 20:  # sized from the listing, never downloaded
+                    text, size = "", art["size_in_bytes"]
+                else:
+                    try:
+                        z = subprocess.run(["gh", "api", f"repos/{repo}/actions/artifacts/{art['id']}/zip"],
+                                           check=True, capture_output=True).stdout
+                        with zipfile.ZipFile(io.BytesIO(z)) as zf:
+                            info = zf.getinfo("headless-run.jsonl")
+                            text = zf.open(info).read(1 << 20).decode("utf-8", "replace")
+                        size = info.file_size
+                        for kind in ("maxims", "arete"):  # text from the run: kept as bytes, never parsed
+                            if f".claude-{kind}.md" in zf.namelist():
+                                reports[kind] = zf.open(f".claude-{kind}.md").read(1 << 20)
+                    except (OSError, subprocess.CalledProcessError, LookupError, zipfile.BadZipFile):
+                        continue
+                stamp = {"repo": repo, "run": rid, "artifact": art["id"], "head_sha": run.get("head_sha"),
+                         "artifact_created_at": art.get("created_at"),
+                         "trusted": run.get("repository_id") is not None
+                                    and run.get("head_repository_id") == run.get("repository_id")}
+                recs = []
+                for line in text.splitlines() if size <= 1 << 20 else []:
+                    try:
+                        d = json.loads(line)
+                    except ValueError:
+                        d = None
+                    recs += [d if isinstance(d, dict) else {"unparsed": True, "text": line[:4096]}] if line.strip() else []
+                if size > 1 << 20:
+                    recs = [{"oversize": size}]
+                rows = [{**d, "what": d.get("what") or "claude-review", **stamp, "head_sha": d.get("head_sha") or stamp["head_sha"]} for d in recs]
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                for kind, data in reports.items():  # before the .jsonl, so a run with one is fully harvested
+                    md = dest[:-len(".jsonl")] + f"-{kind}.md"
+                    with open(md + ".part", "wb") as f:
+                        f.write(data)
+                    os.replace(md + ".part", md)
+                with open(dest + ".part", "w", encoding="utf-8") as f:  # whole or absent, never torn
+                    f.write("".join(json.dumps(r) + "\n" for r in rows))
+                os.replace(dest + ".part", dest)
+            if len(got) < 100 or not new:
+                break
 
 def main():
     ap = argparse.ArgumentParser()
