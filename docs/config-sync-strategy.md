@@ -280,7 +280,10 @@ commits also touch is carried over by autostash, but only after the cron has
 rehearsed the re-apply off-tree: the same three-way merge per file, then a
 parse of the result where the file is one the layer executes from (JSON,
 Python, shell). A conflict or a result that does not parse is a skip that
-names the file, and the live tree is not touched. The rehearsal is what the
+names the file, and the live tree is not touched. Should git's own re-apply
+still fail after a clean rehearsal (a write landing between the two), the
+cron resets HEAD to where it stood, pops the stash it kept, and skips with
+the file named: the pre-run tree, nothing live and unparsed. The rehearsal is what the
 boat incident lacked: an unattended autostash whose re-apply conflicted on
 `settings.json` left invalid JSON live and a stash no one saw, and a hook
 file that fails to parse denies every tool call (dotfiles README, "Why the
@@ -296,9 +299,13 @@ A clean clone keeps the skips rare. The clone is written by two things that
 are not a merge to `main`: an agent editing in place (#215 warns), and Claude
 Code's own UI saving a toggle into the tracked `settings.json`. The second is
 what the rehearsed autostash is for: the UI's keys and a merge to `main`
-touch different hunks of the file, so the carry-over is clean (measured
-2026-10-24 against the 22 upstream `settings.json` commits since 7 Oct that
-the local edits apply to: 22 clean, 0 conflicts). Claude Code writes those
+touch different hunks of the file, so the carry-over is clean. Measured
+2026-10-24: the live clone's uncommitted `settings.json` diff (`defaultMode`,
+two plugin toggles, one languette option) was applied with `patch` to the
+parent of each of the last 30 upstream commits touching the file, then
+`git merge-file` merged it with that commit and `python3 json.load` parsed
+the result; 22 merged clean and parsed, 0 conflicted, 8 predate the hunks
+so the patch did not apply. Claude Code writes those
 keys to the user `settings.json`, not `settings.local.json`, so moving them
 is not in our hands (#166).
 
@@ -309,7 +316,7 @@ hook would double the fixed context tax:
 
 - `config: main@1a2b3c4 (current)` — healthy.
 - `config: main@1a2b3c4, origin 4 ahead` — refresh pending or failed quietly.
-- `config: 2 behind, cron skipped: dirty settings.json` — the cron's last skip, cause named.
+- `config: 2 behind, cron skipped: settings.json does not merge cleanly` — the cron's last skip, cause named.
 - `config: DEGRADED — <reason>` — no status file, incomplete install, fetch
   failure.
 
@@ -373,8 +380,8 @@ gitignored by default); `~/.claude/.credentials.json` holds OAuth tokens on
 Linux, so whole-directory `git init ~/.claude` without an allowlist commits
 them; `CLAUDE_CONFIG_DIR` is ignored inside devcontainers (#26623); chezmoi's
 bolt-on autoPull (SessionStart `chezmoi update --force`) blocks session start
-on rebase conflicts. These justify R7-as-tripwire and the notify-only default
-in §6.6.
+on rebase conflicts. These justify R7-as-tripwire and §6.6's rule that nothing
+unchecked reaches the live tree.
 
 **Nobody has solved** (recurring across every source): user config into cloud
 sessions at all (official answer is "commit it to each repo"); atomic
