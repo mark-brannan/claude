@@ -490,3 +490,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t002104z
 - the shared contract file for the checks waits for easy-grind's point 1; no shared note in this PR Undo: none; nothing built ([#301](https://github.com/mark-brannan/claude/pull/301))
+
+### 20261024t003905z
+- batch walk lives beside the proposal as <date>-walk-<parent-id>.md, arete brief beside it, walk=<path> on the parent Undo: name another home in scoping's Walk bullet ([#302](https://github.com/mark-brannan/claude/pull/302))
