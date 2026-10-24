@@ -405,9 +405,10 @@ class Hook:
         Claude Code appends to the transcript while hooks run, so jq can meet
         a last line still being written and refuse the whole file (dotfiles#161
         finding 3), which used to drop the event: on a prompt, the sitting
-        clock never heard it. One retry after 50 ms; a second refusal reads
-        the files with each one's unterminated last line left off, and an
-        error that is not a torn line raises as before."""
+        clock never heard it. One retry after 50 ms; a second refusal re-reads
+        the files and parses them with each one's unterminated last line left
+        off (a complete file parses as it is), and an error that is not a torn
+        line raises from that last parse, as before."""
         base = self.tp[:-len(".jsonl")] if self.tp.endswith(".jsonl") else self.tp
         sub_files = sorted(glob.glob(f"{base}/subagents/agent-*.jsonl"))
         try:
@@ -419,8 +420,6 @@ class Hook:
             return self.slurp(self.tp, b"".join(s + b"\n" for s in subs))
         except Failed:
             main = read_bytes(self.tp)
-            if not (torn(main) or any(torn(s) for s in subs)):
-                raise
         fd, tmp = tempfile.mkstemp(prefix="metrics-live-", suffix=".jsonl")
         try:
             with os.fdopen(fd, "wb") as fh:
@@ -817,7 +816,7 @@ class Hook:
         # flight together each read, change and write the whole file, and
         # without it the later write puts back a crossing the other spent.
         # The wait is bounded; past it the run goes on unlocked, as before.
-        self.nag_locked = run_engine and self.nag_lock()
+        self.nag_locked = bool(run_engine and soft("nag_lock", self.nag_lock, default=False))
         try:
             self.load_state()
             if run_engine:
