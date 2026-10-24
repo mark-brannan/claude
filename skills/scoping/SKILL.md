@@ -222,8 +222,8 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   and `~/.claude/bin/work-item log <parent-id> lane=autonomous`: the lane
   lives on the parent and its children inherit it (2026-10-22), so `/pickup`
   lets the driver label its PRs; and
-  `~/.claude/bin/work-item log <parent-id> driver=<mode>`, `subagents`
-  unless §1's flag said `workflow`;
+  `~/.claude/bin/work-item log <parent-id> driver=<mode>`: `workflow` only
+  when the user typed `--workflow` in this run, `subagents` otherwise;
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
   `--parent <parent-id> [--model <m>] [--effort <e>]`, then
@@ -276,32 +276,31 @@ the rulings to date:
   same way, `actual=<n>usd`.
 - **Reviews,** after the PR opens, as the human cycle runs (2026-10-23).
   The worker builds, tests, gets the gates green, posts the PR, sees CI
-  green and marks it ready. The driver then spawns `/critical-review` on
-  it as a sub-agent; it only comments, on a model unlike the coder's, at
-  the depth the child's card carries (this scoping estimates the work's
-  criticality). A fresh fixer, never the coder, works the comments to
-  `/pickup` §6. Three refine rounds at most; a PR past the third is
-  parked on an agora card and the driver moves on. The cap and the park
-  are pencil and short-term (2026-10-24): what a PR past the cap should
-  do is open, and it is never an andon pull.
+  green and marks it ready. The driver then spawns `/critical-review
+  <PR> --coder <model>` as a sub-agent, the depth the child's card carries
+  in its prompt (this scoping estimates the work's criticality); it only
+  comments, on a model unlike the coder's. A fresh fixer works the
+  comments to `/pickup` §6. A round is one review and one fixer pass;
+  three rounds at most. A PR past the third, or one a fixer labels
+  `fixup-hard`, is parked on an agora card and the driver moves on. The
+  cap (pencil, 2026-10-23) and the park (pencil, 2026-10-24) are
+  short-term: what a PR past the cap should do is open, and it is never
+  an andon pull.
 - **Arete.** A separate action from the critical review, which is why it
   comes last: the arete check runs once, on the batch as a whole, at the
-  end before the walk, as an `Explore` sub-agent that returns the brief
-  and writes nothing. The driver keeps the brief beside the walk, under
-  the batch parent. Its findings go to the user with the walk, the
-  user's to decide on and act on. It never blocks the autonomous lane's
+  end before the walk, as an `Explore` sub-agent that returns the brief,
+  with "read every file in the read-set whole" in its prompt. The driver
+  writes the brief beside the walk (below). Its findings go to the user
+  with the walk, the user's to decide on and act on. It never blocks the autonomous lane's
   work; a finding the driver judges must hold something is escalated to
   the agora, parked on a card, and nothing else holds (2026-10-22). A −
   finding that is `one-way` and seen only `after`, one the item should
   not land with as it stands, always counts as one.
 - **Maxims.** `/maxims-check` runs once on the batch, as an `Explore`
-  sub-agent, beside the arete check. Its table goes to the walk, never to
-  a PR thread (pencil, 2026-10-24). Rival maxims pull against each other,
+  sub-agent with the same read-whole clause, beside the arete check. Its
+  table goes to the walk, never to a PR thread (pencil, 2026-10-24). Rival maxims pull against each other,
   so a run is expected to find something: a run with no findings is
   flagged in the walk as suspect.
-- **Driver mode.** The parent's log says `driver=subagents` or
-  `driver=workflow`; `/pickup` reads it, and the mode is a trial
-  (2026-10-24).
 - **Who merges.** In the autonomous lane, where a PR's diff stays inside
   this brief, the driver puts `merge`, `churn-ok` and `mixed-loops-ok` on
   it once its last review round is clean, names the brief in the PR body, and
@@ -310,11 +309,11 @@ the rulings to date:
   (2026-10-01) for the autonomous lane. The gated lane keeps the user's
   merge.
 - **The walk.** What the driver hands back, kept under the batch parent:
-  written beside the proposal as `<date>-walk-<parent-id>.md`, the arete
-  brief beside it as `<date>-arete-<parent-id>.md`, and logged on the parent
-  as `walk=<path>`. It holds each child's PR and actual, the batch's
-  actual against its allocation, the arete brief and the maxims table,
-  and per batch: hours from `/pickup` to the last merge on main, idle
+  the driver writes it beside the proposal as `<date>-walk-<parent-id>.md`,
+  the arete brief beside it as `<date>-arete-<parent-id>.md`, and logs the
+  walk on the parent as `walk=<path>`. It holds each child's PR and actual,
+  the batch's actual against its allocation, the arete brief and the
+  maxims table, and per batch: hours from `/pickup` to the last merge on main, idle
   hours, sessions used, the user's turns, and dollars per merged PR
   (2026-10-24).
 
