@@ -505,3 +505,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t045832z
 - metrics-live nag lock: bounded wait 2000 ms, polled every 50 ms; past it the run reads and writes as before (write skipped if the lock is held) Undo: set METRICS_NAG_LOCK_WAIT_MS or change the default ([#161](https://github.com/mark-brannan/dotfiles/issues/161)) (no PR, branch claude/hook-races-161)
+
+### 20261024t045834z
+- metrics-live: the day counter call moves ahead of the nag lock, since state.py holds one lock at a time; the hook never reads its result, so no output changes Undo: move the day_decisions call back into run_engine ([#161](https://github.com/mark-brannan/dotfiles/issues/161)) (no PR, branch claude/hook-races-161)
