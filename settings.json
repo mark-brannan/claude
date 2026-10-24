@@ -224,6 +224,17 @@
             "statusMessage": "Loading the PR ownership rules"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|mcp__.*github.*__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/word-guard.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
+            "timeout": 10,
+            "statusMessage": "Checking for words the user keeps out of repos"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -318,6 +329,16 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/log-gh-writes.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|mcp__.*github.*__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/word-guard.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
+            "timeout": 10
           }
         ]
       }
