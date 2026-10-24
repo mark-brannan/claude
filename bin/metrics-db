@@ -439,11 +439,13 @@ def load_github(cx):
 
 def fetch_ci_reviews(cx, sd):
     """Rewrite each recent claude-review run's `headless-run` artifact as
-    metrics/headless-runs/ci-review-<run id>.jsonl, where the loader picks it
-    up (a run already written is skipped). Looks at the last 10 runs of repos
+    metrics/headless-runs/ci-review-<run id>.jsonl, one line per row, where the
+    loader picks it up (a run already written is skipped), and its maxims table
+    and arete brief, if it carries them, as ci-review-<run id>-{maxims,arete}.md
+    (each capped at 1 MiB, kept as text). Looks at the last 10 runs of repos
     with a PR from the last 14 days. The artifact is untrusted: every run gets
     a line carrying its head_repository and whether that is the repo itself
-    (trusted); a file over 1 MiB is only sized, one that is not a JSON object
+    (trusted); a file over 1 MiB is only sized, a line that is not a JSON object
     is kept as text. gh missing or offline, or no artifact: skipped quietly."""
     for (repo,) in cx.execute("select distinct repo from gh_items where kind = 'pr' and created_at > date('now', '-14 days')").fetchall():
         try:
@@ -463,15 +465,28 @@ def fetch_ci_reviews(cx, sd):
                     size = os.path.getsize(path)
                     with open(path, encoding="utf-8", errors="replace") as f:
                         text = f.read(1 << 20)
-                    try:
-                        d = {"oversize": size} if size > 1 << 20 else json.loads(text.strip().splitlines()[-1])
-                    except (ValueError, IndexError):
-                        d = None
-                    rec = {**(d if isinstance(d, dict) else {"unparsed": True, "text": text[:4096]}), "what": "claude-review",
-                           "repo": repo, "run": run["id"], "head_repository": head, "trusted": head == repo}
+                    lines = [l for l in text.splitlines() if l.strip()]
+                    rows = [{"oversize": size}] if size > 1 << 20 else []
+                    for line in ([] if rows else lines):
+                        try:
+                            d = json.loads(line)
+                        except ValueError:
+                            d = None
+                        rows.append(d if isinstance(d, dict) else {"unparsed": True, "text": line[:4096]})
+                    out = "".join(json.dumps({"what": "claude-review", **r, "repo": repo, "run": run["id"],
+                                              "head_repository": head, "trusted": head == repo}) + "\n"
+                                  for r in rows or [{"unparsed": True, "text": ""}])
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    # The reports are text from the run, kept as text: copied, never parsed or run.
+                    for kind in ("maxims", "arete"):
+                        src = os.path.join(tmp, f".claude-{kind}.md")
+                        if os.path.isfile(src):
+                            md = dest[:-len(".jsonl")] + f"-{kind}.md"
+                            with open(src, "rb") as f, open(md + ".part", "wb") as g:
+                                g.write(f.read(1 << 20))
+                            os.replace(md + ".part", md)
                     with open(dest + ".part", "w", encoding="utf-8") as f:  # whole or absent, never torn
-                        f.write(json.dumps(rec) + "\n")
+                        f.write(out)  # last, so a run with a .jsonl is a run fully harvested
                     os.replace(dest + ".part", dest)
                 except (OSError, subprocess.CalledProcessError, LookupError):
                     continue
