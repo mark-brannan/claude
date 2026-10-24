@@ -18,7 +18,6 @@ ensure() { # ensure <label> <color> <description>
 while read -r name color description; do
   ensure "$name" "$color" "$description"
 done <<'LABELS'
-awaiting-human 8250DF Green and thread-free: it is your turn
 ready 1D76DB Agent-startable: grind will pull this
 claimed 6A737D A session holds this branch; see the claim stamp on the card
 churn-ok FBCA04 Waives the churn-diff gate (human-applied only)
