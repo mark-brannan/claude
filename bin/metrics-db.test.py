@@ -507,36 +507,53 @@ class GithubTest(FixtureTest):
         self.build("--quiet")
         self.assertEqual(self.fx.q("select count(*) from gh_items"), [(4,)])
 
-    def test_a_ci_review_artifact_lands_as_one_row_and_a_refetch_adds_none(self):
-        good = json.dumps({"ts": "2026-10-20T10:00:00Z", "what": "planted", "repo": "evil/x", "pr": 2, "num_turns": 7,
-                           "model": "claude-sonnet-5-5", "total_cost_usd": 0.5, "outcome": "success",
-                           "usage": {"input_tokens": 3, "output_tokens": 4, "other": 9}})
-        runs = json.dumps({"workflow_runs": [{"id": n, "head_repository": {"full_name": r}} for n, r in
-                           ((42, "acme/widgets"), (43, "fork/widgets"), (44, "acme/widgets"))]})
+    def test_ci_check_artifacts_land_once_per_check_and_a_refetch_adds_none(self):
+        rows = [{"ts": "2026-10-20T10:00:00Z", "what": "claude-review", "repo": "evil/x", "pr": 2, "num_turns": 7,
+                 "model": "claude-sonnet-5-5", "total_cost_usd": 0.5, "outcome": "success", "usage": {"input_tokens": 3, "output_tokens": 4}},
+                {"ts": "2026-10-20T10:05:00Z", "what": "claude-maxims", "pr": 2, "model": "claude-opus-5-5", "total_cost_usd": 1.5},
+                {"ts": "2026-10-20T10:09:00Z", "pr": 2, "model": "claude-sonnet-5-5", "total_cost_usd": 0.25}]  # no `what`: a review
+        # Run 42 is acme/widgets' own; run 43 is a fork's; run 44's file is junk; run 45 is expired.
+        def art(aid, rid, own=True, expired=False):
+            return {"id": aid, "expired": expired, "created_at": "2026-10-20T10:10:00Z",
+                    "workflow_run": {"id": rid, "head_sha": "abc123", "repository_id": 1, "head_repository_id": 1 if own else 2}}
+        listing = json.dumps({"artifacts": [art(142, 42), art(143, 43, own=False), art(144, 44), art(145, 45, expired=True)]})
+        zipper = self.fx.bin / "mkzip.py"
+        zipper.write_text("""import io, sys, zipfile
+b = io.BytesIO()
+with zipfile.ZipFile(b, "w") as z:
+    z.writestr("headless-run.jsonl", sys.argv[1] if sys.argv[1:] else "")
+sys.stdout.buffer.write(b.getvalue())
+""")
+        good = "\n".join(json.dumps(r) for r in rows) + "\n"
+        (self.fx.bin / "good.jsonl").write_text(good)
         gh = self.fx.bin / "gh"
         gh.rename(self.fx.bin / "gh-real")
-        # The fixture's PR is made recent; run 43 is a fork's, run 44's artifact is junk.
+        # The fixture's PR is made recent so the item fetch is unchanged.
         gh.write_text(f"""#!/bin/sh
 case "$1" in
-  api) case "$2" in repos/acme/widgets/*) echo '{runs}';; repos/*) echo '{{"workflow_runs": []}}';; *) gh-real "$@" | sed "s/2026-09-02T10:00:00Z/$(date -u +%Y-%m-%dT%H:%M:%SZ)/";; esac;;
-  run) id=$3; while [ "$1" != -D ]; do shift; done
-       if [ "$id" = 44 ]; then echo '[1, "junk"' > "$2/headless-run.jsonl"; else echo '{good}' > "$2/headless-run.jsonl"; fi;;
+  api) case "$2" in
+         repos/acme/widgets/actions/artifacts/144/zip) python3 {zipper} '[1, "junk"';;
+         repos/acme/widgets/actions/artifacts/*/zip) python3 {zipper} "$(cat {self.fx.bin}/good.jsonl)";;
+         repos/acme/widgets/actions/artifacts\?*) echo '{listing}';;
+         repos/*) echo '{{"artifacts": []}}';;
+         *) gh-real "$@";;
+       esac;;
   *) exec gh-real "$@";;
 esac
 """)
         gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
         for _ in range(2):
             self.build("--github", "--quiet")
-            self.assertEqual(self.fx.q("select what, repo, pr, cost_usd, output_tokens from headless_runs "
-                                       "where what = 'claude-review' and pr is not null"),
-                             [("claude-review", "acme/widgets", 2, 0.5, 4)] * 2)
-        runs = self.fx.sd / "metrics" / "headless-runs"
-        self.assertEqual(sorted(p.name for p in runs.glob("ci-review-*")),
-                         ["ci-review-42.jsonl", "ci-review-43.jsonl", "ci-review-44.jsonl"])
-        got = {n: json.loads((runs / f"ci-review-{n}.jsonl").read_text()) for n in (42, 43, 44)}
-        self.assertEqual((got[42]["num_turns"], got[42]["what"], got[42]["repo"], got[42]["trusted"]), (7, "claude-review", "acme/widgets", True))
-        self.assertEqual((got[43]["trusted"], got[43]["head_repository"]), (False, "fork/widgets"))
-        self.assertEqual((got[44]["unparsed"], got[44]["text"]), (True, '[1, "junk"\n'))
+            self.assertEqual(self.fx.q("select what, repo, run, cost_usd, head_sha from ci_checks order by what"),
+                             [("claude-maxims", "acme/widgets", 42, 1.5, "abc123"),
+                              ("claude-review", "acme/widgets", 42, 0.5, "abc123")])  # dedupe by repo, run and check
+        runs = list((self.fx.sd / "metrics" / "headless-runs").glob("*/ci-*.jsonl"))  # sharded by run id
+        self.assertEqual(sorted(p.name for p in runs), ["ci-42.jsonl", "ci-43.jsonl", "ci-44.jsonl"])
+        got = {p.name: [json.loads(l) for l in p.read_text().splitlines()] for p in runs}
+        self.assertEqual([r["what"] for r in got["ci-42.jsonl"]], ["claude-review", "claude-maxims", "claude-review"])
+        self.assertEqual({r["repo"] for r in got["ci-42.jsonl"]}, {"acme/widgets"})  # the artifact cannot name its repo
+        self.assertEqual(got["ci-43.jsonl"][0]["trusted"], False)
+        self.assertEqual((got["ci-44.jsonl"][0]["unparsed"], got["ci-44.jsonl"][0]["text"]), (True, '[1, "junk"'))
 
     def test_a_failing_gh_is_a_failed_build(self):
         (self.fx.bin / "gh").write_text("#!/bin/sh\necho nope >&2\nexit 9\n")

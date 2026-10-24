@@ -10,6 +10,9 @@
 #   agent work     how much lands with how few touches
 #   cost           API-equivalent dollars by model and per merged PR, and the session
 #                  shape behind them: cold context, context per turn, length
+#   ci checks      what the CI review checks (claude-review, claude-maxims,
+#                  claude-arete) cost: total, runs and mean per check, by week,
+#                  by repo and by model; from the headless-run artifacts
 #
 # Usage: metrics-dashboard [--db FILE] [--out FILE] [--days N]
 #   --days   the daily window (default 56); weekly series cover the whole span.
@@ -123,6 +126,17 @@ def card(title, svg_body, legend):
     return (f'<figure><figcaption>{html.escape(title)}</figcaption>'
             f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{html.escape(title)}">{svg_body}</svg>'
             f'{"<div class=leg>" + leg + "</div>" if leg else ""}</figure>')
+
+def table_card(title, head, rows, labels=1):
+    """A figure holding a table. rows: lists of cells, the first `labels` of them text, the rest numbers."""
+    th = "".join(f'<th{"" if i < labels else " class=num"}>{html.escape(h)}</th>' for i, h in enumerate(head))
+    tr = "".join("<tr>" + f"<td>{html.escape(str(r[0]))}</td>" + "".join(f'<td{"" if i < labels else " class=num"}>{html.escape(str(c))}</td>' for i, c in enumerate(r[1:], 1)) + "</tr>" for r in rows)
+    return f'<figure class="wide"><figcaption>{html.escape(title)}</figcaption><table><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table></figure>'
+
+def usd(v):
+    return "–" if v is None else f"${v:,.2f}" if abs(v) >= 0.995 else f"${v:,.3f}"
+
+CI_CHECKS = ["claude-review", "claude-maxims", "claude-arete"]
 
 def tile(label, now, prev=None, unit="", good="down"):
     delta = ""
@@ -277,6 +291,35 @@ def build(db, out, ndays):
     model_series = [(m, {w: round(v, 2) for w, v in mweek[m].items()}) for m in named + (["other"] if len(named) < len(ranked) else [])]
     ratio = lambda num, den, scale=1: {r["w"]: round(scale * (r[num] or 0) / r[den], 1) for r in costw if r[den]}
 
+    # ci checks: one row per check per workflow run (view ci_checks, metrics-db) ---
+    has_ci = bool(q("select 1 from sqlite_master where name='ci_checks'"))
+    ci = q("select ts, what, repo, model, coalesce(cost_usd, 0) cost_usd from ci_checks") if has_ci else []
+    ci_figs = []
+    if ci:
+        tot, cnt = defaultdict(float), defaultdict(int)
+        by_repo, by_model, ci_week = defaultdict(lambda: [0.0, 0]), defaultdict(lambda: [0.0, 0]), defaultdict(lambda: defaultdict(float))
+        for r in ci:
+            tot[r["what"]] += r["cost_usd"]; cnt[r["what"]] += 1
+            for acc, k in ((by_repo, r["repo"]), (by_model, model_name(r["model"]))):
+                acc[(r["what"], k)][0] += r["cost_usd"]; acc[(r["what"], k)][1] += 1
+            d = dt.date.fromisoformat(r["ts"][:10]); ci_week[r["what"]][(d - dt.timedelta(days=d.weekday())).isoformat()] += r["cost_usd"]
+        order = CI_CHECKS + sorted(set(tot) - set(CI_CHECKS))
+        order = [c for c in order if c in tot]
+        cikeys = mondays(dt.date.fromisoformat(min(r["ts"][:10] for r in ci)), today)
+        ci_figs.append(table_card("Cost per check, all collected runs", ["check", "total", "runs", "mean per run"],
+            [[c, usd(tot[c]), cnt[c], usd(tot[c] / cnt[c])] for c in order] +
+            [["all checks", usd(sum(tot.values())), sum(cnt.values()), usd(sum(tot.values()) / sum(cnt.values()))]]))
+        ci_figs.append(bars("CI check $ per week, by check", cikeys, [(c, {w: round(v, 3) for w, v in ci_week[c].items()}) for c in order[:4]], every=max(len(cikeys) // 8, 1), unit="$"))
+        for title, acc, hdr in (("Cost by repo and check", by_repo, "repo"), ("Cost by model and check", by_model, "model")):
+            ranked = sorted(acc.items(), key=lambda kv: -kv[1][0])
+            ci_figs.append(table_card(title, [hdr, "check", "total", "runs", "mean per run"],
+                [[k[1], k[0], usd(v[0]), v[1], usd(v[0] / v[1])] for k, v in ranked], labels=2))
+        ci_note = (f"Rows are the headless-run artifacts of the CI review checks, collected by metrics-db --github (they expire after 90 days), "
+                   f"one per check per workflow run, from trusted runs only; cost is the CLI's own total_cost_usd, not an estimate. "
+                   f"{sum(cnt.values())} check rows from {len({r['repo'] for r in ci})} repos, {min(r['ts'][:10] for r in ci)} to {max(r['ts'][:10] for r in ci)}.")
+    else:
+        ci_note = "No CI check rows yet: run metrics-db --github to collect the headless-run artifacts."
+
     # input: one row per host-minute the host's ActivityWatch covered -------------
     lo = epoch_min(start + "T00:00:00Z")
     has_input = bool(q("select 1 from sqlite_master where name='input'"))
@@ -371,6 +414,7 @@ def build(db, out, ndays):
             lines("Agent hours per keyboard hour, weekly", wkeys, [("agent h / keyboard h", {r["w"]: round(r["ah"] / r["hh"], 2) for r in weekly if r["hh"]})], every=4),
             lines("Commits per prompt, weekly", wkeys, [("commits/prompt", {r["w"]: round(r["cm"] / r["ut"], 2) for r in weekly if r["ut"]})], every=4),
         ],
+        "ci": ci_figs,
         "cost": [
             bars("API-equivalent $ per week, by model", wkeys, model_series, every=4),
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
@@ -386,6 +430,7 @@ def build(db, out, ndays):
                 ("input", "Input", f"Per-minute counts from ActivityWatch on each host that exports them (input-export); counts and app categories only. A minute is active input at {ACTIVE_KEYS_PER_MIN}+ key presses; present is time ActivityWatch did not call away. A session's minutes are those between its start and end on the host whose home holds its cwd. Days with no data are gaps, never zeros; the coverage tile says how many there were."),
                 ("agent", "Agent work vs touches", "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch."),
                 ("cost", "Cost", "Dollars are the Stop hook's estimate at API list price, pricing each session's four token counts per model (hooks/session-metrics.jq): a weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. Cold context is the share of context tokens written to the cache instead of re-read from it; a write is priced far above a re-read, and a gap past the cache window makes the next turn cold for the whole context. A merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session are left out of the mean.")]
+    sections.append(("ci", "CI review checks", ci_note))
     body = "".join(f'<h2 id="{k}">{html.escape(t)}</h2><p class="note">{html.escape(n)}</p><div class="grid">{"".join(figs[k])}</div>' for k, t, n in sections)
     page = PAGE.format(tiles="".join(tiles), body=body,
                        built=html.escape(meta.get("built_at", "?")), gh=html.escape(meta.get("gh_refreshed_at", "never")),
@@ -421,6 +466,7 @@ rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--
 .hit {{ fill:transparent }} .hit:hover {{ fill:var(--ink); fill-opacity:.06 }}
 .leg {{ display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--ink2); margin-top:6px }} .leg i {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px }}
 .leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }}
+figure.wide {{ grid-column:1/-1 }} table {{ border-collapse:collapse; width:100%; font-size:13px }} th, td {{ text-align:left; padding:3px 10px 3px 0; border-bottom:1px solid var(--grid) }} th {{ color:var(--ink2); font-weight:500 }} td.num, th.num {{ text-align:right }}
 footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}
 </style></head><body>
 <header><h1>Metrics</h1><small>built {built} · GitHub refreshed {gh}</small><nav>{nav}</nav></header>
