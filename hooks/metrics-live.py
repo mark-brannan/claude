@@ -40,6 +40,7 @@ import re
 import string
 import subprocess
 import sys
+import tempfile
 import time
 
 HOOK_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -122,6 +123,16 @@ def read_json(path, stage):
     except (OSError, ValueError) as e:
         trace(stage, Failed(f"{path}: {e}"))
         return None
+
+
+def torn(data):
+    """A JSONL file's bytes end mid-line: a writer has not finished the last one."""
+    return bool(data) and not data.endswith(b"\n")
+
+
+def untorn(data):
+    """The bytes up to and including the last newline: a torn last line left off."""
+    return data[:data.rfind(b"\n") + 1] if torn(data) else data
 
 
 def read_bytes(path):
@@ -284,6 +295,9 @@ class Knobs:
         self.night_end_hour = self.number("METRICS_NIGHT_END_HOUR", 5)
         # Minutes before the named bedtime that the warning lands.
         self.bed_warn_min = self.number("METRICS_BED_WARN_MIN", 5)
+        # How long an engine run waits for its session's nag lock before going
+        # on without it, as it did before the lock spanned the read (#161).
+        self.nag_lock_wait_ms = self.number("METRICS_NAG_LOCK_WAIT_MS", 2000)
 
     @staticmethod
     def number(name, default):
@@ -386,13 +400,40 @@ class Hook:
 
     def compute(self):
         """session-metrics.jq over the transcript, with the sub-agent
-        transcripts that sit beside it slurped in as $subs (#206)."""
+        transcripts that sit beside it slurped in as $subs (#206).
+
+        Claude Code appends to the transcript while hooks run, so jq can meet
+        a last line still being written and refuse the whole file (dotfiles#161
+        finding 3), which used to drop the event: on a prompt, the sitting
+        clock never heard it. One retry after 50 ms; a second refusal reads
+        the files with each one's unterminated last line left off, and an
+        error that is not a torn line raises as before."""
         base = self.tp[:-len(".jsonl")] if self.tp.endswith(".jsonl") else self.tp
-        subs = b"".join(read_bytes(f) + b"\n" for f in sorted(glob.glob(f"{base}/subagents/agent-*.jsonl")))
+        sub_files = sorted(glob.glob(f"{base}/subagents/agent-*.jsonl"))
+        try:
+            return self.slurp(self.tp, b"".join(read_bytes(f) + b"\n" for f in sub_files))
+        except Failed:
+            time.sleep(0.05)
+        subs = [read_bytes(f) for f in sub_files]
+        try:
+            return self.slurp(self.tp, b"".join(s + b"\n" for s in subs))
+        except Failed:
+            main = read_bytes(self.tp)
+            if not (torn(main) or any(torn(s) for s in subs)):
+                raise
+        fd, tmp = tempfile.mkstemp(prefix="metrics-live-", suffix=".jsonl")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(untorn(main))
+            return self.slurp(tmp, b"".join(untorn(s) + b"\n" for s in subs))
+        finally:
+            os.unlink(tmp)
+
+    def slurp(self, tp, subs):
         out = run_out(["jq", "-s", "--slurpfile", "subs", "/dev/stdin",
                        "--arg", "sid", self.sid, "--arg", "repo", self.work_repo,
                        "--arg", "branch", self.work_branch, "--arg", "cwd", self.cwd,
-                       "--arg", "now", self.now, "-f", JQPROG, self.tp], stdin=subs or b"\n")
+                       "--arg", "now", self.now, "-f", JQPROG, tp], stdin=subs or b"\n")
         metrics = json.loads(out)
         if not isinstance(metrics, dict):
             raise Failed(f"session-metrics.jq gave {type(metrics).__name__}, not an object")
@@ -508,10 +549,23 @@ class Hook:
                                f"-{self.work_repo}-{self.sid[:8]}.md",
             "last_cwd": self.cwd, "last_prompt_preview": self.prompt[:80]}))
 
+    def nag_lock(self):
+        """This session's nag lock, retried every 50 ms for up to
+        nag_lock_wait_ms; False when another run still holds it."""
+        d = f"{self.live}/{self.sid}.lock"
+        os.makedirs(self.live, exist_ok=True)
+        deadline = time.monotonic() + max(self.k.nag_lock_wait_ms, 0) / 1000
+        while not state.state_lock(d):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        return True
+
     def save_nag(self):
-        # Never blocks the hook: a lock held by a concurrent invocation of this
-        # same session (dotfiles#161) skips this write rather than waiting.
-        if not state.state_lock(f"{self.live}/{self.sid}.lock"):
+        # Under the lock engine() took before the read. A run that waited it
+        # out and went on without it still never blocks: a lock held by a
+        # concurrent invocation of this same session skips this write.
+        if not self.nag_locked and not state.state_lock(f"{self.live}/{self.sid}.lock"):
             return
         try:
             os.makedirs(os.path.dirname(self.nagf), exist_ok=True)
@@ -526,7 +580,8 @@ class Hook:
                 "model_context_tools": self.m_ctx_tools,
                 "bed_warn_at": self.bed_warn_at, "bed_past_at": self.bed_past_at}))
         finally:
-            state.state_unlock()
+            if not self.nag_locked:
+                state.state_unlock()
 
     def record_crossing(self, kind, at_, txt):
         os.makedirs(os.path.dirname(self.crossf), exist_ok=True)
@@ -734,7 +789,6 @@ class Hook:
         self.crossf = state.state_shard_path(self.crossd, f"{self.sid}.jsonl", self.sid)
         self.heldf = state.state_shard_path(self.live, f"{self.sid}.held", self.sid)
         self.in_flight_memo = None
-        self.load_state()
 
         # Only the wired events drive the engine; the statusline never
         # consumes a crossing. can_inject: where Claude Code accepts
@@ -749,13 +803,34 @@ class Hook:
         inject_event = "PostToolUse" if ev == "posttooluse" else "UserPromptSubmit"
         self.curia_live = False
 
-        if run_engine:
-            self.run_engine(is_prompt, can_inject)
+        if run_engine and is_prompt:
+            # The machine-wide day counter (#301): measured, never alarmed.
+            # Before the nag lock, never inside it: state.py holds one lock at
+            # a time, and this one takes its own.
+            sess = obj(self.metrics.get("session"))
+            soft("day_decisions", state.day_decisions, self.sid,
+                 num(obj(sess.get("decisions")).get("total")), 0, self.now_ts,
+                 self.k.decision_gap_min * 60)
 
-        block_reason = soft("stop", self.stop_nag, default="") if self.hook_name == "Stop" else ""
+        # One lock across the nag file's read, the engine that changes it and
+        # the write (dotfiles#161 finding 1): a Stop and a SubagentStop in
+        # flight together each read, change and write the whole file, and
+        # without it the later write puts back a crossing the other spent.
+        # The wait is bounded; past it the run goes on unlocked, as before.
+        self.nag_locked = run_engine and self.nag_lock()
+        try:
+            self.load_state()
+            if run_engine:
+                self.run_engine(is_prompt, can_inject)
 
-        if run_engine:
-            soft("nag", self.save_nag)
+            block_reason = soft("stop", self.stop_nag, default="") if self.hook_name == "Stop" else ""
+
+            if run_engine:
+                soft("nag", self.save_nag)
+        finally:
+            if self.nag_locked:
+                state.state_unlock()
+                self.nag_locked = False
 
         model_line = "\n".join(self.model_lines) if can_inject else ""
         sys_text = "\n".join(self.sys_lines)
@@ -799,10 +874,6 @@ class Hook:
         if can_inject:
             soft("bedtime", self.bedtime)
         if is_prompt:
-            # The machine-wide day counter (#301): measured, never alarmed.
-            soft("day_decisions", state.day_decisions, self.sid,
-                 num(obj(sess.get("decisions")).get("total")), 0, self.now_ts,
-                 self.k.decision_gap_min * 60)
             soft("friction", self.friction, num(sess.get("user_turns")))
 
     def deliver_held(self):

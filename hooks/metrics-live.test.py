@@ -1400,6 +1400,79 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("a commit recomputes the cache", "yes", "yes" if cache.exists() else "no")
         return self.done(w)
 
+    # --- concurrency (dotfiles#161) ---------------------------------------------
+    # Finding 1: one lock spans the nag file's read, change and write, so a run
+    # in flight beside another reads what that one wrote, never a stale copy.
+    def section_nag_lock(self):
+        w = self.world()
+        S = w.scratch
+        tp = w.turn(S / "lock.jsonl", 1000)
+        sid = "lock1"
+        nagf = w.shard("live", sid, ".nag.json")
+        lock = w.state / "metrics" / "live" / f"{sid}.lock"
+        lock.mkdir(parents=True)
+        (lock / "meta").write_text(f"pid={os.getpid()}\nhostname={os.uname().nodename}\n")
+        p = w.start(w.payload(tp, sid, S, "SubagentStop"), "subagentstop",
+                    env={"METRICS_NAG_LOCK_WAIT_MS": "60000"})
+        time.sleep(1.5)
+        w.t("a run waits while another holds the session's nag lock", "None", p.poll())
+        w.t("and has written no nag file yet", "no", "yes" if nagf.exists() else "no")
+        planted = {"context_line": 200000, "context_rungs": 3, "handoff_sum": "planted",
+                   "resume_ts": 1234, "nag_pending": True}
+        w.write(nagf, planted)
+        shutil.rmtree(lock)
+        _, err = p.communicate(timeout=60)
+        w.t("the waiting run wrote nothing to stderr", "", err)
+        w.t("its read came after the other run's write", "planted", w.nag_field(sid, "handoff_sum"))
+        w.t("so a pending nag stays pending", "True", w.nag_field(sid, "nag_pending"))
+        w.t("and the spent rung stays spent", "200000", w.nag_field(sid, "context_line"))
+        w.t("the run releases the lock", "no", "yes" if lock.exists() else "no")
+
+        # Past the bounded wait the run goes on as before: it never hangs the
+        # session, and skips the write rather than clobber the holder's.
+        lock.mkdir()
+        (lock / "meta").write_text(f"pid={os.getpid()}\nhostname={os.uname().nodename}\n")
+        w.write(nagf, dict(planted, marker=1))
+        t0 = time.monotonic()
+        w.hook(w.payload(tp, sid, S, "SubagentStop"), "subagentstop", env={"METRICS_NAG_LOCK_WAIT_MS": "200"})
+        w.t("a run that waited out the lock still finishes", "yes", "yes" if time.monotonic() - t0 < 30 else "no")
+        w.t("and leaves the holder's nag file alone", "1", w.nag_field(sid, "marker"))
+        w.t("and the holder's lock in place", "yes", "yes" if lock.exists() else "no")
+        shutil.rmtree(lock)
+
+        # A prompt takes the day counter's lock too: never inside the nag lock,
+        # since state.py holds one lock at a time, so neither is left behind.
+        w.hook(w.payload(tp, sid, S, "UserPromptSubmit", prompt="go on"), "prompt")
+        w.t("a prompt leaves no nag lock behind", "no", "yes" if lock.exists() else "no")
+        w.t("nor the day counter's", "no",
+            "yes" if (w.state / "metrics" / "day-decisions.json.lock").exists() else "no")
+        w.t("and still counts the day", "yes",
+            "yes" if (w.state / "metrics" / "day-decisions.json").exists() else "no")
+        return self.done(w)
+
+    # Finding 3: the transcript is appended while hooks run; a last line caught
+    # mid-write must not drop the event.
+    def section_torn_transcript(self):
+        w = self.world()
+        S = w.scratch
+        tp = w.turn(S / "torn.jsonl", 1000)
+        with open(tp, "a") as fh:
+            fh.write('{"type":"user","message":{"role":"us')
+        sub = S / "torn" / "subagents" / "agent-a1.jsonl"
+        sub.parent.mkdir(parents=True)
+        w.turn(sub, 500)
+        with open(sub, "a") as fh:
+            fh.write('{"type":"assist')
+        w.clock_clear()
+        w.hook(w.payload(tp, "torn1", S, "UserPromptSubmit", prompt="go on"), "prompt")
+        cache = w.shard("live", "torn1", ".json")
+        w.t("a torn last line still writes the cache", "yes", "yes" if cache.exists() else "no")
+        w.t("from this event", "prompt", w.read(cache).get("last_event") if cache.exists() else "")
+        w.t("and the prompt still winds the sitting clock", "yes", "yes" if w.sit_start() else "no")
+        w.t("the transcript itself is untouched", "yes",
+            "yes" if Path(tp).read_text().endswith('"role":"us') else "no")
+        return self.done(w)
+
     def test_git_state_failure_keeps_the_start_sha(self):
         """git_state raises partway (traced by soft() in the run): the cached
         start SHA still reaches write_cache, so `commits` keeps counting from
