@@ -29,17 +29,6 @@ jobs:
         hooks/*
         settings.json
         settings.*.json
-      # The critical-review skill from the seeded $HOME does the review (claude#296).
-      prompt: |
-        Run the critical-review skill on this pull request: invoke the Skill
-        tool with skill "critical-review" and the PR's URL as args, and follow
-        it. You are headless in CI, so three of its steps change: you cannot
-        spawn a sub-agent, so when the models step names a reviewer family
-        other than yours, say so in the summary and review anyway; you cannot
-        reach the state repo, so a finding the skill would card becomes a PR
-        thread; and the summary goes in one top-level `gh pr comment`.
-        Findings go as inline comments via
-        mcp__github_inline_comment__create_inline_comment. Do not push
-        commits or edit files.
-      allowed-tools: Skill,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(python3 ~/.claude/lib/critical_review.py reviewer:*),Bash(~/.claude/bin/pr-blockers:*)
-      timeout-minutes: 15
+      # The shared default grants npm ci/test, which would run a PR's own code;
+      # an empty value keeps it off. No package.json exists here today.
+      allowed-tools: ''
