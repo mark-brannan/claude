@@ -342,8 +342,8 @@ field is eating the budget when a line wraps.
 `prose-budget` reads `docs/budgets.json` (or `.prose-budgets.json`), walking
 up from the current directory; a repo with neither is skipped. The commit
 hook runs `--staged` and denies the commit on findings. `--base` is not yet
-wired into this repository's CI — `hook-tests.yml` only runs the engine's own
-test suite — so a finding that a local commit lets through (`--file`,
+wired into this repository's CI — `ci.yml`'s `tool-tests` job only runs the
+engine's own test suite — so a finding that a local commit lets through (`--file`,
 `--only`, an uncommitted skip) has no CI backstop today.
 
 ```bash
