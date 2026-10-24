@@ -175,7 +175,7 @@
 # any item. A run that is only prs defaults to a $5 session. A pr worker the backstop or an error
 # stops anyway still gets its stop rule -- grind applies the fixup-hard label
 # and the one comment for it -- and its claim stamp released. The pr
-# kind needs a signing key, pr-label-audit, lib-state.sh and the contract: a
+# kind needs a signing key, pr-label-audit, lib/state.py and the contract: a
 # run that asked for it (--prs, --kind pr) refuses without them, one that got
 # it by default drops the kind and says so.
 #
@@ -370,7 +370,7 @@ find_beside() {  # find_beside <path relative to the Claude layer's tree>
   return 1
 }
 audit_bin=$(find_beside bin/pr-label-audit) || audit_bin=""
-lib_state=$(find_beside hooks/lib-state.sh) || lib_state=""
+state_py=$(find_beside lib/state.py) || state_py=""
 contract_file=$(find_beside skills/pickup/SKILL.md) || contract_file=""
 claim_stamp=$(find_beside hooks/claim-stamp.py) || claim_stamp=""
 work_item_bin=${GRIND_WORK_ITEM:-$(command -v work-item 2>/dev/null || find_beside bin/work-item || true)}
@@ -520,7 +520,7 @@ if has_kind pr; then
   if [ -z "$(git config --get user.signingkey 2>/dev/null)" ]; then
     pr_unmet="a signing key on this machine (git config user.signingkey is empty)"
   elif [ -z "$audit_bin" ]; then pr_unmet="pr-label-audit; not found beside grind or under \$HOME"
-  elif [ -z "$lib_state" ]; then pr_unmet="hooks/lib-state.sh for branch_brief"
+  elif [ -z "$state_py" ]; then pr_unmet="lib/state.py for branch_brief"
   elif [ -z "$(fixup_contract || true)" ]; then pr_unmet="the fixup contract in skills/pickup/SKILL.md"
   fi
   if [ -n "$pr_unmet" ]; then
@@ -1074,8 +1074,7 @@ build_pr_prompt() {
   printf -- '=== pr-label-audit --pr %s ===\n' "$1"
   "$audit_bin" --pr "$1" 2>&1 || printf '(the audit failed -- read the PR with gh before deciding anything)\n'
   printf -- '\n=== branch_brief %s %s ===\n' "$3" "$2"
-  # shellcheck disable=SC1090
-  ( . "$lib_state" && branch_brief "$3" "$2" ) 2>&1 \
+  python3 "$state_py" branch_brief "$3" "$2" 2>&1 \
     || printf '(the brief failed -- do not guess the base; stop and say so)\n'
   printf -- '\n---\n\n'
   fixup_contract

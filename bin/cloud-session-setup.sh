@@ -87,7 +87,6 @@ skills/curia/forms/success-metric.md
 skills/scoping/SKILL.md
 skills/prt/SKILL.md
 skills/critical-review/SKILL.md
-hooks/lib-state.sh
 hooks/lib_state.py
 lib/state.py
 lib/ids.py
@@ -119,10 +118,10 @@ hooks/pr-ownership-context.py
 hooks/pr-threads-gate.py
 hooks/pr-blockers-prompt.py
 hooks/scratch-mirror.py
-hooks/npm-publish-auth.sh
+hooks/npm-publish-auth.py
 hooks/no-prose-gate.py
-hooks/no-unsigned-push.sh
-hooks/no-update-branch.sh
+hooks/no-unsigned-push.py
+hooks/no-update-branch.py
 hooks/spend-gate.py
 hooks/session-start-seed-refresh.py
 hooks/guard-add-repo.py

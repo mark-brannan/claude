@@ -29,7 +29,7 @@ is under Interfaces.
 - Every file it writes under the state dir is the session's own, except
   `metrics-rollup.sh`'s untracked rollup (job 3), a curia digest (job 10)
   and the state commit (jobs 12, 13). The metrics and the checkpoint are
-  sharded by `state_shard_path` (`lib-state.sh`). Two parallel sessions
+  sharded by `state_shard_path` (`lib/state.py`). Two parallel sessions
   never write the same session file.
 
 ## Interfaces
@@ -121,7 +121,7 @@ otherwise `not archivable: ` and the reasons, comma-joined, in this order:
    filter <f> unconfigured)`; `state-repo commit failed`; and in the cloud
    only, `state-repo push failed`
 
-The strings are the interface: `verdict_explain` in `lib-state.sh` matches
+The strings are the interface: `verdict_explain` in `lib/state.py` matches
 them to explain the verdict, so a rewrite emits them byte for byte.
 
 Reason 3 is asked only when 1 and 2 are clear, reason 4 only when 1 to 3

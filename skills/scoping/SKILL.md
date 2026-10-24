@@ -218,7 +218,7 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   (the card text on stdin; it prints the new id; `$title` is read from a
   quoted here-doc, as `/sweep` quotes a value, so a `'` in a title is safe),
   then `~/.claude/bin/work-item log <parent-id> status=ready`; `ready` because `/pickup` finds an agent
-  item only when it is ready or claimed (`claude_cards`, hooks/lib-state.sh);
+  item only when it is ready or claimed (`claude_cards`, lib/state.py);
   and `~/.claude/bin/work-item log <parent-id> lane=autonomous`: the lane
   lives on the parent and its children inherit it (2026-10-22), so `/pickup`
   lets the driver label its PRs; and

@@ -42,7 +42,7 @@ jobs:
       - name: Every settings.json hook is in INSTALL
         run: |
           set -euo pipefail
-          { grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.sh' settings.json \
+          { grep -o '\.claude/hooks/[A-Za-z0-9._-]*\.\(sh\|py\)' settings.json \
               | sed 's|^\.claude/||'
             grep -ho 'lib-[A-Za-z0-9._-]*\.\(awk\|sh\|jq\)' hooks/*.sh \
               | sed 's|^|hooks/|'

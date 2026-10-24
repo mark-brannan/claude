@@ -110,7 +110,7 @@ source. There is no environment setting that does this for you.
 1. `mcp__Claude_Code_Remote__add_repo` with owner `mark-brannan`, repo
    `claude_prompts_scratch`, access `push`.
 2. Clone it to `/workspace/claude_prompts_scratch` — a path `state_repo()`
-   in `.claude/hooks/lib-state.sh` already searches.
+   in `.claude/lib/state.py` already searches.
 
 The other paths it searches, in order: `$CLAUDE_STATE_REPO`,
 `/home/user/claude_prompts_scratch`, `/workspace/claude_prompts_scratch`,
@@ -494,7 +494,7 @@ corrupt it. The hook prints nothing and always exits 0, so a roll that
 silently stopped looks the same as one that works. Check the roll itself:
 
 ```bash
-d="$(. ~/.claude/hooks/lib-state.sh && state_dir)/curia/<id>"
+d="$(python3 ~/.claude/lib/state.py state_dir)/curia/<id>"
 cat "$d/LIVE"; ls "$d/digest.md"
 tail -n 8 "$d/roll.md"
 ```

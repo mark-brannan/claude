@@ -31,8 +31,7 @@ file and so never conflict on push.
 A port of stop-continuity.sh (dotfiles#517), byte for byte in what it
 writes. The transcript is still read by session-metrics.jq, through jq;
 everything after that is plain Python, and the shared answers --
-archivable, the locks, where state lives -- are lib/state.py's, which
-lib/state-parity.test.py holds equal to lib-state.sh's.
+archivable, the locks, where state lives -- are lib/state.py's.
 
 Always exits 0. A metrics hook that can fail a session is worse than no
 metrics hook. Stdlib only.
@@ -605,7 +604,7 @@ class Stop:
         append(self.ckpt, f"\n## Stop-commit\n\n{msg}\n")
 
     # Whether a commit made here should be signed: yes exactly when this
-    # machine has a signing key, the same test no-unsigned-push.sh uses (`git
+    # machine has a signing key, the same test no-unsigned-push.py uses (`git
     # config user.signingkey`) so the two can never disagree. A commit made
     # unsigned on a machine with a key is what that guard then refuses to
     # push, forcing every other session here to re-sign it; a cloud VM has no

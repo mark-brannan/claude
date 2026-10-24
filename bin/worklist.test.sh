@@ -554,9 +554,10 @@ run --fresh --json
 eq 'json carries the item' 1 "$(printf '%s' "$OUT" | jq '[.. | strings | select(contains("1790836845aaaaaaaa"))] | length > 0 | if . then 1 else 0 end')"
 
 # --- a broken store is an error, never an empty board (card 179101773919cb0a62) ---
-# python3 failing under work-item must be named and exit non-zero, in the
+# work-item failing must be named and exit non-zero, in the
 # output a hook captures, and not render as "nothing outstanding".
-printf '#!/bin/sh\necho "python exploded" >&2\nexit 4\n' > "$S/bin/python3"; chmod +x "$S/bin/python3"
+printf 'import sys\nprint("python exploded", file=sys.stderr)\nsys.exit(4)\n' > "$S/broken-work-item"
+export WORK_ITEM_BIN="$S/broken-work-item"
 run
 has 'a failing work-item is named in the output' 'Board: BROKEN STORE -- work-item list failed \(exit 4\): python exploded'
 eq 'and the view exits non-zero' 3 "$RC"
@@ -570,11 +571,10 @@ eq 'json exits non-zero on a broken store' 3 "$RC"
 run card 1790836845aaaaaaaa
 eq 'card <id> exits 3 on a broken store' 3 "$RC"
 has 'and names it, never "no item"' '^worklist card: BROKEN STORE -- work-item list failed'
-mkdir -p "$S/noghbroken"; for f in "$S/nogh"/*; do [ "${f##*/}" = python3 ] || ln -sf "$(readlink "$f")" "$S/noghbroken/${f##*/}"; done; cp "$S/bin/python3" "$S/noghbroken/python3"
-OUT=$(PATH="$S/noghbroken" sh "$WL" --json 2>&1); RC=$?
+OUT=$(PATH="$S/nogh" sh "$WL" --json 2>&1); RC=$?
 eq 'json without gh exits 3 on a broken store' 3 "$RC"
 lacks 'and does not blame gh' 'no gh'
-rm -f "$S/bin/python3"
+unset WORK_ITEM_BIN
 run
 eq 'a readable store exits 0 again' 0 "$RC"
 lacks 'and does not name a broken store' 'BROKEN STORE'
