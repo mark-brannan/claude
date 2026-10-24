@@ -484,3 +484,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t002059z
 - arete takes one earlier: brief; choosing which is the caller's Undo: restore 'one or more, read the latest' with a rule for latest ([#301](https://github.com/mark-brannan/claude/pull/301))
+
+### 20261024t002102z
+- no guard for Bash writes by an Explore check runner; the Never line stands alone until one is reviewed Undo: none; nothing built ([#301](https://github.com/mark-brannan/claude/pull/301))
