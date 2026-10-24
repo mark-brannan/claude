@@ -511,6 +511,7 @@ class GithubTest(FixtureTest):
         rows = [{"ts": "2026-10-20T10:00:00Z", "what": "claude-review", "repo": "evil/x", "pr": 2, "num_turns": 7,
                  "model": "claude-sonnet-5-5", "total_cost_usd": 0.5, "outcome": "success", "usage": {"input_tokens": 3, "output_tokens": 4}},
                 {"ts": "2026-10-20T10:05:00Z", "what": "claude-maxims", "pr": 2, "model": "claude-opus-5-5", "total_cost_usd": 1.5, "head_sha": "rowsha", "tier": "deep"},
+                {"ts": "n/a", "what": "claude-arete", "pr": 2, "total_cost_usd": 9},  # no usable date: left out
                 {"ts": "2026-10-20T10:09:00Z", "pr": 2, "model": "claude-sonnet-5-5", "total_cost_usd": 0.25}]  # no `what`: a review
         # Run 42 is acme/widgets' own; run 43 is a fork's; run 44's file is junk; run 45 is expired.
         def art(aid, rid, own=True, expired=False):
@@ -550,7 +551,7 @@ esac
         runs = list((self.fx.sd / "metrics" / "headless-runs").glob("*/ci-*.jsonl"))  # sharded by run id
         self.assertEqual(sorted(p.name for p in runs), ["ci-42.jsonl", "ci-43.jsonl", "ci-44.jsonl"])
         got = {p.name: [json.loads(l) for l in p.read_text().splitlines()] for p in runs}
-        self.assertEqual([r["what"] for r in got["ci-42.jsonl"]], ["claude-review", "claude-maxims", "claude-review"])
+        self.assertEqual([r["what"] for r in got["ci-42.jsonl"]], ["claude-review", "claude-maxims", "claude-arete", "claude-review"])
         self.assertEqual({r["repo"] for r in got["ci-42.jsonl"]}, {"acme/widgets"})  # the artifact cannot name its repo
         self.assertEqual(got["ci-43.jsonl"][0]["trusted"], False)
         self.assertEqual((got["ci-44.jsonl"][0]["unparsed"], got["ci-44.jsonl"][0]["text"]), (True, '[1, "junk"'))

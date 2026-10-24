@@ -93,7 +93,7 @@ create view ci_checks as
            json_extract(raw, '$.run') as run, pr, model, cost_usd,
            json_extract(raw, '$.head_sha') as head_sha, json_extract(raw, '$.tier') as tier
     from headless_runs
-    where json_extract(raw, '$.run') is not null and json_extract(raw, '$.unparsed') is null and json_extract(raw, '$.oversize') is null and json_extract(raw, '$.trusted') = 1)
+    where ts glob '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' and json_extract(raw, '$.run') is not null and json_extract(raw, '$.unparsed') is null and json_extract(raw, '$.oversize') is null and json_extract(raw, '$.trusted') = 1)
   group by repo, run, what;
 create table if not exists commits(ts text, session_id text, repo text, branch text, commit_sha text);
 create table if not exists item_events(item_id text, ts text, session8 text, status text, owner text,
