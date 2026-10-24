@@ -25,7 +25,6 @@ fixup-hard D93F0B A fixer session gave up; needs a bigger session or a human
 blocked B60205 Waiting on something; body carries the Blocked by line
 epic 5319E7 An [Epic] issue: the aim; its sub-issues hold the work
 merge 0E8A16 Queue this pull request with Mergify; the queue updates, checks and merges it
-queued 006B75 Mergify has this pull request in its merge queue
 mixed-loops-ok F9A8A0 Human waiver: a design doc and its implementation may land in this one PR
 slop #4A412A AI SLOP! this is terrible EMDASH must a human toil to sort out this mess?!?
 LABELS

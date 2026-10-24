@@ -10,7 +10,7 @@ printf '#!/bin/sh\necho "$@"\n' > "$S/bin/gh"; chmod +x "$S/bin/gh"
 
 out=$(HOME="$S/home" PATH="$S/bin:$PATH" sh "$SCRIPT")
 
-for label in merge queued mixed-loops-ok epic slop blocked; do
+for label in merge mixed-loops-ok epic slop blocked; do
   for repo in dotfiles repoa; do
     grep -q "^label create $label -R mark-brannan/$repo " <<<"$out" || { echo "FAIL $label on $repo"; exit 1; }
   done
