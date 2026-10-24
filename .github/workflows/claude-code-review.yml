@@ -23,4 +23,12 @@ jobs:
       # Overriding replaces the default list, so restate it with claude[bot] and
       # the mark-brannan-agent App local sessions post as.
       allowed-bots: mergify[bot],mark-brannan-release-please[bot],claude[bot],mark-brannan-agent[bot]
-      timeout-minutes: 15
+      # This repo is installed as ~/.claude, so its hooks and settings sit at
+      # the root, not under .claude/ where the shared triage looks for them.
+      risky-paths: |
+        hooks/*
+        settings.json
+        settings.*.json
+      # The shared default grants npm ci/test, which would run a PR's own code;
+      # an empty value keeps it off. No package.json exists here today.
+      allowed-tools: ''
