@@ -23,7 +23,9 @@ orchestrator had spent 105k of context before its first dispatch. Ask for a
 table, one row per open issue: number, labels, the files the body names,
 any open PR or branch already carrying it, what it says blocks it. Plus
 the open PRs and their state (conflicting, red, awaiting-human) and the
-branches other sessions hold (`claim-stamp.py read`, the worktree list).
+branches other sessions hold (`claim-stamp.py read`, the worktree list),
+and each issue's card holders (`work-item by-home <owner/repo#n>`: a live
+holder there is a session on the issue, as a live stamp is).
 
 Then rule on each row yourself:
 
@@ -33,7 +35,7 @@ Then rule on each row yourself:
   order inside a cluster, not a skip. Nothing from this pass goes to
   `## Needs ruling`; a genuine one becomes a card after wave 1 is out.
 - **A red or conflicting open PR gets a fixer** unless a live claim stamp
-  (`claim-stamp.py read`, stale after 2h) or a human's review thread shows
+  (`claim-stamp.py read`, stale after 1h) or a human's review thread shows
   a session already on it. Labels are not the signal: `awaiting-human` is
   computed by Mergify and says "done", `fixup-hard` is session-applied and
   says nothing about who is there. A fixer finding no thread and a current
