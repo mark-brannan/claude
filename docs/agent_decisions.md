@@ -493,3 +493,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t003905z
 - batch walk lives beside the proposal as <date>-walk-<parent-id>.md, arete brief beside it, walk=<path> on the parent Undo: name another home in scoping's Walk bullet ([#302](https://github.com/mark-brannan/claude/pull/302))
+
+### 20261024t003908z
+- pickup reads a batch parent as a card its children name in parent= Undo: key on driver= instead ([#302](https://github.com/mark-brannan/claude/pull/302))
