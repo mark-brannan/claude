@@ -502,3 +502,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t045824z
 - metrics-live torn transcript: retry once after 50 ms, then read with each file's unterminated last line left off; a non-torn jq failure raises as before Undo: revert compute() to a single jq call ([#161](https://github.com/mark-brannan/dotfiles/issues/161)) (no PR, branch claude/hook-races-161)
+
+### 20261024t045832z
+- metrics-live nag lock: bounded wait 2000 ms, polled every 50 ms; past it the run reads and writes as before (write skipped if the lock is held) Undo: set METRICS_NAG_LOCK_WAIT_MS or change the default ([#161](https://github.com/mark-brannan/dotfiles/issues/161)) (no PR, branch claude/hook-races-161)
