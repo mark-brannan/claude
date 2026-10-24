@@ -473,6 +473,17 @@ def state_lock_wait(d, secs=90):
     return True
 
 
+def push_locked(command):
+    """(exit status, "") of `sh -c command` run under STATE_PUSH_LOCK; 1 when
+    the lock is still held after 90s."""
+    if not state_lock_wait(STATE_PUSH_LOCK, 90):
+        return 1, "state.py push_locked: the push lock is held\n"
+    try:
+        return subprocess.call(["sh", "-c", command]), ""
+    finally:
+        state_unlock()
+
+
 _NUM = re.compile(r"[ \t\n]*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][-+]?[0-9]+)?")
 
 
@@ -1125,7 +1136,7 @@ CLI = {f.__name__: f for f in (
     state_repo, state_dir, state_is_repo, state_shard_path, items_dir, board_union, is_card_id,
     work_claims_load, work_record, board_card, claude_cards, done_board,
     ruling_until, ruling_ref_state, ruling_readiness, rulings_ready,
-    pr_base_refs, default_branch, branch_brief)}
+    pr_base_refs, default_branch, branch_brief, push_locked)}
 CLI["item_rows"] = item_rows_text
 
 

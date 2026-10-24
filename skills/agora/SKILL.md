@@ -174,11 +174,7 @@ a PR or comments on an issue just to record a private ruling.
    staged. Under the Stop hook's push lock, in one Bash call:
 
    ```bash
-   python3 -c 'import os, subprocess, sys
-   sys.path.insert(0, os.path.expanduser("~/.claude/lib")); import state
-   if not state.state_lock_wait(state.STATE_PUSH_LOCK, 90): sys.exit(1)
-   try: sys.exit(subprocess.call(["sh", "-c", sys.argv[1]]))
-   finally: state.state_unlock()' 'cd ~/claude_prompts_scratch \
+   python3 ~/.claude/lib/state.py push_locked 'cd ~/claude_prompts_scratch \
      && git add -- <paths> && git commit -q -m "State: agora session <sid8> (<date>)" -- <paths> \
      && git pull -q --rebase --autostash && git push -q origin HEAD'
    ```

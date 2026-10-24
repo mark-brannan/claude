@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from unittest import mock
 import time
 import unittest
 from pathlib import Path
@@ -350,6 +351,16 @@ class LockTest(Base):
         self.assertTrue(self.state.state_lock_wait(self.LOCK, 5))
         t.join()
         self.assertIn(f"pid={os.getpid()}\n", Path(self.LOCK, "meta").read_text())
+
+    def test_push_locked_refuses_a_held_lock_and_runs_then_releases_a_free_one(self):
+        self.state.STATE_PUSH_LOCK = self.LOCK
+        self.hold(os.getpid())
+        orig = self.state.state_lock_wait
+        with mock.patch.object(self.state, "state_lock_wait", lambda d, secs: orig(d, 0)):
+            self.assertEqual(self.state.push_locked("exit 0")[0], 1)
+        shutil.rmtree(self.LOCK)
+        self.assertEqual(self.state.push_locked("exit 3"), (3, ""))
+        self.assertFalse(os.path.exists(self.LOCK), "the lock is released after the command")
 
     def test_stale_dead_pid_same_host_is_reclaimed(self):
         self.hold(999999999)
