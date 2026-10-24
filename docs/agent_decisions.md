@@ -499,3 +499,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t033649z
 - ITEM_ROWS_FILE env knob lists the work-item store once per tool run; blank --cards lines skipped Undo: drop the knob and emit an empty record ([#312](https://github.com/mark-brannan/claude/pull/312))
+
+### 20261024t045824z
+- metrics-live torn transcript: retry once after 50 ms, then read with each file's unterminated last line left off; a non-torn jq failure raises as before Undo: revert compute() to a single jq call ([#161](https://github.com/mark-brannan/dotfiles/issues/161)) (no PR, branch claude/hook-races-161)
