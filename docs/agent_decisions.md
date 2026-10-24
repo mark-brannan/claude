@@ -478,3 +478,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t002053z
 - settledness brief filename takes UTC <time> (YYYY-MM-DDTHHMMZ), not <date> Undo: restore <date> in For callers ([#301](https://github.com/mark-brannan/claude/pull/301))
+
+### 20261024t002056z
+- for kind curia the caller keeps the settledness brief in inputs/, not only if it wants it Undo: restore 'a caller that wants it kept' ([#301](https://github.com/mark-brannan/claude/pull/301))
