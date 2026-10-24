@@ -302,6 +302,8 @@ class WorkItemTest(unittest.TestCase):
         self.assertEqual(p.returncode, 1, "a second open card for one home is refused")
         self.assertIn(first, p.stderr, "the refusal names the item")
         self.assertEqual(ok(A, "by-home", "o/r#5").split("\t")[0], first)
+        ok(A, "log", first, "status=ready")
+        ok(A, "claim", first)
         ok(A, "log", first, "status=done", "evidence=" + LINK)
         ok(A, "create", "--id", "1700000003077c62eb", "--home", "o/r#5", "--brief", LINK, "After done")
 
