@@ -296,11 +296,15 @@ the rulings to date:
   the agora, parked on a card, and nothing else holds (2026-10-22). A −
   finding that is `one-way` and seen only `after`, one the item should
   not land with as it stands, always counts as one.
-- **Maxims.** `/maxims-check` runs once on the batch, as an `Explore`
-  sub-agent with the same read-whole clause, beside the arete check. Its
-  table goes to the walk, never to a PR thread (pencil, 2026-10-24). Rival maxims pull against each other,
-  so a run is expected to find something: a run with no findings is
-  flagged in the walk as suspect.
+- **Maxims.** `/maxims-check` runs once per child PR, each as an `Explore`
+  sub-agent on `sonnet` with the same read-whole clause, beside the arete
+  check; the driver collects each table into the walk, never to a PR thread
+  (pencil, 2026-10-24). Measured cost, 7 backtest runs: about $0.35 each,
+  72–92k peak context. One run over the whole batch is estimated (not
+  measured) about 15–25% cheaper, but past ~6 PRs it goes beyond the context
+  the backtest runs read whole. Rival maxims pull against each other, so a
+  run is expected to find something: a run with no findings is flagged in
+  the walk as suspect.
 - **Who merges.** In the autonomous lane, where a PR's diff stays inside
   this brief, the driver puts `merge`, `churn-ok` and `mixed-loops-ok` on
   it once its last review round is clean, names the brief in the PR body, and
