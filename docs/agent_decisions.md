@@ -475,3 +475,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t002049z
 - scoping's driver keeps the arete brief at arete-check's For-callers home, the parent's id as slug, linked from the walk; it passes no earlier: brief Undo: drop the keep clause from scoping's Arete paragraph ([#301](https://github.com/mark-brannan/claude/pull/301))
+
+### 20261024t002053z
+- settledness brief filename takes UTC <time> (YYYY-MM-DDTHHMMZ), not <date> Undo: restore <date> in For callers ([#301](https://github.com/mark-brannan/claude/pull/301))
