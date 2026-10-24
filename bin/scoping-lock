@@ -13,7 +13,7 @@ record's path, `take` takes its commit after syncing, never before; given
 anything else (an issue's updatedAt), it records that as is.
 
 A GATE, NOT A CONVENIENCE: anything that stops the lock being read from
-origin, taken and pushed -- no state repo on lib-state.sh's search path, no
+origin, taken and pushed -- no state repo on lib/state.py's search path, no
 origin, a pull that will not rebase, a rejected push -- exits 2 and the run
 stops. A $CLAUDE_STATE_REPO with no .git is not an error: the search goes on
 down that path, as it does for the shell hooks. The lock is pushed at
@@ -245,7 +245,7 @@ def main(argv):
         print(read_of(args[0]))
         return 0
     if SR is None:  # state_repo() names only a directory that has a .git
-        die("no state repo on lib-state.sh's search path (lib/state.py)")
+        die("no state repo on lib/state.py's search path")
     lock = lock_of(args[0])
     if cmd == "read":
         path = SR / lock

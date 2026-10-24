@@ -974,7 +974,7 @@ class StopContinuityTest(unittest.TestCase):
 
     def state_signing(self):
         # --- the state-repo commit is signed iff this machine has a signing key
-        # Same test as no-unsigned-push.sh (`git config user.signingkey`): a
+        # Same test as no-unsigned-push.py (`git config user.signingkey`): a
         # key means the guard refuses unsigned commits here, so the hook must
         # sign; no key (a cloud VM) means unsigned, and the hook must still
         # commit and not fail.

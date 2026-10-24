@@ -12,7 +12,7 @@
 # an open pull request nobody is looking at.
 #
 # Since .github#24 the label is also load-bearing rather than advisory:
-# Mergify only updates a branch that carries it, and no-update-branch.sh
+# Mergify only updates a branch that carries it, and no-update-branch.py
 # forbids the session from using GitHub's own Update branch. An unlabelled
 # pull request is therefore one that nothing will ever bring up to date.
 #

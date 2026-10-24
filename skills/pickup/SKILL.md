@@ -210,11 +210,10 @@ makes a branch decision, and neither do you:
 ```
 ~/.claude/bin/pr-blockers <owner/repo#n>    # what keeps it from merging, threads first
 pr-label-audit --pr <owner/repo#n>          # the GitHub side: verdict, threads, failing checks
-branch_brief <repo root> <head branch>      # the local side: base, ahead/behind, conflicts, unsigned
+python3 ~/.claude/lib/state.py branch_brief <repo root> <head branch>   # the local side: base, ahead/behind, conflicts, unsigned
 ```
 
-`branch_brief` is a shell function in `~/.claude/hooks/lib-state.sh`, so
-`. ~/.claude/hooks/lib-state.sh` first. Its last line is `recommend:` followed
+`branch_brief`'s last line is `recommend:` followed
 by one command — rebase, merge, resign, or a refusal to guess. That line is
 the base decision. Run it; do not second-guess it from the diff.
 
@@ -263,7 +262,7 @@ do not paraphrase it into a second version that can drift from this one.
 
 4. **Commits sign themselves on this machine.** Never
    `-c commit.gpgsign=false`, never `git commit-tree`. If
-   `no-unsigned-push.sh` denies the push, it prints the line that fixes it —
+   `no-unsigned-push.py` denies the push, it prints the line that fixes it —
    run that line. An unsigned commit fails the gate, so a shortcut here buys
    nothing and costs the branch.
 

@@ -418,7 +418,7 @@ public" section.
   logfile and the channels that took the URL; tail the log, confirm with
   `npm view <pkg> dist-tags`. If no channel took it, tell me to `cat` the
   log in my own terminal. `npm publish --dry-run` needs no approval and runs
-  plain. `~/.claude/hooks/npm-publish-auth.sh` denies a bare `npm publish`
+  plain. `~/.claude/hooks/npm-publish-auth.py` denies a bare `npm publish`
   and says so. That's the guard working, not something to route around.
 - **A new package's first publish is mine, from the CLI.** Trusted-publisher
   CI can't create a name that doesn't exist yet, and npm reports that as

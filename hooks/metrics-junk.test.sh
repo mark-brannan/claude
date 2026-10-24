@@ -35,7 +35,7 @@ ST="$S/state"; mkdir -p "$ST/metrics/sessions"
 jq -nc '{session_id:"a", started_at:"2026-09-21T10:00:00Z", decisions:{total:4,gate:1,junk:1}}' > "$ST/metrics/sessions/a.json"
 jq -nc '{session_id:"b", started_at:"2026-09-21T15:00:00Z", decisions:{total:6,gate:0,junk:2}}' > "$ST/metrics/sessions/b.json"
 jq -nc '{session_id:"c", started_at:"2026-09-22T09:00:00Z", decisions:{total:2,gate:0,junk:0}}' > "$ST/metrics/sessions/c.json"
-# lib-state resolves the state dir from the repo; give it a fake one.
+# lib/state.py resolves the state dir from the repo; give it a fake one.
 mkdir -p "$S/repo/.git" "$S/repo/state/global/metrics"
 cp -r "$ST/metrics/sessions" "$S/repo/state/global/metrics/"
 CLAUDE_STATE_REPO="$S/repo" python3 "$HOOKS/metrics-rollup.py"

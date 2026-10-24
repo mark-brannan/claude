@@ -2,20 +2,14 @@
 it, for the Python tools and hooks. Imported, never run directly; stdlib
 only.
 
-The bash hooks' twin is hooks/lib-state.sh, which ~20 shell scripts still
-source. The functions here are ports of the ones the Python side needs --
-state_repo, state_dir, state_is_repo, state_shard_path, the state_lock
-family, unpushed_state, dirty_paths, archivable_reasons, decision_rate,
-names_branch, items_dir, board_union --
-and must answer exactly as their shell twins do: shell hooks still read
-"archivable" and the rest from lib-state.sh, and the two must never disagree
-(dotfiles#149). lib/state-parity.test.py runs both over the same fixtures
-and fails on any difference. Change one, change both. GIT_EVENT_RE,
-buffered_state, verdict_explain and day_decisions have no shell twin: only
-metrics-live.py reads them.
+The one home for the shared answers about state: where it lives, the
+work-item store and the board read from it, work records, ruling readiness
+and branch_brief. Shell tools reach it through the command line at the
+bottom (`python3 lib/state.py <fn> [args]`).
 
-The locks are the shell's mkdir protocol, not lib/lock.py: abandon-branch.sh
-takes the same directories from bash, claim-stamp.py through this module.
+The locks are a mkdir protocol, not lib/lock.py: every hook and skill that
+takes the state locks takes them through this module, so they hold against
+each other.
 
 The one home for this lookup (dotfiles#517). hooks/lib_state.py re-exports
 it; bin tools put this directory on sys.path and `import state`.
@@ -192,23 +186,23 @@ def _names(line, t):
 
 
 def names_branch(text, branch):
-    """text names branch as a whole token, not merely as a substring, as
-    lib-state.sh's names_branch: every maximal run of branch-name characters
+    """text names branch as a whole token, not merely as a substring:
+    every maximal run of branch-name characters
     is a token, and one must equal the branch. claude/homed-extra does not
     name claude/homed. The charset strips prose punctuation such as a
     trailing comma or backquote; a period is a branch character, so a
-    branch that ends a sentence is not named, in either language."""
+    branch that ends a sentence is not named."""
     return bool(branch) and branch in re.findall(r"[A-Za-z0-9._/+@-]+", text or "")
 
 
 def items_dir():
     """The work-item store's directory: $WORK_ITEM_DIR, else items/ in the
-    state dir, as lib-state.sh's items_dir."""
+    state dir."""
     return os.environ.get("WORK_ITEM_DIR") or f"{state_dir()}/items"
 
 
 def board_union(hook_dir=HOOK_DIR):
-    """The store as one board text, as lib-state.sh's board_union: every
+    """The store as one board text: every
     item as a `- [ ] ` card under `## Needs ruling` (owner human-ruling,
     `### <repo name>` as the group, else `### global`), `## Human's`
     (human-click) or `## Claude's` (agent). "" when the store is empty."""
@@ -231,21 +225,55 @@ def board_union(hook_dir=HOOK_DIR):
     return "\n".join(out) + "\n" if out else ""
 
 
-def _item_rows(hook_dir):
-    """work-item list's rows for the store (`id owner status holder updated
-    repo line`, split on tabs); [] when there is no items/ or it cannot be
-    read, as lib-state.sh's item_rows."""
-    d = items_dir()
-    if not os.path.isdir(d):
-        return []
+def _work_item_bin(hook_dir):
+    env_hooks = os.environ.get("HOOK_DIR", "")
     for wi in (os.environ.get("WORK_ITEM_BIN", ""), f"{hook_dir}/../bin/work-item",
+               env_hooks and f"{env_hooks}/../bin/work-item",
                f"{os.environ.get('HOME', '')}/.claude/bin/work-item"):
         if wi and os.path.isfile(wi):
-            break
-    else:
-        return []
-    out = _cap([sys.executable, wi, "list"], env=dict(os.environ, WORK_ITEM_DIR=d))
-    return [ln.split("\t") for ln in out.split("\n") if ln]
+            return wi
+    return None
+
+
+def _work_item(d, *args, hook_dir=HOOK_DIR):
+    """work-item args over the store d: (stdout, None), or ("", the cause)."""
+    wi = _work_item_bin(hook_dir)
+    if wi is None:
+        return "", "work-item not found"
+    try:
+        p = subprocess.run([sys.executable, wi, *args], stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, env=dict(os.environ, WORK_ITEM_DIR=d))
+    except (OSError, subprocess.SubprocessError) as e:
+        return "", f"work-item {args[0]} failed: {e}"
+    if p.returncode:
+        err = p.stderr.decode("utf-8", "replace").rstrip("\n").split("\n")[-1]
+        return "", f"work-item {args[0]} failed (exit {p.returncode}): {err}"
+    return p.stdout.decode("utf-8", "surrogateescape").rstrip("\n"), None
+
+
+def item_rows(hook_dir=HOOK_DIR):
+    """(rows, err): work-item list's rows for the store (`id owner status
+    holder updated repo line`, split on tabs). No items/ is ([], None); a
+    store that cannot be read is ([], the cause), which a reader that must
+    not pass a broken board off as an empty one checks. $ITEM_ROWS_FILE,
+    when set, holds rows a caller already listed: a shell tool asking
+    several questions pays for one listing, not one each."""
+    d = items_dir()
+    if not os.path.isdir(d):
+        return [], None
+    primed = os.environ.get("ITEM_ROWS_FILE")
+    if primed:
+        try:
+            with open(primed, encoding="utf-8", errors="surrogateescape", newline="") as fh:
+                return [ln.split("\t") for ln in fh.read().split("\n") if ln], None
+        except OSError:
+            pass
+    out, err = _work_item(d, "list", hook_dir=hook_dir)
+    return [ln.split("\t") for ln in out.split("\n") if ln], err
+
+
+def _item_rows(hook_dir):
+    return item_rows(hook_dir)[0]
 
 
 def _live_claim_names(names, self8, hook_dir):
@@ -339,15 +367,12 @@ def archivable_reasons(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
     return archivable(work_root, work_branch, self_sid, hook_dir)[0]
 
 
-# state_lock / state_unlock -- mkdir atomic test-and-set, the same protocol
-# and the same `meta` file as lib-state.sh's (copied there from grind's
-# per-repo lock; no flock: macOS has none), so a lock taken here holds
-# against abandon-branch.sh taking it from bash, and the other way
-# round. meta carries pid+host; a same-host
+# state_lock / state_unlock -- mkdir atomic test-and-set (grind's per-repo
+# lock protocol; no flock: macOS has none). meta carries pid+host; a same-host
 # dead pid is reclaimed via rename-then-rm. A dir with no meta at all (a
 # kill between mkdir and the meta write) has no pid to check; one older
 # than STATE_LOCK_STALE_SECS (default 5) is reclaimed regardless. One lock
-# at a time, as in the shell: the caller releases it on every exit path.
+# at a time: the caller releases it on every exit path.
 _held = None
 
 
@@ -405,7 +430,7 @@ def state_lock(d):
                 if os.stat(d).st_mtime_ns >= cutoff * 1_000_000_000:
                     return False
             except OSError:
-                pass  # gone already: the rename below fails, as the shell's mv does
+                pass  # gone already: the rename below fails
         moved = f"{d}.stale.{os.getpid()}"
         try:
             os.rename(d, moved)
@@ -433,8 +458,8 @@ def state_unlock():
 # state_lock_wait -- state_lock, retried once a second for up to secs: the
 # portable `flock -w`. A bare `flock` here silently exited every Stop hook
 # on macOS before the state-repo push. STATE_PUSH_LOCK is the push lock
-# stop-continuity.py and abandon-branch.sh share, fixed at import as the
-# shell fixes it when sourced.
+# stop-continuity.py, abandon-branch.py and the agora skill share, fixed at
+# import.
 STATE_PUSH_LOCK = f"{os.environ.get('TMPDIR') or '/tmp'}/claude-state-push.lock.d"
 
 
@@ -460,8 +485,8 @@ def _awk_num(s):
 # decision_rate -- "<n> decisions in 1h10 (2.6/h)", or "" when the session
 # clock (first prompt to last) is under a minute. Measured, never alarmed
 # (one-entry-point §5, 2026-09-30): the two places that call it are the
-# session-start brief and the Stop checkpoint, nothing else. Without the
-# shell's trailing newline.
+# session-start brief and the Stop checkpoint, nothing else. No trailing
+# newline.
 def decision_rate(decisions=0, span=0):
     d, s = _awk_num(decisions), _awk_num(span)
     if s < 60:
@@ -611,15 +636,520 @@ def day_decisions(sid, total, junk, now, gap):
             sum(s.get("junk") or 0 for s in sessions))
 
 
-# The command line, for the shell scripts that still need an answer from
-# here: `state.py <fn> [args]` prints what the shell function of the same
-# name printed (no trailing newline) and exits the way it did. To expose
-# another function, add its name to CLI. A str result is printed, exit 0;
-# None is "no answer" (exit 1); a bool is a predicate, no output, exit 0 for
-# True and 1 for False. Argument counts are checked against the signature
+# ------------------------------------------------------------- units of work
+# A pickup item and an agent-owned work item are facets of one thing, the
+# unit of work. Every view that lists work reads it through work_records, so
+# pickup-list, worklist's resume section and /pickup cannot disagree about
+# what an item is.
+US = "\x1f"
+
+
+class StoreError(Exception):
+    """The work-item store could not be read."""
+
+
+def is_card_id(word=""):
+    """A work item's identifier: epoch seconds, then eight hex, no separator."""
+    return re.fullmatch(r"[0-9]{10}[0-9a-f]{8}", word or "") is not None
+
+
+def work_claims_load(hook_dir=None):
+    """Every card claim on record, one `live|stale <sid8> <machine> <age>m
+    <url>` line each (claim-stamp.py owns the ledger), then each item's live
+    holder with the item's id for <url>. "" when neither has one."""
+    hook_dir = hook_dir or os.environ.get("HOOK_DIR") or f"{os.environ.get('HOME', '')}/.claude/hooks"
+    claims = ""
+    cs = f"{hook_dir}/claim-stamp.py"
+    if os.path.isfile(cs):
+        claims = _cap([sys.executable, cs, "card-claims"])
+    held = "\n".join(f"live\t{f[3]}\t-\t-\t{f[0]}" for f in item_rows()[0] if len(f) > 3 and f[3])
+    return "\n".join(x for x in (claims, held) if x)
+
+
+def _trim(v):
+    return re.sub(r"[ \t\r]+$", "", re.sub(r"^[ \t]+", "", v))
+
+
+def _mshort(m):
+    m = m.lower()
+    for name in ("fable", "opus", "sonnet", "haiku"):
+        if name in m:
+            return name
+    return "" if m in ("none", "?", "-") else m
+
+
+def _cfield(b, k):
+    """A card field: the value after " <name>:" up to ";", ")", the next
+    field or the end."""
+    b = " " + b
+    p = b.find(f" {k}:")
+    if p < 0:
+        p = b.find(f"({k}:")
+    if p < 0:
+        return ""
+    v = b[p + len(k) + 2:].lstrip(" \t")
+    m = re.search(r"[;)]", v)
+    if m:
+        v = v[:m.start()]
+    m = re.search(r" [a-z][a-z ]*:", v)
+    if m:
+        v = v[:m.start()]
+    return _trim(v)
+
+
+def _record(kind, title, st, until, claim, model, effort, link, id_, up):
+    return US.join((kind, title, st, until, claim, _mshort(model), _trim(effort), link, id_, up))
+
+
+def _card_record(up, b, held):
+    b = re.sub(r"^[ \t]*(- \[[ xX]\] |- |[0-9]+\. )", "", b, count=1)
+    if b.startswith("**"):
+        t = b[2:]
+        p = t.find("**")
+        title = t[:p] if p >= 0 else t
+    else:
+        title = re.sub(r"\]\([^)]*\)", "", b).replace("[", "")
+    link = ""
+    m = re.search(r"\]\((https?://[^) ]+|(?:\.\./)*log/[^) ]+)\)", b)
+    if m:
+        link = m.group(1)
+    else:
+        m = re.search(r"https?://[^ )>]+", b)
+        if m:
+            link = m.group(0)
+    id_ = _cfield(b, "id") or link
+    claim = held[link] if link in held else held.get(id_, "")
+    return _record("card", _trim(title), "taken" if claim else "open", _cfield(b, "until"), claim,
+                   _cfield(b, "model"), _cfield(b, "effort"), link, id_, up)
+
+
+def _pickup_record(path):
+    try:
+        with open(path, encoding="utf-8", errors="surrogateescape", newline="") as fh:
+            lines = fh.read().split("\n")
+    except OSError:
+        return None
+    if lines and lines[-1] == "":
+        lines.pop()
+    if not lines:
+        return None
+    hf, bf, title, body = {}, {}, "", False
+    for ln in lines:
+        if not body:
+            if ln == "---":
+                body = True
+                continue
+            p = ln.find(": ")
+            if p >= 0:
+                hf.setdefault(ln[:p], _trim(ln[p + 2:]))
+            continue
+        if not title and re.search(r"[^ \t\r]", ln):
+            title = _trim(ln)
+            continue
+        m = re.match(r"(until|effort|link|model):", ln)
+        if m:
+            bf.setdefault(m.group(1), _trim(ln[m.end():]))
+    id_ = re.sub(r"\.md$", "", path.rsplit("/", 1)[-1])
+    link = bf.get("link", "")
+    if not link and hf.get("pr", "") != "none":
+        link = hf.get("pr", "")
+    return _record("pickup", title, hf.get("status") or "open", bf.get("until", ""), "",
+                   bf.get("model") or hf.get("model", ""), bf.get("effort", ""), link, id_,
+                   hf.get("updated", ""))
+
+
+def _live_holders(claims):
+    held = {}
+    for ln in (claims or "").split("\n"):
+        c = ln.split("\t")
+        if c[0] == "live" and len(c) > 4 and c[4]:
+            held.setdefault(c[4], c[1])
+    return held
+
+
+def work_records(paths=(), cards_text=None, claims=None):
+    """Units of work, one line each, fields joined by \\037:
+
+        kind title status until claim model effort link id updated
+
+    kind is `pickup` or `card`; an absent field is empty. A pickup item's
+    model, effort, until and link come from its hand-off body (the header's
+    model stands in only when the body names none). A card's come from its
+    own `model:`, `effort:`, `until:` fields and its first link; its id is its
+    `id:` field (else the link), and a live claim on either makes it `taken`,
+    claim being the holder's short session id. cards_text is `<updated>\\t<card
+    text>` lines (claude_cards' output), read first. claims is
+    work_claims_load's text; when None, $WORK_CLAIMS if set (even empty),
+    else read here."""
+    if not paths and cards_text is None:
+        return ""
+    if claims is None:
+        claims = os.environ.get("WORK_CLAIMS")
+    held = _live_holders(work_claims_load() if claims is None else claims)
+    out = []
+    for ln in (cards_text or "").split("\n"):
+        if ln:
+            up, _, b = ln.partition("\t") if "\t" in ln else ("", "", ln)
+            out.append(_card_record(up, b, held))
+    for pth in paths:
+        r = _pickup_record(pth)
+        if r is not None:
+            out.append(r)
+    return "".join(r + "\n" for r in out)
+
+
+def work_record(item, updated=""):
+    """One unit of work: a pickup file's path or a card's text, as one line."""
+    if os.path.isfile(item):
+        return work_records([item])
+    return work_records(cards_text=f"{updated}\t{item}")
+
+
+def item_rows_text():
+    """item_rows as work-item printed them; a store that cannot be read
+    raises StoreError, never reads as empty."""
+    rows, err = item_rows()
+    if err:
+        raise StoreError(err)
+    return "".join("\t".join(r) + "\n" for r in rows)
+
+
+def done_rows(hook_dir=HOOK_DIR):
+    """(rows, err): the rows of every item at `done`, in item_rows' shape:
+    the agent finished and logged evidence; only the user's acceptance
+    remains."""
+    d = items_dir()
+    if not os.path.isdir(d):
+        return [], None
+    out, err = _work_item(d, "list", "--all", hook_dir=hook_dir)
+    rows = [ln.split("\t") for ln in out.split("\n") if ln]
+    return [r for r in rows if len(r) > 2 and r[2] == "done"], err
+
+
+def done_board(rows=None):
+    """The done rows as one more board section, `## Done`."""
+    rows = done_rows()[0] if rows is None else rows
+    if not rows:
+        return ""
+    return "## Done\n" + "".join(f"- [ ] {(r + [''] * 7)[6]}\n" for r in rows) + "\n"
+
+
+def board_card(card_id):
+    """The items whose `id:` is card_id, as `<section>\\t<group>\\t<folded
+    card>` lines, the done queue included; None when there is none."""
+    if not os.path.isdir(items_dir()):
+        return None
+    want = re.compile(r"(^|[ (])id:[ \t]*" + re.escape(card_id) + r"([^0-9a-z]|$)")
+    hits, txt, sec, grp = [], "", "", ""
+
+    def flush():
+        nonlocal txt
+        if txt and want.search(txt):
+            hits.append(f"{sec}\t{grp}\t{txt}")
+        txt = ""
+    for ln in (board_union() + done_board()).split("\n"):
+        if ln.startswith("## "):
+            flush()
+            sec, grp = ln[3:], ""
+        elif ln.startswith("### "):
+            flush()
+            grp = ln[4:]
+        elif ln.startswith("#") or not ln.strip(" \t"):
+            flush()
+        elif re.match(r"(- |[0-9]+\. )", ln):
+            flush()
+            txt = ln.rstrip(" \t")
+        elif txt:
+            txt += " " + ln.strip(" \t")
+    flush()
+    return "\n".join(hits) + "\n" if hits else None
+
+
+def claude_cards():
+    """The pickup candidates: every agent-owned item that is ready or
+    claimed, one `<updated>\\t<card text>` per card. A ruling waits for the
+    user and click work is theirs; open and blocked items cannot be taken."""
+    out = []
+    for f in item_rows()[0]:
+        f = f + [""] * (7 - len(f))
+        if f[1] == "agent" and f[2] in ("ready", "claimed"):
+            out.append(f"{f[4]}\t{f[6]}\n")
+    return "".join(out)
+
+
+# --- Ruling-card readiness -------------------------------------------------
+# A ruling card is ready when its `until:` date has arrived or the PR or
+# issue it links is in flight, otherwise waiting. `until:` holds a date, a
+# PR/issue link, or an event in words; an event in words waits until a human
+# says otherwise. Every date and link in the value is read, and any one of
+# them makes the card ready. In flight: a PR in any state, a closed issue,
+# or an open issue an open PR closes. No `until:` (a legacy card) is ready,
+# and so is a link gh cannot answer for: showing a waiting card costs a
+# line, hiding a ready one costs the ruling.
+#
+# Link state is cached under $XDG_CACHE_HOME/ruling-refs for RULING_REF_TTL
+# seconds (900). RULING_REF_CACHE_ONLY=1 never calls gh and takes a stale
+# entry over none (worklist --brief). RULING_TODAY overrides today's date.
+_UNTIL_END = re.compile(r"[ (;,.*](default|undo|risk|judgment|settle|repos|repo|kind|why you|why this|id):")
+
+
+def ruling_until(card):
+    """The value of a card's `until:` field, or None when it has none."""
+    line = next((ln for ln in card.split("\n") if "until:" in ln.lower()), None)
+    if line is None:
+        return None
+    v = line[line.lower().find("until:") + 6:]
+    m = _UNTIL_END.search(v.lower())
+    if m:
+        v = v[:m.start()]
+    return re.sub(r"[ \t*.;,]+$", "", re.sub(r"^[ \t*]+", "", v))
+
+
+_GRAPHQL = """query($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){issueOrPullRequest(number:$n){
+       __typename ... on PullRequest{state}
+       ... on Issue{state closedByPullRequestsReferences(first:10,includeClosedPrs:false){nodes{state}}}}}}"""
+_JQ = """
+    .data.repository.issueOrPullRequest
+    | if . == null then "unknown"
+      elif .__typename == "PullRequest" then "pr-" + (.state | ascii_downcase)
+      elif .state == "CLOSED" then "issue-closed"
+      elif ([.closedByPullRequestsReferences.nodes[] | select(.state == "OPEN")] | length) > 0 then "issue-inflight"
+      else "issue-open" end"""
+_REF_STATES = ("pr-open", "pr-merged", "pr-closed", "issue-open", "issue-inflight", "issue-closed")
+
+
+def ruling_ref_state(owner, repo, number):
+    """pr-open | pr-merged | pr-closed | issue-open | issue-inflight |
+    issue-closed, or unknown when neither the cache nor gh can say."""
+    cache_only = os.environ.get("RULING_REF_CACHE_ONLY", "0") == "1"
+    home = os.environ.get("HOME", "")
+    cdir = f"{os.environ.get('XDG_CACHE_HOME') or home + '/.cache'}/ruling-refs"
+    f = f"{cdir}/{owner}_{repo}_{number}"
+    now = int(time.time())
+    try:
+        with open(f, encoding="utf-8") as fh:
+            line = fh.read().split("\n")[0]
+    except OSError:
+        line = ""
+    at, _, st = line.partition(" ")
+    ttl = int(os.environ.get("RULING_REF_TTL") or 900)
+    if line and (cache_only or (at.isdigit() and now - int(at) < ttl)):
+        return st
+    if cache_only or not shutil.which("gh"):
+        return "unknown"
+    argv = ["gh", "api", "graphql", "-F", f"owner={owner}", "-F", f"name={repo}", "-F", f"n={number}",
+            "-f", f"query={_GRAPHQL}", "--jq", _JQ]
+    st = "unknown"
+    try:
+        p = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+        if p.returncode == 0:
+            st = p.stdout.decode("utf-8", "replace").rstrip("\n")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if st not in _REF_STATES:
+        return "unknown"
+    try:
+        os.makedirs(cdir, exist_ok=True)
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write(f"{now} {st}\n")
+    except OSError:
+        pass
+    return st
+
+
+_REF = re.compile(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/(?:pull|issues)/([0-9]+)"
+                  r"|([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([0-9]+)")
+
+
+def ruling_readiness(card):
+    """`ready` or `waiting` for one `## Needs ruling` card, its continuation
+    lines already folded onto one line."""
+    v = ruling_until(card)
+    if v is None:
+        return "ready"
+    today = os.environ.get("RULING_TODAY") or time.strftime("%Y-%m-%d")
+    for d in re.findall(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", v):
+        if d <= today:
+            return "ready"
+    # A bare #n names no repo and reads as words.
+    for m in _REF.finditer(v):
+        o, r, n = m.group(1, 2, 3) if m.group(1) else m.group(4, 5, 6)
+        if ruling_ref_state(o, r, n) != "issue-open":
+            return "ready"
+    return "waiting"
+
+
+def rulings_ready():
+    """Stdin lines `<group>\\t<card>` out as `<readiness>\\t<group>\\t<card>`:
+    ruling_readiness for many cards in one process."""
+    return "".join(f"{ruling_readiness(ln.partition(chr(9))[2])}\t{ln}\n"
+                   for ln in sys.stdin.read().split("\n") if ln)
+
+
+# ------------------------------------------------------------- branch facts
+def pr_base_refs(root, branch, remote="origin"):
+    """Base branch names of the open PRs whose head is branch, one per line.
+    "" is "no open PR"; None is "the lookup could not be made at all" (no gh,
+    no such remote, gh failed). Different answers: flattening one into the
+    other is how a stacked PR gets silently rebased onto main. Policy on
+    0/1/many stays with the caller."""
+    if not shutil.which("gh"):
+        return None
+    rc, url = _git("-C", root, "remote", "get-url", remote)
+    if rc:
+        return None
+    try:
+        p = subprocess.run(["gh", "pr", "list", "-R", url.rstrip("\n"), "--head", branch, "--state", "open",
+                            "--json", "baseRefName", "--jq", ".[].baseRefName"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode:
+        return None
+    return p.stdout.decode("utf-8", "replace").rstrip("\n")
+
+
+def default_branch(root, remote="origin"):
+    """The remote's default branch, short name, or None when this clone has
+    never recorded one. Read-only: it never runs `git remote set-head`."""
+    rc, ref = _git("-C", root, "symbolic-ref", "-q", "--short", f"refs/remotes/{remote}/HEAD")
+    if rc:
+        return None
+    ref = ref.rstrip("\n")
+    return ref[len(remote) + 1:] if ref.startswith(remote + "/") else ref
+
+
+def branch_brief(root, br):
+    """(status, text): the facts a session starting on an existing branch
+    keeps getting wrong, one per line, ending in exactly one recommended
+    command. Read-only: it never fetches, commits or pushes.
+
+    Lines: worktrees, base, ahead, behind, conflicts, unsigned, merges,
+    recommend. A fact that cannot be taken is `unknown`, never a guess:
+    without a fetch a base ref this machine has never seen is not known, and
+    "0 behind" would lie in the direction that loses work. `unsigned` is the
+    presence of a `gpgsig` header (what no-unsigned-push tests), not `%G?`,
+    which calls every signed commit unverified on a machine with no
+    allowed-signers file. The recommendation ladder is ordered by what is
+    unrecoverable: merge commits outrank everything (a rebase drops what
+    lives only in a hand-resolved merge's tree), then conflicts, then
+    signing; a branch merely behind is left to the queue."""
+    def g(*a):
+        return _git("-C", root, *a)
+
+    if g("rev-parse", "--verify", "-q", f"refs/heads/{br}")[0]:
+        return 1, f"error: no branch {br} in {root}\n"
+    out = []
+    wts, cur = "", ""
+    for ln in g("worktree", "list", "--porcelain")[1].split("\n"):
+        if ln.startswith("worktree "):
+            cur = ln[9:]
+        elif ln == f"branch refs/heads/{br}":
+            wts += cur + " "
+    out.append(f"worktrees: {wts or 'none'}")
+
+    bases = pr_base_refs(root, br)
+    nb = "unknown" if bases is None else str(len([x for x in bases.split("\n") if x]))
+    base = ""
+    if nb == "1":
+        base = bases
+        out.append(f"base: {base} (open PR)")
+    elif nb == "0":
+        base = default_branch(root) or ""
+        out.append(f"base: {base or 'unknown'} (default branch, no open PR)")
+    elif nb == "unknown":
+        base = default_branch(root) or ""
+        out.append(f"base: {base or 'unknown'} (assumed: the open-PR lookup failed, so a stacked base would not show)")
+    else:
+        out.append(f"base: ambiguous -- {nb} open PRs, bases: {bases.replace(chr(10), ' ')}")
+
+    if not base or g("rev-parse", "--verify", "-q", f"origin/{base}")[0]:
+        out += ["ahead: unknown", "behind: unknown", "conflicts: unknown", "unsigned: unknown", "merges: unknown",
+                "recommend: no base to compare against here -- `git fetch origin` and re-run, or name the base by hand"]
+        return 0, "\n".join(out) + "\n"
+
+    rc, lr = g("rev-list", "--left-right", "--count", f"origin/{base}...{br}")
+    m = re.match(r"([0-9]+)\s+([0-9]+)", lr) if rc == 0 else None
+    behind, ahead = m.groups() if m else ("unknown", "unknown")
+    out += [f"ahead: {ahead}", f"behind: {behind}"]
+
+    # merge-tree: 0 clean, 1 conflicted, anything else (a git too old for
+    # --write-tree included) is unknown, never "conflicted".
+    rc = g("merge-tree", "--write-tree", f"origin/{base}", br)[0]
+    conf = "no" if rc == 0 else "yes" if rc == 1 else "unknown"
+
+    rc, revs = g("rev-list", f"origin/{base}..{br}")
+    if rc == 0:
+        uns = sum(1 for s in revs.split("\n") if s and not re.search(r"^gpgsig", g("cat-file", "-p", s)[1], re.M))
+    else:
+        uns = "unknown"
+    rc, mg = g("rev-list", "--count", "--merges", f"origin/{base}..{br}")
+    mg = mg.strip() if rc == 0 else "unknown"
+    out += [f"conflicts: {conf}", f"unsigned: {uns}", f"merges: {mg}"]
+
+    rc, mb = g("merge-base", f"origin/{base}", br)
+    mb = mb.strip() if rc == 0 else f"origin/{base}"
+    if mg == "unknown":
+        rec = f"count the merge commits by hand before touching history -- git could not count them between {br} and origin/{base}"
+    elif int(mg) > 0:
+        rec = (f"do not rebase and do not resign -- {mg} merge commit(s) on the branch; `git merge origin/{base}`, "
+               "resolve, commit signed, push as a fast-forward")
+    elif conf == "yes":
+        rec = f"git merge origin/{base}   # conflicts against the base; resolve, commit, and never linearize the branch afterwards"
+    elif conf == "unknown":
+        rec = f"check the merge by hand before touching history -- git merge-tree could not answer whether {br} conflicts with origin/{base}"
+    elif uns == "unknown":
+        rec = f"check the signatures by hand before pushing -- git could not list the commits between origin/{base} and {br}"
+    elif uns > 0 and g("config", "user.signingkey")[0] == 0:
+        rec = (f"git rebase -S --force-rebase {mb}   # {uns} unsigned commit(s); if {br} is already on the remote, "
+               f"resign-branch.sh {br} instead")
+    elif uns > 0:
+        rec = (f"cannot sign on this machine (no user.signingkey) -- {uns} unsigned commit(s) will block the PR; "
+               f"hand over saying resign-branch.sh {br} has to run where the key is")
+    else:
+        rec = (f"nothing on the base -- signed, no conflict; a branch merely behind origin/{base} is left as is, "
+               "the queue updates it (fixup contract, pickup skill section 6)")
+    out.append(f"recommend: {rec}")
+    return 0, "\n".join(out) + "\n"
+
+
+# The command line, for the shell tools that need an answer from here:
+# `state.py <fn> [args]`. To expose another function, add it
+# to CLI. A str result is printed, exit 0; None is "no answer" (exit 1); a
+# bool is a predicate, no output, exit 0 for True and 1 for False; a tuple is
+# (exit status, text). A store that cannot be read exits 3 with the cause on
+# stderr. Argument counts are checked against the signature
 # before the call, so an error raised inside a function is never mistaken
 # for a usage error.
-CLI = {f.__name__: f for f in (state_repo, state_dir, state_is_repo, state_shard_path)}
+CLI = {f.__name__: f for f in (
+    state_repo, state_dir, state_is_repo, state_shard_path, items_dir, board_union, is_card_id,
+    work_claims_load, work_record, board_card, claude_cards, done_board,
+    ruling_until, ruling_ref_state, ruling_readiness, rulings_ready,
+    pr_base_refs, default_branch, branch_brief)}
+CLI["item_rows"] = item_rows_text
+
+
+def done_rows_text():
+    """done_rows as work-item printed them; StoreError when unreadable."""
+    rows, err = done_rows()
+    if err:
+        raise StoreError(err)
+    return "".join("\t".join(r) + "\n" for r in rows)
+
+
+CLI["done_rows"] = done_rows_text
+
+
+def _done_board_cli():
+    rows, err = done_rows()
+    if err:
+        raise StoreError(err)
+    return done_board(rows)
+
+
+CLI["done_board"] = _done_board_cli
+CLI["work_records"] = lambda *a: work_records(
+    [x for x in a if x != "--cards"], sys.stdin.read() if "--cards" in a else None)
 
 
 def main(argv):
@@ -632,7 +1162,14 @@ def main(argv):
     except TypeError:
         print("state.py %s: wrong number of arguments" % argv[0], file=sys.stderr)
         return 2
-    out = fn(*args)
+    try:
+        out = fn(*args)
+    except StoreError as e:
+        print(f"BROKEN STORE -- {e}", file=sys.stderr)
+        return 3
+    if isinstance(out, tuple):  # (exit status, text)
+        sys.stdout.write(out[1])
+        return out[0]
     if out is None or out is False:
         return 1
     if out is not True:

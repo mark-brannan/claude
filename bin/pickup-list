@@ -43,16 +43,26 @@ usage() { sed -n '/^#   pickup-list/,/^#$/p' "$0" | sed '$d' | sed 's/^#   \{0,1
 self=$0
 case $self in */*) ;; *) self=$(command -v "$self" 2>/dev/null || printf '%s' "$self") ;; esac
 self_dir=$(cd "$(dirname "$self")" 2>/dev/null && pwd)
-lib=""
-for c in "$self_dir/../hooks/lib-state.sh" "$HOME/.claude/hooks/lib-state.sh"; do
-  [ -f "$c" ] && { lib=$c; break; }
+state_py=""
+for c in "$self_dir/../lib/state.py" "$HOME/.claude/lib/state.py"; do
+  [ -f "$c" ] && { state_py=$c; break; }
 done
-[ -n "$lib" ] || { printf 'pickup-list: lib-state.sh not found\n' >&2; exit 1; }
-# shellcheck disable=SC1090
-. "$lib"
-HOOK_DIR=$(dirname "$lib")
+[ -n "$state_py" ] || { printf 'pickup-list: lib/state.py not found\n' >&2; exit 1; }
+st() { python3 "$state_py" "$@"; }
+HOOK_DIR=$(dirname "$state_py")/../hooks; export HOOK_DIR
 
-PICKUP="$(state_dir)/pickup"
+# prime_rows -- list the store once into $ITEM_ROWS_FILE for every later
+# state.py call; when it cannot be read, $store_err is the cause and every
+# call lists (and fails) again.
+prime_rows() {
+  rows_file=$(mktemp "${TMPDIR:-/tmp}/item-rows.XXXXXX") || { store_err="mktemp failed"; return 0; }
+  trap 'rm -f "$rows_file"' EXIT
+  if e=$(st item_rows 2>&1 >"$rows_file"); then
+    store_err=""; ITEM_ROWS_FILE=$rows_file; export ITEM_ROWS_FILE
+  else store_err=${e#BROKEN STORE -- }; store_err=${store_err:-state.py item_rows failed}; fi
+}
+
+PICKUP="$(st state_dir)/pickup"
 now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 now_s=$(date -u +%s)
 
@@ -77,11 +87,10 @@ set_field() {
 # card_text <id|link> -- the folded card of the agent's ready or claimed item
 # whose id or link it is, or fail: only agent items are pickup candidates.
 card_text() {
-  claude_cards | cut -f2- | while IFS= read -r c; do
-    r=$(work_record "$c")
-    [ "$(printf '%s' "$r" | cut -d "$(printf '\037')" -f8)" = "$1" ] \
-      || [ "$(printf '%s' "$r" | cut -d "$(printf '\037')" -f9)" = "$1" ] && { printf '%s\n' "$c"; break; }
-  done | grep .
+  cards=$(st claude_cards)
+  n=$(printf '%s\n' "$cards" | WORK_CLAIMS="" st work_records --cards \
+        | awk -F "$(printf '\037')" -v h="$1" '$8 == h || $9 == h { print NR; exit }')
+  [ -n "$n" ] && printf '%s\n' "$cards" | sed -n "${n}p" | cut -f2- | grep .
 }
 
 # --- writes ------------------------------------------------------------------
@@ -90,31 +99,31 @@ card_text() {
 # is never `done` here: work-item log <id> status=done does that.
 cmd=${1:-}
 handle=${2:-}
-card=0
-is_card_id "$handle" && card=1
+card=0; is_id=0
+case "$handle" in ?*) st is_card_id "$handle" && { card=1; is_id=1; } ;; esac
 case "$handle" in http*|log/*|../*) card=1 ;; esac
 if [ "$card" = 1 ]; then
   case "$cmd" in take|open|done|show)
-    # shellcheck disable=SC2034 # read by work_record; a lookup needs no claims
-    WORK_CLAIMS=""
-    # Primed here, outside $(...), so a broken store is named, never "no item".
-    item_rows >/dev/null
-    [ -z "${ITEM_ROWS_ERR:-}" ] || { printf 'pickup-list %s: BROKEN STORE -- %s\n' "$cmd" "$ITEM_ROWS_ERR" >&2; exit 1; }
-    if [ "$cmd" = show ] && is_card_id "$handle"; then
+    # A lookup needs no claims.
+    WORK_CLAIMS=""; export WORK_CLAIMS
+    # Primed first, so a broken store is named, never "no item".
+    prime_rows
+    [ -z "$store_err" ] || { printf 'pickup-list %s: BROKEN STORE -- %s\n' "$cmd" "$store_err" >&2; exit 1; }
+    if [ "$cmd" = show ] && [ "$is_id" = 1 ]; then
       # any section: a ruling or click-work card is shown, never taken
-      c=$(board_card "$handle") || { printf 'pickup-list: no item %s in the store\n' "$handle" >&2; exit 1; }
+      c=$(st board_card "$handle") || { printf 'pickup-list: no item %s in the store\n' "$handle" >&2; exit 1; }
       c=$(printf '%s\n' "$c" | cut -f3-)
     else
       c=$(card_text "$handle") || { printf 'pickup-list: no agent item with id or link %s\n' "$handle" >&2; exit 1; }
     fi
-    link=$(work_record "$c" | cut -d "$(printf '\037')" -f8)
+    link=$(st work_record "$c" | cut -d "$(printf '\037')" -f8)
     # An item is claimed in its own log, not by link.
-    if is_card_id "$handle" && [ -f "$(items_dir)/$handle.md" ] && [ "$cmd" != show ]; then
+    if [ "$is_id" = 1 ] && [ -f "$(st items_dir)/$handle.md" ] && [ "$cmd" != show ]; then
       sid=${3:-${CLAUDE_CODE_SESSION_ID:-}}
       [ -n "$sid" ] || { printf 'pickup-list %s: no session id (pass one, or run inside a session)\n' "$cmd" >&2; exit 1; }
       case "$cmd" in take) verb=claim; st=taken ;; open) verb=release; st=open ;;
         *) printf 'pickup-list done: an item is done by work-item log %s status=done\n' "$handle" >&2; exit 1 ;; esac
-      WORK_ITEM_DIR=$(items_dir) CLAUDE_CODE_SESSION_ID=$sid python3 "$self_dir/work-item" "$verb" "$handle" || exit 1
+      WORK_ITEM_DIR=$(st items_dir) CLAUDE_CODE_SESSION_ID=$sid python3 "$self_dir/work-item" "$verb" "$handle" || exit 1
       printf '%s %s\n' "$st" "$handle"; exit 0
     fi
     case "$cmd" in
@@ -141,14 +150,14 @@ case "$cmd" in
     # open item naming the same PR or link would hand it to a second session
     # (card 179093046079e60170). Same link, open, and not this file -- nor
     # the taker's own item (id ends in its sid8), which is its live hand-off.
-    # shellcheck disable=SC2034 # read by work_records; pickup items carry no claims
-    WORK_CLAIMS=""
+    # Pickup items carry no claims.
+    WORK_CLAIMS=""; export WORK_CLAIMS
     sep=$(printf '\037')
-    link=$(work_record "$f" | cut -d "$sep" -f8)
+    link=$(st work_record "$f" | cut -d "$sep" -f8)
     [ -n "$link" ] || exit 0
     own=$(printf '%.8s' "${CLAUDE_CODE_SESSION_ID:-}")
     set -- "$PICKUP"/*.md
-    work_records "$@" | awk -F "$sep" -v l="$link" -v me="$(basename "$f" .md)" -v own="$own" \
+    st work_records "$@" | awk -F "$sep" -v l="$link" -v me="$(basename "$f" .md)" -v own="$own" \
       '$8 == l && $3 == "open" && $9 != me && (own == "" || substr($9, length($9) - 8) != "-" own) { print $9 }' \
       | while IFS= read -r o; do
           set_field "$PICKUP/$o.md" status taken || { printf 'pickup-list take: write failed for %s\n' "$o" >&2; exit 1; }
@@ -204,30 +213,29 @@ hard=$(cat "$hard_cache" 2>/dev/null) || hard=""
 # A store that cannot be read (work-item or python3 failing) is named here,
 # in the output a hook captures, and exits 1 below: an empty list from a
 # broken store is not "Pickup: none".
-store_rc=0; item_rows >/dev/null
-[ -z "${ITEM_ROWS_ERR:-}" ] || { printf 'Pickup: BROKEN STORE -- %s; this is not an empty list\n' "$ITEM_ROWS_ERR"; store_rc=1; }
+store_rc=0; prime_rows
+[ -z "$store_err" ] || { printf 'Pickup: BROKEN STORE -- %s; this is not an empty list\n' "$store_err"; store_rc=1; }
 [ -n "$hard" ] && printf 'Hard -- a fixer gave up on these; take one before any item\n\n%s\n\n' "$hard"
 
 # The agora docket is the human-ruling items (board_union's `## Needs ruling`);
 # one count, one drill path.
 docket() {
-  n=$(board_union 2>/dev/null | awk '/^## / { f = ($0 ~ /^## Needs ruling[[:space:]]*$/); next }
+  n=$(st board_union 2>/dev/null | awk '/^## / { f = ($0 ~ /^## Needs ruling[[:space:]]*$/); next }
            f && /^- \[ \]/ { n++ }
            END { print n + 0 }')
   [ "${n:-0}" -gt 0 ] || return 0
   printf '\nDocket: %s awaiting an agora -- human-ruling items\n' "$n"
 }
 
-# One record per unit of work, from work_record (lib-state.sh): pickup items
+# One record per unit of work, from work_records (lib/state.py): pickup items
 # and the agent's items alike, so both render in one line shape.
 sep=$(printf '\037')
-work_claims_load
 set -- "$PICKUP"/*.md; [ -f "$1" ] || set --
 if [ -n "$find_word" ]; then
   for f; do shift; grep -qiF -- "$find_word" "$f" 2>/dev/null && set -- "$@" "$f"; done
 fi
-recs=$(claude_cards | { if [ -n "$find_word" ]; then grep -iF -- "$find_word"; else cat; fi; } \
-  | work_records --cards "$@" | awk -F "$sep" -v closed="$closed" 'closed || $3 == "open"')
+recs=$(st claude_cards | { if [ -n "$find_word" ]; then grep -iF -- "$find_word"; else cat; fi; } \
+  | st work_records --cards "$@" | awk -F "$sep" -v closed="$closed" 'closed || $3 == "open"')
 [ -n "$recs" ] || { printf 'Pickup: none\n'; docket; exit "$store_rc"; }
 
 limit=5; [ "$all" = 1 ] && limit=100000

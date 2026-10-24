@@ -1415,14 +1415,16 @@ unset WORK_ITEM_DIR GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMM
 # trust -- done wants the label Mergify computes or a signed head that moved,
 # blocked wants the fixup-hard label the contract's stop rule promises.
 prroot="$S/prroot"; prrepo="$S/prrepo"; prorigin="$S/remote/o/alpha.git"
-mkdir -p "$prroot/bin" "$prroot/hooks" "$prroot/skills/pickup" "$S/remote/o"
+mkdir -p "$prroot/bin" "$prroot/hooks" "$prroot/lib" "$prroot/skills/pickup" "$S/remote/o"
 export GRIND_ROOT="$prroot"
 
 # The real contract, read from the skill exactly as grind reads it in anger.
 cp "$(cd "$(dirname "$GRIND")/.." && pwd)/skills/pickup/SKILL.md" \
    "$prroot/skills/pickup/SKILL.md"
-cat > "$prroot/hooks/lib-state.sh" <<'LS'
-branch_brief() { printf 'base: main (open PR)\nconflicts: yes\nrecommend: git merge origin/main   # fixture\n'; }
+cat > "$prroot/lib/state.py" <<'LS'
+import sys
+if sys.argv[1:2] == ["branch_brief"]:
+    print("base: main (open PR)\nconflicts: yes\nrecommend: git merge origin/main   # fixture")
 LS
 cat > "$prroot/hooks/claim-stamp.py" <<STAMP
 import sys
