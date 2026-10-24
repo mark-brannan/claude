@@ -18,9 +18,12 @@ sub-agent on the reviewer's model. The metrics row records this line.
 Then run `~/.claude/bin/pr-blockers <PR>`. Its lines are findings, in its
 order: open conversations before anything else.
 
-Read the PR and comment on it. Every comment is signed as an agent's, the
-way the code rules say, tagged `[blocker]`, `[should]` or `[nit]`, with
-the failure scenario and the wanted fix.
+Read the repo's own instructions (CLAUDE.md, .claude/CLAUDE.md and
+AGENTS.md, where they exist) and hold the diff to them, including what
+they ask a reviewer to look hard at: a break is a finding even when the
+code works. Read the PR and comment on it. Every comment is signed as
+an agent's, the way the code rules say, tagged `[blocker]`, `[should]`
+or `[nit]`, with the failure scenario and the wanted fix.
 
 Then summarize. Open with one line, before any heading: what the PR does
 in your words and whether it is ready to merge, which it is only when you

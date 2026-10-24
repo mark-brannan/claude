@@ -24,3 +24,8 @@ Two reflexes:
 - A hook problem (silent, stale or misfiring): run the hook by hand on a real
   transcript, then read the live clone's reflog. `~/.claude/bin/self-check`
   runs the hook and sets the live clone against `origin/main` in one table.
+
+Reviewing a PR here: this repo is public and runs unattended inside every
+session, so look hard at anything that executes automatically (hooks), widens
+permissions, fetches and runs remote content, or puts a credential in the
+diff.
