@@ -124,7 +124,7 @@ flags, callers, files, defaults changed. Never a score.
 | robustness | nothing found                                                    |                                     |                    | grep  |            |        |
 | fail fast  | missing `pr:` defaulted, no log (hook.py:31)                     | yes: comment, "never block Stop"    | 1 field defaulted  | grep  | reversible | before |
 | prem. opt. | mu: no mechanism for speed or size                               |                                     |                    |       |            |        |
-| prem. pess.| mu: no path named hot                                            |                                     |                    |       |            |        |
+| prem. pess.| nothing found                                                    |                                     |                    | read  |            |        |
 | Chesterton | nothing found                                                    |                                     |                    | git   |            |        |
 
 Tensions: fail fast / robustness kept at hook.py:31; DRY / WET kept at hook.py:12-49.
