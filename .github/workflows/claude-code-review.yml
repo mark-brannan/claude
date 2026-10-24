@@ -23,15 +23,18 @@ jobs:
       # Overriding replaces the default list, so restate it with claude[bot] and
       # the mark-brannan-agent App local sessions post as.
       allowed-bots: mergify[bot],mark-brannan-release-please[bot],claude[bot],mark-brannan-agent[bot]
+      # Trial (claude#296): the CI review runs the critical-review skill from
+      # the seeded $HOME, so the bot and the drivers share one review.
       prompt: |
-        Review this pull request to a public repo holding a Claude Code layer:
-        hooks, skills and settings that run unattended inside an agent session.
-        Attack surface worth extra scrutiny: anything that executes
-        automatically (hooks), anything that widens permissions, anything that
-        fetches and executes remote content, and any credential, hostname or
-        personal identifier in the diff. Otherwise review for correctness bugs
-        and clear simplification opportunities. Skip pure style nits. Post
-        inline comments on specific lines, then a short summary; say so briefly
-        if you find nothing.
-      allowed-tools: mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)
+        Run the critical-review skill on this pull request: invoke the Skill
+        tool with skill "critical-review" and the PR's URL as args, and follow
+        it. You are headless in CI, so three of its steps change: you cannot
+        spawn a sub-agent, so when the models step names a reviewer family
+        other than yours, say so in the summary and review anyway; you cannot
+        reach the state repo, so a finding the skill would card becomes a PR
+        thread; and the summary goes in one top-level `gh pr comment`.
+        Findings go as inline comments via
+        mcp__github_inline_comment__create_inline_comment. Do not push
+        commits or edit files.
+      allowed-tools: Skill,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(python3 ~/.claude/lib/critical_review.py:*),Bash(~/.claude/bin/pr-blockers:*)
       timeout-minutes: 15
