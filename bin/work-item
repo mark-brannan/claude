@@ -3,7 +3,7 @@
 # the id its filename (dotfiles#510).
 #
 #   work-item create --id <id> [--owner <o>] [--repo <r>] [--parent <id>]
-#                    [--model <m>] [--effort <e>] [--points <n>]
+#                    [--model <m>] [--effort <e>] [--points <n>] [--home <o/r#n>]
 #                    [--brief <text>|-] <title>    write the item, print its id
 #   work-item brief <id> [--points <n>] <text>|-   replace the brief, log `briefed`
 #   work-item log <id> <word>...                   append one log line
@@ -12,6 +12,7 @@
 #   work-item show <id>                            print the file
 #   work-item fold <id>                            print its folded state
 #   work-item list [--all]                         every live item as a card row
+#   work-item by-home <o/r#n>                      the open items homed there: id status holder
 #   work-item dir                                  print the items directory
 #
 # The format, ruled in pen (one-entry-point curia, 2026-10-01/02):
@@ -45,6 +46,7 @@
 # Python 3 stdlib only.
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -329,6 +331,55 @@ def card_line(f, brief):
     return f"{line} id: {i}"
 
 
+HOME = re.compile(r"([\w.-]+)/([\w.-]+)#(\d+)")
+
+
+def open_homed(home):
+    """The folded items, not done or closed, whose home is <home>."""
+    d = items_dir()
+    cutoff = iso(time.time() - int(os.environ.get("WORK_ITEM_STALE_SECS") or 3600))
+    for p in sorted(d.glob("*.md")) if d.is_dir() else []:
+        if not is_item_id(p.name[:-3]):
+            continue
+        try:
+            f = dict(fold(p, cutoff))
+        except OSError:
+            continue
+        if f["home"] == home and f["status"] not in ("done", "closed"):
+            yield f
+
+
+def by_home(args):
+    """id, status and live holder of every open item homed at <o/r#n>: the
+    reverse lookup a dispatcher reads beside the claim stamps."""
+    if len(args) != 1 or not HOME.fullmatch(args[0]):
+        die("by-home takes one owner/repo#n")
+    for f in open_homed(args[0]):
+        live = f["holder"] if f["holder_stale"] == "no" else ""
+        print("\t".join((f["id"], f["status"], live)))
+
+
+def stamp_holder(home, sid):
+    """The sid8 of a live claim stamp on <home> held by another session, or
+    "". An unreadable stamp store is not a holder: claims stay advisory."""
+    m = HOME.fullmatch(home or "")
+    if not m:
+        return ""
+    cs = os.environ.get("WORK_ITEM_CLAIM_STAMP") or str(
+        Path(os.path.realpath(__file__)).parent.parent / "hooks" / "claim-stamp.py")
+    url = f"https://github.com/{m[1]}/{m[2]}/issues/{m[3]}"
+    try:
+        out = subprocess.run([sys.executable, cs, "read", url], capture_output=True,
+                             text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    for ln in out.splitlines():
+        c = ln.split("\t")
+        if c[0] == "live" and len(c) > 1 and c[1] != sid:
+            return c[1]
+    return ""
+
+
 def list_items(args):
     """One TSV row per item, oldest id first, done and closed left out unless
     --all: id owner status holder updated repo line. holder is the live
@@ -401,7 +452,7 @@ def replayed(path, body, now):
 
 def create(args):
     opt = {"id": "", "owner": "agent", "repo": "-", "parent": "-", "model": "-",
-           "effort": "-", "points": ""}
+           "effort": "-", "points": "", "home": ""}
     brief, has_brief = "", False
     while args:
         a = args[0]
@@ -430,6 +481,12 @@ def create(args):
         die(f"parent is an item id, got [{opt['parent']}]")
     if opt["points"]:
         points_ok(opt["points"])
+    if opt["home"]:
+        if not HOME.fullmatch(opt["home"]):
+            die(f"home is owner/repo#n, got [{opt['home']}]")
+        for f in open_homed(opt["home"]):
+            refuse(f"{opt['home']} is already the home of open item {f['id']} "
+                   f"({f['title']}); claim that one")
     sid = me()
     if not LINK.search(brief):
         refuse("the brief carries no link: an http link or owner/repo#n, "
@@ -449,7 +506,8 @@ def create(args):
     now = iso(time.time())
     body = (f"# {title}\n\n" + brief_section(brief, opt["points"]) + "## Log\n"
             + f"{now} {sid} status=open owner={opt['owner']} repo={opt['repo']} "
-              f"parent={opt['parent']} model={opt['model']} effort={opt['effort']}\n")
+              f"parent={opt['parent']} model={opt['model']} effort={opt['effort']}"
+              + (f" home={opt['home']}" if opt["home"] else "") + "\n")
     if has_brief or opt["points"]:
         body += f"{now} {sid} briefed\n"
     try:
@@ -469,12 +527,14 @@ def main(argv):
         return create(args)
     if cmd == "list":
         return list_items(args)
+    if cmd == "by-home":
+        return by_home(args)
     if cmd == "dir":
         print(items_dir())
         return 0
     if cmd not in ("brief", "log", "claim", "release", "show", "fold"):
-        sys.stderr.write("".join(l[4:] + "\n" for l in
-                                 Path(__file__).read_text().splitlines()[4:15]))
+        head = Path(__file__).read_text().splitlines()[4:]
+        sys.stderr.write("".join(l[4:] + "\n" for l in head[:head.index("#")]))
         return 2
     it = Item(args[0] if args else "").need()
     args = args[1:]
@@ -525,6 +585,12 @@ def main(argv):
         it.append(sid, line)
     elif cmd == "claim":
         sid = me()
+        # the stamp read is a network call: it stays outside the write lock
+        # (advisory, so the small race costs nothing the lock was buying)
+        held = stamp_holder(it.facts()["home"], sid)
+        if held:
+            refuse(f"{it.id}: its home {it.facts()['home']} carries a live claim stamp "
+                   f"from session {held}")
         it.lock()
         it.move(sid, "claimed")
         it.append(sid, "status=claimed")

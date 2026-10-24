@@ -699,7 +699,7 @@ def launch(run, work, pool):
             work_item("log", f["item"], "prt", "estimate", f"usd={f['est_usd']:.2f}",
                       f"score={f['score']}", f"run={run}")
         except Exception as e:
-            # A store error must not leave the claim held for 2h: release it
+            # A store error must not leave the claim held for an hour: release it
             # and hand this PR off; the others go on.
             claim_stamp("card-release", f["url"], f["sid"])
             f["sid"] = None

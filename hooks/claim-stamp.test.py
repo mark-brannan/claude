@@ -192,7 +192,7 @@ class ClaimStampTest(unittest.TestCase):
             r"\*\*Claimed:\*\* `aaaaaaaa` · `claude/claimed` · `" + machine +
             r"` · [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\n\n"
             r"A session holds this work\. The Stop hook refreshes the timestamp; `/wrapup`\n"
-            r"and the archive verdict delete this comment\. Older than 2h and\n"
+            r"and the archive verdict delete this comment\. Older than 1h and\n"
             r"the claim is stale -- the session that wrote it died without releasing it\.\Z"))
         self.assertNotIn(host, b, "the machine is a hash, not a name")
         self.assertEqual(out, "", "an uncontested claim says nothing")

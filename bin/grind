@@ -1394,7 +1394,7 @@ stop_rule_for_worker() {
 
 # release_worker_claim: the worker is gone whatever it reported, and its
 # session claimed the branch at start. A stamp it never released says a dead
-# session holds the PR for two hours. Uses the loop's worker_sid and wt_path.
+# session holds the PR for an hour. Uses the loop's worker_sid and wt_path.
 # Returns 1 only when a session ran and there is no claim-stamp.py to
 # release it with.
 release_worker_claim() {

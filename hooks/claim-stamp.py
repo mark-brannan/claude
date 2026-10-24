@@ -54,8 +54,8 @@ nothing to refresh: it reads a per-session record under TMPDIR and returns
 without a single network call when this session has not claimed anything.
 When it has, the refresh is debounced to once per CLAIM_REFRESH_SECS.
 
-PROPOSED, NOT RULED (dotfiles#287): a stamp older than CLAIM_STALE_SECS
-(default 2h) is stale -- its session died without releasing it. `claim`
+A stamp older than CLAIM_STALE_SECS (default 1h, the work-item spec's
+claim lapse) is stale -- its session died without releasing it. `claim`
 deletes stale stamps it finds, which is the only garbage collection there
 is; nothing else ever removes a comment a dead session left. Age is taken
 from the epoch in the stamp's own marker, never from the comment's
@@ -107,7 +107,7 @@ def _int_env(name, default):
         return default
 
 
-STALE_SECS = _int_env("CLAIM_STALE_SECS", 7200)
+STALE_SECS = _int_env("CLAIM_STALE_SECS", 3600)
 REFRESH_SECS = _int_env("CLAIM_REFRESH_SECS", 300)
 LABEL = os.environ.get("CLAIM_LABEL") or "claimed"
 

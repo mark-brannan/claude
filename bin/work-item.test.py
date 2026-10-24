@@ -43,7 +43,10 @@ class WorkItemTest(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         T = Path(cls.tmp.name)
         cls.dir = T / "items"
-        os.environ.update(WORK_ITEM_DIR=str(cls.dir), TMPDIR=str(T))
+        quiet = T / "quiet-stamp.py"  # offline by default: no stamp read reaches gh
+        quiet.write_text("#!/usr/bin/env python3\n")
+        os.environ.update(WORK_ITEM_DIR=str(cls.dir), TMPDIR=str(T),
+                          WORK_ITEM_CLAIM_STAMP=str(quiet))
         cls.id = ok(A, "create", "--id", "1690000000077c62eb", "--repo", "mark-brannan/dotfiles", "--model", "sonnet",
                     "--effort", "medium", "--points", "3",
                     "--brief", f"Measure growth per day. {LINK}", "Size the store")
@@ -295,6 +298,45 @@ class WorkItemTest(unittest.TestCase):
             c = chr(n)
             if not wi.one_line("a" + c + "b"):
                 self.assertTrue(re.fullmatch(wi.LINE_BREAK, c), f"[{c!r}] breaks a line")
+
+    def test_14_second_card_for_one_home_is_refused(self):
+        first = ok(A, "create", "--id", "1700000001077c62eb", "--home", "o/r#5", "--brief", LINK, "First card")
+        p = run(A, "create", "--id", "1700000002077c62eb", "--home", "o/r#5", "--brief", LINK, "Second card")
+        self.assertEqual(p.returncode, 1, "a second open card for one home is refused")
+        self.assertIn(first, p.stderr, "the refusal names the item")
+        self.assertEqual(ok(A, "by-home", "o/r#5").split("\t")[0], first)
+        ok(A, "log", first, "status=ready")
+        ok(A, "claim", first)
+        ok(A, "log", first, "status=done", "evidence=" + LINK)
+        ok(A, "create", "--id", "1700000003077c62eb", "--home", "o/r#5", "--brief", LINK, "After done")
+
+    def stamp_stub(self, out):
+        stub = Path(self.tmp.name) / "cs.py"
+        stub.write_text(f"#!/usr/bin/env python3\nprint({out!r}, end='')\n")
+        prior = os.environ["WORK_ITEM_CLAIM_STAMP"]
+        os.environ["WORK_ITEM_CLAIM_STAMP"] = str(stub)
+        self.addCleanup(os.environ.__setitem__, "WORK_ITEM_CLAIM_STAMP", prior)
+
+    def test_15_card_claim_reads_the_stamp_on_its_home(self):
+        # one session through the issue (a stamp), one through the card
+        it = ok(A, "create", "--id", "1700000004077c62eb", "--home", "o/r#6", "--brief", LINK, "Stamped")
+        self.stamp_stub("live\t9a1b2c3d\thost-1\t3m\thttps://github.com/o/r/issues/6\n")
+        p = run(A, "claim", it)
+        self.assertEqual(p.returncode, 1, "another session's live stamp refuses the claim")
+        self.assertIn("9a1b2c3d", p.stderr)
+        self.assertEqual(run(B, "claim", it).returncode, 0, "the stamp's own session may claim")
+
+    def test_16_dead_worker_stamp_does_not_block(self):
+        it = ok(A, "create", "--id", "1700000005077c62eb", "--home", "o/r#7", "--brief", LINK, "Dead worker")
+        self.stamp_stub("stale\t9a1b2c3d\thost-1\t900m\thttps://github.com/o/r/issues/7\n")
+        ok(A, "claim", it)
+        self.assertEqual(fact(it, "holder"), "077c62eb", "a stale stamp is let go")
+
+    def test_17_orchestrate_sees_a_card_holder(self):
+        it = ok(A, "create", "--id", "1700000006077c62eb", "--home", "o/r#8", "--brief", LINK, "Held card")
+        self.stamp_stub("")
+        ok(A, "claim", it)
+        self.assertEqual(ok(B, "by-home", "o/r#8").split("\t"), [it, "claimed", "077c62eb"])
 
     def test_11_lookup(self):
         self.assertEqual(run(A, "show", "1790000000ffffffff").returncode, 1, "an unknown id is not found")
