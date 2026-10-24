@@ -273,7 +273,10 @@ the 2026-10-22 rulings:
   and the child's card carries the depth (2026-10-22).
 - **Arete.** A separate action from the critical review, which is why it
   comes last: the arete check runs once, on the stack as a whole, at the
-  end before the walk. Its findings go to the user with the walk, the
+  end before the walk. The driver runs it as the skill's "Run as" says,
+  with "read every file in the read-set whole" in the prompt, and keeps
+  the brief where the skill's "For callers" says, the parent's id as the
+  slug, linked from the walk. Its findings go to the user with the walk, the
   user's to decide on and act on. It never blocks the autonomous lane's
   work; a finding the driver judges must hold something is escalated to
   the agora, parked on a card, and nothing else holds (2026-10-22). A −

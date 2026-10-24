@@ -20,8 +20,9 @@ itself to `~/claude_prompts_scratch/state/global/arete/<slug>/<time>.md`
 and commits it there by path, where `<slug>` names the target
 (`claude-264`, `curia-loop`, `skills-arete-check`, a stack's parent id)
 and `<time>` is UTC `YYYY-MM-DDTHHMMZ`, so a same-day rerun keeps the
-earlier brief. That place is a suggestion, never a public repo. To have
-persisting findings marked, name the earlier brief in the prompt:
+earlier brief. That place is a suggestion, never a public repo. Run
+inline, the session is the caller once the brief is returned. To have
+persisting findings marked, name one earlier brief in the prompt:
 `/arete-check <target> earlier: <path>`.
 
 *Arete* is excellence as the fulfilment of function, aimed at a life
@@ -136,12 +137,16 @@ which.
    what you did not look at. The brief takes the format in areas.md.
 
 3. **Read the earlier brief the caller names.** If the prompt names one
-   or more earlier briefs (`earlier: <path>`), read the latest and mark
-   each finding that persists from it, in the whole brief only. With
-   none named, skip this step and say so in one line of the brief:
-   `Earlier brief: none named.` Never search for one.
+   (`earlier: <path>`), read it and mark each finding that persists from
+   it, in the whole brief only; which brief is the right one to compare
+   against is the caller's call. With none named, skip this step and say
+   so in one line of the brief: `Earlier brief: none named.` Never search
+   for one.
 
-4. **Lead with the short form.** The lead finding, if there is one; then
+4. **Lead with the header and the short form.** The header first:
+   target, kind, revision (the PR head, the file's last commit, or the
+   state repo's `HEAD`), date, model, "a recommendation; the caller acts
+   on it". Then the lead finding, if there is one; then
    the delta, the chain of aims on one line, the indication and its
    indicators, the if-not-done line; then the recommendation; then the
    excellent and devolves lines; then the + findings and the − findings, one line each with
@@ -149,10 +154,7 @@ which.
    nothing found either side and the `mu` areas as one line naming them;
    then the not-looked-at line. The whole brief follows it, in step 5.
 
-5. **Return the brief, whole.** Below the short form, print the header:
-   target, kind, revision (the PR head, the file's last commit, or the
-   state repo's `HEAD`), date, model, "a recommendation; the caller acts
-   on it". Then the full brief from step 2, with the persisting findings
-   marked or step 3's none-named line. This is the skill's
-   output, to the caller; no file is written. Keeping it is the caller's,
-   as "For callers" says.
+5. **Return the brief, whole.** Below the short form, the full brief
+   from step 2, with the persisting findings marked or step 3's
+   none-named line. This is the skill's output, to the caller; no file
+   is written. Keeping it is the caller's, as "For callers" says.

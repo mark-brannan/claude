@@ -15,11 +15,16 @@ target in hand; this skill spawns nothing. Run inline, it works the
 same and spends the caller's context on the read-set.
 
 **For callers.** The check writes nothing; the brief it returns is its
-whole output. A caller that wants the brief kept across runs writes it
-itself as `settledness-<slug>-<date>.md`, the slug naming the target: for
-kind `curia`, in `state/global/curia/<id>/inputs/` in the state repo,
-committed there by path; otherwise the session scratchpad. That place is
-a suggestion, never a public repo.
+whole output. Keeping it is the caller's, as
+`settledness-<slug>-<time>.md`, the slug naming the target and `<time>`
+UTC `YYYY-MM-DDTHHMMZ`, so a second measurement the same day keeps the
+first. For kind `curia` the caller keeps it, in
+`state/global/curia/<id>/inputs/` in the state repo, committed there by
+path, since the curia's facets and its next sitting read `inputs/`.
+Otherwise a caller that wants it writes it to the session scratchpad,
+which lasts the session only. Either place is a suggestion, never a
+public repo. Run inline, the session is the caller once the brief is
+returned.
 
 The directory name is a description, not a name; the user names it later.
 
