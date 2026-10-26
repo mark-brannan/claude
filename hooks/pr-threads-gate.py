@@ -120,8 +120,11 @@ def first_json(text):
         return {}
 
 
-def seconds(raw, default=60.0):
-    """A timeout(1) duration (60, 1.5, 2m) in seconds."""
+def seconds(raw, default=20.0):
+    """A timeout(1) duration (60, 1.5, 2m) in seconds. The 20 s default is the
+    per-call bound on the gate's gh calls: settings.json wraps the gate in a 60 s
+    timeout whose fail-closed fallback only runs if the hook exits first, and a
+    fetch, a 2 s sleep and a recheck must fit inside it."""
     m = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*([smhd]?)\s*", raw or "")
     if not m:
         return default
