@@ -338,6 +338,24 @@ class TypingTest(FixtureTest):
         _, _, _, pasted, _, _, _ = self.typing("sess-typed-1")
         self.assertEqual(pasted, len("<pasted_content size=9>0123456789</pasted_content>"))
 
+    def test_a_prompt_opening_with_a_paste_block_is_typed_but_a_tag_is_not(self):
+        block = "<pasted_content size=9>0123456789</pasted_content>"
+        lines = [
+            transcript_line(block + " why does this fail", "2026-10-03T09:00:00Z", session="sess-paste-3"),
+            transcript_line("  " + block + "\n" + block + "\nand this", "2026-10-03T09:01:00Z", session="sess-paste-3"),
+            transcript_line(block + "<system-reminder>machine</system-reminder>", "2026-10-03T09:02:00Z",
+                            session="sess-paste-3"),
+            transcript_line("<system-reminder>machine</system-reminder>", "2026-10-03T09:03:00Z",
+                            session="sess-paste-3"),
+        ]
+        (self.fx.projects / "-fixture-cwd" / "sess-paste-3.jsonl").write_text("\n".join(lines) + "\n")
+        self.build("--quiet")
+        prompts, chars, words, pasted, _, _, _ = self.typing("sess-paste-3")
+        self.assertEqual(prompts, 2)
+        self.assertEqual(pasted, 3 * len(block))
+        self.assertEqual(chars, len(" why does this fail") + len("  \n\nand this"))
+        self.assertEqual(words, 4 + 2)
+
     def test_headless_machine_prompts_leave_zero_typed(self):
         self.build("--quiet")
         self.assertEqual(self.typing("sess-headless-2")[:4], (0, 0, 0, 0))
