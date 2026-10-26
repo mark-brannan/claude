@@ -30,13 +30,19 @@
 #                row per check: claude-review, claude-maxims, claude-arete) into
 #                metrics/headless-runs/, incrementally; they expire, so this is
 #                the copy that lasts. View ci_checks reads them, deduped.
+#                Also lists every non-archived repo's workflows that run Claude and
+#                record no cost (table unpriced_workflows; a warning at the end of
+#                the run): one contents listing per repo plus one fetch per
+#                workflow file whose blob sha is not in the cache
+#                (metrics/dashboard/workflow-verdicts.json): 162 calls cold for 49 repos, one
+#                per repo warm. Exit status is unchanged.
 #   --no-typing  skip the transcript scan (the one slow source on first run).
 #   --rescan-typing  rescan every transcript (after changing what counts as typed).
 #   --no-input   leave the input tables as they were.
 # Exit 0 on success, 2 on usage, 3 when the state repo cannot be found, 4 when
 # the database path is inside a git checkout and not gitignored (it is private).
 # Python 3 stdlib only.
-import argparse, glob, io, json, os, re, sqlite3, subprocess, sys, tempfile, time, zipfile
+import argparse, base64, glob, io, json, os, re, sqlite3, subprocess, sys, tempfile, time, zipfile
 
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
@@ -122,6 +128,7 @@ create table if not exists gh_repos(repo text primary key, topics text, archived
 create table if not exists gh_items(repo text, number int, kind text, created_at text, closed_at text,
   merged_at text, state text, draft int, head_ref text, author text, title text,
   primary key(repo, number, kind));
+create table if not exists unpriced_workflows(repo text, path text, url text, primary key(repo, path));
 create table if not exists session_pr(session_id text, repo text, number int, primary key(session_id, repo, number));
 create view if not exists pr_cost_guess as
   select p.repo, p.number, g.merged_at, sum(s.cost_usd / n.k) as cost_usd_guess, count(*) as sessions
@@ -520,6 +527,65 @@ def fetch_ci_reviews(cx, sd):
             if len(got) < 100 or not new:
                 break
 
+# A workflow runs Claude when it uses the action or calls the CLI headless; it is priced
+# when it records the run's cost: the shared cost action, a `headless-run` artifact upload,
+# or a call of the shared review workflow (which records its own).
+RUNS_CLAUDE = re.compile(r"uses:\s*[\"']?anthropics/claude-code-(?:base-)?action\b|\bclaude\s+(?:-p|--print)\b")
+PRICED = re.compile(r"mark-brannan/\.github/\.github/actions/headless-run-cost\b"
+                    r"|mark-brannan/\.github/\.github/workflows/claude-review\.yml\b"
+                    r"|^\s*(?:-\s*)?name:\s*[\"']?headless-run(?:-.*|[\"']?\s*)$", re.M)
+
+def classify_workflow(text):
+    """'none' (does not run Claude), 'priced' or 'unpriced', from a workflow's YAML text.
+    Comments are dropped first (a `#` at a line start or after whitespace); a `#` inside a
+    quoted string is cut too, which can only hide a match, never invent one."""
+    body = "\n".join(re.sub(r"(^|\s)#.*$", "", l) for l in text.splitlines())
+    shared = "mark-brannan/.github/.github/workflows/claude-review.yml" in body
+    if not RUNS_CLAUDE.search(body) and not shared:
+        return "none"
+    return "priced" if PRICED.search(body) else "unpriced"
+
+def workflow_coverage(cx, sd):
+    """Fill unpriced_workflows with the workflows that run Claude and record no cost, across
+    every non-archived repo. Per repo, one contents listing; a file's content is fetched only
+    when its blob sha is not in metrics/dashboard/workflow-verdicts.json (sha -> verdict; a
+    sha names its content, so a verdict never goes stale). A repo gh cannot list is skipped.
+    Returns (unpriced rows as (repo, path, url), gh calls made)."""
+    cache_path = os.path.join(sd, "metrics", "dashboard", "workflow-verdicts.json")
+    cache = load_json(cache_path)
+    cache = cache if isinstance(cache, dict) else {}
+    out, calls = [], 0
+    for (repo,) in cx.execute("select repo from gh_repos where archived = 0 order by repo").fetchall():
+        calls += 1
+        try:
+            files = gh(["api", f"repos/{repo}/contents/.github/workflows"])
+        except (OSError, RuntimeError, ValueError):
+            continue  # no workflows directory, or gh refused
+        for f in files if isinstance(files, list) else []:
+            if not isinstance(f, dict) or not str(f.get("name", "")).endswith((".yml", ".yaml")):
+                continue
+            sha = f.get("sha")
+            if sha not in cache:
+                calls += 1
+                try:
+                    blob = gh(["api", f"repos/{repo}/contents/{f['path']}"])
+                    text = base64.b64decode(blob["content"]).decode("utf-8", "replace")
+                except (OSError, RuntimeError, ValueError, LookupError):
+                    continue  # try again next run
+                cache[sha] = classify_workflow(text)
+            if cache[sha] == "unpriced":
+                out.append((repo, f["path"], f.get("html_url") or ""))
+    cx.execute("delete from unpriced_workflows")
+    cx.executemany("insert or replace into unpriced_workflows values (?,?,?)", out)
+    try:
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        with open(cache_path + ".part", "w", encoding="utf-8") as fh:
+            json.dump(cache, fh)
+        os.replace(cache_path + ".part", cache_path)
+    except OSError:
+        pass  # a cache is only a saving
+    return out, calls
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db")
@@ -557,6 +623,8 @@ def main():
         gh_n, calls, repos = load_github(cx)
         cx.commit()
         fetch_ci_reviews(cx, sd)  # before the streams load, so this run's rows are in headless_runs
+        unpriced, wf_calls = workflow_coverage(cx, sd)
+        cx.commit()
     report = {"sessions": load_sessions(cx, sd), **load_streams(cx, sd), "item_events": load_items(cx, sd),
               "session_pr": load_session_pr(cx, sd)}
     cx.commit()
@@ -574,6 +642,10 @@ def main():
         report["gh_items"] = f"{gh_n} from {repos} repos in {calls} calls"
     cx.execute("insert or replace into meta values ('built_at', ?)", (when.stamp(),))
     cx.commit()
+    if a.github:
+        report["workflows"] = f"{len(unpriced)} run Claude with no cost recorded ({wf_calls} calls)"
+        for repo, path, url in unpriced:  # stderr and not --quiet's to hide: a gap is news
+            print(f"metrics-db: workflow runs Claude, records no cost: {repo}  {path}  {url}", file=sys.stderr)
     if not a.quiet:
         print(f"{db}  ({time.time() - t0:.1f}s)")
         for k, v in report.items():

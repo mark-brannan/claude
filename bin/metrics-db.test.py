@@ -562,6 +562,72 @@ esac
         self.assertNotEqual(r.returncode, 0)
 
 
+class WorkflowCoverageTest(FixtureTest):
+    CASES = {
+        "action": ("      - uses: anthropics/claude-code-action@v1\n", "unpriced"),
+        "base-action": ("      - uses: anthropics/claude-code-base-action@v1\n", "unpriced"),
+        "cli": ("      - run: claude -p 'hi' --output-format json\n", "unpriced"),
+        "cli-print": ("      - run: |\n          claude --print 'hi'\n", "unpriced"),
+        "commented": ("      # - uses: anthropics/claude-code-action@v1\n      - run: echo hi # claude -p\n", "none"),
+        "review-caller": ("    uses: mark-brannan/.github/.github/workflows/claude-review.yml@main\n", "priced"),
+        "priced-by-action": ("      - uses: anthropics/claude-code-action@v1\n"
+                             "      - uses: mark-brannan/.github/.github/actions/headless-run-cost@main\n", "priced"),
+        "priced-by-upload": ("      - run: claude -p hi\n      - uses: actions/upload-artifact@v4\n"
+                             "        with:\n          name: headless-run\n", "priced"),
+        "priced-by-suffix": ("      - run: claude -p hi\n      - uses: actions/upload-artifact@v4\n"
+                             "        with:\n          name: headless-run-${{ matrix.n }}\n", "priced"),
+        "comment-only-price": ("      - uses: anthropics/claude-code-action@v1\n      # name: headless-run\n", "unpriced"),
+        "plain": ("      - run: make test\n", "none"),
+    }
+
+    def test_classifier(self):
+        for name, (yaml, want) in self.CASES.items():
+            self.assertEqual(mdb.classify_workflow("on: push\njobs:\n  j:\n    steps:\n" + yaml), want, name)
+
+    def test_unpriced_workflows_are_tabled_warned_and_cached_by_sha(self):
+        import base64
+        wf = self.fx.bin / "wf"
+        wf.mkdir()
+        files = {"a.yml": ("sha-a", self.CASES["action"][0]), "b.yml": ("sha-b", self.CASES["priced-by-upload"][0]),
+                 "c.yml": ("sha-c", "      - run: make\n"), "notes.md": ("sha-n", "claude -p")}
+        listing = [{"name": n, "path": f".github/workflows/{n}", "sha": sh,
+                    "html_url": f"https://github.com/acme/widgets/blob/main/.github/workflows/{n}"}
+                   for n, (sh, _) in files.items()]
+        (wf / "list.json").write_text(json.dumps(listing))
+        for n, (_, body) in files.items():
+            (wf / n).write_text(json.dumps({"content": base64.b64encode(body.encode()).decode()}))
+        gh = self.fx.bin / "gh"
+        gh.rename(self.fx.bin / "gh-real")
+        log = self.fx.bin / "calls.log"
+        gh.write_text(f"""#!/bin/sh
+case "$2" in
+  repos/acme/widgets/contents/.github/workflows) echo "$2" >> {log}; cat {wf}/list.json;;
+  repos/acme/widgets/contents/.github/workflows/*) echo "$2" >> {log}; cat {wf}/"$(basename "$2")";;
+  repos/*) echo '{{"artifacts": []}}';;
+  *) exec gh-real "$@";;
+esac
+""")
+        gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+        r = self.build("--github")
+        self.assertEqual(self.fx.q("select repo, path, url from unpriced_workflows"),
+                         [("acme/widgets", ".github/workflows/a.yml",
+                           "https://github.com/acme/widgets/blob/main/.github/workflows/a.yml")])
+        self.assertIn("records no cost: acme/widgets  .github/workflows/a.yml", r.stderr)
+        self.assertRegex(r.stdout, r"workflows +1 run Claude with no cost recorded \(4 calls\)")  # 1 listing + 3 yml
+        self.assertEqual(len(log.read_text().split()), 4)
+        # Warm: the shas are cached, so only the listing is called; the verdict is the same.
+        log.unlink()
+        self.build("--github")
+        self.assertEqual(log.read_text().split(), ["repos/acme/widgets/contents/.github/workflows"])
+        self.assertEqual(len(self.fx.q("select * from unpriced_workflows")), 1)
+        # A changed file has a new sha, so it is fetched again and reclassified.
+        listing[0]["sha"] = "sha-a2"
+        (wf / "list.json").write_text(json.dumps(listing))
+        (wf / "a.yml").write_text(json.dumps({"content": base64.b64encode(self.CASES["priced-by-action"][0].encode()).decode()}))
+        self.build("--github", "--quiet")
+        self.assertEqual(self.fx.q("select * from unpriced_workflows"), [])
+
+
 class StateRepoTest(unittest.TestCase):
     def test_env_override_wins_when_it_is_a_git_checkout(self):
         with tempfile.TemporaryDirectory() as d:
