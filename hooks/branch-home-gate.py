@@ -70,7 +70,10 @@ import sys
 
 sys.dont_write_bytecode = True
 HOOK = "branch-home-gate"
-GH_SECS = 30
+# Per gh call. Up to three run in a row and settings.json wraps the gate in a 60 s
+# timeout whose fail-closed fallback only runs if the hook exits first, so the
+# three must fit inside it.
+GH_SECS = 15
 
 
 class Quiet(Exception):

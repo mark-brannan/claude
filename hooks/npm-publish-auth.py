@@ -49,20 +49,11 @@ def scanner():
     Code records in installed_plugins.json (a hook in settings.json gets no
     CLAUDE_PLUGIN_ROOT; that is set only for the plugin's own hooks). None
     when it cannot be found."""
-    conf = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
-    try:
-        with open(os.path.join(conf, "plugins", "installed_plugins.json")) as f:
-            plugins = json.load(f)["plugins"]
-        for key, installs in plugins.items():
-            if not key.startswith("languette@"):
-                continue
-            for inst in installs:
-                if inst.get("scope") == "user" and inst.get("installPath"):
-                    path = os.path.join(inst["installPath"], "languette", "__main__.py")
-                    return path if os.access(path, os.R_OK) else None
-    except (OSError, ValueError, KeyError, AttributeError, TypeError):
-        pass
-    return None
+    root = lib_state.languette_root()
+    if not root:
+        return None
+    path = os.path.join(root, "languette", "__main__.py")
+    return path if os.access(path, os.R_OK) else None
 
 
 def publishes(segments):

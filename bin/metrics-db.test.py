@@ -338,6 +338,24 @@ class TypingTest(FixtureTest):
         _, _, _, pasted, _, _, _ = self.typing("sess-typed-1")
         self.assertEqual(pasted, len("<pasted_content size=9>0123456789</pasted_content>"))
 
+    def test_a_prompt_opening_with_a_paste_block_is_typed_but_a_tag_is_not(self):
+        block = "<pasted_content size=9>0123456789</pasted_content>"
+        lines = [
+            transcript_line(block + " why does this fail", "2026-10-03T09:00:00Z", session="sess-paste-3"),
+            transcript_line("  " + block + "\n" + block + "\nand this", "2026-10-03T09:01:00Z", session="sess-paste-3"),
+            transcript_line(block + "<system-reminder>machine</system-reminder>", "2026-10-03T09:02:00Z",
+                            session="sess-paste-3"),
+            transcript_line("<system-reminder>machine</system-reminder>", "2026-10-03T09:03:00Z",
+                            session="sess-paste-3"),
+        ]
+        (self.fx.projects / "-fixture-cwd" / "sess-paste-3.jsonl").write_text("\n".join(lines) + "\n")
+        self.build("--quiet")
+        prompts, chars, words, pasted, _, _, _ = self.typing("sess-paste-3")
+        self.assertEqual(prompts, 2)
+        self.assertEqual(pasted, 3 * len(block))
+        self.assertEqual(chars, len(" why does this fail") + len("  \n\nand this"))
+        self.assertEqual(words, 4 + 2)
+
     def test_headless_machine_prompts_leave_zero_typed(self):
         self.build("--quiet")
         self.assertEqual(self.typing("sess-headless-2")[:4], (0, 0, 0, 0))
@@ -560,6 +578,93 @@ esac
         (self.fx.bin / "gh").write_text("#!/bin/sh\necho nope >&2\nexit 9\n")
         r = self.fx.run("--quiet", github=True)
         self.assertNotEqual(r.returncode, 0)
+
+
+class WorkflowCoverageTest(FixtureTest):
+    CASES = {
+        "action": ("      - uses: anthropics/claude-code-action@v1\n", "unpriced"),
+        "base-action": ("      - uses: anthropics/claude-code-base-action@v1\n", "unpriced"),
+        "cli": ("      - run: claude -p 'hi' --output-format json\n", "unpriced"),
+        "cli-print": ("      - run: |\n          claude --print 'hi'\n", "unpriced"),
+        "commented": ("      # - uses: anthropics/claude-code-action@v1\n      - run: echo hi # claude -p\n", "none"),
+        "review-caller": ("    uses: mark-brannan/.github/.github/workflows/claude-review.yml@main\n", "priced"),
+        "priced-by-action": ("      - uses: anthropics/claude-code-action@v1\n"
+                             "      - uses: mark-brannan/.github/.github/actions/headless-run-cost@main\n", "priced"),
+        "priced-by-upload": ("      - run: claude -p hi\n      - uses: actions/upload-artifact@v4\n"
+                             "        with:\n          name: headless-run\n", "priced"),
+        "priced-by-suffix": ("      - run: claude -p hi\n      - uses: actions/upload-artifact@v4\n"
+                             "        with:\n          name: headless-run-${{ matrix.n }}\n", "priced"),
+        "comment-only-price": ("      - uses: anthropics/claude-code-action@v1\n      # name: headless-run\n", "unpriced"),
+        "plain": ("      - run: make test\n", "none"),
+    }
+
+    def test_classifier(self):
+        for name, (yaml, want) in self.CASES.items():
+            self.assertEqual(mdb.classify_workflow("on: push\njobs:\n  j:\n    steps:\n" + yaml), want, name)
+
+    def test_unpriced_workflows_are_tabled_warned_and_cached_by_sha(self):
+        import base64
+        wf = self.fx.bin / "wf"
+        wf.mkdir()
+        files = {"a.yml": ("sha-a", self.CASES["action"][0]), "b.yml": ("sha-b", self.CASES["priced-by-upload"][0]),
+                 "c.yml": ("sha-c", "      - run: make\n"), "notes.md": ("sha-n", "claude -p")}
+        listing = [{"name": n, "path": f".github/workflows/{n}", "sha": sh,
+                    "html_url": f"https://github.com/acme/widgets/blob/main/.github/workflows/{n}"}
+                   for n, (sh, _) in files.items()]
+        (wf / "list.json").write_text(json.dumps(listing))
+        for n, (_, body) in files.items():
+            (wf / n).write_text(json.dumps({"content": base64.b64encode(body.encode()).decode()}))
+        gh = self.fx.bin / "gh"
+        gh.rename(self.fx.bin / "gh-real")
+        log = self.fx.bin / "calls.log"
+        gh.write_text(f"""#!/bin/sh
+case "$2" in
+  repos/acme/widgets/contents/.github/workflows) echo "$2" >> {log}; cat {wf}/list.json;;
+  repos/acme/widgets/contents/.github/workflows/*) echo "$2" >> {log}; cat {wf}/"$(basename "$2")";;
+  repos/*) echo '{{"artifacts": []}}';;
+  *) exec gh-real "$@";;
+esac
+""")
+        gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+        r = self.build("--github")
+        self.assertEqual(self.fx.q("select repo, path, url from unpriced_workflows"),
+                         [("acme/widgets", ".github/workflows/a.yml",
+                           "https://github.com/acme/widgets/blob/main/.github/workflows/a.yml")])
+        self.assertIn("records no cost: acme/widgets  .github/workflows/a.yml", r.stderr)
+        self.assertRegex(r.stdout, r"workflows +1 run Claude with no cost recorded \(4 calls\)")  # 1 listing + 3 yml
+        self.assertEqual(len(log.read_text().split()), 4)
+        # Warm: the shas are cached, so only the listing is called; the verdict is the same.
+        log.unlink()
+        self.build("--github")
+        self.assertEqual(log.read_text().split(), ["repos/acme/widgets/contents/.github/workflows"])
+        self.assertEqual(len(self.fx.q("select * from unpriced_workflows")), 1)
+        # A changed file has a new sha, so it is fetched again and reclassified.
+        listing[0]["sha"] = "sha-a2"
+        (wf / "list.json").write_text(json.dumps(listing))
+        (wf / "a.yml").write_text(json.dumps({"content": base64.b64encode(self.CASES["priced-by-action"][0].encode()).decode()}))
+        self.build("--github", "--quiet")
+        self.assertEqual(self.fx.q("select * from unpriced_workflows"), [])
+
+    def test_a_failed_listing_is_reported_and_keeps_old_rows(self):
+        gh = self.fx.bin / "gh"
+        gh.rename(self.fx.bin / "gh-real")
+        gh.write_text("""#!/bin/sh
+case "$2" in
+  repos/acme/widgets/contents/.github/workflows) echo "HTTP 403: rate limit" >&2; exit 1;;
+  repos/*) echo '{"artifacts": []}';;
+  *) exec gh-real "$@";;
+esac
+""")
+        gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+        self.build("--github", "--quiet")  # create the schema
+        cx = sqlite3.connect(self.fx.db)
+        cx.execute("insert into unpriced_workflows values ('acme/widgets', '.github/workflows/a.yml', 'u')")
+        cx.commit()
+        cx.close()
+        r = self.build("--github")
+        self.assertEqual(len(self.fx.q("select * from unpriced_workflows")), 1)
+        self.assertRegex(r.stdout, r"1 repos not checked")
+        self.assertIn("workflows not checked", r.stderr)
 
 
 class StateRepoTest(unittest.TestCase):

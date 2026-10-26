@@ -395,7 +395,7 @@ class PrtTest(unittest.TestCase):
         try:
             out = self.prt("queue", f"{REPO}#1")
             self.assertIn("unsigned commit ddddddd by coderabbitai[bot]", out)
-            self.assertIn("resign-branch.sh b", out)
+            self.assertIn("git rebase -S --force-rebase", out)
         finally:
             stub.unlink()
         self.assertNotIn("unsigned", self.prt("queue", f"{REPO}#1"))

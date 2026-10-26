@@ -301,8 +301,8 @@ def _live_claim_names(names, self8, hook_dir):
 # read-only check.
 #
 # Home is checked before session-live, and both only when dirty/unpushed are
-# already clean: both can shell out to `gh` (branch-home-gate.py up to two
-# 30s calls per mode, and session-live asks for its --card after the home
+# already clean: both can shell out to `gh` (branch-home-gate.py up to three
+# 15s calls per mode, and session-live asks for its --card after the home
 # check has), so a dirty mid-work tree -- the common
 # case, and the one Stop fires on every turn -- never pays that cost.
 #
@@ -1112,11 +1112,11 @@ def branch_brief(root, br):
     elif uns == "unknown":
         rec = f"check the signatures by hand before pushing -- git could not list the commits between origin/{base} and {br}"
     elif uns > 0 and g("config", "user.signingkey")[0] == 0:
-        rec = (f"git rebase -S --force-rebase {mb}   # {uns} unsigned commit(s); if {br} is already on the remote, "
-               f"resign-branch.sh {br} instead")
+        rec = (f"git rebase -S --force-rebase {mb}   # {uns} unsigned commit(s); push it with "
+               "git push --force-with-lease")
     elif uns > 0:
         rec = (f"cannot sign on this machine (no user.signingkey) -- {uns} unsigned commit(s) will block the PR; "
-               f"hand over saying resign-branch.sh {br} has to run where the key is")
+               f"hand over saying `git rebase -S --force-rebase origin/{base}` then `git push --force-with-lease` has to run where the key is")
     else:
         rec = (f"nothing on the base -- signed, no conflict; a branch merely behind origin/{base} is left as is, "
                "the queue updates it (fixup contract, pickup skill section 6)")
