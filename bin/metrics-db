@@ -545,46 +545,66 @@ def classify_workflow(text):
         return "none"
     return "priced" if PRICED.search(body) else "unpriced"
 
+# Bump when RUNS_CLAUDE, PRICED or classify_workflow change: cached verdicts are the
+# classifier's output, so they are only good for the classifier that made them.
+CLASSIFIER = 1
+
 def workflow_coverage(cx, sd):
     """Fill unpriced_workflows with the workflows that run Claude and record no cost, across
     every non-archived repo. Per repo, one contents listing; a file's content is fetched only
-    when its blob sha is not in metrics/dashboard/workflow-verdicts.json (sha -> verdict; a
-    sha names its content, so a verdict never goes stale). A repo gh cannot list is skipped.
-    Returns (unpriced rows as (repo, path, url), gh calls made)."""
+    when its blob sha is not in metrics/dashboard/workflow-verdicts.json ({classifier, verdicts:
+    sha -> verdict}; a sha names the content, the verdict depends on CLASSIFIER, so a file of
+    another classifier is dropped). Only a 404 means "no workflows directory"; any other
+    failure leaves the repo unchecked and its old rows in place.
+    Returns (unpriced rows as (repo, path, url), gh calls made, repos not checked)."""
     cache_path = os.path.join(sd, "metrics", "dashboard", "workflow-verdicts.json")
-    cache = load_json(cache_path)
-    cache = cache if isinstance(cache, dict) else {}
-    out, calls = [], 0
+    saved = load_json(cache_path)
+    old = saved.get("verdicts") if isinstance(saved, dict) and saved.get("classifier") == CLASSIFIER else None
+    old = old if isinstance(old, dict) else {}
+    seen, out, calls, unchecked = {}, [], 0, []
     for (repo,) in cx.execute("select repo from gh_repos where archived = 0 order by repo").fetchall():
         calls += 1
+        rows = []
         try:
             files = gh(["api", f"repos/{repo}/contents/.github/workflows"])
-        except (OSError, RuntimeError, ValueError):
-            continue  # no workflows directory, or gh refused
+        except (OSError, RuntimeError, ValueError) as e:
+            if "404" not in str(e):
+                unchecked.append(repo)
+            continue
+        ok = True
         for f in files if isinstance(files, list) else []:
             if not isinstance(f, dict) or not str(f.get("name", "")).endswith((".yml", ".yaml")):
                 continue
             sha = f.get("sha")
-            if sha not in cache:
+            if sha not in old and sha not in seen:
                 calls += 1
                 try:
                     blob = gh(["api", f"repos/{repo}/contents/{f['path']}"])
                     text = base64.b64decode(blob["content"]).decode("utf-8", "replace")
                 except (OSError, RuntimeError, ValueError, LookupError):
-                    continue  # try again next run
-                cache[sha] = classify_workflow(text)
-            if cache[sha] == "unpriced":
-                out.append((repo, f["path"], f.get("html_url") or ""))
+                    ok = False  # try again next run
+                    continue
+                seen[sha] = classify_workflow(text)
+            elif sha in old:
+                seen[sha] = old[sha]
+            if seen[sha] == "unpriced":
+                rows.append((repo, f["path"], f.get("html_url") or ""))
+        if ok:
+            out += rows
+        else:
+            unchecked.append(repo)
+    for repo in unchecked:
+        out += cx.execute("select repo, path, url from unpriced_workflows where repo = ?", (repo,)).fetchall()
     cx.execute("delete from unpriced_workflows")
     cx.executemany("insert or replace into unpriced_workflows values (?,?,?)", out)
     try:
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
         with open(cache_path + ".part", "w", encoding="utf-8") as fh:
-            json.dump(cache, fh)
+            json.dump({"classifier": CLASSIFIER, "verdicts": seen}, fh)
         os.replace(cache_path + ".part", cache_path)
     except OSError:
         pass  # a cache is only a saving
-    return out, calls
+    return out, calls, unchecked
 
 def main():
     ap = argparse.ArgumentParser()
@@ -623,7 +643,7 @@ def main():
         gh_n, calls, repos = load_github(cx)
         cx.commit()
         fetch_ci_reviews(cx, sd)  # before the streams load, so this run's rows are in headless_runs
-        unpriced, wf_calls = workflow_coverage(cx, sd)
+        unpriced, wf_calls, unchecked = workflow_coverage(cx, sd)
         cx.commit()
     report = {"sessions": load_sessions(cx, sd), **load_streams(cx, sd), "item_events": load_items(cx, sd),
               "session_pr": load_session_pr(cx, sd)}
@@ -643,7 +663,10 @@ def main():
     cx.execute("insert or replace into meta values ('built_at', ?)", (when.stamp(),))
     cx.commit()
     if a.github:
-        report["workflows"] = f"{len(unpriced)} run Claude with no cost recorded ({wf_calls} calls)"
+        report["workflows"] = (f"{len(unpriced)} run Claude with no cost recorded"
+                               + (f"; {len(unchecked)} repos not checked" if unchecked else "") + f" ({wf_calls} calls)")
+        for repo in unchecked:
+            print(f"metrics-db: workflows not checked (gh failed, not a 404): {repo}", file=sys.stderr)
         for repo, path, url in unpriced:  # stderr and not --quiet's to hide: a gap is news
             print(f"metrics-db: workflow runs Claude, records no cost: {repo}  {path}  {url}", file=sys.stderr)
     if not a.quiet:

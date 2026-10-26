@@ -627,6 +627,27 @@ esac
         self.build("--github", "--quiet")
         self.assertEqual(self.fx.q("select * from unpriced_workflows"), [])
 
+    def test_a_failed_listing_is_reported_and_keeps_old_rows(self):
+        gh = self.fx.bin / "gh"
+        gh.rename(self.fx.bin / "gh-real")
+        gh.write_text("""#!/bin/sh
+case "$2" in
+  repos/acme/widgets/contents/.github/workflows) echo "HTTP 403: rate limit" >&2; exit 1;;
+  repos/*) echo '{"artifacts": []}';;
+  *) exec gh-real "$@";;
+esac
+""")
+        gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+        self.build("--github", "--quiet")  # create the schema
+        cx = sqlite3.connect(self.fx.db)
+        cx.execute("insert into unpriced_workflows values ('acme/widgets', '.github/workflows/a.yml', 'u')")
+        cx.commit()
+        cx.close()
+        r = self.build("--github")
+        self.assertEqual(len(self.fx.q("select * from unpriced_workflows")), 1)
+        self.assertRegex(r.stdout, r"1 repos not checked")
+        self.assertIn("workflows not checked", r.stderr)
+
 
 class StateRepoTest(unittest.TestCase):
     def test_env_override_wins_when_it_is_a_git_checkout(self):
