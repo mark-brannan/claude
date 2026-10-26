@@ -520,3 +520,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261026t083001z
 - metrics-dashboard: weekly per-prompt charts plot every week that has typed prompts, with 0 events when no session started that week Undo: iterate weeks of started sessions only, as before ([#324](https://github.com/mark-brannan/claude/pull/324))
+
+### 20261026t083625z
+- metrics-dashboard: a known-headless session's events stay in the week it started, with no prompts, in the per-prompt weekly charts (main's behaviour) Undo: add where p > 0 to the per-week query so headless sessions drop from the numerator ([#324](https://github.com/mark-brannan/claude/pull/324))
