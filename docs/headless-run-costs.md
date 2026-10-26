@@ -50,4 +50,4 @@ records no cost. A new bot shows up in that report until it is priced.
 ## Open
 
 Cloud routines and cloud sessions are not priced. Our hooks run there, but the
-numbers stay in the sandbox. A decision is pending.
+numbers stay in the sandbox. A decision is pending: mark-brannan/claude#219.
