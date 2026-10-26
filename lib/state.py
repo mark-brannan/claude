@@ -1118,7 +1118,7 @@ def branch_brief(root, br):
         rec = f"count the merge commits by hand before touching history -- git could not count them between {br} and origin/{base}"
     elif int(mg) > 0 and conf == "no" and _merges_all_clean(g, f"origin/{base}..{br}"):
         # No merge holds a hand-resolution, so linearizing drops nothing; base's commits are skipped.
-        cmd = f"git rebase -S --force-rebase origin/{base}"
+        cmd = f"git rebase -S --force-rebase {mb}"
         if g("config", "user.signingkey")[0] == 0:
             rec = f"{cmd}   # {mg} clean merge commit(s), nothing hand-resolved; push it with git push --force-with-lease"
         else:
@@ -1138,6 +1138,15 @@ def branch_brief(root, br):
             else:
                 rec = (f"cannot sign on this machine (no user.signingkey) -- {uns} unsigned commit(s) above the last merge; "
                        f"hand over saying `{cmd}` then `git push --force-with-lease` has to run where the key is")
+        elif (rc == 0 and rc2 == 0 and not above.strip() and uns == 1 and lm == g("rev-parse", br)[1].strip()
+              and not re.search(r"^gpgsig", g("cat-file", "-p", lm)[1], re.M)):
+            # The one unsigned commit is the merge itself, at the tip: an amend re-signs it, tree and parents intact.
+            cmd = "git commit --amend -S --no-edit"
+            if g("config", "user.signingkey")[0] == 0:
+                rec = f"{cmd}   # the unsigned commit is the merge itself, at the tip; push it with git push --force-with-lease"
+            else:
+                rec = (f"cannot sign on this machine (no user.signingkey) -- the unsigned commit is the merge itself, at the tip; "
+                       f"hand over saying `{cmd}` on {br} then `git push --force-with-lease` has to run where the key is")
         else:
             rec = (f"do not rebase and do not resign -- an unsigned commit sits at or below one of the {mg} merge commit(s), "
                    "so the branch cannot be re-signed without losing the merge; hand it over saying so")
@@ -1155,7 +1164,7 @@ def branch_brief(root, br):
                "git push --force-with-lease")
     elif uns > 0:
         rec = (f"cannot sign on this machine (no user.signingkey) -- {uns} unsigned commit(s) will block the PR; "
-               f"hand over saying `git rebase -S --force-rebase origin/{base}` then `git push --force-with-lease` has to run where the key is")
+               f"hand over saying `git rebase -S --force-rebase {mb}` then `git push --force-with-lease` has to run where the key is")
     else:
         rec = (f"nothing on the base -- signed, no conflict; a branch merely behind origin/{base} is left as is, "
                "the queue updates it (fixup contract, pickup skill section 6)")

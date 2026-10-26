@@ -844,6 +844,36 @@ class BranchBriefTest(Base):
         self.assertRegex(self.rec(out), r"^recommend: do not rebase and do not resign")
         self.assertIn("cannot be re-signed without losing the merge", self.rec(out))
 
+    def test_an_unsigned_merge_at_the_tip_is_amended_in_place(self):
+        r = self.new_repo("unsignedmerge")
+        self.g(r, "checkout", "-q", "main")
+        self.commit(r, "base\nmain\n", "main moves")
+        self.g(r, "push", "-q", "origin", "main")
+        self.g(r, "checkout", "-q", "feat")
+        self.fake_signed(r, "feat work", "base\nfeat\n")
+        subprocess.run(["git", "-C", str(r), "merge", "-q", "--no-edit", "origin/main"], capture_output=True)
+        (r / "f").write_text("base\nboth\n")
+        self.g(r, "add", "f")
+        self.g(r, "-c", "commit.gpgsign=false", "commit", "-q", "--no-edit")
+        out = self.brief(r)[1]
+        self.assertIn("unsigned: 1", out)
+        self.assertRegex(self.rec(out), r"^recommend: cannot sign on this machine .*`git commit --amend -S --no-edit`")
+        self.g(r, "config", "user.signingkey", "/dev/null")
+        rec = self.rec(self.brief(r)[1])
+        self.assertRegex(rec, r"^recommend: git commit --amend -S --no-edit ")
+        # Stand-in for the signer: re-sign the merge the way the amend would, keeping tree and parents.
+        tip = self.g(r, "rev-parse", "HEAD")
+        parents = self.g(r, "rev-list", "--parents", "-1", tip).split()[1:]
+        obj = subprocess.run(["git", "-C", str(r), "hash-object", "-t", "commit", "-w", "--stdin"], check=True,
+                             capture_output=True, text=True, input=(
+            f"tree {self.g(r, 'rev-parse', tip + '^{tree}')}\n" + "".join(f"parent {p}\n" for p in parents) +
+            "author T <t@e> 1700000000 +0000\ncommitter T <t@e> 1700000000 +0000\n"
+            "gpgsig -----BEGIN SSH SIGNATURE-----\n Zm9v\n -----END SSH SIGNATURE-----\n\nmerge\n")).stdout.strip()
+        self.g(r, "update-ref", "HEAD", obj)
+        out = self.brief(r)[1]
+        self.assertIn("merges: 1", out)
+        self.assertIn("unsigned: 0", out)
+
     def test_clean_merges_are_linearized_onto_the_base(self):
         r = self.new_repo("cleanmerge")
         self.g(r, "checkout", "-q", "main")
@@ -856,7 +886,7 @@ class BranchBriefTest(Base):
         self.assertIn("merges: 1", out)
         self.assertRegex(self.rec(out), r"^recommend: cannot sign on this machine .*clean merge")
         self.g(r, "config", "user.signingkey", "/dev/null")
-        self.assertRegex(self.rec(self.brief(r)[1]), r"^recommend: git rebase -S --force-rebase origin/main ")
+        self.assertRegex(self.rec(self.brief(r)[1]), r"^recommend: git rebase -S --force-rebase [0-9a-f]{40} ")
 
     def test_unsigned_with_and_without_a_key(self):
         r = self.new_repo("unsigned")

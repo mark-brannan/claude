@@ -93,7 +93,7 @@ class NoUnsignedPushTest(unittest.TestCase):
         brief = subprocess.run([sys.executable, str(STATE), "branch_brief", str(w), "feat"],
                                capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout
         rec = next(ln for ln in brief.split("\n") if ln.startswith("recommend: "))
-        self.assertRegex(rec, r"^recommend: git rebase -S --force-rebase origin/main ")
+        self.assertRegex(rec, r"^recommend: git rebase -S --force-rebase [0-9a-f]{40} ")
         git(w, *rec.split("#")[0].split()[2:])
         self.assertEqual(self.verdict("git push", w), "silent")
 
