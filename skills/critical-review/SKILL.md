@@ -15,6 +15,9 @@ family coded it) goes into your summary. Run the review on that reviewer's
 model and never on a coder's family; if you are one, hand the review to a
 sub-agent on the reviewer's model. The metrics row records this line.
 
+CI runs this review on every PR (claude[bot]); a driver or session runs it by
+hand only where the bot cannot.
+
 Then run `~/.claude/bin/pr-blockers <PR>`. Its lines are findings, in its
 order: open conversations before anything else.
 
@@ -37,6 +40,10 @@ raised no `[blocker]` or `[should]` and pr-blockers printed nothing. That
 sentence stands in for my reading the diff. Then four headings, each shown
 even when empty. One line per item. Reading is my toil; deciding is
 dearer still.
+
+A diff that adds browser storage, cookies or similar persistence is an
+API-class change: say so under Look at, and plan for it; it is not a blocker
+by itself.
 
 **Look at** — a diff a human must read: where (file and lines), and why a
 machine couldn't settle it. Never a question; a question belongs under

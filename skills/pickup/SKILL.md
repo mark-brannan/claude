@@ -282,7 +282,11 @@ do not paraphrase it into a second version that can drift from this one.
    `lane=autonomous` adds `merge`, `churn-ok` and `mixed-loops-ok`
    itself, where the diff stays inside the parent's driver brief, once
    the final reviews are clean, and names that brief by the parent's id
-   in the PR body. A diff outside it gets none of the three and waits
+   in the PR body, except where the repo's own instructions forbid naming
+   cards: there the reference goes on the card's log only. A refused label
+   is retried once, with the clean review named, then the driver carries on.
+   The review is the CI bot's; the driver runs `/critical-review` only where
+   the bot cannot. A diff outside it gets none of the three and waits
    for the user. A gated child, or a parent logging `lane=gated`, keeps
    the user's merge, and every other session keeps the rule above.
 

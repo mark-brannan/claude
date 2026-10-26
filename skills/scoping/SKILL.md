@@ -180,7 +180,12 @@ taken; never overwrite an earlier one. Commit it. Shape:
    card. A curia question becomes an issue only when its ruling yields
    buildable work of unknown PR count. A research item is judged by what
    it produces: an answer a planned step needs is a card; an answer that
-   would change the epic's shape is an issue. No label is ever added. An
+   would change the epic's shape is an issue. No label is ever added.
+   A work item that adds browser storage, cookies or similar persistence is
+   an API-class change (pencil): the proposal calls it out, under Ambiguity
+   or the item's defaults, and plans for it; it never halts the plan. The
+   gate rubric (pen, 2026-10-22): a visual diff or UX work is gated, and the
+   plan marks that child gated; the rest is autonomous. An
    umbrella item already one session in size is its own work item and its
    child card carries only the link; a bigger one splits into children of
    the batch. A careful sequence is one work item whose brief holds the
@@ -278,9 +283,11 @@ the rulings to date:
 - **Reviews,** after the PR opens, as the human cycle runs (2026-10-23).
   The worker builds, tests, gets the gates green, posts the PR, sees CI
   green and marks it ready. The driver then spawns `/critical-review
-  <PR> --coder <model>` as a sub-agent, the depth the child's card carries
-  in its prompt (this scoping estimates the work's criticality); it only
-  comments, on a model unlike the coder's. A fresh fixer works the
+  <PR> --coder <model>` as a sub-agent, only where the bot cannot (pen,
+  2026-10-24): CI runs the critical review (claude[bot]) on the PR, and its
+  comments are the round's review. The sub-agent takes the depth the child's
+  card carries in its prompt (this scoping estimates the work's
+  criticality); it only comments, on a model unlike the coder's. A fresh fixer works the
   comments to `/pickup` §6. A round is one review and one fixer pass;
   three rounds at most. A PR past the third, or one a fixer labels
   `fixup-hard`, is parked on an agora card and the driver moves on. The
@@ -296,7 +303,10 @@ the rulings to date:
   work; a finding the driver judges must hold something is escalated to
   the agora, parked on a card, and nothing else holds (2026-10-22). A −
   finding that is `one-way` and seen only `after`, one the item should
-  not land with as it stands, always counts as one.
+  not land with as it stands, always counts as one. On a harm grade at
+  this final check the driver takes `merge` off the PRs not yet merged, cards
+  the finding for the agora, and the walk says which PRs landed; merged PRs
+  stay.
 - **Maxims.** `/maxims-check` runs once per child PR (2026-10-24), each as an
   `Explore` sub-agent on `sonnet` with the same read-whole clause, at the end
   before the walk, beside the arete check, on each child PR's final head. The
@@ -310,7 +320,11 @@ the rulings to date:
 - **Who merges.** In the autonomous lane, where a PR's diff stays inside
   this brief, the driver puts `merge`, `churn-ok` and `mixed-loops-ok` on
   it once its last review round is clean, names the brief in the PR body, and
-  the queue lands it on main alone; the user's gate is the batch after
+  the queue lands it on main alone. Where the repo's own instructions forbid
+  naming cards, the PR body carries no reference and the brief is named on
+  the card's log only. A label attempt that is refused is retried once, with
+  the PR's clean review named, then the driver carries on; it never hands the
+  label to the user; the user's gate is the batch after
   the fact, with a revert as the undo. This replaces "only I merge"
   (2026-10-01) for the autonomous lane. The gated lane keeps the user's
   merge.
