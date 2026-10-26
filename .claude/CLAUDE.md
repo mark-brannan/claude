@@ -16,6 +16,7 @@ Where each subsystem's design lives:
 - Stop hook, checkpoints and pickup items: `hooks/stop-continuity-requirements.md`.
 - Config sync across machines: `docs/config-sync-strategy.md`.
 - Work items: `docs/work-item-lifecycle.md`.
+- Headless run costs: `docs/headless-run-costs.md`.
 
 Two reflexes:
 

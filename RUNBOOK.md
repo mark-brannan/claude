@@ -440,6 +440,7 @@ collected is skipped), because Actions expires artifacts after 90 days. The dash
 runs only): total, runs and mean per check, dollars per week, and cuts by repo and model.
 The cost is `total_cost_usd` from the CLI, not an estimate. Cold backfill: one list call per
 repo plus one download per artifact, about 130 calls for 79 artifacts; warm, one call per repo.
+What every headless run records, and who prices which kind: `docs/headless-run-costs.md`.
 
 `--github` also lists, with a warning at the end of the run and in table `unpriced_workflows`,
 every workflow that runs Claude (`claude-code-action`, `claude -p`) and records no cost: neither
