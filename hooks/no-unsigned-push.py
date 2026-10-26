@@ -186,7 +186,7 @@ def main():
         f"no-unsigned-push: {n} unsigned commit(s) on {branch} are being pushed from a machine with "
         f"no signing key:\n\n{listing}\n\nA repo that requires signed commits will block the PR until "
         "someone re-signs from a machine with the signing key, following `python3 ~/.claude/lib/state.py "
-        f"branch_brief {shlex.quote(cwd)} {shlex.quote(branch)}`. Say so in the PR body and the handoff; "
+        f"branch_brief <repo-root> {shlex.quote(branch)}`. Say so in the PR body and the handoff; "
         "do not try to sign here."),
         ascii=False, compact=True, errors="surrogateescape")
     return 0

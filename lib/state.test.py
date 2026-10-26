@@ -830,8 +830,22 @@ class BranchBriefTest(Base):
         self.assertIn("behind: 1", out)
         self.assertRegex(self.rec(out), r"^recommend: git merge origin/main .*never linearize")
 
-    def test_merge_commits_outrank_everything(self):
+    def test_hand_resolved_merge_commits_outrank_everything(self):
         r = self.new_repo("merged")
+        self.g(r, "checkout", "-q", "main")
+        self.commit(r, "base\nmain\n", "main moves")
+        self.g(r, "push", "-q", "origin", "main")
+        self.g(r, "checkout", "-q", "feat")
+        self.commit(r, "base\nfeat\n", "feat work")
+        subprocess.run(["git", "-C", str(r), "merge", "-q", "--no-edit", "origin/main"], capture_output=True)
+        self.commit(r, "base\nboth\n", "resolved by hand")
+        out = self.brief(r)[1]
+        self.assertIn("merges: 1", out)
+        self.assertRegex(self.rec(out), r"^recommend: do not rebase and do not resign")
+        self.assertIn("cannot be re-signed without losing the merge", self.rec(out))
+
+    def test_clean_merges_are_linearized_onto_the_base(self):
+        r = self.new_repo("cleanmerge")
         self.g(r, "checkout", "-q", "main")
         self.commit(r, "base\nmain\n", "main moves")
         self.g(r, "push", "-q", "origin", "main")
@@ -840,8 +854,9 @@ class BranchBriefTest(Base):
         self.g(r, "merge", "-q", "--no-edit", "origin/main")
         out = self.brief(r)[1]
         self.assertIn("merges: 1", out)
-        self.assertRegex(self.rec(out), r"^recommend: do not rebase and do not resign")
-        self.assertIn("cannot be re-signed without losing the merge", self.rec(out))
+        self.assertRegex(self.rec(out), r"^recommend: cannot sign on this machine .*clean merge")
+        self.g(r, "config", "user.signingkey", "/dev/null")
+        self.assertRegex(self.rec(self.brief(r)[1]), r"^recommend: git rebase -S --force-rebase origin/main ")
 
     def test_unsigned_with_and_without_a_key(self):
         r = self.new_repo("unsigned")

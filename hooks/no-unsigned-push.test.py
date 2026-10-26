@@ -93,8 +93,34 @@ class NoUnsignedPushTest(unittest.TestCase):
         brief = subprocess.run([sys.executable, str(STATE), "branch_brief", str(w), "feat"],
                                capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout
         rec = next(ln for ln in brief.split("\n") if ln.startswith("recommend: "))
+        self.assertRegex(rec, r"^recommend: git rebase -S --force-rebase origin/main ")
+        git(w, *rec.split("#")[0].split()[2:])
+        self.assertEqual(self.verdict("git push", w), "silent")
+
+    def test_hand_resolved_merge_keeps_its_tree_when_resigned(self):
+        w = self.setup_repo()
+        git(w, "switch", "-q", "-c", "feat")
+        (w / "f").write_text("feat\n")
+        git(w, "add", "f")
+        git(w, "commit", "-q", "-m", "feat work")
+        git(w, "switch", "-q", "main")
+        (w / "f").write_text("main\n")
+        git(w, "add", "f")
+        git(w, "commit", "-q", "-m", "main work")
+        git(w, "push", "-q", "origin", "main")
+        git(w, "switch", "-q", "feat")
+        git(w, "merge", "-q", "--no-edit", "main", check=False)
+        (w / "f").write_text("both\n")
+        git(w, "add", "f")
+        git(w, "commit", "-q", "--no-edit")
+        self.unsigned(w, "unsigned above the merge")
+        self.assertEqual(self.verdict("git push", w), "deny")
+        brief = subprocess.run([sys.executable, str(STATE), "branch_brief", str(w), "feat"],
+                               capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout
+        rec = next(ln for ln in brief.split("\n") if ln.startswith("recommend: "))
         self.assertRegex(rec, r"^recommend: git rebase -S --force-rebase [0-9a-f]{12} ")
         git(w, *rec.split("#")[0].split()[2:])
+        self.assertEqual((w / "f").read_text(), "both\n")
         self.assertEqual(git(w, "rev-list", "--count", "--merges", "origin/main..HEAD").stdout.strip(), "1")
         self.assertEqual(self.verdict("git push", w), "silent")
 

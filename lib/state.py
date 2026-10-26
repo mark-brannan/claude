@@ -1030,6 +1030,20 @@ def default_branch(root, remote="origin"):
     return ref[len(remote) + 1:] if ref.startswith(remote + "/") else ref
 
 
+def _merges_all_clean(g, rng):
+    """True when every merge in rng is what re-merging its parents gives:
+    no tree edit lives only in a merge. Octopus or unreadable is not clean."""
+    rc, ms = g("rev-list", "--merges", rng)
+    if rc:
+        return False
+    for m in (s for s in ms.split("\n") if s):
+        ps = g("rev-parse", f"{m}^@")[1].split()
+        rc, t = g("merge-tree", "--write-tree", *ps) if len(ps) == 2 else (1, "")
+        if rc or t.split("\n")[0].strip() != g("rev-parse", f"{m}^{{tree}}")[1].strip():
+            return False
+    return True
+
+
 def branch_brief(root, br):
     """(status, text): the facts a session starting on an existing branch
     keeps getting wrong, one per line, ending in exactly one recommended
@@ -1042,7 +1056,7 @@ def branch_brief(root, br):
     presence of a `gpgsig` header (what no-unsigned-push tests), not `%G?`,
     which calls every signed commit unverified on a machine with no
     allowed-signers file. The recommendation ladder is ordered by what is
-    unrecoverable: merge commits outrank everything (a rebase drops what
+    unrecoverable: hand-resolved merge commits outrank everything (a rebase drops what
     lives only in a hand-resolved merge's tree), then conflicts, then
     signing; a branch merely behind is left to the queue."""
     def g(*a):
@@ -1102,6 +1116,14 @@ def branch_brief(root, br):
     mb = mb.strip() if rc == 0 else f"origin/{base}"
     if mg == "unknown":
         rec = f"count the merge commits by hand before touching history -- git could not count them between {br} and origin/{base}"
+    elif int(mg) > 0 and conf == "no" and _merges_all_clean(g, f"origin/{base}..{br}"):
+        # No merge holds a hand-resolution, so linearizing drops nothing; base's commits are skipped.
+        cmd = f"git rebase -S --force-rebase origin/{base}"
+        if g("config", "user.signingkey")[0] == 0:
+            rec = f"{cmd}   # {mg} clean merge commit(s), nothing hand-resolved; push it with git push --force-with-lease"
+        else:
+            rec = (f"cannot sign on this machine (no user.signingkey) -- {mg} clean merge commit(s); "
+                   f"hand over saying `{cmd}` then `git push --force-with-lease` has to run where the key is")
     elif int(mg) > 0 and uns not in ("unknown", 0):
         # Commits above the last merge replay alone; the merge and its tree stay as they are.
         rc, lm = g("rev-list", "--merges", "--topo-order", "-1", f"origin/{base}..{br}")
