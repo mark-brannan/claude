@@ -511,3 +511,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261026t082817z
 - metrics-dashboard: exactly 3600 s elapsed counts as '5 min to 1 h' Undo: change the mid/long boundary in costw back to >= 3600 (bin/metrics-dashboard) ([#323](https://github.com/mark-brannan/claude/pull/323))
+
+### 20261026t082947z
+- metrics-dashboard: a session with no transcript row has an unknown typed count, left out of the headless tile and the prompt buckets (not counted as 0) Undo: use coalesce(t.prompts, 0) in temp view sv ([#324](https://github.com/mark-brannan/claude/pull/324))
