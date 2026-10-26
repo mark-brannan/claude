@@ -21,7 +21,7 @@ ones.
 
 Rows land in the state repo's `metrics/headless-runs`, `metrics-db` loads them
 into `headless_runs`, and `spend --by bot` rolls them up by `what`. The cost
-lands on the PR a row names.
+lands on the PR a row names; a row from a fork, or from an uploader `spend` does not trust, is costed with no PR.
 
 ## The inventory
 
@@ -37,7 +37,7 @@ lands on the PR a row names.
 ## How a CI run is priced
 
 After its Claude step, the workflow calls the shared cost action in
-mark-brannan/.github (`headless-run-cost`) and uploads the `headless-run`
+mark-brannan/.github (`headless-run-cost`, not yet written: mark-brannan/claude#219) and uploads the `headless-run`
 artifact. `metrics-db --github` collects every repo's artifacts into the state
 repo. Actions expires artifacts after 90 days, so collection runs inside that
 window.
