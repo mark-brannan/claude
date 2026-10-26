@@ -13,7 +13,7 @@ naming the branch and what it holds.
 
 Runs on Stop, alongside pr-threads-gate.py. The quiet path costs nothing:
 HEAD on the default branch, a detached HEAD, no origin, or no commits ahead
-and the hook exits before any network call.
+and no dirty tracked files, and the hook exits before any network call.
 
 Read-only: detects and blocks, never deletes. Abandon lives in its own
 script, abandon-branch.py; see dotfiles#115.
@@ -130,7 +130,8 @@ def where(cwd):
         raise Quiet("is the default branch")
     ok, n = git(work_root, "rev-list", "--count", f"{base}..HEAD")
     ahead = int(n) if ok and n.isdigit() else 0
-    if ahead <= 0:
+    # Uncommitted edits are work that can strand too, even at 0 commits ahead.
+    if ahead <= 0 and not git(work_root, "status", "--porcelain", "--untracked-files=no")[1]:
         raise Quiet(f"no commits ahead of {base}")
     return work_root, branch, base, ahead
 
@@ -234,13 +235,14 @@ def gate(ev):
     if unverified:
         note(rec, f"blocked: could not verify a home for `{branch}` ({unverified})")
         return (f"branch-home-gate: this session cannot end yet. Branch `{branch}` in {repo} is {ahead} "
-                f"commit(s) ahead of {base}, and whether it has a home could not be verified -- {unverified}. "
+                f"commit(s) ahead of {base} (0 means uncommitted tracked changes), and whether it has a home could not be verified -- {unverified}. "
                 "This is a gate and fails closed, so \"can't check\" is not a pass: open the PR, or file a "
                 "pointer card (/card-write) naming the branch and what it holds, then end the turn again. "
                 "This gate fires once per session.")
-    note(rec, f"blocked: `{branch}` is {ahead} commit(s) ahead of {base} with no PR and no pointer")
-    return (f"branch-home-gate: this session cannot end yet. Branch `{branch}` in {repo} is {ahead} commit(s) "
-            f"ahead of {base} with no PR and no pointer: no PR has this head, no open issue names the branch, "
+    what = f"{ahead} commit(s) ahead of {base}" + (" and uncommitted tracked changes" if not ahead else "")
+    note(rec, f"blocked: `{branch}` is {what} with no PR and no pointer")
+    return (f"branch-home-gate: this session cannot end yet. Branch `{branch}` in {repo} is {what} "
+            f"with no PR and no pointer: no PR has this head, no open issue names the branch, "
             "and no card on the board does either.\n\n"
             "Take one of the two ways out, then end the turn again:\n"
             "  - open the PR, or\n"

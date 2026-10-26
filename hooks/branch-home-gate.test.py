@@ -190,6 +190,18 @@ class Gate(unittest.TestCase):
         self.assertEqual(got, "block")
         self.assertIn("ahead of origin/main", reason)
 
+    def test_dirty_at_zero_ahead_blocks(self):
+        self.repo("claude/level", 0)
+        (self.WORK / "f").write_text("edited\n")
+        got, reason = self.stop("d1")
+        self.assertEqual(got, "block", "tracked edit, no commits, no PR")
+        self.assertIn("uncommitted tracked changes", reason)
+        self.assertEqual(self.stop("d2", GH_PRS='[{"url":"https://github.com/o/r/pull/7"}]')[0], "silent",
+                         "a PR is a home")
+        self.repo("claude/level", 0)
+        (self.WORK / "new").write_text("untracked\n")
+        self.assertEqual(self.stop("d3")[0], "silent", "untracked files alone do not block")
+
     def test_odd_session_id_names_a_safe_marker(self):
         self.repo("claude/orphan")
         self.assertEqual(self.stop("a/b c")[0], "block")

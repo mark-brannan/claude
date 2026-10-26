@@ -498,7 +498,7 @@ class StopNoticeTest(Base):
 
     def test_verdict_explain(self):
         ve = self.state.verdict_explain
-        tail = "Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
+        tail = "Archive the worktree only after the agent commits them."
         for n in "abcd":
             (self.WT / n).touch()
         self.assertEqual(ve("not archivable: worktree dirty", str(self.WT)),

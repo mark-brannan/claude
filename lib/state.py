@@ -591,7 +591,7 @@ _EXPLAIN = (
     (("did not finish",),
      "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries."),
 )
-_DIRTY_TAIL = "Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
+_DIRTY_TAIL = "Archive the worktree only after the agent commits them."
 
 
 def verdict_explain(verdict, root=""):
