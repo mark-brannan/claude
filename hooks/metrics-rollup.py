@@ -27,12 +27,8 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 
 import atomic  # noqa: E402
+import lib_state  # noqa: E402
 import state  # noqa: E402
-
-try:
-    import hooktrace  # noqa: E402
-except ImportError:  # a seed without lib/hooktrace.py: stderr is all there is
-    hooktrace = None
 
 
 def prune(root, pattern_suffix, min_age_days, infix=False):
@@ -205,10 +201,7 @@ def main():
         atomic.write(f"{m}/metrics.json", out + "\n")
     except (OSError, ValueError, TypeError, KeyError) as e:
         # The previous metrics.json stands; say why the new one did not land.
-        if hooktrace is None:
-            print(f"metrics-rollup: rollup: {type(e).__name__}: {e}", file=sys.stderr)
-        else:
-            hooktrace.trace("metrics-rollup", "rollup", e)
+        lib_state.trace_failure("metrics-rollup", "", e, stage="rollup")
 
 
 if __name__ == "__main__":
