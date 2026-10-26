@@ -508,3 +508,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261024t045834z
 - metrics-live: the day counter call moves ahead of the nag lock, since state.py holds one lock at a time; the hook never reads its result, so no output changes Undo: move the day_decisions call back into run_engine ([#161](https://github.com/mark-brannan/dotfiles/issues/161)) (no PR, branch claude/hook-races-161)
+
+### 20261026t082817z
+- metrics-dashboard: exactly 3600 s elapsed counts as '5 min to 1 h' Undo: change the mid/long boundary in costw back to >= 3600 (bin/metrics-dashboard) ([#323](https://github.com/mark-brannan/claude/pull/323))
