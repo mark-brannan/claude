@@ -179,10 +179,13 @@ def graphql(repo, num, query):
             "-F", f"number={num}", "-f", f"query={query}"]
 
 
-def touched_prs(record):
+def touched_prs(record, budget):
     """Every distinct PR the record names, as sorted (owner/name, number)
     pairs. A cwd line resolves through gh to whatever PR its branch has; no
-    PR there is fine. A read never gates the Stop (dotfiles#224)."""
+    PR there is fine. A read never gates the Stop (dotfiles#224). The cwd
+    lines share budget seconds between them; past it the gate blocks as
+    unverified rather than drop a PR it could not look up."""
+    deadline = time.monotonic() + budget if budget else None
     with open(record, "rb") as f:
         lines = sorted(set(f.read().decode("utf-8", "replace").splitlines()))
     prs = set()
@@ -194,22 +197,27 @@ def touched_prs(record):
                 continue
             prs.add((a, b))
         elif kind == "cwd" and os.path.isdir(a):
-            for url in branch_pr_urls(a):
+            for url in branch_pr_urls(a, deadline):
                 m = PR_URL.match(url)
                 if m:
                     prs.add((m.group(1), m.group(2)))
     return sorted((r, n) for r, n in prs if r and n)
 
 
-def branch_pr_urls(cwd):
+def branch_pr_urls(cwd, deadline=None):
     """The PR urls gh finds for the branch checked out at cwd. The url names
     the base repo, where the threads live; the head repo would be wrong for a
     fork. A local branch named apart from the PR's head (pickup's `checkout
     -B <short-name>`) has no PR by name; after its push, its HEAD does."""
     def run(argv):
+        left = None if deadline is None else deadline - time.monotonic()
         try:
+            if left is not None and left <= 0:
+                raise subprocess.TimeoutExpired(argv, 0)
             p = subprocess.run(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.DEVNULL)
+                               stderr=subprocess.DEVNULL, timeout=left)
+        except subprocess.TimeoutExpired:
+            raise Blocked(f"{HOOK}: gh timed out resolving the PR for {cwd}, {UNVERIFIED_TAIL}")
         except OSError:
             return None
         return p.stdout.decode("utf-8", "replace").rstrip("\n") if p.returncode == 0 else None
@@ -234,8 +242,11 @@ def not_found_on_repository(reply):
 
 
 def fetch(work, i, repo, num, limit):
-    """One PR's threads as (rc, out, view). view is None, or, when the reply
-    is NOT_FOUND on the repository, the confirming `gh repo view` as (rc, out)."""
+    """One PR's threads as (rc, out, view, again). view is None, or, when the
+    reply is NOT_FOUND on the repository, the confirming `gh repo view` as
+    (rc, out). again is None, or, for an OPEN PR whose merge state came back
+    UNKNOWN, the re-asked MERGE_QUERY reply text: it runs here, in the pool,
+    so N PRs still cost one fetch window plus one recheck, not N rechecks."""
     base = os.path.join(work, str(i))
     rc = bounded(graphql(repo, num, THREADS_QUERY), base + ".out", limit)
     out = read_text(base + ".out")
@@ -243,7 +254,13 @@ def fetch(work, i, repo, num, limit):
     if not_found_on_repository(first_json(out)):
         vrc = bounded(["gh", "repo", "view", repo], base + ".view.out", limit)
         view = (vrc, read_text(base + ".view.out"))
-    return rc, out, view
+    again = None
+    pr = dig(first_json(out), "data", "repository", "pullRequest")
+    if rc == 0 and view is None and jq_str(dig(pr, "state")) == "OPEN" and "UNKNOWN" in merge_state(pr):
+        time.sleep(seconds(os.environ.get("PR_THREADS_GATE_RECHECK_SLEEP"), 2.0))
+        if bounded(graphql(repo, num, MERGE_QUERY), base + ".again", limit, subprocess.DEVNULL) == 0:
+            again = read_text(base + ".again")
+    return rc, out, view, again
 
 
 def first_lines(text, n):
@@ -286,7 +303,7 @@ def check(prs):
         with ThreadPoolExecutor(max_workers=len(prs)) as pool:
             futures = [pool.submit(fetch, work, i, r, n, limit) for i, (r, n) in enumerate(prs, 1)]
         for i, ((repo, num), f) in enumerate(zip(prs, futures), 1):
-            rc, out, view = f.result()
+            rc, out, view, again = f.result()
             if rc == TIMED_OUT:
                 failed += f"\n- {repo}#{num}: fetch timed out"
                 continue
@@ -322,16 +339,11 @@ def check(prs):
             # branch that conflicts with main. Only CONFLICTING gates: the
             # fixup contract (pickup skill, section 6) leaves a branch that
             # is merely BEHIND alone, the queue updates it when it merges.
-            # GitHub computes mergeability lazily, so UNKNOWN means "ask
-            # again": one re-ask, then reported as unverified.
+            # GitHub computes mergeability lazily, so UNKNOWN was asked again
+            # in fetch(); what is still UNKNOWN here is reported as unverified.
             mergeable, mstate = merge_state(pr)
-            if "UNKNOWN" in (mergeable, mstate):
-                time.sleep(seconds(os.environ.get("PR_THREADS_GATE_RECHECK_SLEEP"), 2.0))
-                again = os.path.join(work, f"{i}.again")
-                if bounded(graphql(repo, num, MERGE_QUERY), again, limit, subprocess.DEVNULL) == 0:
-                    text = read_text(again)
-                    if text:
-                        mergeable, mstate = merge_state(dig(first_json(text), "data", "repository", "pullRequest"))
+            if again and "UNKNOWN" in (mergeable, mstate):
+                mergeable, mstate = merge_state(dig(first_json(again), "data", "repository", "pullRequest"))
             # Checked independently, never concatenated: the two fields are
             # computed apart and don't resolve in lockstep.
             if mergeable == "CONFLICTING":
@@ -361,7 +373,8 @@ def verdict(ev):
     try:
         if not shutil.which("gh"):
             raise Blocked(f"{HOOK}: gh is not installed here, {UNVERIFIED_TAIL}")
-        prs = touched_prs(record)
+        # Half the fetch bound: resolving (serial) plus fetching must fit the 60 s wrapper.
+        prs = touched_prs(record, seconds(os.environ.get("PR_THREADS_GATE_TIMEOUT")) / 2)
         if not prs:
             return None
         open_, stale, failed, dropped = check(prs)

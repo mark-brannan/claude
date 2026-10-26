@@ -301,8 +301,8 @@ def _live_claim_names(names, self8, hook_dir):
 # read-only check.
 #
 # Home is checked before session-live, and both only when dirty/unpushed are
-# already clean: both can shell out to `gh` (branch-home-gate.py up to two
-# 30s calls per mode, and session-live asks for its --card after the home
+# already clean: both can shell out to `gh` (branch-home-gate.py up to three
+# 15s calls per mode, and session-live asks for its --card after the home
 # check has), so a dirty mid-work tree -- the common
 # case, and the one Stop fires on every turn -- never pays that cost.
 #
