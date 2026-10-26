@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zoneinfo
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -27,7 +28,7 @@ spec = importlib.util.spec_from_loader("metrics_dashboard", importlib.machinery.
 md = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(md)
 
-TODAY = dt.date.today()
+TODAY = dt.datetime.now(dt.timezone.utc).date()
 
 
 def day(n):
@@ -271,6 +272,69 @@ class HelpersTest(unittest.TestCase):
         self.assertIn('class="flat"', md.tile("x", 100, 100, good="up"))
         self.assertIn("prior: 0", md.tile("x", 4, 0))
         self.assertNotIn("<i>", md.tile("<i>label</i>", 1))
+
+
+class WindowsAndBucketsTest(unittest.TestCase):
+    """The spec's windows (daily: UTC, weekly: the whole record) and the session length buckets."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        l = importlib.machinery.SourceFileLoader("metrics_db_schema", str(DB))
+        schema = importlib.util.module_from_spec(importlib.util.spec_from_loader("metrics_db_schema", l))
+        l.exec_module(schema)
+        cls.schema = schema.SCHEMA
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def render(self, name, setup, env=None):
+        db = os.path.join(self.tmp.name, name + ".db")
+        cx = sqlite3.connect(db)
+        cx.executescript(self.schema)
+        setup(cx)
+        cx.commit()
+        cx.close()
+        out = os.path.join(self.tmp.name, name + ".html")
+        r = subprocess.run([sys.executable, str(DASH), "--db", db, "--out", out],
+                           env=env or os.environ, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return Path(out).read_text()
+
+    @staticmethod
+    def monday(n):
+        d = TODAY - dt.timedelta(days=n)
+        return (d - dt.timedelta(days=d.weekday())).isoformat()
+
+    def test_daily_window_ends_on_the_utc_date_whatever_the_host_zone(self):
+        # UTC+14 and UTC-11: at every hour of the day one of them is on another date than UTC.
+        for tz in ("Pacific/Kiritimati", "Pacific/Pago_Pago"):
+            try:
+                zoneinfo.ZoneInfo(tz)
+            except zoneinfo.ZoneInfoNotFoundError:
+                self.skipTest(f"no tzdata for {tz}")  # an unknown TZ is read as UTC, which would prove nothing
+            before = dt.datetime.now(dt.timezone.utc).date().isoformat()
+            page = self.render("tz", lambda cx: None, {**os.environ, "TZ": tz})
+            after = dt.datetime.now(dt.timezone.utc).date().isoformat()
+            last = re.findall(r"<title>(\d{4}-\d{2}-\d{2})\nopen PRs: ", page)[-1]
+            self.assertIn(last, {before, after}, tz)
+
+    def test_weekly_charts_reach_back_to_the_earliest_typing_or_merged_pr(self):
+        def setup(cx):
+            cx.execute("insert into sessions(session_id, started_at, elapsed_seconds) values ('s', ?, 600)", (day(1),))
+            cx.execute("insert into typing(path, session_id, first_ts, prompts, chars, words) values ('p', 'old', ?, 2, 20, 4)", (day(120),))
+            cx.execute("insert into gh_items values ('acme/w', 1, 'pr', ?, ?, ?, 'MERGED', 0, 'claude/x', 'u', 't')", (day(101), day(100), day(100)))
+        page = self.render("weekly", setup)
+        self.assertIn(f"<title>{self.monday(120)}\nwords/prompt: 2", page)
+        self.assertRegex(page, rf"<title>{self.monday(100)}\nclaude/\* branch: 1\n")
+
+    def test_session_length_buckets_leave_no_gap(self):
+        def setup(cx):
+            for i, secs in enumerate((299.9, 300, 3599.5, 3600, 3600.5)):
+                cx.execute("insert into sessions(session_id, started_at, elapsed_seconds) values (?, ?, ?)", (f"s{i}", day(1), secs))
+        page = self.render("buckets", setup)
+        self.assertRegex(page, r"under 5 min: 1\n5 min to 1 h: 3\nover 1 h: 1\ntotal: 5")
 
 
 class InputHelpersTest(unittest.TestCase):
