@@ -83,8 +83,10 @@ class DashboardFixture(unittest.TestCase):
         projects = root / "projects" / "-fixture"
         projects.mkdir(parents=True)
         # typed-a was resumed: a second transcript carries the same session id.
+        # headless-c has a transcript with nothing typed in it: known to be headless.
         for name, sid, ago, text in (("typed-a", "typed-a", 1, "one two three"), ("typed-b", "typed-b", 3, "four five"),
-                                     ("typed-a-resumed", "typed-a", 1, "six seven")):
+                                     ("typed-a-resumed", "typed-a", 1, "six seven"),
+                                     ("headless-c", "headless-c", 2, "<system-reminder>injected</system-reminder>")):
             rec = {"type": "user", "isSidechain": False, "sessionId": sid, "cwd": "/fixture", "timestamp": day(ago),
                    "message": {"role": "user", "content": text}}
             (projects / f"{name}.jsonl").write_text(json.dumps(rec, separators=(",", ":")) + "\n")
@@ -211,6 +213,102 @@ class RenderTest(DashboardFixture):
     def test_series_names_from_repo_topics_are_escaped(self):
         self.assertNotIn("<b>alpha", self.page)
         self.assertIn("&lt;b&gt;alpha", self.page)
+
+
+def week_of(ago):
+    d = TODAY - dt.timedelta(days=ago)
+    return (d - dt.timedelta(days=d.weekday())).isoformat()
+
+
+class TypedPromptTest(unittest.TestCase):
+    """Typed counts come only from the transcripts' typed prompts; a transcript's
+    prompts sit in the week of its first prompt, however early the session began."""
+    # session id -> days ago it started
+    STARTED = {"late": 20, "orphan": 2, "quiet": 3}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        root = Path(cls.tmp.name)
+        repo = root / "state-repo"
+        (repo / ".git").mkdir(parents=True)
+        sd = repo / "state" / "global"
+        (sd / "metrics" / "sessions").mkdir(parents=True)
+        cls.sess = {
+            # begun 20 days ago, first prompt 1 day ago (two prompts); user_turns says 0
+            "late": session("late", 20, user_turns=0, tool_calls=6, commits=2, friction={"total": 4}),
+            # no transcript at all; user_turns says 0, which is no evidence of headless
+            "orphan": session("orphan", 2, user_turns=0, tool_calls=10, commits=1, friction={"total": 3}),
+            # a transcript with nothing typed in it
+            "quiet": session("quiet", 3, user_turns=5, tool_calls=4, commits=0, friction={"total": 1}),
+        }
+        for sid, rec in cls.sess.items():
+            (sd / "metrics" / "sessions" / f"{sid}.json").write_text(json.dumps(rec))
+        projects = root / "projects" / "-fixture"
+        projects.mkdir(parents=True)
+
+        def user(sid, ago, text):
+            return json.dumps({"type": "user", "isSidechain": False, "sessionId": sid, "cwd": "/fixture", "timestamp": day(ago),
+                               "message": {"role": "user", "content": text}}, separators=(",", ":")) + "\n"
+        (projects / "late.jsonl").write_text(user("late", 1, "first words") + user("late", 1, "second"))
+        (projects / "quiet.jsonl").write_text(user("quiet", 3, "<system-reminder>injected</system-reminder>"))
+        env = {**os.environ, "CLAUDE_STATE_REPO": str(repo), "HOME": str(root)}
+        db, cls.out = root / "out" / "metrics.db", root / "out" / "index.html"
+        for cmd in ([DB, "--db", db, "--projects", root / "projects", "--quiet"], [DASH, "--db", db, "--out", cls.out]):
+            r = subprocess.run([sys.executable, *map(str, cmd)], env=env, capture_output=True, text=True)
+            assert r.returncode == 0, r.stderr
+        cls.page = cls.out.read_text()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def tips(self, caption):
+        """{x key: {series: value text}} for one chart, from its hover titles."""
+        fig = re.search(r"<figure><figcaption>" + re.escape(caption) + r"</figcaption>.*?</figure>", self.page, re.S)
+        self.assertIsNotNone(fig, f"no chart {caption!r}")
+        out = {}
+        for t in re.findall(r"<title>([^<]*)</title>", fig.group(0)):
+            key, *rows = t.split("\n")
+            out[key] = dict(r.split(": ", 1) for r in rows if ": " in r)
+        return out
+
+    def tile(self, label):
+        return re.search(r'<div class="tile"><b>([^<]*)</b><span>' + re.escape(label) + r"</span>", self.page).group(1)
+
+    def started_in(self, week, num):
+        return sum(num(self.sess[sid]) for sid, ago in self.STARTED.items() if week_of(ago) == week)
+
+    def test_a_session_with_no_transcript_is_unknown_not_headless(self):
+        # orphan and quiet are in the window; only quiet is known to be headless.
+        self.assertEqual(self.tile("sessions, 7d"), "2")
+        self.assertEqual(self.tile("of them headless, 7d"), "1")
+
+    def test_a_session_with_no_transcript_is_in_no_prompt_bucket(self):
+        buckets = self.tips("Sessions per week, by prompts typed")
+        total = lambda name: sum(int(v[name]) for v in buckets.values())
+        self.assertEqual(total("0 (headless)"), 1)  # quiet
+        self.assertEqual(total("2–5"), 1)           # late, two prompts
+        self.assertEqual(total("1") + total("6+"), 0)
+
+    def test_the_daily_mix_leaves_an_unknown_session_out_of_both_sides(self):
+        day_of_orphan = (TODAY - dt.timedelta(days=2)).isoformat()
+        mix = self.tips("Sessions per day: headless vs interactive")[day_of_orphan]
+        self.assertEqual((mix["headless (nothing typed)"], mix["interactive"]), ("0", "0"))
+
+    def test_weekly_per_prompt_charts_use_the_week_of_the_first_prompt(self):
+        # late began in an earlier week than its two prompts: that week has no prompts, so no point;
+        # the prompts' week divides the events of the sessions started in it by 2.
+        w_start, w_typed = week_of(20), week_of(1)
+        self.assertNotEqual(w_start, w_typed)
+        cases = (("Friction per 100 prompts, weekly", "friction/100", lambda r: 100.0 * r["friction"]["total"]),
+                 ("Tool calls per prompt, weekly", "tool calls/prompt", lambda r: r["tool_calls"]),
+                 ("Commits per prompt, weekly", "commits/prompt", lambda r: r["commits"]))
+        for caption, name, num in cases:
+            tip = self.tips(caption)
+            self.assertEqual(tip[w_start][name], "–", caption)
+            digits = 2 if name.startswith("commits") else 1
+            self.assertEqual(tip[w_typed][name], md.fmt(round(self.started_in(w_typed, num) / 2, digits)), caption)
 
 
 class CliTest(unittest.TestCase):
