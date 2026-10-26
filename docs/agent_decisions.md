@@ -514,3 +514,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261026t082947z
 - metrics-dashboard: a session with no transcript row has an unknown typed count, left out of the headless tile and the prompt buckets (not counted as 0) Undo: use coalesce(t.prompts, 0) in temp view sv ([#324](https://github.com/mark-brannan/claude/pull/324))
+
+### 20261026t082956z
+- metrics-dashboard: the daily headless-vs-interactive chart counts interactive as sessions with typed prompts, so an unknown session is on neither side Undo: chart interactive as n - headless again ([#324](https://github.com/mark-brannan/claude/pull/324))
