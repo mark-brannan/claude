@@ -33,6 +33,7 @@ uncertain (not a repo, no upstream and no origin/HEAD) -> allow.
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -172,7 +173,7 @@ def main():
     listing = "\n".join(unsigned)
     n = len(unsigned)
     branch = git(cwd, "symbolic-ref", "--short", "HEAD")[1]
-    how = (f"Ask for the remedy and run what its recommend line says:\n  python3 ~/.claude/lib/state.py branch_brief {cwd} {branch}")
+    how = (f"Ask for the remedy and run what its recommend line says:\n  python3 ~/.claude/lib/state.py branch_brief {shlex.quote(cwd)} {shlex.quote(branch)}")
 
     if git(cwd, "config", "user.signingkey")[0] == 0:
         deny(f"no-unsigned-push: {n} unsigned commit(s) on {branch} would be pushed, and this machine "
@@ -185,7 +186,7 @@ def main():
         f"no-unsigned-push: {n} unsigned commit(s) on {branch} are being pushed from a machine with "
         f"no signing key:\n\n{listing}\n\nA repo that requires signed commits will block the PR until "
         "someone re-signs from a machine with the signing key, following `python3 ~/.claude/lib/state.py "
-        f"branch_brief {cwd} {branch}`. Say so in the PR body and the handoff; "
+        f"branch_brief {shlex.quote(cwd)} {shlex.quote(branch)}`. Say so in the PR body and the handoff; "
         "do not try to sign here."),
         ascii=False, compact=True, errors="surrogateescape")
     return 0
