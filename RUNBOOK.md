@@ -441,6 +441,12 @@ runs only): total, runs and mean per check, dollars per week, and cuts by repo a
 The cost is `total_cost_usd` from the CLI, not an estimate. Cold backfill: one list call per
 repo plus one download per artifact, about 130 calls for 79 artifacts; warm, one call per repo.
 
+`--github` also lists, with a warning at the end of the run and in table `unpriced_workflows`,
+every workflow that runs Claude (`claude-code-action`, `claude -p`) and records no cost: neither
+the shared `headless-run-cost` action, a `headless-run` upload nor a call of the shared
+`claude-review.yml`. One contents listing per repo plus one fetch per workflow file whose blob sha
+is not in `metrics/dashboard/workflow-verdicts.json`; warm, one call per repo. Exit status is unchanged.
+
 A timer rebuilds both every four hours. Install once:
 
 ```bash
