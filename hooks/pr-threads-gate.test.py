@@ -29,7 +29,8 @@ RUN = ["/bin/sh"] if HOOK.suffix == ".sh" else [sys.executable]
 FAKE_GH = r"""#!/bin/sh
 echo "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "pr view") [ -n "${GH_NO_BRANCH_PR:-}" ] && { echo 'no pull requests found for branch "fix183"' >&2; exit 1; }
+  "pr view") [ -n "${GH_HANG_VIEW:-}" ] && sleep 30
+    [ -n "${GH_NO_BRANCH_PR:-}" ] && { echo 'no pull requests found for branch "fix183"' >&2; exit 1; }
     printf 'https://github.com/o/r/pull/7\n'; exit 0 ;;
   "pr list") case "$*" in *headRefOid*) printf 'https://github.com/o/r/pull/7\n' ;; esac; exit 0 ;;
   "repo view")
@@ -64,6 +65,7 @@ case "${GH_MODE:-}" in
   missing)  printf '{"data":{"repository":{"pullRequest":null}}}' ;;
   fail)     echo "gh: HTTP 401: Bad credentials" >&2; exit 1 ;;
   hang)     sleep 30 ;;
+  slow_unknown) case "$*" in *reviewThreads*) printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"UNKNOWN","mergeStateStatus":"UNKNOWN","reviewThreads":{"nodes":[]}}}}}' ;; *) sleep 1; printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}}}}' ;; esac ;;
 esac
 """
 
@@ -266,6 +268,24 @@ class CannotVerify(Base):
         # timeout(1) reads a duration of 0 as no bound; so does the gate.
         self.record("s10z", "repo", "o/r", "25")
         self.assertSilent("s10z", "resolved", PR_THREADS_GATE_TIMEOUT="0")
+
+
+class Bounds(Base):
+    @unittest.skipUnless(shutil.which("timeout"), "needs timeout(1)")
+    def test_rechecks_run_concurrently(self):
+        # Each recheck sleeps 1 s; serially, four PRs would take 4 s of them.
+        for i in "1234":
+            self.record("b1", "repo", "o/r", i)
+        start = time.monotonic()
+        self.assertSilent("b1", "slow_unknown")
+        self.assertLess(time.monotonic() - start, 3.5, "the rechecks ran serially")
+
+    def test_hung_cwd_resolution_blocks_unverified(self):
+        self.record("b2", "cwd", str(self.root / "repo"), "", "")
+        start = time.monotonic()
+        self.assertBlocks("b2", "resolved", GH_HANG_VIEW="1", PR_THREADS_GATE_TIMEOUT="2")
+        self.assertLess(time.monotonic() - start, 10)
+        self.says("timed out resolving the PR")
 
 
 class NotFoundRepo(Base):
