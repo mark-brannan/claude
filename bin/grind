@@ -765,7 +765,7 @@ items=$(printf '%s' "$record" | jq -c --argjson repos "$repos_json" --argjson re
   ($audit | map({key: "\(.repo)#\(.number)", value: .}) | from_entries) as $a
   | ([ .buckets.not_ready[] | (.repo | short) as $s | select(mine and (.isDraft|not) and (($red | index($s)) == null))
        | . + ($a["\($s)#\(.number)"] // {} | del(.repo))
-       | select((.section // "unfinished") | IN("unfinished", "stale-label"))
+       | select((.section // "unfinished") == "unfinished")
        | {kind: "pr", repo, number, title, url, labels, author, verdict: (.verdict // "unfinished"),
           cancelled_only: (.cancelled_only // false), failing_checks: (.failing_checks // []),
           head_committed_at: (.head_committed_at // null)} ] | sort_by(.number)) as $prs

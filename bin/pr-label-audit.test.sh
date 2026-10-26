@@ -6,10 +6,10 @@
 # on PATH: a canned search payload in, the rendered sections out.
 #
 # What matters: every verdict lands in exactly the section that tells the
-# reader what to DO about it -- a missing label needs `gh label create`, a
-# missing gate needs the ci-gate workflow, a green-but-unlabelled pull request
-# means the Mergify rule itself is broken -- and those three have different
-# fixes, so confusing them is the one failure that makes the audit useless.
+# reader what to DO about it -- a missing `fixup-hard` label needs
+# `gh label create`, a missing gate needs the ci-gate workflow, an unfinished
+# pull request needs a session -- and those have different fixes, so
+# confusing them is the one failure that makes the audit useless.
 # Drafts are excluded because nobody is waiting on them. And a failing query
 # exits non-zero rather than printing a reassuringly empty report, because an
 # empty report and a broken query look identical.
@@ -24,7 +24,7 @@ S=$(mktemp -d); trap 'rm -rf "$S"' EXIT
 export PR_LABEL_AUDIT_OWNER=testowner
 
 # --- the fixture -------------------------------------------------------------
-# One repo that defines the label (alpha) and one that does not (nolabel),
+# One repo that defines fixup-hard (alpha) and one that does not (nolabel),
 # with a pull request per verdict the jq program can reach.
 pr() { # pr <repo> <number> <title> <draft> <mergeable> <labels-json> <threads-json> <rollup-json>
   cat <<EOF
@@ -38,7 +38,7 @@ EOF
 }
 green='{"contexts":{"nodes":[{"name":"ci-gate / gate","conclusion":"SUCCESS"}]}}'
 red='{"contexts":{"nodes":[{"name":"ci-gate / gate","conclusion":"FAILURE"}]}}'
-lab='[{"name":"awaiting-human"}]'
+lab='[{"name":"claimed"}]'
 
 # A page as the API returns one: `hasNextPage` decides whether the script
 # follows the cursor.
@@ -117,21 +117,8 @@ for r in ${GH_LABEL_FAIL:-}; do
   case "$*" in *"/$r/labels"*) echo "gh: Not Found" >&2; exit 1 ;; esac
 done
 case "$*" in
-  */alpha/labels*) echo awaiting-human; echo bug; echo fixup-hard; exit 0 ;;
+  */alpha/labels*) echo bug; echo fixup-hard; exit 0 ;;
   */labels*)       echo bug; exit 0 ;;
-esac
-# `gh api user -q .login`: the account `--refresh` posts as.
-case "$*" in
-  *"api user"*) echo "${GH_LOGIN:-mergify-bot}"; exit 0 ;;
-esac
-# `gh pr comment <n> -R owner/repo --body ...`: record it instead of posting,
-# so the test can assert on what would have been sent.
-case "$*" in
-  "pr comment "*)
-    [ "${GH_COMMENT_FAIL:-0}" = 1 ] && { echo "gh: could not comment" >&2; exit 1; }
-    echo "$*" >> "$(dirname "$0")/.comments"
-    echo "AGENT_BOT_OFF=${AGENT_BOT_OFF:-}" >> "$(dirname "$0")/.comment-env"
-    exit 0 ;;
 esac
 exit 1
 EOF
@@ -161,35 +148,29 @@ section_lists() { # section_lists <heading substring> <repo#number>
 # --- the happy path -----------------------------------------------------------
 run
 eq 'exit 0 on a good query' 0 "$RC"
-has 'Your turn is always present' '^## Your turn \(1\)$'
-has 'and ends with the live search link' 'https://github.com/pulls\?q=.*label%3Aawaiting-human'
+has 'the green list is always present' '^## Green and thread-free \(3\)$'
+hasnt 'and no label search link' 'label%3A'
 
 # --- each verdict lands in the section that names its fix ----------------------
-eq 'green + labelled is your turn' \
-  '## Your turn (1)' "$(section_of 'alpha#1')"
-eq 'green + unlabelled indicts the Mergify rule' \
-  '## Green and thread-free but NOT labelled' "$(section_of 'alpha#2')"
-assert 'labelled but red is listed as a stale label' \
-  section_lists 'Labelled but no longer green' 'alpha#3 '
-assert 'and also as work a session left unfinished' \
-  section_lists 'a session left these unfinished' 'alpha#3 '
-hasnt 'but never as your turn' 'alpha#3.*your turn'
+eq 'green is listed as green' '## Green and thread-free (3)' "$(section_of 'alpha#1')"
+eq 'a claimed label changes nothing about the verdict' '## Green and thread-free (3)' "$(section_of 'alpha#2')"
+eq 'a red gate is unfinished work' \
+  '## Gated, not finished -- a session left these' "$(section_of 'alpha#3')"
 eq 'a missing gate is its own section' \
-  '## No `ci-gate / gate` check -- the label can never apply' "$(section_of 'alpha#4')"
-eq 'threads open is unfinished work, not a broken rule' \
-  '## Gated, unlabelled -- a session left these unfinished' "$(section_of 'alpha#5')"
+  '## No `ci-gate / gate` check -- nothing can say these are finished' "$(section_of 'alpha#4')"
+eq 'threads open is unfinished work' \
+  '## Gated, not finished -- a session left these' "$(section_of 'alpha#5')"
 eq 'a conflict is unfinished work too' \
-  '## Gated, unlabelled -- a session left these unfinished' "$(section_of 'alpha#6')"
+  '## Gated, not finished -- a session left these' "$(section_of 'alpha#6')"
 has 'and the verdict is spelled out inline' 'alpha#6 \[conflicted\]'
 has 'as it is for threads' 'alpha#5 \[threads-open\]'
 
-# --- a repo without the label is a repo problem, not a PR problem --------------
+# --- a repo without fixup-hard is a repo problem, not a PR problem --------------
 has 'the repo is named once, under its own heading' \
-  '^## Repositories that do not define the `awaiting-human` label'
-eq 'the repo, not its PRs, is listed' '## Repositories that do not define the `awaiting-human` label' \
+  '^## Repositories that do not define the `fixup-hard` label'
+eq 'the repo, not its PRs, is listed' '## Repositories that do not define the `fixup-hard` label' \
   "$(section_of 'nolabel')"
-hasnt 'and its green PR is not blamed on the Mergify rule' 'nolabel#1'
-has 'the fix is a copy-pasteable command' 'gh label create awaiting-human -R testowner/<repo>'
+has 'the fix is a copy-pasteable command' 'gh label create fixup-hard -R testowner/<repo>'
 
 # --- drafts are nobody`s turn ---------------------------------------------------
 hasnt 'draft excluded' 'alpha#7'
@@ -199,7 +180,7 @@ page false "$(pr alpha 1 'green and labelled' false MERGEABLE "$lab" '[]' "$gree
 run
 eq 'a clean audit still exits 0' 0 "$RC"
 eq 'and prints exactly one heading' 1 "$(grep -c '^## ' <<<"$OUT")"
-has 'the one that matters' '^## Your turn \(1\)$'
+has 'the one that matters' '^## Green and thread-free \(1\)$'
 
 # --- nothing at all is said so, not left blank --------------------------------------
 page false > "$S/search.json"
@@ -215,7 +196,7 @@ SEARCH_JSON_2="$S/page2.json" run
 eq 'both pages counted' 0 "$RC"
 has 'page one kept' 'alpha#1 on page one'
 has 'page two fetched and merged' 'alpha#2 on page two'
-has 'and both are your turn' '^## Your turn \(2\)$'
+has 'and both are green' '^## Green and thread-free \(2\)$'
 unset SEARCH_JSON_2
 
 # --- a cursor that never ends is a refusal, not an under-report -------------------------
@@ -223,7 +204,7 @@ page true "$(pr alpha 1 'endless' false MERGEABLE "$lab" '[]' "$green")" > "$S/s
 run
 eq 'runaway pagination exits non-zero' 1 "$RC"
 has 'and says the report would be incomplete' 'more than 1000 open pull requests'
-hasnt 'rather than printing a partial report' '## Your turn'
+hasnt 'rather than printing a partial report' '## Green and thread-free'
 
 # --- exactly 1000 results (10 full pages, no more) is not a refusal --------------------
 # The 10th page completing with hasNextPage:false is a finished report, not the
@@ -245,21 +226,20 @@ eq 'an unreadable lookup still exits 0' 0 "$RC"
 has 'reported as not checked' '^## Repositories whose labels could not be read'
 eq 'and listed only there' '## Repositories whose labels could not be read' "$(section_of 'beta')"
 hasnt 'never as a repo that lacks the label' 'do not define'
-hasnt 'and no create-the-label advice' 'gh label create awaiting-human -R testowner/<repo>'
+hasnt 'and no create-the-label advice' 'gh label create fixup-hard -R testowner/<repo>'
 has 'the reader is told not to act on it' 'do NOT create the label here'
-hasnt 'nor is its green PR blamed on the Mergify rule' 'beta#1 lookup'
 
 # --- a repo that genuinely lacks the label is still reported as missing -----------------------
 run
 eq 'a readable lookup exits 0' 0 "$RC"
-has 'missing, not unchecked' '^## Repositories that do not define the `awaiting-human` label'
+has 'missing, not unchecked' '^## Repositories that do not define the `fixup-hard` label'
 hasnt 'and not reported as unreadable' 'could not be read'
 
 # --- a broken query must not look like a clean audit ----------------------------------
 GH_FAIL=1 run
 eq 'a failed query exits non-zero' 1 "$RC"
 has 'and says so' 'the GitHub query failed'
-hasnt 'rather than printing a reassuring report' '## Your turn'
+hasnt 'rather than printing a reassuring report' '## Green and thread-free'
 
 # --- a missing dependency is named ------------------------------------------------------
 EMPTY="$S/empty"; mkdir -p "$EMPTY"
@@ -290,16 +270,16 @@ row() { # row <repo#number> -- the one JSON object for that PR, from ndjson outp
 } > "$S/search.json"
 runargs --json
 eq '--json exits 0' 0 "$RC"
-eq 'green + labelled maps to your-turn' 'your-turn' "$(row 'alpha#1' | jq -r .section)"
-eq 'green + unlabelled maps to green-unlabelled' 'green-unlabelled' "$(row 'alpha#2' | jq -r .section)"
-eq 'labelled + red maps to stale-label (one row, not two)' 'stale-label' "$(row 'alpha#3' | jq -r .section)"
+eq 'green maps to green' 'green' "$(row 'alpha#1' | jq -r .section)"
+eq 'green, claimed or not, maps to green' 'green' "$(row 'alpha#2' | jq -r .section)"
+eq 'red maps to unfinished (one row, not two)' 'unfinished' "$(row 'alpha#3' | jq -r .section)"
 eq 'no gate maps to no-gate' 'no-gate' "$(row 'alpha#4' | jq -r .section)"
-eq 'green + unlabelled + repo missing the label maps to no-label-repo' 'no-label-repo' "$(row 'nolabel#1' | jq -r .section)"
+eq 'a repo missing fixup-hard does not change its PR section' 'green' "$(row 'nolabel#1' | jq -r .section)"
 eq 'exactly one JSON row per PR' 1 "$(printf '%s\n' "$OUT" | jq -c 'select(has("number"))' | grep -c 'alpha#3\|"number":3')"
 has '--json also carries the repo-level fixup-hard fact' 'repos_missing_fixup_hard'
 eq 'nolabel is missing fixup-hard' 'nolabel' "$(printf '%s\n' "$OUT" | jq -r 'select(has("repos_missing_fixup_hard")) | .repos_missing_fixup_hard[]' | grep -x nolabel)"
 eq 'each row carries mergeable' 'MERGEABLE' "$(row 'alpha#1' | jq -r .mergeable)"
-eq 'and its labels array' '["awaiting-human"]' "$(row 'alpha#1' | jq -c .labels)"
+eq 'and its labels array' '["claimed"]' "$(row 'alpha#1' | jq -c .labels)"
 
 # --- --pr: a single PR, restricted to one repository's query --------------------------
 PR_SINGLE_JSON="$S/single.json"
@@ -331,7 +311,7 @@ eq '--pr on a draft exits 0' 0 "$RC"
 has '--pr on a draft says so instead of printing nothing' 'colregs#194 is a draft'
 hasnt '--pr on a draft emits no row' '"number"'
 
-# --- argument parsing: strict, because --refresh writes ------------------------------
+# --- argument parsing: strict, because a typo must not widen the audit ------------------------------
 runargs --jsno
 eq 'an unknown flag exits 1' 1 "$RC"
 has 'and names it' 'unknown argument: --jsno'
@@ -349,9 +329,9 @@ eq 'a running, skipped or pending check is not a failing one' '["lint"]' "$(row 
 eq 'and a failing check carries its url' 'https://example.test/lint' "$(row 'alpha#9' | jq -r '.failing_checks[0].url')"
 run
 eq 'a red check outside the gate is unfinished work -- Mergify wants #check-failure=0' \
-  '## Gated, unlabelled -- a session left these unfinished' "$(section_of 'alpha#9')"
+  '## Gated, not finished -- a session left these' "$(section_of 'alpha#9')"
 has 'and the report names the check' 'alpha#9 \[checks-red: lint\]'
-hasnt 'rather than indicting the rule' 'Green and thread-free but NOT labelled'
+hasnt 'rather than calling it green' 'alpha#9.*green'
 runargs --json
 eq 'a real failure is not cancelled_only' false "$(row 'alpha#9' | jq -r '.cancelled_only')"
 
@@ -370,49 +350,6 @@ page false "$(pr alpha 1 'green and labelled' false MERGEABLE "$lab" '[]' "$gree
 runargs --json
 eq 'no failing checks at all -> cancelled_only false, not vacuously true' false "$(row 'alpha#1' | jq -r '.cancelled_only')"
 
-# --- --refresh: idempotent, and never fires without the flag ---------------------------
-rm -f "$BIN/.comments"
-page false "$(pr alpha 1 'stale label' false MERGEABLE "$lab" '[]' "$red")" > "$S/search.json"
-run
-eq 'default (no --refresh) still exits 0' 0 "$RC"
-[ -f "$BIN/.comments" ] && { fail=$((fail + 1)); echo "FAIL: no --refresh: a comment was posted anyway"; } || pass=$((pass + 1))
-
-rm -f "$BIN/.comments" "$BIN/.comment-env"
-GH_LOGIN=mergify-bot runargs --refresh
-eq '--refresh (nothing already posted) exits 0' 0 "$RC"
-eq 'exactly one comment was posted, to the stale-label PR, by number and -R repo' 1 \
-  "$(posted '^pr comment 1 -R testowner/alpha ')"
-eq 'the comment text is exactly the refresh trigger' 1 \
-  "$(posted '--body @mergifyio refresh')"
-eq 'it posts as the user, not the agent App (Mergify refuses the App)' 1 \
-  "$(grep -c '^AGENT_BOT_OFF=1$' "$BIN/.comment-env")"
-
-# A green-but-unlabelled PR in a repo that defines the label is the other
-# refresh target; a green-and-labelled one is not.
-rm -f "$BIN/.comments"
-page false "$(pr alpha 2 'green unlabelled' false MERGEABLE '[]' '[]' "$green"),$(pr alpha 1 'green and labelled' false MERGEABLE "$lab" '[]' "$green")" > "$S/search.json"
-GH_LOGIN=mergify-bot runargs --refresh
-eq 'green-unlabelled is refreshed' 1 "$(posted '^pr comment 2 -R testowner/alpha ')"
-eq 'green-and-labelled is left alone' 0 "$(posted '^pr comment 1 ')"
-
-# Re-running --refresh right after must not repost: the fixture's PR now
-# carries a lastComments entry matching what was just "posted".
-page false "$(cat <<JSON
-{ "number": 1, "title": "stale label", "isDraft": false,
-  "url": "https://github.com/testowner/alpha/pull/1",
-  "repository": { "name": "alpha", "owner": {"login": "testowner"} }, "mergeable": "MERGEABLE",
-  "labels": { "nodes": $lab }, "reviewThreads": { "nodes": [] },
-  "lastComments": { "nodes": [ { "author": {"login": "mergify-bot"}, "body": "@mergifyio refresh",
-    "createdAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" } ] },
-  "commits": { "nodes": [ { "commit": { "oid": "abc", "pushedDate": "2026-01-01T00:00:00Z", "statusCheckRollup": $red } } ] } }
-JSON
-)" > "$S/search.json"
-rm -f "$BIN/.comments"
-GH_LOGIN=mergify-bot runargs --refresh
-eq 'already-refreshed within 24h: exits 0' 0 "$RC"
-[ -f "$BIN/.comments" ] && { fail=$((fail + 1)); echo "FAIL: idempotency: reposted anyway"; } || pass=$((pass + 1))
-unset GH_LOGIN
-
 # --- a nested connection that truncates is a refusal, not an under-report (dotfiles#277) --
 # `pr()` never sets totalCount, so it defaults to 0 and never trips this --
 # these fixtures set it by hand to simulate GitHub reporting more items than
@@ -420,7 +357,7 @@ unset GH_LOGIN
 trunc_labels='{ "number": 30, "title": "truncated labels", "isDraft": false,
   "url": "https://github.com/testowner/alpha/pull/30",
   "repository": { "name": "alpha", "owner": {"login": "testowner"} }, "mergeable": "MERGEABLE",
-  "labels": { "totalCount": 25, "nodes": [{"name":"awaiting-human"}] },
+  "labels": { "totalCount": 25, "nodes": [{"name":"claimed"}] },
   "reviewThreads": { "nodes": [] },
   "commits": { "nodes": [ { "commit": { "oid": "abc", "committedDate": "2026-01-01T00:00:00Z",
     "statusCheckRollup": '"$green"' } } ] } }'
@@ -428,7 +365,7 @@ page false "$trunc_labels" > "$S/search.json"
 run
 eq 'a truncated labels connection is a refusal' 1 "$RC"
 has 'and names the PR and which connection truncated' 'alpha#30: labels truncated \(25 total, 1 fetched\)'
-hasnt 'rather than a report built on partial data' '## Your turn'
+hasnt 'rather than a report built on partial data' '## Green and thread-free'
 
 trunc_threads='{ "number": 31, "title": "truncated threads", "isDraft": false,
   "url": "https://github.com/testowner/alpha/pull/31",
