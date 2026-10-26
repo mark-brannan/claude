@@ -592,6 +592,15 @@ _EXPLAIN = (
      "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries."),
 )
 _DIRTY_TAIL = "Archive the worktree only after the agent commits them."
+# The state repo is dirty between the Stop hook's commits; anywhere else it is not.
+_DIRTY_TAIL_STATE = "Normal in the state repo: the Stop hook commits it."
+
+
+def _dirty_tail(root):
+    sr = state_repo()
+    if root and sr and os.path.realpath(root) == os.path.realpath(sr):
+        return _DIRTY_TAIL_STATE
+    return _DIRTY_TAIL
 
 
 def verdict_explain(verdict, root=""):
@@ -606,9 +615,9 @@ def verdict_explain(verdict, root=""):
         paths = _porcelain_paths(dirty_paths(root)) if root else []
         if paths:
             shown = ", ".join(paths[:3]) + (f", +{len(paths) - 3} more" if len(paths) > 3 else "")
-            lines.append(f"→ worktree dirty: {len(paths)} uncommitted file(s) ({shown}). {_DIRTY_TAIL}")
+            lines.append(f"→ worktree dirty: {len(paths)} uncommitted file(s) ({shown}). {_dirty_tail(root)}")
         else:
-            lines.append(f"→ worktree dirty: uncommitted files in this worktree. {_DIRTY_TAIL}")
+            lines.append(f"→ worktree dirty: uncommitted files in this worktree. {_dirty_tail(root)}")
     return "\n".join(lines)
 
 

@@ -513,6 +513,10 @@ class StopNoticeTest(Base):
         self.assertEqual(ve("not archivable: worktree dirty"),
                          f"→ worktree dirty: uncommitted files in this worktree. {tail}",
                          "without the tree, no file list")
+        (self.SR / "README").write_text("changed\n")
+        self.assertEqual(ve("not archivable: worktree dirty", str(self.SR)),
+                         "→ worktree dirty: 1 uncommitted file(s) (README). Normal in the state repo: the Stop hook commits it.",
+                         "dirty is normal in the state repo, and only there")
         self.assertEqual(len(ve("not archivable: worktree dirty, 2 commit(s) unpushed").split("\n")), 2,
                          "two reasons, one line each")
         self.assertEqual(ve("not archivable: something no explanation knows"), "", "an unknown reason has none")
