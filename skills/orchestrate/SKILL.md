@@ -44,6 +44,9 @@ Then rule on each row yourself:
   the review sessions'.
 - **Rate each issue for an agent** — low / medium / high, the triage
   convention. Low and medium go to Sonnet, high to Opus.
+- **Call out browser storage.** An issue that adds browser storage, cookies
+  or similar persistence is an API-class change (pencil): the plan table
+  names it, the worker's task says so, and it is planned for, never a halt.
 
 ## 2. Sequence
 

@@ -15,6 +15,9 @@ family coded it) goes into your summary. Run the review on that reviewer's
 model and never on a coder's family; if you are one, hand the review to a
 sub-agent on the reviewer's model. The metrics row records this line.
 
+CI runs this review on every PR (claude[bot]). A scoping driver takes the bot's
+comments as the round's review and runs it by hand only where the bot cannot.
+
 Then run `~/.claude/bin/pr-blockers <PR>`. Its lines are findings, in its
 order: open conversations before anything else.
 
@@ -40,7 +43,8 @@ dearer still.
 
 **Look at** — a diff a human must read: where (file and lines), and why a
 machine couldn't settle it. Never a question; a question belongs under
-Pencil or Decide.
+Pencil or Decide. A diff that adds browser storage, cookies or similar
+persistence is API-class: it goes here, not as a blocker.
 
 **Reversed** — every thread, a bot's or a reviewer's, that asked to undo
 an instruction: a governing document (a design doc, a decisions file, an
