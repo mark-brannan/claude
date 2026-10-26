@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zoneinfo
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -295,6 +296,10 @@ class WindowsAndBucketsTest(unittest.TestCase):
     def test_daily_window_ends_on_the_utc_date_whatever_the_host_zone(self):
         # UTC+14 and UTC-11: at every hour of the day one of them is on another date than UTC.
         for tz in ("Pacific/Kiritimati", "Pacific/Pago_Pago"):
+            try:
+                zoneinfo.ZoneInfo(tz)
+            except zoneinfo.ZoneInfoNotFoundError:
+                self.skipTest(f"no tzdata for {tz}")  # an unknown TZ is read as UTC, which would prove nothing
             before = dt.datetime.now(dt.timezone.utc).date().isoformat()
             page = self.render("tz", lambda cx: None, {**os.environ, "TZ": tz})
             after = dt.datetime.now(dt.timezone.utc).date().isoformat()
