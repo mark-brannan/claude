@@ -1116,7 +1116,7 @@ def branch_brief(root, br):
     mb = mb.strip() if rc == 0 else f"origin/{base}"
     if mg == "unknown":
         rec = f"count the merge commits by hand before touching history -- git could not count them between {br} and origin/{base}"
-    elif int(mg) > 0 and conf == "no" and _merges_all_clean(g, f"origin/{base}..{br}"):
+    elif int(mg) > 0 and conf == "no" and uns not in ("unknown", 0) and _merges_all_clean(g, f"origin/{base}..{br}"):
         # No merge holds a hand-resolution, so linearizing drops nothing; base's commits are skipped.
         cmd = f"git rebase -S --force-rebase {mb}"
         if g("config", "user.signingkey")[0] == 0:
@@ -1150,7 +1150,7 @@ def branch_brief(root, br):
         else:
             rec = (f"do not rebase and do not resign -- an unsigned commit sits at or below one of the {mg} merge commit(s), "
                    "so the branch cannot be re-signed without losing the merge; hand it over saying so")
-    elif int(mg) > 0:
+    elif int(mg) > 0 and conf != "no":
         rec = (f"do not rebase and do not resign -- {mg} merge commit(s) on the branch; `git merge origin/{base}`, "
                "resolve, commit signed, push as a fast-forward")
     elif conf == "yes":

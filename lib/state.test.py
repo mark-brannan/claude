@@ -888,6 +888,28 @@ class BranchBriefTest(Base):
         self.g(r, "config", "user.signingkey", "/dev/null")
         self.assertRegex(self.rec(self.brief(r)[1]), r"^recommend: git rebase -S --force-rebase [0-9a-f]{40} ")
 
+    def test_a_signed_clean_merge_needs_nothing_on_the_base(self):
+        r = self.new_repo("signedmerge")
+        self.fake_signed(r, "feat work", "base\nfeat\n")
+        self.g(r, "checkout", "-q", "main")
+        self.commit(r, "other\n", "main moves", path="g")
+        self.g(r, "push", "-q", "origin", "main")
+        self.g(r, "checkout", "-q", "feat")
+        self.g(r, "merge", "-q", "--no-edit", "origin/main")
+        # Re-sign the clean merge in place, keeping its tree and parents, as a signer would.
+        tip = self.g(r, "rev-parse", "HEAD")
+        parents = self.g(r, "rev-list", "--parents", "-1", tip).split()[1:]
+        obj = subprocess.run(["git", "-C", str(r), "hash-object", "-t", "commit", "-w", "--stdin"], check=True,
+                             capture_output=True, text=True, input=(
+            f"tree {self.g(r, 'rev-parse', tip + '^{tree}')}\n" + "".join(f"parent {p}\n" for p in parents) +
+            "author T <t@e> 1700000000 +0000\ncommitter T <t@e> 1700000000 +0000\n"
+            "gpgsig -----BEGIN SSH SIGNATURE-----\n Zm9v\n -----END SSH SIGNATURE-----\n\nmerge\n")).stdout.strip()
+        self.g(r, "update-ref", "HEAD", obj)
+        out = self.brief(r)[1]
+        self.assertIn("merges: 1", out)
+        self.assertIn("unsigned: 0", out)
+        self.assertRegex(self.rec(out), r"^recommend: nothing on the base")
+
     def test_unsigned_with_and_without_a_key(self):
         r = self.new_repo("unsigned")
         self.commit(r, "base\nfeat\n", "feat work")

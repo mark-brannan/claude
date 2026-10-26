@@ -87,14 +87,16 @@ class NoUnsignedPushTest(unittest.TestCase):
         self.assertEqual(verdict, "deny")
         self.assertEqual(out.count("1 unsigned commit"), 1)
 
-        # The remedy is the brief; its command re-signs only what sits above
-        # the merge, so the merge and main's commits survive and the push clears.
+        # The remedy is the brief. Its command rebases onto the merged main tip,
+        # so main's commits are kept, not replayed, and the push clears.
         self.assertIn("state.py branch_brief", out)
         brief = subprocess.run([sys.executable, str(STATE), "branch_brief", str(w), "feat"],
                                capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout
         rec = next(ln for ln in brief.split("\n") if ln.startswith("recommend: "))
         self.assertRegex(rec, r"^recommend: git rebase -S --force-rebase [0-9a-f]{40} ")
         git(w, *rec.split("#")[0].split()[2:])
+        self.assertEqual(git(w, "merge-base", "--is-ancestor", "origin/HEAD", "HEAD", check=False).returncode, 0,
+                         "advised rebase keeps main's commit, not a copy")
         self.assertEqual(self.verdict("git push", w), "silent")
 
     def test_hand_resolved_merge_keeps_its_tree_when_resigned(self):
