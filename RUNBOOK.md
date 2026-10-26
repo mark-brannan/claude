@@ -27,7 +27,6 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 
 **GitHub repository**
 - [Set the auth token for the PR review workflows](#set-the-auth-token-for-the-pr-review-workflows)
-- [Re-sign a branch whose commits are unsigned](#re-sign-a-branch-whose-commits-are-unsigned)
 - [Act on GitHub as the agent App](#act-on-github-as-the-agent-app)
 
 **PRs**
@@ -576,62 +575,6 @@ the owner pushes.
 
 CodeRabbit is configured by `.coderabbit.yaml` and authenticates as a GitHub
 App. It needs no secret, so none of this affects it.
-
-## Re-sign a branch whose commits are unsigned
-
-**When:** a PR says *"All commits must have verified signatures"*, or the
-`no-unsigned-push` hook refused a push. Commits come out unsigned from cloud
-sessions (no key on the VM), from plumbing such as `git commit-tree`, and
-from anything run with `-c commit.gpgsign=false`. The fix is the same for
-all three, and it runs from any machine that has the signing key, never from
-the cloud session.
-
-**Never reach for GitHub's own "Update branch" instead.** The `--rebase`
-form (`gh pr update-branch --rebase`) rewrites the commits and does not
-re-sign them, so a branch that verified before the call comes back with every
-commit unsigned, and the damage looks like a different problem: the PR simply
-swaps one silent block for another. The merge form (the button's default, and
-plain `gh pr update-branch`) keeps signatures and is harmless to linear
-history, because `required_linear_history` constrains only `main` and a PR
-squash-merges to one commit; it is merely unneeded here. The `no-update-branch`
-hook blocks the subcommand in both forms, and its message still gives the
-older merge-commit rationale, which this section retracts.
-
-From any checkout of the repo; it works in a throwaway worktree, so the
-branch you have checked out and any uncommitted work are untouched:
-
-```bash
-resign-branch.sh <branch>
-```
-
-It resets local `<branch>` to `origin/<branch>`, rebases onto the tip of the
-PR's base branch with `-S` (which re-signs every commit and drops any "Update
-branch" merge commits), verifies each one locally, and force-pushes with
-lease. The base comes from GitHub, so a stacked PR stays on its parent; with
-no open PR it uses the default branch, and `RESIGN_BASE=<branch>` names the
-base by hand when `gh` can't answer. Run it to re-sign, never to catch a
-branch up: a branch that is merely behind is brought up to date by the merge
-queue, so it is not a reason to run this (the script does rebase onto the
-base, so a behind branch comes out current as a side effect). Running it on
-a branch that already verifies and is up to date does nothing. It
-refuses if any clone of the repo on this machine — `~/dotfiles` and yadm's
-both count — has local commits on the branch that are not on origin, if
-the rebase conflicts, or if linearizing would drop content from a
-hand-resolved merge commit — in every case the branch is left as it was. Your working tree is
-never touched, dirty or not: all the rewriting happens in a throwaway
-worktree, so there is nothing to stash first.
-
-Verify on GitHub — every line must say `true`:
-
-```bash
-gh api repos/<owner>/<repo>/pulls/<n>/commits --jq '.[]|"\(.sha[0:7]) \(.commit.verification.verified) \(.commit.message|split("\n")[0])"'
-```
-
-If the local verify step reports every commit as `U` or `E` instead of
-`G`, `~/.ssh/allowed_signers` is missing or in the wrong column order. The
-format is `<email> <key-type> <key>` — email first, unlike
-`authorized_keys`. The script builds a temporary one when none is
-configured, so this only matters for `git log --show-signature` by hand.
 
 ## Act on GitHub as the agent App
 

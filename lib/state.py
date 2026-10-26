@@ -1112,11 +1112,11 @@ def branch_brief(root, br):
     elif uns == "unknown":
         rec = f"check the signatures by hand before pushing -- git could not list the commits between origin/{base} and {br}"
     elif uns > 0 and g("config", "user.signingkey")[0] == 0:
-        rec = (f"git rebase -S --force-rebase {mb}   # {uns} unsigned commit(s); if {br} is already on the remote, "
-               f"resign-branch.sh {br} instead")
+        rec = (f"git rebase -S --force-rebase {mb}   # {uns} unsigned commit(s); push it with "
+               "git push --force-with-lease")
     elif uns > 0:
         rec = (f"cannot sign on this machine (no user.signingkey) -- {uns} unsigned commit(s) will block the PR; "
-               f"hand over saying resign-branch.sh {br} has to run where the key is")
+               f"hand over saying `git rebase -S --force-rebase origin/{base}` then `git push --force-with-lease` has to run where the key is")
     else:
         rec = (f"nothing on the base -- signed, no conflict; a branch merely behind origin/{base} is left as is, "
                "the queue updates it (fixup contract, pickup skill section 6)")

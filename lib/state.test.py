@@ -851,7 +851,7 @@ class BranchBriefTest(Base):
         self.g(r, "config", "user.signingkey", "/dev/null")
         out = self.brief(r)[1]
         self.assertRegex(self.rec(out), r"^recommend: git rebase -S --force-rebase [0-9a-f]{7,}")
-        self.assertIn("resign-branch.sh feat instead", self.rec(out))
+        self.assertIn("git push --force-with-lease", self.rec(out))
 
     def test_the_base_comes_from_the_open_pr(self):
         r = self.new_repo("stacked")
