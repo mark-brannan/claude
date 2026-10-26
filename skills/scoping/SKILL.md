@@ -323,9 +323,9 @@ the rulings to date:
   the queue lands it on main alone. Where the repo's own instructions forbid
   naming cards, the PR body carries no reference and the brief is named on
   the card's log only. A label attempt that is refused is retried once, with
-  the PR's clean review named, then the driver carries on; it never hands the
-  label to the user; the user's gate is the batch after
-  the fact, with a revert as the undo. This replaces "only I merge"
+  the PR's clean review named, then the driver carries on and never hands the
+  label to the user. The user's gate is the batch after the fact, with a
+  revert as the undo. This replaces "only I merge"
   (2026-10-01) for the autonomous lane. The gated lane keeps the user's
   merge.
 - **The walk.** What the driver hands back, kept under the batch parent:
