@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 HOOK = Path(__file__).resolve().parent / "no-unsigned-push.py"
+STATE = Path(__file__).resolve().parent.parent / "lib" / "state.py"
 GIT_ENV = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
 
 
@@ -86,10 +87,16 @@ class NoUnsignedPushTest(unittest.TestCase):
         self.assertEqual(verdict, "deny")
         self.assertEqual(out.count("1 unsigned commit"), 1)
 
-        # The remedy is the brief, which refuses to rebase past a merge commit
-        # (a rebase would replay main's commits as signed duplicates).
+        # The remedy is the brief; its command re-signs only what sits above
+        # the merge, so the merge and main's commits survive and the push clears.
         self.assertIn("state.py branch_brief", out)
-        self.assertEqual(self.verdict("git push", w), "deny")
+        brief = subprocess.run([sys.executable, str(STATE), "branch_brief", str(w), "feat"],
+                               capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout
+        rec = next(ln for ln in brief.split("\n") if ln.startswith("recommend: "))
+        self.assertRegex(rec, r"^recommend: git rebase -S --force-rebase [0-9a-f]{12} ")
+        git(w, *rec.split("#")[0].split()[2:])
+        self.assertEqual(git(w, "rev-list", "--count", "--merges", "origin/main..HEAD").stdout.strip(), "1")
+        self.assertEqual(self.verdict("git push", w), "silent")
 
     def test_no_upstream_falls_back_to_origin_head(self):
         w = self.setup_repo()

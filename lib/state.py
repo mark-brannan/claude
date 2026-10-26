@@ -1102,6 +1102,23 @@ def branch_brief(root, br):
     mb = mb.strip() if rc == 0 else f"origin/{base}"
     if mg == "unknown":
         rec = f"count the merge commits by hand before touching history -- git could not count them between {br} and origin/{base}"
+    elif int(mg) > 0 and uns not in ("unknown", 0):
+        # Commits above the last merge replay alone; the merge and its tree stay as they are.
+        rc, lm = g("rev-list", "--merges", "--topo-order", "-1", f"origin/{base}..{br}")
+        lm = lm.strip() if rc == 0 else ""
+        rc, below = g("rev-list", f"origin/{base}..{lm}") if lm else (1, "")
+        rc2, above = g("rev-list", "--merges", f"{lm}..{br}") if lm else (1, "x")
+        if rc == 0 and rc2 == 0 and not above.strip() and not any(
+                s and not re.search(r"^gpgsig", g("cat-file", "-p", s)[1], re.M) for s in below.split("\n")):
+            cmd = f"git rebase -S --force-rebase {lm[:12]}"
+            if g("config", "user.signingkey")[0] == 0:
+                rec = f"{cmd}   # {uns} unsigned commit(s) above the last merge; push it with git push --force-with-lease"
+            else:
+                rec = (f"cannot sign on this machine (no user.signingkey) -- {uns} unsigned commit(s) above the last merge; "
+                       f"hand over saying `{cmd}` then `git push --force-with-lease` has to run where the key is")
+        else:
+            rec = (f"do not rebase and do not resign -- an unsigned commit sits at or below one of the {mg} merge commit(s), "
+                   "so the branch cannot be re-signed without losing the merge; hand it over saying so")
     elif int(mg) > 0:
         rec = (f"do not rebase and do not resign -- {mg} merge commit(s) on the branch; `git merge origin/{base}`, "
                "resolve, commit signed, push as a fast-forward")

@@ -841,6 +841,7 @@ class BranchBriefTest(Base):
         out = self.brief(r)[1]
         self.assertIn("merges: 1", out)
         self.assertRegex(self.rec(out), r"^recommend: do not rebase and do not resign")
+        self.assertIn("cannot be re-signed without losing the merge", self.rec(out))
 
     def test_unsigned_with_and_without_a_key(self):
         r = self.new_repo("unsigned")
