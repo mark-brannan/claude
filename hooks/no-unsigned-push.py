@@ -14,9 +14,8 @@ every signed commit as unsigned there.
   - unsigned + this machine has a signing key -> DENY, with the exact
     rebase command that re-signs them
   - unsigned + no key here (cloud)          -> ALLOW, and tell the session
-    the PR will be blocked until resign-branch.sh is run (any machine --
-    it falls back to a GitHub-API-signed commit with no local key), so it
-    can say so in the handoff
+    the PR will be blocked until they are re-signed on a machine with the
+    signing key, so it can say so in the handoff
 
 The current branch of the *pushed* repo is inspected -- which is the
 payload's cwd unless the command itself names a different one, via a
@@ -180,15 +179,13 @@ def main():
     # new ones (--rebase-merges too), so rebase from the merged main tip; that
     # rewrites pushed commits, hence the lease.
     how = (f"Re-sign everything since the base and push again:\n  git rebase -S --force-rebase {mb}\n"
-           f"If the branch is already on the remote, use `resign-branch.sh {branch}` instead "
-           "— it resets to the remote, re-signs, rebases onto main and force-pushes with lease.")
+           "If the branch is already on the remote, push the result with `git push --force-with-lease`.")
     if main:
         rc, mbm = git(cwd, "merge-base", main, "HEAD")
         if rc == 0 and git(cwd, "merge-base", "--is-ancestor", mbm, mb)[0]:
             how = ("This branch merged main after it was pushed, so re-sign from the merged main tip "
                    "(a rebase from the upstream would replay main's commits as new ones), then push "
-                   "with --force-with-lease — the rebase rewrites the pushed commits too, and "
-                   "resign-branch.sh refuses a branch with local commits the remote lacks:\n"
+                   "with --force-with-lease — the rebase rewrites the pushed commits too:\n"
                    f"  git rebase -S --force-rebase {mbm}")
 
     if git(cwd, "config", "user.signingkey")[0] == 0:
@@ -201,10 +198,9 @@ def main():
     hookio.emit(hookio.allow(
         f"no-unsigned-push: {n} unsigned commit(s) on {branch} are being pushed from a machine with "
         f"no signing key:\n\n{listing}\n\nA repo that requires signed commits will block the PR until "
-        f"someone runs `resign-branch.sh {branch}`. It falls back to a GitHub-API-signed commit when "
-        "this machine has no local signing key, so it does not need to run from a machine that has "
-        "one -- but it also does not preserve author identity in that fallback (see "
-        "resign-branch.sh's own notes). Say so in the PR body and the handoff; do not try to sign here."),
+        "someone re-signs from a machine with the signing key: `git rebase -S --force-rebase "
+        "origin/<base>` then `git push --force-with-lease`. Say so in the PR body and the handoff; "
+        "do not try to sign here."),
         ascii=False, compact=True, errors="surrogateescape")
     return 0
 

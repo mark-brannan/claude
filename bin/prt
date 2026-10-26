@@ -248,7 +248,7 @@ def resolve_scope(o):
 
 # ------------------------------------------------------------------ the clones
 def norm_url(u):
-    """host/owner/repo from any git remote URL, as resign-branch.sh's norm_url."""
+    """host/owner/repo from any git remote URL, as a remote's normalized form."""
     u = u.strip().rstrip("/")
     u = u[:-4] if u.endswith(".git") else u
     if "://" in u:

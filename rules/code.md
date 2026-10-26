@@ -125,10 +125,10 @@ in nobody's queue but this session's.
   - **only when the branch conflicts, merge — don't rebase.** `git merge
     origin/<base>`, resolve, commit — the merge commit is signed like any
     other and carries the hand-resolution in its tree — then push it as a
-    plain fast-forward. Do NOT then `git rebase`/`resign-branch.sh` to
+    plain fast-forward. Do NOT then `git rebase` to
     linearize it: a rebase replays only single-parent commits, so every
     edit that lives only in the merge commit's tree is silently dropped
-    (`resign-branch.sh` refuses this case for that reason). A stacked PR
+    A stacked PR
     is the one rebase left: `git rebase --onto origin/<base>` after its
     parent squash-merges, which the queue cannot do. A PR branch tracks
     its own remote branch, never main. Never `--no-verify`: skipping
