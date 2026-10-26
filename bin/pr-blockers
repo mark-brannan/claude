@@ -221,7 +221,7 @@ def blockers(owner, repo, n):
         if not v.get("isValid"):
             who = ((c["author"].get("user") or {}).get("login")) or c["author"]["name"]
             out.append(f"unsigned commit {c['oid'][:7]} by {who} (reason: {(v.get('state') or 'unsigned').lower()}); "
-                       f"the ruleset requires verified signatures; fix: git rebase -S --force-rebase <merge-base>, then git push --force-with-lease")
+                       f"the ruleset requires verified signatures; fix: run `python3 ~/.claude/lib/state.py branch_brief <repo-root> {head}` and do what its recommend line says")
     if pr["mergeable"] == "CONFLICTING" or state == "DIRTY":
         conflicts.append("merge conflict with the base; fix: merge the base into the branch, resolve, never linearize afterwards")
     # BEHIND is not a line: the fixup contract (pickup skill, section 6) leaves

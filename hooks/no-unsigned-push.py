@@ -11,8 +11,8 @@ On a `git push` from the Bash tool, look at the commits that push would
 send and ask whether each carries a signature header at all. Validity is
 GitHub's job; a cloud VM has no allowed-signers file, so %G? would report
 every signed commit as unsigned there.
-  - unsigned + this machine has a signing key -> DENY, with the exact
-    rebase command that re-signs them
+  - unsigned + this machine has a signing key -> DENY, pointing at the
+    branch brief that names the remedy
   - unsigned + no key here (cloud)          -> ALLOW, and tell the session
     the PR will be blocked until they are re-signed on a machine with the
     signing key, so it can say so in the handoff
@@ -172,21 +172,7 @@ def main():
     listing = "\n".join(unsigned)
     n = len(unsigned)
     branch = git(cwd, "symbolic-ref", "--short", "HEAD")[1]
-    rc, mb = git(cwd, "merge-base", base, "HEAD")
-    if rc:
-        mb = base
-    # Past a merged main, a rebase from the upstream replays main's commits as
-    # new ones (--rebase-merges too), so rebase from the merged main tip; that
-    # rewrites pushed commits, hence the lease.
-    how = (f"Re-sign everything since the base and push again:\n  git rebase -S --force-rebase {mb}\n"
-           "If the branch is already on the remote, push the result with `git push --force-with-lease`.")
-    if main:
-        rc, mbm = git(cwd, "merge-base", main, "HEAD")
-        if rc == 0 and git(cwd, "merge-base", "--is-ancestor", mbm, mb)[0]:
-            how = ("This branch merged main after it was pushed, so re-sign from the merged main tip "
-                   "(a rebase from the upstream would replay main's commits as new ones), then push "
-                   "with --force-with-lease — the rebase rewrites the pushed commits too:\n"
-                   f"  git rebase -S --force-rebase {mbm}")
+    how = (f"Ask for the remedy and run what its recommend line says:\n  python3 ~/.claude/lib/state.py branch_brief {cwd} {branch}")
 
     if git(cwd, "config", "user.signingkey")[0] == 0:
         deny(f"no-unsigned-push: {n} unsigned commit(s) on {branch} would be pushed, and this machine "
@@ -198,8 +184,8 @@ def main():
     hookio.emit(hookio.allow(
         f"no-unsigned-push: {n} unsigned commit(s) on {branch} are being pushed from a machine with "
         f"no signing key:\n\n{listing}\n\nA repo that requires signed commits will block the PR until "
-        "someone re-signs from a machine with the signing key: `git rebase -S --force-rebase "
-        "origin/<base>` then `git push --force-with-lease`. Say so in the PR body and the handoff; "
+        "someone re-signs from a machine with the signing key, following `python3 ~/.claude/lib/state.py "
+        f"branch_brief {cwd} {branch}`. Say so in the PR body and the handoff; "
         "do not try to sign here."),
         ascii=False, compact=True, errors="surrogateescape")
     return 0

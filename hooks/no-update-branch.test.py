@@ -77,7 +77,7 @@ class NoUpdateBranchTest(unittest.TestCase):
                            capture_output=True, text=True)
         reason = json.loads(p.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("no-update-branch.py", reason)
-        self.assertIn("git rebase -S --force-rebase <merge-base>", reason)
+        self.assertIn("state.py branch_brief", reason)
 
 
 if __name__ == "__main__":

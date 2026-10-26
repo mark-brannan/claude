@@ -6,7 +6,6 @@
 # -c commit.gpgsign=false. Global git config is ignored throughout.
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -87,16 +86,10 @@ class NoUnsignedPushTest(unittest.TestCase):
         self.assertEqual(verdict, "deny")
         self.assertEqual(out.count("1 unsigned commit"), 1)
 
-        # The remedy has the same trap: a rebase from the upstream replays
-        # main's commits as new, signed duplicates. The advised command must not.
-        m = re.search(r"git rebase -S --force-rebase ([0-9a-f]*)", out)
-        self.assertTrue(m)
-        self.assertIn("force-with-lease", out)
-        git(w, "rebase", "-S", "--force-rebase", m.group(1), check=False)
-        self.assertEqual(git(w, "merge-base", "--is-ancestor", "origin/HEAD", "HEAD", check=False).returncode, 0,
-                         "advised rebase keeps main's commit, not a copy")
-        self.assertEqual(git(w, "rev-list", "--count", "HEAD", "--not", "origin/HEAD").stdout.strip(), "2")
-        self.assertEqual(self.verdict("git push", w), "silent")
+        # The remedy is the brief, which refuses to rebase past a merge commit
+        # (a rebase would replay main's commits as signed duplicates).
+        self.assertIn("state.py branch_brief", out)
+        self.assertEqual(self.verdict("git push", w), "deny")
 
     def test_no_upstream_falls_back_to_origin_head(self):
         w = self.setup_repo()
@@ -117,7 +110,7 @@ class NoUnsignedPushTest(unittest.TestCase):
         git(w, "config", "--unset", "user.signingkey")
         verdict, out = self.hook("git push", w)
         self.assertEqual(verdict, "allow")
-        self.assertIn("git rebase -S --force-rebase origin/<base>", json.loads(out)["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("state.py branch_brief", json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
     def test_unreadable_payload_denies(self):
         p = subprocess.run([sys.executable, str(HOOK)], input="{not json", capture_output=True, text=True)
