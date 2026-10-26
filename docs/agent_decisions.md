@@ -517,3 +517,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261026t082956z
 - metrics-dashboard: the daily headless-vs-interactive chart counts interactive as sessions with typed prompts, so an unknown session is on neither side Undo: chart interactive as n - headless again ([#324](https://github.com/mark-brannan/claude/pull/324))
+
+### 20261026t083001z
+- metrics-dashboard: weekly per-prompt charts plot every week that has typed prompts, with 0 events when no session started that week Undo: iterate weeks of started sessions only, as before ([#324](https://github.com/mark-brannan/claude/pull/324))
