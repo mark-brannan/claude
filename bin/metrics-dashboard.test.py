@@ -76,6 +76,10 @@ class DashboardFixture(unittest.TestCase):
         (sd / "items").mkdir()
         (sd / "items" / "card-one.md").write_text(
             f"# Fixture card\n\n## Log\n{day(5)} abcd1234 status=open owner=human-ruling\n")
+        # Re-owned: the agent's until day 3, then the user's, with a status-only line in between.
+        (sd / "items" / "card-two.md").write_text(
+            f"# Re-owned card\n\n## Log\n{day(5)} abcd1234 status=open owner=agent\n"
+            f"{day(4)} abcd1234 status=claimed\n{day(3)} abcd1234 status=open owner=human-ruling\n")
         projects = root / "projects" / "-fixture"
         projects.mkdir(parents=True)
         # typed-a was resumed: a second transcript carries the same session id.
@@ -170,6 +174,16 @@ class RenderTest(DashboardFixture):
         # PR 3 (acme/other, same branch name): no session committed there.
         # PR 4: a session whose prompt count is unknown -> 0-1, not "no session".
         self.assertRegex(self.page, r"0–1 prompts: 1\n2–5 prompts: 1\n6\+ prompts: 0\nno session: 1\ntotal: 3")
+
+    def test_a_card_is_counted_under_its_owner_of_the_day_not_its_first_owner(self):
+        d = lambda n: (TODAY - dt.timedelta(days=n)).isoformat()
+        # Today both cards are the user's; the re-owned one has left the agent's queue.
+        self.assertEqual(self.tile("rulings waiting"), "2")
+        self.assertIn(f"{d(0)}\nhuman-ruling: 2\nhuman-click: 0", self.page)
+        self.assertIn(f"{d(0)}\nagent queue: 0", self.page)
+        # While it was the agent's (a claimed line between keeps the owner), it was not the user's.
+        self.assertIn(f"{d(4)}\nhuman-ruling: 1\nhuman-click: 0", self.page)
+        self.assertIn(f"{d(4)}\nagent queue: 1", self.page)
 
     def test_days_under_the_tile_windows_do_not_crash(self):
         r = subprocess.run([sys.executable, str(DASH), "--db", str(self.db),

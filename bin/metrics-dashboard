@@ -223,16 +223,15 @@ def build(db, out, ndays):
     pr_open = ("open PRs", {d: open_on("pr", d) for d in dkeys})
     merged = q(f"select {wk('merged_at')} w, sum(head_ref like 'claude/%') agent, sum(head_ref not like 'claude/%') other from gh_items where kind='pr' and merged_at is not null group by w")
     ev = q("select item_id, ts, status, owner from item_events order by item_id, ts")
-    owner_of, hist = {}, defaultdict(list)
+    hist = defaultdict(list)
     for r in ev:
-        if r["owner"] and r["item_id"] not in owner_of: owner_of[r["item_id"]] = r["owner"]
-        hist[r["item_id"]].append((r["ts"][:10], r["status"]))
+        hist[r["item_id"]].append((r["ts"][:10], r["status"], r["owner"]))
     def cards_open(day, owner):
         n = 0
         for it, h in hist.items():
-            if owner_of.get(it) != owner: continue
-            st = [s for d, s in h if d <= day]
-            if st and st[-1] not in ("done", "closed"): n += 1
+            seen = [e for e in h if e[0] <= day]
+            # the owner is the latest one logged by that day; a status-only line keeps it
+            if seen and seen[-1][1] not in ("done", "closed") and next((o for _, _, o in reversed(seen) if o), None) == owner: n += 1
         return n
     card_first = min((r["ts"][:10] for r in ev), default=start)
     ckeys = [d for d in dkeys if d >= card_first]
