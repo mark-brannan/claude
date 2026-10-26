@@ -52,6 +52,7 @@ import metrics_format  # noqa: E402
 
 try:
     import atomic  # noqa: E402
+    import cksum  # noqa: E402
     import gitrun  # noqa: E402
     import hookio  # noqa: E402
     import state  # noqa: E402
@@ -1163,7 +1164,7 @@ class Hook:
             # of the bodies is kept, and the time restamped when it differs.
             # The item file is rewritten every Stop, so its mtime says nothing.
             bodies = "".join(f"{ln}\n" for f, w in items if w for ln in split_item(f)[1])
-            body_sum = str(cksum(bodies.encode("utf-8")))
+            body_sum = str(cksum.cksum(bodies.encode("utf-8")))
             if any(w for _, w in items) and (self.resume_ts <= 0 or body_sum != self.handoff_sum):
                 self.resume_ts, self.handoff_sum = self.now_ts, body_sum
             for f, w in items:
@@ -1296,25 +1297,6 @@ def split_item(path):
         return lines, []
     i = lines.index("---")
     return lines[:i], lines[i + 1:]
-
-
-def cksum(data):
-    """POSIX cksum(1)'s CRC, so a checksum the shell hook stored still matches."""
-    crc = 0
-
-    def feed(byte):
-        nonlocal crc
-        crc ^= byte << 24
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x04C11DB7 if crc & 0x80000000 else crc << 1) & 0xFFFFFFFF
-
-    for b in data:
-        feed(b)
-    n = len(data)
-    while n:
-        feed(n & 0xFF)
-        n >>= 8
-    return ~crc & 0xFFFFFFFF
 
 
 def item_field(path, key):

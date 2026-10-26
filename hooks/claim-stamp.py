@@ -116,10 +116,6 @@ def now_epoch():
     return int(time.time())
 
 
-def now_iso():
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
 def tdiv(a, b):
     """Shell arithmetic's a / b: truncated toward zero."""
     q = abs(a) // b
@@ -250,9 +246,10 @@ def epoch_of(e):
 
 
 def stamp_body(sid, branch):
+    import when
     s, m = sid8(sid), machine_id()
     return (f"{MARKER} sid={s} epoch={now_epoch()} machine={m} -->\n"
-            f"**Claimed:** `{s}` · `{branch}` · `{m}` · {now_iso()}\n"
+            f"**Claimed:** `{s}` · `{branch}` · `{m}` · {when.stamp()}\n"
             "\n"
             "A session holds this work. The Stop hook refreshes the timestamp; `/wrapup`\n"
             f"and the archive verdict delete this comment. Older than {tdiv(STALE_SECS, 3600)}h and\n"

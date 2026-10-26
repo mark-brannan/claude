@@ -34,12 +34,12 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 
 sys.dont_write_bytecode = True
 
 import lib_state  # noqa: E402,F401  (puts lib/ on sys.path)
+import gitrun  # noqa: E402
 import hookio  # noqa: E402
 
 # Regexes are matched per line (re.M, and \s never crosses a newline here),
@@ -56,8 +56,7 @@ def deny(reason):
 
 def git(cwd, *args):
     """(returncode, stdout without trailing newlines) of a git call in cwd."""
-    p = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
-                       encoding="utf-8", errors="surrogateescape")
+    p = gitrun.run(*args, cwd=cwd, errors="surrogateescape")
     return p.returncode, p.stdout.rstrip("\n")
 
 
