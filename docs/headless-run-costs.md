@@ -16,7 +16,7 @@ ones.
  "pr": 412, "model": "claude-sonnet-5-5", "total_cost_usd": 0.1873,
  "usage": {"input_tokens": 41210, "output_tokens": 2894,
            "cache_read_input_tokens": 118400, "cache_creation_input_tokens": 9120},
- "outcome": "success", "run_id": 18230467715}
+ "outcome": "success", "head_sha": "4b45f6d", "tier": "default"}
 ```
 
 Rows land in the state repo's `metrics/headless-runs`, `metrics-db` loads them
