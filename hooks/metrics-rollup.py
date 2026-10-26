@@ -26,7 +26,13 @@ sys.dont_write_bytecode = True
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 
+import atomic  # noqa: E402
 import state  # noqa: E402
+
+try:
+    import hooktrace  # noqa: E402
+except ImportError:  # a seed without lib/hooktrace.py: stderr is all there is
+    hooktrace = None
 
 
 def prune(root, pattern_suffix, min_age_days, infix=False):
@@ -194,17 +200,15 @@ def main():
         files += sorted(glob.glob(f"{m}/{pat}"))
     if not files:
         return
-    tmp = f"{m}/metrics.json.{os.getpid()}"
     try:
         out = json.dumps(rollup(load(files)), indent=2, ensure_ascii=False)
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(out + "\n")
-        os.replace(tmp, f"{m}/metrics.json")
-    except (OSError, ValueError, TypeError, KeyError):
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        atomic.write(f"{m}/metrics.json", out + "\n")
+    except (OSError, ValueError, TypeError, KeyError) as e:
+        # The previous metrics.json stands; say why the new one did not land.
+        if hooktrace is None:
+            print(f"metrics-rollup: rollup: {type(e).__name__}: {e}", file=sys.stderr)
+        else:
+            hooktrace.trace("metrics-rollup", "rollup", e)
 
 
 if __name__ == "__main__":

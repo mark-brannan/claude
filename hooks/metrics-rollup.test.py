@@ -108,7 +108,18 @@ class MetricsRollupTest(unittest.TestCase):
         self.put("sessions/bad.json", "{ not json")
         self.run_hook()
         self.assertEqual(json.loads(self.out.read_text()), {"keep": True})
-        self.assertEqual([p.name for p in self.m.iterdir() if p.name.startswith("metrics.json.")], [])
+        self.assertEqual([p.name for p in self.m.iterdir() if "metrics.json." in p.name], [])
+
+    def test_unreadable_input_is_traced_not_swallowed(self):
+        self.out.write_text('{"keep": true}')
+        self.put("sessions/a.json", {"session_id": "a"})
+        self.put("sessions/bad.json", "{ not json")
+        self.run_hook()
+        rows = [json.loads(ln) for f in (self.repo / "state/global/metrics/hook-errors").rglob("*.jsonl")
+                for ln in f.read_text().splitlines()]
+        self.assertEqual([(r["hook"], r["stage"]) for r in rows], [("metrics-rollup", "rollup")])
+        self.assertIn("JSONDecodeError", rows[0]["error"])
+        self.assertEqual(json.loads(self.out.read_text()), {"keep": True})
 
     def test_no_inputs_or_no_metrics_dir_writes_nothing(self):
         self.assertIsNone(self.run_hook())
