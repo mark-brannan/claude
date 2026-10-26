@@ -327,6 +327,7 @@ INJECTED = re.compile(r"^\s*(<|Another Claude session sent a message|Stop hook f
                       r"You previously flagged these candidate vulnerabilities)")
 COMMAND = re.compile(r"^\s*<command-name>([^<]*)</command-name>")
 PASTED = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
+LEADING_PASTE = re.compile(r"^\s*(?:" + PASTED.pattern + r"\s*)+", re.S)
 
 def load_typing(cx, projects):
     known = {r[0]: (r[1], r[2]) for r in cx.execute("select path, mtime, size from typing")}
@@ -359,7 +360,7 @@ def load_typing(cx, projects):
                     cmd = COMMAND.match(c)
                     if cmd:
                         c = cmd.group(1)
-                    elif INJECTED.match(c):
+                    elif INJECTED.match(LEADING_PASTE.sub("", c)):
                         continue
                     sid = sid or d.get("sessionId") or os.path.basename(p)[:-6]
                     cwd = cwd or d.get("cwd")
