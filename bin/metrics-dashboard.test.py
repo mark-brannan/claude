@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zoneinfo
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -27,7 +28,7 @@ spec = importlib.util.spec_from_loader("metrics_dashboard", importlib.machinery.
 md = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(md)
 
-TODAY = dt.date.today()
+TODAY = dt.datetime.now(dt.timezone.utc).date()
 
 
 def day(n):
@@ -75,11 +76,17 @@ class DashboardFixture(unittest.TestCase):
         (sd / "items").mkdir()
         (sd / "items" / "card-one.md").write_text(
             f"# Fixture card\n\n## Log\n{day(5)} abcd1234 status=open owner=human-ruling\n")
+        # Re-owned: the agent's until day 3, then the user's, with a status-only line in between.
+        (sd / "items" / "card-two.md").write_text(
+            f"# Re-owned card\n\n## Log\n{day(5)} abcd1234 status=open owner=agent\n"
+            f"{day(4)} abcd1234 status=claimed\n{day(3)} abcd1234 status=open owner=human-ruling\n")
         projects = root / "projects" / "-fixture"
         projects.mkdir(parents=True)
         # typed-a was resumed: a second transcript carries the same session id.
+        # headless-c has a transcript with nothing typed in it: known to be headless.
         for name, sid, ago, text in (("typed-a", "typed-a", 1, "one two three"), ("typed-b", "typed-b", 3, "four five"),
-                                     ("typed-a-resumed", "typed-a", 1, "six seven")):
+                                     ("typed-a-resumed", "typed-a", 1, "six seven"),
+                                     ("headless-c", "headless-c", 2, "<system-reminder>injected</system-reminder>")):
             rec = {"type": "user", "isSidechain": False, "sessionId": sid, "cwd": "/fixture", "timestamp": day(ago),
                    "message": {"role": "user", "content": text}}
             (projects / f"{name}.jsonl").write_text(json.dumps(rec, separators=(",", ":")) + "\n")
@@ -170,6 +177,16 @@ class RenderTest(DashboardFixture):
         # PR 4: a session whose prompt count is unknown -> 0-1, not "no session".
         self.assertRegex(self.page, r"0–1 prompts: 1\n2–5 prompts: 1\n6\+ prompts: 0\nno session: 1\ntotal: 3")
 
+    def test_a_card_is_counted_under_its_owner_of_the_day_not_its_first_owner(self):
+        d = lambda n: (TODAY - dt.timedelta(days=n)).isoformat()
+        # Today both cards are the user's; the re-owned one has left the agent's queue.
+        self.assertEqual(self.tile("rulings waiting"), "2")
+        self.assertIn(f"{d(0)}\nhuman-ruling: 2\nhuman-click: 0", self.page)
+        self.assertIn(f"{d(0)}\nagent queue: 0", self.page)
+        # While it was the agent's (a claimed line between keeps the owner), it was not the user's.
+        self.assertIn(f"{d(4)}\nhuman-ruling: 1\nhuman-click: 0", self.page)
+        self.assertIn(f"{d(4)}\nagent queue: 1", self.page)
+
     def test_days_under_the_tile_windows_do_not_crash(self):
         r = subprocess.run([sys.executable, str(DASH), "--db", str(self.db),
                             "--out", str(self.out.with_name("short.html")), "--days", "3"],
@@ -196,6 +213,102 @@ class RenderTest(DashboardFixture):
     def test_series_names_from_repo_topics_are_escaped(self):
         self.assertNotIn("<b>alpha", self.page)
         self.assertIn("&lt;b&gt;alpha", self.page)
+
+
+def week_of(ago):
+    d = TODAY - dt.timedelta(days=ago)
+    return (d - dt.timedelta(days=d.weekday())).isoformat()
+
+
+class TypedPromptTest(unittest.TestCase):
+    """Typed counts come only from the transcripts' typed prompts; a transcript's
+    prompts sit in the week of its first prompt, however early the session began."""
+    # session id -> days ago it started
+    STARTED = {"late": 20, "orphan": 2, "quiet": 3}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        root = Path(cls.tmp.name)
+        repo = root / "state-repo"
+        (repo / ".git").mkdir(parents=True)
+        sd = repo / "state" / "global"
+        (sd / "metrics" / "sessions").mkdir(parents=True)
+        cls.sess = {
+            # begun 20 days ago, first prompt 1 day ago (two prompts); user_turns says 0
+            "late": session("late", 20, user_turns=0, tool_calls=6, commits=2, friction={"total": 4}),
+            # no transcript at all; user_turns says 0, which is no evidence of headless
+            "orphan": session("orphan", 2, user_turns=0, tool_calls=10, commits=1, friction={"total": 3}),
+            # a transcript with nothing typed in it
+            "quiet": session("quiet", 3, user_turns=5, tool_calls=4, commits=0, friction={"total": 1}),
+        }
+        for sid, rec in cls.sess.items():
+            (sd / "metrics" / "sessions" / f"{sid}.json").write_text(json.dumps(rec))
+        projects = root / "projects" / "-fixture"
+        projects.mkdir(parents=True)
+
+        def user(sid, ago, text):
+            return json.dumps({"type": "user", "isSidechain": False, "sessionId": sid, "cwd": "/fixture", "timestamp": day(ago),
+                               "message": {"role": "user", "content": text}}, separators=(",", ":")) + "\n"
+        (projects / "late.jsonl").write_text(user("late", 1, "first words") + user("late", 1, "second"))
+        (projects / "quiet.jsonl").write_text(user("quiet", 3, "<system-reminder>injected</system-reminder>"))
+        env = {**os.environ, "CLAUDE_STATE_REPO": str(repo), "HOME": str(root)}
+        db, cls.out = root / "out" / "metrics.db", root / "out" / "index.html"
+        for cmd in ([DB, "--db", db, "--projects", root / "projects", "--quiet"], [DASH, "--db", db, "--out", cls.out]):
+            r = subprocess.run([sys.executable, *map(str, cmd)], env=env, capture_output=True, text=True)
+            assert r.returncode == 0, r.stderr
+        cls.page = cls.out.read_text()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def tips(self, caption):
+        """{x key: {series: value text}} for one chart, from its hover titles."""
+        fig = re.search(r"<figure><figcaption>" + re.escape(caption) + r"</figcaption>.*?</figure>", self.page, re.S)
+        self.assertIsNotNone(fig, f"no chart {caption!r}")
+        out = {}
+        for t in re.findall(r"<title>([^<]*)</title>", fig.group(0)):
+            key, *rows = t.split("\n")
+            out[key] = dict(r.split(": ", 1) for r in rows if ": " in r)
+        return out
+
+    def tile(self, label):
+        return re.search(r'<div class="tile"><b>([^<]*)</b><span>' + re.escape(label) + r"</span>", self.page).group(1)
+
+    def started_in(self, week, num):
+        return sum(num(self.sess[sid]) for sid, ago in self.STARTED.items() if week_of(ago) == week)
+
+    def test_a_session_with_no_transcript_is_unknown_not_headless(self):
+        # orphan and quiet are in the window; only quiet is known to be headless.
+        self.assertEqual(self.tile("sessions, 7d"), "2")
+        self.assertEqual(self.tile("of them headless, 7d"), "1")
+
+    def test_a_session_with_no_transcript_is_in_no_prompt_bucket(self):
+        buckets = self.tips("Sessions per week, by prompts typed")
+        total = lambda name: sum(int(v[name]) for v in buckets.values())
+        self.assertEqual(total("0 (headless)"), 1)  # quiet
+        self.assertEqual(total("2–5"), 1)           # late, two prompts
+        self.assertEqual(total("1") + total("6+"), 0)
+
+    def test_the_daily_mix_leaves_an_unknown_session_out_of_both_sides(self):
+        day_of_orphan = (TODAY - dt.timedelta(days=2)).isoformat()
+        mix = self.tips("Sessions per day: headless vs interactive")[day_of_orphan]
+        self.assertEqual((mix["headless (nothing typed)"], mix["interactive"]), ("0", "0"))
+
+    def test_weekly_per_prompt_charts_use_the_week_of_the_first_prompt(self):
+        # late began in an earlier week than its two prompts: that week has no prompts, so no point;
+        # the prompts' week divides the events of the sessions started in it by 2.
+        w_start, w_typed = week_of(20), week_of(1)
+        self.assertNotEqual(w_start, w_typed)
+        cases = (("Friction per 100 prompts, weekly", "friction/100", lambda r: 100.0 * r["friction"]["total"]),
+                 ("Tool calls per prompt, weekly", "tool calls/prompt", lambda r: r["tool_calls"]),
+                 ("Commits per prompt, weekly", "commits/prompt", lambda r: r["commits"]))
+        for caption, name, num in cases:
+            tip = self.tips(caption)
+            self.assertEqual(tip[w_start][name], "–", caption)
+            digits = 2 if name.startswith("commits") else 1
+            self.assertEqual(tip[w_typed][name], md.fmt(round(self.started_in(w_typed, num) / 2, digits)), caption)
 
 
 class CliTest(unittest.TestCase):
@@ -257,6 +370,69 @@ class HelpersTest(unittest.TestCase):
         self.assertIn('class="flat"', md.tile("x", 100, 100, good="up"))
         self.assertIn("prior: 0", md.tile("x", 4, 0))
         self.assertNotIn("<i>", md.tile("<i>label</i>", 1))
+
+
+class WindowsAndBucketsTest(unittest.TestCase):
+    """The spec's windows (daily: UTC, weekly: the whole record) and the session length buckets."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        l = importlib.machinery.SourceFileLoader("metrics_db_schema", str(DB))
+        schema = importlib.util.module_from_spec(importlib.util.spec_from_loader("metrics_db_schema", l))
+        l.exec_module(schema)
+        cls.schema = schema.SCHEMA
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def render(self, name, setup, env=None):
+        db = os.path.join(self.tmp.name, name + ".db")
+        cx = sqlite3.connect(db)
+        cx.executescript(self.schema)
+        setup(cx)
+        cx.commit()
+        cx.close()
+        out = os.path.join(self.tmp.name, name + ".html")
+        r = subprocess.run([sys.executable, str(DASH), "--db", db, "--out", out],
+                           env=env or os.environ, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return Path(out).read_text()
+
+    @staticmethod
+    def monday(n):
+        d = TODAY - dt.timedelta(days=n)
+        return (d - dt.timedelta(days=d.weekday())).isoformat()
+
+    def test_daily_window_ends_on_the_utc_date_whatever_the_host_zone(self):
+        # UTC+14 and UTC-11: at every hour of the day one of them is on another date than UTC.
+        for tz in ("Pacific/Kiritimati", "Pacific/Pago_Pago"):
+            try:
+                zoneinfo.ZoneInfo(tz)
+            except zoneinfo.ZoneInfoNotFoundError:
+                self.skipTest(f"no tzdata for {tz}")  # an unknown TZ is read as UTC, which would prove nothing
+            before = dt.datetime.now(dt.timezone.utc).date().isoformat()
+            page = self.render("tz", lambda cx: None, {**os.environ, "TZ": tz})
+            after = dt.datetime.now(dt.timezone.utc).date().isoformat()
+            last = re.findall(r"<title>(\d{4}-\d{2}-\d{2})\nopen PRs: ", page)[-1]
+            self.assertIn(last, {before, after}, tz)
+
+    def test_weekly_charts_reach_back_to_the_earliest_typing_or_merged_pr(self):
+        def setup(cx):
+            cx.execute("insert into sessions(session_id, started_at, elapsed_seconds) values ('s', ?, 600)", (day(1),))
+            cx.execute("insert into typing(path, session_id, first_ts, prompts, chars, words) values ('p', 'old', ?, 2, 20, 4)", (day(120),))
+            cx.execute("insert into gh_items values ('acme/w', 1, 'pr', ?, ?, ?, 'MERGED', 0, 'claude/x', 'u', 't')", (day(101), day(100), day(100)))
+        page = self.render("weekly", setup)
+        self.assertIn(f"<title>{self.monday(120)}\nwords/prompt: 2", page)
+        self.assertRegex(page, rf"<title>{self.monday(100)}\nclaude/\* branch: 1\n")
+
+    def test_session_length_buckets_leave_no_gap(self):
+        def setup(cx):
+            for i, secs in enumerate((299.9, 300, 3599.5, 3600, 3600.5)):
+                cx.execute("insert into sessions(session_id, started_at, elapsed_seconds) values (?, ?, ?)", (f"s{i}", day(1), secs))
+        page = self.render("buckets", setup)
+        self.assertRegex(page, r"under 5 min: 1\n5 min to 1 h: 3\nover 1 h: 1\ntotal: 5")
 
 
 class InputHelpersTest(unittest.TestCase):

@@ -26,6 +26,8 @@ sys.dont_write_bytecode = True
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 
+import atomic  # noqa: E402
+import lib_state  # noqa: E402
 import state  # noqa: E402
 
 
@@ -194,17 +196,12 @@ def main():
         files += sorted(glob.glob(f"{m}/{pat}"))
     if not files:
         return
-    tmp = f"{m}/metrics.json.{os.getpid()}"
     try:
         out = json.dumps(rollup(load(files)), indent=2, ensure_ascii=False)
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(out + "\n")
-        os.replace(tmp, f"{m}/metrics.json")
-    except (OSError, ValueError, TypeError, KeyError):
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        atomic.write(f"{m}/metrics.json", out + "\n")
+    except (OSError, ValueError, TypeError, KeyError) as e:
+        # The previous metrics.json stands; say why the new one did not land.
+        lib_state.trace_failure("metrics-rollup", "", e, stage="rollup")
 
 
 if __name__ == "__main__":

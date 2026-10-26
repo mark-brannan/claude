@@ -117,7 +117,7 @@ class NoUnsignedPushTest(unittest.TestCase):
         git(w, "config", "--unset", "user.signingkey")
         verdict, out = self.hook("git push", w)
         self.assertEqual(verdict, "allow")
-        self.assertIn("resign-branch.sh keyless", json.loads(out)["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("git rebase -S --force-rebase origin/<base>", json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
     def test_unreadable_payload_denies(self):
         p = subprocess.run([sys.executable, str(HOOK)], input="{not json", capture_output=True, text=True)

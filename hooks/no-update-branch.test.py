@@ -50,7 +50,7 @@ ALLOW = [
     # neighbouring commands
     ("other pr subcommand", 'gh pr view 226 --json mergeStateStatus'),
     ("pr checks", 'gh pr checks 226'),
-    ("the sanctioned remedy", 'resign-branch.sh claude/foo'),
+    ("the sanctioned remedy", 'git rebase -S --force-rebase origin/main'),
     ("word merely ending in gh", 'high pr update-branch'),
     ("unrelated command", 'git status'),
     ("empty command", ''),
@@ -77,7 +77,7 @@ class NoUpdateBranchTest(unittest.TestCase):
                            capture_output=True, text=True)
         reason = json.loads(p.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("no-update-branch.py", reason)
-        self.assertIn("resign-branch.sh <branch>", reason)
+        self.assertIn("git rebase -S --force-rebase <merge-base>", reason)
 
 
 if __name__ == "__main__":

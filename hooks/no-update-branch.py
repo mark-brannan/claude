@@ -15,18 +15,16 @@ GitHub signs the merge commit it creates -- but adds a merge commit, which
 `required_linear_history` rejects. This repo's ruleset carries both rules,
 so BOTH forms are dead ends here and the hook denies the subcommand
 outright rather than trying to distinguish them. On a repo with neither
-rule the deny is a false positive; resign-branch.sh is correct there too,
+rule the deny is a false positive; re-signing by hand is correct there too,
 so the cost is a redirect, not lost capability.
 
-The remedy is resign-branch.sh, which exists for exactly this and describes
-itself as a signed, linear stand-in for the Update branch button: it rebases
-onto the PR's base with -S, drops any "Update branch" merge commits, and
-force-pushes with lease. It is idempotent -- a branch already signed and
-linear exits 0 untouched. A branch that is merely behind needs neither: the
+The remedy is a signed rebase onto the PR's base, force-pushed with lease
+(`git rebase -S --force-rebase <merge-base>`, `git push --force-with-lease`),
+run where the signing key is. A branch that is merely behind needs neither: the
 queue updates it (fixup contract, pickup skill section 6).
 
 Fails OPEN on an unreadable payload, unlike the $HOME gates: what this
-protects is recoverable (resign-branch.sh repairs the damage after the
+protects is recoverable (a signed rebase repairs the damage after the
 fact), so denying every gh call would cost more than it saves.
 
 Match structurally, not by substring. A sibling hook was tripped twice in
@@ -44,11 +42,12 @@ import hookio  # noqa: E402
 
 REASON = """Blocked by ~/.claude/hooks/no-update-branch.py: GitHub's server-side "Update branch" is a dead end on a repo with signed commits or linear history. The --rebase form rewrites the commits and does NOT re-sign them, so every commit on the branch comes back unsigned; the merge form keeps signatures but adds a merge commit that required_linear_history rejects.
 
-A branch that is merely behind its base needs nothing: the merge queue brings it up to date (fixup contract, ~/.claude/skills/pickup/SKILL.md section 6). A conflict is merged in by hand: git merge origin/<base>, resolve, push. Only unsigned commits or Update-branch merge commits call for resign-branch.sh, which rebases onto the PR's base with -S and force-pushes with lease:
+A branch that is merely behind its base needs nothing: the merge queue brings it up to date (fixup contract, ~/.claude/skills/pickup/SKILL.md section 6). A conflict is merged in by hand: git merge origin/<base>, resolve, push. Only unsigned commits or Update-branch merge commits call a signed rebase onto the PR's base, force-pushed with lease, run where the signing key is:
 
-  resign-branch.sh <branch>
+  git rebase -S --force-rebase <merge-base>
+  git push --force-with-lease
 
-It is idempotent: a branch already signed and linear exits 0 without touching anything. Do not ask the user; this is settled.
+Do not ask the user; this is settled.
 
 This is a routing correction, not a misuse -- the session reached for the wrong verb, and nothing was damaged. The blocked-tool-call this records means exactly that."""
 

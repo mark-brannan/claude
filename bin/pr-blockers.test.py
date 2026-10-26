@@ -124,7 +124,7 @@ class Test(unittest.TestCase):
         code, out = self.run_tool(view("BLOCKED"), page(commit("a"), bot))
         self.assertEqual(code, 1)
         self.assertEqual(len(out.splitlines()), 1)  # explained, so no "cause not named" line
-        for want in ("bbbbbbb", "coderabbitai[bot]", "unsigned", "~/.claude/bin/resign-branch.sh feat"):
+        for want in ("bbbbbbb", "coderabbitai[bot]", "unsigned", "git rebase -S --force-rebase"):
             self.assertIn(want, out)
 
     def test_unexplained_blocked_says_so_plainly(self):
