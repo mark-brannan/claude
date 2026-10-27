@@ -523,3 +523,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261026t083625z
 - metrics-dashboard: a known-headless session's events stay in the week it started, with no prompts, in the per-prompt weekly charts (main's behaviour) Undo: add where p > 0 to the per-week query so headless sessions drop from the numerator ([#324](https://github.com/mark-brannan/claude/pull/324))
+
+### 20261027t160125z
+- gh-resolve-thread stays allowlisted while it gains reply modes, so signed replies skip the auto-mode PR-ownership check Undo: drop the reply modes or add a PR-ownership check to the wrapper ([#336](https://github.com/mark-brannan/claude/pull/336))
