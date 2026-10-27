@@ -160,10 +160,20 @@ def _pwd_p(p):
 # and stop-continuity.py commits them with `git add state/`. A session run
 # from the state repo was "worktree dirty" on every Stop, 82 of 82 recorded,
 # over files no one but a hook could commit.
+def is_state_repo(root):
+    """root is the state repo's own clone (a worktree of it is not)."""
+    sr = state_repo()
+    return bool(root and sr) and _pwd_p(root) == _pwd_p(sr)
+
+
+def is_cloud():
+    """A cloud VM, whose clones die with it."""
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+
+
 def dirty_paths(root):
     """git's porcelain lines as it printed them, trailing newline and all."""
-    sr = state_repo() or ""
-    if sr and _pwd_p(root) == _pwd_p(sr):
+    if is_state_repo(root):
         return _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain",
                     "--", ".", ":(exclude)state/")[1]
     return _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain")[1]
@@ -326,8 +336,15 @@ def archivable(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
     branch-home-gate.py's gh round trip a second time in one Stop."""
     reasons = []
     home = None
-    if dirty_paths(work_root).rstrip("\n"):
+    # The state repo's own clone is not a worktree archiving deletes: on a
+    # machine that keeps it, its dirt is a note (buffered_state), not a
+    # reason. A cloud VM's clone dies with the VM, so there the state repo's
+    # dirt is a reason whichever repo the session worked in, named after the
+    # work area's own.
+    if not is_state_repo(work_root) and dirty_paths(work_root).rstrip("\n"):
         reasons.append("worktree dirty")
+    if is_cloud() and state_repo() and dirty_paths(state_repo()).rstrip("\n"):
+        reasons.append("state repo dirty")
 
     ust = unpushed_state(work_root, work_branch)
     if ust == "ahead 0":
@@ -535,17 +552,25 @@ def _porcelain_paths(text):
     return paths
 
 
-# buffered_state -- in the state repo only, one line naming what dirty_paths
-# left out: the uncommitted files under state/. stop-continuity.py has already
+# buffered_state -- in the state repo only, what the verdict leaves out.
+# First, the uncommitted files under state/. stop-continuity.py has already
 # committed this Stop's by the time the readout runs, so what is left was
 # written since, or its commit failed; the next Stop commits it. Leaving them
 # out of the verdict is right; leaving them unsaid is not: a hand-off or card
 # still on disk is worth knowing about. Metrics are counted, everything else
-# is named. "" elsewhere, and when nothing is buffered.
+# is named. Then, off the cloud, the files outside state/ (a draft, a README
+# edit): archiving leaves the clone and them in place, but no hook commits
+# them. In the cloud those are the verdict's "state repo dirty" instead.
+# "" elsewhere, and when nothing is buffered.
 def buffered_state(root):
-    sr = state_repo()
-    if not sr or _pwd_p(root) != _pwd_p(sr):
+    if not is_state_repo(root):
         return ""
+    lines = []
+    stray = [] if is_cloud() else _porcelain_paths(dirty_paths(root))
+    if stray:
+        lines.append(f"→ state repo: {_shown(stray)} outside state/. "
+                     "Safe to archive: the clone keeps them. The Stop hook commits only state/, "
+                     "so commit these by hand to keep them.")
     text = _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain",
                 "--untracked-files=all", "--", "state/")[1]
     paths = []
@@ -553,13 +578,13 @@ def buffered_state(root):
         p = p[len("state/global/"):] if p.startswith("state/global/") else p
         p = p[len("state/"):] if p.startswith("state/") else p
         paths.append(p)
-    if not paths:
-        return ""
-    named = ", ".join(p for p in paths if not p.startswith("metrics/"))
-    nm = sum(1 for p in paths if p.startswith("metrics/"))
-    if nm:
-        named = f"{named + ', ' if named else ''}+ {nm} metrics file{'' if nm == 1 else 's'}"
-    return f"→ buffered in the state repo, not committed yet (the next Stop commits it): {named}"
+    if paths:
+        named = ", ".join(p for p in paths if not p.startswith("metrics/"))
+        nm = sum(1 for p in paths if p.startswith("metrics/"))
+        if nm:
+            named = f"{named + ', ' if named else ''}+ {nm} metrics file{'' if nm == 1 else 's'}"
+        lines.insert(0, f"→ buffered in the state repo, not committed yet (the next Stop commits it): {named}")
+    return "\n".join(lines)
 
 
 # verdict_explain -- one line per reason the verdict names: what is at risk,
@@ -570,6 +595,7 @@ _EXPLAIN = (
     (("not a git repo",),
      "→ not a git repo: the session ran outside any repo, so there was no branch to check."),
     (("worktree dirty",), None),
+    (("state repo dirty",), None),
     ((" commit(s) unpushed",),
      "→ commits unpushed: they exist on this machine only. Push the branch."),
     (("has no upstream (never pushed)",),
@@ -591,7 +617,15 @@ _EXPLAIN = (
     (("did not finish",),
      "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries."),
 )
-_DIRTY_TAIL = "Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
+_DIRTY_TAIL = "Archive the worktree only after the agent commits them."
+_DIRTY_TAIL_CLOUD = ("This cloud VM's clone dies with the VM, and the Stop hook commits only state/: "
+                     "commit these and push them to main, or they are lost.")
+
+
+def _shown(paths):
+    """`N uncommitted file(s) (a, b, c, +M more)`."""
+    more = f", +{len(paths) - 3} more" if len(paths) > 3 else ""
+    return f"{len(paths)} uncommitted file(s) ({', '.join(paths[:3])}{more})"
 
 
 def verdict_explain(verdict, root=""):
@@ -602,13 +636,14 @@ def verdict_explain(verdict, root=""):
             continue
         if line is not None:
             lines.append(line)
-            continue
-        paths = _porcelain_paths(dirty_paths(root)) if root else []
-        if paths:
-            shown = ", ".join(paths[:3]) + (f", +{len(paths) - 3} more" if len(paths) > 3 else "")
-            lines.append(f"→ worktree dirty: {len(paths)} uncommitted file(s) ({shown}). {_DIRTY_TAIL}")
+        elif needles[0] == "state repo dirty":
+            paths = _porcelain_paths(dirty_paths(state_repo())) if state_repo() else []
+            what = _shown(paths) if paths else "uncommitted files in the state repo"
+            lines.append(f"→ state repo dirty: {what}. {_DIRTY_TAIL_CLOUD}")
         else:
-            lines.append(f"→ worktree dirty: uncommitted files in this worktree. {_DIRTY_TAIL}")
+            paths = _porcelain_paths(dirty_paths(root)) if root else []
+            what = _shown(paths) if paths else "uncommitted files in this worktree"
+            lines.append(f"→ worktree dirty: {what}. {_DIRTY_TAIL}")
     return "\n".join(lines)
 
 
@@ -1030,6 +1065,20 @@ def default_branch(root, remote="origin"):
     return ref[len(remote) + 1:] if ref.startswith(remote + "/") else ref
 
 
+def _merges_all_clean(g, rng):
+    """True when every merge in rng is what re-merging its parents gives:
+    no tree edit lives only in a merge. Octopus or unreadable is not clean."""
+    rc, ms = g("rev-list", "--merges", rng)
+    if rc:
+        return False
+    for m in (s for s in ms.split("\n") if s):
+        ps = g("rev-parse", f"{m}^@")[1].split()
+        rc, t = g("merge-tree", "--write-tree", *ps) if len(ps) == 2 else (1, "")
+        if rc or t.split("\n")[0].strip() != g("rev-parse", f"{m}^{{tree}}")[1].strip():
+            return False
+    return True
+
+
 def branch_brief(root, br):
     """(status, text): the facts a session starting on an existing branch
     keeps getting wrong, one per line, ending in exactly one recommended
@@ -1042,7 +1091,7 @@ def branch_brief(root, br):
     presence of a `gpgsig` header (what no-unsigned-push tests), not `%G?`,
     which calls every signed commit unverified on a machine with no
     allowed-signers file. The recommendation ladder is ordered by what is
-    unrecoverable: merge commits outrank everything (a rebase drops what
+    unrecoverable: hand-resolved merge commits outrank everything (a rebase drops what
     lives only in a hand-resolved merge's tree), then conflicts, then
     signing; a branch merely behind is left to the queue."""
     def g(*a):
@@ -1102,7 +1151,41 @@ def branch_brief(root, br):
     mb = mb.strip() if rc == 0 else f"origin/{base}"
     if mg == "unknown":
         rec = f"count the merge commits by hand before touching history -- git could not count them between {br} and origin/{base}"
-    elif int(mg) > 0:
+    elif int(mg) > 0 and conf == "no" and uns not in ("unknown", 0) and _merges_all_clean(g, f"origin/{base}..{br}"):
+        # No merge holds a hand-resolution, so linearizing drops nothing; base's commits are skipped.
+        cmd = f"git rebase -S --force-rebase {mb}"
+        if g("config", "user.signingkey")[0] == 0:
+            rec = f"{cmd}   # {mg} clean merge commit(s), nothing hand-resolved; push it with git push --force-with-lease"
+        else:
+            rec = (f"cannot sign on this machine (no user.signingkey) -- {mg} clean merge commit(s); "
+                   f"hand over saying `{cmd}` then `git push --force-with-lease` has to run where the key is")
+    elif int(mg) > 0 and uns not in ("unknown", 0):
+        # Commits above the last merge replay alone; the merge and its tree stay as they are.
+        rc, lm = g("rev-list", "--merges", "--topo-order", "-1", f"origin/{base}..{br}")
+        lm = lm.strip() if rc == 0 else ""
+        rc, below = g("rev-list", f"origin/{base}..{lm}") if lm else (1, "")
+        rc2, above = g("rev-list", "--merges", f"{lm}..{br}") if lm else (1, "x")
+        if rc == 0 and rc2 == 0 and not above.strip() and not any(
+                s and not re.search(r"^gpgsig", g("cat-file", "-p", s)[1], re.M) for s in below.split("\n")):
+            cmd = f"git rebase -S --force-rebase {lm[:12]}"
+            if g("config", "user.signingkey")[0] == 0:
+                rec = f"{cmd}   # {uns} unsigned commit(s) above the last merge; push it with git push --force-with-lease"
+            else:
+                rec = (f"cannot sign on this machine (no user.signingkey) -- {uns} unsigned commit(s) above the last merge; "
+                       f"hand over saying `{cmd}` then `git push --force-with-lease` has to run where the key is")
+        elif (rc == 0 and rc2 == 0 and not above.strip() and uns == 1 and lm == g("rev-parse", br)[1].strip()
+              and not re.search(r"^gpgsig", g("cat-file", "-p", lm)[1], re.M)):
+            # The one unsigned commit is the merge itself, at the tip: an amend re-signs it, tree and parents intact.
+            cmd = "git commit --amend -S --no-edit"
+            if g("config", "user.signingkey")[0] == 0:
+                rec = f"{cmd}   # the unsigned commit is the merge itself, at the tip; push it with git push --force-with-lease"
+            else:
+                rec = (f"cannot sign on this machine (no user.signingkey) -- the unsigned commit is the merge itself, at the tip; "
+                       f"hand over saying `{cmd}` on {br} then `git push --force-with-lease` has to run where the key is")
+        else:
+            rec = (f"do not rebase and do not resign -- an unsigned commit sits at or below one of the {mg} merge commit(s), "
+                   "so the branch cannot be re-signed without losing the merge; hand it over saying so")
+    elif int(mg) > 0 and conf != "no":
         rec = (f"do not rebase and do not resign -- {mg} merge commit(s) on the branch; `git merge origin/{base}`, "
                "resolve, commit signed, push as a fast-forward")
     elif conf == "yes":
@@ -1116,7 +1199,7 @@ def branch_brief(root, br):
                "git push --force-with-lease")
     elif uns > 0:
         rec = (f"cannot sign on this machine (no user.signingkey) -- {uns} unsigned commit(s) will block the PR; "
-               f"hand over saying `git rebase -S --force-rebase origin/{base}` then `git push --force-with-lease` has to run where the key is")
+               f"hand over saying `git rebase -S --force-rebase {mb}` then `git push --force-with-lease` has to run where the key is")
     else:
         rec = (f"nothing on the base -- signed, no conflict; a branch merely behind origin/{base} is left as is, "
                "the queue updates it (fixup contract, pickup skill section 6)")

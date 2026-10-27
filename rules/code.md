@@ -125,10 +125,9 @@ in nobody's queue but this session's.
   - **only when the branch conflicts, merge — don't rebase.** `git merge
     origin/<base>`, resolve, commit — the merge commit is signed like any
     other and carries the hand-resolution in its tree — then push it as a
-    plain fast-forward. Do NOT then `git rebase`/`resign-branch.sh` to
+    plain fast-forward. Do NOT then `git rebase` to
     linearize it: a rebase replays only single-parent commits, so every
-    edit that lives only in the merge commit's tree is silently dropped
-    (`resign-branch.sh` refuses this case for that reason). A stacked PR
+    edit that lives only in the merge commit's tree is silently dropped. A stacked PR
     is the one rebase left: `git rebase --onto origin/<base>` after its
     parent squash-merges, which the queue cannot do. A PR branch tracks
     its own remote branch, never main. Never `--no-verify`: skipping
@@ -176,10 +175,14 @@ in nobody's queue but this session's.
   never handed over as a status report.
 - **"Resolve conversation" is mine to do, not the user's.** The REST API and
   `gh` CLI have no resolve-thread call, which reads like a dead end —
-  it isn't; GitHub only exposes it over GraphQL:
-  `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<threadId>`
-  (thread ids from `reviewThreads(first:N){nodes{id isResolved}}` on the PR,
-  not the REST comment id). Telling the user to click "Resolve" herself because
+  it isn't: `gh-resolve-thread <threadId>` resolves one thread, and is the
+  only allowed way from a shell; auto mode refuses a raw `gh api graphql`
+  resolve. In a cloud session, where GraphQL 403s, `skills/prt` has the
+  fallback. The
+  thread id is the `PRRT_...` node id from `reviewThreads{nodes{id}}` on
+  the PR, not the REST comment id. Reply first, in its own call (the GitHub MCP reply
+  tool, or `gh api` POST to `pulls/comments/<id>/replies`), then resolve;
+  never chain the two. Telling the user to click "Resolve" herself because
   the obvious tool doesn't have it is asserting a limitation without
   checking whether a less-obvious one does — verify before you claim
   something can't be done from here.
