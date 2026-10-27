@@ -430,7 +430,8 @@
   "autoMode": {
     "allow": [
       "$defaults",
-      "Creating, editing or commenting on a GitHub issue in a mark-brannan repo (gh issue create/edit/comment, or the GitHub MCP issue tools) is allowed when the user, at any earlier point in this session, asked for an issue, agreed an issue was the right home for the work, or approved a drafted one, or when the issue is the one the session was started to work on. The go-ahead need not be the latest user turn and need not repeat \"file it\". Block it when nothing the user said in this session indicated an issue was wanted."
+      "Creating, editing or commenting on a GitHub issue in a mark-brannan repo (gh issue create/edit/comment, or the GitHub MCP issue tools) is allowed when the user, at any earlier point in this session, asked for an issue, agreed an issue was the right home for the work, or approved a drafted one, or when the issue is the one the session was started to work on. The go-ahead need not be the latest user turn and need not repeat \"file it\". Block it when nothing the user said in this session indicated an issue was wanted.",
+      "Replying to and resolving review threads on a pull request in a mark-brannan repo (gh api, gh pr, or the GitHub MCP review-thread tools) is allowed when the session is working that PR: it opened the PR, was started to work it, or the user asked it to address its review. Block it on a PR the session is not working."
     ]
   },
   "theme": "dark",
