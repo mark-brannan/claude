@@ -13,7 +13,7 @@ trap 'rm -rf "$S"' EXIT
 export HOME="$S/home" TMPDIR="$S/tmp" XDG_STATE_HOME="$S/xdg" GH_FIX="$S/fix" WORK_ITEM_DIR="$S/items"
 export PATH="$S/bin:$PATH" GIT_CONFIG_NOSYSTEM=1
 mkdir -p "$S/bin" "$HOME" "$TMPDIR/grind-worktrees" "$XDG_STATE_HOME/grind" "$WORK_ITEM_DIR" \
-  "$GH_FIX"/{prs,prview,issues,comments,commits}
+  "$GH_FIX"/{prs,prview,issues,comments,commits,clear}
 
 # --- gh stub: each question answered from a file under $GH_FIX, through the
 # caller's own --jq filter. A file holding FAIL makes that call fail.
@@ -38,7 +38,13 @@ if [ -f "$f" ]; then [ "$(cat "$f")" = FAIL ] && exit 1; jq -r "$filter" "$f"
 elif [ -n "$default" ]; then printf '%s' "$default" | jq -r "$filter"
 else exit 1; fi
 GH
-chmod +x "$S/bin/gh"
+# pr-blockers stub: clear (exit 0) only for a PR with a file under $GH_FIX/clear.
+cat > "$S/bin/pr-blockers" <<'PB'
+#!/bin/sh
+r=$(printf '%s' "${1%#*}" | tr / _)
+[ -f "$GH_FIX/clear/${r}__${1##*#}" ]
+PB
+chmod +x "$S/bin/gh" "$S/bin/pr-blockers"
 
 # --- a checkout of o/alpha with a bare origin whose path ends in o/alpha ----
 git init -q --bare "$S/remotes/o/alpha"
@@ -69,7 +75,8 @@ put prs/o_alpha__grind-card-fix-the-widget.json '[{"number":41,"state":"OPEN","c
 put prs/o_alpha__grind-8.json '[{"number":42,"state":"OPEN","createdAt":"2026-10-03T10:30:00Z","url":"u","headRefOid":"x","labels":[]}]'
 put prs/o_beta__grind-5.json '[{"number":7,"state":"OPEN","createdAt":"2026-10-03T10:12:00Z","url":"u","headRefOid":"x","labels":[]}]'
 put prs/o_alpha__grind-7.json FAIL
-put prview/o_alpha__30.json '{"number":30,"state":"OPEN","url":"u","headRefName":"feature-x","labels":[{"name":"awaiting-human"}],"commits":[{"oid":"c30","committedDate":"2026-09-01T00:00:00Z"}]}'
+put prview/o_alpha__30.json '{"number":30,"state":"OPEN","url":"u","headRefName":"feature-x","labels":[],"commits":[{"oid":"c30","committedDate":"2026-09-01T00:00:00Z"}]}'
+put clear/o_alpha__30 ''
 put prview/o_alpha__31.json '{"number":31,"state":"OPEN","url":"u","headRefName":"feature-y","labels":[],"commits":[{"oid":"c31","committedDate":"2026-10-03T10:40:00Z"}]}'
 cat > "$WORK_ITEM_DIR/1790000000aaaaaaaa.md" <<'MD'
 # Fix the widget

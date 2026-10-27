@@ -373,6 +373,7 @@ audit_bin=$(find_beside bin/pr-label-audit) || audit_bin=""
 state_py=$(find_beside lib/state.py) || state_py=""
 contract_file=$(find_beside skills/pickup/SKILL.md) || contract_file=""
 claim_stamp=$(find_beside hooks/claim-stamp.py) || claim_stamp=""
+blockers_bin=$(command -v pr-blockers 2>/dev/null || find_beside bin/pr-blockers) || blockers_bin=""
 work_item_bin=${GRIND_WORK_ITEM:-$(command -v work-item 2>/dev/null || find_beside bin/work-item || true)}
 # Where a `carded` worker is expected to have written, and where a card is
 # claimed and retired: the work-item store, named by work-item itself so the
@@ -765,7 +766,7 @@ items=$(printf '%s' "$record" | jq -c --argjson repos "$repos_json" --argjson re
   ($audit | map({key: "\(.repo)#\(.number)", value: .}) | from_entries) as $a
   | ([ .buckets.not_ready[] | (.repo | short) as $s | select(mine and (.isDraft|not) and (($red | index($s)) == null))
        | . + ($a["\($s)#\(.number)"] // {} | del(.repo))
-       | select((.section // "unfinished") == "unfinished")
+       | select((.section // "unfinished") | IN("unfinished", "stale-label"))
        | {kind: "pr", repo, number, title, url, labels, author, verdict: (.verdict // "unfinished"),
           cancelled_only: (.cancelled_only // false), failing_checks: (.failing_checks // []),
           head_committed_at: (.head_committed_at // null)} ] | sort_by(.number)) as $prs
@@ -1350,8 +1351,9 @@ verify_pr() {
 pr_labels() { gh pr view "$1" --repo "$repo" --json labels --jq '.labels[].name' 2>/dev/null; }
 
 # pr_finished <pr number> -- pr-blockers exits 0 only for a PR with no open
-# thread, conflict or red or pending check; any other exit reads as not finished.
-pr_finished() { pr-blockers "$repo#$1" >/dev/null 2>&1; }
+# thread, conflict or red or pending check; any other exit, or no pr-blockers,
+# reads as not finished.
+pr_finished() { [ -n "$blockers_bin" ] && "$blockers_bin" "$repo#$1" >/dev/null 2>&1; }
 
 # verify_pr_fixup <pr number> <branch> <worktree> <worker start, ISO 8601>
 # Two ways to be finished, and neither is the worker's word for it: pr-blockers
@@ -1983,8 +1985,8 @@ while [ "$i" -lt "$count" ]; do
 
   # A failed fixup is one the backstop or an error cut off before it could
   # carry out the contract's stop rule, so grind carries it out: the
-  # fixup-hard label and one comment, the whole handover. Not when Mergify
-  # has already called the PR finished, nor when there was no result.
+  # fixup-hard label and one comment, the whole handover. Not when pr-blockers
+  # already finds the PR finished, nor when there was no result.
   if [ "$kind" = pr ] && [ "$status" = failed ] && [ "$no_result" -eq 0 ] \
      && ! pr_finished "$number"; then
     if stop_rule_for_worker "$number" "$cost" "$last_text"; then
