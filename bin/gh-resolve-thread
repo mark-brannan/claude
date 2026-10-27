@@ -1,29 +1,83 @@
 #!/bin/sh
-# gh-resolve-thread <threadId> -- resolve one PR review thread by node id.
+# gh-resolve-thread <threadId> [--reply BODY | --reply-only BODY]
+#   one PR review thread, by node id:
+#   (bare)              resolve it, only if its last comment is an agent's reply
+#   --reply BODY        post BODY on it and resolve it, in one GraphQL request
+#   --reply-only BODY   post BODY on it and leave it open
 #
-# Exists so thread resolution can be allowlisted as `Bash(gh-resolve-thread:*)`.
+# Exists so thread work can be allowlisted as `Bash(gh-resolve-thread:*)`.
 # The alternative, a `gh api graphql:*` glob, would also approve deleteRef,
-# closePullRequest and every other mutation GitHub exposes. The mutation is
-# hard-coded; the only caller-controlled input is the id, and it is passed as
-# a GraphQL variable, never interpolated into the query.
+# closePullRequest and every other mutation GitHub exposes. The mutations are
+# hard-coded; the id and body travel as GraphQL variables, never interpolated.
 #
-# Exit: 0 when GitHub reports the thread resolved; 1 on usage error or when
-# the mutation ran but the thread is not resolved; gh's own status otherwise.
+# BODY must be signed as rules/code.md says: first line opens with "🤖 ", last
+# line is "🤖 <model> · <effort> · <8 hex>". The bare resolve refuses unless
+# the thread's last comment opens with "🤖 ", so a thread nobody answered, or
+# one a bot posted on after the agent's reply, stays open.
+#
+# Exit: 0 on success; 1 on usage error, an unsigned body, an unanswered
+# thread, or when GitHub does not report the result; gh's own status otherwise.
 set -u
 
-usage() { echo "usage: gh-resolve-thread <threadId>   (one PRRT_... id, no loop)" >&2; exit 1; }
+usage() {
+  echo "usage: gh-resolve-thread <threadId> [--reply BODY | --reply-only BODY]   (one PRRT_... id, no loop)" >&2
+  exit 1
+}
 
-[ $# -eq 1 ] || usage
+[ $# -eq 1 ] || [ $# -eq 3 ] || usage
 id=$1
 case $id in
   PRRT_*) ;;
   *) echo "gh-resolve-thread: '$id' is not a review-thread id (expected PRRT_...)" >&2; exit 1 ;;
 esac
+mode=resolve
+if [ $# -eq 3 ]; then
+  case $2 in
+    --reply) mode=reply ;;
+    --reply-only) mode=reply-only ;;
+    *) usage ;;
+  esac
+  body=$3
+  first=$(printf '%s\n' "$body" | head -n 1)
+  last=$(printf '%s\n' "$body" | sed '/^[[:space:]]*$/d' | tail -n 1)
+  case $first in
+    '🤖 '*) ;;
+    *) echo "gh-resolve-thread: the reply must open with '🤖 ' (rules/code.md, signed replies)" >&2; exit 1 ;;
+  esac
+  printf '%s\n' "$last" | grep -Eq '^🤖 [^ ]+ · [^ ]+ · [0-9a-f]{8}$' || {
+    echo "gh-resolve-thread: the reply must end with '🤖 <model> · <effort> · <8 hex>'" >&2; exit 1; }
+fi
 
-# shellcheck disable=SC2016  # $id is a GraphQL variable, resolved by GitHub, not the shell
-out=$(gh api graphql \
-  -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
-  -f id="$id") || exit $?
+# shellcheck disable=SC2016  # $id and $body are GraphQL variables, resolved by GitHub
+case $mode in
+  resolve)
+    lastbody=$(gh api graphql \
+      -f query='query($id:ID!){node(id:$id){... on PullRequestReviewThread{comments(last:1){nodes{body}}}}}' \
+      -f id="$id" --jq '.data.node.comments.nodes[0].body // ""') || exit $?
+    case $lastbody in
+      '🤖 '*) ;;
+      *) echo "gh-resolve-thread: $id has no agent reply as its last comment; answer it with --reply BODY" >&2; exit 1 ;;
+    esac
+    out=$(gh api graphql \
+      -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
+      -f id="$id") || exit $? ;;
+  reply)
+    out=$(gh api graphql \
+      -f query='mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{url}} resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
+      -f id="$id" -f body="$body") || exit $? ;;
+  reply-only)
+    out=$(gh api graphql \
+      -f query='mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{url}}}' \
+      -f id="$id" -f body="$body") || exit $? ;;
+esac
+
+if [ "$mode" != resolve ]; then
+  case $out in
+    *'"url":"'*) ;;
+    *) echo "gh-resolve-thread: reply on $id not posted:" >&2; printf '%s\n' "$out" >&2; exit 1 ;;
+  esac
+  [ "$mode" = reply-only ] && { echo "replied on $id"; exit 0; }
+fi
 case $out in
   *'"isResolved":true'*) echo "resolved $id"; exit 0 ;;
   *) echo "gh-resolve-thread: $id not resolved:" >&2; printf '%s\n' "$out" >&2; exit 1 ;;

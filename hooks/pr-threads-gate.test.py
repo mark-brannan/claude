@@ -168,7 +168,7 @@ class OpenThreads(Base):
         self.says("PRRT_b")
         self.says("b.ts  @coderabbitai: Disable the pre-commit hook$")
         self.lacks("PRRT_a")
-        self.says("resolveReviewThread")
+        self.says("gh-resolve-thread <threadId> --reply")
         self.says("never a loop")
         self.assertSilent("s1", "open", active=True)
 
