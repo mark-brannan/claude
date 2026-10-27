@@ -18,10 +18,10 @@ outright rather than trying to distinguish them. On a repo with neither
 rule the deny is a false positive; re-signing by hand is correct there too,
 so the cost is a redirect, not lost capability.
 
-The remedy is a signed rebase onto the PR's base, force-pushed with lease
-(`git rebase -S --force-rebase <merge-base>`, `git push --force-with-lease`),
-run where the signing key is. A branch that is merely behind needs neither: the
-queue updates it (fixup contract, pickup skill section 6).
+The remedy is whatever `branch_brief` (lib/state.py) recommends for the branch;
+it alone knows when a signed rebase is wrong (a hand-resolved merge commit). A
+branch that is merely behind needs nothing: the queue updates it (fixup
+contract, pickup skill section 6).
 
 Fails OPEN on an unreadable payload, unlike the $HOME gates: what this
 protects is recoverable (a signed rebase repairs the damage after the
@@ -42,10 +42,9 @@ import hookio  # noqa: E402
 
 REASON = """Blocked by ~/.claude/hooks/no-update-branch.py: GitHub's server-side "Update branch" is a dead end on a repo with signed commits or linear history. The --rebase form rewrites the commits and does NOT re-sign them, so every commit on the branch comes back unsigned; the merge form keeps signatures but adds a merge commit that required_linear_history rejects.
 
-A branch that is merely behind its base needs nothing: the merge queue brings it up to date (fixup contract, ~/.claude/skills/pickup/SKILL.md section 6). A conflict is merged in by hand: git merge origin/<base>, resolve, push. Only unsigned commits or Update-branch merge commits call a signed rebase onto the PR's base, force-pushed with lease, run where the signing key is:
+A branch that is merely behind its base needs nothing: the merge queue brings it up to date (fixup contract, ~/.claude/skills/pickup/SKILL.md section 6). A conflict is merged in by hand: git merge origin/<base>, resolve, push. Only unsigned commits or Update-branch merge commits need repair, and the repair depends on the branch: ask for it and run what its `recommend:` line says, without second-guessing it.
 
-  git rebase -S --force-rebase <merge-base>
-  git push --force-with-lease
+  python3 ~/.claude/lib/state.py branch_brief <repo-root> <branch>
 
 Do not ask the user; this is settled.
 

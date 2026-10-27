@@ -6,7 +6,6 @@
 # -c commit.gpgsign=false. Global git config is ignored throughout.
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -15,6 +14,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 HOOK = Path(__file__).resolve().parent / "no-unsigned-push.py"
+STATE = Path(__file__).resolve().parent.parent / "lib" / "state.py"
 GIT_ENV = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
 
 
@@ -87,15 +87,43 @@ class NoUnsignedPushTest(unittest.TestCase):
         self.assertEqual(verdict, "deny")
         self.assertEqual(out.count("1 unsigned commit"), 1)
 
-        # The remedy has the same trap: a rebase from the upstream replays
-        # main's commits as new, signed duplicates. The advised command must not.
-        m = re.search(r"git rebase -S --force-rebase ([0-9a-f]*)", out)
-        self.assertTrue(m)
-        self.assertIn("force-with-lease", out)
-        git(w, "rebase", "-S", "--force-rebase", m.group(1), check=False)
+        # The remedy is the brief. Its command rebases onto the merged main tip,
+        # so main's commits are kept, not replayed, and the push clears.
+        self.assertIn("state.py branch_brief", out)
+        brief = subprocess.run([sys.executable, str(STATE), "branch_brief", str(w), "feat"],
+                               capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout
+        rec = next(ln for ln in brief.split("\n") if ln.startswith("recommend: "))
+        self.assertRegex(rec, r"^recommend: git rebase -S --force-rebase [0-9a-f]{40} ")
+        git(w, *rec.split("#")[0].split()[2:])
         self.assertEqual(git(w, "merge-base", "--is-ancestor", "origin/HEAD", "HEAD", check=False).returncode, 0,
                          "advised rebase keeps main's commit, not a copy")
-        self.assertEqual(git(w, "rev-list", "--count", "HEAD", "--not", "origin/HEAD").stdout.strip(), "2")
+        self.assertEqual(self.verdict("git push", w), "silent")
+
+    def test_hand_resolved_merge_keeps_its_tree_when_resigned(self):
+        w = self.setup_repo()
+        git(w, "switch", "-q", "-c", "feat")
+        (w / "f").write_text("feat\n")
+        git(w, "add", "f")
+        git(w, "commit", "-q", "-m", "feat work")
+        git(w, "switch", "-q", "main")
+        (w / "f").write_text("main\n")
+        git(w, "add", "f")
+        git(w, "commit", "-q", "-m", "main work")
+        git(w, "push", "-q", "origin", "main")
+        git(w, "switch", "-q", "feat")
+        git(w, "merge", "-q", "--no-edit", "main", check=False)
+        (w / "f").write_text("both\n")
+        git(w, "add", "f")
+        git(w, "commit", "-q", "--no-edit")
+        self.unsigned(w, "unsigned above the merge")
+        self.assertEqual(self.verdict("git push", w), "deny")
+        brief = subprocess.run([sys.executable, str(STATE), "branch_brief", str(w), "feat"],
+                               capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout
+        rec = next(ln for ln in brief.split("\n") if ln.startswith("recommend: "))
+        self.assertRegex(rec, r"^recommend: git rebase -S --force-rebase [0-9a-f]{12} ")
+        git(w, *rec.split("#")[0].split()[2:])
+        self.assertEqual((w / "f").read_text(), "both\n")
+        self.assertEqual(git(w, "rev-list", "--count", "--merges", "origin/main..HEAD").stdout.strip(), "1")
         self.assertEqual(self.verdict("git push", w), "silent")
 
     def test_no_upstream_falls_back_to_origin_head(self):
@@ -117,7 +145,7 @@ class NoUnsignedPushTest(unittest.TestCase):
         git(w, "config", "--unset", "user.signingkey")
         verdict, out = self.hook("git push", w)
         self.assertEqual(verdict, "allow")
-        self.assertIn("git rebase -S --force-rebase origin/<base>", json.loads(out)["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("state.py branch_brief", json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
     def test_unreadable_payload_denies(self):
         p = subprocess.run([sys.executable, str(HOOK)], input="{not json", capture_output=True, text=True)
