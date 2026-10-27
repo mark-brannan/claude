@@ -1455,7 +1455,7 @@ audit_row() { # audit_row <n> <section> <verdict> <labels json> <author> <when>
   audit_row 44 unfinished conflicted '[]' solace "$(fresh)"
   audit_row 45 unfinished conflicted '[]' solace "$(old)"
   audit_row 46 unfinished conflicted '[]' solace "$(fresh)"
-  audit_row 50 green green '["awaiting-human"]' solace "$(old)"
+  audit_row 50 green green '[]' solace "$(old)"
   jq -nc '{repos_missing_fixup_hard:[]}'
 } > "$S/audit.json"
 
@@ -1478,10 +1478,19 @@ git -C "$prrepo" branch -q fix-45-held main
 
 # gh, for --prs: pr view answers from one canned doc per PR, by whatever --jq
 # filter grind passed, so the shim never second-guesses the query.
+# pr-blockers answers clear (exit 0) for a PR whose clear-<n> marker exists;
+# prview resets it, so each canned PR starts blocked.
 prview() { # prview <n> <label names json> <commits json>
+  rm -f "$S/clear-$1"
   jq -n --arg b "fix-$1" --argjson l "$2" --argjson c "$3" \
     '{headRefName:$b, baseRefName:"main", labels:($l | map({name:.})), commits:$c}' > "$S/pr-$1.json"
 }
+clear() { : > "$S/clear-$1"; }   # clear <n>: pr-blockers finds nothing on PR n
+cat > "$S/bin/pr-blockers" <<PB
+#!/bin/sh
+[ -f "$S/clear-\${1##*#}" ]
+PB
+chmod +x "$S/bin/pr-blockers"
 for n in 30 11 40 41 42 43 45; do prview "$n" '[]' '[]'; done
 # 44: a session pushed minutes ago. 46: the session pushed days ago and the
 # fresh head is Mergify merging main in -- workable, whatever the head date says.
@@ -1661,7 +1670,7 @@ rm -f "$S/bin/gh-agent"
 mv "$S/pr-11.saved" "$S/pr-11.json"
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json
 reply 0.20 "done" 1
-prview 11 '["awaiting-human"]' '[]'
+prview 11 '[]' '[]'; clear 11
 : > "$CLAUDE_LOG"; : > "$S/claude-env.log"
 run --prs
 eq 'exit 0' 0 "$RC"
@@ -1669,7 +1678,7 @@ eq 'exit 0' 0 "$RC"
 # the worker still needs Bash to label, comment and push (claude#69 review).
 eq 'a pr worker gets its soft cap ($1.25) as the spend gate line' '1.25 HANDOFF.md' \
   "$(cat "$S/claude-env.log")"
-has 'awaiting-human alone is enough to be done' '^.*#11: PR 11 -- sonnet, \$0\.20'
+has 'a PR clear of blockers is enough to be done' '^.*#11: PR 11 -- sonnet, \$0\.20'
 lacks 'and it is not unverified' 'UNVERIFIED'
 PROMPT=$(cat "$S/prompt.txt")
 prompt_has 'the GitHub brief is in the prompt'  'AUDIT BRIEF'
@@ -1684,12 +1693,12 @@ prompt_has 'the worker is told the stop rule is its budget, not a kill' 'grind d
 prompt_has 'and that the gate closes past it, at the soft cap' 'Past ~$1.25 a hook denies every tool but one Write'
 lacks 'no grind-N branch is ever made for a PR' 'grind-11'
 
-# --- done with neither the label nor a signed head move is unverified ----------------
+# --- done with neither a clear PR nor a signed head move is unverified ----------------
 prview 11 '[]' '[]'
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json
 reply 0.20 "done" 1
 run --prs
-has 'an unbacked done claim is unverified' 'UNVERIFIED: .*#11 .*no awaiting-human label, and no signed commit'
+has 'an unbacked done claim is unverified' 'UNVERIFIED: .*#11 .*PR not clear of blockers, and no signed commit'
 
 # --- blocked without the fixup-hard label is unverified, not a clean give-up ---------
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json
@@ -1725,7 +1734,7 @@ assert 'the worker session claim stamp is released' grep -Eq -- '^release .*--sc
 has 'its worktree is kept' 'keeping worktree .*/pr-11 on branch fix-11'
 
 # --- the cap lands after a claim GitHub bears out: that is a done fixup ------------------
-prview 11 '["awaiting-human"]' '[]'
+prview 11 '[]' '[]'; clear 11
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json; : > "$GH_LOG"; : > "$S/stamp.log"
 capkill 1 'All green.
 GRIND_STATUS: done'
@@ -1735,14 +1744,14 @@ lacks 'so it is not failed' '^FAILED'
 assert 'and grind labels nothing' test "$(grep -c '^pr edit 11' "$GH_LOG")" = 0
 assert 'the stamp is released on every exit, not only a failed one' grep -q 'release' "$S/stamp.log"
 
-# --- the cap lands with no claim, but Mergify already finished the fixup: done ---------
-# dotfiles#249's shape: the signed commit was on the PR and awaiting-human on
-# it before the cap killed the worker mid-turn. The label is the same word a
+# --- the cap lands with no claim, but the fixup is already finished: done ---------
+# dotfiles#249's shape: the signed commit was on the PR and the PR clear of
+# blockers before the cap killed the worker mid-turn. That is the same test a
 # `done` claim is checked against, so the missing claim costs nothing.
 rm -f "$S/claude-replies"/*.json "$S/state/grind"/*.json; : > "$GH_LOG"; : > "$S/stamp.log"
 capkill 1 'Pushing.'
 run --prs
-has 'awaiting-human outranks a missing claim' '^.*#11: PR 11 -- sonnet, \$1\.26'
+has 'a clear PR outranks a missing claim' '^.*#11: PR 11 -- sonnet, \$1\.26'
 lacks 'so it is not failed' '^FAILED'
 sess=$(latest_session)
 eq 'recorded done in state' 'done' "$(jq -r '.items[0].status' "$sess")"

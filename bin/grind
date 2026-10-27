@@ -373,6 +373,7 @@ audit_bin=$(find_beside bin/pr-label-audit) || audit_bin=""
 state_py=$(find_beside lib/state.py) || state_py=""
 contract_file=$(find_beside skills/pickup/SKILL.md) || contract_file=""
 claim_stamp=$(find_beside hooks/claim-stamp.py) || claim_stamp=""
+blockers_bin=$(command -v pr-blockers 2>/dev/null || find_beside bin/pr-blockers) || blockers_bin=""
 work_item_bin=${GRIND_WORK_ITEM:-$(command -v work-item 2>/dev/null || find_beside bin/work-item || true)}
 # Where a `carded` worker is expected to have written, and where a card is
 # claimed and retired: the work-item store, named by work-item itself so the
@@ -1090,8 +1091,8 @@ build_pr_prompt() {
   printf 'how to resume) and end the turn. The gap between the two is for the\n'
   printf 'label, the comment and the push, which need tools the hook denies.\n\n'
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
-  printf '  GRIND_STATUS: done     you finished. grind checks the PR for the\n'
-  printf '                         awaiting-human label Mergify computes, or for a\n'
+  printf '  GRIND_STATUS: done     you finished. grind runs pr-blockers on the PR\n'
+  printf '                         and takes no blockers as finished, or looks for a\n'
   printf '                         head that moved with every commit signed, and\n'
   printf '                         records the item unverified if it finds neither.\n'
   printf '  GRIND_STATUS: blocked  you hit the contract\047s stop rule. Its terms are\n'
@@ -1349,15 +1350,27 @@ verify_pr() {
 # a lookup that did not complete never reads as "the label is absent".
 pr_labels() { gh pr view "$1" --repo "$repo" --json labels --jq '.labels[].name' 2>/dev/null; }
 
+# pr_finished <pr number> -- pr-blockers exits 0 only for a PR with no open
+# thread, conflict or red or pending check, and 3 for one no longer open; a
+# merged one leaves nothing to hand over, but one closed unmerged is not
+# finished, so a worker cannot close its way to done. Any other exit, or no
+# pr-blockers, reads as not finished.
+pr_finished() {
+  [ -n "$blockers_bin" ] || return 1
+  "$blockers_bin" "$repo#$1" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  [ "$rc" -eq 3 ] && [ "$(gh pr view "$1" --repo "$repo" --json state --jq .state 2>/dev/null)" = MERGED ]
+}
+
 # verify_pr_fixup <pr number> <branch> <worktree> <worker start, ISO 8601>
-# Two ways to be finished, and neither is the worker's word for it: Mergify
-# put `awaiting-human` on the PR, or the head moved while the worker ran and
+# Two ways to be finished, and neither is the worker's word for it: pr-blockers
+# finds nothing keeping the PR from merging, or the head moved while the worker ran and
 # every commit between the base and the head verifies. A signature grind
 # cannot read is not a signature -- %G? is checked against G and U only, so an
 # unsigned commit (N) or a bad one (B/E) fails this, which is the whole
 # reason the contract forbids working around the signing hook.
 verify_pr_fixup() {
-  pr_labels "$1" | grep -qx awaiting-human && return 0
+  pr_finished "$1" && return 0
   base=$(gh pr view "$1" --repo "$repo" --json baseRefName --jq .baseRefName 2>/dev/null) || return 1
   [ -n "$base" ] || return 1
   moved=$(gh pr view "$1" --repo "$repo" --json commits \
@@ -1907,7 +1920,7 @@ while [ "$i" -lt "$count" ]; do
   # worker that errored is only as good as a claim GitHub bears out: the
   # backstop can land between its push and its exit, and what it pushed is
   # real. With no claim at all, an errored worker is still done when GitHub
-  # says the work is: a PR on its branch (Mergify's awaiting-human for a
+  # says the work is: a PR on its branch (no blockers for a
   # fixup -- a moved head alone is not that word, the stop can land between
   # two commits of one fixup). Otherwise failed -- cost kept, so the session
   # budget stays honest, and retried on --resume.
@@ -1923,7 +1936,7 @@ while [ "$i" -lt "$count" ]; do
     "done") ;;
     *)
       if [ "$errored" -eq 1 ]; then
-        if [ "$kind" = pr ]; then pr_labels "$number" | grep -qx awaiting-human || status=failed
+        if [ "$kind" = pr ]; then pr_finished "$number" || status=failed
         else verify_pr "$branch" "$started_iso" || [ -n "$opened_prs" ] || status=failed
         fi
       fi ;;
@@ -1938,7 +1951,7 @@ while [ "$i" -lt "$count" ]; do
     done)
       if [ "$kind" = pr ]; then
         if ! verify_pr_fixup "$number" "$branch" "$wt_path" "$started_iso"; then
-          unverified_why="no awaiting-human label, and no signed commit pushed to $branch"
+          unverified_why="PR not clear of blockers, and no signed commit pushed to $branch"
           status=unverified
         fi
       elif ! verify_pr "$branch" "$started_iso" && [ -z "$opened_prs" ]; then
@@ -1979,10 +1992,10 @@ while [ "$i" -lt "$count" ]; do
 
   # A failed fixup is one the backstop or an error cut off before it could
   # carry out the contract's stop rule, so grind carries it out: the
-  # fixup-hard label and one comment, the whole handover. Not when Mergify
-  # has already called the PR finished, nor when there was no result.
+  # fixup-hard label and one comment, the whole handover. Not when pr-blockers
+  # already finds the PR finished, nor when there was no result.
   if [ "$kind" = pr ] && [ "$status" = failed ] && [ "$no_result" -eq 0 ] \
-     && ! pr_labels "$number" | grep -qx awaiting-human; then
+     && ! pr_finished "$number"; then
     if stop_rule_for_worker "$number" "$cost" "$last_text"; then
       info "labelled $ref fixup-hard and left the stop-rule comment for its worker"
     else

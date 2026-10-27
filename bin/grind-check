@@ -31,6 +31,9 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$arg" ] || { usage >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "grind-check: needs jq" >&2; exit 2; }
+self_dir=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+blockers_bin=$(command -v pr-blockers 2>/dev/null || { [ -x "$self_dir/pr-blockers" ] && echo "$self_dir/pr-blockers"; } || { [ -x "$HOME/.claude/bin/pr-blockers" ] && echo "$HOME/.claude/bin/pr-blockers"; }) \
+  || { echo "grind-check: needs pr-blockers" >&2; exit 2; }
 
 state_root=${XDG_STATE_HOME:-$HOME/.local/state}/grind
 if [ -f "$arg" ]; then file=$arg
@@ -145,6 +148,8 @@ prs_on() { memo "prs-$1-$2" pr_list "$1" "$2"; }   # prs_on <repo> <branch> -> J
 pr_view() { gh pr view "$2" --repo "$1" --json number,state,url,labels,commits \
   --jq '{number, state, url, labels: [.labels[].name], dates: [.commits[].committedDate],
          head: (.commits | last // {} | {oid, committedDate})}'; }
+# pr_clear <repo> <n> -- pr-blockers finds nothing keeping the PR from merging.
+pr_clear() { "$blockers_bin" "$1#$2" >/dev/null 2>&1 && echo true || echo false; }
 commit_verified() { gh api "repos/$1/commits/$2" --jq '.commit.verification.verified'; }
 read_stamps() {  # read_stamps <repo> <number> -- id sid8 epoch, claim-stamp.py's marker
   gh api "repos/$1/issues/$2/comments" --paginate --jq '
@@ -220,8 +225,8 @@ else row 3 over-cap PASS "no undelivered item over ${overcap_factor}x its cap ($
 fi
 
 # 4. no ref attempted more than twice, nor after a done record for it. A pr ref
-# done in an earlier session may come back: a new review thread takes the
-# label off and puts the PR back in the queue.
+# done in an earlier session may come back: a new review thread blocks the
+# PR again and puts it back in the queue.
 : > "$off"; prior=$cache/prior-done; : > "$prior"
 for f in "$sdir"/grind-*.json; do
   [ -f "$f" ] || continue
@@ -251,10 +256,11 @@ while IFS=$US read -r _ ref kind repo branch status _; do
   if [ -z "$repo" ] || [ -z "$branch" ]; then echo "$ref: cannot tell its repo or branch" >> "$off"; continue; fi
   if [ "$kind" = pr ]; then
     v=$(memo "view-$ref" pr_view "$repo" "$(ref_num "$ref")") || { echo "$ref: gh could not read the PR" >> "$off"; continue; }
-    printf '%s' "$v" | jq -e '.state == "MERGED" or (.labels | index("awaiting-human"))' >/dev/null && continue
+    printf '%s' "$v" | jq -e '.state == "MERGED"' >/dev/null && continue
+    [ "$(memo "clear-$ref" pr_clear "$repo" "$(ref_num "$ref")")" = true ] && continue
     hd=$(printf '%s' "$v" | jq -r '.head.committedDate // ""'); oid=$(printf '%s' "$v" | jq -r '.head.oid // ""')
     if [ -n "$hd" ] && in_window "$hd" && [ "$(memo "sig-$oid" commit_verified "$repo" "$oid")" = true ]; then continue; fi
-    echo "$ref: no awaiting-human, not merged, no signed head pushed in the run" >> "$off"
+    echo "$ref: blocked, not merged, no signed head pushed in the run" >> "$off"
   else
     p=$(prs_on "$repo" "$branch") || { echo "$ref: gh could not list PRs on $branch" >> "$off"; continue; }
     printf '%s' "$p" | jq -e 'any(.[]; .state == "OPEN" or .state == "MERGED")' >/dev/null \
@@ -275,8 +281,8 @@ while IFS=$US read -r _ ref kind repo branch status _; do
   if [ "$kind" = pr ]; then
     v=$(memo "view-$ref" pr_view "$repo" "$(ref_num "$ref")") || { echo "$ref: gh could not read the PR" >> "$off"; continue; }
     # A fixup delivers on the PR's own head: a commit pushed in the run counts.
-    if printf '%s' "$v" | jq -e '.labels | index("awaiting-human")' >/dev/null; then
-      echo "$ref recorded $status, but the PR now carries awaiting-human" >> "$off"
+    if [ "$(memo "clear-$ref" pr_clear "$repo" "$(ref_num "$ref")")" = true ]; then
+      echo "$ref recorded $status, but the PR now has no blockers" >> "$off"
     else
       for at in $(printf '%s' "$v" | jq -r '.dates[]'); do
         in_window "$at" && { echo "$ref recorded $status, but a commit landed on its head at $at" >> "$off"; break; }
