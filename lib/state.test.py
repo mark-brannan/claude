@@ -496,9 +496,29 @@ class StopNoticeTest(Base):
         gitq(self.SR, "commit", "-q", "-m", "state")
         self.assertEqual(bs(str(self.SR)), "", "silent when state/ is committed")
 
+    def test_state_repo_dirt(self):
+        # The four cases: a dirty work area warns; the state repo's own dirt
+        # is safe to archive at home; in the cloud it is a reason, after the
+        # work area's.
+        fake = self.T / "no-hooks"
+        reasons = lambda root: self.state.archivable(str(root), "main", "", str(fake))[0]
+        (self.WT / "edit").touch()
+        (self.SR / "README").write_text("changed\n")
+        self.assertEqual(reasons(self.WT), "worktree dirty", "real work: dirty")
+        self.assertNotIn("dirty", reasons(self.SR), "state repo at home: not a reason")
+        self.assertEqual(self.state.buffered_state(str(self.SR)).split("\n")[1],
+                         "→ state repo: 1 uncommitted file(s) (README) outside state/. Safe to archive: "
+                         "the clone keeps them. The Stop hook commits only state/, so commit these by hand "
+                         "to keep them.", "...but named, after what is buffered")
+        os.environ["CLAUDE_CODE_REMOTE"] = "true"
+        self.assertEqual(reasons(self.WT), "worktree dirty, state repo dirty", "cloud, mixed: work area first")
+        self.assertEqual(reasons(self.SR).split(", ")[0], "state repo dirty", "cloud, in the state repo")
+        self.assertEqual(self.state.buffered_state(str(self.SR)).count("\n"), 0,
+                         "cloud: the verdict names it, the note does not")
+
     def test_verdict_explain(self):
         ve = self.state.verdict_explain
-        tail = "Normal mid-task: the agent commits them when the work lands. Archive the worktree only after that."
+        tail = "Archive the worktree only after the agent commits them."
         for n in "abcd":
             (self.WT / n).touch()
         self.assertEqual(ve("not archivable: worktree dirty", str(self.WT)),
@@ -513,6 +533,13 @@ class StopNoticeTest(Base):
         self.assertEqual(ve("not archivable: worktree dirty"),
                          f"→ worktree dirty: uncommitted files in this worktree. {tail}",
                          "without the tree, no file list")
+        (self.SR / "README").write_text("changed\n")
+        self.assertEqual(ve("not archivable: worktree dirty, state repo dirty", str(self.WT)),
+                         f"→ worktree dirty: 1 uncommitted file(s) (my file). {tail}\n"
+                         "→ state repo dirty: 1 uncommitted file(s) (README). This cloud VM's clone dies with "
+                         "the VM, and the Stop hook commits only state/: commit these and push them to main, "
+                         "or they are lost.",
+                         "mixed: the work area leads, the state repo follows")
         self.assertEqual(len(ve("not archivable: worktree dirty, 2 commit(s) unpushed").split("\n")), 2,
                          "two reasons, one line each")
         self.assertEqual(ve("not archivable: something no explanation knows"), "", "an unknown reason has none")
