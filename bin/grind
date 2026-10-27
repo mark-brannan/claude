@@ -1351,10 +1351,16 @@ verify_pr() {
 pr_labels() { gh pr view "$1" --repo "$repo" --json labels --jq '.labels[].name' 2>/dev/null; }
 
 # pr_finished <pr number> -- pr-blockers exits 0 only for a PR with no open
-# thread, conflict or red or pending check, and 3 for one no longer open
-# (merged or closed), which leaves nothing to hand over; any other exit, or no
+# thread, conflict or red or pending check, and 3 for one no longer open; a
+# merged one leaves nothing to hand over, but one closed unmerged is not
+# finished, so a worker cannot close its way to done. Any other exit, or no
 # pr-blockers, reads as not finished.
-pr_finished() { [ -n "$blockers_bin" ] || return 1; "$blockers_bin" "$repo#$1" >/dev/null 2>&1; rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]; }
+pr_finished() {
+  [ -n "$blockers_bin" ] || return 1
+  "$blockers_bin" "$repo#$1" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  [ "$rc" -eq 3 ] && [ "$(gh pr view "$1" --repo "$repo" --json state --jq .state 2>/dev/null)" = MERGED ]
+}
 
 # verify_pr_fixup <pr number> <branch> <worktree> <worker start, ISO 8601>
 # Two ways to be finished, and neither is the worker's word for it: pr-blockers
