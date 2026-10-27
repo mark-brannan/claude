@@ -160,10 +160,20 @@ def _pwd_p(p):
 # and stop-continuity.py commits them with `git add state/`. A session run
 # from the state repo was "worktree dirty" on every Stop, 82 of 82 recorded,
 # over files no one but a hook could commit.
+def is_state_repo(root):
+    """root is the state repo's own clone (a worktree of it is not)."""
+    sr = state_repo()
+    return bool(root and sr) and _pwd_p(root) == _pwd_p(sr)
+
+
+def is_cloud():
+    """A cloud VM, whose clones die with it."""
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+
+
 def dirty_paths(root):
     """git's porcelain lines as it printed them, trailing newline and all."""
-    sr = state_repo() or ""
-    if sr and _pwd_p(root) == _pwd_p(sr):
+    if is_state_repo(root):
         return _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain",
                     "--", ".", ":(exclude)state/")[1]
     return _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain")[1]
@@ -326,8 +336,15 @@ def archivable(work_root, work_branch, self_sid="", hook_dir=HOOK_DIR):
     branch-home-gate.py's gh round trip a second time in one Stop."""
     reasons = []
     home = None
-    if dirty_paths(work_root).rstrip("\n"):
+    # The state repo's own clone is not a worktree archiving deletes: on a
+    # machine that keeps it, its dirt is a note (buffered_state), not a
+    # reason. A cloud VM's clone dies with the VM, so there the state repo's
+    # dirt is a reason whichever repo the session worked in, named after the
+    # work area's own.
+    if not is_state_repo(work_root) and dirty_paths(work_root).rstrip("\n"):
         reasons.append("worktree dirty")
+    if is_cloud() and state_repo() and dirty_paths(state_repo()).rstrip("\n"):
+        reasons.append("state repo dirty")
 
     ust = unpushed_state(work_root, work_branch)
     if ust == "ahead 0":
@@ -535,17 +552,25 @@ def _porcelain_paths(text):
     return paths
 
 
-# buffered_state -- in the state repo only, one line naming what dirty_paths
-# left out: the uncommitted files under state/. stop-continuity.py has already
+# buffered_state -- in the state repo only, what the verdict leaves out.
+# First, the uncommitted files under state/. stop-continuity.py has already
 # committed this Stop's by the time the readout runs, so what is left was
 # written since, or its commit failed; the next Stop commits it. Leaving them
 # out of the verdict is right; leaving them unsaid is not: a hand-off or card
 # still on disk is worth knowing about. Metrics are counted, everything else
-# is named. "" elsewhere, and when nothing is buffered.
+# is named. Then, off the cloud, the files outside state/ (a draft, a README
+# edit): archiving leaves the clone and them in place, but no hook commits
+# them. In the cloud those are the verdict's "state repo dirty" instead.
+# "" elsewhere, and when nothing is buffered.
 def buffered_state(root):
-    sr = state_repo()
-    if not sr or _pwd_p(root) != _pwd_p(sr):
+    if not is_state_repo(root):
         return ""
+    lines = []
+    stray = [] if is_cloud() else _porcelain_paths(dirty_paths(root))
+    if stray:
+        lines.append(f"→ state repo: {_shown(stray)} outside state/. "
+                     "Safe to archive: the clone keeps them. The Stop hook commits only state/, "
+                     "so commit these by hand to keep them.")
     text = _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain",
                 "--untracked-files=all", "--", "state/")[1]
     paths = []
@@ -553,13 +578,13 @@ def buffered_state(root):
         p = p[len("state/global/"):] if p.startswith("state/global/") else p
         p = p[len("state/"):] if p.startswith("state/") else p
         paths.append(p)
-    if not paths:
-        return ""
-    named = ", ".join(p for p in paths if not p.startswith("metrics/"))
-    nm = sum(1 for p in paths if p.startswith("metrics/"))
-    if nm:
-        named = f"{named + ', ' if named else ''}+ {nm} metrics file{'' if nm == 1 else 's'}"
-    return f"→ buffered in the state repo, not committed yet (the next Stop commits it): {named}"
+    if paths:
+        named = ", ".join(p for p in paths if not p.startswith("metrics/"))
+        nm = sum(1 for p in paths if p.startswith("metrics/"))
+        if nm:
+            named = f"{named + ', ' if named else ''}+ {nm} metrics file{'' if nm == 1 else 's'}"
+        lines.insert(0, f"→ buffered in the state repo, not committed yet (the next Stop commits it): {named}")
+    return "\n".join(lines)
 
 
 # verdict_explain -- one line per reason the verdict names: what is at risk,
@@ -570,6 +595,7 @@ _EXPLAIN = (
     (("not a git repo",),
      "→ not a git repo: the session ran outside any repo, so there was no branch to check."),
     (("worktree dirty",), None),
+    (("state repo dirty",), None),
     ((" commit(s) unpushed",),
      "→ commits unpushed: they exist on this machine only. Push the branch."),
     (("has no upstream (never pushed)",),
@@ -592,15 +618,14 @@ _EXPLAIN = (
      "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries."),
 )
 _DIRTY_TAIL = "Archive the worktree only after the agent commits them."
-# The state repo is dirty between the Stop hook's commits; anywhere else it is not.
-_DIRTY_TAIL_STATE = "Normal in the state repo: the Stop hook commits it."
+_DIRTY_TAIL_CLOUD = ("This cloud VM's clone dies with the VM, and the Stop hook commits only state/: "
+                     "commit these and push them to main, or they are lost.")
 
 
-def _dirty_tail(root):
-    sr = state_repo()
-    if root and sr and os.path.realpath(root) == os.path.realpath(sr):
-        return _DIRTY_TAIL_STATE
-    return _DIRTY_TAIL
+def _shown(paths):
+    """`N uncommitted file(s) (a, b, c, +M more)`."""
+    more = f", +{len(paths) - 3} more" if len(paths) > 3 else ""
+    return f"{len(paths)} uncommitted file(s) ({', '.join(paths[:3])}{more})"
 
 
 def verdict_explain(verdict, root=""):
@@ -611,13 +636,14 @@ def verdict_explain(verdict, root=""):
             continue
         if line is not None:
             lines.append(line)
-            continue
-        paths = _porcelain_paths(dirty_paths(root)) if root else []
-        if paths:
-            shown = ", ".join(paths[:3]) + (f", +{len(paths) - 3} more" if len(paths) > 3 else "")
-            lines.append(f"→ worktree dirty: {len(paths)} uncommitted file(s) ({shown}). {_dirty_tail(root)}")
+        elif needles[0] == "state repo dirty":
+            paths = _porcelain_paths(dirty_paths(state_repo())) if state_repo() else []
+            what = _shown(paths) if paths else "uncommitted files in the state repo"
+            lines.append(f"→ state repo dirty: {what}. {_DIRTY_TAIL_CLOUD}")
         else:
-            lines.append(f"→ worktree dirty: uncommitted files in this worktree. {_dirty_tail(root)}")
+            paths = _porcelain_paths(dirty_paths(root)) if root else []
+            what = _shown(paths) if paths else "uncommitted files in this worktree"
+            lines.append(f"→ worktree dirty: {what}. {_DIRTY_TAIL}")
     return "\n".join(lines)
 
 
