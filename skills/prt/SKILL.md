@@ -132,8 +132,8 @@ you under sid <sid>; you release that claim at the end.
    what you have and report.
 3. Threads, the reviewer's and the bots': read each unresolved one, fix
    it or state why not, reply on it with the evidence (commit, file and
-   line), then resolve it by id, one at a time:
-   `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id>`
+   line), then resolve it by id, one at a time, in its own call:
+   `gh-resolve-thread <thread id>`, never a raw `gh api graphql`.
    In a Claude Code cloud session GraphQL is refused with a 403; use the
    GitHub MCP server's `resolve_review_thread` with the thread id from
    `pull_request_read` (`get_review_comments`), or from a shell
