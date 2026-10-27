@@ -1091,8 +1091,8 @@ build_pr_prompt() {
   printf 'how to resume) and end the turn. The gap between the two is for the\n'
   printf 'label, the comment and the push, which need tools the hook denies.\n\n'
   printf 'End your final message with exactly one of these lines, nothing after it:\n\n'
-  printf '  GRIND_STATUS: done     you finished. grind checks the PR for the\n'
-  printf '                         PR with no blockers (pr-blockers), or for a\n'
+  printf '  GRIND_STATUS: done     you finished. grind runs pr-blockers on the PR\n'
+  printf '                         and takes no blockers as finished, or looks for a\n'
   printf '                         head that moved with every commit signed, and\n'
   printf '                         records the item unverified if it finds neither.\n'
   printf '  GRIND_STATUS: blocked  you hit the contract\047s stop rule. Its terms are\n'
@@ -1351,9 +1351,10 @@ verify_pr() {
 pr_labels() { gh pr view "$1" --repo "$repo" --json labels --jq '.labels[].name' 2>/dev/null; }
 
 # pr_finished <pr number> -- pr-blockers exits 0 only for a PR with no open
-# thread, conflict or red or pending check; any other exit, or no pr-blockers,
-# reads as not finished.
-pr_finished() { [ -n "$blockers_bin" ] && "$blockers_bin" "$repo#$1" >/dev/null 2>&1; }
+# thread, conflict or red or pending check, and 3 for one no longer open
+# (merged or closed), which leaves nothing to hand over; any other exit, or no
+# pr-blockers, reads as not finished.
+pr_finished() { [ -n "$blockers_bin" ] || return 1; "$blockers_bin" "$repo#$1" >/dev/null 2>&1; rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]; }
 
 # verify_pr_fixup <pr number> <branch> <worktree> <worker start, ISO 8601>
 # Two ways to be finished, and neither is the worker's word for it: pr-blockers
