@@ -35,7 +35,7 @@ chmod +x "$T/bin/gh"
 # The checkout the script runs in: o/r, on the PR's head branch.
 git init -q -b feat "$T/repo" && git -C "$T/repo" remote add origin git@github.com:o/r.git
 cd "$T/repo" || exit 1
-thread() { printf 'o/r\n%s\n7\n99\nagent\n%s\n%s\n' "${2:-feat}" "${3:-agent}" "$1" > "$T/gh.last"; }
+thread() { printf 'o/r\n%s\n7\n99\nBot:agent\n%s\n%s\n' "${2:-feat}" "${3:-Bot:agent}" "$1" > "$T/gh.last"; }
 
 run() { rc=0; : > "$T/gh.argv"; out=$(sh "$SCRIPT" "$@" 2>&1) || rc=$?; }
 ok()   { pass=$((pass+1)); }
@@ -70,9 +70,12 @@ grep -qE 'deleteRef|closePullRequest|addPullRequestReviewThreadReply' "$T/gh.arg
 thread 'Please also handle the empty case.'
 run PRRT_kwDOabc123;    expect_rc 1 "last comment not an agent's: refused"; expect_out "no signed reply of yours" "says why"
 no_mutation "an unanswered thread"
-thread $'🤖 Fixed.\n🤖 claude-fable-5-1 · - · 6181b536' feat claude
+thread $'🤖 Fixed.\n🤖 claude-fable-5-1 · - · 6181b536' feat Bot:claude
 run PRRT_kwDOabc123;    expect_rc 1 "a review bot's signed finding: refused"; expect_out "no signed reply of yours" "says whose reply it wants"
 no_mutation "a review bot's finding"
+thread $'🤖 Fixed.\n🤖 claude-opus-5-5 · - · a0e46df2' feat User:agent
+run PRRT_kwDOabc123;    expect_rc 1 "a user holding the bot's bare name: refused"
+no_mutation "a same-named user"
 thread $'🤖 Fixed.'
 run PRRT_kwDOabc123;    expect_rc 1 "prefix-only last comment: refused"; expect_out "<8 hex>" "names the missing signature"
 no_mutation "a prefix-only reply"

@@ -65,14 +65,15 @@ fi
 
 # One read for every mode: the PR's repo, head branch and number, the
 # thread's first comment id (for the REST reply call), the caller, the last
-# comment's author, then its body.
+# comment's author, each as type:login (a bot's login drops [bot] in
+# GraphQL, and a user may hold that bare name), then its body.
 err=$(mktemp) || exit 1
 trap 'rm -f "$err"' EXIT
 # shellcheck disable=SC2016  # $id and $body are GraphQL variables, resolved by GitHub
 info=$(gh api graphql \
-  -f query='query($id:ID!){viewer{login} node(id:$id){... on PullRequestReviewThread{pullRequest{number headRefName repository{nameWithOwner}} first:comments(first:1){nodes{databaseId}} last:comments(last:1){nodes{body author{login}}}}}}' \
+  -f query='query($id:ID!){viewer{login} node(id:$id){... on PullRequestReviewThread{pullRequest{number headRefName repository{nameWithOwner}} first:comments(first:1){nodes{databaseId}} last:comments(last:1){nodes{body author{login __typename}}}}}}' \
   -f id="$id" \
-  --jq '.data as $d | $d.node | (.pullRequest.repository.nameWithOwner // ""), (.pullRequest.headRefName // ""), (.pullRequest.number // ""), (.first.nodes[0].databaseId // ""), ($d.viewer.login // "" | sub("\\[bot\\]$"; "")), (.last.nodes[0].author.login // ""), (.last.nodes[0].body // "")' \
+  --jq '.data as $d | $d.node | (.pullRequest.repository.nameWithOwner // ""), (.pullRequest.headRefName // ""), (.pullRequest.number // ""), (.first.nodes[0].databaseId // ""), ($d.viewer.login // "" | if endswith("[bot]") then "Bot:" + .[:-5] else "User:" + . end), ((.last.nodes[0].author // {}) | if .login then .__typename + ":" + .login else "" end), (.last.nodes[0].body // "")' \
   2>"$err")
 rc=$?
 if [ $rc -ne 0 ]; then
