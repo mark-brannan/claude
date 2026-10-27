@@ -176,7 +176,9 @@ in nobody's queue but this session's.
 - **"Resolve conversation" is mine to do, not the user's.** The REST API and
   `gh` CLI have no resolve-thread call, which reads like a dead end —
   it isn't: `gh-resolve-thread <threadId>` resolves one thread, and is the
-  only allowed way; auto mode refuses a raw `gh api graphql` resolve. The
+  only allowed way from a shell; auto mode refuses a raw `gh api graphql`
+  resolve. In a cloud session, where GraphQL 403s, `skills/prt` has the
+  fallback. The
   thread id is the `PRRT_...` node id from `reviewThreads{nodes{id}}` on
   the PR, not the REST comment id. Reply first, in its own call (the GitHub MCP reply
   tool, or `gh api` POST to `pulls/comments/<id>/replies`), then resolve;
