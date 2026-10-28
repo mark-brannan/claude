@@ -397,6 +397,7 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 12.5 | a new file outside `state/`, under 5 MB, no secret | Stop | it is in the state commit | card 1793161639e876a21f |
 | 12.6 | a file over 5 MB; or one `gitleaks` flags | Stop | not staged; the rest committed; the checkpoint names it and its reason | card 1793161639e876a21f |
 | 12.7 | 12.6 | the next session starts | its continuity brief names the file and asks it to offer the user a resolution | card 1793161639e876a21f |
+| 12.8 | no `gitleaks` on PATH, or its scan times out; a new file | Stop | staged and committed; the checkpoint and verdict say the secret scan did not run | card 1793161639e876a21f |
 | 12.8 | no `gitleaks` on PATH, or a scan that times out or errors; a new file | Stop | staged and committed; the checkpoint and the verdict say the secret scan did not run | card 1793161639e876a21f |
 | 13.1 | a push under 300 s ago from this clone | Stop | committed, not pushed | test |
 | 13.2 | 13.1, the push stamp brought in by a pull | Stop | the window still holds | test |
