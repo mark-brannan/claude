@@ -48,7 +48,8 @@ is under Interfaces.
   (job 9's 10-minute miss).
 - Scripts called: `branch-home-gate.py --check` prints `home:<…>` or
   `unverified:<…>`, else nothing; `claim-stamp.py refresh|release`;
-  `metrics-rollup.sh`. The transcript's fields are whatever
+  `metrics-rollup.sh`; `gitleaks` (job 12), looked up on PATH, absent is not
+  an error. The transcript's fields are whatever
   `session-metrics.jq` emits, which is the contract for job 2.
 - The push stamp is the literal `$SR/.git/claude-last-state-push` in the
   state repo, on purpose: a worktree's git dir would not do.
@@ -216,8 +217,9 @@ verdict gets the reason.
 Not a git repo: nothing committed. Otherwise every path git reports changed
 or untracked in the state repo is staged by path, `.gitignore` respected,
 except a held-back path: a file over 5 MB, or one `gitleaks detect --no-git`
-flags. With no scanner on PATH nothing is held back for secrets and the
-checkpoint says the scan did not run. A held-back path stays unstaged and
+flags, run over the changed paths only, 30 s in all. With no scanner on PATH,
+or a scan that times out or errors, nothing is held back for secrets; the
+checkpoint and the verdict say the scan did not run. A held-back path stays unstaged and
 the rest still commit. The checkpoint names each one with its reason, and
 the next session's continuity brief (`session-start-continuity.py`) names it
 and asks that session to offer the user a way to resolve it (commit, scrub,
