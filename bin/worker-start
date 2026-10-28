@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+# worker-start -- a worker sub-agent's opening as one command, so one
+# allow-list entry covers what is otherwise three or four chained calls that
+# each stop for a permission dialog: fetch, put a branch or worktree on the
+# right base, read the issue or PR.
+#
+#   worker-start [-C <repo>] --new <slug> [--base <ref>] [--worktree <path>] [--issue <n>]
+#   worker-start [-C <repo>] --head <branch> [--worktree <path>] [--issue <n>]
+#   worker-start [-C <repo>] --pr <n> [--worktree <path>]
+#
+# --new cuts claude/<slug> (a slug with a / is used as given) from --base,
+#   default origin/main. --head checks out an existing remote branch; --pr
+#   does the same for that PR's head and prints the PR. With --worktree the
+#   checkout goes in a new worktree at <path> (a --head or --pr one detached,
+#   so the branch stays free for whoever holds it); without, in <repo>.
+# Each step prints as `$ <command>` before it runs; the first that fails
+# stops the run with its exit code. 2 on bad arguments.
+import argparse
+import json
+import shlex
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+
+
+def run(cmd, capture=False):
+    print("$ " + shlex.join(cmd), flush=True)
+    r = subprocess.run(cmd, text=True, stdout=subprocess.PIPE if capture else None)
+    if r.returncode:
+        sys.stderr.write("worker-start: failed: %s\n" % shlex.join(cmd))
+        sys.exit(r.returncode)
+    return r.stdout
+
+
+def main(argv):
+    p = argparse.ArgumentParser(prog="worker-start")
+    p.add_argument("-C", dest="repo", default=".")
+    how = p.add_mutually_exclusive_group(required=True)
+    how.add_argument("--new", metavar="SLUG")
+    how.add_argument("--head", metavar="BRANCH")
+    how.add_argument("--pr", type=int)
+    p.add_argument("--base", default="origin/main")
+    p.add_argument("--worktree", metavar="PATH")
+    p.add_argument("--issue", type=int)
+    a = p.parse_args(argv)
+    if a.base != "origin/main" and not a.new:
+        p.error("--base goes with --new")
+    git = ["git", "-C", a.repo]
+    run(git + ["fetch", "-q", "origin"])
+    if a.pr:
+        out = run(["gh", "pr", "view", str(a.pr), "--json", "headRefName", "-q", ".headRefName"], capture=True)
+        a.head = out.strip()
+    if a.new:
+        branch = a.new if "/" in a.new else "claude/" + a.new
+        if a.worktree:
+            run(git + ["worktree", "add", "-q", "-b", branch, a.worktree, a.base])
+        else:
+            run(git + ["checkout", "-q", "-b", branch, a.base])
+    else:
+        ref = "origin/" + a.head
+        if a.worktree:
+            run(git + ["worktree", "add", "-q", "--detach", a.worktree, ref])
+        else:
+            run(git + ["checkout", "-q", "-B", a.head, ref])
+    if a.pr:
+        run(["gh", "pr", "view", str(a.pr), "--comments"])
+    if a.issue:
+        run(["gh", "issue", "view", str(a.issue), "--comments"])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
