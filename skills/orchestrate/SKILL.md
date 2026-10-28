@@ -36,9 +36,8 @@ Then rule on each row yourself:
   `## Needs ruling`; a genuine one becomes a card after wave 1 is out.
 - **A red or conflicting open PR gets a fixer** unless a live claim stamp
   (`claim-stamp.py read`, stale after 1h) or a human's review thread shows
-  a session already on it. Labels are not the signal: `awaiting-human` is
-  computed by Mergify and says "done", `fixup-hard` is session-applied and
-  says nothing about who is there. A fixer finding no thread and a current
+  a session already on it. Labels are not the signal: `fixup-hard` is
+  session-applied and says nothing about who is there. A fixer finding no thread and a current
   base stops at no cost, so a second fixer on the same PR is harmless; two
   at once is what the stamp and `--force-with-lease` catch. Green PRs are
   the review sessions'.

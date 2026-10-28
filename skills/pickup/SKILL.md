@@ -272,12 +272,11 @@ do not paraphrase it into a second version that can drift from this one.
    someone else pushed to this branch while you worked. Stop, and say whose
    push you found.
 
-6. **Finish is `awaiting-human` back on the PR** — and Mergify puts it there,
-   computed from a green `ci-gate / gate` and no unresolved thread. Run
-   `pr-blockers` again after the last push, once the review bots have had
-   their pass: a bot thread lands minutes after the push that caused it.
-   The report opens with what it prints, conversations first. The
-   session never applies that label and never merges the PR.
+6. **Finish is `pr-blockers` printing nothing for the PR.** Run it again
+   after the last push, once the review bots have had their pass: a bot
+   thread lands minutes after the push that caused it. The report opens
+   with what it prints, conversations first. The session never merges the
+   PR.
    One exception: a driver session whose parent card's log carries
    `lane=autonomous` adds `merge`, `churn-ok` and `mixed-loops-ok`
    itself, where the diff stays inside the parent's driver brief, once
@@ -286,7 +285,8 @@ do not paraphrase it into a second version that can drift from this one.
    cards: there the reference goes on the card's log only. A refused label
    is retried once, with the clean review named, then the driver carries on
    and never hands the label to the user. The review is the CI bot's; the
-   driver runs `/critical-review` only where the bot cannot. A diff outside
+   driver works its threads and starts no reviewer of its own, and a head
+   the bot never reviewed is not clean: the labels wait. A diff outside
    the brief gets none of the three and waits
    for the user. A gated child, or a parent logging `lane=gated`, keeps
    the user's merge, and every other session keeps the rule above.
