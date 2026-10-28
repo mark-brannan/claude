@@ -16,7 +16,7 @@ TOOL = Path(__file__).resolve().parent / "worker-start"
 
 GH = '''#!/bin/sh
 echo "gh $*" >> "$GH_LOG"
-case "$1 $2" in "pr view") case "$*" in *headRefName*) echo feature ;; esac ;; esac
+case "$1 $2" in "pr view") case "$*" in *headRefName*) [ -f "$GH_LOG.fork" ] && echo "true feature" || echo "false feature" ;; esac ;; esac
 exit 0
 '''
 
@@ -82,6 +82,17 @@ class WorkerStart(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("worker-start: failed", r.stderr)
         self.assertEqual(self.gh_calls(), [])
+
+    def test_existing_local_branch_is_not_reset(self):
+        sh("git", "-C", str(self.repo), "branch", "feature", "origin/main")
+        self.assertNotEqual(self.run_tool("--head", "feature").returncode, 0)
+
+    def test_fork_pr_is_refused(self):
+        Path(str(self.log) + ".fork").write_text("")
+        self.assertEqual(self.run_tool("--pr", "5").returncode, 2)
+
+    def test_dash_argument_is_refused(self):
+        self.assertEqual(self.run_tool("--new", "--exec=x").returncode, 2)
 
     def test_base_without_new_is_refused(self):
         self.assertEqual(self.run_tool("--head", "feature", "--base", "origin/x").returncode, 2)
