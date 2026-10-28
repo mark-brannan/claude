@@ -306,13 +306,12 @@ fi
 # first seven characters of the status sha.
 # The Localise step below also writes $HOME and the state repo's path into
 # the staged settings.json, so those are content too: a release staged before
-# the state repo was cloned, reused once it sits elsewhere, would keep a terms
-# path that no longer exists. Their checksum is the name's third part.
+# the state repo was cloned, reused once it is here, would keep the guard off.
+# Their checksum is the name's third part.
 # The state repo is found by lib/state.py's own search, the one every hook
-# uses; not cloned yet, it is /workspace, the path the SessionStart brief
-# tells a session to clone it to.
+# uses, and is empty when it is not here: a clone that turns up later, even at
+# the path the SessionStart brief names, stages a new release.
 STATE_REPO=$(python3 "$SEED/lib/state.py" state_repo 2>/dev/null)
-[ -n "$STATE_REPO" ] || STATE_REPO=/workspace/claude_prompts_scratch
 LOCAL_REV=$(printf '%s\n%s\n' "$HOME" "$STATE_REPO" | cksum | cut -d' ' -f1)
 CLAUDE_REV=$(git -C "$SEED" rev-parse HEAD 2>/dev/null)
 if [ -n "$CLAUDE_REV" ]; then
@@ -365,28 +364,19 @@ done
 # =========================================================================
 # Localise — settings.json's absolute paths, rewritten for this VM.
 # =========================================================================
-# settings.json names two paths for the languette plugin: env.PROSE_BUDGET
-# and its private_terms_file option. Claude Code expands
-# neither ~ nor ${HOME} in env or pluginConfigs values (probed: the hook saw
-# the literal string), so the repo holds a real machine's absolute paths, and
-# here they would name a HOME that doesn't exist. A terms file that is set but
-# unreadable makes the plugin's guard-private-terms deny every public post, so
-# the staged copy gets this VM's own: its $HOME, and $STATE_REPO (resolved
-# above, where the release is named). jq missing or failing counts as a failed
-# stage, so the unlocalised copy is never flipped live: the previous release
-# keeps serving, as for any other partial stage below.
+# settings.json names a real machine's absolute paths; bin/localise-settings
+# rewrites the staged copy for this VM, the same rule the CI seeded home runs.
+# With no state repo it drops the private terms option, so the guard is inert
+# rather than denying every public post. A failure counts as a failed stage,
+# so the unlocalised copy is never flipped live: the previous release keeps
+# serving, as for any other partial stage below.
 if [ "$DRY_RUN" = yes ]; then
-  say "would localise settings.json paths to $HOME and $STATE_REPO"
+  say "would localise settings.json paths to $HOME and ${STATE_REPO:-no state repo}"
 elif [ -f "$STAGE_TMP/settings.json" ]; then
-  if jq --arg home "$HOME" --arg terms "$STATE_REPO/state/global/private-terms.txt" '
-       .env.PROSE_BUDGET = ($home + "/.claude/bin/prose-budget")
-       | .pluginConfigs["languette@languette"].options.private_terms_file = $terms' \
-       "$STAGE_TMP/settings.json" >"$STAGE_TMP/settings.json.tmp" 2>/dev/null &&
-     mv -f "$STAGE_TMP/settings.json.tmp" "$STAGE_TMP/settings.json"; then
-    say "settings.json paths localised to $HOME and $STATE_REPO"
+  if said=$(python3 "$SEED/bin/localise-settings" "$STAGE_TMP/settings.json" 2>&1); then
+    say "settings.json $said"
   else
-    rm -f "$STAGE_TMP/settings.json.tmp"
-    warn "  FAILED to localise settings.json paths (is jq installed?)"
+    warn "  FAILED to localise settings.json paths: $said"
     failed=$((failed + 1))
   fi
 fi
