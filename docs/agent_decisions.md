@@ -538,3 +538,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t052930z
 - The entry "test" at 20261028t052903z is void: a stray from a mistyped call, left because the log is append-only Undo: none needed ([#347](https://github.com/mark-brannan/claude/pull/347))
+
+### 20261028t052942z
+- Held-back notes for over-5MB files go in the checkpoint before the first commit; a refusal note lands after it and rides the next Stop's commit Undo: revert the note_held placement in state_repo_commit ([#347](https://github.com/mark-brannan/claude/pull/347))
