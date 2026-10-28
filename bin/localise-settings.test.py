@@ -43,29 +43,32 @@ class LocaliseSettings(unittest.TestCase):
     def test_state_repo_with_the_list_names_it(self):
         st = Path(self.tmp.name) / "state"
         (st / ".git").mkdir(parents=True)
-        (st / "state/global").mkdir(parents=True)
-        (st / "state/global/private-terms.txt").write_text("zephyr-01\n")
+        (st / "redacted-terms.tsv").write_text("term\treplacement\n")
+        (st / "blocked-terms.tsv").write_text("term\n")
         r, s = self.run_it(st)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.options(s)["private_terms_file"], f"{st}/state/global/private-terms.txt")
+        self.assertEqual(self.options(s)["redacted_terms_file"], f"{st}/redacted-terms.tsv")
+        self.assertEqual(self.options(s)["blocked_terms_file"], f"{st}/blocked-terms.tsv")
 
     def test_state_repo_without_the_list_still_names_it(self):
         st = Path(self.tmp.name) / "state"
         (st / ".git").mkdir(parents=True)
         r, s = self.run_it(st)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.options(s)["private_terms_file"], f"{st}/state/global/private-terms.txt")
+        self.assertEqual(self.options(s)["redacted_terms_file"], f"{st}/redacted-terms.tsv")
+        self.assertEqual(self.options(s)["blocked_terms_file"], f"{st}/blocked-terms.tsv")
 
     def test_no_state_repo_drops_the_option_and_says_so(self):
         r, s = self.run_it()
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertNotIn("private_terms_file", self.options(s))
+        self.assertNotIn("redacted_terms_file", self.options(s))
+        self.assertNotIn("blocked_terms_file", self.options(s))
         self.assertIn("guard-private-terms is off", r.stdout)
 
     def test_other_options_and_prose_budget(self):
         before = self.options(json.loads(REPO.read_text()))
         r, s = self.run_it()
-        self.assertEqual({k: v for k, v in before.items() if k != "private_terms_file"}, self.options(s))
+        self.assertEqual({k: v for k, v in before.items() if not k.endswith("_terms_file")}, self.options(s))
         self.assertEqual(s["env"]["PROSE_BUDGET"], f"{self.home}/.claude/bin/prose-budget")
 
     def test_unreadable_is_exit_2_and_untouched(self):
