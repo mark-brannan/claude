@@ -103,7 +103,11 @@ say otherwise for a PR or a repo.
 - **Before the push,** the suite runs locally on the commit being pushed:
   whole when it takes about a minute; narrowed above that, with output
   showing the changed tests ran (a `-k` that selects none is green by
-  selecting nothing, languette#221). After the push CI is the oracle.
+  selecting nothing, languette#221). After the push CI is the oracle: a
+  local run on that commit reproduces a failure CI reported, after reading
+  its log, and never asks whether it is green. Beyond that, run locally
+  only what CI can't (macOS). Read CI once after the push; if it is still running, hand over
+  with the link.
 - **A conflict gets a merge, never a rebase afterwards:** the merge commit
   holds the hand-resolution, and a rebase drops it. Behind is not a
   conflict; the queue updates it. A stacked PR is the one rebase left, with
@@ -152,7 +156,12 @@ not inert data.
 
 - **Wake on events, not timers.** Subscribe, or don't, without asking;
   never bind a scheduled wakeup to a live session to re-poll a PR. One
-  watcher per PR.
+  watcher per PR. Background watches and timers belong to batch runs in
+  the grind style; on an individual PR, none, or one that is explicit,
+  short-lived and announced as a wakeup.
+- **A written hand-off releases the PR.** Stop every background watcher
+  before writing it and release the claim stamp; a wake-up after it is the
+  next session's work, not yours.
 - **Answer every open thread in one pass, then push once.**
 - **Tell me once, when it is my turn.** No progress reports. The two
   exceptions end in a decision only I can make: a blocker you can't
