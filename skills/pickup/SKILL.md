@@ -101,9 +101,11 @@ mid-turn (PR #162).
 So fork one: `EnterWorktree(name=<short-name>)`, then inside it
 
 ```
-git fetch origin
-git checkout <the branch the item names>
+~/.claude/bin/worker-start --head <the branch the item names>
 ```
+
+(`worker-start` is one allow-listed command for the fetch and the checkout;
+it never resets a local branch, so the refusal below still applies.)
 
 If git refuses because the branch is checked out in another worktree, that
 worktree holds it — but a holder is not always alive. A sub-agent that
