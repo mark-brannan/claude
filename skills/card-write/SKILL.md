@@ -61,8 +61,8 @@ no GitHub home. Take the first line that fits:
   and hand-chores are never issues. Below the bar it is a log line or nothing.
 - **Public or private repo?** An issue on a public repo is a publish, and the
   undo is a support ticket. It goes public only when its text passes the
-  private-terms check — `state/global/private-terms.txt` in the state repo,
-  read by path, never copied — **and** a stranger could read it without
+  private-terms check — the redacted and blocked term files languette's
+  options name, read by path, never copied — **and** a stranger could read it without
   learning a plan, a finding or a draft you would not hand them. Otherwise
   `mark-brannan/claude_prompts_scratch`; the public-issue guard refuses the
   first half anyway, the second half is yours to judge.
