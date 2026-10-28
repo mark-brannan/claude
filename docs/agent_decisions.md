@@ -556,3 +556,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t053057z
 - An untracked directory that is its own git repo is skipped by the second commit and not named in the checkpoint Undo: drop the trailing-slash skip in other_paths ([#347](https://github.com/mark-brannan/claude/pull/347))
+
+### 20261028t062617z
+- A clone declares its pre-commit gate with git config stopContinuity.preCommitGate true; the hook must also exist and be executable. Nothing in a hook's file says whether it can refuse. Undo: rename the key in has_gate() and its test ([#347](https://github.com/mark-brannan/claude/pull/347))
