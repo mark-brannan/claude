@@ -79,11 +79,13 @@ check "cold: PROSE_BUDGET localised and runnable" \
 # with the state repo at /home/user/claude_prompts_scratch finds it there.
 exp_state=$(python3 "$REPO/lib/state.py" state_repo 2>/dev/null)
 if [ -n "$exp_state" ]; then
-  check "cold: private_terms_file localised to the state repo" \
-    '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_terms_file")" = "$exp_state/state/global/private-terms.txt" ]'
+  check "cold: redacted_terms_file localised to the state repo" \
+    '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.redacted_terms_file")" = "$exp_state/redacted-terms.tsv" ]'
+  check "cold: blocked_terms_file localised to the state repo" \
+    '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.blocked_terms_file")" = "$exp_state/blocked-terms.tsv" ]'
 else
-  check "cold: no state repo, no private_terms_file" \
-    '[ "$(sj ".pluginConfigs[\"languette@languette\"].options | has(\"private_terms_file\")")" = false ]'
+  check "cold: no state repo, no terms files" \
+    '[ "$(sj ".pluginConfigs[\"languette@languette\"].options | has(\"redacted_terms_file\") or has(\"blocked_terms_file\")")" = false ]'
   has "guard-private-terms is off" "$out" "cold, no state repo"
 fi
 check "cold: private_repos kept" \
@@ -100,7 +102,7 @@ check "re-run: one release" '[ "$(ls "$HOME/.claude-config/releases" | wc -l)" -
 mkdir -p "$S/state/.git"
 out=$(CLAUDE_STATE_REPO="$S/state" run)
 check "state repo later: terms path follows it" \
-  '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_terms_file")" = "$S/state/state/global/private-terms.txt" ]'
+  '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.redacted_terms_file")" = "$S/state/redacted-terms.tsv" ] && [ "$(sj ".pluginConfigs[\"languette@languette\"].options.blocked_terms_file")" = "$S/state/blocked-terms.tsv" ]'
 check "state repo later: old release pruned" '[ "$(ls "$HOME/.claude-config/releases" | wc -l)" -eq 1 ]'
 
 # --- refusals -------------------------------------------------------------
