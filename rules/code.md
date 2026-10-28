@@ -94,10 +94,9 @@ project-specific facts belong in that project's own CLAUDE.md.
 
 ## PR ownership
 
-A PR is yours until `~/.claude/bin/pr-blockers` prints nothing for it: no
-open conversation, no conflict, no unsigned commit, no red check. Then it is my
-turn. Merging is mine too, by the `merge` label, unless I say otherwise for
-a PR or a repo.
+A PR is yours until `pr-blockers` prints nothing for it, not one line.
+Then it is my turn. Merging is mine too, by the `merge` label, unless I
+say otherwise for a PR or a repo.
 
 - **Threads before checks.** A running check or a long local suite is
   background: start it and work the threads while it runs.
@@ -122,8 +121,12 @@ a PR or a repo.
   stays open and goes under the critical-review summary's Reversed heading
   (languette#110, languette#116). One only I can answer stays open, under
   Decide. Anything else is verified against the code, fixed or answered
-  with the evidence, and resolved; one answered with a default goes under
-  Pencil with its thread link.
+  with the evidence, and resolved with `gh-resolve-thread <id>`; one
+  answered with a default goes under Pencil with its thread link.
+- **Threads are read and resolved one at a time,** never in a loop over
+  "all unresolved": a bot can post between the listing and the resolve
+  (dotfiles#60). A finding that shows up again is checked against the
+  live thread, never answered from memory (signalk-noaa-space-weather#214).
 - **Everything you post is signed** as an agent's, opening with `🤖 ` and
   closing with `🤖 <model> · <effort> · <first 8 hex of the session id>`, so
   no one reads an agent's line as mine.
@@ -140,8 +143,10 @@ Where a repo's board file lives in the repo and PR authorship is trusted
 (solo maintainer, own bots), a PR whose whole diff is that file auto-merges
 once its required checks pass, and every review bot skips exactly that
 diff. Keep the two tests matched: a wider bot skip lets code past review; a
-narrower one leaves the board PR waiting. The board is read into every
-future session, so this is a prompt-injection surface, not inert data.
+narrower one leaves the board PR waiting. Both live in the repo: the merge
+rule in its Mergify config, the skips in each bot's path filter. The board
+is read into every future session, so this is a prompt-injection surface,
+not inert data.
 
 ### Watching a PR
 

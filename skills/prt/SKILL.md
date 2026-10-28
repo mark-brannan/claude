@@ -258,7 +258,6 @@ against real main, and dequeue is the undo.
 
 ## Never
 
-- Touch `awaiting-human`. Mergify computes it and owns it.
 - Make or remove an agent's worktree by hand; the agent makes its own and
   `prt clean` removes it.
 - Create a label, a report file or a decisions line.

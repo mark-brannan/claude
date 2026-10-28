@@ -272,12 +272,11 @@ do not paraphrase it into a second version that can drift from this one.
    someone else pushed to this branch while you worked. Stop, and say whose
    push you found.
 
-6. **Finish is `awaiting-human` back on the PR** — and Mergify puts it there,
-   computed from a green `ci-gate / gate` and no unresolved thread. Run
-   `pr-blockers` again after the last push, once the review bots have had
-   their pass: a bot thread lands minutes after the push that caused it.
-   The report opens with what it prints, conversations first. The
-   session never applies that label and never merges the PR.
+6. **Finish is `pr-blockers` printing nothing for the PR.** Run it again
+   after the last push, once the review bots have had their pass: a bot
+   thread lands minutes after the push that caused it. The report opens
+   with what it prints, conversations first. The session never merges the
+   PR.
    One exception: a driver session whose parent card's log carries
    `lane=autonomous` adds `merge`, `churn-ok` and `mixed-loops-ok`
    itself, where the diff stays inside the parent's driver brief, once
