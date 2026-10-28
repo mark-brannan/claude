@@ -526,3 +526,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261027t160125z
 - gh-resolve-thread stays allowlisted while it gains reply modes, so signed replies skip the auto-mode PR-ownership check Undo: drop the reply modes or add a PR-ownership check to the wrapper ([#336](https://github.com/mark-brannan/claude/pull/336))
+
+### 20261028t010206z
+- With no state repo, localise-settings drops private_terms_file so guard-private-terms is inert (the empty shim), rather than keeping a dead path that denies every public post Undo: revert the del branch in bin/localise-settings ([#338](https://github.com/mark-brannan/claude/issues/338)) (no PR, branch claude/cloud-ci-session-confusion-fc6fa9)
