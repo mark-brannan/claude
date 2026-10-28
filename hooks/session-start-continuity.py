@@ -422,7 +422,9 @@ def held_back(sr):
             + "".join(f"- `{p}` — {why}\n" for p, why in rows[:10])
             + (f"- +{len(rows) - 10} more\n" if len(rows) > 10 else "")
             + "\nWhichever session wrote these, offer the user a way to resolve each: "
-              "commit it, scrub it, move it or gitignore it.\n")
+              "commit it, scrub it, move it or gitignore it.\n"
+            + (f"A file {state.HELD_WAITING} needs the scan fixed (install gitleaks, or see why it failed), "
+               "not the file touched.\n" if any(why.startswith(state.HELD_WAITING) for _, why in rows) else ""))
 
 
 def main():

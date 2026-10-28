@@ -302,6 +302,16 @@ class Brief(unittest.TestCase):
             self.assertIn(way, line)
         self.assertLess(c.index("drafts/leak.md"), c.index("Where recent sessions left off"))
 
+    def test_a_file_waiting_for_a_scan_asks_for_the_scan_fixed(self):
+        (self.state / "drafts").mkdir()
+        (self.state / "drafts/new.md").write_text("x\n")
+        (self.state / ".git/claude-held-back.json").write_text(json.dumps(
+            [{"path": "drafts/new.md", "reason": "waiting for a scan: gitleaks not on PATH"}]))
+        self.worklist("echo BOARD")
+        c = self.run_hook()
+        self.assertIn("gitleaks not on PATH", c)
+        self.assertIn("install gitleaks", c)
+
     def test_nothing_held_back_says_nothing(self):
         self.worklist("echo BOARD")
         self.assertNotIn("Held back", self.run_hook())

@@ -294,14 +294,14 @@ def stop_group(p, grace=5, collect=True):
     return out
 
 
-def bounded(argv, secs, capture=False):
+def bounded(argv, secs, capture=False, cwd=None):
     """timeout <secs> argv, as timeout(1) runs it: its own process group,
     signalled whole on expiry, 124 then. (rc, stdout) -- stdout as $(...)
     keeps it, partial on a timeout, when capture."""
     global _child
     try:
         p = subprocess.Popen(argv, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True)
+                             stderr=subprocess.DEVNULL, start_new_session=True, cwd=cwd)
     except OSError:
         return 127, ""
     _child = p
@@ -1120,12 +1120,16 @@ class Stop:
                 continue  # gone since the listing
         if not copies:
             return sorted(held.items()), {}
+        # Run from the copy's root, so a finding's File is repo-relative and
+        # the repo's .gitleaksignore fingerprints and path allowlists match.
         gl, rc, found = shutil.which("gitleaks"), 127, []
         try:
             if gl:
+                if os.path.isfile(".gitleaksignore"):
+                    shutil.copyfile(".gitleaksignore", os.path.join(src, ".gitleaksignore"))
                 cfg = ["-c", os.path.join(SR, ".gitleaks.toml")] if os.path.isfile(".gitleaks.toml") else []
                 rc = bounded([gl, "detect", "--no-git", "--no-banner", "--redact", "-l", "error", "--exit-code", "3",
-                              "-f", "json", "-r", rep, "-s", src, *cfg], 30)[0]
+                              "-f", "json", "-r", rep, "-s", ".", *cfg], 30, cwd=src)[0]
             if rc == 3:
                 with open(rep, encoding="utf-8", errors="surrogateescape") as fh:
                     found = json.load(fh)
@@ -1137,9 +1141,11 @@ class Stop:
             if rel in copies:
                 held.setdefault(rel, f"secret scan: {f.get('Description') or f.get('RuleID') or 'flagged'}")
         if rc not in (0, 3):
+            why = {127: "gitleaks not on PATH", 124: "the secret scan timed out (30 s)"}.get(
+                rc, "the secret scan failed")
             for x in copies:
                 if not x.startswith("state/"):
-                    held[x] = "secret scan did not run"
+                    held[x] = f"{state.HELD_WAITING}: {why}"
         return sorted(held.items()), {x: c for x, c in copies.items() if x not in held}
 
     @staticmethod
@@ -1155,6 +1161,28 @@ class Stop:
         if entries:
             gitrun.run("update-index", "--add", "-z", "--index-info",
                        input="".join(entries).encode("utf-8", "surrogateescape"), binary=True)
+
+    # The verdict was set before the state repo's dirt outside state/ was
+    # staged. When the staging took all of it, "state repo dirty" goes, and
+    # the checkpoint is staged again so the commit carries the line. Were it
+    # the only reason, archivable() stopped before the home check, so that
+    # case alone is recomputed first.
+    def drop_state_dirt(self, SR):
+        if not re.search(r"(^|, )state repo dirty(, |$)", self.reasons or ""):
+            return
+        st = gitrun.run("-C", SR, "status", "--porcelain", "--", ".", ":(exclude)state/",
+                        errors="surrogateescape").stdout
+        if any(ln[:2] == "??" or ln[1:2] not in ("", " ") for ln in st.split("\n") if ln):
+            return
+        def drop(r):
+            return re.sub(r"(^|, )state repo dirty(?=, |$)", "", r).lstrip(", ")
+        if not drop(self.reasons):
+            # Recomputed with the dirt staged, which archivable() still counts.
+            self.reasons = None
+            self.set_verdict()
+        self.reasons = drop(self.reasons)
+        self.set_verdict()
+        self.stage([os.path.relpath(self.ckpt, SR)], "add")
 
     def state_repo_commit(self):
         SR = state.state_repo()
@@ -1196,8 +1224,12 @@ class Stop:
         # copy, so nothing unscanned rides along.
         p = gitrun.run("-c", "core.quotePath=off", "ls-files", "-z", "--modified", "--others", "--deleted",
                        "--exclude-standard", binary=True)
-        paths = sorted({x.decode("utf-8", "surrogateescape") for x in p.stdout.split(b"\0") if x}) \
-            if p.returncode == 0 else []
+        # And what is already staged, by hand or by a Stop whose commit failed:
+        # the commit takes the whole index, so it is scanned too.
+        c = gitrun.run("-c", "core.quotePath=off", "diff", "--cached", "--name-only", "-z", binary=True)
+        paths = sorted({x.decode("utf-8", "surrogateescape")
+                        for x in (p.stdout if p.returncode == 0 else b"").split(b"\0")
+                        + (c.stdout if c.returncode == 0 else b"").split(b"\0") if x})
         tmp = tempfile.mkdtemp(prefix="claude-state-scan.", dir=tmpdir())
         try:
             held, copies = self.held_back(SR, paths, tmp)
@@ -1220,6 +1252,7 @@ class Stop:
             self.stage([x for x in paths if x not in out and x not in copies], "add")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+        self.drop_state_dirt(SR)
         if git_ok("diff", "--cached", "--quiet"):
             return  # nothing changed
 
@@ -1235,11 +1268,6 @@ class Stop:
                        f"State: {self.work_repo} session {self.sid[:8]} ({self.today})") != 0:
             self.set_verdict("state-repo commit failed")
             return
-        # The verdict was set before this commit took the state repo's dirt
-        # outside state/; recomputed when that dirt was its reason and is gone.
-        if "state repo dirty" in (self.reasons or "") and not state.dirty_paths(SR).rstrip("\n"):
-            self.reasons = None
-            self.set_verdict()
 
         # Debounce the push, not the commit: every Stop still commits locally
         # (cheap, never lost), but this clone pushes at most once per debounce

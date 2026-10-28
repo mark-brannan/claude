@@ -599,6 +599,7 @@ def buffered_state(root):
 # attempt; the 📦 notice and the next session's brief read it. A path gone
 # from disk since is dropped.
 HELD_BACK_BYTES = 5 * 1024 * 1024
+HELD_WAITING = "waiting for a scan"  # the reason's lead when the scan could not run: the scanner is the fix
 
 
 def held_back_file(sr):
@@ -640,8 +641,9 @@ def held_back_note(sr=None):
     if not rows:
         return ""
     more = f", +{len(rows) - 3} more" if len(rows) > 3 else ""
-    return (f"→ state repo: held back from the commit: {', '.join(f'{p} ({r})' for p, r in rows[:3])}{more}. "
-            "Commit, scrub, move or gitignore each by hand.")
+    fix = ("Fix the secret scan, and the files waiting on it commit; the rest by hand: commit, scrub, move or gitignore."
+           if any(r.startswith(HELD_WAITING) for _, r in rows) else "Commit, scrub, move or gitignore each by hand.")
+    return f"→ state repo: held back from the commit: {', '.join(f'{p} ({r})' for p, r in rows[:3])}{more}. {fix}"
 
 
 # verdict_explain -- one line per reason the verdict names: what is at risk,

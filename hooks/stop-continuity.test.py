@@ -1113,7 +1113,7 @@ class StopContinuityTest(unittest.TestCase):
         w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR, FAKE_GITLEAKS_FAIL=1)
         self.assertFalse(committed("drafts/later.md"), "no scan: a new file outside state/ waits")
         self.assertTrue(committed("state/global/later.md"), "no scan: state/ still commits")
-        self.has("no scan: the checkpoint says why", r"^- `drafts/later\.md` — secret scan did not run", ck())
+        self.has("no scan: the checkpoint says why", r"^- `drafts/later\.md` — waiting for a scan: ", ck())
 
         # Resolved by hand: the list empties on the next Stop.
         for rel in ("drafts/big.bin", "log/leak.md"):
@@ -1137,6 +1137,23 @@ class StopContinuityTest(unittest.TestCase):
         self.has("and held back", r"^- `drafts/race\.sh` — secret scan", ck())
         race.unlink()
 
+        # Staged by hand: the commit takes the index, so the index is scanned.
+        (SR / "drafts" / "keys.md").write_text("token FAKE-LEAK\n")
+        w.gitq(SR, "add", "drafts/keys.md")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.assertFalse(committed("drafts/keys.md"), "hand-staged and flagged: not committed")
+        self.assertNotIn("drafts/keys.md", staged(), "hand-staged and flagged: unstaged")
+        (SR / "drafts" / "keys.md").unlink()
+
+        # Cloud: the verdict, set before the staging, drops "state repo dirty"
+        # when the staging took all of it, in the checkpoint the commit carries.
+        (SR / "drafts" / "cloud.md").write_text("cloud\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR, CLAUDE_CODE_REMOTE="true")
+        self.assertTrue(committed("drafts/cloud.md"), "cloud: the draft is committed")
+        shown = w.git(SR, "show", f"HEAD:{os.path.relpath(ck(), SR)}")
+        self.assertRegex(shown, r"\*\*Verdict:\*\* ", "cloud: the committed checkpoint has a verdict")
+        self.assertNotIn("state repo dirty", shown, "cloud: and it does not call the state repo dirty")
+
         # The real scanner, where this machine has one: the invocation is the
         # one this gitleaks takes, and a token-shaped string is flagged.
         real = shutil.which("gitleaks", path=os.environ.get("PATH", ""))
@@ -1150,6 +1167,9 @@ class StopContinuityTest(unittest.TestCase):
             w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
             self.assertFalse(committed("drafts/real.md"), "real gitleaks: the token is held back")
             self.assertTrue(committed("drafts/fine.md"), "real gitleaks: the clean file commits")
+            (SR / ".gitleaksignore").write_text("drafts/real.md:github-pat:1\n")
+            w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+            self.assertTrue(committed("drafts/real.md"), "real gitleaks: the repo's .gitleaksignore is honoured")
 
     def state_debounce(self):
         # --- the push debounce holds across a pull, however many sessions stop
