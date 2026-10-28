@@ -48,8 +48,8 @@ is under Interfaces.
   (job 9's 10-minute miss).
 - Scripts called: `branch-home-gate.py --check` prints `home:<…>` or
   `unverified:<…>`, else nothing; `claim-stamp.py refresh|release`;
-  `metrics-rollup.sh`; `gitleaks` (job 12), looked up on PATH, absent is
-  not an error. The transcript's fields are whatever
+  `metrics-rollup.sh`; `gitleaks` (job 12), looked up on PATH, absent is not
+  an error. The transcript's fields are whatever
   `session-metrics.jq` emits, which is the contract for job 2.
 - The push stamp is the literal `$SR/.git/claude-last-state-push` in the
   state repo, on purpose: a worktree's git dir would not do.
@@ -217,9 +217,9 @@ verdict gets the reason.
 Not a git repo: nothing committed. Otherwise every path git reports changed
 or untracked in the state repo is staged by path, `.gitignore` respected,
 except a held-back path: a file over 5 MB, or one `gitleaks detect --no-git`
-over the changed paths flags, 30 s. With no scanner on PATH, or a scan past
-its bound, nothing is held back for secrets and the checkpoint says the scan
-did not run. A held-back path stays unstaged and
+flags, run over the changed paths only, 30 s in all. With no scanner on PATH,
+or a scan that times out or errors, nothing is held back for secrets; the
+checkpoint and the verdict say the scan did not run. A held-back path stays unstaged and
 the rest still commit. The checkpoint names each one with its reason, and
 the next session's continuity brief (`session-start-continuity.py`) names it
 and asks that session to offer the user a way to resolve it (commit, scrub,
@@ -397,7 +397,7 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 12.5 | a new file outside `state/`, under 5 MB, no secret | Stop | it is in the state commit | card 1793161639e876a21f |
 | 12.6 | a file over 5 MB; or one `gitleaks` flags | Stop | not staged; the rest committed; the checkpoint names it and its reason | card 1793161639e876a21f |
 | 12.7 | 12.6 | the next session starts | its continuity brief names the file and asks it to offer the user a resolution | card 1793161639e876a21f |
-| 12.8 | no `gitleaks` on PATH, or a scan past 30 s; a new file | Stop | staged and committed; the checkpoint says the secret scan did not run | card 1793161639e876a21f |
+| 12.8 | no `gitleaks` on PATH, or a scan that times out or errors; a new file | Stop | staged and committed; the checkpoint and the verdict say the secret scan did not run | card 1793161639e876a21f |
 | 13.1 | a push under 300 s ago from this clone | Stop | committed, not pushed | test |
 | 13.2 | 13.1, the push stamp brought in by a pull | Stop | the window still holds | test |
 | 13.3 | cloud, archivable, a push under 300 s ago | Stop | pushed | code |
