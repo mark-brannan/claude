@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""worker-start: put a worker agent's worktree on its branch, in one command.
+
+A worker's first move was a compound line -- `gh issue view`, `git fetch`,
+`git checkout -b`, `work-item log ... dispatched` joined by `;` and `&&`.
+Outside bypass a compound line matches no single allow rule, so every
+dispatch stopped for a dialog. This is that line as one allow-listed command.
+
+Usage:
+  worker-start --branch <name> [--from <ref>] [--issue <n>] [--item <id>]
+      fetch origin, create <name> from origin/<ref> (default main), print
+      issue <n> with its comments, log `dispatched` on work item <id>
+  worker-start --pr <n> [--item <id>]
+      fetch origin, check out PR <n>'s head branch tracking its remote branch
+
+Runs in the current directory: the worker's own worktree. Exit 0 when the
+branch is checked out; 1 when git or gh refuses (their message on stderr),
+before anything later runs. The issue print and the log line never fail the
+start: a worker on its branch with no issue text says so and carries on.
+"""
+import argparse
+import os
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+
+
+def run(*cmd):
+    """Run cmd, its output passed through; True when it exits 0."""
+    return subprocess.run(cmd).returncode == 0
+
+
+def out(*cmd):
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode:
+        sys.stderr.write(p.stderr)
+        return None
+    return p.stdout.strip()
+
+
+def work_item():
+    here = os.path.join(os.path.dirname(os.path.realpath(__file__)), "work-item")
+    return here if os.path.exists(here) else os.path.expanduser("~/.claude/bin/work-item")
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="worker-start")
+    which = ap.add_mutually_exclusive_group(required=True)
+    which.add_argument("--branch")
+    which.add_argument("--pr", type=int)
+    ap.add_argument("--from", dest="base", default="main")
+    ap.add_argument("--issue", type=int)
+    ap.add_argument("--item")
+    a = ap.parse_args(argv)
+
+    if not run("git", "fetch", "-q", "origin"):
+        return 1
+    if a.pr is not None:
+        head = out("gh", "pr", "view", str(a.pr), "--json", "headRefName", "--jq", ".headRefName")
+        if not head:
+            return 1
+        ok = run("git", "checkout", "-q", "-B", head, "--track", f"origin/{head}")
+    else:
+        ok = run("git", "checkout", "-q", "--no-track", "-b", a.branch, f"origin/{a.base}")
+    if not ok:
+        return 1
+    print(f"on {out('git', 'branch', '--show-current')} at {out('git', 'rev-parse', '--short', 'HEAD')}")
+
+    if a.issue is not None and not run("gh", "issue", "view", str(a.issue), "--comments"):
+        print(f"worker-start: issue #{a.issue} could not be read; carry on from the dispatch")
+    if a.item and subprocess.run([work_item(), "log", a.item, "dispatched"],
+                                 capture_output=True).returncode:
+        print(f"worker-start: work item {a.item} not logged")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

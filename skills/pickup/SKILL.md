@@ -56,7 +56,10 @@ is the driver's whole prompt, and the session that takes it is the driver.
 `work-item show <id>` prints the log. On `driver=workflow`, run the batch
 with the Workflow tool; that fact on the parent is the user's opt-in to it,
 logged only when the user typed `--workflow`. On `driver=subagents`, or a
-parent filed before the fact existed, run it with sub-agents.
+parent filed before the fact existed, run it with sub-agents. A worker's
+first command is `~/.claude/bin/worker-start`, alone in its Bash call
+(usage in its header): its fetch, branch, issue read and `dispatched` log
+are one allow-listed command, where a chain of them asks.
 
 ## 2. Restate it, in three lines
 
