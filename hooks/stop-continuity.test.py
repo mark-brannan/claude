@@ -67,6 +67,8 @@ FAKE_GITLEAKS = f'''#!{sys.executable}
 import json, os, sys
 if os.environ.get("FAKE_GITLEAKS_FAIL"):
     sys.exit(2)
+if os.environ.get("FAKE_GITLEAKS_REWRITE"):  # the live file changes mid-scan
+    open(os.environ["FAKE_GITLEAKS_REWRITE"], "w").write("token FAKE-LEAK\\n")
 a = sys.argv[1:]
 src, rep, code = a[a.index("-s") + 1], a[a.index("-r") + 1], int(a[a.index("--exit-code") + 1])
 found = [{{"File": os.path.join(d, f), "Description": "fake rule", "RuleID": "fake"}}
@@ -1119,6 +1121,21 @@ class StopContinuityTest(unittest.TestCase):
         w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
         self.assertTrue(committed("drafts/later.md"), "scan back: the waiting file commits")
         self.assertFalse((SR / ".git" / "claude-held-back.json").exists(), "nothing held back: no list")
+
+        # A file rewritten after the scan: what commits is the bytes scanned,
+        # mode and all, and the next Stop scans the rewrite.
+        race = SR / "drafts" / "race.sh"
+        race.write_text("clean\n")
+        race.chmod(0o755)
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR, FAKE_GITLEAKS_REWRITE=race)
+        self.assertEqual(w.git(SR, "show", "HEAD:drafts/race.sh"), "clean",
+                         "rewritten mid-scan: the committed content is the scanned content")
+        self.assertEqual(w.git(SR, "ls-tree", "HEAD", "drafts/race.sh").split()[0], "100755",
+                         "rewritten mid-scan: the scanned copy's mode is kept")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.assertEqual(w.git(SR, "show", "HEAD:drafts/race.sh"), "clean", "the rewrite is flagged in turn")
+        self.has("and held back", r"^- `drafts/race\.sh` — secret scan", ck())
+        race.unlink()
 
         # The real scanner, where this machine has one: the invocation is the
         # one this gitleaks takes, and a token-shaped string is flagged.

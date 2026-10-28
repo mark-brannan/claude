@@ -1093,34 +1093,36 @@ class Stop:
                 run([x])
 
     # held_back -- [(path, reason)] for the paths the state commit leaves
-    # out: over 5 MB, or flagged by gitleaks under the repo's own config. One
-    # scan over a copy of the candidates, bounded like the other calls out.
-    # A scan that cannot run clears nothing new: state/ commits unscanned, as
-    # it always has, and every path outside it waits for a scan that runs.
+    # out, and {path: copy} for those it stages from the copy scanned: over
+    # 5 MB, or flagged by gitleaks under the repo's own config. One scan over
+    # a copy of the candidates in tmp, bounded like the other calls out. The
+    # copy is what is staged, so a file rewritten after the scan is never
+    # committed unscanned. A scan that cannot run clears nothing new: state/
+    # commits unscanned, as it always has, and every path outside it waits
+    # for a scan that runs.
     @staticmethod
-    def held_back(SR, paths):
-        held, scan = {}, []
-        for x in paths:
-            try:
-                st = os.lstat(x)
-            except OSError:
-                continue  # a deletion: nothing to scan
-            if not os.path.isfile(x) or os.path.islink(x):
-                continue
-            if st.st_size > state.HELD_BACK_BYTES:
-                held[x] = "over 5 MB"
-            else:
-                scan.append(x)
-        if not scan:
-            return sorted(held.items())
-        gl, rc, found = shutil.which("gitleaks"), 127, []
-        tmp = tempfile.mkdtemp(prefix="claude-state-scan.", dir=tmpdir())
+    def held_back(SR, paths, tmp):
+        held, copies = {}, {}
         src, rep = os.path.join(tmp, "src"), os.path.join(tmp, "report.json")
+        for x in paths:
+            if not os.path.isfile(x) or os.path.islink(x):
+                continue  # a deletion or a link: nothing to scan
+            c = os.path.join(src, x)
+            try:
+                if os.lstat(x).st_size <= state.HELD_BACK_BYTES:
+                    os.makedirs(os.path.dirname(c), exist_ok=True)
+                    shutil.copy(x, c)
+                if not os.path.isfile(c) or os.lstat(c).st_size > state.HELD_BACK_BYTES:
+                    held[x] = "over 5 MB"
+                else:
+                    copies[x] = c
+            except OSError:
+                continue  # gone since the listing
+        if not copies:
+            return sorted(held.items()), {}
+        gl, rc, found = shutil.which("gitleaks"), 127, []
         try:
             if gl:
-                for x in scan:
-                    os.makedirs(os.path.dirname(os.path.join(src, x)), exist_ok=True)
-                    shutil.copyfile(x, os.path.join(src, x))
                 cfg = ["-c", os.path.join(SR, ".gitleaks.toml")] if os.path.isfile(".gitleaks.toml") else []
                 rc = bounded([gl, "detect", "--no-git", "--no-banner", "--redact", "-l", "error", "--exit-code", "3",
                               "-f", "json", "-r", rep, "-s", src, *cfg], 30)[0]
@@ -1129,18 +1131,30 @@ class Stop:
                     found = json.load(fh)
         except (OSError, ValueError):
             rc = 1
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
         for f in found if isinstance(found, list) else []:
             name = f.get("File") if isinstance(f, dict) else None
             rel = os.path.relpath(os.path.join(src, name), src) if isinstance(name, str) else None
-            if rel in set(scan):
+            if rel in copies:
                 held.setdefault(rel, f"secret scan: {f.get('Description') or f.get('RuleID') or 'flagged'}")
         if rc not in (0, 3):
-            for x in scan:
+            for x in copies:
                 if not x.startswith("state/"):
                     held[x] = "secret scan did not run"
-        return sorted(held.items())
+        return sorted(held.items()), {x: c for x, c in copies.items() if x not in held}
+
+    @staticmethod
+    def stage_copies(copies):
+        """Stage each copy's bytes and mode under its path, writing the index
+        entry directly; a copy git cannot hash stays unstaged."""
+        entries = []
+        for x, c in sorted(copies.items()):
+            p = gitrun.run("hash-object", "-w", f"--path={x}", "--", c, errors="surrogateescape")
+            if p.returncode == 0 and p.stdout.strip():
+                mode = "100755" if os.stat(c).st_mode & 0o111 else "100644"
+                entries.append(f"{mode} {p.stdout.strip()}\t{x}\0")
+        if entries:
+            gitrun.run("update-index", "--add", "-z", "--index-info",
+                       input="".join(entries).encode("utf-8", "surrogateescape"), binary=True)
 
     def state_repo_commit(self):
         SR = state.state_repo()
@@ -1178,25 +1192,34 @@ class Stop:
         # Every changed or untracked path goes in, .gitignore respected, bar
         # what is held back: one flagged file would fail the whole commit at
         # the state repo's secret scan, so it stays out and the rest commit.
-        # Staged by path, never `add -A`, so nothing unscanned rides along.
+        # Staged by path, never `add -A`, and a scanned file from its scanned
+        # copy, so nothing unscanned rides along.
         p = gitrun.run("-c", "core.quotePath=off", "ls-files", "-z", "--modified", "--others", "--deleted",
                        "--exclude-standard", binary=True)
         paths = sorted({x.decode("utf-8", "surrogateescape") for x in p.stdout.split(b"\0") if x}) \
             if p.returncode == 0 else []
-        held = self.held_back(SR, paths)
+        tmp = tempfile.mkdtemp(prefix="claude-state-scan.", dir=tmpdir())
         try:
-            state.write_held_back(SR, held)
-        except OSError:
-            pass
-        if held:
-            append(self.ckpt, "\n## Held back from the state commit\n\n"
-                   + "".join(f"- `{x}` — {why}\n" for x, why in held))
-            ck = os.path.relpath(self.ckpt, SR)
-            if not ck.startswith("../") and ck not in paths:
-                paths.append(ck)
-        out = {x for x, _ in held}
-        self.stage(sorted(out), "reset", "-q")
-        self.stage([x for x in paths if x not in out], "add")
+            held, copies = self.held_back(SR, paths, tmp)
+            try:
+                state.write_held_back(SR, held)
+            except OSError:
+                pass
+            if held:
+                # The hook's own text: it goes on the scanned copy as well.
+                note = "\n## Held back from the state commit\n\n" + "".join(f"- `{x}` — {why}\n" for x, why in held)
+                append(self.ckpt, note)
+                ck = os.path.relpath(self.ckpt, SR)
+                if ck in copies:
+                    append(copies[ck], note)
+                elif not ck.startswith("../") and ck not in paths:
+                    paths.append(ck)
+            out = {x for x, _ in held}
+            self.stage(sorted(out), "reset", "-q")
+            self.stage_copies(copies)
+            self.stage([x for x in paths if x not in out and x not in copies], "add")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
         if git_ok("diff", "--cached", "--quiet"):
             return  # nothing changed
 
