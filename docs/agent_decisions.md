@@ -544,3 +544,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t052953z
 - The brief reads the last 14 days of checkpoints naming this clone and raises only paths git still reports uncommitted Undo: change HELD_DAYS or the status filter in session-start-continuity.py ([#347](https://github.com/mark-brannan/claude/pull/347))
+
+### 20261028t053004z
+- Cloud: 'state repo dirty' is dropped after the second commit took all the dirt; when it was the only reason the verdict is recomputed, erring toward not archivable Undo: remove drop_state_dirt ([#347](https://github.com/mark-brannan/claude/pull/347))
