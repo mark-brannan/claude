@@ -7,7 +7,8 @@ and a CI job's seeded home run this on their copy:
 
 - env.PROSE_BUDGET becomes $HOME/.claude/bin/prose-budget.
 - languette's redacted_terms_file and blocked_terms_file become the state
-  repo's lists where the state repo is here. A state repo without a list keeps
+  repo's lists where the state repo is here. languette expands a leading ~ in
+  these two itself, but the state repo need not sit at ~/claude_prompts_scratch. A state repo without a list keeps
   that path, so the guard denies loudly: that machine was meant to have it.
   With no state repo both options go and the guard is inert, the empty shim of
   languette#290.

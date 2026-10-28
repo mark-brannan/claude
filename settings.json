@@ -442,8 +442,8 @@
   "pluginConfigs": {
     "languette@languette": {
       "options": {
-        "redacted_terms_file": "/home/solace/claude_prompts_scratch/redacted-terms.tsv",
-        "blocked_terms_file": "/home/solace/claude_prompts_scratch/blocked-terms.tsv",
+        "redacted_terms_file": "~/claude_prompts_scratch/redacted-terms.tsv",
+        "blocked_terms_file": "~/claude_prompts_scratch/blocked-terms.tsv",
         "private_repos": "mark-brannan/claude_prompts_scratch",
         "guard_worktrees": true,
         "guard_worktrees_foreign": false,
