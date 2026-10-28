@@ -1064,6 +1064,7 @@ class StopContinuityTest(unittest.TestCase):
         hook.write_text("#!/bin/sh\ngit diff --cached --name-only -z | xargs -0 -r grep -l FAKE-LEAK -- "
                         ">/dev/null 2>&1 && exit 1\nexit 0\n")
         hook.chmod(0o755)
+        w.gitq(SR, "config", "stopContinuity.preCommitGate", "true")
         for rel, text in (("drafts/note.md", "a draft\n"), ("scratch/x", "ignored\n")):
             (SR / rel).parent.mkdir(parents=True, exist_ok=True)
             (SR / rel).write_text(text)
@@ -1117,6 +1118,23 @@ class StopContinuityTest(unittest.TestCase):
         self.has("cloud: the checkpoint has a verdict", r"^\*\*Verdict:\*\* ", ck())
         self.assertNotIn("state repo dirty", read(ck()), "cloud: and it does not call the state repo dirty")
         self.assertNotIn("Held back", read(ck()), "nothing held back: no section")
+
+        # No gate declared, or none to run: nothing outside state/ is committed.
+        for gate in ("unset", "no hook"):
+            (SR / ".git" / "claude-last-state-push").unlink(missing_ok=True)
+            if gate == "unset":
+                w.gitq(SR, "config", "--unset", "stopContinuity.preCommitGate")
+            else:
+                w.gitq(SR, "config", "stopContinuity.preCommitGate", "true")
+                hook.unlink()
+            (SR / "drafts" / "ungated.md").write_text(f"{gate}\n")
+            (SR / "state" / "global" / "later.md").write_text(f"{gate}\n")
+            w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+            self.assertEqual(subjects()[0], "State: work session stopcont", f"no gate, {gate}: the state/ commit only")
+            self.assertFalse(committed("drafts/ungated.md"), f"no gate, {gate}: the file is not committed")
+            self.assertEqual(w.git(SR, "diff", "--cached", "--name-only"), "", f"no gate, {gate}: nor staged")
+            self.has(f"no gate, {gate}: the checkpoint names it and why",
+                     r"^- `drafts/ungated\.md` — no pre-commit gate in this clone$", ck())
 
     def state_debounce(self):
         # --- the push debounce holds across a pull, however many sessions stop

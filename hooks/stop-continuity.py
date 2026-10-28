@@ -1123,6 +1123,18 @@ class Stop:
             (big if large else files).append(x)
         return files, big
 
+    @staticmethod
+    def has_gate():
+        """True when this clone declares a pre-commit hook that refuses a
+        finding (`git config stopContinuity.preCommitGate true`) and that hook
+        is there to run. Nothing in a hook's file says whether it can refuse,
+        so the clone says it."""
+        if gitrun.run("config", "--bool", "stopContinuity.preCommitGate").stdout.strip() != "true":
+            return False
+        p = gitrun.run("rev-parse", "--git-path", "hooks/pre-commit")
+        hook = p.stdout.strip() if p.returncode == 0 else ""
+        return bool(hook) and os.access(hook, os.X_OK)
+
     def note_held(self, SR, rows):
         """Name each held-back path in the checkpoint, with the clone that
         holds it: the next session there reads it (session-start-continuity.py)."""
@@ -1183,6 +1195,12 @@ class Stop:
         # back now, so the checkpoint names it in the first commit.
         files, big = self.other_paths()
         self.note_held(SR, [(x, "over 5 MB") for x in big])
+        # The second commit's only check is that hook. Without one that can
+        # refuse, nothing outside state/ is committed: a leak would be pushed
+        # before anything scanned it.
+        if files and not self.has_gate():
+            self.note_held(SR, [(x, "no pre-commit gate in this clone") for x in files])
+            files = []
 
         # Everything under state/ goes in, the board's items/ included. The
         # commit takes the index as it stands, so a path staged by hand rides
