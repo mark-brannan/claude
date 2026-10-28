@@ -541,3 +541,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t052942z
 - Held-back notes for over-5MB files go in the checkpoint before the first commit; a refusal note lands after it and rides the next Stop's commit Undo: revert the note_held placement in state_repo_commit ([#347](https://github.com/mark-brannan/claude/pull/347))
+
+### 20261028t052953z
+- The brief reads the last 14 days of checkpoints naming this clone and raises only paths git still reports uncommitted Undo: change HELD_DAYS or the status filter in session-start-continuity.py ([#347](https://github.com/mark-brannan/claude/pull/347))
