@@ -162,8 +162,7 @@ taken; never overwrite an earlier one. Commit it. Shape:
    of the umbrella lands in the plan: as a work item, folded into one
    (named), or set aside with its reason. Each work item: the umbrella
    items or rulings it plans, its files, the worker model and effort it
-   carries, an estimate of its spend, the depth of its one critical review
-   from the work's criticality, and every default the doer will
+   carries, an estimate of its spend, and every default the doer will
    pick that carries medium risk or more, as a table of default, undo,
    risk. The plan's home is one parent card, the batch, with one child
    card per work item, whatever the umbrella (2026-10-22); an issue the
@@ -282,12 +281,10 @@ the rulings to date:
   same way, `actual=<n>usd`.
 - **Reviews,** after the PR opens, as the human cycle runs (2026-10-23).
   The worker builds, tests, gets the gates green, posts the PR, sees CI
-  green and marks it ready. The driver then spawns `/critical-review
-  <PR> --coder <model>` as a sub-agent, only where the bot cannot (pen,
-  2026-10-24): CI runs the critical review (claude[bot]) on the PR, and its
-  comments are the round's review. The sub-agent takes the depth the child's
-  card carries in its prompt (this scoping estimates the work's
-  criticality); it only comments, on a model unlike the coder's. A fresh fixer works the
+  green and marks it ready. CI runs the critical review (claude[bot]) on
+  the PR, and its comments are the round's review; the driver starts no
+  reviewer of its own, and a head the bot skipped has had no round. A
+  fresh fixer works the
   comments to `/pickup` §6. A round is one review and one fixer pass;
   three rounds at most. A PR past the third, or one a fixer labels
   `fixup-hard`, is parked on an agora card and the driver moves on. The
