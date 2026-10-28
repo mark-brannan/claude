@@ -550,3 +550,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t053015z
 - A failed first commit skips the second, so the second never sweeps up staged state/ Undo: remove the early return ([#347](https://github.com/mark-brannan/claude/pull/347))
+
+### 20261028t053037z
+- Dropped the held-back line in metrics-live and .git/claude-held-back.json: the design carries held-back files in the checkpoint only Undo: restore them from c1bbb62 ([#347](https://github.com/mark-brannan/claude/pull/347))
