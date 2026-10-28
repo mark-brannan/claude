@@ -1107,7 +1107,9 @@ class Stop:
         for x in paths:
             if not os.path.isfile(x) or os.path.islink(x):
                 continue  # a deletion or a link: nothing to scan
-            c = os.path.join(src, x)
+            # The scan root's .gitleaksignore is HEAD's, so a changed one is
+            # scanned beside it, under a name of its own.
+            c = os.path.join(src, x + ("~candidate" if x == ".gitleaksignore" else ""))
             try:
                 if os.lstat(x).st_size <= state.HELD_BACK_BYTES:
                     os.makedirs(os.path.dirname(c), exist_ok=True)
@@ -1122,12 +1124,19 @@ class Stop:
             return sorted(held.items()), {}
         # Run from the copy's root, so a finding's File is repo-relative and
         # the repo's .gitleaksignore fingerprints and path allowlists match.
+        # Both come from HEAD, never the worktree: a Stop must not allowlist
+        # a secret and commit it in one go.
         gl, rc, found = shutil.which("gitleaks"), 127, []
         try:
             if gl:
-                if os.path.isfile(".gitleaksignore"):
-                    shutil.copyfile(".gitleaksignore", os.path.join(src, ".gitleaksignore"))
-                cfg = ["-c", os.path.join(SR, ".gitleaks.toml")] if os.path.isfile(".gitleaks.toml") else []
+                cfg = []
+                for name, dest in ((".gitleaksignore", os.path.join(src, ".gitleaksignore")),
+                                   (".gitleaks.toml", os.path.join(tmp, "gitleaks.toml"))):
+                    p = gitrun.run("show", f"HEAD:{name}", binary=True)
+                    if p.returncode == 0:
+                        with open(dest, "wb") as fh:
+                            fh.write(p.stdout)
+                        cfg = ["-c", dest] if name == ".gitleaks.toml" else cfg
                 rc = bounded([gl, "detect", "--no-git", "--no-banner", "--redact", "-l", "error", "--exit-code", "3",
                               "-f", "json", "-r", rep, "-s", ".", *cfg], 30, cwd=src)[0]
             if rc == 3:
@@ -1135,10 +1144,11 @@ class Stop:
                     found = json.load(fh)
         except (OSError, ValueError):
             rc = 1
+        at = {os.path.relpath(c, src): x for x, c in copies.items()}
         for f in found if isinstance(found, list) else []:
             name = f.get("File") if isinstance(f, dict) else None
-            rel = os.path.relpath(os.path.join(src, name), src) if isinstance(name, str) else None
-            if rel in copies:
+            rel = at.get(os.path.relpath(os.path.join(src, name), src)) if isinstance(name, str) else None
+            if rel:
                 held.setdefault(rel, f"secret scan: {f.get('Description') or f.get('RuleID') or 'flagged'}")
         if rc not in (0, 3):
             why = {127: "gitleaks not on PATH", 124: "the secret scan timed out (30 s)"}.get(

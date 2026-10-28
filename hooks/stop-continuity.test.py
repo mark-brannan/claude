@@ -71,8 +71,13 @@ if os.environ.get("FAKE_GITLEAKS_REWRITE"):  # the live file changes mid-scan
     open(os.environ["FAKE_GITLEAKS_REWRITE"], "w").write("token FAKE-LEAK\\n")
 a = sys.argv[1:]
 src, rep, code = a[a.index("-s") + 1], a[a.index("-r") + 1], int(a[a.index("--exit-code") + 1])
+try:  # .gitleaksignore at the source root: fingerprints <file>:<rule>:<line>
+    ignore = set(open(os.path.join(src, ".gitleaksignore")).read().split())
+except OSError:
+    ignore = set()
 found = [{{"File": os.path.join(d, f), "Description": "fake rule", "RuleID": "fake"}}
-         for d, _, fs in os.walk(src) for f in fs if b"FAKE-LEAK" in open(os.path.join(d, f), "rb").read()]
+         for d, _, fs in os.walk(src) for f in fs if b"FAKE-LEAK" in open(os.path.join(d, f), "rb").read()
+         and os.path.relpath(os.path.join(d, f), src) + ":fake:1" not in ignore]
 json.dump(found, open(rep, "w"))
 sys.exit(code if found else 0)
 '''
@@ -1145,6 +1150,20 @@ class StopContinuityTest(unittest.TestCase):
         self.assertNotIn("drafts/keys.md", staged(), "hand-staged and flagged: unstaged")
         (SR / "drafts" / "keys.md").unlink()
 
+        # A .gitleaksignore is read from HEAD: one Stop cannot allowlist a
+        # secret and commit it. Once the line is committed, it counts.
+        (SR / "drafts" / "allow.md").write_text("token FAKE-LEAK\n")
+        (SR / ".gitleaksignore").write_text("drafts/allow.md:fake:1\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.assertFalse(committed("drafts/allow.md"), "allowlisted in the same Stop: still held back")
+        self.assertTrue(committed(".gitleaksignore"), "the changed .gitleaksignore is scanned and commits")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.assertTrue(committed("drafts/allow.md"), "allowlisted in HEAD: the file commits")
+        (SR / ".gitleaksignore").write_text("drafts/allow.md:fake:1\n# FAKE-LEAK\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.has("a flagged .gitleaksignore is held back like any file", r"^- `\.gitleaksignore` — secret scan", ck())
+        (SR / ".gitleaksignore").write_text("drafts/allow.md:fake:1\n")
+
         # Cloud: the verdict, set before the staging, drops "state repo dirty"
         # when the staging took all of it, in the checkpoint the commit carries.
         (SR / "drafts" / "cloud.md").write_text("cloud\n")
@@ -1169,7 +1188,9 @@ class StopContinuityTest(unittest.TestCase):
             self.assertTrue(committed("drafts/fine.md"), "real gitleaks: the clean file commits")
             (SR / ".gitleaksignore").write_text("drafts/real.md:github-pat:1\n")
             w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
-            self.assertTrue(committed("drafts/real.md"), "real gitleaks: the repo's .gitleaksignore is honoured")
+            self.assertFalse(committed("drafts/real.md"), "real gitleaks: a worktree .gitleaksignore is not honoured")
+            w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+            self.assertTrue(committed("drafts/real.md"), "real gitleaks: HEAD's .gitleaksignore is honoured")
 
     def state_debounce(self):
         # --- the push debounce holds across a pull, however many sessions stop
