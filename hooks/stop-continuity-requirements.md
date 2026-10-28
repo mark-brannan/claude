@@ -213,9 +213,14 @@ verdict gets the reason.
 
 ## 12. Commit the state repo
 
-Not a git repo: nothing committed. Otherwise `git add state/`, the board's
-`items/` included; nothing staged, the hook exits with no commit and no
-push. The commit: author `Claude <noreply@anthropic.com>` unless the
+Not a git repo: nothing committed. Otherwise every path git reports changed
+or untracked in the state repo is staged by path, `.gitignore` respected,
+except a held-back path: a file over 5 MB, or one the secret scan flags. A
+held-back path stays unstaged and the rest still commit. The checkpoint
+names each one with its reason, and the next session's brief names it and
+asks that session to offer the user a way to resolve it (commit, scrub, move
+or ignore), however the file got there. Nothing staged, the hook exits with
+no commit and no push. The commit: author `Claude <noreply@anthropic.com>` unless the
 environment sets one, signed when the clone has `user.signingkey`, 30 s,
 message `State: <repo> session <id8> (<date>)`. A failed commit is never
 retried unsigned: the state stays staged for the next Stop and the verdict
@@ -383,7 +388,10 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 11.1 | `.gitattributes` declares `filter=x`, `filter.x.clean` unset | Stop | no state commit; checkpoint says `NOT COMMITTED`; verdict names the filter | code |
 | 12.1 | the clone has `user.signingkey`; or none | Stop | the state commit is signed; or unsigned | test |
 | 12.2 | a new file under `state/global/items/` | Stop | it is in the state commit | test |
-| 12.3 | nothing changed under `state/` | Stop | no commit, no push | code |
+| 12.3 | nothing changed in the state repo | Stop | no commit, no push | code |
+| 12.5 | a new file outside `state/`, under 5 MB, no secret | Stop | it is in the state commit | card 1793161639e876a21f |
+| 12.6 | a file over 5 MB; or one the secret scan flags | Stop | not staged; the rest committed; the checkpoint names it and its reason | card 1793161639e876a21f |
+| 12.7 | 12.6 | the next session starts | its brief names the file and asks it to offer the user a resolution | card 1793161639e876a21f |
 | 12.4 | signing fails | Stop | no unsigned commit; state staged; verdict `state-repo commit failed` | code |
 | 13.1 | a push under 300 s ago from this clone | Stop | committed, not pushed | test |
 | 13.2 | 13.1, the push stamp brought in by a pull | Stop | the window still holds | test |
