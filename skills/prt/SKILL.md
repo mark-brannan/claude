@@ -1,13 +1,13 @@
 ---
 name: prt
-description: PR triage — walk every open pull request in a repo, a project or all of the user's repos, give each one critical review with its fixes worked to the fixup contract, send what only the user can settle to the agora as Needs-ruling cards, and print a terminal summary. Use on "/prt", "/prt --dry-run", "/prt --project <name>", "triage the PRs", "drain the PR queue". Args that name PRs or repos are the whole job. Not for one PR (/critical-review, /pickup) and not for issues (/orchestrate). Merging is off. Fable or Opus; fixers Sonnet, Opus for a PR rated high.
+description: PR triage — walk every open pull request in a repo, a project or all of the user's repos, work each one's CI critical review to the fixup contract, send what only the user can settle to the agora as Needs-ruling cards, and print a terminal summary. Use on "/prt", "/prt --dry-run", "/prt --project <name>", "triage the PRs", "drain the PR queue". Args that name PRs or repos are the whole job. Not for one PR (/critical-review, /pickup) and not for issues (/orchestrate). Merging is off. Fable or Opus; fixers Sonnet, Opus for a PR rated high.
 ---
 
 # PR triage
 
 Orchestrate fills the band of open PRs; this drains it. Every open PR is
-triaged, not only the ones waiting on the user: cleaned up, reviewed once,
-fixed where an agent can, and the few that need the user funnelled to their
+triaged, not only the ones waiting on the user: cleaned up, its CI review
+worked, fixed where an agent can, and the few that need the user funnelled to their
 desk. The desk is the agora: a Decide becomes a Needs-ruling card, and a PR
 that touches a governing path goes to the user whatever its review says.
 
@@ -95,15 +95,14 @@ claim as its last step. When an agent never ran, release it yourself:
 `~/.claude/bin/prt release <owner/repo#n> <sid>`. A claim nobody releases
 goes stale after 1h, and the next claim on that PR collects it.
 
-This session drives one round per worked PR: a review, then a fix.
-First run critical-review's models step yourself and spawn a reviewer
-sub-agent on the family it prints, briefed to run /critical-review on the
-PR. A PR's earlier rounds are the `prt estimate` lines on its item from
-earlier runs. After three, the reviewer runs alone; if it still raises a
-`[blocker]` or `[should]`, park the PR on a `human-ruling` card through
-card-write naming those threads, list it under Not ready as `parked:
-<card>`, and spawn no fixer. Otherwise, when the reviewer returns, one
-fresh fixer agent, never the reviewer's session, the model from the
+This session drives one round per worked PR: a fix against the review
+CI already posted (claude[bot], critical-review). It starts no reviewer
+of its own. A PR's earlier rounds are the `prt estimate` lines on its
+item from earlier runs. After three, if the bot's threads still hold an
+open `[blocker]` or `[should]`, park the PR on a `human-ruling` card
+through card-write naming those threads, list it under Not ready as
+`parked: <card>`, and spawn no fixer. Otherwise one fresh fixer agent,
+the model from the
 table, in the background, five at a time, and no `isolation`: the agent
 makes its own worktree, since the guard-worktrees hook lets an agent
 work only in one it made. Each prompt is this text, verbatim, with the blanks filled.
@@ -122,7 +121,7 @@ you under sid <sid>; you release that claim at the end.
    If `git rev-parse HEAD` is not <start sha>, someone pushed since the
    plan: go to step 7 and report that, pushing nothing. If a guard
    refuses a step, report its exact message and go to step 7.
-2. A reviewer's threads are on <url>, and
+2. The CI review's threads (claude[bot]) are on <url>, and
    `~/.claude/bin/pr-blockers <url>` lists the rest. Work every fix to
    the fixup contract,
    ~/.claude/skills/pickup/SKILL.md section 6, read in full. Its stop
