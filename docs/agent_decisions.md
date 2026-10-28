@@ -547,3 +547,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t053004z
 - Cloud: 'state repo dirty' is dropped after the second commit took all the dirt; when it was the only reason the verdict is recomputed, erring toward not archivable Undo: remove drop_state_dirt ([#347](https://github.com/mark-brannan/claude/pull/347))
+
+### 20261028t053015z
+- A failed first commit skips the second, so the second never sweeps up staged state/ Undo: remove the early return ([#347](https://github.com/mark-brannan/claude/pull/347))
