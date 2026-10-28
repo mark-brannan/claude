@@ -1,6 +1,6 @@
 ---
 name: critical-review
-description: Review one pull request and comment on it — read the diff, post tagged findings, print a summary. It never edits, pushes or resolves; whoever owns the PR works the comments. Use on "/critical-review <PR>" or "critical review of #N". It runs on the session's own model and says in its summary when that family coded the PR.
+description: Review one pull request and comment on it — read the diff, post tagged findings, print a summary. It never edits, pushes or resolves; whoever owns the PR works the comments. Use on "/critical-review <PR>" or "critical review of #N". The driver picks a reviewer unlike the coder; the skill itself never switches model, and flags a run on a coder's family.
 ---
 
 Do a critical review of $ARGUMENTS. You comment; you never edit, push
@@ -11,11 +11,14 @@ reviewer <PR> [--coder <model>]`, with `--coder` when the hand-off names
 the coder. Otherwise it reads every model named in the PR's commit
 trailers and prints `coder=<families> reviewer=<family>`, the reviewer a
 family that coded none of it. A note after the line (coder unknown, or every
-family coded it) goes into your summary. The review runs in this session's
-own model; when that is a coder's family, the summary says so. The line's
-`reviewer=` is the family an independent review would take, not who
-reviews here; the metrics row records it as `reviewer_model` beside
-`model`, the one that did.
+family coded it) goes into your summary. The reviewer's model is the
+driver's choice, made before this skill runs, and should be a family that
+coded none of the PR. The skill never changes model, forks or spawns a
+sub-agent. When this session's family is a coder's, the summary opens with
+that as a flaw of the run: "review ran on a coder's family (<family>)".
+The line's `reviewer=` is the family the driver should have picked; the
+metrics row records it as `reviewer_model` beside `model`, the one that
+did.
 
 CI runs this review on every PR (claude[bot]). Drivers (prt, pickup,
 scoping) work the bot's threads and start no reviewer of their own.
