@@ -70,16 +70,22 @@ for h in $(grep -o '\$HOME/\.claude/hooks/[A-Za-z0-9._-]*' "$REPO/settings.json"
   check "cold: settings.json hook ${h##*/} present" '[ -f "$f" ]'
 done
 # The repo's absolute paths name a real machine; the VM gets its own. A terms
-# path left pointing elsewhere makes the plugin deny every public post.
+# path left pointing elsewhere makes the plugin deny every public post, so with
+# no state repo the option goes.
 sj() { jq -r "$1" "$HOME/.claude/settings.json" 2>/dev/null; }
 check "cold: PROSE_BUDGET localised and runnable" \
   '[ "$(sj .env.PROSE_BUDGET)" = "$HOME/.claude/bin/prose-budget" ] && [ -x "$(sj .env.PROSE_BUDGET)" ]'
 # Expected is computed by lib/state.py's own search, not hard-coded: a host
 # with the state repo at /home/user/claude_prompts_scratch finds it there.
 exp_state=$(python3 "$REPO/lib/state.py" state_repo 2>/dev/null)
-[ -n "$exp_state" ] || exp_state=/workspace/claude_prompts_scratch
-check "cold: private_terms_file localised to the state repo" \
-  '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_terms_file")" = "$exp_state/state/global/private-terms.txt" ]'
+if [ -n "$exp_state" ]; then
+  check "cold: private_terms_file localised to the state repo" \
+    '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_terms_file")" = "$exp_state/state/global/private-terms.txt" ]'
+else
+  check "cold: no state repo, no private_terms_file" \
+    '[ "$(sj ".pluginConfigs[\"languette@languette\"].options | has(\"private_terms_file\")")" = false ]'
+  has "guard-private-terms is off" "$out" "cold, no state repo"
+fi
 check "cold: private_repos kept" \
   '[ "$(sj ".pluginConfigs[\"languette@languette\"].options.private_repos")" = mark-brannan/claude_prompts_scratch ]'
 

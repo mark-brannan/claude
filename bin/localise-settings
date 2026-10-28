@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Rewrite a copy of settings.json's machine paths for the machine it lands on.
+
+settings.json names a real machine's absolute paths: Claude Code expands
+neither ~ nor ${HOME} in env or pluginConfigs values. A cloud session's setup
+and a CI job's seeded home run this on their copy:
+
+- env.PROSE_BUDGET becomes $HOME/.claude/bin/prose-budget.
+- languette's private_terms_file becomes the state repo's list where the state
+  repo is here. A state repo without the list keeps that path, so the guard
+  denies loudly: that machine was meant to have it. With no state repo the
+  option goes and the guard is inert, the empty shim of languette#290.
+  Provisioning the list there instead: claude#338.
+
+Usage: localise-settings SETTINGS_FILE
+Prints one line saying what it did. Exit 0 done, 2 could not read or write.
+"""
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+import state  # noqa: E402
+
+TERMS = "state/global/private-terms.txt"
+
+
+def localise(settings, home, state_repo):
+    """settings with this machine's paths, and a line saying what changed."""
+    if "PROSE_BUDGET" in settings.get("env", {}):
+        settings["env"]["PROSE_BUDGET"] = f"{home}/.claude/bin/prose-budget"
+    options = settings.get("pluginConfigs", {}).get("languette@languette", {}).get("options", {})
+    if "private_terms_file" not in options:
+        return settings, f"paths localised to {home}"
+    if state_repo:
+        options["private_terms_file"] = f"{state_repo}/{TERMS}"
+        return settings, f"paths localised to {home}; private terms from {state_repo}"
+    del options["private_terms_file"]
+    return settings, f"paths localised to {home}; no state repo, so no private terms list: guard-private-terms is off"
+
+
+def main(argv):
+    if len(argv) != 2:
+        print(__doc__.strip().split("\n\n")[-2], file=sys.stderr)
+        return 2
+    path = Path(argv[1])
+    try:
+        settings, said = localise(json.loads(path.read_text()), os.environ["HOME"], state.state_repo())
+        tmp = path.with_name(path.name + ".localise.tmp")
+        tmp.write_text(json.dumps(settings, indent=2) + "\n")
+        tmp.replace(path)
+    except (OSError, ValueError, KeyError) as e:
+        print(f"localise-settings: {path}: {e}", file=sys.stderr)
+        return 2
+    print(said)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
