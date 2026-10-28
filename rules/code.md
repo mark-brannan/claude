@@ -105,8 +105,8 @@ say otherwise for a PR or a repo.
   showing the changed tests ran (a `-k` that selects none is green by
   selecting nothing, languette#221). After the push CI is the oracle: a
   local run on that commit reproduces a failure CI reported, after reading
-  its log, and never asks whether it is green. Run locally only what CI
-  can't. Read CI once after the push; if it is still running, hand over
+  its log, and never asks whether it is green. Beyond that, run locally
+  only what CI can't (macOS). Read CI once after the push; if it is still running, hand over
   with the link.
 - **A conflict gets a merge, never a rebase afterwards:** the merge commit
   holds the hand-resolution, and a rebase drops it. Behind is not a
