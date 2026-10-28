@@ -219,8 +219,8 @@ or untracked in the state repo is staged by path, `.gitignore` respected,
 except a held-back path: a file over 5 MB, or one `gitleaks detect --no-git`
 flags, run over the changed paths not already held back for size, 30 s in
 all. With no scanner on PATH, or a scan that times out or errors, nothing is
-held back for secrets and the checkpoint says the scan did not run. A
-held-back path stays unstaged and the rest still commit. The checkpoint names
+each one with its reason and the clone that holds it (hostname and the state
+repo's path), and the next session on
 each one with its reason and the clone that holds it, and the next session on
 that clone gets a continuity brief (`session-start-continuity.py`) that names
 it and asks that session to offer the user a way to resolve it (commit, scrub,
