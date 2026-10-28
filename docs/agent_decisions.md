@@ -553,3 +553,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t053037z
 - Dropped the held-back line in metrics-live and .git/claude-held-back.json: the design carries held-back files in the checkpoint only Undo: restore them from c1bbb62 ([#347](https://github.com/mark-brannan/claude/pull/347))
+
+### 20261028t053057z
+- An untracked directory that is its own git repo is skipped by the second commit and not named in the checkpoint Undo: drop the trailing-slash skip in other_paths ([#347](https://github.com/mark-brannan/claude/pull/347))
