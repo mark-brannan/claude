@@ -103,7 +103,10 @@ say otherwise for a PR or a repo.
 - **Before the push,** the suite runs locally on the commit being pushed:
   whole when it takes about a minute; narrowed above that, with output
   showing the changed tests ran (a `-k` that selects none is green by
-  selecting nothing, languette#221). After the push CI is the oracle.
+  selecting nothing, languette#221). After the push CI is the oracle: a
+  local run on that commit reproduces a failure CI reported, after reading
+  its log, and never asks whether it is green. Run locally only what CI
+  can't.
 - **A conflict gets a merge, never a rebase afterwards:** the merge commit
   holds the hand-resolution, and a rebase drops it. Behind is not a
   conflict; the queue updates it. A stacked PR is the one rebase left, with
