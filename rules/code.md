@@ -55,8 +55,8 @@ project-specific facts belong in that project's own CLAUDE.md.
   When a branch *is* warranted: push it and open the PR yourself, as
   early as the work is worth looking at — local checks need not have
   finished. Never wait to be asked, never leave a pushed branch without a
-  PR. Draft or ready, reviewer or none, is yours to judge; the
-  `awaiting-human` label is what says it is my turn. A branch opened this
+  PR. Draft or ready, reviewer or none, is yours to judge; `pr-blockers`
+  printing nothing is what says it is my turn. A branch opened this
   way ends only one way: merged via PR, never folded back to main and
   deleted.
 
@@ -94,257 +94,69 @@ project-specific facts belong in that project's own CLAUDE.md.
 
 ## PR ownership
 
-The bar is computed, not prose: Mergify adds `awaiting-human` when
-`ci-gate / gate` is green and no review thread is unresolved, and removes
-it when either stops being true. Until it is on, the PR is mine. A draft
-carries no label and gets no CodeRabbit or claude-review pass, so it sits
-in nobody's queue but this session's.
+A PR is yours until `pr-blockers` prints nothing for it, not one line.
+Then it is my turn. Merging is mine too, by the `merge` label, unless I
+say otherwise for a PR or a repo.
 
-- **Read the conversation before you watch the checks.** On any PR — mine or
-  one I am reviewing — the order is: review comments and unresolved threads
-  first, then the fix and the push, then CI. Waiting on a check is the lowest
-  priority thing a session can be doing, and never the only thing: a long
-  local suite or a running GitHub check is background, so start it and go work
-  the threads while it runs. A session idling on `gh pr checks --watch` or a
-  test run while an unanswered comment sits on the PR is wasting the one
-  resource that matters.
-- In a repo whose `.github/show-dont-tell.yml` has a `serve:` line, a PR touching its rendered
-  paths carries a `## Try it` block that serves that PR's head from its own worktree in one
-  paste: the repo's `scripts/try-it` prints it; the shared show-dont-tell check is red without
-  it. On any PR or hypothetical change there, a dev server is up and its URL shown before the diff.
-- **Ready before hand-over.** In order:
-  - every fast check the repo defines passes locally — formatter, lint,
-    typecheck, build, tests; whatever that repo actually has;
-  - the branch has no conflict with its base — `git fetch origin <base>`
-    and look at `gh pr view --json mergeable`. A branch that is merely
-    behind is handed over as is: Mergify brings it up to date inside the
-    queue, once, and a rebase of a clean branch only costs a force-push, a
-    stale `Head:` line, reset review state and a CI re-run. Main moves
-    while a session works; check for conflict before the first push AND
-    again immediately before handing the PR over;
-  - **only when the branch conflicts, merge — don't rebase.** `git merge
-    origin/<base>`, resolve, commit — the merge commit is signed like any
-    other and carries the hand-resolution in its tree — then push it as a
-    plain fast-forward. Do NOT then `git rebase` to
-    linearize it: a rebase replays only single-parent commits, so every
-    edit that lives only in the merge commit's tree is silently dropped. A stacked PR
-    is the one rebase left: `git rebase --onto origin/<base>` after its
-    parent squash-merges, which the queue cannot do. A PR branch tracks
-    its own remote branch, never main. Never `--no-verify`: skipping
-    hooks is the user's call, asked for, never taken;
-  - the merge state says so, not just the checks — `gh pr view --json
-    mergeable,mergeStateStatus`. `gh pr checks` is green on a branch that
-    conflicts with main, so green checks are not a mergeable PR;
-  - read CI once after the push; if it is still running, hand over with the
-    link and say so — `awaiting-human` says when it is green. The suite ran
-    locally on the commit being pushed, before the push: whole, when it
-    finishes in about a minute; narrowed above that, and then the output
-    shows the tests this change added or changed actually ran — a `-k` that
-    selects none of them is green by selecting nothing (languette#221).
-    After the push CI is the oracle: never re-run locally what it has run
-    on that commit; run locally only what CI can't (macOS);
-  - **the body carries a `Head: <sha>` line naming this push** — the last
-    edit before hand-over, so a head that moves afterward (one more commit,
-    a rebase, a resign) is visible on the PR page before anyone merges it,
-    not discovered after (dotfiles#286). Add the line if it's missing,
-    replace it if it's there: `gh pr edit <n> --body "$new_body"` with the
-    line set to `git rev-parse HEAD`;
-  - **every pencil call the change stands on is logged** — each default
-    taken under the one-way-door test, in the body's `## Pencil:` list and
-    appended with `~/.claude/bin/agent-decision "<call>" --undo "<undo>" --link <PR>`
-    (add `--curia <id>` when the work came from a curia), committed in this
-    PR. None taken: say `## Pencil: none`. **A reversal is never a pencil
-    call** (2026-10-09, claude#127): a default that contradicts the
-    linked issue, a design doc, a decisions line or a thread the user
-    wrote is not yours however cheap the revert; the instruction stands
-    and the conflict goes under the critical-review summary's Reversed
-    heading, as a Decide line if the PR cannot be right without it.
-- **A PR handed to the user needs a judgment pass, not a "did this even build"
-  pass.** His read is for the call I can't make — is this the right change,
-  does it fit the design. Anything a machine could have caught should
-  already be caught.
-- **What can't be made green gets said, in the PR description.** A flaky
-  external dependency, a check that needs a secret or a decision only the user
-  has, a failure that provably predates the branch: name it in the body and
-  say why it isn't mine to fix. Opening a broken PR silently is the exact
-  failure this section exists to prevent; opening one with the breakage
-  labelled is fine.
-- **Ready is not the end of the turn.** After it, CI failures, bot findings
-  and merge conflicts are mine, round after round, until every check is
-  green and every automated thread is answered or resolved. A red check is
-  never handed over as a status report.
-- **"Resolve conversation" is mine to do, not the user's.** The REST API and
-  `gh` CLI have no resolve-thread call, which reads like a dead end —
-  it isn't: `gh-resolve-thread <threadId>` resolves one thread, and is the
-  only allowed way from a shell; auto mode refuses a raw `gh api graphql`
-  resolve. In a cloud session, where GraphQL 403s, `skills/prt` has the
-  fallback. The
-  thread id is the `PRRT_...` node id from `reviewThreads{nodes{id}}` on
-  the PR, not the REST comment id. Reply first, in its own call (the GitHub MCP reply
-  tool, or `gh api` POST to `pulls/comments/<id>/replies`), then resolve;
-  never chain the two. Telling the user to click "Resolve" herself because
-  the obvious tool doesn't have it is asserting a limitation without
-  checking whether a less-obvious one does — verify before you claim
-  something can't be done from here.
-- **CodeRabbit findings get closed the loop, not skimmed.** Read every
-  actionable comment on the PR, not just the top-level summary line — it
-  edits comments in place to mark them "✅ Addressed in commit X" once a fix
-  lands, so a finding that looks unresolved from the summary may already be
-  fixed, and one that looks handled may not be. For each: verify against
-  current code, fix or state why not, then **reply on the thread with the
-  evidence and resolve it** — a repo ruleset can require
-  `required_review_thread_resolution` and silently block the merge until you
-  do, independent of check status. Two exits: a bot thread only the user
-  can answer stays open and is listed under Decide; one answered with a
-  default is resolved and listed under Pencil with its thread link (the
-  critical-review summary's headings). Scar: 2026-08-27, ampacity#3 — confirmed
-  a flagged link was live, never replied or resolved the thread, merge failed
-  on branch policy. A third exit, taken first: a bot thread that asks to
-  undo an instruction — a governing document, the linked issue's words, a
-  thread the user wrote — is a reversal, never a fix and never a pencil.
-  The instruction stands, the thread stays open, and the summary's
-  Reversed heading carries the line in the record's own words. Scars:
-  2026-10-09, languette#110 — a design rule's allowlist and a decision's
-  reasons cut on a bot's rubric nit, merged, then restored; languette#116 —
-  the bot flagged "the issue says adds, the code replaces", the agent
-  replied "Replacement is the intent", resolved it, and filed the reversal as
-  pencil.
-- **Every comment, review or thread reply you post is signed as an
-  agent's.** It goes out under the user's login, and a bot or the next
-  session reads an unsigned reply as the user's ruling (languette#116:
-  "Replacement is the intent" was an agent's line, taken as the user's).
-  The body opens with `🤖 ` and closes with one signature line:
-
-  ```
-  🤖 claude-fable-5-1 · high · 5a74df74
-  ```
-
-  The model as this session reports it, the effort as the pickup item
-  names it (`-` when unknown), the session's first eight hex. A PR body's
-  `🤖 Generated with Claude Code` line gains the same model and effort.
-  A languette guard refuses the unsigned post (card 17915273135a74df74);
-  until it lands this line stands alone. An identity of the agents' own
-  is under research (card 17915273125a74df74).
-- **Resolve threads one at a time, by id, after reading and responding to each one.** Never
-  loop over "all unresolved threads" — a review bot can post between your
-  listing and your resolve, and the loop closes findings nobody read. Scar:
-  2026-09-01, dotfiles#60 — resolved three CodeRabbit threads unread this
-  way, one of which asked to disable pre-commit hooks.
-- **Every subagent prompt that touches a PR carries the resolve requirement
-  verbatim.** Delegating the fix does not delegate away this rule — an agent
-  told only "fix the CI failure" fixes it and leaves the thread open, and the
-  thread is then mine, discovered a turn later by the gate. Any prompt that
-  sends an agent at a PR states: read the thread, fix it, reply with the
-  evidence, resolve it by id, in the same pass; and report the thread ids it
-  resolved. Scar: 2026-09-08, the six-PR conflict sweep — six agents launched,
-  only two carried the instruction, and the user had to ask again.
-
-- **A repeated CodeRabbit comment gets re-verified live, not answered from
-  turn memory.** When the same finding text shows up again (re-pasted, or a
-  fresh review pass after a push), re-fetch the actual thread state — GraphQL
-  `reviewThreads` (path, `isResolved`, comment body) — before telling the user
-  it's already handled, even when you're confident it's the same one. State
-  what you found: thread id, resolved status, which commit fixed it. Scar:
-  2026-08-28, signalk-noaa-space-weather#214 — said "nothing further to do"
-  from memory of an earlier fix; the conclusion happened to be right, but it
-  was asserted, not checked, on the very question "is this fully closed."
-- "Looks good" / "I'm signing off" said before CI finishes isn't a stall —
-  it's pre-authorization: push the moment CI comes back green, without
-  circling back to re-confirm.
-- This stops at merge, not before it. Getting a PR to ready-and-green is
-  mine by default; merging it is a separate, explicit action unless told
-  otherwise for a given PR or repo.
-- Don't ask "want me to watch this PR?" — subscribe yourself, or don't,
-  per the token-budget rule below. Either way, no question.
+- **Threads before checks.** A running check or a long local suite is
+  background: start it and work the threads while it runs.
+- **Before the push,** the suite runs locally on the commit being pushed:
+  whole when it takes about a minute; narrowed above that, with output
+  showing the changed tests ran (a `-k` that selects none is green by
+  selecting nothing, languette#221). After the push CI is the oracle.
+- **A conflict gets a merge, never a rebase afterwards:** the merge commit
+  holds the hand-resolution, and a rebase drops it. Behind is not a
+  conflict; the queue updates it. A stacked PR is the one rebase left, with
+  `--onto`, after its parent merges.
+- **The body carries a `Head: <sha>` line** naming the last push, so a head
+  that moves after hand-over shows on the PR page (dotfiles#286).
+- **Every pencil call is logged,** in the body's `## Pencil:` list and with
+  `~/.claude/bin/agent-decision`; none taken says `## Pencil: none`. A
+  default that contradicts the linked issue, a design doc, a decisions line
+  or a thread I wrote is a reversal, never a pencil call (claude#127).
+- **What can't be made green is named in the body,** with why it isn't
+  yours to fix. A red check is never handed over as a status report.
+- **A bot thread has three exits.** One that asks to undo an instruction (a
+  governing document, the issue's words, a thread I wrote) is a reversal: it
+  stays open and goes under the critical-review summary's Reversed heading
+  (languette#110, languette#116). One only I can answer stays open, under
+  Decide. Anything else is verified against the code, fixed or answered
+  with the evidence, and resolved with `gh-resolve-thread <id>`; one
+  answered with a default goes under Pencil with its thread link.
+- **Threads are read and resolved one at a time,** never in a loop over
+  "all unresolved": a bot can post between the listing and the resolve
+  (dotfiles#60). A finding that shows up again is checked against the
+  live thread, never answered from memory (signalk-noaa-space-weather#214).
+- **Everything you post is signed** as an agent's, opening with `🤖 ` and
+  closing with `🤖 <model> · <effort> · <first 8 hex of the session id>`, so
+  no one reads an agent's line as mine.
+- **A sub-agent sent at a PR is told** to reply on and resolve each thread
+  it fixes, by id, and to report the ids.
+- In a repo whose `.github/show-dont-tell.yml` has a `serve:` line, a dev
+  server is up and its URL shown before the diff of any change there.
+- "Looks good" said before CI finishes is pre-authorization: act the moment
+  it is green, without asking again.
 
 ### A board-only PR merges itself
 
-Ported from `signalk-noaa-space-weather/AGENTS.md`, 2026-08-26 — the pattern
-was write-once there; this generalizes it for any repo whose board/state file
-lives inside the repo and is edited via PR (a cloud session pinned to a
-branch is the case that comes up, per each repo's own branch-vs-main rule).
+Where a repo's board file lives in the repo and PR authorship is trusted
+(solo maintainer, own bots), a PR whose whole diff is that file auto-merges
+once its required checks pass, and every review bot skips exactly that
+diff. Keep the two tests matched: a wider bot skip lets code past review; a
+narrower one leaves the board PR waiting. Both live in the repo: the merge
+rule in its Mergify config, the skips in each bot's path filter. The board
+is read into every future session, so this is a prompt-injection surface,
+not inert data.
 
-A PR whose diff touches **only** the board/state file (`kanban.md` or
-whatever the repo names it) needs no review and no approval to ask for —
-it's a card, not code; nothing installs it, and the next session to read the
-board fixes anything wrong with it in the same breath it's reading it in
-anyway. Only wire this up on a repo where PR authorship is trusted (solo
-maintainer, own bots) — the board is exactly the file a session-start hook
-reads into every future session's context, so skipping review on it is
-skipping review on a live prompt-injection surface, not just inert data.
-Set this up once per repo, not per PR:
+### Watching a PR
 
-- Repo settings: auto-merge enabled, branch deletes on merge.
-- Every review bot the repo runs (CodeRabbit, `claude-review`, etc.) is
-  filtered to skip when the board file is the *entire* diff — same test the
-  merge rule uses. Without this, a slow bot's finding lands as a comment on
-  an already-merged PR, which nobody reads.
-- The PR itself: `gh pr merge --squash --auto --delete-branch` as soon as
-  whatever required check the repo has (if any) goes green — often
-  immediately, since a board-only diff triggers nothing else.
-
-Keep the merge-rule diff test and the bot skip-filters matched to each
-other — the two can drift in either direction, and each is wrong a
-different way: a bot-skip filter *wider* than the merge rule lets non-board
-changes bypass review, while a bot-skip filter *narrower* than the merge
-rule leaves a board-only PR waiting on a bot it was supposed to be exempt
-from. This does not apply to a repo whose board edits already go straight
-to `main` with no PR at all (e.g. `claude_prompts_scratch`) — there's no PR
-here to auto-merge. Nor does it apply to dotfiles itself: this repo has no
-board file to write the checklist against — see `CLAUDE.md`'s "This repo is
-public" section.
-
-### Babysitting a PR is cheap; polling for it is not
-
-- **Past 60% of the context window — ~120k on the default 200k — don't
-  subscribe.** Push, open the PR, and end the turn with a follow-up prompt
-  plus: "You should archive this chat now. It's at ~Nk tokens."
-  Fire-and-forget — no webhook, no wake, pick it up fresh next time.
-  A fraction, not a fixed number, because 100k is
-  half the default window but a tenth of the 1M one Opus upgrades to on
-  Max. 60% leaves room for ~6-10 wakes at 5-15k each and stops short of the
-  band where cloud sessions start compacting — and compaction drops exactly
-  the reasoning behind the diff under review. Enforced by
-  `~/.claude/hooks/no-late-pr-subscribe.sh`, which reads current context
-  from the transcript and denies `subscribe_pr_activity` at or above the
-  threshold. Knobs: `CLAUDE_PR_WATCH_CONTEXT_WINDOW` (raise it by hand for
-  a 1M session — the hook can't see the model's window),
-  `CLAUDE_PR_WATCH_CONTEXT_PERCENT`, `CLAUDE_PR_WATCH_MIN_HEADROOM`,
-  `CLAUDE_PR_WATCH_TOKEN_LIMIT` (absolute, overrides the rest).
-- **Wake on events, not timers.** Subscribing to PR activity costs nothing
-  idle and fires the moment a check finishes or a comment lands — cheaper and faster than checking back. "I'll check again in a
-  few minutes" is a polling loop in disguise; if a check is still running,
-  say so and stop.
-- **Never bind a scheduled wakeup to a live session** to re-poll a PR — no
-  `send_later`, no `create_trigger` carrying a persistent session id or
-  missing a fresh-session flag. Each firing re-sends that session's whole
-  accumulated context, so the cost compounds with every wake, and a
-  PR-watching session gets asked to re-arm before ending its turn, which
-  reproduces the same shape again. Take whatever redirect the harness
-  offers instead of working around it.
-- **One watcher per PR.** Check whether another session already has it
-  before subscribing or scheduling.
-- **Batch review responses.** Address every open thread in one pass, then
-  push once — don't wake per comment.
-- **Tell the user once, when it's actually his turn.** He signs off last;
-  everything that can finish without him finishes first. No "CI is
-  running", no "two jobs left", no asking whether to fix a failure I can
-  diagnose myself, no reminders to look at something still in progress —
-  that traffic costs a read and returns nothing actionable. One message,
-  when the PR is green and the automated reviews have been dealt with. The
-  two exceptions both end in a decision only he can make: a blocker I
-  can't resolve, or a design question where guessing wrong means redoing
-  the work — lay out the options and ask, don't narrate.
-- **Long agentic loops, not long conversations, are the real expense.**
-  Every tool call re-sends the full context, so a tool-dense task (PR
-  review, CI chasing, branch cleanup) costs far more than its wall-clock
-  suggests. Scope these tightly; prefer one considered pass over iterative
-  poking.
-- **Park open questions somewhere durable** — as an issue or card per
-  `/card-write`, or ask directly when the answer blocks the task —
-  never only in session scrollback. A question that lives solely in a
-  session's last response is invisible the moment that session scrolls out
-  of view.
+- **Wake on events, not timers.** Subscribe, or don't, without asking;
+  never bind a scheduled wakeup to a live session to re-poll a PR. One
+  watcher per PR.
+- **Answer every open thread in one pass, then push once.**
+- **Tell me once, when it is my turn.** No progress reports. The two
+  exceptions end in a decision only I can make: a blocker you can't
+  resolve, or a design question where a wrong guess redoes the work.
 
 ## Our own workflows and actions
 
