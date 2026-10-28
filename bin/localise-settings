@@ -6,10 +6,11 @@ neither ~ nor ${HOME} in env or pluginConfigs values. A cloud session's setup
 and a CI job's seeded home run this on their copy:
 
 - env.PROSE_BUDGET becomes $HOME/.claude/bin/prose-budget.
-- languette's private_terms_file becomes the state repo's list where the state
-  repo is here. A state repo without the list keeps that path, so the guard
-  denies loudly: that machine was meant to have it. With no state repo the
-  option goes and the guard is inert, the empty shim of languette#290.
+- languette's redacted_terms_file and blocked_terms_file become the state
+  repo's lists where the state repo is here. A state repo without a list keeps
+  that path, so the guard denies loudly: that machine was meant to have it.
+  With no state repo both options go and the guard is inert, the empty shim of
+  languette#290.
   Provisioning the list there instead: claude#338.
 
 Usage: localise-settings SETTINGS_FILE
@@ -24,7 +25,8 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 import state  # noqa: E402
 
-TERMS = "state/global/private-terms.txt"
+# Each languette option and its list at the state repo's root.
+TERMS = {"redacted_terms_file": "redacted-terms.tsv", "blocked_terms_file": "blocked-terms.tsv"}
 
 
 def localise(settings, home, state_repo):
@@ -32,12 +34,16 @@ def localise(settings, home, state_repo):
     if "PROSE_BUDGET" in settings.get("env", {}):
         settings["env"]["PROSE_BUDGET"] = f"{home}/.claude/bin/prose-budget"
     options = settings.get("pluginConfigs", {}).get("languette@languette", {}).get("options", {})
-    if "private_terms_file" not in options:
+    keys = [k for k in TERMS if k in options]
+    if not keys:
         return settings, f"paths localised to {home}"
+    for k in keys:
+        if state_repo:
+            options[k] = f"{state_repo}/{TERMS[k]}"
+        else:
+            del options[k]
     if state_repo:
-        options["private_terms_file"] = f"{state_repo}/{TERMS}"
         return settings, f"paths localised to {home}; private terms from {state_repo}"
-    del options["private_terms_file"]
     return settings, f"paths localised to {home}; no state repo, so no private terms list: guard-private-terms is off"
 
 
