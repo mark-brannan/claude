@@ -508,8 +508,8 @@ class StopNoticeTest(Base):
         self.assertNotIn("dirty", reasons(self.SR), "state repo at home: not a reason")
         self.assertEqual(self.state.buffered_state(str(self.SR)).split("\n")[1],
                          "→ state repo: 1 uncommitted file(s) (README) outside state/. Safe to archive: "
-                         "the clone keeps them. The Stop hook commits only state/, so commit these by hand "
-                         "to keep them.", "...but named, after what is buffered")
+                         "the clone keeps them. The Stop hook held them back or they came after it; the "
+                         "checkpoint names why.", "...but named, after what is buffered")
         os.environ["CLAUDE_CODE_REMOTE"] = "true"
         self.assertEqual(reasons(self.WT), "worktree dirty, state repo dirty", "cloud, mixed: work area first")
         self.assertEqual(reasons(self.SR).split(", ")[0], "state repo dirty", "cloud, in the state repo")
@@ -537,8 +537,8 @@ class StopNoticeTest(Base):
         self.assertEqual(ve("not archivable: worktree dirty, state repo dirty", str(self.WT)),
                          f"→ worktree dirty: 1 uncommitted file(s) (my file). {tail}\n"
                          "→ state repo dirty: 1 uncommitted file(s) (README). This cloud VM's clone dies with "
-                         "the VM, and the Stop hook commits only state/: commit these and push them to main, "
-                         "or they are lost.",
+                         "the VM, and the Stop hook has not committed these (held back, or written since): "
+                         "commit these and push them to main, or they are lost.",
                          "mixed: the work area leads, the state repo follows")
         self.assertEqual(len(ve("not archivable: worktree dirty, 2 commit(s) unpushed").split("\n")), 2,
                          "two reasons, one line each")

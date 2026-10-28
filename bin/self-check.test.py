@@ -184,5 +184,24 @@ class HookErrorsRowTest(unittest.TestCase):
         self.assertIn("log-commit x1", value)
 
 
+class StaleUntrackedRowTest(unittest.TestCase):
+    def test_only_files_untracked_over_a_day_warn(self):
+        with tempfile.TemporaryDirectory() as sr:
+            sh(sr, "git", "init", "-q")
+            Path(sr, ".gitignore").write_text("ignored\n")
+            for name in ("old.md", "new.md", "ignored"):
+                Path(sr, name).touch()
+            for name in ("old.md", "ignored"):
+                t = os.path.getmtime(os.path.join(sr, name)) - 2 * 86400
+                os.utime(os.path.join(sr, name), (t, t))
+            now = os.path.getmtime(os.path.join(sr, "new.md"))
+            self.assertEqual(sc.stale_untracked_row(sr, now), ("warn", "1: old.md"))
+            os.unlink(os.path.join(sr, "old.md"))
+            self.assertEqual(sc.stale_untracked_row(sr, now)[0], "ok")
+
+    def test_no_state_repo_is_ok(self):
+        self.assertEqual(sc.stale_untracked_row(None, 0)[0], "ok")
+
+
 if __name__ == "__main__":
     unittest.main()

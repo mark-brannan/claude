@@ -42,6 +42,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,10 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
 # locale (glibc's iswspace), and the ASCII subset tr's byte-wise class takes.
 WS = " \t\n\v\f\r              　"
 WS_ASCII = " \t\n\v\f\r"
+# The state commit's limit on a file outside state/, and the checkpoint
+# section that names what it held back; session-start-continuity.py reads it.
+HELD_BACK_BYTES = 5 * 1024 * 1024
+HELD_HEADING = "## Held back from the state commit"
 
 
 # ------------------------------------------------------------ jq, by hand
@@ -338,6 +343,7 @@ class Stop:
         self.now = when.stamp(t)
         self.today = time.strftime("%Y-%m-%d", time.gmtime(t))
         self.verdict = ""
+        self.held_noted = False
         self.reasons = None  # archivable's answer, cached across set_verdict calls
         self.home = None     # and the home line it read, for the pickup item
         self.pi_branch_line = "none"
@@ -1080,6 +1086,78 @@ class Stop:
             self.curia_floor(thread, model)
 
     # ------------------------------------------------------------ state repo
+    def commit(self, msg):
+        return git_bounded(30, "-c", f"user.name={os.environ.get('GIT_AUTHOR_NAME') or 'Claude'}",
+                           "-c", f"user.email={os.environ.get('GIT_AUTHOR_EMAIL') or 'noreply@anthropic.com'}",
+                           "-c", f"commit.gpgsign={self.sign_if_key('.')}",
+                           "commit", "-q", "-m", msg)
+
+    @staticmethod
+    def stage(paths, *verb):
+        """git <verb> over paths, literally, fed NUL-separated on stdin; one at
+        a time when the batch fails, as it does over a path gone since."""
+        def run(ps):
+            return gitrun.run("--literal-pathspecs", *verb, "--pathspec-from-file=-", "--pathspec-file-nul",
+                              input=b"\0".join(x.encode("utf-8", "surrogateescape") for x in ps),
+                              binary=True).returncode == 0
+        if paths and not run(paths):
+            for x in paths:
+                run([x])
+
+    @staticmethod
+    def other_paths():
+        """(paths, over 5 MB): every changed, deleted or untracked path outside
+        state/, .gitignore respected, split by size. A nested repo is left out:
+        git would add it as an embedded gitlink."""
+        p = gitrun.run("ls-files", "-z", "--modified", "--deleted", "--others", "--exclude-standard",
+                       "--", ".", ":(exclude)state/", binary=True)
+        files, big = [], []
+        for x in sorted({x.decode("utf-8", "surrogateescape")
+                         for x in (p.stdout if p.returncode == 0 else b"").split(b"\0") if x}):
+            if x.endswith("/"):
+                continue
+            try:
+                large = os.lstat(x).st_size > HELD_BACK_BYTES
+            except OSError:
+                large = False  # a deletion
+            (big if large else files).append(x)
+        return files, big
+
+    @staticmethod
+    def has_gate():
+        """True when this clone declares a pre-commit hook that refuses a
+        finding (`git config stopContinuity.preCommitGate true`) and that hook
+        is there to run. Nothing in a hook's file says whether it can refuse,
+        so the clone says it."""
+        if gitrun.run("config", "--bool", "stopContinuity.preCommitGate").stdout.strip() != "true":
+            return False
+        p = gitrun.run("rev-parse", "--git-path", "hooks/pre-commit")
+        hook = p.stdout.strip() if p.returncode == 0 else ""
+        return bool(hook) and os.access(hook, os.X_OK)
+
+    def note_held(self, SR, rows):
+        """Name each held-back path in the checkpoint, with the clone that
+        holds it: the next session there reads it (session-start-continuity.py)."""
+        if not rows:
+            return
+        head = "" if self.held_noted else (f"\n{HELD_HEADING}\n\nClone: `{socket.gethostname()}:{SR}`\n\n")
+        self.held_noted = True
+        append(self.ckpt, head + "".join(f"- `{x}` — {why}\n" for x, why in rows))
+
+    # The verdict was set before the second commit. In the cloud, where the
+    # state repo's dirt outside state/ is a reason, the reason goes once that
+    # commit took all of it, so a clean clone is not called dirty. Were it
+    # the only reason, archivable() stopped before the home check, so the
+    # verdict is recomputed instead; any error there errs toward "not
+    # archivable". The checkpoint's copy rides the next Stop's commit.
+    def drop_state_dirt(self):
+        if not re.search(r"(^|, )state repo dirty(, |$)", self.reasons or ""):
+            return
+        if state.dirty_paths(state.state_repo()).rstrip("\n"):
+            return
+        self.reasons = re.sub(r"(^|, )state repo dirty(?=, |$)", "", self.reasons).lstrip(", ") or None
+        self.set_verdict()
+
     def state_repo_commit(self):
         SR = state.state_repo()
         if SR is None:
@@ -1113,23 +1191,47 @@ class Stop:
                     self.set_verdict(f"state repo not committed (git filter `{f}` unconfigured)")
                     return
 
-        # Everything under state/ goes in, the board's items/ included.
-        git_ok("add", "state/")
-        if git_ok("diff", "--cached", "--quiet"):
-            return  # nothing changed
+        # The second commit's paths, listed first: a file over 5 MB is held
+        # back now, so the checkpoint names it in the first commit.
+        files, big = self.other_paths()
+        self.note_held(SR, [(x, "over 5 MB") for x in big])
+        # The second commit's only check is that hook. Without one that can
+        # refuse, nothing outside state/ is committed: a leak would be pushed
+        # before anything scanned it.
+        if files and not self.has_gate():
+            self.note_held(SR, [(x, "no pre-commit gate in this clone") for x in files])
+            files = []
 
-        # Bounded like the salvage commit: signing calls out to gpg or
-        # ssh-agent, and a locked agent must not hang the Stop. A failed
-        # signature is not retried unsigned -- that is the commit the push
-        # guard refuses; the state stays staged for the next Stop and the
-        # verdict says why.
-        if git_bounded(30, "-c", f"user.name={os.environ.get('GIT_AUTHOR_NAME') or 'Claude'}",
-                       "-c", f"user.email={os.environ.get('GIT_AUTHOR_EMAIL') or 'noreply@anthropic.com'}",
-                       "-c", f"commit.gpgsign={self.sign_if_key('.')}",
-                       "commit", "-q", "-m",
-                       f"State: {self.work_repo} session {self.sid[:8]} ({self.today})") != 0:
-            self.set_verdict("state-repo commit failed")
-            return
+        # Everything under state/ goes in, the board's items/ included. The
+        # commit takes the index as it stands, so a path staged by hand rides
+        # it as staged; the second commit then takes the rest of that file.
+        git_ok("add", "state/")
+        committed = False
+        if not git_ok("diff", "--cached", "--quiet"):
+            # Bounded like the salvage commit: signing calls out to gpg or
+            # ssh-agent, and a locked agent must not hang the Stop. A failed
+            # signature is not retried unsigned -- that is the commit the push
+            # guard refuses; the state stays staged for the next Stop and the
+            # verdict says why.
+            if self.commit(f"State: {self.work_repo} session {self.sid[:8]} ({self.today})") != 0:
+                self.set_verdict("state-repo commit failed")
+                return
+            committed = True
+
+        # Then every other changed or untracked path, staged by path and
+        # committed through the clone's own pre-commit hook, its secret scan.
+        # Refused, the paths are unstaged and named; the first commit stands.
+        if files:
+            self.stage(files, "add")
+            if not git_ok("diff", "--cached", "--quiet"):
+                if self.commit(f"State: {self.work_repo} session {self.sid[:8]} files ({self.today})") == 0:
+                    committed = True
+                else:
+                    self.stage(files, "reset", "-q")
+                    self.note_held(SR, [(x, "the second commit refused") for x in files])
+            self.drop_state_dirt()
+        if not committed:
+            return  # nothing changed
 
         # Debounce the push, not the commit: every Stop still commits locally
         # (cheap, never lost), but this clone pushes at most once per debounce

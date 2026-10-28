@@ -30,9 +30,11 @@ import json
 import math
 import os
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 
 sys.dont_write_bytecode = True
@@ -413,6 +415,50 @@ def crossings(sd):
     return out
 
 
+HELD_HEADING = "## Held back from the state commit"  # stop-continuity.py writes it
+HELD_DAYS = 14  # how far back the checkpoints are read
+
+
+def held_back(sr, sd):
+    """The files the Stop hook's state commit held back on this clone and
+    still uncommitted, for this session to raise. Read from the recent
+    checkpoints that name this clone (hostname and path); one on another
+    clone is not this session's to fix."""
+    d = os.path.join(sd, "log", "auto")
+    if not os.path.isdir(d):
+        return ""
+    clone = f"Clone: `{socket.gethostname()}:{sr}`"
+    since = time.time() - HELD_DAYS * 86400
+    why = {}
+    for f in sorted(flat_and_sharded(d, "*.md"), key=lambda f: mtime_ns(f)):  # oldest first: newest reason wins
+        if mtime_ns(f) < since * 1e9:
+            continue
+        lines = read_text(f).split("\n")
+        sec = sed_range(lines, lambda x: x == HELD_HEADING, lambda x: x.startswith("## ") and x != HELD_HEADING)
+        if clone not in sec:
+            continue
+        for x in sec:
+            if x.startswith("- `") and "` — " in x:
+                path, reason = x[3:].split("` — ", 1)
+                why[path] = reason
+    if not why:
+        return ""
+    try:
+        st = subprocess.run(["git", "-C", sr, "status", "--porcelain", "-z", "--untracked-files=all"],
+                            stdin=subprocess.DEVNULL, capture_output=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    dirty = {x[3:].decode("utf-8", "surrogateescape") for x in st.split(b"\0") if len(x) > 3}
+    rows = [(p, r) for p, r in sorted(why.items()) if p in dirty]
+    if not rows:
+        return ""
+    return ("\n### Held back from the state commit\n\n"
+            + "".join(f"- `{p}` — {r}\n" for p, r in rows[:10])
+            + (f"- +{len(rows) - 10} more\n" if len(rows) > 10 else "")
+            + "\nWhichever session left these, offer the user a way to resolve each: "
+              "commit it, scrub it, move it or gitignore it.\n")
+
+
 def main():
     home = os.environ.get("HOME") or os.path.expanduser("~")
     lead = sync_status_line(home)
@@ -424,7 +470,7 @@ def main():
         sd = os.path.join(sr, "state", "global")
         pull(sr)
         text = lead + PREAMBLE.format(sr=sr) + "\n" + board_view(home)
-        text += checkpoints(sd) + decision_load(sd) + crossings(sd)
+        text += held_back(sr, sd) + checkpoints(sd) + decision_load(sd) + crossings(sd)
     hookio.emit(hookio.context("SessionStart", text), ascii=False)
 
 

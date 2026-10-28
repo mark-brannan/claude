@@ -28,6 +28,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -1049,6 +1050,92 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(subject(), "State: work session f1f2f3f4", "14.7, crashed: the state commit is made and pushed")
         self.has("14.7, crashed: the checkpoint says it did not run", r"^failed: stop-item.py did not run$", ck14("f1f2f3f4"))
 
+    def state_paths(self):
+        # --- the second commit: every other changed path, bar what is held back (12.5, 12.6)
+        w = self.world("paths12")
+        _, WORK = w.make_work()
+        _, SR = w.make_state("state12")
+        (SR / ".gitignore").write_text("scratch/\n")
+        w.gitq(SR, "add", ".gitignore")
+        w.gitq(SR, "commit", "-m", "ignore")
+        # The clone's own pre-commit scan, faked: refuses a staged file holding FAKE-LEAK.
+        hook = SR / ".git" / "hooks" / "pre-commit"
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text("#!/bin/sh\ngit diff --cached --name-only -z | xargs -0 -r grep -l FAKE-LEAK -- "
+                        ">/dev/null 2>&1 && exit 1\nexit 0\n")
+        hook.chmod(0o755)
+        w.gitq(SR, "config", "stopContinuity.preCommitGate", "true")
+        for rel, text in (("drafts/note.md", "a draft\n"), ("scratch/x", "ignored\n")):
+            (SR / rel).parent.mkdir(parents=True, exist_ok=True)
+            (SR / rel).write_text(text)
+        with open(SR / "drafts" / "big.bin", "wb") as fh:
+            fh.truncate(5 * 1024 * 1024 + 1)
+
+        def committed(rel, rev="HEAD"):
+            return subprocess.run(["git", "-C", str(SR), "cat-file", "-e", f"{rev}:{rel}"], env=w.base,
+                                  capture_output=True).returncode == 0
+
+        def subjects():
+            return [re.sub(r" \(.*", "", x) for x in w.git(SR, "log", "-2", "--format=%s").split("\n")]
+
+        def ck():
+            return sorted(glob.glob(f"{SR}/state/global/log/auto/*/*{SID[:8]}.md"))[0]
+
+        clone = re.escape(f"Clone: `{socket.gethostname()}:{SR}`")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.assertEqual(subjects(), ["State: work session stopcont files", "State: work session stopcont"],
+                         "12.5: two commits, state/ first")
+        self.assertTrue(committed("drafts/note.md"), "12.5: a new file outside state/ is in the second commit")
+        self.assertFalse(committed("drafts/note.md", "HEAD~1"), "12.5: and not in the first")
+        self.assertFalse(committed("scratch/x"), ".gitignore is respected")
+        self.assertFalse(committed("drafts/big.bin"), "12.6: a file over 5 MB is not committed")
+        self.assertEqual(w.git(SR, "diff", "--cached", "--name-only"), "", "12.6: nor left staged")
+        shown = w.git(SR, "show", f"HEAD~1:{os.path.relpath(ck(), SR)}")
+        self.assertRegex(shown, r"(?m)^- `drafts/big\.bin` — over 5 MB$", "12.6: the checkpoint names it and why")
+        self.assertRegex(shown, f"(?m)^{clone}$", "12.6: and its clone, in the first commit")
+
+        # A second commit the pre-commit scan refuses: unstaged, the state/ commit stands.
+        (SR / ".git" / "claude-last-state-push").unlink(missing_ok=True)
+        (SR / "drafts" / "leak.md").write_text("token FAKE-LEAK\n")
+        (SR / "state" / "global" / "later.md").write_text("later\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.assertTrue(committed("state/global/later.md"), "12.6: the state/ commit stands")
+        self.assertEqual(subjects()[0], "State: work session stopcont", "12.6: and is the last commit")
+        self.assertFalse(committed("drafts/leak.md"), "12.6: the refused file is not committed")
+        self.assertEqual(w.git(SR, "diff", "--cached", "--name-only"), "", "12.6: and is unstaged")
+        self.has("12.6: the checkpoint names it and why", r"^- `drafts/leak\.md` — the second commit refused$", ck())
+        self.has("12.6: once over 5 MB, still", r"^- `drafts/big\.bin` — over 5 MB$", ck())
+        self.has("12.6: and the clone, once", f"^{clone}$", ck())
+        self.assertEqual(read(ck()).count("## Held back"), 1, "one section for both reasons")
+
+        # Cloud: the verdict, set before the second commit, drops "state repo
+        # dirty" once that commit took all of it.
+        for rel in ("drafts/leak.md", "drafts/big.bin"):
+            (SR / rel).unlink()
+        (SR / "drafts" / "cloud.md").write_text("cloud\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR, CLAUDE_CODE_REMOTE="true")
+        self.assertTrue(committed("drafts/cloud.md"), "cloud: the draft is committed")
+        self.has("cloud: the checkpoint has a verdict", r"^\*\*Verdict:\*\* ", ck())
+        self.assertNotIn("state repo dirty", read(ck()), "cloud: and it does not call the state repo dirty")
+        self.assertNotIn("Held back", read(ck()), "nothing held back: no section")
+
+        # No gate declared, or none to run: nothing outside state/ is committed.
+        for gate in ("unset", "no hook"):
+            (SR / ".git" / "claude-last-state-push").unlink(missing_ok=True)
+            if gate == "unset":
+                w.gitq(SR, "config", "--unset", "stopContinuity.preCommitGate")
+            else:
+                w.gitq(SR, "config", "stopContinuity.preCommitGate", "true")
+                hook.unlink()
+            (SR / "drafts" / "ungated.md").write_text(f"{gate}\n")
+            (SR / "state" / "global" / "later.md").write_text(f"{gate}\n")
+            w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+            self.assertEqual(subjects()[0], "State: work session stopcont", f"no gate, {gate}: the state/ commit only")
+            self.assertFalse(committed("drafts/ungated.md"), f"no gate, {gate}: the file is not committed")
+            self.assertEqual(w.git(SR, "diff", "--cached", "--name-only"), "", f"no gate, {gate}: nor staged")
+            self.has(f"no gate, {gate}: the checkpoint names it and why",
+                     r"^- `drafts/ungated\.md` — no pre-commit gate in this clone$", ck())
+
     def state_debounce(self):
         # --- the push debounce holds across a pull, however many sessions stop
         # The stamp used to be state/global/.last-state-push, tracked like any
@@ -1215,8 +1302,8 @@ class StopContinuityTest(unittest.TestCase):
         self.assertNotIn("state repo", box(out), "incident, pushed: the 📦 line never names the state repo")
 
     SECTIONS = ("verdict_basics", "verdict_branches", "resume_and_pickup", "session_item", "curia_digests",
-                "salvage", "state_push", "state_signing", "state_items", "state_debounce", "live_lock",
-                "incident", "critical_review")
+                "salvage", "state_push", "state_signing", "state_items", "state_paths", "state_debounce",
+                "live_lock", "incident", "critical_review")
 
     def test_term_stops_the_child_before_the_lock_comes_off(self):
         # A child bounded() started runs in a session of its own, so a TERM
