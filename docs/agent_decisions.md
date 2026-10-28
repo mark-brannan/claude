@@ -562,3 +562,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t171336z
 - decision_verbs checks only dated list items in a decisions file, so its header may say whose the lines are Undo: drop the DECISION_LINE filter ([#352](https://github.com/mark-brannan/claude/pull/352))
+
+### 20261028t171341z
+- decision_verbs is off unless a repo's budgets config turns it on Undo: pass on=True to _rule ([#352](https://github.com/mark-brannan/claude/pull/352))
