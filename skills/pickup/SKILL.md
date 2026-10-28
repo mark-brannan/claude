@@ -286,7 +286,8 @@ do not paraphrase it into a second version that can drift from this one.
    cards: there the reference goes on the card's log only. A refused label
    is retried once, with the clean review named, then the driver carries on
    and never hands the label to the user. The review is the CI bot's; the
-   driver works its threads and starts no reviewer of its own. A diff outside
+   driver works its threads and starts no reviewer of its own, and a head
+   the bot never reviewed is not clean: the labels wait. A diff outside
    the brief gets none of the three and waits
    for the user. A gated child, or a parent logging `lane=gated`, keeps
    the user's merge, and every other session keeps the rule above.

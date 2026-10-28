@@ -97,7 +97,9 @@ goes stale after 1h, and the next claim on that PR collects it.
 
 This session drives one round per worked PR: a fix against the review
 CI already posted (claude[bot], critical-review). It starts no reviewer
-of its own. A PR's earlier rounds are the `prt estimate` lines on its
+of its own, and a head the bot never reviewed (a draft, a diff under its
+skip line, its cap or its budget pause) is not clean: hand it off
+`unreviewed`, with no fixer. A PR's earlier rounds are the `prt estimate` lines on its
 item from earlier runs. After three, if the bot's threads still hold an
 open `[blocker]` or `[should]`, park the PR on a `human-ruling` card
 through card-write naming those threads, list it under Not ready as
@@ -129,7 +131,7 @@ you under sid <sid>; you release that claim at the end.
    here: past that, label the PR `fixup-hard`, leave its one comment and
    go to step 7. Your context budget is 110k, hard; past about 95k, push
    what you have and report.
-3. Threads, the reviewer's and the bots': read each unresolved one, fix
+3. Threads, the CI review's and the other bots': read each unresolved one, fix
    it or state why not, reply on it with the evidence (commit, file and
    line), then resolve it by id, one at a time, in its own call:
    `gh-resolve-thread <thread id>`, never a raw `gh api graphql`.

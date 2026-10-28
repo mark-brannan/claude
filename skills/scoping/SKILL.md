@@ -283,7 +283,8 @@ the rulings to date:
   The worker builds, tests, gets the gates green, posts the PR, sees CI
   green and marks it ready. CI runs the critical review (claude[bot]) on
   the PR, and its comments are the round's review; the driver starts no
-  reviewer of its own. A fresh fixer works the
+  reviewer of its own, and a head the bot skipped has had no round. A
+  fresh fixer works the
   comments to `/pickup` §6. A round is one review and one fixer pass;
   three rounds at most. A PR past the third, or one a fixer labels
   `fixup-hard`, is parked on an agora card and the driver moves on. The

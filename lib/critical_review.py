@@ -13,8 +13,9 @@ hook recomputes its rows (by=user) from the transcript every time it fires;
 prt's rows are keyed by agent id. Either rewrite replaces its own rows and
 keeps the other's, under a lock on the file. Imported; its one direct use is
 `critical_review.py reviewer <PR> [--coder <model>]`, which the skill runs to
-learn the coder's families and a reviewer outside them; the rows read that
-printed line back from the transcript. Stdlib only.
+learn the coder's families and the family an independent review would take;
+the review itself runs on the session's model (the row's `model`), and the
+rows read that printed line back from the transcript. Stdlib only.
 """
 import collections
 import datetime
