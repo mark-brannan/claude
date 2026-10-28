@@ -48,8 +48,7 @@ is under Interfaces.
   (job 9's 10-minute miss).
 - Scripts called: `branch-home-gate.py --check` prints `home:<…>` or
   `unverified:<…>`, else nothing; `claim-stamp.py refresh|release`;
-  `metrics-rollup.sh`; `gitleaks` (job 12), looked up on PATH, absent is not
-  an error. The transcript's fields are whatever
+  `metrics-rollup.sh`. The transcript's fields are whatever
   `session-metrics.jq` emits, which is the contract for job 2.
 - The push stamp is the literal `$SR/.git/claude-last-state-push` in the
   state repo, on purpose: a worktree's git dir would not do.
@@ -214,21 +213,22 @@ verdict gets the reason.
 
 ## 12. Commit the state repo
 
-Not a git repo: nothing committed. Otherwise every path git reports changed
-or untracked in the state repo is staged by path, `.gitignore` respected,
-except a held-back path: a file over 5 MB, or one `gitleaks detect --no-git`
-flags, run over the changed paths not already held back for size, 30 s in
-all. With no scanner on PATH, or a scan that times out or errors, nothing is
-each one with its reason and the clone that holds it (hostname and the state
-repo's path), and the next session on
-each one with its reason and the clone that holds it, and the next session on
-that clone gets a continuity brief (`session-start-continuity.py`) that names
-it and asks that session to offer the user a way to resolve it (commit, scrub,
-move or ignore), however the file got there. A session on another clone is
-asked nothing. Nothing staged, the hook exits with
-no commit and no push. The commit: author `Claude <noreply@anthropic.com>` unless the
-environment sets one, signed when the clone has `user.signingkey`, 30 s,
-message `State: <repo> session <id8> (<date>)`. A failed commit is never
+Not a git repo: nothing committed. Otherwise two commits. The first is
+`git add state/`, the board's `items/` included. The second stages by path
+every other path git reports changed or untracked, `.gitignore` respected,
+except a file over 5 MB, and commits it through the state repo's own
+pre-commit secret scan, message `State: <repo> session <id8> files (<date>)`.
+A refused second commit is unstaged, and the first stands. The checkpoint
+names each held-back path with its reason (over 5 MB, or the second commit
+refused) and the clone that holds it (hostname and the state repo's path).
+The next session on that clone gets a continuity brief
+(`session-start-continuity.py`) that names it and asks that session to offer
+the user a way to resolve it (commit, scrub, move or ignore), however the
+file got there. A session on another clone is asked nothing. Nothing staged,
+the hook exits with no commit and no push. Each commit: author
+`Claude <noreply@anthropic.com>` unless the environment sets one, signed when
+the clone has `user.signingkey`, 30 s; the first's message is
+`State: <repo> session <id8> (<date>)`. A failed first commit is never
 retried unsigned: the state stays staged for the next Stop and the verdict
 says why.
 
@@ -312,7 +312,7 @@ on them.
 - Whether a lock-wait failure (job 5) should say more than the placeholder
   verdict.
 - What a kill at 290 s should leave. The per-job timeouts (90 s lock, 60 s
-  fetches, 30 s commits, 30 s scan, 120 s pushes and pulls) add up past it.
+  fetches, 30 s commits, 120 s pushes and pulls) add up past it.
 - What replaces job 8's release and refresh once the store's claim holds:
   `work-item release` writes `status=ready`, which puts the item in grind's
   queue, and a claim goes stale two hours after its holder's last line,
@@ -396,10 +396,9 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 12.2 | a new file under `state/global/items/` | Stop | it is in the state commit | test |
 | 12.3 | nothing changed in the state repo | Stop | no commit, no push | code |
 | 12.4 | signing fails | Stop | no unsigned commit; state staged; verdict `state-repo commit failed` | code |
-| 12.5 | a new file outside `state/`, under 5 MB, no secret | Stop | it is in the state commit | card 1793161639e876a21f |
-| 12.6 | a file over 5 MB; or one `gitleaks` flags | Stop | not staged; the rest committed; the checkpoint names it and its reason | card 1793161639e876a21f |
+| 12.5 | a new file outside `state/`, under 5 MB, no secret | Stop | it is in the second commit | card 1793161639e876a21f |
+| 12.6 | a file over 5 MB; or a second commit the pre-commit scan refuses | Stop | not committed; the `state/` commit stands; the checkpoint names it, its reason and its clone | card 1793161639e876a21f |
 | 12.7 | 12.6 | the next session on the same clone starts; or one on another clone | its continuity brief names the file and asks it to offer the user a resolution; or asks nothing | card 1793161639e876a21f |
-| 12.8 | no `gitleaks` on PATH, or a scan that times out or errors; a new file | Stop | staged and committed; the checkpoint says the secret scan did not run; the verdict is unchanged | card 1793161639e876a21f |
 | 13.1 | a push under 300 s ago from this clone | Stop | committed, not pushed | test |
 | 13.2 | 13.1, the push stamp brought in by a pull | Stop | the window still holds | test |
 | 13.3 | cloud, archivable, a push under 300 s ago | Stop | pushed | code |
