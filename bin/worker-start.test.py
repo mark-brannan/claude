@@ -6,6 +6,7 @@
 # worktree one detached; the issue or PR is read last; a failing step stops
 # the run with its code. A real git repo with a local "origin"; gh is a stub.
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,7 @@ def sh(*cmd, cwd=None):
 class WorkerStart(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         origin, self.repo = self.tmp / "origin", self.tmp / "repo"
         sh("git", "init", "-q", "-b", "main", str(origin))
         sh("git", "-C", str(origin), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
@@ -41,9 +43,9 @@ class WorkerStart(unittest.TestCase):
         self.log = self.tmp / "gh.log"
         self.env = dict(os.environ, PATH="%s:%s" % (bindir, os.environ["PATH"]), GH_LOG=str(self.log))
 
-    def run_tool(self, *args):
+    def run_tool(self, *args, cwd=None):
         return subprocess.run([sys.executable, str(TOOL), "-C", str(self.repo), *args],
-                              env=self.env, text=True, capture_output=True)
+                              env=self.env, text=True, capture_output=True, cwd=cwd)
 
     def branch(self, where=None):
         return sh("git", "-C", str(where or self.repo), "rev-parse", "--abbrev-ref", "HEAD").strip()
@@ -69,6 +71,8 @@ class WorkerStart(unittest.TestCase):
         r = self.run_tool("--head", "feature")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.branch(), "feature")
+        self.assertEqual(sh("git", "-C", str(self.repo), "rev-parse", "HEAD"),
+                         sh("git", "-C", str(self.repo), "rev-parse", "origin/feature"))
 
     def test_pr_in_worktree_is_detached_and_prints_pr(self):
         wt = self.tmp / "wt"
@@ -76,6 +80,16 @@ class WorkerStart(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.branch(wt), "HEAD")
         self.assertEqual(self.gh_calls()[-1], "gh pr view 5 --comments")
+
+    def test_relative_worktree_is_the_callers_not_the_repos(self):
+        r = self.run_tool("--new", "fix-r", "--worktree", "wt", cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((self.tmp / "wt").is_dir())
+        self.assertFalse((self.repo / "wt").exists())
+
+    def test_gh_runs_in_the_repo_whatever_the_callers_cwd(self):
+        r = self.run_tool("--new", "fix-c", "--issue", "7", cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_failing_step_stops_the_run(self):
         r = self.run_tool("--new", "fix-z", "--base", "origin/nope", "--issue", "7")

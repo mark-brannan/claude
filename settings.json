@@ -41,7 +41,7 @@
       "Bash(~/.claude/bin/worklist)",
       "Bash(~/.claude/bin/worklist *)",
       "Bash(~/.claude/bin/work-item *)",
-    "Bash(~/.claude/bin/worker-start *)",
+      "Bash(~/.claude/bin/worker-start *)",
       "Bash(/home/solace/.claude/bin/work-item *)"
     ],
     "deny": [

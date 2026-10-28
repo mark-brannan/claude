@@ -19,7 +19,7 @@
 # Each step prints as `$ <command>` before it runs; the first that fails
 # stops the run with its exit code. 2 on bad arguments.
 import argparse
-import json
+import os
 import shlex
 import subprocess
 import sys
@@ -52,6 +52,8 @@ def main(argv):
     for v in (a.repo, a.new, a.head, a.base, a.worktree):
         if v and v.startswith("-"):
             p.error("an argument may not start with -: %s" % v)
+    if a.worktree:
+        a.worktree = os.path.abspath(a.worktree)
     git = ["git", "-C", a.repo]
     run(git + ["fetch", "-q", "origin"])
     if a.pr:
