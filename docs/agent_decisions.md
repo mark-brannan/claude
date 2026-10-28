@@ -529,3 +529,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t010206z
 - With no state repo, localise-settings drops private_terms_file so guard-private-terms is inert (the empty shim), rather than keeping a dead path that denies every public post Undo: revert the del branch in bin/localise-settings ([#338](https://github.com/mark-brannan/claude/issues/338)) (no PR, branch claude/cloud-ci-session-confusion-fc6fa9)
+
+### 20261028t044105z
+- old private-terms.txt not ported to redacted/blocked term files Undo: copy the terms into the two files ([#345](https://github.com/mark-brannan/claude/pull/345))
