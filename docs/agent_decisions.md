@@ -559,3 +559,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t062617z
 - A clone declares its pre-commit gate with git config stopContinuity.preCommitGate true; the hook must also exist and be executable. Nothing in a hook's file says whether it can refuse. Undo: rename the key in has_gate() and its test ([#347](https://github.com/mark-brannan/claude/pull/347))
+
+### 20261028t171336z
+- decision_verbs checks only dated list items in a decisions file, so its header may say whose the lines are Undo: drop the DECISION_LINE filter ([#352](https://github.com/mark-brannan/claude/pull/352))
