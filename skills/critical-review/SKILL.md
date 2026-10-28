@@ -42,9 +42,13 @@ no sub-agent and no Agent tool of your own, and never `--comment`, which
 posts unsigned. The harness keeps it in this session where the host has
 a ReportFindings tool (settings.json sets `CLAUDE_CODE_REPORT_FINDINGS`
 for that) and forks it elsewhere; either way its findings come back to
-you. The level is the diff's changed lines, additions plus deletions
-(`gh pr view <PR> --json additions,deletions`): under 100 `low`, under
-500 `medium`, else `high`. Weigh each finding it returns against the base
+you. The level is `high` when any changed path is one `bin/prt`'s desk
+set names (a governing document or a safety path) or a skill's
+`SKILL.md`, whatever the size; otherwise it is the diff's changed lines,
+additions plus deletions (`gh pr view <PR> --json additions,deletions`):
+under 100 `low`, under 500 `medium`, else `high`. The line cuts are a
+stand-in until a measured rule replaces them (see the PR that set them).
+Weigh each finding it returns against the base
 instructions, then post the ones that stand yourself. Every comment is signed as
 an agent's, the way the code rules say, tagged `[blocker]`, `[should]`
 or `[nit]`, with the failure scenario and the wanted fix.
