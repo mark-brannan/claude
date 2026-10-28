@@ -413,6 +413,18 @@ def crossings(sd):
     return out
 
 
+def held_back(sr):
+    """What the last state commit held back, for this session to raise."""
+    rows = state.held_back(sr)
+    if not rows:
+        return ""
+    return ("\n### Held back from the state commit\n\n"
+            + "".join(f"- `{p}` — {why}\n" for p, why in rows[:10])
+            + (f"- +{len(rows) - 10} more\n" if len(rows) > 10 else "")
+            + "\nWhichever session wrote these, offer the user a way to resolve each: "
+              "commit it, scrub it, move it or gitignore it.\n")
+
+
 def main():
     home = os.environ.get("HOME") or os.path.expanduser("~")
     lead = sync_status_line(home)
@@ -424,7 +436,7 @@ def main():
         sd = os.path.join(sr, "state", "global")
         pull(sr)
         text = lead + PREAMBLE.format(sr=sr) + "\n" + board_view(home)
-        text += checkpoints(sd) + decision_load(sd) + crossings(sd)
+        text += held_back(sr) + checkpoints(sd) + decision_load(sd) + crossings(sd)
     hookio.emit(hookio.context("SessionStart", text), ascii=False)
 
 

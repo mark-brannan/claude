@@ -1080,6 +1080,68 @@ class Stop:
             self.curia_floor(thread, model)
 
     # ------------------------------------------------------------ state repo
+    @staticmethod
+    def stage(paths, *verb):
+        """git <verb> over paths, literally, fed NUL-separated on stdin; one at
+        a time when the batch fails, as it does over a path gone since."""
+        def run(ps):
+            return gitrun.run("--literal-pathspecs", *verb, "--pathspec-from-file=-", "--pathspec-file-nul",
+                              input=b"\0".join(x.encode("utf-8", "surrogateescape") for x in ps),
+                              binary=True).returncode == 0
+        if paths and not run(paths):
+            for x in paths:
+                run([x])
+
+    # held_back -- [(path, reason)] for the paths the state commit leaves
+    # out: over 5 MB, or flagged by gitleaks under the repo's own config. One
+    # scan over a copy of the candidates, bounded like the other calls out.
+    # A scan that cannot run clears nothing new: state/ commits unscanned, as
+    # it always has, and every path outside it waits for a scan that runs.
+    @staticmethod
+    def held_back(SR, paths):
+        held, scan = {}, []
+        for x in paths:
+            try:
+                st = os.lstat(x)
+            except OSError:
+                continue  # a deletion: nothing to scan
+            if not os.path.isfile(x) or os.path.islink(x):
+                continue
+            if st.st_size > state.HELD_BACK_BYTES:
+                held[x] = "over 5 MB"
+            else:
+                scan.append(x)
+        if not scan:
+            return sorted(held.items())
+        gl, rc, found = shutil.which("gitleaks"), 127, []
+        tmp = tempfile.mkdtemp(prefix="claude-state-scan.", dir=tmpdir())
+        src, rep = os.path.join(tmp, "src"), os.path.join(tmp, "report.json")
+        try:
+            if gl:
+                for x in scan:
+                    os.makedirs(os.path.dirname(os.path.join(src, x)), exist_ok=True)
+                    shutil.copyfile(x, os.path.join(src, x))
+                cfg = ["-c", os.path.join(SR, ".gitleaks.toml")] if os.path.isfile(".gitleaks.toml") else []
+                rc = bounded([gl, "detect", "--no-git", "--no-banner", "--redact", "-l", "error", "--exit-code", "3",
+                              "-f", "json", "-r", rep, "-s", src, *cfg], 30)[0]
+            if rc == 3:
+                with open(rep, encoding="utf-8", errors="surrogateescape") as fh:
+                    found = json.load(fh)
+        except (OSError, ValueError):
+            rc = 1
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        for f in found if isinstance(found, list) else []:
+            name = f.get("File") if isinstance(f, dict) else None
+            rel = os.path.relpath(os.path.join(src, name), src) if isinstance(name, str) else None
+            if rel in set(scan):
+                held.setdefault(rel, f"secret scan: {f.get('Description') or f.get('RuleID') or 'flagged'}")
+        if rc not in (0, 3):
+            for x in scan:
+                if not x.startswith("state/"):
+                    held[x] = "secret scan did not run"
+        return sorted(held.items())
+
     def state_repo_commit(self):
         SR = state.state_repo()
         if SR is None:
@@ -1113,8 +1175,28 @@ class Stop:
                     self.set_verdict(f"state repo not committed (git filter `{f}` unconfigured)")
                     return
 
-        # Everything under state/ goes in, the board's items/ included.
-        git_ok("add", "state/")
+        # Every changed or untracked path goes in, .gitignore respected, bar
+        # what is held back: one flagged file would fail the whole commit at
+        # the state repo's secret scan, so it stays out and the rest commit.
+        # Staged by path, never `add -A`, so nothing unscanned rides along.
+        p = gitrun.run("-c", "core.quotePath=off", "ls-files", "-z", "--modified", "--others", "--deleted",
+                       "--exclude-standard", binary=True)
+        paths = sorted({x.decode("utf-8", "surrogateescape") for x in p.stdout.split(b"\0") if x}) \
+            if p.returncode == 0 else []
+        held = self.held_back(SR, paths)
+        try:
+            state.write_held_back(SR, held)
+        except OSError:
+            pass
+        if held:
+            append(self.ckpt, "\n## Held back from the state commit\n\n"
+                   + "".join(f"- `{x}` — {why}\n" for x, why in held))
+            ck = os.path.relpath(self.ckpt, SR)
+            if not ck.startswith("../") and ck not in paths:
+                paths.append(ck)
+        out = {x for x, _ in held}
+        self.stage(sorted(out), "reset", "-q")
+        self.stage([x for x in paths if x not in out], "add")
         if git_ok("diff", "--cached", "--quiet"):
             return  # nothing changed
 
@@ -1130,6 +1212,11 @@ class Stop:
                        f"State: {self.work_repo} session {self.sid[:8]} ({self.today})") != 0:
             self.set_verdict("state-repo commit failed")
             return
+        # The verdict was set before this commit took the state repo's dirt
+        # outside state/; recomputed when that dirt was its reason and is gone.
+        if "state repo dirty" in (self.reasons or "") and not state.dirty_paths(SR).rstrip("\n"):
+            self.reasons = None
+            self.set_verdict()
 
         # Debounce the push, not the commit: every Stop still commits locally
         # (cheap, never lost), but this clone pushes at most once per debounce

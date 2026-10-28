@@ -4,7 +4,8 @@
 # go quiet and nothing says why.
 #
 # Rows: the live ~/.claude clone's branch and sha against origin/main, its
-# dirty files, the hooks that traced a swallowed error in the last day, this
+# dirty files, the hooks that traced a swallowed error in the last day, the
+# state repo's files untracked for over a day, this
 # session's hook records by event and the last one, the metrics cache's last
 # event, and the metrics hook run by hand on this session's transcript, its
 # stderr kept. The hand run writes to a scratch
@@ -80,6 +81,26 @@ def dirty_row():
     if not paths:
         return ("ok", "clean")
     return ("warn", "%d: %s" % (len(paths), ", ".join(paths[:5]) + (" ..." if len(paths) > 5 else "")))
+
+
+def stale_untracked_row(sr, now):
+    """State-repo files untracked for over a day: the Stop hook commits
+    everything else, so these are what it holds back, or what it never ran on."""
+    if not sr:
+        return ("ok", "no state repo here")
+    p = gitrun.run("-C", sr, "ls-files", "-z", "--others", "--exclude-standard", errors="surrogateescape")
+    if p.returncode:
+        return ("bad", "git ls-files failed in %s" % sr)
+    old = []
+    for path in filter(None, p.stdout.split("\0")):
+        try:
+            if now - os.lstat(os.path.join(sr, path)).st_mtime > 86400:
+                old.append(path)
+        except OSError:
+            pass
+    if not old:
+        return ("ok", "none over a day")
+    return ("warn", "%d: %s" % (len(old), ", ".join(sorted(old)[:5]) + (" ..." if len(old) > 5 else "")))
 
 
 def hook_records(transcript):
@@ -250,6 +271,7 @@ def main(argv):
             ("hook errors", *hook_errors_row(state_dir()))]
     transcript, sid = find_transcript(args.session)
     now = datetime.now(timezone.utc)
+    rows.append(("state repo untracked", *stale_untracked_row(state.state_repo(), now.timestamp())))
     if transcript:
         recs = hook_records(transcript)
         records, last = hook_rows(recs, now)

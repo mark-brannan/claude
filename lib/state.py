@@ -157,7 +157,7 @@ def _pwd_p(p):
 # dirty_paths -- `git status --porcelain` for the tree, less what the hooks
 # themselves own. In the state repo that is all of state/: the hooks write
 # metrics there on every event, this session's and every other live one's,
-# and stop-continuity.py commits them with `git add state/`. A session run
+# and stop-continuity.py commits them on every Stop. A session run
 # from the state repo was "worktree dirty" on every Stop, 82 of 82 recorded,
 # over files no one but a hook could commit.
 def is_state_repo(root):
@@ -559,22 +559,28 @@ def _porcelain_paths(text):
 # out of the verdict is right; leaving them unsaid is not: a hand-off or card
 # still on disk is worth knowing about. Metrics are counted, everything else
 # is named. Then, off the cloud, the files outside state/ (a draft, a README
-# edit): archiving leaves the clone and them in place, but no hook commits
-# them. In the cloud those are the verdict's "state repo dirty" instead.
+# edit) written since: archiving leaves the clone and them in place, and the
+# next Stop commits them. In the cloud those are the verdict's "state repo
+# dirty" instead. What the commit held back is held_back_note's, not this.
 # "" elsewhere, and when nothing is buffered.
 def buffered_state(root):
     if not is_state_repo(root):
         return ""
     lines = []
-    stray = [] if is_cloud() else _porcelain_paths(dirty_paths(root))
+    held = {p for p, _ in held_back(root)}
+    stray = [] if is_cloud() else [
+        p for p in _porcelain_paths(_git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain",
+                                         "--untracked-files=all", "--", ".", ":(exclude)state/")[1])
+        if p not in held]
     if stray:
         lines.append(f"→ state repo: {_shown(stray)} outside state/. "
-                     "Safe to archive: the clone keeps them. The Stop hook commits only state/, "
-                     "so commit these by hand to keep them.")
+                     "Safe to archive: the clone keeps them, and the next Stop commits them.")
     text = _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain",
                 "--untracked-files=all", "--", "state/")[1]
     paths = []
     for p in _porcelain_paths(text):
+        if p in held:
+            continue
         p = p[len("state/global/"):] if p.startswith("state/global/") else p
         p = p[len("state/"):] if p.startswith("state/") else p
         paths.append(p)
@@ -585,6 +591,57 @@ def buffered_state(root):
             named = f"{named + ', ' if named else ''}+ {nm} metrics file{'' if nm == 1 else 's'}"
         lines.insert(0, f"→ buffered in the state repo, not committed yet (the next Stop commits it): {named}")
     return "\n".join(lines)
+
+
+# held_back -- what the Stop hook's state commit left unstaged, and why: a
+# file over 5 MB, or one the secret scan flagged or could not clear. Kept in
+# the clone's git dir, never the tracked tree, and rewritten by every commit
+# attempt; the 📦 notice and the next session's brief read it. A path gone
+# from disk since is dropped.
+HELD_BACK_BYTES = 5 * 1024 * 1024
+
+
+def held_back_file(sr):
+    return f"{sr}/.git/claude-held-back.json"
+
+
+def held_back(sr=None):
+    """[(path, reason)] for the held-back paths still on disk, relative to the clone."""
+    sr = sr or state_repo()
+    if not sr:
+        return []
+    try:
+        with open(held_back_file(sr), encoding="utf-8", errors="surrogateescape") as fh:
+            rows = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(rows, list):
+        return []
+    return [(r["path"], r["reason"]) for r in rows
+            if isinstance(r, dict) and isinstance(r.get("path"), str) and isinstance(r.get("reason"), str)
+            and os.path.lexists(os.path.join(sr, r["path"]))]
+
+
+def write_held_back(sr, rows):
+    """rows as held_back answers them; none removes the file."""
+    f = held_back_file(sr)
+    if not rows:
+        try:
+            os.unlink(f)
+        except OSError:
+            pass
+        return
+    atomic.write(f, json.dumps([{"path": p, "reason": r} for p, r in rows]) + "\n")
+
+
+def held_back_note(sr=None):
+    """The 📦 line for held_back; "" when nothing is held back."""
+    rows = held_back(sr)
+    if not rows:
+        return ""
+    more = f", +{len(rows) - 3} more" if len(rows) > 3 else ""
+    return (f"→ state repo: held back from the commit: {', '.join(f'{p} ({r})' for p, r in rows[:3])}{more}. "
+            "Commit, scrub, move or gitignore each by hand.")
 
 
 # verdict_explain -- one line per reason the verdict names: what is at risk,
@@ -618,8 +675,8 @@ _EXPLAIN = (
      "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries."),
 )
 _DIRTY_TAIL = "Archive the worktree only after the agent commits them."
-_DIRTY_TAIL_CLOUD = ("This cloud VM's clone dies with the VM, and the Stop hook commits only state/: "
-                     "commit these and push them to main, or they are lost.")
+_DIRTY_TAIL_CLOUD = ("This cloud VM's clone dies with the VM, and the Stop hook has not committed these "
+                     "(held back, or written since): commit these and push them to main, or they are lost.")
 
 
 def _shown(paths):

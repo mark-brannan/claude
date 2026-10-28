@@ -1153,9 +1153,9 @@ class Hook:
             why = state.verdict_explain(self.verdict, self.work_root)
             if why:
                 self.arch_lines.append(why)
-        buf = state.buffered_state(self.work_root)
-        if buf:
-            self.arch_lines.append(buf)
+        for note in (state.buffered_state(self.work_root), state.held_back_note()):
+            if note:
+                self.arch_lines.append(note)
         items = self.pickup_items()
         if not items:
             self.arch_lines.append(f"📄 no pickup item for {self.sid[:8]}")

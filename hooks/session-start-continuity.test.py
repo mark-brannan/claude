@@ -283,6 +283,29 @@ class Brief(unittest.TestCase):
         self.assertNotIn("Sitting", c)
         self.assertIn("Decision load", c)
 
+    # --- held back from the state commit ---
+
+    def test_the_brief_names_each_held_back_file_and_asks_for_a_resolution(self):
+        # 12.7: whatever session wrote it, the next one is asked to offer the user a way out.
+        (self.state / "drafts").mkdir()
+        (self.state / "drafts/leak.md").write_text("x\n")
+        (self.state / ".git/claude-held-back.json").write_text(json.dumps(
+            [{"path": "drafts/leak.md", "reason": "secret scan: fake rule"},
+             {"path": "drafts/gone.bin", "reason": "over 5 MB"}]))
+        self.worklist("echo BOARD")
+        c = self.run_hook()
+        self.assertIn("drafts/leak.md", c)
+        self.assertIn("secret scan: fake rule", c)
+        self.assertNotIn("drafts/gone.bin", c, "a file resolved since is not raised")
+        line = next(x for x in c.split("\n") if "offer the user" in x)
+        for way in ("commit", "scrub", "move", "gitignore"):
+            self.assertIn(way, line)
+        self.assertLess(c.index("drafts/leak.md"), c.index("Where recent sessions left off"))
+
+    def test_nothing_held_back_says_nothing(self):
+        self.worklist("echo BOARD")
+        self.assertNotIn("Held back", self.run_hook())
+
 
 if __name__ == "__main__":
     unittest.main()

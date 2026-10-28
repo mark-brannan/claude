@@ -26,8 +26,10 @@ import concurrent.futures
 import glob
 import json
 import os
+import random
 import re
 import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -58,6 +60,19 @@ case "$1 ${2:-}" in
   "issue list") printf '%s\n' "${GH_ISSUES:-[]}" ;;
   *) exit 1 ;;
 esac
+'''
+
+# --- a fake gitleaks: flags a file holding FAKE-LEAK, as `detect --no-git` reports
+FAKE_GITLEAKS = f'''#!{sys.executable}
+import json, os, sys
+if os.environ.get("FAKE_GITLEAKS_FAIL"):
+    sys.exit(2)
+a = sys.argv[1:]
+src, rep, code = a[a.index("-s") + 1], a[a.index("-r") + 1], int(a[a.index("--exit-code") + 1])
+found = [{{"File": os.path.join(d, f), "Description": "fake rule", "RuleID": "fake"}}
+         for d, _, fs in os.walk(src) for f in fs if b"FAKE-LEAK" in open(os.path.join(d, f), "rb").read()]
+json.dump(found, open(rep, "w"))
+sys.exit(code if found else 0)
 '''
 
 
@@ -1049,6 +1064,76 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(subject(), "State: work session f1f2f3f4", "14.7, crashed: the state commit is made and pushed")
         self.has("14.7, crashed: the checkpoint says it did not run", r"^failed: stop-item.py did not run$", ck14("f1f2f3f4"))
 
+    def state_paths(self):
+        # --- every changed path commits, bar what is held back (12.5, 12.6) ---
+        w = self.world("paths12")
+        _, WORK = w.make_work()
+        SRO, SR = w.make_state("state12")
+        (w.BIN / "gitleaks").write_text(FAKE_GITLEAKS)
+        (w.BIN / "gitleaks").chmod(0o755)
+        (SR / ".gitignore").write_text("scratch/\n")
+        w.gitq(SR, "add", ".gitignore")
+        w.gitq(SR, "commit", "-m", "ignore")
+        for rel, text in (("drafts/note.md", "a draft\n"), ("log/leak.md", "token FAKE-LEAK\n"),
+                          ("scratch/x", "ignored\n")):
+            (SR / rel).parent.mkdir(parents=True, exist_ok=True)
+            (SR / rel).write_text(text)
+        with open(SR / "drafts" / "big.bin", "wb") as fh:
+            fh.truncate(5 * 1024 * 1024 + 1)
+
+        def committed(rel):
+            return subprocess.run(["git", "-C", str(SR), "cat-file", "-e", f"HEAD:{rel}"], env=w.base,
+                                  capture_output=True).returncode == 0
+
+        def staged():
+            return w.git(SR, "diff", "--cached", "--name-only")
+
+        def ck():
+            return sorted(glob.glob(f"{SR}/state/global/log/auto/*/*{SID[:8]}.md"))[0]
+
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.assertTrue(committed("drafts/note.md"), "12.5: a new file outside state/ is in the state commit")
+        self.assertTrue(committed(os.path.relpath(ck(), SR)), "12.6: the rest still commit")
+        self.assertFalse(committed("drafts/big.bin"), "12.6: a file over 5 MB is not committed")
+        self.assertFalse(committed("log/leak.md"), "12.6: a flagged file is not committed")
+        self.assertEqual(staged(), "", "12.6: and neither is left staged")
+        self.assertFalse(committed("scratch/x"), ".gitignore is respected")
+        self.has("12.6: the checkpoint names the big file and why", r"^- `drafts/big\.bin` — .*5 MB", ck())
+        self.has("12.6: and the flagged one and why", r"^- `log/leak\.md` — secret scan", ck())
+        held = json.loads((SR / ".git" / "claude-held-back.json").read_text())
+        self.assertEqual(sorted(r["path"] for r in held), ["drafts/big.bin", "log/leak.md"],
+                         "12.7: the held-back list travels to the next session in the clone's git dir")
+
+        # A scan that cannot run clears nothing new outside state/; state/ commits.
+        (SR / ".git" / "claude-last-state-push").unlink(missing_ok=True)
+        (SR / "drafts" / "later.md").write_text("later\n")
+        (SR / "state" / "global" / "later.md").write_text("later\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR, FAKE_GITLEAKS_FAIL=1)
+        self.assertFalse(committed("drafts/later.md"), "no scan: a new file outside state/ waits")
+        self.assertTrue(committed("state/global/later.md"), "no scan: state/ still commits")
+        self.has("no scan: the checkpoint says why", r"^- `drafts/later\.md` — secret scan did not run", ck())
+
+        # Resolved by hand: the list empties on the next Stop.
+        for rel in ("drafts/big.bin", "log/leak.md"):
+            (SR / rel).unlink()
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+        self.assertTrue(committed("drafts/later.md"), "scan back: the waiting file commits")
+        self.assertFalse((SR / ".git" / "claude-held-back.json").exists(), "nothing held back: no list")
+
+        # The real scanner, where this machine has one: the invocation is the
+        # one this gitleaks takes, and a token-shaped string is flagged.
+        real = shutil.which("gitleaks", path=os.environ.get("PATH", ""))
+        if real:
+            (w.BIN / "gitleaks").unlink()
+            rnd = random.Random(7)
+            (SR / "drafts" / "real.md").write_text(
+                "x = '" + "gh" + "p_" + "".join(rnd.choice(string.ascii_letters + string.digits)
+                                                for _ in range(36)) + "'\n")
+            (SR / "drafts" / "fine.md").write_text("fine\n")
+            w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SR)
+            self.assertFalse(committed("drafts/real.md"), "real gitleaks: the token is held back")
+            self.assertTrue(committed("drafts/fine.md"), "real gitleaks: the clean file commits")
+
     def state_debounce(self):
         # --- the push debounce holds across a pull, however many sessions stop
         # The stamp used to be state/global/.last-state-push, tracked like any
@@ -1215,8 +1300,8 @@ class StopContinuityTest(unittest.TestCase):
         self.assertNotIn("state repo", box(out), "incident, pushed: the 📦 line never names the state repo")
 
     SECTIONS = ("verdict_basics", "verdict_branches", "resume_and_pickup", "session_item", "curia_digests",
-                "salvage", "state_push", "state_signing", "state_items", "state_debounce", "live_lock",
-                "incident", "critical_review")
+                "salvage", "state_push", "state_signing", "state_items", "state_paths", "state_debounce",
+                "live_lock", "incident", "critical_review")
 
     def test_term_stops_the_child_before_the_lock_comes_off(self):
         # A child bounded() started runs in a session of its own, so a TERM

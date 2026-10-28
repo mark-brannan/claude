@@ -508,13 +508,30 @@ class StopNoticeTest(Base):
         self.assertNotIn("dirty", reasons(self.SR), "state repo at home: not a reason")
         self.assertEqual(self.state.buffered_state(str(self.SR)).split("\n")[1],
                          "→ state repo: 1 uncommitted file(s) (README) outside state/. Safe to archive: "
-                         "the clone keeps them. The Stop hook commits only state/, so commit these by hand "
-                         "to keep them.", "...but named, after what is buffered")
+                         "the clone keeps them, and the next Stop commits them.",
+                         "...but named, after what is buffered")
         os.environ["CLAUDE_CODE_REMOTE"] = "true"
         self.assertEqual(reasons(self.WT), "worktree dirty, state repo dirty", "cloud, mixed: work area first")
         self.assertEqual(reasons(self.SR).split(", ")[0], "state repo dirty", "cloud, in the state repo")
         self.assertEqual(self.state.buffered_state(str(self.SR)).count("\n"), 0,
                          "cloud: the verdict names it, the note does not")
+
+    def test_held_back(self):
+        st = self.state
+        (self.SR / "drafts").mkdir()
+        (self.SR / "drafts" / "leak.md").touch()
+        (self.SR / "drafts" / "ok.md").touch()
+        self.assertEqual(st.held_back_note(), "", "nothing held back: no line")
+        st.write_held_back(str(self.SR), [("drafts/leak.md", "secret scan: x"), ("drafts/gone.md", "over 5 MB")])
+        self.assertEqual(st.held_back(), [("drafts/leak.md", "secret scan: x")], "a path gone since is dropped")
+        note = st.held_back_note()
+        self.assertIn("drafts/leak.md", note, "the note names the file")
+        self.assertIn("secret scan: x", note, "and its reason")
+        bs = st.buffered_state(str(self.SR))
+        self.assertIn("drafts/ok.md", bs, "the rest is buffered")
+        self.assertNotIn("leak.md", bs, "a held-back file is not called buffered")
+        st.write_held_back(str(self.SR), [])
+        self.assertFalse(os.path.exists(st.held_back_file(str(self.SR))), "an empty list removes the file")
 
     def test_verdict_explain(self):
         ve = self.state.verdict_explain
@@ -537,8 +554,8 @@ class StopNoticeTest(Base):
         self.assertEqual(ve("not archivable: worktree dirty, state repo dirty", str(self.WT)),
                          f"→ worktree dirty: 1 uncommitted file(s) (my file). {tail}\n"
                          "→ state repo dirty: 1 uncommitted file(s) (README). This cloud VM's clone dies with "
-                         "the VM, and the Stop hook commits only state/: commit these and push them to main, "
-                         "or they are lost.",
+                         "the VM, and the Stop hook has not committed these (held back, or written since): "
+                         "commit these and push them to main, or they are lost.",
                          "mixed: the work area leads, the state repo follows")
         self.assertEqual(len(ve("not archivable: worktree dirty, 2 commit(s) unpushed").split("\n")), 2,
                          "two reasons, one line each")
