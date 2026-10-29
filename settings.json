@@ -7,6 +7,7 @@
     "PROSE_BUDGET": "/home/solace/.claude/bin/prose-budget"
   },
   "permissions": {
+    "defaultMode": "auto",
     "allow": [
       "Bash(systemctl --user list-timers *)",
       "Bash(systemctl --user show *)",
@@ -41,6 +42,7 @@
       "Bash(~/.claude/bin/worklist)",
       "Bash(~/.claude/bin/worklist *)",
       "Bash(~/.claude/bin/work-item *)",
+      "Bash(~/.claude/bin/worker-start *)",
       "Bash(/home/solace/.claude/bin/work-item *)"
     ],
     "deny": [
@@ -431,7 +433,7 @@
   "autoMode": {
     "allow": [
       "$defaults",
-      "Creating, editing or commenting on a GitHub issue in a mark-brannan repo (gh issue create/edit/comment, or the GitHub MCP issue tools) is allowed when the user, at any earlier point in this session, asked for an issue, agreed an issue was the right home for the work, or approved a drafted one, or when the issue is the one the session was started to work on. The go-ahead need not be the latest user turn and need not repeat \"file it\". Block it when nothing the user said in this session indicated an issue was wanted.",
+      "Creating a GitHub issue in a mark-brannan repo (gh issue create, or the GitHub MCP issue-create tools) is allowed when the user, at any point in this session, asked for an issue to be written up and filed, approved a drafted one, or said yes to one the session proposed. That go-ahead need not be the latest turn and need not repeat \"file it\"; it covers the issue it pointed at and no other, and a passing mention of issues, or of a loop that could become one, is not a yes. Block it when nothing the user said in this session pointed at this issue, when the only go-ahead was for a different issue, and in a headless or unattended session, where the home is a card. Editing or commenting on an issue in a mark-brannan repo is allowed when the user asked for it in this session or the issue is the one the session was started to work on.",
       "Replying to review threads on a pull request in a mark-brannan repo (gh api POST to that PR's pulls/comments/<id>/replies, or the GitHub MCP review-thread reply tools) is allowed when the session is working that PR: it opened the PR, was started to work it, or the user asked it to address its review. Block it on a PR the session is not working. Resolving a thread goes through gh-resolve-thread; block a raw gh api graphql call that resolves one."
     ]
   },

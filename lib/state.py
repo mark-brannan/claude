@@ -559,8 +559,10 @@ def _porcelain_paths(text):
 # out of the verdict is right; leaving them unsaid is not: a hand-off or card
 # still on disk is worth knowing about. Metrics are counted, everything else
 # is named. Then, off the cloud, the files outside state/ (a draft, a README
-# edit): archiving leaves the clone and them in place, but no hook commits
-# them. In the cloud those are the verdict's "state repo dirty" instead.
+# edit) the Stop hook's second commit did not take: over 5 MB, refused by the
+# clone's pre-commit scan, or written since. Archiving leaves the clone and
+# them in place. In the cloud those are the verdict's "state repo dirty"
+# instead.
 # "" elsewhere, and when nothing is buffered.
 def buffered_state(root):
     if not is_state_repo(root):
@@ -569,8 +571,8 @@ def buffered_state(root):
     stray = [] if is_cloud() else _porcelain_paths(dirty_paths(root))
     if stray:
         lines.append(f"→ state repo: {_shown(stray)} outside state/. "
-                     "Safe to archive: the clone keeps them. The Stop hook commits only state/, "
-                     "so commit these by hand to keep them.")
+                     "Safe to archive: the clone keeps them. The Stop hook held them back or they came "
+                     "after it; the checkpoint names why.")
     text = _git("-C", root, "-c", "core.quotePath=off", "status", "--porcelain",
                 "--untracked-files=all", "--", "state/")[1]
     paths = []
@@ -618,8 +620,8 @@ _EXPLAIN = (
      "→ no verdict this turn: the Stop hook stopped before deciding. The next Stop retries."),
 )
 _DIRTY_TAIL = "Archive the worktree only after the agent commits them."
-_DIRTY_TAIL_CLOUD = ("This cloud VM's clone dies with the VM, and the Stop hook commits only state/: "
-                     "commit these and push them to main, or they are lost.")
+_DIRTY_TAIL_CLOUD = ("This cloud VM's clone dies with the VM, and the Stop hook has not committed these "
+                     "(held back, or written since): commit these and push them to main, or they are lost.")
 
 
 def _shown(paths):

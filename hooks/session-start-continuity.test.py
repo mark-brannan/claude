@@ -14,6 +14,7 @@ needed). Cost per push: about 7 s, one of them the 6 s hung-worklist case.
 """
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -282,6 +283,37 @@ class Brief(unittest.TestCase):
         c = self.run_hook()
         self.assertNotIn("Sitting", c)
         self.assertIn("Decision load", c)
+
+    # --- held back from the state commit (12.7) ---
+
+    def held(self, clone):
+        """A checkpoint naming two held-back files on clone; git reports one still untracked."""
+        self.put("log/auto/2026-01-02-held.md", CHECKPOINT + "\n## Held back from the state commit\n\n"
+                 f"Clone: `{clone}`\n\n- `drafts/big.bin` — over 5 MB\n"
+                 "- `drafts/gone.md` — the second commit refused\n")
+        shim = Path(self.tmp.name) / "bin/git"
+        shim.write_text("#!/bin/sh\ncase \"$*\" in *status*) printf '?? drafts/big.bin\\0' ;; esac\nexit 0\n")
+        self.worklist("echo BOARD")
+
+    def test_this_clone_is_asked_to_offer_a_resolution(self):
+        self.held(f"{socket.gethostname()}:{self.state}")
+        c = self.run_hook()
+        self.assertIn("- `drafts/big.bin` — over 5 MB", c, "12.7: the brief names the file and why")
+        self.assertNotIn("drafts/gone.md", c, "a file resolved since is not raised")
+        line = next(x for x in c.split("\n") if "offer the user" in x)
+        for way in ("commit", "scrub", "move", "gitignore"):
+            self.assertIn(way, line, "12.7: and asks for a resolution")
+        self.assertLess(c.index("drafts/big.bin"), c.index("Where recent sessions left off"))
+
+    def test_another_clone_is_asked_nothing(self):
+        self.held(f"elsewhere:{self.state}")
+        self.assertNotIn("Held back", self.run_hook(), "12.7: another host's clone")
+        self.held(f"{socket.gethostname()}:/some/other/clone")
+        self.assertNotIn("Held back", self.run_hook(), "12.7: another path on this host")
+
+    def test_nothing_held_back_says_nothing(self):
+        self.worklist("echo BOARD")
+        self.assertNotIn("Held back", self.run_hook())
 
 
 if __name__ == "__main__":
