@@ -565,3 +565,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261028t171341z
 - decision_verbs is off unless a repo's budgets config turns it on Undo: pass on=True to _rule ([#352](https://github.com/mark-brannan/claude/pull/352))
+
+### 20261029t205702z
+- worker-start --item logs dispatched after the issue or PR read, using the work-item beside the script; a failure is said on stderr, exit stays 0 Undo: revert c63150e ([#348](https://github.com/mark-brannan/claude/pull/348))
