@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+# worker-start -- a worker sub-agent's opening as one command, so one
+# allow-list entry covers what is otherwise three or four chained calls that
+# each stop for a permission dialog: fetch, put a branch or worktree on the
+# right base, read the issue or PR.
+#
+#   worker-start [-C <repo>] --new <slug> [--base <ref>] [--worktree <path>] [--issue <n>] [--item <id>]
+#   worker-start [-C <repo>] --head <branch> [--worktree <path>] [--issue <n>] [--item <id>]
+#   worker-start [-C <repo>] --pr <n> [--worktree <path>] [--item <id>]
+#
+# --new cuts claude/<slug> (a slug with a / is used as given) from --base,
+#   default origin/main. --head checks out an existing remote branch; --pr
+#   does the same for that PR's head and prints the PR. With --worktree the
+#   checkout goes in a new worktree at <path> (a --head or --pr one detached,
+#   so the branch stays free for whoever holds it); without, in <repo>.
+# A local branch is never reset: --head fails if one by that name exists.
+# A PR whose head is in a fork is refused. gh runs in <repo>, so it reads
+# that repo's issues and PRs.
+# --item logs `dispatched` on work item <id>, last, with the work-item beside
+#   this script. It never fails the start: a work-item that errors is said
+#   on stderr and the exit stays 0.
+# Each step prints as `$ <command>` before it runs; the first that fails
+# stops the run with its exit code. 2 on bad arguments.
+import argparse
+import os
+import shlex
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+
+
+def run(cmd, capture=False, cwd=None):
+    print("$ " + shlex.join(cmd), flush=True)
+    r = subprocess.run(cmd, text=True, stdout=subprocess.PIPE if capture else None, cwd=cwd)
+    if r.returncode:
+        sys.stderr.write("worker-start: failed: %s\n" % shlex.join(cmd))
+        sys.exit(r.returncode)
+    return r.stdout
+
+
+def log_dispatched(item):
+    """Log `dispatched` on work item <item>; a failure is said, never raised."""
+    cmd = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "work-item"),
+           "log", item, "dispatched"]
+    print("$ " + shlex.join(cmd), flush=True)
+    try:
+        r = subprocess.run(cmd, text=True, capture_output=True)
+        why = r.stderr.strip() if r.returncode else ""
+    except OSError as e:
+        why = str(e)
+    if why:
+        sys.stderr.write("worker-start: work item %s not logged: %s\n" % (item, why))
+
+
+def main(argv):
+    p = argparse.ArgumentParser(prog="worker-start")
+    p.add_argument("-C", dest="repo", default=".")
+    how = p.add_mutually_exclusive_group(required=True)
+    how.add_argument("--new", metavar="SLUG")
+    how.add_argument("--head", metavar="BRANCH")
+    how.add_argument("--pr", type=int)
+    p.add_argument("--base", default="origin/main")
+    p.add_argument("--worktree", metavar="PATH")
+    p.add_argument("--issue", type=int)
+    p.add_argument("--item", metavar="ID")
+    a = p.parse_args(argv)
+    if a.base != "origin/main" and not a.new:
+        p.error("--base goes with --new")
+    if a.new == "" or a.head == "":
+        p.error("--new and --head need a name")
+    if a.pr is not None and a.pr < 1 or a.issue is not None and a.issue < 1:
+        p.error("--pr and --issue are numbers from 1")
+    for v in (a.repo, a.new, a.head, a.base, a.worktree, a.item):
+        if v and v.startswith("-"):
+            p.error("an argument may not start with -: %s" % v)
+    if a.new:
+        branch = a.new if "/" in a.new else "claude/" + a.new
+        if subprocess.run(["git", "check-ref-format", "--branch", branch],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+            p.error("not a branch name: %s" % branch)
+    if a.worktree:
+        a.worktree = os.path.abspath(a.worktree)
+    git = ["git", "-C", a.repo]
+    run(git + ["fetch", "-q", "origin"])
+    if a.pr is not None:
+        out = run(["gh", "pr", "view", str(a.pr), "--json", "headRefName,isCrossRepository",
+                   "-q", '"\\(.isCrossRepository) \\(.headRefName)"'], capture=True, cwd=a.repo)
+        cross, _, a.head = out.strip().partition(" ")
+        if cross != "false":
+            sys.stderr.write("worker-start: PR #%d's head is in a fork; check it out by hand\n" % a.pr)
+            sys.exit(2)
+    if a.new is not None:
+        # --no-track: the start is origin/main, which must not become the upstream.
+        if a.worktree:
+            run(git + ["worktree", "add", "-q", "--no-track", "-b", branch, a.worktree, a.base])
+        else:
+            run(git + ["checkout", "-q", "--no-track", "-b", branch, a.base])
+    else:
+        ref = "origin/" + a.head
+        if a.worktree:
+            run(git + ["worktree", "add", "-q", "--detach", a.worktree, ref])
+        else:
+            run(git + ["checkout", "-q", "-b", a.head, ref])
+    if a.pr is not None:
+        run(["gh", "pr", "view", str(a.pr), "--comments"], cwd=a.repo)
+    if a.issue is not None:
+        run(["gh", "issue", "view", str(a.issue), "--comments"], cwd=a.repo)
+    if a.item:
+        log_dispatched(a.item)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
