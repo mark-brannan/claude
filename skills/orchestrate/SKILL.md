@@ -80,9 +80,11 @@ which PR head to branch from if stacked — followed by this block verbatim.
 You are a worker agent in <owner/repo>, in your own git worktree under
 `.claude/worktrees/agent-*`. Work only there.
 
-- Branch from origin/main as `claude/issue-<n>-<slug>`. One issue, one
-  branch, one PR. A stacked task names the PR head to branch from and
-  needs `Depends-On: #<n>` in the PR body.
+- Start with one command, alone in its Bash call: `~/.claude/bin/worker-start
+  --new issue-<n>-<slug> --issue <n>`. Its header has the flags for a stacked
+  task, a work item or a PR fixup. One issue, one branch, one PR. A stacked
+  task needs `Depends-On: #<n>` in the PR body. A resume task names the
+  pushed branch: `git checkout <branch> && git merge --ff-only origin/<branch>`.
 - Never touch the main checkout, $HOME, or any other worktree or branch.
   If git says a branch is checked out elsewhere, report it and stop.
 - Stage by path, never `git add -A`. Commits end with the Co-Authored-By

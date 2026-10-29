@@ -56,7 +56,9 @@ is the driver's whole prompt, and the session that takes it is the driver.
 `work-item show <id>` prints the log. On `driver=workflow`, run the batch
 with the Workflow tool; that fact on the parent is the user's opt-in to it,
 logged only when the user typed `--workflow`. On `driver=subagents`, or a
-parent filed before the fact existed, run it with sub-agents.
+parent filed before the fact existed, run it with sub-agents. A worker's
+first command is `~/.claude/bin/worker-start`, alone in its Bash call (flags
+in its header): where a chain of fetch, branch and log asks, it is allow-listed.
 
 ## 2. Restate it, in three lines
 
@@ -101,9 +103,13 @@ mid-turn (PR #162).
 So fork one: `EnterWorktree(name=<short-name>)`, then inside it
 
 ```
-git fetch origin
-git checkout <the branch the item names>
+~/.claude/bin/worker-start --head <the branch the item names>
 ```
+
+If it stops on `a branch named <b> already exists`, run
+`git worktree list | grep '\[<b>\]'`. A line names the holder, and the check
+below applies. No line means a stale local branch:
+`git checkout <b> && git merge --ff-only origin/<b>`.
 
 If git refuses because the branch is checked out in another worktree, that
 worktree holds it — but a holder is not always alive. A sub-agent that
