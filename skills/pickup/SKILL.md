@@ -106,8 +106,10 @@ So fork one: `EnterWorktree(name=<short-name>)`, then inside it
 ~/.claude/bin/worker-start --head <the branch the item names>
 ```
 
-(`worker-start` is one allow-listed command for the fetch and the checkout;
-it never resets a local branch, so the refusal below still applies.)
+If it stops on `a branch named <b> already exists`, run
+`git worktree list | grep '\[<b>\]'`. A line names the holder, and the check
+below applies. No line means a stale local branch:
+`git checkout <b> && git merge --ff-only origin/<b>`.
 
 If git refuses because the branch is checked out in another worktree, that
 worktree holds it — but a holder is not always alive. A sub-agent that
