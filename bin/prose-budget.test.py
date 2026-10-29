@@ -838,6 +838,36 @@ class UniqueIdsTest(RepoCase):
         self.assertEqual(self.findings("--tree"), [])
 
 
+class DecisionVerbsTest(RepoCase):
+    def hits(self, text, cfg=None):
+        self.config({"decision_verbs": cfg or {}})
+        self.write("docs/decisions.md", text)
+        return [(f["line"], f["message"].split('"')[1]) for f in self.findings("--tree")]
+
+    def test_deciding_verb_on_a_dated_line_fails(self):
+        self.assertEqual(self.hits("- 2026-09-22 \u2014 base rule last. Ruled by #12.\n"), [(1, "Ruled")])
+        self.assertEqual(self.hits("* 2026-09-22: approved and decided\n"), [(1, "approved"), (1, "decided")])
+
+    def test_header_quotes_and_inline_code_are_exempt(self):
+        text = ("One line per ruling, newest last.\n"
+                '- 2026-09-22 \u2014 cites "ruled out" and \u201cdecided\u201d and `approved`.\n'
+                "- 2026-09-23 \u2014 a plain statement ([#1](x)).\n")
+        self.assertEqual(self.hits(text), [])
+
+    def test_off_unless_configured_and_targets_override(self):
+        self.config({})
+        self.write("docs/decisions.md", "- 2026-09-22 ruled\n")
+        self.assertEqual(self.findings("--tree"), [])
+        self.write("docs/d.md", "- 2026-09-22 ruled\n")
+        self.assertEqual(self.hits("- 2026-09-22 fine\n", {"targets": ["docs/d.md"]}), [(1, "ruled")])
+
+    def test_dropping_a_target_is_a_relaxation(self):
+        old = {"decision_verbs": {"targets": ["docs/decisions.md", "docs/d.md"]}}
+        new = {"decision_verbs": {"targets": ["docs/decisions.md"]}}
+        self.assertTrue(any(r.startswith("decision_verbs.targets") for r in pb.relaxations(old, new)))
+        self.assertIn("decision_verbs: rule turned off", pb.relaxations({"decision_verbs": {}}, {}))
+
+
 class MissingLibTest(unittest.TestCase):
     def test_no_lib_exits_2_and_says_so(self):
         import shutil
