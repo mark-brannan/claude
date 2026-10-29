@@ -64,9 +64,15 @@ did not look at.
 - on an ADR promotion, before the PR opens.
 
 What happens next is the caller's, not the check's: a promotion may wait
-on the brief, a scoping run may turn a finding into a card or a ledger
-item, an on-demand run may only print it. The caller's own skill says
-which.
+on the brief, an on-demand run may only print it. The caller's own skill
+says which.
+
+A finding is never by itself a reason to file an issue or a card. A
+finding that touches judgment, risk or values is the user's to weigh:
+the caller brings it to the user and discusses it before anything is
+filed. A finding that is toil in service of the work at hand, the
+caller fixes. Filing what should have been fixed or discussed takes the
+decision from the user while doing none of the work.
 
 ## Never
 
