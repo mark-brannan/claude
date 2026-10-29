@@ -106,7 +106,7 @@ class WorkerStart(unittest.TestCase):
         self.assertEqual(self.run_tool("--pr", "5").returncode, 2)
 
     def test_dash_argument_is_refused(self):
-        self.assertEqual(self.run_tool("--new", "--exec=x").returncode, 2)
+        self.assertEqual(self.run_tool("--new=--exec=x").returncode, 2)
 
     def test_base_without_new_is_refused(self):
         self.assertEqual(self.run_tool("--head", "feature", "--base", "origin/x").returncode, 2)
