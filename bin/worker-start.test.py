@@ -4,7 +4,7 @@
 # What matters: --new cuts claude/<slug> from origin/main (or --base), in the
 # repo or in a new worktree; --head and --pr check out the remote head, a
 # worktree one detached; the issue or PR is read last; a failing step stops
-# the run with its code. A real git repo with a local "origin"; gh is a stub.
+# the run with its code; --item logs `dispatched` last and never fails it. A real git repo with a local "origin"; gh is a stub.
 import os
 import shutil
 import subprocess
@@ -102,7 +102,7 @@ class WorkerStart(unittest.TestCase):
             self.assertNotEqual(u.returncode, 0)
 
     def test_bad_arguments_exit_2_before_any_fetch(self):
-        for args in (["--new", ""], ["--head", ""], ["--pr", "0"], ["--new", "x", "--issue", "0"], ["--new", "a..b"]):
+        for args in (["--new", ""], ["--head", ""], ["--pr", "0"], ["--new", "x", "--issue", "0"], ["--new", "a..b"], ["--new", "x", "--item", "-x"]):
             r = self.run_tool(*args)
             self.assertEqual(r.returncode, 2, args)
             self.assertNotIn("fetch", r.stdout, args)
@@ -116,6 +116,39 @@ class WorkerStart(unittest.TestCase):
     def test_existing_local_branch_is_not_reset(self):
         sh("git", "-C", str(self.repo), "branch", "feature", "origin/main")
         self.assertNotEqual(self.run_tool("--head", "feature").returncode, 0)
+
+    def with_work_item(self, body):
+        """The tool copied beside a fake work-item, which is where it looks."""
+        beside = self.tmp / "beside"
+        beside.mkdir(exist_ok=True)
+        shutil.copy(TOOL, beside / "worker-start")
+        (beside / "work-item").write_text("#!/bin/sh\n" + body)
+        (beside / "work-item").chmod(0o755)
+        return subprocess.run([sys.executable, str(beside / "worker-start"), "-C", str(self.repo),
+                               "--new", "fix-i", "--item", "abc123"],
+                              env=self.env, text=True, capture_output=True)
+
+    def test_item_logs_dispatched_last(self):
+        r = self.with_work_item('echo "$*" >> "$GH_LOG.item"')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(Path(str(self.log) + ".item").read_text(), "log abc123 dispatched\n")
+        self.assertEqual(self.branch(), "claude/fix-i")
+
+    def test_item_that_fails_to_log_still_starts(self):
+        r = self.with_work_item("echo boom >&2; exit 1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("work item abc123 not logged: boom", r.stderr)
+        self.assertEqual(self.branch(), "claude/fix-i")
+
+    def test_item_with_no_work_item_beside_still_starts(self):
+        beside = self.tmp / "alone"
+        beside.mkdir()
+        shutil.copy(TOOL, beside / "worker-start")
+        r = subprocess.run([sys.executable, str(beside / "worker-start"), "-C", str(self.repo),
+                            "--new", "fix-j", "--item", "abc123"],
+                           env=self.env, text=True, capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("not logged", r.stderr)
 
     def test_fork_pr_is_refused(self):
         Path(str(self.log) + ".fork").write_text("")

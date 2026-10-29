@@ -4,9 +4,9 @@
 # each stop for a permission dialog: fetch, put a branch or worktree on the
 # right base, read the issue or PR.
 #
-#   worker-start [-C <repo>] --new <slug> [--base <ref>] [--worktree <path>] [--issue <n>]
-#   worker-start [-C <repo>] --head <branch> [--worktree <path>] [--issue <n>]
-#   worker-start [-C <repo>] --pr <n> [--worktree <path>]
+#   worker-start [-C <repo>] --new <slug> [--base <ref>] [--worktree <path>] [--issue <n>] [--item <id>]
+#   worker-start [-C <repo>] --head <branch> [--worktree <path>] [--issue <n>] [--item <id>]
+#   worker-start [-C <repo>] --pr <n> [--worktree <path>] [--item <id>]
 #
 # --new cuts claude/<slug> (a slug with a / is used as given) from --base,
 #   default origin/main. --head checks out an existing remote branch; --pr
@@ -16,6 +16,9 @@
 # A local branch is never reset: --head fails if one by that name exists.
 # A PR whose head is in a fork is refused. gh runs in <repo>, so it reads
 # that repo's issues and PRs.
+# --item logs `dispatched` on work item <id>, last, with the work-item beside
+#   this script. It never fails the start: a work-item that errors is said
+#   on stderr and the exit stays 0.
 # Each step prints as `$ <command>` before it runs; the first that fails
 # stops the run with its exit code. 2 on bad arguments.
 import argparse
@@ -36,6 +39,20 @@ def run(cmd, capture=False, cwd=None):
     return r.stdout
 
 
+def log_dispatched(item):
+    """Log `dispatched` on work item <item>; a failure is said, never raised."""
+    cmd = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "work-item"),
+           "log", item, "dispatched"]
+    print("$ " + shlex.join(cmd), flush=True)
+    try:
+        r = subprocess.run(cmd, text=True, capture_output=True)
+        why = r.stderr.strip() if r.returncode else ""
+    except OSError as e:
+        why = str(e)
+    if why:
+        sys.stderr.write("worker-start: work item %s not logged: %s\n" % (item, why))
+
+
 def main(argv):
     p = argparse.ArgumentParser(prog="worker-start")
     p.add_argument("-C", dest="repo", default=".")
@@ -46,6 +63,7 @@ def main(argv):
     p.add_argument("--base", default="origin/main")
     p.add_argument("--worktree", metavar="PATH")
     p.add_argument("--issue", type=int)
+    p.add_argument("--item", metavar="ID")
     a = p.parse_args(argv)
     if a.base != "origin/main" and not a.new:
         p.error("--base goes with --new")
@@ -53,7 +71,7 @@ def main(argv):
         p.error("--new and --head need a name")
     if a.pr is not None and a.pr < 1 or a.issue is not None and a.issue < 1:
         p.error("--pr and --issue are numbers from 1")
-    for v in (a.repo, a.new, a.head, a.base, a.worktree):
+    for v in (a.repo, a.new, a.head, a.base, a.worktree, a.item):
         if v and v.startswith("-"):
             p.error("an argument may not start with -: %s" % v)
     if a.new:
@@ -88,6 +106,8 @@ def main(argv):
         run(["gh", "pr", "view", str(a.pr), "--comments"], cwd=a.repo)
     if a.issue is not None:
         run(["gh", "issue", "view", str(a.issue), "--comments"], cwd=a.repo)
+    if a.item:
+        log_dispatched(a.item)
     return 0
 
 
