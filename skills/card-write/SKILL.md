@@ -55,13 +55,17 @@ no GitHub home. Take the first line that fits:
   when they review it. Never a card, agora item or question, inline
   included: a session states the overrun in the PR body and says nothing
   else. `work-item` refuses a human-owned card that asks for one.
-- **The issue bar** — file an issue only when the loop is fairly serious
-  and broad, the user said yes to that issue in this session, **and** a
-  fresh session could start from the body alone: a link to the evidence and
-  a next action an agent can execute without asking. Anything less is a
-  card. An unattended session never files one: a loop that clears the rest
-  of the bar is a `human-ruling` card proposing the issue. Status mirrors, vague loops, "review/merge X"
-  and hand-chores are never issues. Below the bar it is a log line or nothing.
+- **The issue bar** — an issue takes three things: it looks issue-shaped
+  (fairly serious and broad; toil is a card on the agent's queue), a fresh
+  session could start from the body alone: a link to the evidence **and** a
+  next action an agent can execute without asking, and the user's yes to
+  that issue. An explicit ask to write up and file one is the yes, filed
+  with no "shall I" turn; anything less clear is one AskUserQuestion line.
+  Below that it is a card. An unattended session never files one: a loop
+  that clears the rest of the bar is a `human-ruling` card proposing the
+  issue, the driver's way of asking. Status mirrors, vague loops,
+  "review/merge X" and hand-chores are never issues. Below the bar it is a
+  log line or nothing.
 - **Public or private repo?** An issue on a public repo is a publish, and the
   undo is a support ticket. It goes public only when its text passes the
   private-terms check — the redacted and blocked term files languette's
