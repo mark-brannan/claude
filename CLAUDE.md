@@ -257,16 +257,21 @@ Hooks handle the mechanics unprompted.
   wrap-up** — by then the evidence is compacted away — and only if you
   would pull it yourself. "Verify X later" is never mine to hear about: run it now, or
   queue it on `## Claude's`. Routing and format: `/card-write`.
-- **Cards, not issues; I decide what goes public.** A loop found
-  mid-work is a card by default. With me in the session, bring it to me
-  and wait for my word before anything is filed. An unattended session
-  cards it and moves on; that exit is what cards are for. An issue is for
-  what is fairly serious and broad, and is filed only on my yes to that
-  issue; from an unattended session it is a card proposing the issue.
-  languette's guards hold the line; when one refuses, ask me through
-  AskUserQuestion, one line. Never filed: what is cheap, close to the ask
-  and doable now, which you do; anything from a scoping plan before my
-  yes. Sonnet over-files issues and cards alike; correct for it.
+- **Filing an issue is my call; the default home is a card.** Clear and
+  explicit — I opened the session or the turn asking you to write up and
+  file an issue — is the yes: draft it and file it, no "shall I file"
+  turn, no hedging. Not clear whether I want one: ask, one line, through
+  AskUserQuestion. Toil for later, however it looks: a card on
+  `## Claude's`. With me in the session: talk it over; a card, unless it
+  looks issue-shaped — fairly serious, broad, startable from its body —
+  and I confirm it. Unattended: the worker raises it with the driver,
+  the driver cards it; an issue from there is a `human-ruling` card
+  proposing it, the driver's way of asking me. languette's guards hold
+  the line (a repo's own rule overrides): one create per human turn;
+  when the door shuts on an issue I asked for, ask me, one line, and my
+  yes opens it again. Never filed: what is cheap, close to the ask and
+  doable now, which you do; anything from a scoping plan before my yes.
+  Sonnet over-files issues and cards alike; correct for it.
 - **One home per fact.** GitHub owns work state. One board, global, three
   sections: decisions, my click work, your queue. `worklist` reads, `/sweep`
   prunes with my tick, nothing else edits.
