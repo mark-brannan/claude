@@ -63,10 +63,14 @@ did not look at.
 - on a scoping stack, once, on the stack as a whole;
 - on an ADR promotion, before the PR opens.
 
-What happens next is the caller's, not the check's: a promotion may wait
-on the brief, a scoping run may turn a finding into a card or a ledger
-item, an on-demand run may only print it. The caller's own skill says
-which.
+What happens next is the caller's, not the check's: the session that
+ran the check decides where each finding goes, by the standing orders'
+filing rule. A finding that is toil in service of the work at hand, the
+caller fixes. One that touches judgment, risk or values is the user's to
+weigh: with the user in the session, the caller brings it to them and
+waits for their word; an unattended caller, such as a scoping driver,
+puts it on a card for the agora. A finding is never filed as an issue
+from here.
 
 ## Never
 
