@@ -49,36 +49,44 @@ def main(argv):
     a = p.parse_args(argv)
     if a.base != "origin/main" and not a.new:
         p.error("--base goes with --new")
+    if a.new == "" or a.head == "":
+        p.error("--new and --head need a name")
+    if a.pr is not None and a.pr < 1 or a.issue is not None and a.issue < 1:
+        p.error("--pr and --issue are numbers from 1")
     for v in (a.repo, a.new, a.head, a.base, a.worktree):
         if v and v.startswith("-"):
             p.error("an argument may not start with -: %s" % v)
+    if a.new:
+        branch = a.new if "/" in a.new else "claude/" + a.new
+        if subprocess.run(["git", "check-ref-format", "--branch", branch],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+            p.error("not a branch name: %s" % branch)
     if a.worktree:
         a.worktree = os.path.abspath(a.worktree)
     git = ["git", "-C", a.repo]
     run(git + ["fetch", "-q", "origin"])
-    if a.pr:
+    if a.pr is not None:
         out = run(["gh", "pr", "view", str(a.pr), "--json", "headRefName,isCrossRepository",
                    "-q", '"\\(.isCrossRepository) \\(.headRefName)"'], capture=True, cwd=a.repo)
         cross, _, a.head = out.strip().partition(" ")
         if cross != "false":
             sys.stderr.write("worker-start: PR #%d's head is in a fork; check it out by hand\n" % a.pr)
             sys.exit(2)
-    if a.new:
-        branch = a.new if "/" in a.new else "claude/" + a.new
-        run(["git", "check-ref-format", "--branch", branch], capture=True)
+    if a.new is not None:
+        # --no-track: the start is origin/main, which must not become the upstream.
         if a.worktree:
-            run(git + ["worktree", "add", "-q", "-b", branch, a.worktree, a.base])
+            run(git + ["worktree", "add", "-q", "--no-track", "-b", branch, a.worktree, a.base])
         else:
-            run(git + ["checkout", "-q", "-b", branch, a.base])
+            run(git + ["checkout", "-q", "--no-track", "-b", branch, a.base])
     else:
         ref = "origin/" + a.head
         if a.worktree:
             run(git + ["worktree", "add", "-q", "--detach", a.worktree, ref])
         else:
             run(git + ["checkout", "-q", "-b", a.head, ref])
-    if a.pr:
+    if a.pr is not None:
         run(["gh", "pr", "view", str(a.pr), "--comments"], cwd=a.repo)
-    if a.issue:
+    if a.issue is not None:
         run(["gh", "issue", "view", str(a.issue), "--comments"], cwd=a.repo)
     return 0
 

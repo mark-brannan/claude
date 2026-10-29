@@ -17,6 +17,7 @@ TOOL = Path(__file__).resolve().parent / "worker-start"
 
 GH = '''#!/bin/sh
 echo "gh $*" >> "$GH_LOG"
+pwd -P >> "$GH_LOG.pwd"
 case "$1 $2" in "pr view") case "$*" in *headRefName*) [ -f "$GH_LOG.fork" ] && echo "true feature" || echo "false feature" ;; esac ;; esac
 exit 0
 '''
@@ -90,6 +91,21 @@ class WorkerStart(unittest.TestCase):
     def test_gh_runs_in_the_repo_whatever_the_callers_cwd(self):
         r = self.run_tool("--new", "fix-c", "--issue", "7", cwd=self.tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(Path(str(self.log) + ".pwd").read_text().split(), [str(self.repo.resolve())])
+
+    def test_new_branch_has_no_upstream(self):
+        for wt in (None, self.tmp / "wt"):
+            r = self.run_tool("--new", "fix-u%s" % bool(wt), *(["--worktree", str(wt)] if wt else []))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            u = subprocess.run(["git", "-C", str(wt or self.repo), "rev-parse", "--abbrev-ref", "@{upstream}"],
+                               capture_output=True)
+            self.assertNotEqual(u.returncode, 0)
+
+    def test_bad_arguments_exit_2_before_any_fetch(self):
+        for args in (["--new", ""], ["--head", ""], ["--pr", "0"], ["--new", "x", "--issue", "0"], ["--new", "a..b"]):
+            r = self.run_tool(*args)
+            self.assertEqual(r.returncode, 2, args)
+            self.assertNotIn("fetch", r.stdout, args)
 
     def test_failing_step_stops_the_run(self):
         r = self.run_tool("--new", "fix-z", "--base", "origin/nope", "--issue", "7")
