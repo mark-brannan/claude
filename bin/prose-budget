@@ -4,7 +4,8 @@
 # Every number and every grandfathered exception lives in the repo's config
 # (docs/budgets.json or .prose-budgets.json), so loosening a rule is a
 # visible diff in review, not a quiet edit to a test. Rules: lines, sections,
-# delta, json_prose, narration, voice, headers, unique_ids, land_alone, config.
+# delta, json_prose, narration, voice, headers, unique_ids, decision_verbs,
+# land_alone, config.
 #
 # The `config` rule closes the obvious hole in that: the config is a file like
 # any other, so an agent that trips a limit can simply raise it in the same
@@ -53,11 +54,18 @@ RELAX_EXEMPT = ["voice.allow", "sections.exempt", "json_prose.grandfathered", "n
                 "narration.disable", "lines.pending", "headers.grandfathered", "land_alone.with"]
 RELAX_COVER = ["lines.must_budget", "voice.words", "json_prose.keys", "sections.targets", "delta.targets",
                "json_prose.targets", "narration.targets", "voice.targets", "headers.targets",
-               "land_alone.targets", "unique_ids"]
+               "land_alone.targets", "unique_ids", "decision_verbs.targets", "decision_verbs.words"]
 LINES_META = ("required", "must_budget", "pending")
 # A new or raised line cap leaves this much room above the file, rounded up to
 # the next 10; a file shorter than MUST_BUDGET_FROM needs no cap at all.
 HEADROOM_PCT = 20
+# A decisions line is a statement: the date, the statement, the link. It
+# carries no deciding verb outside quotes or inline code, where a line may
+# cite a source's words. Only dated list items are decision lines, so a
+# file's header may say whose the lines are.
+DECISION_VERBS = ["ruled", "ruling", "decided", "approved"]
+DECISION_LINE = re.compile(r"^\s*[-*]\s+\d{4}-\d{2}-\d{2}\b")
+QUOTED = re.compile(r'"[^"]*"|“[^”]*”|`[^`]*`')
 MUST_BUDGET_FROM = 200
 
 NARRATION = {
@@ -386,7 +394,7 @@ def parse_config(cfg):
     if not isinstance(cfg, dict):
         raise ConfigError("top level must be an object")
     known = {"$comment", "preset", "lines", "sections", "delta", "json_prose", "narration", "voice",
-             "headers", "unique_ids", "land_alone", "config"}
+             "headers", "unique_ids", "decision_verbs", "land_alone", "config"}
     for k in cfg:
         if k not in known:
             raise ConfigError(f"unknown rule {k!r}")
@@ -443,6 +451,8 @@ def parse_config(cfg):
         except re.error as e:
             raise ConfigError(f"unique_ids[{entry['file']}].pattern: invalid pattern: {e}") from e
     r["unique_ids"] = ids or None
+    r["decision_verbs"] = _rule(cfg, "decision_verbs", {"targets": ["docs/decisions.md"],
+                                                         "words": DECISION_VERBS}, False)
     r["land_alone"] = _rule(cfg, "land_alone", {"targets": RUNBOOK_TARGETS, "with": LAND_WITH}, True)
     r["config"] = _rule(cfg, "config", {"enforce": True}, True)
     return r
@@ -655,7 +665,8 @@ class Checker:
             self.info.append("staged: mid-merge (MERGE_HEAD present), every check skipped; "
                              "CI --base gates the real diff after push")
             return self.findings
-        for name in ("lines", "sections", "json_prose", "narration", "voice", "headers", "unique_ids"):
+        for name in ("lines", "sections", "json_prose", "narration", "voice", "headers", "unique_ids",
+                     "decision_verbs"):
             if r[name]:
                 getattr(self, "check_" + name)(r[name])
         if self.mode in ("staged", "base") and self.only is None:
@@ -860,6 +871,16 @@ class Checker:
             for id_, n in seen.items():
                 if n > 1:
                     self.add("unique_ids", f, f"{id_} defined {n} times")
+
+    def check_decision_verbs(self, cfg):
+        rx = re.compile(r"\b(?:" + "|".join(re.escape(w) for w in cfg["words"]) + r")\b", re.I)
+        for f in self.targets(cfg["targets"]):
+            for lineno, line in enumerate((self.read(f) or "").split("\n"), 1):
+                if not DECISION_LINE.match(line):
+                    continue
+                for m in rx.finditer(QUOTED.sub("", line)):
+                    self.add("decision_verbs", f, f'"{m.group(0)}" on a decisions line; a decision is a '
+                             "statement, so drop the deciding verb or quote the source", line=lineno)
 
     def check_delta(self, cfg):
         exempt = tuple(self.rules["sections"]["exempt"]) if self.rules["sections"] else ("Where things are",)
