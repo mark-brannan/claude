@@ -58,6 +58,16 @@ class ResolveTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             vs.resolve(["AGENT_BOT_PRIVATE_KEY"], self.dir)
 
+    def test_key_malformed_base64_exits(self):
+        self.write("agent-bot.env", "AGENT_BOT_PRIVATE_KEY_B64=!!!\n")
+        with self.assertRaises(SystemExit):
+            vs.resolve(["AGENT_BOT_PRIVATE_KEY"], self.dir)
+
+    def test_key_not_utf8_exits(self):
+        self.write("agent-bot.env", "AGENT_BOT_PRIVATE_KEY_B64=%s\n" % base64.b64encode(b"\xff\xfe").decode())
+        with self.assertRaises(SystemExit):
+            vs.resolve(["AGENT_BOT_PRIVATE_KEY"], self.dir)
+
 
 if __name__ == "__main__":
     unittest.main()
