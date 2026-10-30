@@ -113,6 +113,17 @@ class RestRoute(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn(f"do not post it again, finish with: gh-resolve-thread {self.H}", out)
 
+    def test_unconfirmed_resolve_after_reply_says_not_to_repost(self):
+        (self.T / "noeffect").write_text("")
+        rc, out, _ = self.run_w(self.H, "--reply", SIGNED)
+        self.assertEqual(rc, 1)
+        self.assertIn(f"do not post it again, finish with: gh-resolve-thread {self.H}", out)
+
+    def test_reply_accepted_on_a_cloud_proxy_origin(self):
+        subprocess.run(["git", "-C", str(self.repo), "remote", "set-url", "origin", "http://local_proxy@127.0.0.1:41234/git/o/r"], check=True)
+        rc, out, _ = self.run_w(self.H, "--reply", SIGNED)
+        self.assertEqual((rc, out.strip()), (0, f"resolved {self.H}"))
+
     def test_an_unconfirmed_resolve_is_a_failure(self):
         (self.T / "noeffect").write_text("")
         rc, out, _ = self.run_w(self.H)

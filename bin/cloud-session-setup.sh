@@ -96,6 +96,7 @@ lib/hooktrace.py
 lib/libpath.py
 lib/critical_review.py
 lib/ghrest.py
+lib/resolve_thread_rest.py
 lib/when.py
 lib/jsonl.py
 lib/hookio.py

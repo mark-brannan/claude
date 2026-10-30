@@ -28,7 +28,8 @@
 #
 # Exit: 0 on success; 1 on usage error, an unsigned body, an unanswered
 # thread, a PR this checkout is not, a 403, or when GitHub does not report
-# the result; gh's own status otherwise.
+# the result; gh's own status otherwise on the PRRT_ route (the REST route
+# exits 1 on any gh failure).
 set -u
 
 usage() {

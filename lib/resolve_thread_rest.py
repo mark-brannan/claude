@@ -12,9 +12,15 @@ PR without GraphQL. Same refusals as the GraphQL route: a reply is signed, a
 bare resolve needs the thread's last comment to be a signed reply of the
 caller's, and a reply lands only on the PR this checkout is.
 """
+import json
+import os
 import re
 import subprocess
 import sys
+
+# -I drops the script directory from sys.path; ghrest sits beside this file.
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import ghrest  # noqa: E402
 
 HANDLE = re.compile(r"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d+):(\d+)$")
 SIG_FIRST = "\U0001f916 "
@@ -33,8 +39,7 @@ def gh(*args):
 
 
 def get_json(path):
-    import json
-    return json.loads(gh("api", path) or "null")
+    return ghrest.rest(lambda a: gh(*a), path)
 
 
 def signed(body):
@@ -50,7 +55,9 @@ def local_checkout(repo, head):
         return p.stdout.strip() if p.returncode == 0 else ""
     origin = out("git", "remote", "get-url", "origin")
     branch = out("git", "symbolic-ref", "--short", "-q", "HEAD")
-    return re.search(r"github\.com[:/]" + re.escape(repo) + r"(\.git)?$", origin) is not None and branch == head
+    # github.com, or a cloud session's local git proxy (.../git/<owner>/<repo>)
+    pat = r"(github\.com[:/]|/git/)" + re.escape(repo) + r"(\.git)?/?$"
+    return re.search(pat, origin) is not None and branch == head
 
 
 def run(handle, mode, body, say):
@@ -84,18 +91,17 @@ def run(handle, mode, body, say):
             return
     try:
         gh("api", "-X", "POST", f"{base}/ccr/comments/{cid}/resolve")
+        after = get_json(f"{base}/ccr/review_threads") or []
+        if not any(t.get("comment_ids") and t["comment_ids"][0] == cid and t.get("resolved") for t in after):
+            raise Refused(f"{handle} not resolved: the thread list still shows it open")
     except Refused as e:
         if mode == "reply":
             raise Refused(f"reply posted on {handle} but not resolved ({e}); do not post it again, finish with: gh-resolve-thread {handle}")
         raise
-    after = get_json(f"{base}/ccr/review_threads") or []
-    if not any(t.get("comment_ids") and t["comment_ids"][0] == cid and t.get("resolved") for t in after):
-        raise Refused(f"{handle} not resolved: the thread list still shows it open")
     say(f"resolved {handle}")
 
 
 def get_json_post(path, body):
-    import json
     return json.loads(gh("api", "-X", "POST", path, "-f", f"body={body}") or "null")
 
 
