@@ -53,6 +53,27 @@ instructions, then post the ones that stand yourself. Every comment is signed as
 an agent's, the way the code rules say, tagged `[blocker]`, `[should]`
 or `[nit]`, with the failure scenario and the wanted fix.
 
+**Easy.** A finding you judge easy and unambiguous carries a second tag,
+`[easy]`, right after the first: `🤖 [nit] [easy] <what is wrong>`. Easy is a
+nit, typo, name, one-line fix, the PR title, a missing "try it". Never `[easy]`
+on a risky path (a hook, a permission, a credential, remote content), a
+`[blocker]`, a Judgment line or a reversal. Where the fix replaces whole lines
+of the file, the comment is an inline thread on those lines and carries a
+suggestion fence holding the replacement, before the signature:
+
+````
+🤖 [nit] [easy] "Where thing are": missing s.
+```suggestion
+## Where things are
+```
+🤖 claude-sonnet-5-5 · medium · 1a2b3c4d
+````
+
+A later job reads exactly two things, the `[easy]` token and a
+```` ```suggestion ```` fence on the inline thread; a title, PR-body or
+multi-file fix has no fence, so say the wanted text in words and expect no
+automatic fix.
+
 Then summarize. Open with one line, before any heading: what the PR does
 in your words and whether it is ready to merge, which it is only when you
 raised no `[blocker]` or `[should]` and pr-blockers printed nothing. That
