@@ -21,9 +21,10 @@
 # PR: its origin is the PR's repo and its branch the PR's head. Anywhere else
 # they refuse and name the raw reply call, which auto mode then judges.
 #
-# A cloud session answers GraphQL with HTTP 403; the GitHub MCP server's
-# review-thread tools work there, under auto mode's judgment, so the refusal
-# points at them rather than at a REST fallback here.
+# A cloud session answers GraphQL with HTTP 403. There the thread is named by
+# its PR and first comment instead of a PRRT_ id (the CCR thread list carries
+# no node id): gh-resolve-thread owner/repo#n:<comment id> [same modes] takes
+# the REST route (lib/resolve_thread_rest.py) with the same refusals.
 #
 # Exit: 0 on success; 1 on usage error, an unsigned body, an unanswered
 # thread, a PR this checkout is not, a 403, or when GitHub does not report
@@ -31,7 +32,7 @@
 set -u
 
 usage() {
-  echo "usage: gh-resolve-thread <threadId> [--reply BODY | --reply-only BODY]   (one PRRT_... id, no loop)" >&2
+  echo "usage: gh-resolve-thread <threadId | owner/repo#n:commentId> [--reply BODY | --reply-only BODY]   (one thread, no loop)" >&2
   exit 1
 }
 
@@ -48,9 +49,11 @@ signed() {  # $1 body, $2 what it is, for the message
 
 [ $# -eq 1 ] || [ $# -eq 3 ] || usage
 id=$1
+rest=no
 case $id in
   PRRT_*) ;;
-  *) echo "gh-resolve-thread: '$id' is not a review-thread id (expected PRRT_...)" >&2; exit 1 ;;
+  */*#*:*) rest=yes ;;
+  *) echo "gh-resolve-thread: '$id' is not a review-thread id (expected PRRT_... or owner/repo#n:commentId)" >&2; exit 1 ;;
 esac
 mode=resolve
 if [ $# -eq 3 ]; then
@@ -61,6 +64,12 @@ if [ $# -eq 3 ]; then
   esac
   body=$3
   signed "$body" "the reply" || exit 1
+fi
+
+if [ "$rest" = yes ]; then
+  here=$(cd "$(dirname "$0")" && pwd)
+  if [ "$mode" = resolve ]; then exec python3 -I "$here/../lib/resolve_thread_rest.py" "$id" resolve
+  else exec python3 -I "$here/../lib/resolve_thread_rest.py" "$id" "$mode" "$body"; fi
 fi
 
 # One read for every mode: the PR's repo, head branch and number, the
@@ -78,7 +87,7 @@ info=$(gh api graphql \
 rc=$?
 if [ $rc -ne 0 ]; then
   if grep -q 'HTTP 403' "$err"; then
-    echo "gh-resolve-thread: GitHub refused GraphQL (HTTP 403), as it does in a Claude Code cloud session; use the GitHub MCP server's review-thread reply and resolve tools there" >&2
+    echo "gh-resolve-thread: GitHub refused GraphQL (HTTP 403), as it does in a Claude Code cloud session; name the thread as owner/repo#n:<first comment id> (comment ids: gh api repos/<o>/<r>/pulls/<n>/ccr/review_threads) and run this again" >&2
     exit 1
   fi
   cat "$err" >&2; exit $rc

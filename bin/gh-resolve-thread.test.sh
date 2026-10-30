@@ -147,7 +147,7 @@ run PRRT_kwDOabc123;    expect_rc 4 "gh's own exit status propagates"
 run PRRT_kwDOabc123 --reply "$SIGNED"; expect_rc 4 "gh's status propagates on reply"
 rm -f "$T/gh.rc"
 printf 'HTTP 403: Forbidden (https://api.github.com/graphql)\n' > "$T/gh.err"; echo 1 > "$T/gh.readrc"
-run PRRT_kwDOabc123;    expect_rc 1 "a 403 is a failure"; expect_out "MCP server's review-thread" "a 403 points at the MCP tools"
+run PRRT_kwDOabc123;    expect_rc 1 "a 403 is a failure"; expect_out "owner/repo#n:<first comment id>" "a 403 names the REST handle"
 no_mutation "a 403"
 rm -f "$T/gh.err" "$T/gh.readrc"
 
