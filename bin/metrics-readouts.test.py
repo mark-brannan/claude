@@ -34,7 +34,7 @@ class ReadoutsTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name).resolve() / "home"
         self.repo = Path(self.tmp.name).resolve() / "repo"
-        (self.repo / (".g" + "it")).mkdir(parents=True)
+        (self.repo / ".git").mkdir(parents=True)
         self.m = self.repo / "state/global/metrics"
         self.live = self.m / "live"
         self.live.mkdir(parents=True)
@@ -133,7 +133,9 @@ class ReadoutsTest(unittest.TestCase):
         # Not asserted: the `prompt` silence check. It currently FAILs on a
         # fresh state (the prompt event prints the block under `show`), which
         # predates this test; every other check above passes.
-        self.assertEqual(p.returncode, 1 if "FAIL  prompt event printed" in p.stderr else 0, p.stderr)
+        fails = [ln for ln in p.stderr.splitlines() if ln.startswith("  FAIL")]
+        self.assertTrue(all("prompt event printed" in ln for ln in fails), p.stderr)
+        self.assertEqual(p.returncode, 1 if fails else 0, p.stderr)
 
     def test_preview_quiet_prints_no_ok_lines(self):
         self.transcript()
