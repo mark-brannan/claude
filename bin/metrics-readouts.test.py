@@ -96,7 +96,8 @@ class ReadoutsTest(unittest.TestCase):
         self.cache(tool_calls=1)
         (self.live / "zz").mkdir()
         (self.live / "zz/zz999999.nag.json").write_text("{}")
-        (self.live / "zz999999.nag.json").write_text("{}")  # newest, must still lose
+        (self.live / "zz999999.nag.json").write_text("{}")
+        os.utime(self.live / "zz999999.nag.json", (2**31, 2**31))  # newest, must still lose
         p = self.run_script("metrics-breakdown.sh")
         self.assertIn(f"session {SID}", p.stdout)
         p = self.run_script("metrics-breakdown.sh", "zz99")
@@ -137,7 +138,6 @@ class ReadoutsTest(unittest.TestCase):
     def test_preview_quiet_prints_no_ok_lines(self):
         self.transcript()
         p = self.run_script("metrics-preview.sh", "--quiet")
-        self.assertNotIn("  ok ", p.stdout)
         self.assertEqual(p.stdout, "")
 
     def test_preview_ruler_width_and_fields(self):
