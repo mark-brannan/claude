@@ -91,21 +91,28 @@ def add(nums):
 
 
 def load(paths):
-    """Every JSON value in every file, as jq -s slurps them; ValueError on any
-    file jq would reject."""
+    """Every JSON value in every file, as jq -s slurps them. A file jq would
+    reject (a conflict-marked or truncated one) is skipped whole and traced,
+    so one bad file cannot stop the rollup."""
     dec = json.JSONDecoder()
     out = []
     for p in paths:
-        with open(p, encoding="utf-8") as fh:
-            text = fh.read()
-        i, n = 0, len(text)
-        while True:
-            while i < n and text[i] in " \t\r\n":
-                i += 1
-            if i >= n:
-                break
-            v, i = dec.raw_decode(text, i)
-            out.append(v)
+        try:
+            with open(p, encoding="utf-8") as fh:
+                text = fh.read()
+            vals = []
+            i, n = 0, len(text)
+            while True:
+                while i < n and text[i] in " \t\r\n":
+                    i += 1
+                if i >= n:
+                    break
+                v, i = dec.raw_decode(text, i)
+                vals.append(v)
+        except (OSError, ValueError) as e:
+            lib_state.trace_failure("metrics-rollup", "", e, stage=f"skip-file {p}")
+            continue
+        out.extend(vals)
     return out
 
 
@@ -193,7 +200,8 @@ def main():
     # still regenerate metrics.json.
     files = []
     for pat in ("sessions/*.json", "sessions/*/*.json", "live/*.json", "live/*/*.json"):
-        files += sorted(glob.glob(f"{m}/{pat}"))
+        # *.nag.json is metrics-live's own nag state, not a session record.
+        files += sorted(f for f in glob.glob(f"{m}/{pat}") if not f.endswith(".nag.json"))
     if not files:
         return
     try:

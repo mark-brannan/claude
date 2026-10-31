@@ -102,24 +102,46 @@ class MetricsRollupTest(unittest.TestCase):
         self.assertFalse((self.m / "live/tmp.json.123").exists())
         self.assertTrue((self.m / "live/fresh.json.123").exists())
 
-    def test_unreadable_input_leaves_previous_rollup_and_no_temp_file(self):
+    CONFLICTED = ('{\n  "session_id": "n",\n<<<<<<< HEAD:a.nag.json\n  "x": 1\n=======\n'
+                  '  "x": 2\n>>>>>>> abc (State: s):b.nag.json\n}\n')
+
+    def traced(self):
+        return [json.loads(ln) for f in (self.repo / "state/global/metrics/hook-errors").rglob("*.jsonl")
+                for ln in f.read_text().splitlines()]
+
+    def test_failed_rollup_leaves_previous_rollup_and_no_temp_file(self):
         self.out.write_text('{"keep": true}')
         self.put("sessions/a.json", {"session_id": "a"})
-        self.put("sessions/bad.json", "{ not json")
+        self.put("sessions/list.json", "[1]")  # valid JSON, not a record: the rollup itself fails
         self.run_hook()
         self.assertEqual(json.loads(self.out.read_text()), {"keep": True})
         self.assertEqual([p.name for p in self.m.iterdir() if "metrics.json." in p.name], [])
+        self.assertEqual([(r["hook"], r["stage"]) for r in self.traced()], [("metrics-rollup", "rollup")])
 
-    def test_unreadable_input_is_traced_not_swallowed(self):
-        self.out.write_text('{"keep": true}')
-        self.put("sessions/a.json", {"session_id": "a"})
+    def test_undecodable_file_is_skipped_and_traced_not_fatal(self):
+        self.put("sessions/a.json", {"session_id": "a", "output_tokens": 7})
         self.put("sessions/bad.json", "{ not json")
-        self.run_hook()
-        rows = [json.loads(ln) for f in (self.repo / "state/global/metrics/hook-errors").rglob("*.jsonl")
-                for ln in f.read_text().splitlines()]
-        self.assertEqual([(r["hook"], r["stage"]) for r in rows], [("metrics-rollup", "rollup")])
+        r = self.run_hook()
+        self.assertEqual([s["session_id"] for s in r["sessions"]], ["a"])
+        rows = self.traced()
+        self.assertEqual([(r["hook"], r["stage"].split()[0]) for r in rows], [("metrics-rollup", "skip-file")])
+        self.assertIn("bad.json", rows[0]["stage"])
         self.assertIn("JSONDecodeError", rows[0]["error"])
-        self.assertEqual(json.loads(self.out.read_text()), {"keep": True})
+
+    def test_nag_state_files_are_skipped_silently(self):
+        self.put("sessions/a.json", {"session_id": "a"})
+        self.put("live/48/x.nag.json", self.CONFLICTED)
+        self.put("live/y.nag.json", {"session_id": "nag"})
+        r = self.run_hook()
+        self.assertEqual([s["session_id"] for s in r["sessions"]], ["a"])
+        self.assertEqual(self.traced(), [])
+
+    def test_conflict_marked_session_file_is_skipped(self):
+        self.put("sessions/a.json", {"session_id": "a"})
+        self.put("live/48/c.json", self.CONFLICTED)
+        r = self.run_hook()
+        self.assertEqual([s["session_id"] for s in r["sessions"]], ["a"])
+        self.assertEqual(len(self.traced()), 1)
 
     def test_no_inputs_or_no_metrics_dir_writes_nothing(self):
         self.assertIsNone(self.run_hook())
