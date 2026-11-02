@@ -51,7 +51,7 @@ LEADING_CD = [re.compile(rf"{SP}*cd{SP}+[^;&|]*"), re.compile(rf"{SP}*cd{SP}*(?:
 
 
 # A command made of several segments; a lone push needs no warning about the others.
-CHAINED = re.compile(r"&&|\|\||[;|\n]")
+CHAINED = re.compile(r"[;|\n]|(?<!>)&")
 
 
 def deny(reason):
