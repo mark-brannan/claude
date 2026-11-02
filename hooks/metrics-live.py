@@ -517,6 +517,7 @@ class Hook:
         self.m_sit_at = num(nag.get("model_sitting_at"))
         self.m_sit_said = num(nag.get("model_sitting_said"), self.m_sit_at)
         self.m_ctx_tools = num(nag.get("model_context_tools"))
+        self.m_ctx_hushed = num(nag.get("model_context_hushed"))
         self.bed_warn_at = num(nag.get("bed_warn_at"))
         self.bed_past_at = num(nag.get("bed_past_at"))
         if self.tl_sitting != self.sit_start:
@@ -586,7 +587,7 @@ class Hook:
                 "resume_ts": self.resume_ts, "nag_pending": self.nag_pending,
                 "late_nagged": self.late_nagged, "model_context_at": self.m_ctx_at,
                 "model_sitting_at": self.m_sit_at, "model_sitting_said": self.m_sit_said,
-                "model_context_tools": self.m_ctx_tools,
+                "model_context_tools": self.m_ctx_tools, "model_context_hushed": self.m_ctx_hushed,
                 "bed_warn_at": self.bed_warn_at, "bed_past_at": self.bed_past_at}))
         finally:
             if not self.nag_locked:
@@ -775,6 +776,42 @@ class Hook:
                 return True
         return False
 
+    def in_driver(self):
+        """True when this session is a batch driver: it still holds an item
+        that carries a `driver=` Log line (only batch parents carry one). One
+        glob and a read of each file that mentions the short id. Memoized."""
+        if self.driver_memo is None:
+            short = self.sid[:8].encode()
+            # The holder as bin/work-item's fold() reads it: the newest claim,
+            # kept through blocked, dropped by any other status.
+            status = re.compile(rb"^\S+ (\S+) (?:.* )?status=(\S+)", re.M)
+            driver = re.compile(rb"^\S+ \S+ driver=", re.M)
+            self.driver_memo = False
+            if len(short) == 8:
+                for f in glob.glob(f"{self.sdir}/items/*.md"):
+                    data = read_bytes(f)
+                    if short not in data or not driver.search(data):
+                        continue
+                    holder = b""
+                    for s, v in status.findall(data):
+                        holder = s if v == b"claimed" else holder if v == b"blocked" else b""
+                    if holder == short:
+                        self.driver_memo = True
+                        break
+        return self.driver_memo
+
+    @property
+    def driver(self):
+        return not self.curia_live and bool(soft("driver", self.in_driver, default=False))
+
+    @property
+    def hush(self):
+        """A live curia sitting or a batch driver: nothing nags the model, the
+        Stop block never asks for a hand-off. Crossings are still counted.
+        Checked last in each gate, so the item scan runs only when a nag would
+        speak: a rung crossed, a repeat due, a sitting rung unspent."""
+        return self.curia_live or self.driver
+
     def hold(self, kind, txt):
         """Gentle lines (sitting clock, bedtime) are held while a curia is
         live and said once when it is not: one line per kind, the latest wins."""
@@ -811,6 +848,7 @@ class Hook:
         # the injection is discarded silently.
         inject_event = "PostToolUse" if ev == "posttooluse" else "UserPromptSubmit"
         self.curia_live = False
+        self.driver_memo = None
 
         if run_engine and is_prompt:
             # The machine-wide day counter (#301): measured, never alarmed.
@@ -976,7 +1014,14 @@ class Hook:
         # context climbs while the model works, and a rung crossed mid-turn is
         # the moment worth saying so.
         r = rung_of(k.model_context_lines, k.model_context_step, ctx)
-        if r > self.m_ctx_at:
+        if self.event in ("prompt", "userpromptsubmit"):
+            # The hush is read again each prompt: a curia that closed or a
+            # claim that ended gets its line on the next turn.
+            self.m_ctx_hushed = 0
+        if r > max(self.m_ctx_at, self.m_ctx_hushed):
+            if self.hush:
+                self.m_ctx_hushed = r
+                return
             if self.m_ctx_at == 0:
                 self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)}: a stopping point is due.")
             else:
@@ -989,8 +1034,9 @@ class Hook:
             # autonomous run can burn a rung without ever reaching a prompt.
             self.m_ctx_tools += 1
             if self.m_ctx_tools >= k.model_context_repeat:
-                self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(self.m_ctx_at)} for "
-                                        f"{self.m_ctx_tools} tool calls: a stopping point is due.")
+                if not self.hush:
+                    self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(self.m_ctx_at)} for "
+                                            f"{self.m_ctx_tools} tool calls: a stopping point is due.")
                 self.m_ctx_tools = 0
 
     def sitting_line(self, ctx):
@@ -1006,7 +1052,7 @@ class Hook:
             return
         # Two hours arms the Stop block's hand-off, unless work is in flight:
         # landing it comes first.
-        if n >= k.sit_every_min * 2 and not self.in_flight() and not self.curia_live:
+        if n >= k.sit_every_min * 2 and not self.in_flight() and not self.hush:
             self.since_nag = True
         t = f"⏱ {hm(sit_min)} · context {kfmt(ctx)}"
         tail = self.sit_tail()
@@ -1045,13 +1091,13 @@ class Hook:
         r = rung_of([k.sit_every_min], k.sit_every_min, m_min)
         if r == 0:
             self.m_sit_at = self.m_sit_said = 0
-        elif not self.sit_quiet and self.in_flight() and r > self.m_sit_said:
+        elif not self.sit_quiet and self.in_flight() and r > self.m_sit_said and not self.driver:
             self.model_lines.append(
                 f"Sitting {hm(m_min)} at this machine, past {hm(r)}, with work in flight "
                 f"({self.in_flight_memo}). Don't raise the time yet: land this first, without "
                 f"asking -- commit, push, open the PR. This rung comes back once it lands. {self.SIT_ORDERS}")
             self.m_sit_said = r
-        elif not self.sit_quiet and not self.in_flight() and r > self.m_sit_at:
+        elif not self.sit_quiet and not self.in_flight() and r > self.m_sit_at and not self.driver:
             self.model_lines.append(f"Sitting {hm(m_min)} at this machine, past {hm(r)}. "
                                     f"{self.pickup_duty} {self.SIT_ORDERS}")
             self.m_sit_at = self.m_sit_said = r
@@ -1195,6 +1241,8 @@ class Hook:
         # since_nag is armed by a context or time crossing and by friction, and
         # disarmed by the nag. The hour arms it once per session.
         if not (self.since_nag or (late and not self.late_nagged)):
+            return ""
+        if self.hush:
             return ""
         if late:
             self.late_nagged = True

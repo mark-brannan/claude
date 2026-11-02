@@ -161,6 +161,13 @@ two-hour arming of the Stop hand-off) stay silent. Gentle, non-reactive ones
 first prompt after the sitting is no longer live, where they help rather than
 interrupt. Counting continues and every metrics file is still written.
 
+**A batch driver and a live curia sitting are hushed.** A driver is a session
+that claimed an item carrying a `driver=` Log line. For it and for a live
+curia sitting, nothing nags the model: no context line or its repeat, no
+sitting line, and the Stop block never asks for a hand-off, whatever armed it.
+Crossings are still counted and recorded, and the block still shows them:
+hush is about what reaches the model, never the record.
+
 ## Thresholds
 
 **Every threshold is easily modifiable by the user,** in one obvious place,
