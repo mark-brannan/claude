@@ -30,8 +30,12 @@ class SubagentPermissionApproveTest(unittest.TestCase):
         self.state = Path(self.tmp.name) / "state"
         self.records = self.state / "languette" / "decisions.jsonl"
         self.records.parent.mkdir(parents=True)
+        repo = Path(self.tmp.name) / "staterepo"
+        (repo / ".git").mkdir(parents=True)
+        self.log = repo / "state/global/metrics/permission-approvals/ab/abc123.jsonl"
         self.env = {**os.environ, "HOME": self.tmp.name, "XDG_STATE_HOME": str(self.state),
-                    "PYTHONDONTWRITEBYTECODE": "1"}
+                    "CLAUDE_STATE_REPO": str(repo), "PYTHONDONTWRITEBYTECODE": "1"}
+        self.env.pop("CLAUDE_CONFIG_DIR", None)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -42,11 +46,18 @@ class SubagentPermissionApproveTest(unittest.TestCase):
         with open(path or self.records, "a") as f:
             f.write(json.dumps(rec) + "\n")
 
-    def run_hook(self, agent=True, suggestions=SUGGEST, stdin=None):
+    def verdicts(self):
+        if not self.log.exists():
+            return []
+        return [json.loads(x)["verdict"] for x in self.log.read_text().splitlines()]
+
+    def run_hook(self, agent=True, suggestions=SUGGEST, stdin=None, agent_type=None):
         ev = {"hook_event_name": "PermissionRequest", "session_id": "abc123", "cwd": "/w/repo",
               "permission_mode": "default", "tool_name": "Bash", "tool_input": {"command": "touch x"}}
         if agent:
             ev.update(agent_id="a4aadbe92e02e5780", agent_type="general-purpose")
+        if agent_type:
+            ev["agent_type"] = agent_type
         if suggestions is not None:
             ev["permission_suggestions"] = suggestions
         r = subprocess.run([sys.executable, str(HOOK)], input=stdin if stdin is not None else json.dumps(ev),
@@ -57,6 +68,7 @@ class SubagentPermissionApproveTest(unittest.TestCase):
     def test_subagent_rule_request_is_approved(self):
         self.record("silent")
         self.assertEqual(self.run_hook(), ALLOW)
+        self.assertEqual(self.verdicts(), ["allow"])
 
     def test_approved_with_no_languette_record_at_all(self):
         self.records.unlink(missing_ok=True)
@@ -64,14 +76,21 @@ class SubagentPermissionApproveTest(unittest.TestCase):
 
     def test_main_session_request_is_left_to_the_dialog(self):
         self.assertIsNone(self.run_hook(agent=False))
+        self.assertEqual(self.verdicts(), [])
+
+    def test_main_session_under_agent_flag_is_left_to_the_dialog(self):
+        # --agent sets agent_type on the main session but no agent_id (measured, CC 2.1.300)
+        self.assertIsNone(self.run_hook(agent=False, agent_type="prober"))
 
     def test_request_without_suggestions_is_left_alone_as_a_hook_ask(self):
         self.assertIsNone(self.run_hook(suggestions=None))
         self.assertIsNone(self.run_hook(suggestions=[]))
+        self.assertEqual(self.verdicts(), ["no-suggestions", "no-suggestions"])
 
     def test_recent_languette_ask_in_this_session_holds_it_back(self):
         self.record("ask")
         self.assertIsNone(self.run_hook())
+        self.assertEqual(self.verdicts(), ["languette-ask"])
 
     def test_languette_ask_in_the_rotated_file_holds_it_back(self):
         self.record("ask", path=str(self.records) + ".1")
@@ -95,6 +114,11 @@ class SubagentPermissionApproveTest(unittest.TestCase):
     def test_unreadable_record_fails_closed(self):
         self.records.mkdir()  # a directory where the record should be: open() raises
         self.assertIsNone(self.run_hook())
+
+    def test_unwritable_log_still_approves(self):
+        self.log.parent.parent.mkdir(parents=True)
+        self.log.parent.write_text("")  # a file where the shard directory should be
+        self.assertEqual(self.run_hook(), ALLOW)
 
     def test_malformed_stdin_decides_nothing(self):
         self.assertIsNone(self.run_hook(stdin="not json"))

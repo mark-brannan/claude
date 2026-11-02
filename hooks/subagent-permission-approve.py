@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """PermissionRequest: approve a sub-agent's request, unless a hook asked for it.
 
-Why: the desktop app can drop a session out of bypass mode mid-run (it did on
-2026-11-02, session eb3cc26a, from bypassPermissions to default). From then
+Why: the desktop app can drop a session out of bypass mode mid-run. From then
 on, each sub-agent's tool call that needs permission waits on a dialog nobody
 is watching, and a background sub-agent's call is denied outright. The
 PreToolUse guards (languette first) are where calls are judged, so a request
@@ -13,14 +12,23 @@ so. A request is approved only when all three hold; otherwise the hook prints
 nothing and the dialog shows as it would have:
 
 - agent_id is present: the call is a sub-agent's (a main-session call has
-  none; both carry the parent's session_id);
+  none, even under --agent, which sets only agent_type; both carry the
+  parent's session_id);
 - permission_suggestions is non-empty: a hook's ask carries none (seen on
   Claude Code 2.1.300, docs silent);
 - languette's decision record has no "ask" for this session in the last
-  WINDOW seconds: a direct check on languette, independent of the one above.
-  A guard's ask on a parallel sub-agent holds this one back too.
+  WINDOW seconds. Best-effort: languette writes no record when
+  record_decisions is off and drops one under lock contention, so the check
+  above is the one that always holds. A guard's ask on a parallel sub-agent
+  holds this one back too.
 
-Fails closed: any error prints nothing, so the dialog shows.
+Each sub-agent request's outcome is appended to the state dir's
+metrics/permission-approvals/<session>.jsonl, beside permission-request-log:
+    {"ts": "...", "session_id": "...", "agent_id": "a4aa...", "agent_type":
+     "general-purpose", "tool": "Bash", "verdict": "allow"}
+verdict is allow, no-suggestions or languette-ask.
+
+Fails closed: any error before the answer prints nothing, so the dialog shows.
 """
 import calendar
 import json
@@ -76,20 +84,40 @@ def languette_asked(session, now, path):
     return False
 
 
-def approve(ev, now, path):
+def verdict(ev, now, path):
+    """allow, or why not; None for a main-session request."""
     if not ev.get("agent_id"):
-        return False
+        return None
     if not ev.get("permission_suggestions"):
-        return False
-    return not languette_asked(ev.get("session_id"), now, path)
+        return "no-suggestions"
+    return "languette-ask" if languette_asked(ev.get("session_id"), now, path) else "allow"
+
+
+def log(ev, v):
+    """One line per sub-agent request; never lets a logging failure reach the caller."""
+    try:
+        sd = lib_state.state_dir()
+        if not sd:
+            return
+        import when
+        from state import append_row
+        sid = str(ev.get("session_id") or "unknown")
+        append_row(os.path.join(sd, "metrics", "permission-approvals"), sid,
+                   {"ts": when.stamp(), "session_id": sid, "agent_id": ev.get("agent_id"),
+                    "agent_type": ev.get("agent_type"), "tool": ev.get("tool_name"), "verdict": v})
+    except Exception as e:  # noqa: BLE001 -- the answer is already out
+        lib_state.trace_failure("subagent-permission-approve", "PermissionRequest", e, stage="log")
 
 
 def main():
     ev = lib_state.event()
     if ev.get("hook_event_name") != "PermissionRequest":
         return
-    if approve(ev, time.time(), records_path(os.environ)):
+    v = verdict(ev, time.time(), records_path(os.environ))
+    if v == "allow":
         hookio.emit(hookio.specific("PermissionRequest", decision={"behavior": "allow"}))
+    if v:
+        log(ev, v)
 
 
 if __name__ == "__main__":
