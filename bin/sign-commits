@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# resign -- re-sign a branch's unsigned commits and push it, by hand.
+# sign-commits -- re-sign a branch's unsigned commits and push it, by hand.
 #
-#   resign [branch] [-n | --dry-run]
+#   sign-commits [branch] [-n | --dry-run]
 #
 # For a person at a shell, on the machine that holds the signing key, when a
 # PR is blocked on unsigned commits. The agents' gate, hooks/no-unsigned-push.py,
@@ -46,10 +46,10 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
 try:
     import state  # noqa: E402
 except ImportError:
-    sys.stderr.write("resign: lib/state.py not found (looked beside the tool and in ~/.claude/lib)\n")
+    sys.stderr.write("sign-commits: lib/state.py not found (looked beside the tool and in ~/.claude/lib)\n")
     sys.exit(2)
 
-USAGE = "usage: resign [branch] [-n | --dry-run]\n"
+USAGE = "usage: sign-commits [branch] [-n | --dry-run]\n"
 
 # The recommendation forms this runs. Anything else is for a person to read.
 RUNS = ("git rebase -S ", "git commit --amend -S ")
@@ -86,35 +86,35 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
 
     p = git("rev-parse", "--show-toplevel")
     if p.returncode:
-        err.write("resign: not inside a git repository\n")
+        err.write("sign-commits: not inside a git repository\n")
         return 1
     root = p.stdout.strip()
     cur = git("branch", "--show-current").stdout.strip()
     br = br or cur
     if not br:
-        err.write("resign: HEAD is detached; name the branch to re-sign\n")
+        err.write("sign-commits: HEAD is detached; name the branch to re-sign\n")
         return 2
 
     p = run(["git", "-C", root, "fetch", "--quiet", "origin"])
     if p.returncode:
-        err.write("resign: git fetch origin failed; nothing touched\n")
+        err.write("sign-commits: git fetch origin failed; nothing touched\n")
         return 1
 
     rc, text = brief(root, br)
     if rc:
-        err.write(f"resign: {text}")
+        err.write(f"sign-commits: {text}")
         return 1
     out.write(text)
 
     cmd, rec = recommendation(text)
     if rec.startswith("nothing on the base"):
-        out.write(f"resign: nothing to re-sign on {br}\n")
+        out.write(f"sign-commits: nothing to re-sign on {br}\n")
         return 0
     if not cmd.startswith(RUNS):
-        err.write(f"resign: not a step this runs by itself -- {rec or 'no recommendation'}\n")
+        err.write(f"sign-commits: not a step this runs by itself -- {rec or 'no recommendation'}\n")
         return 1
     if br != cur:
-        err.write(f"resign: check out {br} first; the command rewrites the checked-out branch\n")
+        err.write(f"sign-commits: check out {br} first; the command rewrites the checked-out branch\n")
         return 1
 
     push = ["git", "push", "--force-with-lease", "origin", br]
@@ -123,17 +123,17 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
         out.flush()
         p = run(["git", "-C", root, *shlex.split(cmd)[1:]])
         if p.returncode:
-            err.write(f"resign: `{cmd}` failed (exit {p.returncode}); nothing pushed. "
+            err.write(f"sign-commits: `{cmd}` failed (exit {p.returncode}); nothing pushed. "
                       "If a rebase is in progress, finish it or run `git rebase --abort`.\n")
             return 1
     out.write("+ " + " ".join(push) + "\n")
     if dry:
-        out.write("resign: dry run, nothing touched\n")
+        out.write("sign-commits: dry run, nothing touched\n")
         return 0
     out.flush()
     p = run(["git", "-C", root, *push[1:]])
     if p.returncode:
-        err.write(f"resign: push failed (exit {p.returncode}); the branch is re-signed locally\n")
+        err.write(f"sign-commits: push failed (exit {p.returncode}); the branch is re-signed locally\n")
         return 1
     return 0
 

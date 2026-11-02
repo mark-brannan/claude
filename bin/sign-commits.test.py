@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Tests for resign. Run: python3 bin/resign.test.py
+# Tests for sign-commits. Run: python3 bin/sign-commits.test.py
 #
 # What matters: it runs only a signing rebase or amend that branch_brief
 # recommends, after a fetch and before a leased push, on the checked-out
@@ -16,14 +16,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-TOOL = Path(__file__).resolve().parent / "resign"
-spec = importlib.util.spec_from_file_location("resign", TOOL, loader=importlib.machinery.SourceFileLoader("resign", str(TOOL)))
-resign = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(resign)
+TOOL = Path(__file__).resolve().parent / "sign-commits"
+spec = importlib.util.spec_from_file_location("sign_commits", TOOL, loader=importlib.machinery.SourceFileLoader("sign_commits", str(TOOL)))
+sign_commits = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sign_commits)
 
 REBASE = "git rebase -S --force-rebase 0123abcd   # 2 unsigned commit(s); push it with git push --force-with-lease"
 AMEND = "git commit --amend -S --no-edit   # the unsigned commit is the merge itself, at the tip; push it with git push --force-with-lease"
-HANDOVER = ("do not rebase and do not resign -- an unsigned commit sits at or below one of the 1 merge commit(s), "
+HANDOVER = ("do not rebase and do not re-sign -- an unsigned commit sits at or below one of the 1 merge commit(s), "
             "so the branch cannot be re-signed without losing the merge; hand it over saying so")
 KEYLESS = ("cannot sign on this machine (no user.signingkey) -- 2 unsigned commit(s) will block the PR; "
            "hand over saying `git rebase -S --force-rebase 0123abcd` then `git push --force-with-lease` has to run where the key is")
@@ -47,7 +47,7 @@ class Recorder:
         return subprocess.CompletedProcess(argv, rc)
 
 
-class ResignTest(unittest.TestCase):
+class SignCommitsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = self.tmp.name
@@ -67,7 +67,7 @@ class ResignTest(unittest.TestCase):
             self.assertEqual(os.path.realpath(root), os.path.realpath(self.repo))
             return (brief_rc, f"error: no branch {br} in {root}\n") if brief_rc else (0, brief_text(rec))
 
-        rc = resign.main(argv, cwd=self.repo, brief=brief, run=run, out=out, err=err)
+        rc = sign_commits.main(argv, cwd=self.repo, brief=brief, run=run, out=out, err=err)
         return rc, run.calls, out.getvalue(), err.getvalue()
 
     def test_rebase_recommendation_runs_after_a_fetch_and_before_a_leased_push(self):
@@ -119,7 +119,7 @@ class ResignTest(unittest.TestCase):
     def test_a_brief_error_is_shown_whole(self):
         rc, calls, out, err = self.go(["nope"], REBASE, brief_rc=1)
         self.assertEqual(rc, 1)
-        self.assertIn("resign: error: no branch nope in", err)
+        self.assertIn("sign-commits: error: no branch nope in", err)
 
     def test_a_failed_fetch_stops_before_the_brief(self):
         rc, calls, out, err = self.go([], REBASE, fail=[("fetch",)])
@@ -149,7 +149,7 @@ class ResignTest(unittest.TestCase):
     def test_outside_a_repository(self):
         with tempfile.TemporaryDirectory() as d:
             run, err = Recorder(), io.StringIO()
-            rc = resign.main([], cwd=d, brief=None, run=run, out=io.StringIO(), err=err)
+            rc = sign_commits.main([], cwd=d, brief=None, run=run, out=io.StringIO(), err=err)
         self.assertEqual(rc, 1)
         self.assertEqual(run.calls, [])
         self.assertIn("not inside a git repository", err.getvalue())
@@ -157,13 +157,13 @@ class ResignTest(unittest.TestCase):
     def test_usage(self):
         for argv, rc in ((["-h"], 0), (["--bogus"], 2), (["a", "b"], 2)):
             run, out, err = Recorder(), io.StringIO(), io.StringIO()
-            self.assertEqual(resign.main(argv, cwd=self.repo, brief=None, run=run, out=out, err=err), rc, argv)
+            self.assertEqual(sign_commits.main(argv, cwd=self.repo, brief=None, run=run, out=out, err=err), rc, argv)
             self.assertEqual(run.calls, [])
 
     def test_recommendation_parsing(self):
-        self.assertEqual(resign.recommendation(brief_text(REBASE))[0], "git rebase -S --force-rebase 0123abcd")
-        self.assertEqual(resign.recommendation(brief_text(CLEAN))[0], CLEAN)
-        self.assertEqual(resign.recommendation("ahead: 1\n"), ("", ""))
+        self.assertEqual(sign_commits.recommendation(brief_text(REBASE))[0], "git rebase -S --force-rebase 0123abcd")
+        self.assertEqual(sign_commits.recommendation(brief_text(CLEAN))[0], CLEAN)
+        self.assertEqual(sign_commits.recommendation("ahead: 1\n"), ("", ""))
 
 
 if __name__ == "__main__":

@@ -705,7 +705,7 @@ A PR blocked on unsigned commits, on the machine that holds the signing key.
 From any checkout of the repo, with the PR's branch checked out:
 
 ```bash
-resign --dry-run
+sign-commits --dry-run
 ```
 
 It fetches, prints the branch's facts (ahead, behind, conflicts, unsigned,
@@ -713,7 +713,7 @@ merges) and the one command `branch_brief` recommends. When that is a signing
 rebase or amend, run it for real:
 
 ```bash
-resign
+sign-commits
 ```
 
 That runs the command and `git push --force-with-lease`. Anything else the
