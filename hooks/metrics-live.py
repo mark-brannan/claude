@@ -775,6 +775,35 @@ class Hook:
                 return True
         return False
 
+    def in_driver(self):
+        """True when this session is a batch driver: an item file carries a Log
+        line of this session's short id claiming it, and a `driver=` Log line
+        (only batch parents carry one). One glob and a read of each file that
+        mentions the short id. Memoized."""
+        if self.driver_memo is None:
+            short = self.sid[:8].encode()
+            claimed = re.compile(rb"^\S+ " + re.escape(short) + rb" status=claimed\b", re.M)
+            driver = re.compile(rb"^\S+ \S+ driver=", re.M)
+            self.driver_memo = False
+            if len(short) == 8:
+                for f in glob.glob(f"{self.sdir}/items/*.md"):
+                    data = read_bytes(f)
+                    if short in data and claimed.search(data) and driver.search(data):
+                        self.driver_memo = True
+                        break
+        return self.driver_memo
+
+    @property
+    def driver(self):
+        return not self.curia_live and bool(soft("driver", self.in_driver, default=False))
+
+    @property
+    def hush(self):
+        """A live curia sitting or a batch driver: nothing nags the model, the
+        Stop block never asks for a hand-off. Crossings are still counted.
+        Checked last in each gate, so the item scan runs only when a nag would."""
+        return self.curia_live or self.driver
+
     def hold(self, kind, txt):
         """Gentle lines (sitting clock, bedtime) are held while a curia is
         live and said once when it is not: one line per kind, the latest wins."""
@@ -811,6 +840,7 @@ class Hook:
         # the injection is discarded silently.
         inject_event = "PostToolUse" if ev == "posttooluse" else "UserPromptSubmit"
         self.curia_live = False
+        self.driver_memo = None
 
         if run_engine and is_prompt:
             # The machine-wide day counter (#301): measured, never alarmed.
@@ -977,13 +1007,15 @@ class Hook:
         # the moment worth saying so.
         r = rung_of(k.model_context_lines, k.model_context_step, ctx)
         if r > self.m_ctx_at:
+            if self.hush:
+                return
             if self.m_ctx_at == 0:
                 self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)}: a stopping point is due.")
             else:
                 self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)} "
                                         f"(last offered at {kfmt(self.m_ctx_at)}).")
             self.m_ctx_at, self.m_ctx_tools = r, 0
-        elif self.event == "posttooluse" and self.m_ctx_at > 0 and k.model_context_repeat > 0:
+        elif self.event == "posttooluse" and self.m_ctx_at > 0 and k.model_context_repeat > 0 and not self.hush:
             # The one deliberate repeat: a rung raised and not acted on is said
             # again after model_context_repeat tool calls, since a long
             # autonomous run can burn a rung without ever reaching a prompt.
@@ -1003,6 +1035,9 @@ class Hook:
         sit_min = (self.now_ts - self.sit_start) // 60
         n = sit_min // k.sit_every_min * k.sit_every_min
         if not (n >= k.sit_every_min and n > self.time_line):
+            return
+        if self.driver:
+            self.time_line = n
             return
         # Two hours arms the Stop block's hand-off, unless work is in flight:
         # landing it comes first.
@@ -1045,6 +1080,8 @@ class Hook:
         r = rung_of([k.sit_every_min], k.sit_every_min, m_min)
         if r == 0:
             self.m_sit_at = self.m_sit_said = 0
+        elif self.driver:
+            return
         elif not self.sit_quiet and self.in_flight() and r > self.m_sit_said:
             self.model_lines.append(
                 f"Sitting {hm(m_min)} at this machine, past {hm(r)}, with work in flight "
@@ -1195,6 +1232,8 @@ class Hook:
         # since_nag is armed by a context or time crossing and by friction, and
         # disarmed by the nag. The hour arms it once per session.
         if not (self.since_nag or (late and not self.late_nagged)):
+            return ""
+        if self.hush:
             return ""
         if late:
             self.late_nagged = True
