@@ -284,6 +284,24 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(jfield(sessions / NGSID[:2] / f"{NGSID}.json", "verdict"),
                          "not archivable: not a git repo", "not a git repo: the verdict says so")
 
+        # --- a Workflow worker's transcript reaches jq (claude#363) ------------
+        # It sits under subagents/workflows/<run>/, one level below the flat
+        # agent files; a `*` where the `**` is would miss it.
+        WFSID = "wfsub000-1111-2222-3333"
+        TPW = w.transcript("wf-transcript.jsonl")
+        worker = w.S / "wf-transcript" / "subagents" / "workflows" / "wf_x" / "agent-w1.jsonl"
+        worker.parent.mkdir(parents=True)
+        worker.write_text(json.dumps({"type": "assistant", "requestId": "wf-r1", "isSidechain": True,
+                                      "timestamp": "2026-09-22T00:00:01.000Z",
+                                      "message": {"model": "claude-opus-5", "role": "assistant",
+                                                  "content": [{"type": "text", "text": "ok"}],
+                                                  "usage": {"input_tokens": 10, "output_tokens": 10,
+                                                            "cache_read_input_tokens": 0,
+                                                            "cache_creation_input_tokens": 0}}}) + "\n")
+        w.run_hook(WFSID, NOGIT, tp=TPW)
+        self.assertEqual(jfield(sessions / WFSID[:2] / f"{WFSID}.json", "subagent_turns"), "1",
+                         "a worker under subagents/workflows/ is counted as a sub-agent turn")
+
         # --- one gh round trip per Stop ---------------------------------------
         # The verdict's home check and the pickup item's `pr:` lookup ask the
         # same question. The verdict's answer is handed to the pickup item
