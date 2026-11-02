@@ -333,6 +333,13 @@ the rulings to date:
   maxims table, and per batch: hours from `/pickup` to the last merge on main, idle
   hours, sessions used, the user's turns, and dollars per merged PR
   (2026-10-24).
+- **The close.** With the walk logged, the driver logs each child whose PR
+  merged `status=done evidence=<PR>`, and each that did not
+  `~/.claude/bin/work-item log <id> status=ready note=<why>`, where it stays
+  a standalone ready item. Then it logs the parent
+  `status=done evidence=<walk path>; ready: <child ids>`, naming every child
+  it re-readied. A batch whose parent is not done is one its driver never
+  finished (2026-11-02).
 
 The run's last line is the one line that starts the driver:
 
