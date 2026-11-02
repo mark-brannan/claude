@@ -136,6 +136,14 @@ class ApplyEdits(unittest.TestCase):
         self.assertRefused(r, "is in a .git")
         self.assertEqual(c.read_text(), "[core]\n")
 
+    def test_denials_ignore_case(self):
+        g = self.file(".GIT/config", "[core]\n")
+        m = self.file(".Claude/settings.json", "{}\n")
+        r = self.run_tool([{"path": ".GIT/config", "old": "[core]", "new": "[x]"},
+                           {"path": ".Claude/settings.json", "old": "{}", "new": "[]"}])
+        self.assertRefused(r, "edit 0 (.GIT/config): is in a .git", "edit 1")
+        self.assertEqual((g.read_text(), m.read_text()), ("[core]\n", "{}\n"))
+
     def test_claude_dir_refused_but_worktrees_open(self):
         s = self.file(".claude/settings.json", "{}\n")
         h = self.file(".claude/hooks/h.py", "a\n")

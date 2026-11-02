@@ -79,7 +79,7 @@ def roots(cwd):
     live = os.path.join(h, ".claude")
     out = []
     top = work_tree(cwd)
-    if top and inside(top, h) and top != h and not inside(top, live):
+    if top and inside(top, h) and top != h and not inside(top.casefold(), live.casefold()):
         out.append(top)
     out.append(os.path.join(h, "claude_prompts_scratch"))
     uid = "claude-%d" % os.getuid()
@@ -92,9 +92,10 @@ def roots(cwd):
 
 def refusal(real, allowed):
     """Why real (a resolved path) may not be written, or None."""
-    if inside(real, os.path.join(home(), ".claude")):
+    # Denials compare casefolded: on a case-insensitive filesystem .GIT is .git.
+    if inside(real.casefold(), os.path.join(home(), ".claude").casefold()):
         return "is in the live ~/.claude"
-    parts = real.split("/")
+    parts = real.casefold().split("/")
     for i, p in enumerate(parts):
         if p == ".git":
             return "is in a .git"
