@@ -33,6 +33,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Find all PRs awaiting human review](#find-all-prs-awaiting-human-review)
 - [Audit the `awaiting-human` label](#audit-the-awaiting-human-label)
 - [Find out which session holds a branch](#find-out-which-session-holds-a-branch)
+- [Re-sign a PR's commits by hand](#re-sign-a-prs-commits-by-hand)
 - [Waive the churn gate on a PR](#waive-the-churn-gate-on-a-pr)
 - [Waive the mixed-loops gate on a PR](#waive-the-mixed-loops-gate-on-a-pr)
 - [Grind a project](#grind-a-project)
@@ -697,6 +698,28 @@ is one where no session has ever claimed a card, not one missing setup.
 Verify the whole loop by hand: open a second session on the same branch and it
 prints a warning naming the first at start-up; `/wrapup` the first and
 `claim-stamp.py read -C .` no longer lists it.
+
+## Re-sign a PR's commits by hand
+
+A PR blocked on unsigned commits, on the machine that holds the signing key.
+From any checkout of the repo, with the PR's branch checked out:
+
+```bash
+sign-commits --dry-run
+```
+
+It fetches, prints the branch's facts (ahead, behind, conflicts, unsigned,
+merges) and the one command `branch_brief` recommends. When that is a signing
+rebase or amend, run it for real:
+
+```bash
+sign-commits
+```
+
+That runs the command and `git push --force-with-lease`. Anything else the
+brief recommends (a conflict, a hand-resolved merge, no key here) it prints
+and leaves alone, exit 1; do that step by hand. It worked when `pr-blockers
+<owner/repo#n>` no longer names an unsigned commit.
 
 ## Waive the churn gate on a PR
 

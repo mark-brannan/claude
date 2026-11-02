@@ -1185,10 +1185,10 @@ def branch_brief(root, br):
                 rec = (f"cannot sign on this machine (no user.signingkey) -- the unsigned commit is the merge itself, at the tip; "
                        f"hand over saying `{cmd}` on {br} then `git push --force-with-lease` has to run where the key is")
         else:
-            rec = (f"do not rebase and do not resign -- an unsigned commit sits at or below one of the {mg} merge commit(s), "
+            rec = (f"do not rebase and do not re-sign -- an unsigned commit sits at or below one of the {mg} merge commit(s), "
                    "so the branch cannot be re-signed without losing the merge; hand it over saying so")
     elif int(mg) > 0 and conf != "no":
-        rec = (f"do not rebase and do not resign -- {mg} merge commit(s) on the branch; `git merge origin/{base}`, "
+        rec = (f"do not rebase and do not re-sign -- {mg} merge commit(s) on the branch; `git merge origin/{base}`, "
                "resolve, commit signed, push as a fast-forward")
     elif conf == "yes":
         rec = f"git merge origin/{base}   # conflicts against the base; resolve, commit, and never linearize the branch afterwards"

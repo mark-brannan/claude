@@ -868,7 +868,7 @@ class BranchBriefTest(Base):
         self.commit(r, "base\nboth\n", "resolved by hand")
         out = self.brief(r)[1]
         self.assertIn("merges: 1", out)
-        self.assertRegex(self.rec(out), r"^recommend: do not rebase and do not resign")
+        self.assertRegex(self.rec(out), r"^recommend: do not rebase and do not re-sign")
         self.assertIn("cannot be re-signed without losing the merge", self.rec(out))
 
     def test_an_unsigned_merge_at_the_tip_is_amended_in_place(self):
