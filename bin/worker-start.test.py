@@ -4,7 +4,11 @@
 # What matters: --new cuts claude/<slug> from origin/main (or --base), in the
 # repo or in a new worktree; --head and --pr check out the remote head, a
 # worktree one detached; the issue or PR is read last; a failing step stops
-# the run with its code; --item logs `dispatched` last and never fails it. A real git repo with a local "origin"; gh is a stub.
+# the run with its code; --item logs `dispatched` last and never fails it;
+# --issue alone only prints the issue; with --worktree a repo in the SETUP
+# table (keyed by its origin's owner/name) gets links, excludes or npm ci,
+# unless --no-setup. A real git repo with a local "origin"; gh and npm are stubs.
+import importlib.machinery
 import os
 import shutil
 import subprocess
@@ -19,6 +23,14 @@ GH = '''#!/bin/sh
 echo "gh $*" >> "$GH_LOG"
 pwd -P >> "$GH_LOG.pwd"
 case "$1 $2" in "pr view") case "$*" in *headRefName*) [ -f "$GH_LOG.fork" ] && echo "true feature" || echo "false feature" ;; esac ;; esac
+exit 0
+'''
+
+
+# npm ci stub: logs its argv and cwd, and leaves a real node_modules behind.
+NPM = '''#!/bin/sh
+echo "npm $* (in $(pwd -P))" >> "$GH_LOG.npm"
+mkdir -p node_modules
 exit 0
 '''
 
@@ -41,6 +53,8 @@ class WorkerStart(unittest.TestCase):
         bindir.mkdir()
         (bindir / "gh").write_text(GH)
         (bindir / "gh").chmod(0o755)
+        (bindir / "npm").write_text(NPM)
+        (bindir / "npm").chmod(0o755)
         self.log = self.tmp / "gh.log"
         self.env = dict(os.environ, PATH="%s:%s" % (bindir, os.environ["PATH"]), GH_LOG=str(self.log))
 
@@ -159,6 +173,140 @@ class WorkerStart(unittest.TestCase):
 
     def test_base_without_new_is_refused(self):
         self.assertEqual(self.run_tool("--head", "feature", "--base", "origin/x").returncode, 2)
+
+
+class Setup(unittest.TestCase):
+    """The per-repo opening chores; portolani is the one entry."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.origin, self.repo = self.tmp / "origin", self.tmp / "repo"
+        sh("git", "init", "-q", "-b", "main", str(self.origin))
+        (self.origin / "package-lock.json").write_text("lock v1\n")
+        sh("git", "-C", str(self.origin), "add", ".")
+        sh("git", "-C", str(self.origin), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
+           "commit", "-q", "-m", "root")
+        sh("git", "clone", "-q", str(self.origin), str(self.repo))
+        # The main checkout: installs and downloads that a worktree should reach.
+        (self.repo / "node_modules").mkdir()
+        (self.repo / "downloads").mkdir()
+        (self.repo / "downloads" / "a.pdf").write_text("pdf")
+        bindir = self.tmp / "bin"
+        bindir.mkdir()
+        for name, body in (("gh", GH), ("npm", NPM)):
+            (bindir / name).write_text(body)
+            (bindir / name).chmod(0o755)
+        self.log = self.tmp / "gh.log"
+        self.env = dict(os.environ, PATH="%s:%s" % (bindir, os.environ["PATH"]), GH_LOG=str(self.log))
+        self.exclude = self.repo / ".git" / "info" / "exclude"
+
+    def fake_origin(self, url):
+        """Make origin's URL <url> while fetches still reach the local origin."""
+        sh("git", "-C", str(self.repo), "config", "url.%s.insteadOf" % self.origin, url)
+        sh("git", "-C", str(self.repo), "config", "remote.origin.url", url)
+
+    def start(self, slug, *args):
+        return subprocess.run([sys.executable, str(TOOL), "-C", str(self.repo), "--new", slug,
+                               "--worktree", str(self.tmp / slug), *args],
+                              env=self.env, text=True, capture_output=True)
+
+    def npm_calls(self):
+        f = Path(str(self.log) + ".npm")
+        return f.read_text().splitlines() if f.exists() else []
+
+    def test_portolani_links_installs_and_excludes_them(self):
+        self.fake_origin("git@github.com:mark-brannan/portolani.git")
+        r = self.start("w1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        wt = self.tmp / "w1"
+        self.assertEqual(os.readlink(wt / "node_modules"), str(self.repo / "node_modules"))
+        self.assertEqual(os.readlink(wt / "downloads"), str(self.repo / "downloads"))
+        self.assertEqual(self.npm_calls(), [])
+        self.assertIn("$ ln -s %s %s" % (self.repo / "node_modules", wt / "node_modules"), r.stdout)
+        # The point: the links are not untracked, so nothing has to be rm'd before a commit.
+        self.assertEqual(sh("git", "-C", str(wt), "status", "--porcelain"), "")
+
+    def test_exclude_is_written_once(self):
+        self.fake_origin("https://github.com/Mark-Brannan/portolani")
+        for slug in ("w1", "w2"):
+            self.assertEqual(self.start(slug).returncode, 0)
+        self.assertEqual(self.exclude.read_text().splitlines().count("/node_modules"), 1)
+        self.assertEqual(self.exclude.read_text().splitlines().count("/downloads"), 1)
+        self.assertNotIn("echo", self.start("w3").stdout)
+
+    def test_changed_lockfile_means_npm_ci_not_a_link(self):
+        self.fake_origin("https://github.com/mark-brannan/portolani.git")
+        (self.repo / "package-lock.json").write_text("lock v0\n")
+        r = self.start("w1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        wt = self.tmp / "w1"
+        self.assertFalse((wt / "node_modules").is_symlink())
+        self.assertTrue((wt / "node_modules").is_dir())
+        self.assertEqual(self.npm_calls(), ["npm --prefix %s ci --no-audit --no-fund (in %s)" % (wt, wt.resolve())])
+        self.assertTrue((wt / "downloads").is_symlink())
+
+    def test_no_main_node_modules_means_npm_ci(self):
+        self.fake_origin("https://github.com/mark-brannan/portolani.git")
+        (self.repo / "node_modules").rmdir()
+        self.assertEqual(self.start("w1").returncode, 0)
+        self.assertEqual(len(self.npm_calls()), 1)
+        self.assertFalse((self.tmp / "w1" / "node_modules").is_symlink())
+
+    def test_no_setup_skips_it(self):
+        self.fake_origin("https://github.com/mark-brannan/portolani.git")
+        r = self.start("w1", "--no-setup")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(os.path.lexists(self.tmp / "w1" / "node_modules"))
+        self.assertFalse(os.path.lexists(self.tmp / "w1" / "downloads"))
+        self.assertFalse(self.exclude.exists() and "node_modules" in self.exclude.read_text())
+
+    def test_setup_needs_a_worktree(self):
+        self.fake_origin("https://github.com/mark-brannan/portolani.git")
+        r = subprocess.run([sys.executable, str(TOOL), "-C", str(self.repo), "--new", "w1"],
+                           env=self.env, text=True, capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse((self.repo / "node_modules").is_symlink())
+        self.assertEqual(self.npm_calls(), [])
+
+    def test_unknown_repo_gets_nothing_and_says_nothing(self):
+        self.fake_origin("https://github.com/someone/else.git")
+        r = self.start("w1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(os.path.lexists(self.tmp / "w1" / "node_modules"))
+        self.assertEqual(self.npm_calls(), [])
+        self.assertEqual([l for l in r.stdout.splitlines() if "ln" in l.split()[:2] or "npm" in l or "echo" in l], [])
+        self.assertFalse(self.exclude.exists() and "node_modules" in self.exclude.read_text())
+
+    def test_setup_leaves_what_is_there_alone(self):
+        mod = importlib.machinery.SourceFileLoader("worker_start", str(TOOL)).load_module()
+        self.fake_origin("https://github.com/mark-brannan/portolani.git")
+        wt = self.tmp / "w1"
+        sh("git", "-C", str(self.repo), "worktree", "add", "-q", "--detach", str(wt), "HEAD")
+        (wt / "node_modules").mkdir()
+        (wt / "node_modules" / "keep").write_text("x")
+        (wt / "downloads").mkdir()
+        mod.setup_portolani(str(self.repo), str(wt))
+        self.assertFalse((wt / "node_modules").is_symlink())
+        self.assertFalse((wt / "downloads").is_symlink())
+        self.assertTrue((wt / "node_modules" / "keep").exists())
+        self.assertEqual(self.npm_calls(), [])
+
+    def test_issue_alone_prints_the_issue_and_checks_out_nothing(self):
+        r = subprocess.run([sys.executable, str(TOOL), "-C", str(self.repo), "--issue", "7"],
+                           env=self.env, text=True, capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), ["$ gh issue view 7 --comments"])
+        self.assertEqual(self.log.read_text().splitlines(), ["gh issue view 7 --comments"])
+        self.assertEqual(sh("git", "-C", str(self.repo), "branch", "--list").split(), ["*", "main"])
+        self.assertEqual(Path(str(self.log) + ".pwd").read_text().split(), [str(self.repo.resolve())])
+
+    def test_nothing_to_do_is_a_usage_error(self):
+        for args in ([], ["--worktree", "x"], ["--worktree", "x", "--issue", "7"]):
+            r = subprocess.run([sys.executable, str(TOOL), "-C", str(self.repo), *args],
+                               env=self.env, text=True, capture_output=True)
+            self.assertEqual(r.returncode, 2, args)
+            self.assertEqual(r.stdout, "")
 
 
 if __name__ == "__main__":

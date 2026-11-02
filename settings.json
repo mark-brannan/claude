@@ -48,6 +48,10 @@
       "Bash(/home/solace/.claude/bin/work-item *)",
       "Bash(work-item *)",
       "Bash(pr-blockers *)",
+      "Bash(~/.claude/bin/apply-edits)",
+      "Bash(apply-edits)",
+      "Bash(worker-start *)",
+      "Bash(pickup-list handoff *)",
       "Bash(~/.claude/bin/gh-resolve-thread *)"
     ],
     "deny": [

@@ -303,7 +303,8 @@ anything off), when the Stop nag blocks once, or when the user says "update
 the hand-off". The nag is a backstop, not the trigger: it arms on a
 context, clock or friction crossing, and a session that ends cleanly never
 sees it. Replace everything below the `---` with four lines, house hand-off
-spec:
+spec, through `~/.claude/bin/pickup-list handoff <id>` with the lines on
+stdin:
 
 ```
 <one sentence, imperative — what the next session does first>

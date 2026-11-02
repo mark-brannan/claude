@@ -182,6 +182,11 @@ I'm fine, drop it.
 - **Forbid a command with a guard, not prose.** A rule works only if it
   loads; a guard fires on the action itself. Prose still names the remedy
   and points at the guard, and stands alone only until the guard exists.
+- **A sanctioned script before a hand-rolled command;** each runs without
+  a dialog. A worker opens with `worker-start`; a scripted edit is
+  `apply-edits`; a hand-off is `pickup-list handoff <id>`; a wait on CI is
+  `pr-blockers --wait <pr>`. A heredoc or sleep loop doing their job is a
+  dialog I have to click.
 - **Compute runs in minutes, never hours, in CI or on my machine.** Before
   adding a test, a matrix leg or a workflow, state its cost per push and the
   account-wide concurrent-job cap it draws on; before a local run, its wall
