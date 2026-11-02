@@ -59,7 +59,6 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import atomic  # noqa: E402
-    import state  # noqa: E402
     import when  # noqa: E402
 except ImportError:
     sys.exit("work-item: lib/ not found (looked beside the tool and in ~/.claude/lib)")
@@ -179,6 +178,7 @@ def holder_gone(holder, last, cutoff):
     here and lapses by age), and holds until <cutoff> passes its last line."""
     if holder not in _VERDICT:
         try:
+            import state
             _VERDICT[holder] = state.sid_liveness(holder)
         except Exception:  # no lib/state.py, an odd registry: unseen
             _VERDICT[holder] = None
