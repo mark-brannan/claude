@@ -583,3 +583,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261102t190621z
 - pr-blockers --wait exits 4 on timeout and prints the timeout line on stdout Undo: change the exit code and stream in pr-blockers ([#375](https://github.com/mark-brannan/claude/pull/375))
+
+### 20261102t190656z
+- apply-edits writes only in the cwd's work tree under home, the state repo and the scratchpads, and refuses any .claude dir outside .claude/worktrees/<name>/ Undo: widen or narrow ROOTS in bin/apply-edits ([#375](https://github.com/mark-brannan/claude/pull/375))
