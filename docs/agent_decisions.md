@@ -580,3 +580,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261102t190607z
 - worker-start's setup table lives in the script, not the target repo, so an allow-listed script never runs commands a repo branch supplies Undo: move SETUP into a per-repo file the script reads ([#375](https://github.com/mark-brannan/claude/pull/375))
+
+### 20261102t190621z
+- pr-blockers --wait exits 4 on timeout and prints the timeout line on stdout Undo: change the exit code and stream in pr-blockers ([#375](https://github.com/mark-brannan/claude/pull/375))
