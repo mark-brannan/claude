@@ -31,9 +31,10 @@ when none matches, ask. Empty means the most recently touched open curia:
 list the open curiae as bare `/curia` does and take the newest. Say which
 target, and why, in the first line.
 
-One flag may ride with the target: `--subagents` (the default) or
-`--workflow`, the driver mode the batch runs in. It is a trial (pencil,
-2026-10-24): §6 logs it on the parent, and the driver reads it there.
+The batch's driver is the Workflow tool unless `--subagents` rides with the
+target (`--workflow` is a no-op). The choice is scored on dollars and on ease
+of use for the user; the record is in the decisions file. §6 logs the mode on
+the parent, and the driver reads it there.
 
 | Target | Its items, the input to plan | Lock folder |
 |---|---|---|
@@ -226,8 +227,8 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   and `~/.claude/bin/work-item log <parent-id> lane=autonomous`: the lane
   lives on the parent and its children inherit it (2026-10-22), so `/pickup`
   lets the driver label its PRs; and
-  `~/.claude/bin/work-item log <parent-id> driver=<mode>`: `workflow` only
-  when the user typed `--workflow` in this run, `subagents` otherwise;
+  `~/.claude/bin/work-item log <parent-id> driver=<mode>`: `workflow`
+  unless the user typed `--subagents` in this run, then `subagents`;
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
   `--parent <parent-id> [--model <m>] [--effort <e>]`, plus `--home <owner/repo#n>`
@@ -333,6 +334,13 @@ the rulings to date:
   maxims table, and per batch: hours from `/pickup` to the last merge on main, idle
   hours, sessions used, the user's turns, and dollars per merged PR
   (2026-10-24).
+- **The close.** With the walk logged, the driver logs each child whose PR
+  merged `status=done evidence=<PR>`, and each that did not
+  `~/.claude/bin/work-item log <id> status=ready note=<why>`, where it stays
+  a standalone ready item. Then it logs the parent
+  `status=done evidence=<walk path>; ready: <child ids>`, naming every child
+  it re-readied. A batch whose parent is not done is one its driver never
+  finished (2026-11-02).
 
 The run's last line is the one line that starts the driver:
 

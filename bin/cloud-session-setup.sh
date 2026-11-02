@@ -89,6 +89,7 @@ skills/prt/SKILL.md
 skills/critical-review/SKILL.md
 hooks/lib_state.py
 lib/state.py
+lib/sidlive.py
 lib/ids.py
 lib/lock.py
 lib/gitrun.py
@@ -118,6 +119,7 @@ hooks/release-subagent-branch.py
 hooks/pr-ownership-context.py
 hooks/pr-threads-gate.py
 hooks/pr-blockers-prompt.py
+hooks/takeover-notice.py
 hooks/scratch-mirror.py
 hooks/npm-publish-auth.py
 hooks/no-prose-gate.py

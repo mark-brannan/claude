@@ -39,8 +39,11 @@
 # `status=done` line with no `evidence=`; any `status=closed`, which only the
 # future whole-tree sweep writes (docs/work-item-lifecycle.md).
 #
-# Defaults (dotfiles#510): a flat folder; a holder silent on the item for
-# WORK_ITEM_STALE_SECS (an hour since its last Stop) has let go; a GATE --
+# Defaults (dotfiles#510): a flat folder;
+# a holder the registry here knows is read by lib/state.py's liveness (dead or
+# parked has let go; live or waiting holds); any other holder (the log records
+# no machine, so another machine's, a sub-agent) has let go after
+# WORK_ITEM_STALE_SECS (an hour) silent on the item; a GATE --
 # a write that cannot land, or is refused, exits non-zero (1 refused, 2 usage).
 # Writes are plain files in the state repo; the Stop hook commits and pushes.
 # Python 3 stdlib only.
@@ -163,13 +166,41 @@ def fmt(x):
     return str(int(x)) if x == int(x) and abs(x) < 1e16 else "%.6g" % x
 
 
+_VERDICT = {}
+
+
+def holder_gone(holder, last, cutoff):
+    """True when the holder has let go. The log records no machine, only the
+    sid8, so "on this machine" is "the registry here has a session with that
+    prefix": dead or parked is gone at once, live or waiting holds, whatever
+    the age. A sid8 the registry does not know (another machine's, a running
+    sub-agent, a local session whose entry is gone) holds until <cutoff>
+    passes its last line. The log records no machine, so none gets a shorter
+    window."""
+    if holder not in _VERDICT:
+        try:
+            import sidlive
+            _VERDICT[holder] = sidlive.verdict(holder)
+        except Exception:  # no lib/state.py, an odd registry: unseen
+            _VERDICT[holder] = None
+    v = _VERDICT[holder]
+    return last < cutoff if v is None else v in ("dead", "parked")
+
+
+def stale_secs():
+    """The lapse for a holder the registry here does not know, seconds."""
+    return int(os.environ.get("WORK_ITEM_STALE_SECS") or 3600)
+
+
 def fold(path, cutoff=""):
     """An item's state, folded from its file: (key, value) pairs, the last
     value of each log fact winning. The log is `<iso> <sid8> <words>`; a word
     `k=v` sets fact k, a line that omits a fact changes nothing. The holder is
     the session of the newest `status=claimed` line while the status is
-    claimed or blocked; it is stale when that session's newest line on the
-    item is older than <cutoff> (ISO UTC strings sort as times). `cost` lines
+    claimed or blocked; it is stale when it has let go (holder_gone: the
+    process test for a session the registry knows, else its newest line on
+    the item being older than <cutoff>, ISO UTC strings sorting as times).
+    `cost` lines
     sum to cost_tokens and cost_usd; `briefed` lines count. points comes from
     the brief, not the log."""
     title = status = holder = since = points = created = updated = ""
@@ -221,7 +252,7 @@ def fold(path, cutoff=""):
                 fact[k] = v
         if f[2] == "cost":
             costs += 1
-    stale = "yes" if holder and cutoff and seen.get(holder, "") < cutoff else "no"
+    stale = "yes" if holder and cutoff and holder_gone(holder, seen.get(holder, ""), cutoff) else "no"
     return [("id", path.name[:-3] if path.name.endswith(".md") else path.name),
             ("title", title), ("status", status), ("holder", holder),
             ("held_since", since), ("holder_last", seen.get(holder, "") if holder else ""),
@@ -259,9 +290,8 @@ class Item:
             refuse(f"item {self.id} is locked by another writer")
 
     def facts(self):
-        stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 3600)
         try:
-            return dict(fold(self.path, iso(time.time() - stale)))
+            return dict(fold(self.path, iso(time.time() - stale_secs())))
         except OSError:
             refuse(f"could not read {self.path}")
 
@@ -337,7 +367,7 @@ HOME = re.compile(r"([\w.-]+)/([\w.-]+)#(\d+)")
 def open_homed(home):
     """The folded items, not done or closed, whose home is <home>."""
     d = items_dir()
-    cutoff = iso(time.time() - int(os.environ.get("WORK_ITEM_STALE_SECS") or 3600))
+    cutoff = iso(time.time() - stale_secs())
     for p in sorted(d.glob("*.md")) if d.is_dir() else []:
         if not is_item_id(p.name[:-3]):
             continue
@@ -388,8 +418,7 @@ def list_items(args):
     if args not in ([], ["--all"]):
         die("list takes only --all")
     d = items_dir()
-    stale = int(os.environ.get("WORK_ITEM_STALE_SECS") or 3600)
-    cutoff = iso(time.time() - stale)
+    cutoff = iso(time.time() - stale_secs())
     for p in sorted(d.glob("*.md")) if d.is_dir() else []:
         if not is_item_id(p.name[:-3]):
             continue

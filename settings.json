@@ -398,6 +398,11 @@
           },
           {
             "type": "command",
+            "timeout": 5,
+            "command": "h=\"$HOME/.claude/hooks/takeover-notice.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null; true"
+          },
+          {
+            "type": "command",
             "timeout": 30,
             "command": "h=\"$HOME/.claude/hooks/pr-blockers-prompt.py\"; [ -f \"$h\" ] && python3 \"$h\"; true"
           }
