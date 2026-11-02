@@ -574,3 +574,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261102t175550z
 - suggestions absent read as a PreToolUse hook's ask (measured once, CC 2.1.300) Undo: drop the suggestions check in subagent-permission-approve.py ([#374](https://github.com/mark-brannan/claude/pull/374))
+
+### 20261102t175616z
+- a languette ask holds back all sub-agent approvals in its session for 10 s Undo: match on call instead of session ([#374](https://github.com/mark-brannan/claude/pull/374))
