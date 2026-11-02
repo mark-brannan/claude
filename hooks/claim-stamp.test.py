@@ -327,6 +327,12 @@ class ClaimStampTest(unittest.TestCase):
         self.plant(1, "44444444", int(time.time()) - 60)
         self.assertRegex(self.out("read", URL7), r"(?m)^live\t44444444")
 
+    def test_refresh_stays_well_inside_the_grace(self):
+        src = (HERE / "claim-stamp.py").read_text()
+        g = int(re.search(r'GRACE_SECS = _int_env\("CLAIM_GRACE_SECS", (\d+)\)', src).group(1))
+        r = int(re.search(r'REFRESH_SECS = _int_env\("CLAIM_REFRESH_SECS", (\d+)\)', src).group(1))
+        self.assertGreater(g, 2 * r, "a debounced refresh must land inside the remote grace")
+
     def test_refresh(self):
         self.repo("claude/claimed")
         self.cs("claim", "-C", str(self.work), "ffffffffaaaabbbb")

@@ -116,7 +116,7 @@ def _int_env(name, default):
 
 STALE_SECS = _int_env("CLAIM_STALE_SECS", 3600)
 GRACE_SECS = _int_env("CLAIM_GRACE_SECS", 300)
-REFRESH_SECS = _int_env("CLAIM_REFRESH_SECS", 300)
+REFRESH_SECS = _int_env("CLAIM_REFRESH_SECS", 60)  # well inside GRACE_SECS
 LABEL = os.environ.get("CLAIM_LABEL") or "claimed"
 
 
@@ -668,8 +668,9 @@ def release_cards(sid):
 
 def refresh_cards(sid):
     """Every card claim this session holds is refreshed with its branch
-    claim, so a card worked longer than the stale window is not handed to a second session. Local unless a stamp needs
-    patching; free when there are none."""
+    claim, so a card worked longer than the stale window is not handed to a
+    second session. Local unless a stamp needs patching; free when there
+    are none."""
     for f in ledger_files(f"{glob.escape(claims_dir())}/*-{glob.escape(sid8(sid))}.tsv"):
         (u, s, e, m, c), ok = ifs_read(read_file(f) or "", 5)
         if not ok:
