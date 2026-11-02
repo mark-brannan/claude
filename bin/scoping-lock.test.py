@@ -7,8 +7,10 @@
 # retaken by its holder or taken over by another, saying whose it was;
 # release never removes another's lock. The steps share one origin and run
 # in order, so they are numbered.
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -55,8 +57,8 @@ class ScopingLockTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def run_sl(self, repo, *args, lease=None, cwd=None, exe=None):
-        env = {**self.env, "CLAUDE_STATE_REPO": str(self.S / repo)}
+    def run_sl(self, repo, *args, lease=None, cwd=None, exe=None, **extra):
+        env = {**self.env, "CLAUDE_STATE_REPO": str(self.S / repo), **extra}
         if lease is not None:
             env["SCOPING_LOCK_STALE_SECS"] = str(lease)
         p = subprocess.run([sys.executable, exe or str(SL), *args], env=env, cwd=cwd,
@@ -131,6 +133,42 @@ class ScopingLockTest(unittest.TestCase):
         self.assertIn("released:", self.run_sl("b", "release", D, "sid-three")[1])
         git("pull", "-q", "--rebase", cwd=self.S / "a")
         self.assertEqual("free", self.run_sl("a", "read", D)[1].strip(), "released everywhere")
+
+    def session(self, sid, alive):
+        """A registry entry for sid in a fixture sessions dir, and a fake /proc
+        that has its process only when alive."""
+        reg, proc = self.S / "sessions", self.S / "proc"
+        reg.mkdir(exist_ok=True)
+        proc.mkdir(exist_ok=True)
+        (reg / "4242.json").write_text(json.dumps({"pid": 4242, "sessionId": sid, "cwd": "/x",
+                                                   "procStart": "777", "status": "idle"}))
+        if not alive:
+            shutil.rmtree(proc / "4242", True)
+        elif not (proc / "4242").exists():
+            (proc / "4242").mkdir()
+            (proc / "4242" / "stat").write_text(
+                "4242 (claude) " + " ".join(["S"] + ["0"] * 18 + ["777"] + ["0"] * 10) + "\n")
+        return {"CLAUDE_SESSIONS_DIR": str(reg), "CLAUDE_PROC_ROOT": str(proc)}
+
+    def test_08b_a_dead_holder_is_free_at_once(self):
+        self.assertIn("taken:", self.run_sl("a", "take", D, "sid-dead-0001", self.read_at)[1])
+        git("pull", "-q", "--rebase", cwd=self.S / "b")
+        # alive in the registry: the lease holds, however idle
+        e = self.session("sid-dead-0001", alive=True)
+        rc, out = self.run_sl("b", "take", D, "sid-three", "x", **e)
+        self.assertEqual((1, True), (rc, "held: sid-dead-0001" in out), "a live holder keeps the lock")
+        # unknown to the registry (another machine's): the lease holds
+        e = self.session("some-other-session", alive=False)
+        self.assertEqual(1, self.run_sl("b", "take", D, "sid-three", "x", **e)[0])
+        self.assertIn("held sid-dead-0001", self.run_sl("b", "check", D, "sid-three", **e)[1])
+        # its process gone: free at once, with the lease nowhere near run out
+        e = self.session("sid-dead-0001", alive=False)
+        self.assertEqual((3, "free\n"), self.run_sl("b", "check", D, "sid-three", **e))
+        rc, out = self.run_sl("b", "take", D, "sid-three", "x", **e)
+        self.assertEqual(0, rc)
+        self.assertIn("stale: sid-dead-0001", out, "and says whose it was")
+        self.assertIn("released:", self.run_sl("b", "release", D, "sid-three")[1])
+        git("pull", "-q", "--rebase", cwd=self.S / "a")
 
     def test_09_relative_invocation(self):
         rc, _ = self.run_sl("a", "take", "state/global/curia/r", "sid-rel", self.record,

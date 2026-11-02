@@ -54,8 +54,16 @@ nothing to refresh: it reads a per-session record under TMPDIR and returns
 without a single network call when this session has not claimed anything.
 When it has, the refresh is debounced to once per CLAIM_REFRESH_SECS.
 
-A stamp older than CLAIM_STALE_SECS (default 1h, the work-item spec's
-claim lapse) is stale -- its session died without releasing it. `claim`
+A stamp whose holder has let go is stale -- its session died without
+releasing it. A holder on this machine (the stamp's machine is ours, and the
+session registry here knows the session) is read by lib/state.py's process
+test: dead or parked is stale at once, live or waiting is not, whatever the
+stamp's age. A stamp recording another machine is stale once older than
+CLAIM_GRACE_SECS (default 300, the grace timer; a busy remote turn past it
+reads as gone, and the lease refusal is the backstop). Any other stamp -- a
+session the registry here does not know, such as a sub-agent -- keeps the old
+window: stale once older than CLAIM_STALE_SECS (default 1h), as is every
+board-card claim, whose prt-made sids no Stop refreshes. `claim`
 deletes stale stamps it finds, which is the only garbage collection there
 is; nothing else ever removes a comment a dead session left. Age is taken
 from the epoch in the stamp's own marker, never from the comment's
@@ -93,6 +101,7 @@ STAMPS_JQ = '''
       , ((.body | capture("sid=(?<v>[A-Za-z0-9_-]+)").v) // "?")
       , ((.body | capture("epoch=(?<v>[0-9]+)").v) // "0")
       , ((.body | capture("machine=(?<v>[A-Za-z0-9_-]+)").v) // "?")
+      , ((.body | capture("[*][*]Claimed:[*][*] `[^`]*` · `(?<v>[^`]*)`").v) // "?")
       ] | @tsv'''
 
 # Bounded, always. A hook that hangs on a network call is worse than one that
@@ -108,7 +117,8 @@ def _int_env(name, default):
 
 
 STALE_SECS = _int_env("CLAIM_STALE_SECS", 3600)
-REFRESH_SECS = _int_env("CLAIM_REFRESH_SECS", 300)
+GRACE_SECS = _int_env("CLAIM_GRACE_SECS", 300)
+REFRESH_SECS = _int_env("CLAIM_REFRESH_SECS", 60)  # well inside GRACE_SECS
 LABEL = os.environ.get("CLAIM_LABEL") or "claimed"
 
 
@@ -144,6 +154,37 @@ def machine_id():
     except OSError:
         h = "unknown"
     return "host-" + hashlib.sha256(h.encode("utf-8", "surrogateescape")).hexdigest()[:6]
+
+
+_VERDICT = {}
+
+
+def _verdict(s8):
+    """sidlive.verdict, once per process per sid8."""
+    if s8 not in _VERDICT:
+        try:
+            import sidlive
+            _VERDICT[s8] = sidlive.verdict(s8)
+        except Exception:  # no lib/state.py, an odd registry: unseen
+            _VERDICT[s8] = None
+    return _VERDICT[s8]
+
+
+def holder_gone(s8, machine, age, refreshed=True):
+    """True when the stamp's holder has let go. A holder on this machine that
+    its registry knows is read by the process test. A holder the stamp records
+    on another machine has let go after GRACE_SECS. Any other holder (no
+    registry entry here, no other machine on record: a sub-agent, an old
+    stamp) keeps the old window, STALE_SECS, and so does a card claim
+    (refreshed=False): prt's made-up sids are never refreshed by a Stop, so
+    a short grace would free a live fixer's claim."""
+    if machine == machine_id():
+        v = _verdict(s8)
+        if v is not None:
+            return v in ("dead", "parked")
+    elif refreshed and machine and machine != "?":
+        return age >= GRACE_SECS
+    return age >= STALE_SECS
 
 
 def record_path(sid):
@@ -229,13 +270,14 @@ def card_parts(url):
 
 # --------------------------------------------------------------- the stamp
 def read_stamps(owner, repo, number):
-    """(ok, [(id, sid8, epoch, machine), ...]). Not ok when the read failed:
+    """(ok, [(id, sid8, epoch, machine, kind), ...]), kind being the stamp's
+    branch field, "card" for a board-card claim. Not ok when the read failed:
     that must never read as "no stamps"."""
     ok, out = run(["gh", "api", f"repos/{owner}/{repo}/issues/{number}/comments",
                    "--paginate", "--jq", STAMPS_JQ])
     rows = []
     for ln in out.split("\n"):
-        f, _ = ifs_read(ln + "\n", 4)
+        f, _ = ifs_read(ln + "\n", 5)
         if f[0]:
             rows.append(tuple(f))
     return ok, rows
@@ -252,8 +294,9 @@ def stamp_body(sid, branch):
             f"**Claimed:** `{s}` · `{branch}` · `{m}` · {when.stamp()}\n"
             "\n"
             "A session holds this work. The Stop hook refreshes the timestamp; `/wrapup`\n"
-            f"and the archive verdict delete this comment. Older than {tdiv(STALE_SECS, 3600)}h and\n"
-            "the claim is stale -- the session that wrote it died without releasing it.")
+            "and the archive verdict delete this comment. A claim whose session has died or\n"
+            "parked, or that goes unrefreshed (minutes from another machine, an hour\n"
+            "otherwise), is stale -- the session that wrote it let go without releasing it.")
 
 
 def _body_json(sid, branch):
@@ -309,11 +352,11 @@ def warn_held(stamps, sid, branch):
     the reader can tell a session that started a minute ago from one that has
     been holding the branch for an hour."""
     s8, now, out = sid8(sid), now_epoch(), []
-    for _id, s, e, m in stamps:
+    for _id, s, e, m, k in stamps:
         if s == s8:
             continue
         age = now - epoch_of(e)
-        if age >= STALE_SECS:
+        if holder_gone(s, m, age, k != "card"):
             continue
         out.append(f"session `{s}` on `{m}` claimed `{branch}` {tdiv(age, 60)} minute(s) ago")
     return "\n".join(out)
@@ -343,8 +386,8 @@ def do_claim(d, sid):
     # exactly when someone cares -- at the moment another session asks
     # whether the branch is free.
     now = now_epoch()
-    for cid, s, e, _m in stamps:
-        if s != sid8(sid) and now - epoch_of(e) >= STALE_SECS:
+    for cid, s, e, m, k in stamps:
+        if s != sid8(sid) and holder_gone(s, m, now - epoch_of(e), k != "card"):
             delete_stamp(owner, repo, cid)
 
     held = warn_held(stamps, sid, branch)
@@ -352,7 +395,7 @@ def do_claim(d, sid):
     # This session's own stamp, if it already has one on this card: patch it
     # rather than post a second. A session that restarts (a new SessionStart
     # on the same id) must not leave a trail of its own claims.
-    mine = next((cid for cid, s, _e, _m in stamps if s == sid8(sid)), "")
+    mine = next((cid for cid, s, _e, _m, _k in stamps if s == sid8(sid)), "")
     if mine:
         patch_stamp(owner, repo, mine, sid, branch)
         cid = mine
@@ -437,7 +480,7 @@ def do_release(d, sid, scan):
         if not parts:
             return
         owner, repo, number = parts
-        for cid, s, _e, _m in read_stamps(owner, repo, number)[1]:
+        for cid, s, _e, _m, _k in read_stamps(owner, repo, number)[1]:
             if s == sid8(sid):
                 delete_stamp(owner, repo, cid)
     else:
@@ -481,9 +524,9 @@ def do_read(d, url=""):
         print(f"unverified: could not read the stamps on {url}")
         return
     now = now_epoch()
-    for _id, s, e, m in stamps:
+    for _id, s, e, m, k in stamps:
         age = now - epoch_of(e)
-        state = "stale" if age >= STALE_SECS else "live"
+        state = "stale" if holder_gone(s, m, age, k != "card") else "live"
         print(f"{state}\t{s}\t{m}\t{tdiv(age, 60)}m\t{url}")
     # A card with no stamp says so, so a reader can tell "nobody holds it"
     # from a read that printed nothing because it never ran.
@@ -532,7 +575,7 @@ def card_ledger(url=""):
         if not ok or (url and u != url):
             continue
         age = now - epoch_of(e)
-        st = "stale" if age >= STALE_SECS else "live"
+        st = "stale" if holder_gone(s, m, age, False) else "live"
         out.append(f"{st}\t{s}\t{m}\t{tdiv(age, 60)}m\t{u}")
     return out
 
@@ -583,7 +626,7 @@ def _card_claim_locked(url, sid, s8, d, key):
     cid = ""
     if usable() and parts:
         owner, repo, number = parts
-        mine = next((i for i, s, _e, _m in read_stamps(owner, repo, number)[1] if s == s8), "")
+        mine = next((i for i, s, _e, _m, _k in read_stamps(owner, repo, number)[1] if s == s8), "")
         if mine:
             if patch_stamp(owner, repo, mine, sid, "card"):
                 cid = mine
@@ -630,9 +673,9 @@ def release_cards(sid):
 
 def refresh_cards(sid):
     """Every card claim this session holds is refreshed with its branch
-    claim, so a card worked longer than CLAIM_STALE_SECS is not handed to a
-    second session. Local unless a stamp needs patching; free when there are
-    none."""
+    claim, so a card worked longer than the stale window is not handed to a
+    second session. Local unless a stamp needs patching; free when there
+    are none."""
     for f in ledger_files(f"{glob.escape(claims_dir())}/*-{glob.escape(sid8(sid))}.tsv"):
         (u, s, e, m, c), ok = ifs_read(read_file(f) or "", 5)
         if not ok:

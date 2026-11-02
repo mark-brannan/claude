@@ -6,8 +6,10 @@
 # session holds the item and allowed once the holder has gone quiet; cost
 # lines fold to a per-item total; points live on the brief. The steps share
 # one store and run in order, so they are numbered.
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -45,8 +47,11 @@ class WorkItemTest(unittest.TestCase):
         cls.dir = T / "items"
         quiet = T / "quiet-stamp.py"  # offline by default: no stamp read reaches gh
         quiet.write_text("#!/usr/bin/env python3\n")
-        os.environ.update(WORK_ITEM_DIR=str(cls.dir), TMPDIR=str(T),
-                          WORK_ITEM_CLAIM_STAMP=str(quiet))
+        cls.reg, cls.proc = T / "sessions", T / "proc"  # a fixture registry and /proc
+        cls.reg.mkdir()
+        cls.proc.mkdir()
+        os.environ.update(WORK_ITEM_DIR=str(cls.dir), TMPDIR=str(T), WORK_ITEM_CLAIM_STAMP=str(quiet),
+                          CLAUDE_SESSIONS_DIR=str(cls.reg), CLAUDE_PROC_ROOT=str(cls.proc))
         cls.id = ok(A, "create", "--id", "1690000000077c62eb", "--repo", "mark-brannan/dotfiles", "--model", "sonnet",
                     "--effort", "medium", "--points", "3",
                     "--brief", f"Measure growth per day. {LINK}", "Size the store")
@@ -178,6 +183,75 @@ class WorkItemTest(unittest.TestCase):
         ok(A, "claim", old)
         self.assertEqual(fact(old, "holder"), "077c62eb", "a stale claim can be taken")
         self.assertEqual(fact(old, "holder_stale"), "no", "a fresh claim is not stale")
+
+    def session(self, sid, status="idle", alive=True, newer=False):
+        """A registry entry and (when alive) a fake /proc entry for the session."""
+        for f in self.reg.glob("*.json"):
+            f.unlink()
+        shutil.rmtree(self.proc, True)
+        self.proc.mkdir()
+        pid = 5000
+        now = int(time.time()) * 1000
+        (self.reg / f"{pid}.json").write_text(json.dumps({
+            "pid": pid, "sessionId": sid, "cwd": "/x", "procStart": "777", "status": status,
+            "statusUpdatedAt": now - 600_000, "updatedAt": now - 600_000}))
+        if alive:
+            (self.proc / str(pid)).mkdir()
+            (self.proc / str(pid) / "stat").write_text(
+                f"{pid} (claude) " + " ".join(["S"] + ["0"] * 18 + ["777"] + ["0"] * 10) + "\n")
+        if newer:  # the user has since prompted another session
+            (self.reg / "9999.json").write_text(json.dumps({"pid": 9999, "sessionId": "other", "updatedAt": now}))
+
+    def test_07b_a_local_holder_is_read_by_the_process_test(self):
+        def held(n, line_ts, **kw):
+            it = ok(A, "create", "--id", f"17000001{n}077c62eb", "--brief", LINK, f"Local {n}")
+            ok(A, "log", it, "status=ready")
+            with open(self.dir / f"{it}.md", "a") as fh:
+                fh.write(f"{line_ts} 9a1b2c3d status=claimed\n")
+            return it
+        old, fresh = "2020-01-01T00:00:00Z", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # alive and busy: held, though its last line on the item is years old
+        self.session(B + "x", status="busy")
+        it = held("10", old)
+        self.assertEqual(fact(it, "holder_stale"), "no", "a live local holder holds")
+        self.assertEqual(run(A, "claim", it).returncode, 1)
+        # waiting on a permission prompt: held
+        self.session(B + "x", status="waiting")
+        self.assertEqual(fact(it, "holder_stale"), "no")
+        # process gone: free at once, with a line a second old
+        self.session(B + "x", alive=False)
+        it = held("11", fresh)
+        self.assertEqual(fact(it, "holder_stale"), "yes", "a dead local holder is free at once")
+        ok(A, "claim", it)
+        self.assertEqual(fact(it, "holder"), "077c62eb")
+        # idle, and the user has since prompted another session: parked, free
+        self.session(B + "x", newer=True)
+        it = held("12", fresh)
+        self.assertEqual(fact(it, "holder_stale"), "yes", "a parked local holder is free")
+        # idle, nothing newer: live, however long since its last line
+        self.session(B + "x")
+        it = held("13", old)
+        self.assertEqual(fact(it, "holder_stale"), "no", "an idle live holder is not timed out")
+        for f in self.reg.glob("*.json"):
+            f.unlink()
+
+    def test_07c_an_unseen_holder_keeps_the_old_window(self):
+        # the registry here does not know 9a1b2c3d: no machine on record, so
+        # no short grace; it holds for the hour
+        for f in self.reg.glob("*.json"):
+            f.unlink()
+        it = ok(A, "create", "--id", "1700000014077c62eb", "--brief", LINK, "Unseen")
+        ok(A, "log", it, "status=ready")
+        ago = lambda s: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - s))
+        with open(self.dir / f"{it}.md", "a") as fh:
+            fh.write(f"{ago(330)} 9a1b2c3d status=claimed\n")
+        self.assertEqual(fact(it, "holder_stale"), "no", "5.5 minutes: still held")
+        self.assertEqual(run(A, "claim", it).returncode, 1)
+        it2 = ok(A, "create", "--id", "1700000015077c62eb", "--brief", LINK, "Lapsed")
+        ok(A, "log", it2, "status=ready")
+        with open(self.dir / f"{it2}.md", "a") as fh:
+            fh.write(f"{ago(3700)} 9a1b2c3d status=claimed\n")
+        self.assertEqual(fact(it2, "holder_stale"), "yes", "past the hour: free")
 
     def test_08_brief(self):
         ok(A, "brief", self.id, f"Rewritten. {LINK}")

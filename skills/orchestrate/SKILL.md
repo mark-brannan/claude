@@ -35,10 +35,12 @@ Then rule on each row yourself:
   order inside a cluster, not a skip. Nothing from this pass goes to
   `## Needs ruling`; a genuine one becomes a card after wave 1 is out.
 - **A red or conflicting open PR gets a fixer** unless a live claim stamp
-  (`claim-stamp.py read`, stale after 1h) or a human's review thread shows
-  a session already on it. Labels are not the signal: `fixup-hard` is
-  session-applied and says nothing about who is there. A fixer finding no thread and a current
-  base stops at no cost, so a second fixer on the same PR is harmless; two
+  (`claim-stamp.py read`, stale once its session is gone, or unrefreshed
+  for 5 minutes from another machine, 1h otherwise) or a human's review
+  thread shows a session already on it. Labels are not the signal:
+  `fixup-hard` is session-applied and says nothing about who is there. A
+  fixer finding no thread and a current base stops at no cost, so a second
+  fixer on the same PR is harmless; two
   at once is what the stamp and `--force-with-lease` catch. Green PRs are
   the review sessions'.
 - **Rate each issue for an agent** — low / medium / high, the triage
