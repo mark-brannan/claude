@@ -118,6 +118,7 @@ hooks/release-subagent-branch.py
 hooks/pr-ownership-context.py
 hooks/pr-threads-gate.py
 hooks/pr-blockers-prompt.py
+hooks/takeover-notice.py
 hooks/scratch-mirror.py
 hooks/npm-publish-auth.py
 hooks/no-prose-gate.py

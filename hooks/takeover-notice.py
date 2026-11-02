@@ -30,6 +30,9 @@ import json
 import os
 import sys
 
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+
 HERE = os.path.dirname(os.path.realpath(__file__))
 HOOK = "takeover-notice"
 
@@ -106,7 +109,6 @@ def main(argv):
         return prompt()
     except Exception as e:  # noqa: BLE001 -- a notice must never block a prompt
         try:
-            sys.path[:0] = [os.path.join(HERE, "..", "lib"), os.path.expanduser("~/.claude/lib")]
             import hooktrace
             hooktrace.trace(HOOK, "prompt", e, event="UserPromptSubmit")
         except Exception:  # noqa: BLE001
