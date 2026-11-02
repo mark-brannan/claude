@@ -39,7 +39,8 @@ Then rule on each row yourself:
   for 5 minutes from another machine, 1h otherwise) or a human's review
   thread shows a session already on it. Labels are not the signal:
   `fixup-hard` is session-applied and says nothing about who is there. A
-  fixer finding no thread and a current base stops at no cost, so a second fixer on the same PR is harmless; two
+  fixer finding no thread and a current base stops at no cost, so a second
+  fixer on the same PR is harmless; two
   at once is what the stamp and `--force-with-lease` catch. Green PRs are
   the review sessions'.
 - **Rate each issue for an agent** — low / medium / high, the triage
