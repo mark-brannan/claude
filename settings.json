@@ -25,6 +25,8 @@
       "Bash(npm test)",
       "Bash(worklist *)",
       "Bash(gh search *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
       "Bash(shellcheck *)",
       "Bash(yadm log *)",
       "Bash(~/.claude/bin/agent-decision *)",
