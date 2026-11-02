@@ -123,7 +123,8 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
         out.flush()
         p = run(["git", "-C", root, *shlex.split(cmd)[1:]])
         if p.returncode:
-            err.write(f"resign: `{cmd}` failed (exit {p.returncode}); nothing pushed\n")
+            err.write(f"resign: `{cmd}` failed (exit {p.returncode}); nothing pushed. "
+                      "If a rebase is in progress, finish it or run `git rebase --abort`.\n")
             return 1
     out.write("+ " + " ".join(push) + "\n")
     if dry:

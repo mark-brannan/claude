@@ -132,6 +132,7 @@ class ResignTest(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertEqual(calls[-1][0], "rebase")
         self.assertIn("nothing pushed", err)
+        self.assertIn("git rebase --abort", err)
 
     def test_a_failed_push_says_the_branch_is_re_signed_locally(self):
         rc, calls, out, err = self.go([], REBASE, fail=[("push",)])
