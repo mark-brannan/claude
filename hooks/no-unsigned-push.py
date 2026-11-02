@@ -50,6 +50,10 @@ PUSH = re.compile(
 LEADING_CD = [re.compile(rf"{SP}*cd{SP}+[^;&|]*"), re.compile(rf"{SP}*cd{SP}*(?:$|[;&|])")]
 
 
+# A command made of several segments; a lone push needs no warning about the others.
+CHAINED = re.compile(r"&&|\|\||[;|\n]")
+
+
 def deny(reason):
     hookio.emit(hookio.deny(reason), ascii=False, compact=True, errors="surrogateescape")
 
@@ -178,9 +182,9 @@ def main():
         deny(f"no-unsigned-push: {n} unsigned commit(s) on {branch} would be pushed, and this machine "
              f"has a signing key, so sign them first:\n\n{listing}\n\n{how}\n"
              "Never make commits with plumbing (`git commit-tree`) or `-c commit.gpgsign=false` "
-             "in a repo that requires signatures. "
-             "One refused segment refuses the whole command, and the segments before it did not run: "
-             "run each command in its own Bash call.")
+             "in a repo that requires signatures."
+             + (" One refused segment refuses the whole command, and the segments before it did not run: "
+                "run each command in its own Bash call." if CHAINED.search(cmd) else ""))
         return 0
 
     hookio.emit(hookio.allow(
