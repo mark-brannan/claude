@@ -1014,6 +1014,10 @@ class Hook:
         # context climbs while the model works, and a rung crossed mid-turn is
         # the moment worth saying so.
         r = rung_of(k.model_context_lines, k.model_context_step, ctx)
+        if self.event in ("prompt", "userpromptsubmit"):
+            # The hush is read again each prompt: a curia that closed or a
+            # claim that ended gets its line on the next turn.
+            self.m_ctx_hushed = 0
         if r > max(self.m_ctx_at, self.m_ctx_hushed):
             if self.hush:
                 self.m_ctx_hushed = r

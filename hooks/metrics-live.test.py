@@ -1405,6 +1405,10 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("a live curia crossing 105k is counted", "100000\n150000",
             "\n".join(str(r["at"]) for r in w.rows(cur, "context")))
         w.t("but its Stop is not blocked", "", w.decision(stop(cur)))
+        w.t("a hushed curia prompt past 105k says nothing", "", w.ctx(w.hook(w.payload(hi, cur, repo), "prompt")))
+        (cx / "LIVE").unlink()
+        w.has("and once the curia is gone the next prompt gets its line", "stopping point is due",
+              w.ctx(w.hook(w.payload(hi, cur, repo), "prompt")))
         return self.done(w)
 
     # --- beyond the bash suite: what the port added ---------------------------------
