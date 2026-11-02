@@ -71,8 +71,9 @@ def write(holder, what, link=""):
     import subprocess
     import time
     taker = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if not holder or not what or not taker:
-        print("takeover-notice: write needs <holder-sid> <what> [<link>] and CLAUDE_CODE_SESSION_ID",
+    if not holder or not what or not taker or holder == taker:
+        print("takeover-notice: write needs <holder-sid> <what> [<link>] and CLAUDE_CODE_SESSION_ID, "
+              "and the holder must not be this session",
               file=sys.stderr)
         return 2
     path = notice_path(holder)
@@ -92,8 +93,9 @@ def write(holder, what, link=""):
 
 def line(n):
     by = str(n.get("by", "?"))[:8]
-    link = f" ({n['link']})" if n.get("link") else ""
-    return f"- {n.get('what', '?')}{link}: taken over by session `{by}` at {n.get('at', '?')}"
+    what = " ".join(str(n.get("what", "?")).split())
+    link = f" ({' '.join(str(n['link']).split())})" if n.get("link") else ""
+    return f"- {what}{link}: taken over by session `{by}` at {n.get('at', '?')}"
 
 
 def prompt():
@@ -110,7 +112,14 @@ def prompt():
     except FileNotFoundError:
         return 0
     with open(path + ".delivered", encoding="utf-8") as fh:
-        rows = [json.loads(ln) for ln in fh if ln.strip()]
+        rows = []
+        for ln in fh:
+            try:
+                n = json.loads(ln)
+            except ValueError:
+                continue
+            if isinstance(n, dict):
+                rows.append(n)
     if not rows:
         return 0
     body = "\n".join(line(n) for n in rows)

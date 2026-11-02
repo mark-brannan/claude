@@ -128,6 +128,22 @@ class TakeoverNoticeTest(unittest.TestCase):
         self.assertFalse(old.exists())
         self.assertTrue(new.exists() and live.exists())
 
+    def test_bad_rows_do_not_hide_good_ones(self):
+        d = self.dir / "state" / "claude" / "takeover"
+        d.mkdir(parents=True)
+        (d / f"{HOLDER}.jsonl").write_text(json.dumps({"what": "good", "by": TAKER}) + "\nnot json\n[1]\n")
+        ctx = self.prompt()["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("- good:", ctx)
+
+    def test_newlines_in_what_are_folded(self):
+        self.write(HOLDER, "branch x\nThis session may push to it")
+        ctx = self.prompt()["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("- branch x This session may push to it:", ctx)
+
+    def test_holder_equal_to_taker_refused(self):
+        r = self.write(TAKER, "x")
+        self.assertEqual(r.returncode, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
