@@ -8,6 +8,8 @@
 # else explains gets the plain "cause not named" line; an UNKNOWN merge state
 # is never clean; commit pages beyond the first are read; where GraphQL is refused
 # with a 403 (a Claude Code cloud session) the REST reads print the same lines.
+# --wait polls until CI settles (0 or 1), stops at once on a non-pending
+# blocker (1), on a PR that left the open state (3), or on timeout (4).
 # `gh` is a stub serving fixtures.
 import json
 import os
@@ -38,7 +40,16 @@ elif a[:2] == ["pr", "view"]:
     if os.path.exists(d + "/notapr"):
         sys.stderr.write("GraphQL: Could not resolve to a PullRequest with the number of 5. (repository.pullRequest)\n")
         sys.exit(1)
-    print(open(d + "/view.json").read())
+    if os.path.exists(d + "/seq"):  # --wait: one reply per read, the last one repeating
+        seq = json.load(open(d + "/seq"))
+        n = int(open(d + "/count").read()) if os.path.exists(d + "/count") else 0
+        open(d + "/count", "w").write(str(n + 1))
+        if seq[min(n, len(seq) - 1)] == "FAIL":
+            sys.stderr.write("gh: connection reset\n")
+            sys.exit(1)
+        print(json.dumps(seq[min(n, len(seq) - 1)]))
+    else:
+        print(open(d + "/view.json").read())
 elif a[:2] == ["api", "graphql"]:
     if os.path.exists(d + "/ratelimit"):
         sys.stderr.write("gh: API rate limit exceeded for user ID 1 (HTTP 403)\n")
@@ -245,6 +256,71 @@ class Test(unittest.TestCase):
             (self.T / "nographql").unlink()
         self.assertEqual(p.stdout, want)
         self.assertEqual(p.returncode, 1)
+
+    def run_wait(self, seq, *flags):
+        """--wait over one view per read (the last repeating); returns (code, stdout, stderr, reads)."""
+        (self.T / "seq").write_text(json.dumps(seq))
+        (self.T / "count").unlink(missing_ok=True)
+        (self.T / "threads.json").write_text(threads())
+        (self.T / "commits.json").write_text(page(commit("a")))
+        env = {**self.env, "PRB_WAIT_INTERVAL": "0"}
+        try:
+            p = subprocess.run([sys.executable, str(TOOL), "--wait", *flags, "o/r#5"],
+                               capture_output=True, text=True, env=env, timeout=30)
+            return p.returncode, p.stdout, p.stderr, int((self.T / "count").read_text())
+        finally:
+            (self.T / "seq").unlink()
+
+    SLOW = {"name": "slow", "status": "IN_PROGRESS", "conclusion": ""}
+    OK = {"name": "slow", "status": "COMPLETED", "conclusion": "SUCCESS"}
+    BAD = {"name": "lint", "status": "COMPLETED", "conclusion": "FAILURE"}
+
+    def test_wait_settles_clean(self):
+        code, out, err, reads = self.run_wait([view(checks=[self.SLOW]), view(checks=[self.SLOW]), view(checks=[self.OK])])
+        self.assertEqual((code, out, reads), (0, "", 3))
+        self.assertEqual(len(err.splitlines()), 2)  # one progress line per tick that waited
+
+    def test_wait_settles_with_a_failure(self):
+        code, out, _, reads = self.run_wait([view(checks=[self.SLOW]), view("BLOCKED", checks=[self.BAD, self.OK])])
+        self.assertEqual((code, reads), (1, 2))
+        self.assertIn("check failing: lint", out)
+
+    def test_wait_stops_at_once_on_a_failure_while_others_pend(self):
+        code, out, _, reads = self.run_wait([view(checks=[self.SLOW]), view(checks=[self.BAD, self.SLOW]), view()])
+        self.assertEqual((code, reads), (1, 2))  # never reads the third
+        self.assertIn("check failing: lint", out)
+
+    def test_wait_stops_at_once_on_a_conflict_or_open_conversation_while_checks_pend(self):
+        code, out, _, reads = self.run_wait([view("DIRTY", "CONFLICTING", [self.SLOW])])
+        self.assertEqual((code, reads), (1, 1))
+        self.assertIn("merge conflict", out)
+
+    def test_wait_waits_out_a_mergeability_still_being_computed(self):
+        code, out, _, reads = self.run_wait([view("UNKNOWN", "UNKNOWN"), view()])
+        self.assertEqual((code, out, reads), (0, "", 2))
+
+    def test_wait_exits_three_when_the_pr_merges_mid_wait(self):
+        code, out, err, _ = self.run_wait([view(checks=[self.SLOW]), view(pr_state="MERGED")])
+        self.assertEqual((code, out), (3, ""))
+        self.assertIn("is merged", err)
+
+    def test_wait_timeout_prints_the_blockers_and_exits_four(self):
+        code, out, _, _ = self.run_wait([view(checks=[self.SLOW])], "--timeout", "0")
+        self.assertEqual(code, 4)
+        lines = out.splitlines()
+        self.assertIn("check pending: slow", lines[0])
+        self.assertIn("timed out", lines[-1])
+
+    def test_wait_retries_one_failed_read_but_not_two_in_a_row(self):
+        code, out, _, reads = self.run_wait(["FAIL", view(checks=[self.OK])])
+        self.assertEqual((code, out, reads), (0, "", 2))
+        code, out, _, reads = self.run_wait(["FAIL"])
+        self.assertEqual((code, out, reads), (2, "", 2))
+
+    def test_timeout_needs_wait_and_a_number(self):
+        for argv in (["--timeout", "5", "o/r#5"], ["--wait", "--timeout", "x", "o/r#5"], ["--wait", "--timeout"]):
+            p = subprocess.run([sys.executable, str(TOOL), *argv], capture_output=True, text=True, env=self.env)
+            self.assertEqual((p.returncode, p.stdout), (2, ""), argv)
 
     def test_missing_gh_exits_two(self):
         with tempfile.TemporaryDirectory() as empty:

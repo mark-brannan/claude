@@ -4,9 +4,10 @@
 # each stop for a permission dialog: fetch, put a branch or worktree on the
 # right base, read the issue or PR.
 #
-#   worker-start [-C <repo>] --new <slug> [--base <ref>] [--worktree <path>] [--issue <n>] [--item <id>]
-#   worker-start [-C <repo>] --head <branch> [--worktree <path>] [--issue <n>] [--item <id>]
-#   worker-start [-C <repo>] --pr <n> [--worktree <path>] [--item <id>]
+#   worker-start [-C <repo>] --new <slug> [--base <ref>] [--worktree <path>] [--no-setup] [--issue <n>] [--item <id>]
+#   worker-start [-C <repo>] --head <branch> [--worktree <path>] [--no-setup] [--issue <n>] [--item <id>]
+#   worker-start [-C <repo>] --pr <n> [--worktree <path>] [--no-setup] [--item <id>]
+#   worker-start [-C <repo>] --issue <n> [--item <id>]
 #
 # --new cuts claude/<slug> (a slug with a / is used as given) from --base,
 #   default origin/main. --head checks out an existing remote branch; --pr
@@ -16,16 +17,24 @@
 # A local branch is never reset: --head fails if one by that name exists.
 # A PR whose head is in a fork is refused. gh runs in <repo>, so it reads
 # that repo's issues and PRs.
+# --issue alone only prints the issue: no fetch, no checkout.
+# With --worktree, a repo in SETUP below gets its opening chores after the
+#   checkout (links to the main checkout's installs, shared excludes). The
+#   table lives here, never in the target repo, so what runs is what was
+#   reviewed. --no-setup skips it; a repo with no entry gets none.
 # --item logs `dispatched` on work item <id>, last, with the work-item beside
 #   this script. It never fails the start: a work-item that errors is said
 #   on stderr and the exit stays 0.
 # Each step prints as `$ <command>` before it runs; the first that fails
 # stops the run with its exit code. 2 on bad arguments.
 import argparse
+import filecmp
 import os
+import re
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 
 sys.dont_write_bytecode = True
 
@@ -53,18 +62,79 @@ def log_dispatched(item):
         sys.stderr.write("worker-start: work item %s not logged: %s\n" % (item, why))
 
 
+def git_out(args):
+    """A git command's stdout, quiet; empty on failure."""
+    r = subprocess.run(["git"] + args, text=True, capture_output=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def origin_slug(repo):
+    """The repo's origin as lowercase owner/name, or "" when it has none."""
+    url = git_out(["-C", repo, "config", "--get", "remote.origin.url"])
+    m = re.search(r"[:/]([^/:]+)/([^/:]+?)(?:\.git)?/?$", url)
+    return "%s/%s" % m.groups() if m else ""
+
+
+def exclude_lines(repo, lines):
+    """Append to the shared info/exclude whichever of <lines> it lacks."""
+    common = git_out(["-C", repo, "rev-parse", "--path-format=absolute", "--git-common-dir"])
+    path = os.path.join(common, "info", "exclude")
+    have = Path(path).read_text() if os.path.exists(path) else ""
+    for line in lines:
+        if line in have.splitlines():
+            continue
+        print("$ echo %s >> %s" % (shlex.quote(line), shlex.quote(path)), flush=True)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(("\n" if have and not have.endswith("\n") else "") + line + "\n")
+        have += line + "\n"
+
+
+def setup_portolani(repo, wt):
+    """node_modules and downloads in <wt> from the main checkout's; a changed
+    lockfile means a real node_modules. A trailing-slash ignore misses a link,
+    so the links are excluded without one."""
+    main = git_out(["-C", repo, "worktree", "list", "--porcelain"]).splitlines()[0][len("worktree "):]
+    exclude_lines(repo, ["/node_modules", "/downloads"])
+    nm, dl = os.path.join(wt, "node_modules"), os.path.join(wt, "downloads")
+    lock, main_lock = os.path.join(wt, "package-lock.json"), os.path.join(main, "package-lock.json")
+    if not os.path.lexists(dl):
+        if os.path.isdir(os.path.join(main, "downloads")):
+            run(["ln", "-s", os.path.join(main, "downloads"), dl])
+        else:
+            sys.stderr.write("worker-start: no downloads in %s; not linked\n" % main)
+    if os.path.lexists(nm):
+        return
+    if not os.path.exists(lock):
+        sys.stderr.write("worker-start: no package-lock.json in %s; node_modules not set up\n" % wt)
+    elif (os.path.isdir(os.path.join(main, "node_modules")) and os.path.exists(main_lock)
+          and filecmp.cmp(lock, main_lock, shallow=False)):
+        run(["ln", "-s", os.path.join(main, "node_modules"), nm])
+    else:
+        run(["npm", "--prefix", wt, "ci", "--no-audit", "--no-fund"], cwd=wt)
+
+
+SETUP = {"mark-brannan/portolani": setup_portolani}
+
+
 def main(argv):
     p = argparse.ArgumentParser(prog="worker-start")
     p.add_argument("-C", dest="repo", default=".")
-    how = p.add_mutually_exclusive_group(required=True)
+    how = p.add_mutually_exclusive_group()
     how.add_argument("--new", metavar="SLUG")
     how.add_argument("--head", metavar="BRANCH")
     how.add_argument("--pr", type=int)
     p.add_argument("--base", default="origin/main")
     p.add_argument("--worktree", metavar="PATH")
+    p.add_argument("--no-setup", action="store_true")
     p.add_argument("--issue", type=int)
     p.add_argument("--item", metavar="ID")
     a = p.parse_args(argv)
+    checkout = a.new is not None or a.head is not None or a.pr is not None
+    if not checkout and a.issue is None:
+        p.error("one of --new, --head, --pr or --issue is needed")
+    if not checkout and a.worktree:
+        p.error("--worktree goes with --new, --head or --pr")
     if a.base != "origin/main" and not a.new:
         p.error("--base goes with --new")
     if a.new == "" or a.head == "":
@@ -82,7 +152,8 @@ def main(argv):
     if a.worktree:
         a.worktree = os.path.abspath(a.worktree)
     git = ["git", "-C", a.repo]
-    run(git + ["fetch", "-q", "origin"])
+    if checkout:
+        run(git + ["fetch", "-q", "origin"])
     if a.pr is not None:
         out = run(["gh", "pr", "view", str(a.pr), "--json", "headRefName,isCrossRepository",
                    "-q", '"\\(.isCrossRepository) \\(.headRefName)"'], capture=True, cwd=a.repo)
@@ -96,12 +167,16 @@ def main(argv):
             run(git + ["worktree", "add", "-q", "--no-track", "-b", branch, a.worktree, a.base])
         else:
             run(git + ["checkout", "-q", "--no-track", "-b", branch, a.base])
-    else:
+    elif checkout:
         ref = "origin/" + a.head
         if a.worktree:
             run(git + ["worktree", "add", "-q", "--detach", a.worktree, ref])
         else:
             run(git + ["checkout", "-q", "-b", a.head, ref])
+    if a.worktree and not a.no_setup:
+        setup = SETUP.get(origin_slug(a.repo).lower())
+        if setup:
+            setup(a.repo, a.worktree)
     if a.pr is not None:
         run(["gh", "pr", "view", str(a.pr), "--comments"], cwd=a.repo)
     if a.issue is not None:
