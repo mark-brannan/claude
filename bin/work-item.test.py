@@ -235,19 +235,23 @@ class WorkItemTest(unittest.TestCase):
         for f in self.reg.glob("*.json"):
             f.unlink()
 
-    def test_07c_an_unseen_holder_lapses_after_five_minutes(self):
-        # the registry here does not know 9a1b2c3d: read as another machine's
+    def test_07c_an_unseen_holder_keeps_the_old_window(self):
+        # the registry here does not know 9a1b2c3d: no machine on record, so
+        # no short grace; it holds for the hour
         for f in self.reg.glob("*.json"):
             f.unlink()
-        it = ok(A, "create", "--id", "1700000014077c62eb", "--brief", LINK, "Remote")
+        it = ok(A, "create", "--id", "1700000014077c62eb", "--brief", LINK, "Unseen")
         ok(A, "log", it, "status=ready")
         ago = lambda s: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - s))
         with open(self.dir / f"{it}.md", "a") as fh:
-            fh.write(f"{ago(240)} 9a1b2c3d status=claimed\n")
-        self.assertEqual(fact(it, "holder_stale"), "no", "four minutes: still held")
-        with open(self.dir / f"{it}.md", "a") as fh:
-            fh.write(f"{ago(330)} 9a1b2c3d note=x\n")
-        self.assertEqual(fact(it, "holder_stale"), "yes", "the newest line is what counts, and it is 5.5m old")
+            fh.write(f"{ago(330)} 9a1b2c3d status=claimed\n")
+        self.assertEqual(fact(it, "holder_stale"), "no", "5.5 minutes: still held")
+        self.assertEqual(run(A, "claim", it).returncode, 1)
+        it2 = ok(A, "create", "--id", "1700000015077c62eb", "--brief", LINK, "Lapsed")
+        ok(A, "log", it2, "status=ready")
+        with open(self.dir / f"{it2}.md", "a") as fh:
+            fh.write(f"{ago(3700)} 9a1b2c3d status=claimed\n")
+        self.assertEqual(fact(it2, "holder_stale"), "yes", "past the hour: free")
 
     def test_08_brief(self):
         ok(A, "brief", self.id, f"Rewritten. {LINK}")

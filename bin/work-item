@@ -40,10 +40,10 @@
 # future whole-tree sweep writes (docs/work-item-lifecycle.md).
 #
 # Defaults (dotfiles#510): a flat folder;
-# a holder on this machine is read by lib/state.py's liveness (dead or parked
-# has let go; live or waiting holds); a holder the registry here does not know
-# (another machine's) has let go after WORK_ITEM_STALE_SECS (default 300, the
-# grace timer) silent on the item; a GATE --
+# a holder the registry here knows is read by lib/state.py's liveness (dead or
+# parked has let go; live or waiting holds); any other holder (the log records
+# no machine, so another machine's, a sub-agent) has let go after
+# WORK_ITEM_STALE_SECS (an hour) silent on the item; a GATE --
 # a write that cannot land, or is refused, exits non-zero (1 refused, 2 usage).
 # Writes are plain files in the state repo; the Stop hook commits and pushes.
 # Python 3 stdlib only.
@@ -173,9 +173,10 @@ def holder_gone(holder, last, cutoff):
     """True when the holder has let go. The log records no machine, only the
     sid8, so "on this machine" is "the registry here has a session with that
     prefix": dead or parked is gone at once, live or waiting holds, whatever
-    the age. A sid8 the registry does not know is read as another machine's,
-    the safest reading (a dead local session whose entry is gone also lands
-    here and lapses by age), and holds until <cutoff> passes its last line."""
+    the age. A sid8 the registry does not know (another machine's, a running
+    sub-agent, a local session whose entry is gone) holds until <cutoff>
+    passes its last line. The log records no machine, so none gets a shorter
+    window."""
     if holder not in _VERDICT:
         try:
             import sidlive
@@ -187,8 +188,8 @@ def holder_gone(holder, last, cutoff):
 
 
 def stale_secs():
-    """The grace timer for a holder on another machine, seconds."""
-    return int(os.environ.get("WORK_ITEM_STALE_SECS") or 300)
+    """The lapse for a holder the registry here does not know, seconds."""
+    return int(os.environ.get("WORK_ITEM_STALE_SECS") or 3600)
 
 
 def fold(path, cutoff=""):
@@ -197,8 +198,9 @@ def fold(path, cutoff=""):
     `k=v` sets fact k, a line that omits a fact changes nothing. The holder is
     the session of the newest `status=claimed` line while the status is
     claimed or blocked; it is stale when it has let go (holder_gone: the
-    process test for a session on this machine, else its newest line on the
-    item being older than <cutoff>, ISO UTC strings sorting as times). `cost` lines
+    process test for a session the registry knows, else its newest line on
+    the item being older than <cutoff>, ISO UTC strings sorting as times).
+    `cost` lines
     sum to cost_tokens and cost_usd; `briefed` lines count. points comes from
     the brief, not the log."""
     title = status = holder = since = points = created = updated = ""

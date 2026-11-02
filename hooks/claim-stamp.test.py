@@ -219,8 +219,8 @@ class ClaimStampTest(unittest.TestCase):
             r"` · [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\n\n"
             r"A session holds this work\. The Stop hook refreshes the timestamp; `/wrapup`\n"
             r"and the archive verdict delete this comment\. A claim whose session has died or\n"
-            r"parked, or that is not refreshed for a few minutes from another machine,\n"
-            r"is stale -- the session that wrote it let go without releasing it\.\Z"))
+            r"parked, or that goes unrefreshed \(minutes from another machine, an hour\n"
+            r"otherwise\), is stale -- the session that wrote it let go without releasing it\.\Z"))
         self.assertNotIn(host, b, "the machine is a hash, not a name")
         self.assertEqual(out, "", "an uncontested claim says nothing")
         self.assertIn("labels[]=claimed", self.labels())
@@ -262,7 +262,7 @@ class ClaimStampTest(unittest.TestCase):
 
         self.reset_store()
         self.plant(1, "deadbeef", int(time.time()) - 60)
-        self.cs("claim", "-C", str(self.work), "eeeeeeee99990000", CLAIM_STALE_SECS="30")
+        self.cs("claim", "-C", str(self.work), "eeeeeeee99990000", CLAIM_GRACE_SECS="30")
         self.assertEqual(self.ncomments(), 1, "a lower threshold collects it")
 
     def test_local_holder_is_read_by_the_process_test(self):
@@ -307,12 +307,15 @@ class ClaimStampTest(unittest.TestCase):
         # another machine, 6 minutes old: stale; 4 minutes old: live
         self.plant(1, "11111111", int(time.time()) - 360)
         self.plant(2, "22222222", int(time.time()) - 240)
-        # this machine, but no such session in the registry: read by age too
+        # this machine, but no such session in the registry: the old window,
+        # so 6 minutes holds and a day does not
         self.plant_local(3, "33333333", int(time.time()) - 360)
+        self.plant_local(5, "66666666", int(time.time()) - 86400)
         out = self.out("read", URL7)
         self.assertRegex(out, r"(?m)^stale\t11111111")
         self.assertRegex(out, r"(?m)^live\t22222222")
-        self.assertRegex(out, r"(?m)^stale\t33333333")
+        self.assertRegex(out, r"(?m)^live\t33333333")
+        self.assertRegex(out, r"(?m)^stale\t66666666")
         # a running sub-agent has no registry entry: it reads unseen, never
         # dead, so a fresh local stamp of its holds
         self.plant_local(4, "55555555", int(time.time()) - 60)
