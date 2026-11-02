@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -109,6 +110,23 @@ class TakeoverNoticeTest(unittest.TestCase):
     def test_bad_stdin_is_silent(self):
         for s in ("", "not json", "[1]", '{"session_id": 3}'):
             self.assertIsNone(self.prompt(stdin=s))
+
+    def test_unknown_argv_exits_2(self):
+        r = subprocess.run([sys.executable, str(HOOK), "bogus"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("usage", r.stderr)
+
+    def test_write_prunes_old_delivered_only(self):
+        d = (self.dir / "state") / "claude" / "takeover"
+        d.mkdir(parents=True)
+        old, new, live = d / "a.jsonl.delivered", d / "b.jsonl.delivered", d / "c.jsonl"
+        for f in (old, new, live):
+            f.write_text("{}\n")
+        t = time.time() - 8 * 86400
+        os.utime(old, (t, t)); os.utime(live, (t, t))
+        self.write("h", "x")
+        self.assertFalse(old.exists())
+        self.assertTrue(new.exists() and live.exists())
 
 
 if __name__ == "__main__":

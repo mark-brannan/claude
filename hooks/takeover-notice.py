@@ -16,7 +16,8 @@ the next time anyone types in it, before it works the thing again.
   takeover-notice.py            UserPromptSubmit hook; JSON on stdin.
       In the holder's session: shows every pending notice once, to the model
       as additionalContext and to the user as systemMessage, then marks the
-      file delivered by renaming it.
+      file delivered by renaming it. Delivered files are pruned after 7 days
+      by the writer, never here.
 
 The file is $XDG_STATE_HOME/claude/takeover/<holder-sid>.jsonl, one JSON
 object a line. Local, never the state repo: holder_liveness sees only this
@@ -38,12 +39,32 @@ HOOK = "takeover-notice"
 
 
 def notice_path(sid):
-    """Every character outside [A-Za-z0-9_-] becomes _, as in claim-stamp's
-    record_path, so an id cannot leave the directory. No re: it is an import
-    the every-prompt path would pay for."""
+    """Every character outside [A-Za-z0-9_-] becomes _, so an id cannot leave
+    the directory. The same substitution claim-stamp's record_path makes, but
+    that one works on bytes and this on characters; no re here, it is an
+    import the every-prompt path would pay for."""
     base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
     safe = "".join(c if c.isascii() and (c.isalnum() or c in "_-") else "_" for c in sid)
     return f"{base}/claude/takeover/{safe}.jsonl"
+
+
+def prune(directory, days=7):
+    """Delete delivered notices older than `days`. Writer's path only; the
+    per-prompt path never lists the directory."""
+    import time
+    cutoff = time.time() - days * 86400
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return
+    for name in names:
+        if not name.endswith(".jsonl.delivered"):
+            continue
+        try:
+            if os.stat(f"{directory}/{name}").st_mtime < cutoff:
+                os.remove(f"{directory}/{name}")
+        except OSError:
+            pass
 
 
 def write(holder, what, link=""):
@@ -56,6 +77,7 @@ def write(holder, what, link=""):
         return 2
     path = notice_path(holder)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    prune(os.path.dirname(path))
     row = {"what": what, "by": taker, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
            "link": link}
     with open(path, "a", encoding="utf-8") as fh:
@@ -105,6 +127,10 @@ def prompt():
 def main(argv):
     if argv[:1] == ["write"]:
         return write(*(argv[1:4] + [""] * (3 - len(argv[1:4]))))
+    if argv:
+        print("usage: takeover-notice.py write <holder-sid> <what> [<link>]  (no args: hook, JSON on stdin)",
+              file=sys.stderr)
+        return 2
     try:
         return prompt()
     except Exception as e:  # noqa: BLE001 -- a notice must never block a prompt
