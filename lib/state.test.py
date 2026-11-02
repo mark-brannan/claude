@@ -986,13 +986,158 @@ class BranchBriefTest(Base):
         self.g(r, "checkout", "-q", "main")
         self.g(r, "worktree", "add", "-q", str(self.T / "held wt"), "feat")
         out = self.brief(r)[1]
-        self.assertTrue(any(ln.startswith(f"worktrees: {self.T}/held wt ") for ln in out), out)
+        self.assertTrue(any(ln.startswith(f"worktrees: {self.T}/held wt (dead) ") for ln in out), out)
+
+    def test_worktrees_line_carries_each_holders_verdict(self):
+        r = self.new_repo("verdict")
+        self.g(r, "checkout", "-q", "main")
+        wt = self.T / "verdict wt"
+        self.g(r, "worktree", "add", "-q", str(wt), "feat")
+        reg, proc = self.T / "sessions", self.T / "proc"
+        (proc / "77").mkdir(parents=True)
+        (proc / "77" / "stat").write_text("77 (claude) S " + " ".join(["0"] * 18 + ["900"]) + "\n")
+        reg.mkdir()
+        (reg / "77.json").write_text(json.dumps({"pid": 77, "sessionId": "s", "cwd": str(wt), "procStart": "900",
+                                                 "status": "waiting", "statusUpdatedAt": 1, "updatedAt": 1}))
+        rc, out = self.state.branch_brief(str(r), "feat", str(reg), str(proc))
+        self.assertIn(f"worktrees: {wt} (waiting) ", out.splitlines())
 
     def test_a_missing_branch_is_an_error(self):
         r = self.new_repo("missing")
         rc, out = self.brief(r, br="nope")
         self.assertEqual(rc, 1)
         self.assertTrue(out[0].startswith("error: no branch nope"), out)
+
+
+class LivenessTest(Base):
+    """holder_liveness against a fixture registry and a fake /proc: every
+    pid, start time and status is written here, none is read from the
+    machine."""
+
+    NOW = 1_800_000_000  # epoch seconds
+
+    def setUp(self):
+        super().setUp()
+        self.reg = self.T / "sessions"
+        self.proc = self.T / "proc"
+        self.reg.mkdir()
+        self.proc.mkdir()
+        self.wt = self.T / "repo"
+        (self.wt / ".claude" / "worktrees" / "nested").mkdir(parents=True)
+        (self.wt / ".git").mkdir()
+        (self.wt / ".claude" / "worktrees" / "nested" / ".git").write_text("gitdir: x\n")
+
+    def proc_pid(self, pid, start):
+        d = self.proc / str(pid)
+        d.mkdir()
+        # comm with a space and a paren: the parse must anchor on the last ')'
+        rest = ["S"] + ["0"] * 18 + [str(start)] + ["0"] * 10
+        (d / "stat").write_text(f"{pid} (claude (x) y) " + " ".join(rest) + "\n")
+
+    def entry(self, pid, sid, cwd=None, status="idle", since_s=-600, updated_s=None, start=4242, alive=True, **kw):
+        since = (self.NOW + since_s) * 1000
+        e = {"pid": pid, "sessionId": sid, "cwd": str(cwd or self.wt), "procStart": str(start),
+             "status": status, "statusUpdatedAt": since,
+             "updatedAt": since if updated_s is None else (self.NOW + updated_s) * 1000, **kw}
+        if status is None:
+            del e["status"]
+        (self.reg / f"{pid}.json").write_text(json.dumps(e))
+        if alive:
+            self.proc_pid(pid, start)
+
+    def v(self, target, grace=0):
+        return self.state.holder_liveness(str(target), grace, str(self.reg), str(self.proc), self.NOW)
+
+    def test_no_entry_is_dead(self):
+        self.assertEqual(self.v(self.wt), "dead")
+        self.assertEqual(self.v("no-such-session"), "dead")
+
+    def test_gone_pid_is_dead(self):
+        self.entry(10, "s", alive=False)
+        self.assertEqual(self.v(self.wt), "dead")
+
+    def test_reused_pid_is_dead(self):
+        self.entry(10, "s", start=111, alive=False)
+        self.proc_pid(10, 222)
+        self.assertEqual(self.v("s"), "dead")
+
+    def test_busy_is_live(self):
+        self.entry(10, "s", status="busy", since_s=-86400)
+        self.assertEqual(self.v(self.wt, grace=120), "live")
+
+    def test_waiting_is_waiting_whatever_else(self):
+        self.entry(10, "s", status="waiting", since_s=-3600)
+        self.entry(11, "other", cwd=self.T, status="busy", since_s=-1)
+        self.assertEqual(self.v("s", grace=120), "waiting")
+
+    def test_idle_alone_is_live_without_a_grace_timer(self):
+        self.entry(10, "s", since_s=-86400)
+        self.assertEqual(self.v(self.wt), "live")
+
+    def test_grace_timer_parks_an_idle_holder_once_run_out(self):
+        self.entry(10, "s", since_s=-119)
+        self.assertEqual(self.v("s", grace=120), "live")
+        (self.reg / "10.json").unlink()
+        shutil.rmtree(self.proc / "10")
+        self.entry(10, "s", since_s=-120)
+        self.assertEqual(self.v("s", grace=120), "parked")
+
+    def test_a_newer_prompt_elsewhere_parks_at_once(self):
+        self.entry(10, "s", since_s=-5)
+        self.entry(11, "other", cwd=self.T, status="idle", since_s=-2, alive=False)
+        self.assertEqual(self.v(self.wt), "parked")
+
+    def test_an_older_prompt_elsewhere_does_not_park(self):
+        self.entry(10, "s", since_s=-5)
+        self.entry(11, "other", cwd=self.T, since_s=-60)
+        self.assertEqual(self.v(self.wt), "live")
+
+    def test_its_own_later_writes_do_not_park_it(self):
+        self.entry(10, "s", since_s=-60, updated_s=-1)
+        self.assertEqual(self.v("s"), "live")
+
+    def test_a_session_in_a_nested_worktree_holds_that_one_only(self):
+        nested = self.wt / ".claude" / "worktrees" / "nested"
+        self.entry(10, "s", cwd=nested / "sub", status="busy")
+        self.assertEqual(self.v(self.wt), "dead")
+        self.assertEqual(self.v(nested), "live")
+        self.entry(11, "t", cwd=self.wt / ".claude", status="busy")
+        self.assertEqual(self.v(self.wt), "live")
+
+    def test_the_most_held_entry_wins(self):
+        self.entry(10, "s", alive=False)
+        self.entry(11, "s", status="waiting")
+        self.assertEqual(self.v("s"), "waiting")
+
+    def test_missing_status_reads_as_idle(self):
+        self.entry(10, "s", status=None, since_s=-600)
+        self.assertEqual(self.v("s"), "live")
+        self.assertEqual(self.v("s", grace=300), "parked")
+
+    def test_torn_registry_files_are_skipped(self):
+        (self.reg / "9.json").write_text("{ torn")
+        (self.reg / "8.json").write_text("[1]")
+        self.entry(10, "s", status="busy")
+        self.assertEqual(self.v("s"), "live")
+
+    def test_non_int_pid_entries_are_skipped(self):
+        for i, pid in enumerate((None, [1], "7", True, 1.5)):
+            (self.reg / ("bad%d.json" % i)).write_text(json.dumps({"pid": pid, "sessionId": "s", "cwd": "/x"}))
+        self.assertEqual(self.v("s"), "dead")
+        self.entry(10, "s", status="busy")
+        self.assertEqual(self.v("s"), "live")
+
+    def test_cli_bad_grace_is_a_usage_error(self):
+        rc, out, err = cli("liveness", "nobody", "abc", env={"HOME": os.environ["HOME"]})
+        self.assertEqual((rc, out), (2, ""))
+        self.assertIn("grace", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_cli_prints_the_verdict(self):
+        home = Path(os.environ["HOME"]) / ".claude" / "sessions"
+        home.mkdir(parents=True)
+        rc, out, _ = cli("liveness", "nobody", env={"HOME": os.environ["HOME"]})
+        self.assertEqual((rc, out), (0, "dead\n"))
 
 
 if __name__ == "__main__":
