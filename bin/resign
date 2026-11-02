@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+# resign -- re-sign a branch's unsigned commits and push it, by hand.
+#
+#   resign [branch] [-n | --dry-run]
+#
+# For a person at a shell, on the machine that holds the signing key, when a
+# PR is blocked on unsigned commits. The agents' gate, hooks/no-unsigned-push.py,
+# refuses the push and says to run `lib/state.py branch_brief` and do what
+# its `recommend:` line says; this does that, so the person need not read the
+# brief first and remember which git invocation is safe for the branch's shape.
+#
+# The remedy is decided in one place, branch_brief (claude#329), never here:
+# this runs its recommendation when that is a signing rebase or amend, and for
+# anything else -- a conflict, a hand-resolved merge a rebase would drop, no
+# signing key on this machine, a base git cannot see -- prints the
+# recommendation and stops. The retired resign-branch.sh chose its own remedy,
+# and 11 of its 12 October runs rebased a branch merely to update it
+# (git-stuff curia, 2026-10-26); that is why this one chooses nothing.
+#
+# Steps, in order:
+#   1. `git fetch --quiet origin`. branch_brief never fetches, and a plan made
+#      against a stale origin/<base> counts the base's newer commits as the
+#      branch's own; re-signing them makes duplicates, and the force-push
+#      sends them into the PR (dotfiles#583 review).
+#   2. Print the brief in full, so the facts the command rests on are on screen.
+#   3. On the checked-out branch, run the recommended command, which signs with
+#      the key git is configured for (a passphrase prompt comes through).
+#   4. `git push --force-with-lease origin <branch>`, the lease taken from the
+#      fetch in step 1.
+# --dry-run stops after step 2 and prints what 3 and 4 would run.
+#
+# A tool for the person, not an allow rule for agents: no settings.json rule
+# names it, so an agent that tries it is judged like any other push.
+#
+# Exit: 0 pushed, or nothing to re-sign; 1 the brief recommends something this
+# does not run by itself, the branch is not the one checked out, or a step
+# failed; 2 usage.
+import os
+import shlex
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import state  # noqa: E402
+except ImportError:
+    sys.stderr.write("resign: lib/state.py not found (looked beside the tool and in ~/.claude/lib)\n")
+    sys.exit(2)
+
+USAGE = "usage: resign [branch] [-n | --dry-run]\n"
+
+# The recommendation forms this runs. Anything else is for a person to read.
+RUNS = ("git rebase -S ", "git commit --amend -S ")
+
+
+def recommendation(brief):
+    """(command, whole line) from a brief's `recommend:` line; the command is
+    the part before branch_brief's `   # ...` note, or '' when there is none."""
+    for ln in brief.split("\n"):
+        if ln.startswith("recommend: "):
+            rec = ln[len("recommend: "):]
+            return rec.split("   #", 1)[0].strip(), rec
+    return "", ""
+
+
+def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.stdout, err=sys.stderr):
+    """`brief` reads; `run` is every subprocess that acts (fetch, the
+    recommended command, push), so a test can watch them without a key."""
+    dry, br = False, None
+    for a in argv:
+        if a in ("-n", "--dry-run"):
+            dry = True
+        elif a in ("-h", "--help"):
+            out.write(USAGE)
+            return 0
+        elif a.startswith("-") or br is not None:
+            err.write(USAGE)
+            return 2
+        else:
+            br = a
+
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=cwd, text=True, capture_output=True)
+
+    p = git("rev-parse", "--show-toplevel")
+    if p.returncode:
+        err.write("resign: not inside a git repository\n")
+        return 1
+    root = p.stdout.strip()
+    cur = git("branch", "--show-current").stdout.strip()
+    br = br or cur
+    if not br:
+        err.write("resign: HEAD is detached; name the branch to re-sign\n")
+        return 2
+
+    p = run(["git", "-C", root, "fetch", "--quiet", "origin"])
+    if p.returncode:
+        err.write("resign: git fetch origin failed; nothing touched\n")
+        return 1
+
+    rc, text = brief(root, br)
+    if rc:
+        err.write(f"resign: {text}")
+        return 1
+    out.write(text)
+
+    cmd, rec = recommendation(text)
+    if rec.startswith("nothing on the base"):
+        out.write(f"resign: nothing to re-sign on {br}\n")
+        return 0
+    if not cmd.startswith(RUNS):
+        err.write(f"resign: not a step this runs by itself -- {rec or 'no recommendation'}\n")
+        return 1
+    if br != cur:
+        err.write(f"resign: check out {br} first; the command rewrites the checked-out branch\n")
+        return 1
+
+    push = ["git", "push", "--force-with-lease", "origin", br]
+    out.write(f"+ {cmd}\n")
+    if not dry:
+        out.flush()
+        p = run(["git", "-C", root, *shlex.split(cmd)[1:]])
+        if p.returncode:
+            err.write(f"resign: `{cmd}` failed (exit {p.returncode}); nothing pushed\n")
+            return 1
+    out.write("+ " + " ".join(push) + "\n")
+    if dry:
+        out.write("resign: dry run, nothing touched\n")
+        return 0
+    out.flush()
+    p = run(["git", "-C", root, *push[1:]])
+    if p.returncode:
+        err.write(f"resign: push failed (exit {p.returncode}); the branch is re-signed locally\n")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
