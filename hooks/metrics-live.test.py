@@ -307,6 +307,17 @@ class MetricsLiveTest(unittest.TestCase):
         w.turn(S / "withsubs" / "subagents" / "agent-a1b2c3.jsonl", 5000)
         outs = w.hook(w.payload(tps, "subs1", S, "PostToolUse"), "posttooluse", show=True)
         w.has("a session with sub-agent transcripts still gets its block", "^⛁⛁ ", w.msg(outs))
+        # claude#363: a Workflow run's workers sit one level down, under
+        # subagents/workflows/<run>/, and are read too. The harness numbers a
+        # request id by line, so a one-turn file repeats the main file's id and
+        # dedupes to nothing; the worker gets its own.
+        wf = S / "withsubs" / "subagents" / "workflows" / "wf_x" / "agent-w1.jsonl"
+        wf.parent.mkdir(parents=True)
+        w.turn(wf, 7000)
+        wf.write_text(wf.read_text().replace('"req-1"', '"req-wf1"'))
+        w.hook(w.payload(tps, "subs1", S, "PostToolUse"), "posttooluse", show=True)
+        w.t("a workflow worker's transcript counts as a sub-agent turn", 1,
+            w.read(w.shard("live", "subs1", ".json")).get("subagent_turns"))
 
         w.t("both crossings are recorded, in order", "100000\n150000",
             "\n".join(str(r["at"]) for r in w.rows("ctx1", "context")))

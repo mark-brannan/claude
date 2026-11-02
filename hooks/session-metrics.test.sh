@@ -288,5 +288,20 @@ eq "no sub-agent file: no denial" '[0,0]' "$(dsess | jq -c '.session.blocked|[.t
 eq "a sub-agent denial counts under rule, with its tool named" '[1,1,"Bash","rm -rf x"]' \
    "$(dsess --slurpfile subs "$deny_sub" | jq -c '[.session.blocked.total,.session.blocked.rule,.blocked[0].tool,.blocked[0].target]')"
 
+# --- a repeated record counts once ------------------------------------------
+# A fork inherits its parent's context and a resumed agent may log its history
+# again, so a sub file can carry records the main file already has, or carry
+# its own twice. Each denial counts once, as the cost path dedupes requests.
+rep_main="$S/rep-main.jsonl"; rep_sub="$S/rep-sub.jsonl"
+{ jq -nc '{type:"assistant", uuid:"m1", requestId:"r1", timestamp:"2026-09-22T00:00:02.000Z",
+           message:{role:"assistant", content:[{type:"tool_use", id:"tu9", name:"Bash", input:{command:"rm -rf y"}}]}}'
+  jq -nc '{type:"user", uuid:"m2", timestamp:"2026-09-22T00:00:03.000Z", toolDenialKind:"permission-rule",
+           message:{role:"user", content:[{type:"tool_result", tool_use_id:"tu9", content:"no-rm-tree fired"}]}}'; } > "$rep_main"
+{ cat "$rep_main"; cat "$rep_main"; cat "$deny_sub"; cat "$deny_sub"; } > "$rep_sub"
+rsess() { jq -s "$@" --arg sid s --arg repo r --arg branch b --arg cwd / --arg now n -f "$JQF" "$rep_main"; }
+eq "main file alone: one denial" '1' "$(rsess | jq -c '.session.blocked.total')"
+eq "a sub file repeating the main denial twice, and its own twice, adds one" '[2,2]' \
+   "$(rsess --slurpfile subs "$rep_sub" | jq -c '[.session.blocked.total,.session.blocked.rule]')"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
