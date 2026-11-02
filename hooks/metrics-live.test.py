@@ -1377,10 +1377,16 @@ class MetricsLiveTest(unittest.TestCase):
         drv2 = "d1d1d1d1-driver"
         claim("batch2.md", drv2)
         w.clock(121, 10)
-        w.hasnt("a driver two hours in hears no sitting line",
-                "⏱ 2h", w.msg(w.hook(w.payload(lo, drv2, repo), "prompt")))
+        w.has("a driver two hours in still sees the sitting line",
+              "⏱ 2h", w.msg(w.hook(w.payload(lo, drv2, repo), "prompt")))
         w.t("two hours does not arm its Stop nag", "false", json.dumps(w.nag_field(drv2, "since_nag")))
         w.t("and its Stop is not blocked", "", w.decision(stop(drv2, lo)))
+
+        drv3 = "d2d2d2d2-driver"
+        claim("batch3.md", drv3)
+        with open(items / "batch3.md", "a") as fh:
+            fh.write(f"2026-11-01T10:00:00Z {drv3[:8]} status=done evidence=x\n")
+        w.has("a driver whose claim was closed is nagged again", "stopping point is due", w.ctx(tool(drv3)))
 
         # Only a claimed batch parent counts: neither half alone makes a driver.
         w.clock(121, 10)
