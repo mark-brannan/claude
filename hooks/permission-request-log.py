@@ -9,8 +9,12 @@ nothing, so the dialog shows as it would have.
 One line per request, in the state dir's
 metrics/permission-requests/<session>.jsonl:
     {"ts": "2026-01-01T00:00:00Z", "session_id": "...", "cwd": "/home/u/repo",
-     "permission_mode": "auto", "tool": "Bash",
+     "permission_mode": "auto", "agent_id": "a4aadbe92e02e5780", "agent_type": "general-purpose",
+     "suggestions": 2, "tool": "Bash",
      "input": {"command": "GH_TOKEN=<secret> git push"}, "masked": 1}
+
+agent_id and agent_type are null for a main-session call. suggestions counts
+the permission_suggestions offered; a PreToolUse hook's ask offers none.
 
 input is the tool's input with each string masked by languette's decision
 record (record.mask, the detector guard-secrets uses, its built-in rules
@@ -74,6 +78,8 @@ def line(ev, record, ts):
     return {"ts": ts,
             "session_id": str(ev.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "unknown"),
             "cwd": ev.get("cwd"), "permission_mode": ev.get("permission_mode"),
+            "agent_id": ev.get("agent_id"), "agent_type": ev.get("agent_type"),
+            "suggestions": len(ev.get("permission_suggestions") or []),
             "tool": ev.get("tool_name"), "input": text, "masked": n}
 
 
