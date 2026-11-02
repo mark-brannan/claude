@@ -151,7 +151,7 @@ and the push proceeds as above.
 **Waiting** — the holder is at a permission prompt, which is not idle. Tell
 the user at once, naming the session, and push nothing until it is answered.
 
-Either way the report names what was checked, never "another session":
+Whatever the verdict, the report names what was checked, never "another session":
 
 ```
 Branch <branch> is held by your session "<name>" (worktree <path>).
