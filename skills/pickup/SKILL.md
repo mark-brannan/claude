@@ -79,13 +79,9 @@ Model: <model> · Effort: <effort>
 ```
 
 The body's `model` and `effort` lines are the *previous* session's
-recommendation for this work; a body the model never edited has neither,
-and then the choice is this session's own to make and state. If the
-running session is on something else, say so in one line — never silently.
-
-For a PR fixup there is no item, so read them off the PR instead: the
-hand-off prompt in its description or its own last comment, if one named
-them. If none did, that's the session's own call to make and state.
+recommendation (a PR fixup reads them off the PR's hand-off prompt); with
+none, the choice is this session's own to state. If the running session is
+on something else, say so in one line — never silently.
 
 Then read the link — the PR, issue or card — for live state. The item
 names where the work is (`pr:`, `where:`, the body's link); it does not
@@ -100,7 +96,7 @@ the languette plugin's `guard-worktrees` refuses it, and the reason it refuses
 is that the owning session may still be running and may be archived out from under you
 mid-turn (PR #162).
 
-So fork one: `EnterWorktree(name=<short-name>)`, then inside it
+Fork one: `EnterWorktree(name=<short-name>)`, then inside it
 
 ```
 ~/.claude/bin/worker-start --head <the branch the item names>
@@ -112,19 +108,27 @@ below applies. No line means a stale local branch:
 `git checkout <b> && git merge --ff-only origin/<b>`.
 
 If git refuses because the branch is checked out in another worktree, that
-worktree holds it — but a holder is not always alive. A sub-agent that
-committed keeps its worktree, and the branch, after it has finished; a
-desktop tab the user keeps open for reference holds its branch for hours
-while doing nothing. Read the verdict without entering the worktree. The
-stamp is read off the card by its link, since `read -C .` would read your
-own fork's branch, which has no card:
+worktree holds it — but a holder is not always alive. A finished sub-agent
+keeps its worktree and branch; a desktop tab left open holds its branch for
+hours doing nothing. Check without entering the worktree (`<name>` is the last
+part of the path named). A running sub-agent has no registry file, so scan
+for a process first: any pid found means **live**, whatever the verdict says,
+and `~/.claude/sessions/<pid>.json` carries the session `name`:
+
+```
+for p in /proc/[0-9]*; do case $(readlink "$p/cwd" 2>/dev/null) in */<name> | */<name>/*) echo "live: pid ${p#/proc/}" ;; esac; done
+```
+
+Only when the scan finds nothing, read the verdict (grace 0 for an
+interactive pickup; `branch_brief`'s `worktrees:` line gives the same) and the
+stamp, read off the card by its link, since `read -C .` reads your own fork's branch:
 
 ```
 python3 ~/.claude/lib/state.py liveness <holder worktree path>   # dead | live | parked | waiting
 ~/.claude/hooks/claim-stamp.py read <the PR or issue link the item names>
 ```
 
-`branch_brief`'s `worktrees:` line (below) gives the same verdict per holder.
+A stamp from another session means another machine holds it: **live**.
 
 **Dead** or **parked** — the holder is free. Leave its worktree alone and work
 on a local branch off the remote, pushing with
@@ -138,43 +142,42 @@ git checkout -B <short-name> origin/<the branch>
 Check what the holder has not pushed, from outside its checkout:
 `git -C <holder worktree> log origin/<the branch>..HEAD --oneline`. Absorb
 it: cherry-pick those commits onto your own signed branch before you push,
-and report the takeover in the line below. A refused lease means someone
-else pushed, possibly the holder waking up: §6's stop rule applies.
+and report it in the line below. A refused lease means someone
+else pushed, possibly the holder waking up: §6's stop rule applies. A
+cherry-pick that conflicts is a stop: abort it, push nothing, report.
 
 **Live** — it is working, which narrows the work; it does not end it. Do
 every step that needs no push, from the same local branch. Reply to and
 resolve the threads that need no change, read the failing checks, merge the
-base in locally if it conflicts and report it. Do not push. Read the verdict
-again before stopping: a holder that went idle while you worked is parked,
+base in locally if it conflicts and report it. Do not push. Re-check
+before stopping: a holder gone idle meanwhile is parked,
 and the push proceeds as above.
 
-**Waiting** — the holder is at a permission prompt, which is not idle. Tell
+**Waiting** — the holder is at a permission prompt, not idle. Tell
 the user at once, naming the session, and push nothing until it is answered.
 
-Whatever the verdict, the report names what was checked, never "another session":
+The report names what was checked, never "another session":
 
 ```
 Branch <branch> is held by your session "<name>" (worktree <path>).
-Verdict <dead | live | parked | waiting>. Absorbed <n> unpushed commits.
+Verdict <dead | live | parked | waiting> (<pid, or none>). Absorbed <n> unpushed commits.
 ```
 
 Then claim it on the card, so a session on *another machine* — which git
-cannot see — knows too:
+cannot see — knows:
 
 ```
 ~/.claude/hooks/claim-stamp.py claim -C . <this session id>
 ```
 
-It prints nothing when the branch is free. When it prints a warning, another
-session holds the branch right now: relay it to the user in one line, naming the
-session and how old the claim is, and don't push to the branch until you know
-that session has let go. The SessionStart hook claims automatically for a
-session that *opens* on the branch; a pickup checks the branch out afterwards,
-so this is the one place the claim has to be asked for.
+It prints nothing when the branch is free. A warning means another session
+holds the branch right now: relay it in one line, naming the session and the
+claim's age, and push nothing until it has let go. The SessionStart hook claims
+for a session that *opens* on the branch; a pickup checks out afterwards, so
+this is the one place the claim is asked for.
 
-Everything the previous session wanted handed over is on the remote. If it
-isn't pushed, it isn't handed over: work from the pushed state and say in one
-line what you found missing.
+Everything handed over is on the remote. What isn't pushed isn't handed over:
+work from the pushed state and say in one line what is missing.
 
 One exception, and it is not a hand-off: when the checkpoint the item's
 `where:` names has a `## Stop-commit`
