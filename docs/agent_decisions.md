@@ -568,3 +568,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261029t205702z
 - worker-start --item logs dispatched after the issue or PR read, using the work-item beside the script; a failure is said on stderr, exit stays 0 Undo: revert c63150e ([#348](https://github.com/mark-brannan/claude/pull/348))
+
+### 20261102t091947z
+- in_driver = item claimed by this session plus a driver= Log line in the same file; hush also covers live curia sittings and sitting_model for drivers Undo: revert the PR ([#369](https://github.com/mark-brannan/claude/pull/369))
