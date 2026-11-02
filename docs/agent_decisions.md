@@ -571,3 +571,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261102t091947z
 - in_driver = item claimed by this session plus a driver= Log line in the same file; hush also covers live curia sittings and sitting_model for drivers Undo: revert the PR ([#369](https://github.com/mark-brannan/claude/pull/369))
+
+### 20261102t175550z
+- suggestions absent read as a PreToolUse hook's ask (measured once, CC 2.1.300) Undo: drop the suggestions check in subagent-permission-approve.py ([#374](https://github.com/mark-brannan/claude/pull/374))
