@@ -333,6 +333,10 @@ the rulings to date:
   maxims table, and per batch: hours from `/pickup` to the last merge on main, idle
   hours, sessions used, the user's turns, and dollars per merged PR
   (2026-10-24).
+- **The close.** With the walk logged, the driver logs each child whose PR
+  merged `status=done evidence=<PR>`, re-readies each that did not with a
+  `note=` saying why, and logs the parent `status=done evidence=<walk path>`.
+  A batch whose parent is not done is one its driver never finished.
 
 The run's last line is the one line that starts the driver:
 
