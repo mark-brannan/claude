@@ -1107,7 +1107,7 @@ def _registry(d):
                 e = json.load(f)
         except (OSError, ValueError):
             continue
-        if isinstance(e, dict) and "pid" in e:
+        if isinstance(e, dict) and isinstance(e.get("pid"), int) and not isinstance(e["pid"], bool):
             rows.append(e)
     return rows
 
@@ -1166,6 +1166,11 @@ def holder_liveness(target, grace=0, registry=None, proc_root="/proc", now=None)
     worktree path (any session whose cwd is it or below it, short of a
     worktree nested inside it) or a session id.
 
+    This function sees only this machine. A worktree path is always local,
+    so it is safe to pass. A session id from another machine must not be
+    passed: it has no entry here and reads `dead`, which means free. Callers
+    holding such an id read the claim stamp instead (item 3).
+
     - dead: no registry entry, or its pid is gone from /proc, or the pid's
       start time is not the entry's procStart (the pid was reused). A dead
       holder is free at once.
@@ -1207,8 +1212,14 @@ def holder_liveness(target, grace=0, registry=None, proc_root="/proc", now=None)
 
 
 def liveness(target, grace="0"):
-    """holder_liveness from the command line: the verdict and a newline."""
-    return holder_liveness(target, float(grace)) + "\n"
+    """holder_liveness from the command line: the verdict and a newline; a
+    grace that is not a number is a usage error (exit 2, cause on stderr)."""
+    try:
+        g = float(grace)
+    except ValueError:
+        print("state.py liveness: grace must be a number of seconds, got %r" % grace, file=sys.stderr)
+        return (2, "")
+    return holder_liveness(target, g) + "\n"
 
 
 def branch_brief(root, br, registry=None, proc_root="/proc"):

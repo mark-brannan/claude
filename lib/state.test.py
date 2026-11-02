@@ -1120,6 +1120,19 @@ class LivenessTest(Base):
         self.entry(10, "s", status="busy")
         self.assertEqual(self.v("s"), "live")
 
+    def test_non_int_pid_entries_are_skipped(self):
+        for i, pid in enumerate((None, [1], "7", True, 1.5)):
+            (self.reg / ("bad%d.json" % i)).write_text(json.dumps({"pid": pid, "sessionId": "s", "cwd": "/x"}))
+        self.assertEqual(self.v("s"), "dead")
+        self.entry(10, "s", status="busy")
+        self.assertEqual(self.v("s"), "live")
+
+    def test_cli_bad_grace_is_a_usage_error(self):
+        rc, out, err = cli("liveness", "nobody", "abc", env={"HOME": os.environ["HOME"]})
+        self.assertEqual((rc, out), (2, ""))
+        self.assertIn("grace", err)
+        self.assertNotIn("Traceback", err)
+
     def test_cli_prints_the_verdict(self):
         home = Path(os.environ["HOME"]) / ".claude" / "sessions"
         home.mkdir(parents=True)
