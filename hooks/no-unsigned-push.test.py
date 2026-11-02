@@ -86,6 +86,7 @@ class NoUnsignedPushTest(unittest.TestCase):
         verdict, out = self.hook("git push", w)
         self.assertEqual(verdict, "deny")
         self.assertEqual(out.count("1 unsigned commit"), 1)
+        self.assertIn("One refused segment refuses the whole command, and the segments before it did not run", out)
 
         # The remedy is the brief. Its command rebases onto the merged main tip,
         # so main's commits are kept, not replayed, and the push clears.
@@ -146,6 +147,7 @@ class NoUnsignedPushTest(unittest.TestCase):
         verdict, out = self.hook("git push", w)
         self.assertEqual(verdict, "allow")
         self.assertIn("state.py branch_brief", json.loads(out)["hookSpecificOutput"]["additionalContext"])
+        self.assertNotIn("segment", out)  # the allow note is no refusal
 
     def test_unreadable_payload_denies(self):
         p = subprocess.run([sys.executable, str(HOOK)], input="{not json", capture_output=True, text=True)
