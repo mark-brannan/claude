@@ -365,8 +365,9 @@ class Stop:
         self.work_branch = git("-C", cwd, "rev-parse", "--abbrev-ref", "HEAD")[1]
         work_root, work_repo = self.work_root, self.work_repo
 
-        # Sub-agent transcripts are priced into cost and tokens (session-metrics.jq).
-        subs = sorted(glob.glob(os.path.splitext(self.tp)[0] + "/subagents/agent-*.jsonl"))
+        # Sub-agent transcripts feed cost, tokens and the blocked count (session-metrics.jq).
+        subs = sorted(glob.glob(os.path.splitext(self.tp)[0] + "/subagents/**/agent-*.jsonl",
+                               recursive=True))
         subargs = []
         if subs:
             with tempfile.NamedTemporaryFile("wb", suffix=".jsonl", delete=False) as tf:

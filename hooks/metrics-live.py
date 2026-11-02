@@ -412,7 +412,10 @@ class Hook:
         line raises from that last parse, as before; so does a transcript
         that is not there."""
         base = self.tp[:-len(".jsonl")] if self.tp.endswith(".jsonl") else self.tp
-        sub_files = sorted(glob.glob(f"{base}/subagents/agent-*.jsonl"))
+        # `**` reaches subagents/workflows/<run>/agent-*.jsonl too: a workflow's
+        # workers were never read, so their spend and denials went uncounted
+        # (claude#363).
+        sub_files = sorted(glob.glob(f"{base}/subagents/**/agent-*.jsonl", recursive=True))
         try:
             return self.slurp(self.tp, b"".join(read_bytes(f) + b"\n" for f in sub_files))
         except Failed:

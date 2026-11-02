@@ -101,8 +101,8 @@ to_entries as $E
 # sub-agents' requests (zero isSidechain records, zero shared request ids), so
 # a cost summed over $amsgs alone leaves their spend out. The callers pass
 # those files, concatenated, as `--slurpfile subs`; absent, there are none.
-# They feed the money and token sums only -- turns, tools, clock and the
-# context window stay the main session's.
+# They feed the money and token sums and the blocked count -- turns, tools,
+# clock and the context window stay the main session's.
 | ($ARGS.named.subs // []) as $subrecs
 | ([ $subrecs[] | select(.type == "assistant") ]
    | group_by(.requestId // .uuid) | map(.[0])) as $submsgs
@@ -254,14 +254,29 @@ to_entries as $E
 # user-rejected. An unrecognised value passes through under its own name
 # rather than being dropped, so a new kind shows up as itself instead of
 # silently vanishing.
-| ([ $E[] | .value | select(.type == "assistant")
+# Sub-agent transcripts carry their own denials (claude#363): a worker's
+# refused call never appears in the main file, so the count read from $E
+# alone was low by up to 12x on an autonomous batch. Their records join
+# here with no transcript index (`i: null`), since the index means a
+# position in the main file. A sub record whose uuid the main file already
+# carries, or that a sub file repeats, counts once, as the cost path above
+# dedupes by request id: measured 2026-11-02 over 760 local sessions with
+# sub-agent transcripts (one of them a Workflow run), no uuid was shared or
+# repeated, so this guards a fork or a resumed agent that may yet log its
+# inherited history, not a case seen.
+| ([ $E[].value.uuid // empty ] | map({key: ., value: true}) | from_entries) as $main_uuid
+| ($subrecs | map(select(($main_uuid[.uuid // ""] // false) | not))
+            | unique_by(.uuid // tostring)) as $subonce
+| ([ ($E[] | .value), $subonce[] | select(.type == "assistant")
     | .message.content[]? | select(.type == "tool_use")
     | {key: (.id // ""), value: {name: .name, input: .input}} ] | from_entries) as $tool_by_id
 
 # Correlated by tool_use_id, not by position: one assistant turn can issue
 # several tool_use blocks that all share its transcript index, so picking the
 # nearest preceding one mislabels which call in a parallel batch was refused.
-| ([ $E[] | .key as $i | .value | select(.toolDenialKind != null)
+| ([ ($E[] | .key as $i | .value | {i: $i, rec: .}),
+     ($subonce[] | {i: null, rec: .})
+    | .i as $i | .rec | select(.toolDenialKind != null)
     | .toolDenialKind as $k
     | ([ .message.content[]? | select(.type == "tool_result") ] | first) as $tr
     | (($tr.tool_use_id) // "") as $tid
