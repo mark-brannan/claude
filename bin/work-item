@@ -39,7 +39,7 @@
 # `status=done` line with no `evidence=`; any `status=closed`, which only the
 # future whole-tree sweep writes (docs/work-item-lifecycle.md).
 #
-# Defaults (dotfiles#510): a flat folder; a holder silent on the item for
+# Defaults (dotfiles#510): a flat folder;
 # a holder on this machine is read by lib/state.py's liveness (dead or parked
 # has let go; live or waiting holds); a holder the registry here does not know
 # (another machine's) has let go after WORK_ITEM_STALE_SECS (default 300, the
