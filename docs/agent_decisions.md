@@ -577,3 +577,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261102t175616z
 - a languette ask holds back all sub-agent approvals in its session for 10 s Undo: match on call instead of session ([#374](https://github.com/mark-brannan/claude/pull/374))
+
+### 20261102t190607z
+- worker-start's setup table lives in the script, not the target repo, so an allow-listed script never runs commands a repo branch supplies Undo: move SETUP into a per-repo file the script reads ([#375](https://github.com/mark-brannan/claude/pull/375))
