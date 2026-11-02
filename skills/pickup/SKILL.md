@@ -55,7 +55,7 @@ A batch parent, filed by `/scoping`, carries `driver=` in its log: its brief
 is the driver's whole prompt, and the session that takes it is the driver.
 `work-item show <id>` prints the log. On `driver=workflow`, run the batch
 with the Workflow tool; that fact on the parent is the user's opt-in to it,
-logged only when the user typed `--workflow`. On `driver=subagents`, or a
+logged unless the user typed `--subagents`. On `driver=subagents`, or a
 parent filed before the fact existed, run it with sub-agents. A worker's
 first command is `~/.claude/bin/worker-start`, alone in its Bash call (flags
 in its header): where a chain of fetch, branch and log asks, it is allow-listed.

@@ -31,9 +31,13 @@ when none matches, ask. Empty means the most recently touched open curia:
 list the open curiae as bare `/curia` does and take the newest. Say which
 target, and why, in the first line.
 
-One flag may ride with the target: `--subagents` (the default) or
-`--workflow`, the driver mode the batch runs in. It is a trial (pencil,
-2026-10-24): §6 logs it on the parent, and the driver reads it there.
+The batch's driver is the Workflow tool unless `--subagents` rides with the
+target (`--workflow` is a no-op). That default is pen, the user's word of
+2026-11-02, with the comparison known thin: it rests on the user's intuition
+that Workflow runs a little smoother, and on cost (measured, driver cost only:
+4 Workflow drivers at a median $6.5 against 26 sub-agent drivers at a median
+$18). The comparison goes on being scored on dollars and on ease of use for the
+user. §6 logs the mode on the parent, and the driver reads it there.
 
 | Target | Its items, the input to plan | Lock folder |
 |---|---|---|
@@ -226,8 +230,8 @@ the batch exactly as proposed, cards and the issues the proposal showed:
   and `~/.claude/bin/work-item log <parent-id> lane=autonomous`: the lane
   lives on the parent and its children inherit it (2026-10-22), so `/pickup`
   lets the driver label its PRs; and
-  `~/.claude/bin/work-item log <parent-id> driver=<mode>`: `workflow` only
-  when the user typed `--workflow` in this run, `subagents` otherwise;
+  `~/.claude/bin/work-item log <parent-id> driver=<mode>`: `workflow`
+  unless the user typed `--subagents` in this run, then `subagents`;
 - then one child per yes'd item, worded as `/card-write` words one, its
   estimate in the card text, by the same line with
   `--parent <parent-id> [--model <m>] [--effort <e>]`, plus `--home <owner/repo#n>`
