@@ -89,6 +89,7 @@ skills/prt/SKILL.md
 skills/critical-review/SKILL.md
 hooks/lib_state.py
 lib/state.py
+lib/sidlive.py
 lib/ids.py
 lib/lock.py
 lib/gitrun.py
