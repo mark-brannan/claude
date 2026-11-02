@@ -366,7 +366,8 @@ class Stop:
         work_root, work_repo = self.work_root, self.work_repo
 
         # Sub-agent transcripts are priced into cost and tokens (session-metrics.jq).
-        subs = sorted(glob.glob(os.path.splitext(self.tp)[0] + "/subagents/agent-*.jsonl"))
+        subs = sorted(glob.glob(os.path.splitext(self.tp)[0] + "/subagents/**/agent-*.jsonl",
+                               recursive=True))
         subargs = []
         if subs:
             with tempfile.NamedTemporaryFile("wb", suffix=".jsonl", delete=False) as tf:

@@ -274,5 +274,19 @@ eq "no sub-agent file: cost as before, no sub-agent turns" "[$one,0,1]" "$alone"
 eq "sub-agent request is added, a duplicate id is not; main turns unchanged" \
    "[$(jq -n "$one * 2"),1,1]" "$with"
 
+# --- a sub-agent's refused tool call is counted (claude#363) ------------------
+# The denial record and its tool_use live only in the sub-agent's file; the
+# main transcript never sees them, so the count read from it alone was low.
+deny_main="$S/deny-main.jsonl"; deny_sub="$S/deny-sub.jsonl"
+mtok_msg claude-opus-4-8 m1 | jq -c '. + {requestId:"r1"}' > "$deny_main"
+{ jq -nc '{type:"assistant", uuid:"s1", requestId:"r2", isSidechain:true, timestamp:"2026-09-22T00:00:02.000Z",
+           message:{role:"assistant", content:[{type:"tool_use", id:"tu1", name:"Bash", input:{command:"rm -rf x"}}]}}'
+  jq -nc '{type:"user", uuid:"s2", isSidechain:true, timestamp:"2026-09-22T00:00:03.000Z", toolDenialKind:"permission-rule",
+           message:{role:"user", content:[{type:"tool_result", tool_use_id:"tu1", content:"no-rm-tree fired"}]}}'; } > "$deny_sub"
+dsess() { jq -s "$@" --arg sid s --arg repo r --arg branch b --arg cwd / --arg now n -f "$JQF" "$deny_main"; }
+eq "no sub-agent file: no denial" '[0,0]' "$(dsess | jq -c '.session.blocked|[.total,.rule]')"
+eq "a sub-agent denial counts under rule, with its tool named" '[1,1,"Bash","rm -rf x"]' \
+   "$(dsess --slurpfile subs "$deny_sub" | jq -c '[.session.blocked.total,.session.blocked.rule,.blocked[0].tool,.blocked[0].target]')"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

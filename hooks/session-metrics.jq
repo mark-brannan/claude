@@ -254,14 +254,21 @@ to_entries as $E
 # user-rejected. An unrecognised value passes through under its own name
 # rather than being dropped, so a new kind shows up as itself instead of
 # silently vanishing.
-| ([ $E[] | .value | select(.type == "assistant")
+# Sub-agent transcripts carry their own denials (claude#363): a worker's
+# refused call never appears in the main file, so the count read from $E
+# alone was low by up to 12x on an autonomous batch. Their records join
+# here with no transcript index (`i: null`), since the index means a
+# position in the main file.
+| ([ ($E[] | .value), $subrecs[] | select(.type == "assistant")
     | .message.content[]? | select(.type == "tool_use")
     | {key: (.id // ""), value: {name: .name, input: .input}} ] | from_entries) as $tool_by_id
 
 # Correlated by tool_use_id, not by position: one assistant turn can issue
 # several tool_use blocks that all share its transcript index, so picking the
 # nearest preceding one mislabels which call in a parallel batch was refused.
-| ([ $E[] | .key as $i | .value | select(.toolDenialKind != null)
+| ([ ($E[] | .key as $i | .value | {i: $i, rec: .}),
+     ($subrecs[] | {i: null, rec: .})
+    | .i as $i | .rec | select(.toolDenialKind != null)
     | .toolDenialKind as $k
     | ([ .message.content[]? | select(.type == "tool_result") ] | first) as $tr
     | (($tr.tool_use_id) // "") as $tid
