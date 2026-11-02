@@ -22,7 +22,12 @@ machine cannot see is no lock.
 
 A lease, not a hold: a scoping runs 10 to 25 minutes,
 and the lock lapses SCOPING_LOCK_STALE_SECS (default 25m) after it was
-taken. The lapse is the release; nothing has to run at minute 25. The
+taken. The lapse is the release; nothing has to run at minute 25. The 25
+minutes is the sitting's time budget, not a liveness test, and it stays. One
+thing frees a lock sooner: a holder that lib/state.py's process test reads as
+dead on this machine (its registry entry's process is gone) is free at once.
+The lock records no machine, so a holder the registry here does not know is
+read as another machine's and keeps the lease. The
 holder's own re-take keeps the original time, so re-taking never extends a
 run; only a re-take after the lapse starts a new lease. A lapsed lock is
 taken over, and the takeover says whose it was.
@@ -70,6 +75,7 @@ def state_repo():
 SR = state_repo()
 try:
     import gitrun
+    import state
     import when
 except ImportError:  # main() says so after the usage line, which needs no git
     gitrun = when = None
@@ -101,6 +107,15 @@ def lock_of(d):
     return p / "LOCK"
 
 
+def holder_dead(sid):
+    """True when this machine's registry knows the session and its process
+    is gone. Unknown to the registry is not dead: it may be another machine's."""
+    try:
+        return state.sid_liveness(sid) == "dead"
+    except Exception:  # an odd registry reads as unknown
+        return False
+
+
 def describe(line):
     """(live|stale, sid, at, read, age in minutes) for one lock line."""
     f = line.split()
@@ -111,7 +126,7 @@ def describe(line):
     except ValueError:
         at = 0
     age = int(time.time() - at)
-    return ("stale" if age >= LEASE else "live"), f[0], f[1], (f[2] if len(f) > 2 else "?"), age // 60
+    return ("stale" if age >= LEASE or holder_dead(f[0]) else "live"), f[0], f[1], (f[2] if len(f) > 2 else "?"), age // 60
 
 
 def sync():

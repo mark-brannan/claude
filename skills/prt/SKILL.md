@@ -93,7 +93,9 @@ The claim is the only lock. Two runs over one repo split its PRs between
 them; two runs over different repos never meet. Each agent releases its
 claim as its last step. When an agent never ran, release it yourself:
 `~/.claude/bin/prt release <owner/repo#n> <sid>`. A claim nobody releases
-goes stale after 1h, and the next claim on that PR collects it.
+is stale once its session is gone (dead or parked on this machine), or, from
+another machine, after 5 minutes unrefreshed; the next claim on that PR
+collects it.
 
 This session drives one round per worked PR: a fix against the review
 CI already posted (claude[bot], critical-review). It starts no reviewer

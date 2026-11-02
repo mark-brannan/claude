@@ -54,8 +54,14 @@ nothing to refresh: it reads a per-session record under TMPDIR and returns
 without a single network call when this session has not claimed anything.
 When it has, the refresh is debounced to once per CLAIM_REFRESH_SECS.
 
-A stamp older than CLAIM_STALE_SECS (default 1h, the work-item spec's
-claim lapse) is stale -- its session died without releasing it. `claim`
+A stamp whose holder has let go is stale -- its session died without
+releasing it. A holder on this machine (the stamp's machine is ours, and the
+session registry here knows the session) is read by lib/state.py's process
+test: dead or parked is stale at once, live or waiting is not, whatever the
+stamp's age. Any other stamp -- another machine's, or a session the registry
+does not know -- is stale once it is older than CLAIM_STALE_SECS (default
+300, the grace timer; a busy remote turn past it reads as gone, and the
+lease refusal is the backstop). `claim`
 deletes stale stamps it finds, which is the only garbage collection there
 is; nothing else ever removes a comment a dead session left. Age is taken
 from the epoch in the stamp's own marker, never from the comment's
@@ -107,7 +113,7 @@ def _int_env(name, default):
         return default
 
 
-STALE_SECS = _int_env("CLAIM_STALE_SECS", 3600)
+STALE_SECS = _int_env("CLAIM_STALE_SECS", 300)
 REFRESH_SECS = _int_env("CLAIM_REFRESH_SECS", 300)
 LABEL = os.environ.get("CLAIM_LABEL") or "claimed"
 
@@ -144,6 +150,21 @@ def machine_id():
     except OSError:
         h = "unknown"
     return "host-" + hashlib.sha256(h.encode("utf-8", "surrogateescape")).hexdigest()[:6]
+
+
+def holder_gone(s8, machine, age):
+    """True when the stamp's holder has let go. A holder on this machine and
+    known to its registry is read by the process test; anything else by the
+    stamp's age against STALE_SECS."""
+    if machine == machine_id():
+        try:
+            import state
+            v = state.sid_liveness(s8)
+        except Exception:  # no lib/state.py, an odd registry: read the age
+            v = None
+        if v is not None:
+            return v in ("dead", "parked")
+    return age >= STALE_SECS
 
 
 def record_path(sid):
@@ -252,8 +273,9 @@ def stamp_body(sid, branch):
             f"**Claimed:** `{s}` · `{branch}` · `{m}` · {when.stamp()}\n"
             "\n"
             "A session holds this work. The Stop hook refreshes the timestamp; `/wrapup`\n"
-            f"and the archive verdict delete this comment. Older than {tdiv(STALE_SECS, 3600)}h and\n"
-            "the claim is stale -- the session that wrote it died without releasing it.")
+            "and the archive verdict delete this comment. A claim whose session has died or\n"
+            "parked, or that is not refreshed for a few minutes from another machine,\n"
+            "is stale -- the session that wrote it let go without releasing it.")
 
 
 def _body_json(sid, branch):
@@ -313,7 +335,7 @@ def warn_held(stamps, sid, branch):
         if s == s8:
             continue
         age = now - epoch_of(e)
-        if age >= STALE_SECS:
+        if holder_gone(s, m, age):
             continue
         out.append(f"session `{s}` on `{m}` claimed `{branch}` {tdiv(age, 60)} minute(s) ago")
     return "\n".join(out)
@@ -343,8 +365,8 @@ def do_claim(d, sid):
     # exactly when someone cares -- at the moment another session asks
     # whether the branch is free.
     now = now_epoch()
-    for cid, s, e, _m in stamps:
-        if s != sid8(sid) and now - epoch_of(e) >= STALE_SECS:
+    for cid, s, e, m in stamps:
+        if s != sid8(sid) and holder_gone(s, m, now - epoch_of(e)):
             delete_stamp(owner, repo, cid)
 
     held = warn_held(stamps, sid, branch)
@@ -483,7 +505,7 @@ def do_read(d, url=""):
     now = now_epoch()
     for _id, s, e, m in stamps:
         age = now - epoch_of(e)
-        state = "stale" if age >= STALE_SECS else "live"
+        state = "stale" if holder_gone(s, m, age) else "live"
         print(f"{state}\t{s}\t{m}\t{tdiv(age, 60)}m\t{url}")
     # A card with no stamp says so, so a reader can tell "nobody holds it"
     # from a read that printed nothing because it never ran.
@@ -532,7 +554,7 @@ def card_ledger(url=""):
         if not ok or (url and u != url):
             continue
         age = now - epoch_of(e)
-        st = "stale" if age >= STALE_SECS else "live"
+        st = "stale" if holder_gone(s, m, age) else "live"
         out.append(f"{st}\t{s}\t{m}\t{tdiv(age, 60)}m\t{u}")
     return out
 
@@ -630,9 +652,9 @@ def release_cards(sid):
 
 def refresh_cards(sid):
     """Every card claim this session holds is refreshed with its branch
-    claim, so a card worked longer than CLAIM_STALE_SECS is not handed to a
-    second session. Local unless a stamp needs patching; free when there are
-    none."""
+    claim, so a card worked longer than CLAIM_STALE_SECS from another
+    machine is not handed to a second session. Local unless a stamp needs
+    patching; free when there are none."""
     for f in ledger_files(f"{glob.escape(claims_dir())}/*-{glob.escape(sid8(sid))}.tsv"):
         (u, s, e, m, c), ok = ifs_read(read_file(f) or "", 5)
         if not ok:

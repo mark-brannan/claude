@@ -178,6 +178,32 @@ class ClaimStampTest(unittest.TestCase):
         p[2] = "1"
         f.write_text("\t".join(p) + "\n")
 
+    def local_machine(self):
+        return "host-" + __import__("hashlib").sha256(socket.gethostname().encode()).hexdigest()[:6]
+
+    def session(self, sid, status="idle", alive=True, newer=False):
+        """A registry entry in a fixture sessions dir and a fake /proc, handed
+        to the hook by CLAUDE_SESSIONS_DIR and CLAUDE_PROC_ROOT. `newer` adds
+        another session prompted after this one, which parks an idle holder."""
+        reg, proc = self.tmp / "sessions", self.tmp / "proc"
+        reg.mkdir(exist_ok=True)
+        proc.mkdir(exist_ok=True)
+        now = int(time.time()) * 1000
+        e = {"pid": 4000 + len(list(reg.iterdir())), "sessionId": sid, "cwd": "/x", "procStart": "777",
+             "status": status, "statusUpdatedAt": now - 600_000, "updatedAt": now - 600_000}
+        (reg / f"{e['pid']}.json").write_text(json.dumps(e))
+        if alive:
+            d = proc / str(e["pid"])
+            d.mkdir()
+            (d / "stat").write_text(f"{e['pid']} (claude) " + " ".join(["S"] + ["0"] * 18 + ["777"] + ["0"] * 10) + "\n")
+        if newer:
+            (reg / "9999.json").write_text(json.dumps({"pid": 9999, "sessionId": "other", "updatedAt": now}))
+        self.env.update(CLAUDE_SESSIONS_DIR=str(reg), CLAUDE_PROC_ROOT=str(proc))
+
+    def plant_local(self, n, sid, epoch):
+        (self.store / "comments" / f"{n}.json").write_text(json.dumps(
+            {"id": n, "body": f"<!-- claim-stamp sid={sid} epoch={epoch} machine={self.local_machine()} -->"}))
+
     # -- branch claims -------------------------------------------------------
     def test_claim_release_and_warning(self):
         self.repo("claude/claimed")
@@ -192,8 +218,9 @@ class ClaimStampTest(unittest.TestCase):
             r"\*\*Claimed:\*\* `aaaaaaaa` · `claude/claimed` · `" + machine +
             r"` · [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\n\n"
             r"A session holds this work\. The Stop hook refreshes the timestamp; `/wrapup`\n"
-            r"and the archive verdict delete this comment\. Older than 1h and\n"
-            r"the claim is stale -- the session that wrote it died without releasing it\.\Z"))
+            r"and the archive verdict delete this comment\. A claim whose session has died or\n"
+            r"parked, or that is not refreshed for a few minutes from another machine,\n"
+            r"is stale -- the session that wrote it let go without releasing it\.\Z"))
         self.assertNotIn(host, b, "the machine is a hash, not a name")
         self.assertEqual(out, "", "an uncontested claim says nothing")
         self.assertIn("labels[]=claimed", self.labels())
@@ -237,6 +264,61 @@ class ClaimStampTest(unittest.TestCase):
         self.plant(1, "deadbeef", int(time.time()) - 60)
         self.cs("claim", "-C", str(self.work), "eeeeeeee99990000", CLAIM_STALE_SECS="30")
         self.assertEqual(self.ncomments(), 1, "a lower threshold collects it")
+
+    def test_local_holder_is_read_by_the_process_test(self):
+        self.repo("claude/claimed")
+        old = int(time.time()) - 86400
+        # alive and busy: held whatever the stamp's age
+        self.session("bbbbbbbb-1", status="busy")
+        self.plant_local(1, "bbbbbbbb", old)
+        self.assertRegex(self.out("read", URL7), r"(?m)^live\tbbbbbbbb")
+        # waiting on a permission prompt: held
+        self.reset_store()
+        self.session("cccccccc-1", status="waiting")
+        self.plant_local(1, "cccccccc", old)
+        self.assertRegex(self.out("read", URL7), r"(?m)^live\tcccccccc")
+        # gone from /proc: free at once, though the stamp is a minute old
+        self.reset_store()
+        self.session("dddddddd-1", alive=False)
+        self.plant_local(1, "dddddddd", int(time.time()) - 60)
+        self.assertRegex(self.out("read", URL7), r"(?m)^stale\tdddddddd")
+        # idle, and the user has since prompted another session: parked, free
+        self.reset_store()
+        self.session("eeeeeeee-1", newer=True)
+        self.plant_local(1, "eeeeeeee", int(time.time()) - 60)
+        self.assertRegex(self.out("read", URL7), r"(?m)^stale\teeeeeeee")
+        out = self.out("claim", "-C", str(self.work), "ffffffff00001111")
+        self.assertEqual(out, "", "a parked holder is not warned about")
+        self.assertEqual(self.ncomments(), 1, "and its stamp is collected")
+        # idle, nothing newer: live, whatever the stamp's age
+        self.reset_store()
+        self.reg_clear()
+        self.session("abababab-1")
+        self.plant_local(1, "abababab", old)
+        self.assertRegex(self.out("read", URL7), r"(?m)^live\tabababab")
+
+    def reg_clear(self):
+        shutil.rmtree(self.tmp / "sessions", True)
+        shutil.rmtree(self.tmp / "proc", True)
+
+    def test_unseen_and_remote_holders_lapse_by_age(self):
+        self.repo("claude/claimed")
+        self.session("zzzzzzzz-1", status="busy")  # some other session, so the registry exists
+        # another machine, 6 minutes old: stale; 4 minutes old: live
+        self.plant(1, "11111111", int(time.time()) - 360)
+        self.plant(2, "22222222", int(time.time()) - 240)
+        # this machine, but no such session in the registry: read by age too
+        self.plant_local(3, "33333333", int(time.time()) - 360)
+        out = self.out("read", URL7)
+        self.assertRegex(out, r"(?m)^stale\t11111111")
+        self.assertRegex(out, r"(?m)^live\t22222222")
+        self.assertRegex(out, r"(?m)^stale\t33333333")
+        # another machine's stamp is never read through the registry, even
+        # when a local session has the same prefix and is dead
+        self.reset_store()
+        self.session("44444444-1", alive=False)
+        self.plant(1, "44444444", int(time.time()) - 60)
+        self.assertRegex(self.out("read", URL7), r"(?m)^live\t44444444")
 
     def test_refresh(self):
         self.repo("claude/claimed")
