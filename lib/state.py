@@ -1081,7 +1081,137 @@ def _merges_all_clean(g, rng):
     return True
 
 
-def branch_brief(root, br):
+LIVENESS = ("dead", "live", "parked", "waiting")
+_LIVENESS_RANK = {"dead": 0, "parked": 1, "live": 2, "waiting": 3}
+
+
+def sessions_dir():
+    """This machine's session registry: one <pid>.json per session the
+    client started, written by the client, never by us."""
+    return os.path.join(os.path.expanduser("~"), ".claude", "sessions")
+
+
+def _registry(d):
+    """Every readable registry entry in d, as dicts; a torn or foreign file
+    is skipped, not fatal."""
+    rows = []
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return rows
+    for n in names:
+        if not n.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(d, n), encoding="utf-8") as f:
+                e = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if isinstance(e, dict) and "pid" in e:
+            rows.append(e)
+    return rows
+
+
+def _proc_start(pid, proc_root):
+    """Field 22 of /proc/<pid>/stat (start time in clock ticks since boot),
+    as the string the registry's procStart holds; None when no such pid."""
+    try:
+        with open(os.path.join(proc_root, str(int(pid)), "stat"), encoding="utf-8") as f:
+            st = f.read()
+    except (OSError, ValueError):
+        return None
+    fields = st[st.rfind(")") + 2:].split()  # comm may hold spaces and parens
+    return fields[19] if len(fields) > 19 else None
+
+
+def _ms(e, *keys):
+    for k in keys:
+        v = e.get(k)
+        if isinstance(v, (int, float)):
+            return v
+    return 0
+
+
+def _worktree_of(cwd, t):
+    """The worktree cwd sits in, as far as it matters for t: the nearest
+    ancestor holding a .git entry, so a session in a worktree nested under
+    t (t/.claude/worktrees/x) is that worktree's holder, not t's. None when
+    cwd is not t or below it."""
+    p = os.path.realpath(cwd)
+    if p != t and not p.startswith(t.rstrip(os.sep) + os.sep):
+        return None
+    while p != t and not os.path.exists(os.path.join(p, ".git")):
+        p = os.path.dirname(p)
+    return p
+
+
+def _entry_liveness(e, others, grace, proc_root, now_ms):
+    if not e.get("procStart") or _proc_start(e["pid"], proc_root) != str(e["procStart"]):
+        return "dead"  # gone, or its pid now names another process
+    status = e.get("status")
+    if status == "waiting":
+        return "waiting"
+    if status == "busy":
+        return "live"
+    since = _ms(e, "statusUpdatedAt", "updatedAt", "startedAt")
+    if any(_ms(o, "updatedAt") > since for o in others):
+        return "parked"
+    if grace > 0 and now_ms - since >= grace * 1000:
+        return "parked"
+    return "live"
+
+
+def holder_liveness(target, grace=0, registry=None, proc_root="/proc", now=None):
+    """dead | live | parked | waiting for the session holding `target`: a
+    worktree path (any session whose cwd is it or below it, short of a
+    worktree nested inside it) or a session id.
+
+    - dead: no registry entry, or its pid is gone from /proc, or the pid's
+      start time is not the entry's procStart (the pid was reused). A dead
+      holder is free at once.
+    - waiting: alive, status `waiting` (a permission prompt). Never idle and
+      never parked, whatever the grace timer: the caller surfaces it to the
+      user.
+    - live: alive and `busy`; or alive and idle with nothing below making it
+      parked.
+    - parked: alive and idle, and either another registry entry on this
+      machine has an updatedAt newer than the holder's statusUpdatedAt (the
+      user has since prompted another session), or the grace timer has run
+      out. Parked is free to take over.
+
+    `grace` is seconds, and applies only to an idle holder with no newer
+    prompt anywhere: such a holder idle for `grace` seconds or more is
+    parked. 0 turns the timer off, so that holder stays live: interactive
+    callers pass 0, a headless picker passes 120 to 300. The newer-prompt
+    test never waits on the timer. A holder on another machine has no entry
+    here and reads dead; this function cannot see it.
+
+    Several entries for one target (a resumed session, two sessions in one
+    worktree) give the most held verdict, waiting > live > parked > dead.
+    `registry` (default sessions_dir()), `proc_root` and `now` (epoch
+    seconds) are for tests."""
+    rows = _registry(registry or sessions_dir())
+    now_ms = (time.time() if now is None else now) * 1000
+    if os.sep in target:
+        t = os.path.realpath(target)
+        mine = [e for e in rows if isinstance(e.get("cwd"), str) and _worktree_of(e["cwd"], t) == t]
+    else:
+        mine = [e for e in rows if e.get("sessionId") == target]
+    best = "dead"
+    for e in mine:
+        others = [o for o in rows if o.get("pid") != e.get("pid") and o.get("sessionId") != e.get("sessionId")]
+        v = _entry_liveness(e, others, grace, proc_root, now_ms)
+        if _LIVENESS_RANK[v] > _LIVENESS_RANK[best]:
+            best = v
+    return best
+
+
+def liveness(target, grace="0"):
+    """holder_liveness from the command line: the verdict and a newline."""
+    return holder_liveness(target, float(grace)) + "\n"
+
+
+def branch_brief(root, br, registry=None, proc_root="/proc"):
     """(status, text): the facts a session starting on an existing branch
     keeps getting wrong, one per line, ending in exactly one recommended
     command. Read-only: it never fetches, commits or pushes.
@@ -1107,7 +1237,7 @@ def branch_brief(root, br):
         if ln.startswith("worktree "):
             cur = ln[9:]
         elif ln == f"branch refs/heads/{br}":
-            wts += cur + " "
+            wts += f"{cur} ({holder_liveness(cur, 0, registry, proc_root)}) "
     out.append(f"worktrees: {wts or 'none'}")
 
     bases = pr_base_refs(root, br)
@@ -1221,7 +1351,7 @@ CLI = {f.__name__: f for f in (
     state_repo, state_dir, state_is_repo, state_shard_path, items_dir, board_union, is_card_id,
     work_claims_load, work_record, board_card, claude_cards, done_board,
     ruling_until, ruling_ref_state, ruling_readiness, rulings_ready,
-    pr_base_refs, default_branch, branch_brief, push_locked)}
+    pr_base_refs, default_branch, branch_brief, push_locked, liveness)}
 CLI["item_rows"] = item_rows_text
 
 
