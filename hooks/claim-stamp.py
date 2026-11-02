@@ -62,7 +62,8 @@ stamp's age. A stamp recording another machine is stale once older than
 CLAIM_GRACE_SECS (default 300, the grace timer; a busy remote turn past it
 reads as gone, and the lease refusal is the backstop). Any other stamp -- a
 session the registry here does not know, such as a sub-agent -- keeps the old
-window: stale once older than CLAIM_STALE_SECS (default 1h). `claim`
+window: stale once older than CLAIM_STALE_SECS (default 1h), as is every
+board-card claim, whose prt-made sids no Stop refreshes. `claim`
 deletes stale stamps it finds, which is the only garbage collection there
 is; nothing else ever removes a comment a dead session left. Age is taken
 from the epoch in the stamp's own marker, never from the comment's
@@ -100,6 +101,7 @@ STAMPS_JQ = '''
       , ((.body | capture("sid=(?<v>[A-Za-z0-9_-]+)").v) // "?")
       , ((.body | capture("epoch=(?<v>[0-9]+)").v) // "0")
       , ((.body | capture("machine=(?<v>[A-Za-z0-9_-]+)").v) // "?")
+      , ((.body | capture("[*][*]Claimed:[*][*] `[^`]*` · `(?<v>[^`]*)`").v) // "?")
       ] | @tsv'''
 
 # Bounded, always. A hook that hangs on a network call is worse than one that
@@ -168,17 +170,19 @@ def _verdict(s8):
     return _VERDICT[s8]
 
 
-def holder_gone(s8, machine, age):
+def holder_gone(s8, machine, age, refreshed=True):
     """True when the stamp's holder has let go. A holder on this machine that
     its registry knows is read by the process test. A holder the stamp records
     on another machine has let go after GRACE_SECS. Any other holder (no
     registry entry here, no other machine on record: a sub-agent, an old
-    stamp) keeps the old window, STALE_SECS."""
+    stamp) keeps the old window, STALE_SECS, and so does a card claim
+    (refreshed=False): prt's made-up sids are never refreshed by a Stop, so
+    a short grace would free a live fixer's claim."""
     if machine == machine_id():
         v = _verdict(s8)
         if v is not None:
             return v in ("dead", "parked")
-    elif machine and machine != "?":
+    elif refreshed and machine and machine != "?":
         return age >= GRACE_SECS
     return age >= STALE_SECS
 
@@ -266,13 +270,14 @@ def card_parts(url):
 
 # --------------------------------------------------------------- the stamp
 def read_stamps(owner, repo, number):
-    """(ok, [(id, sid8, epoch, machine), ...]). Not ok when the read failed:
+    """(ok, [(id, sid8, epoch, machine, kind), ...]), kind being the stamp's
+    branch field, "card" for a board-card claim. Not ok when the read failed:
     that must never read as "no stamps"."""
     ok, out = run(["gh", "api", f"repos/{owner}/{repo}/issues/{number}/comments",
                    "--paginate", "--jq", STAMPS_JQ])
     rows = []
     for ln in out.split("\n"):
-        f, _ = ifs_read(ln + "\n", 4)
+        f, _ = ifs_read(ln + "\n", 5)
         if f[0]:
             rows.append(tuple(f))
     return ok, rows
@@ -347,11 +352,11 @@ def warn_held(stamps, sid, branch):
     the reader can tell a session that started a minute ago from one that has
     been holding the branch for an hour."""
     s8, now, out = sid8(sid), now_epoch(), []
-    for _id, s, e, m in stamps:
+    for _id, s, e, m, k in stamps:
         if s == s8:
             continue
         age = now - epoch_of(e)
-        if holder_gone(s, m, age):
+        if holder_gone(s, m, age, k != "card"):
             continue
         out.append(f"session `{s}` on `{m}` claimed `{branch}` {tdiv(age, 60)} minute(s) ago")
     return "\n".join(out)
@@ -381,8 +386,8 @@ def do_claim(d, sid):
     # exactly when someone cares -- at the moment another session asks
     # whether the branch is free.
     now = now_epoch()
-    for cid, s, e, m in stamps:
-        if s != sid8(sid) and holder_gone(s, m, now - epoch_of(e)):
+    for cid, s, e, m, k in stamps:
+        if s != sid8(sid) and holder_gone(s, m, now - epoch_of(e), k != "card"):
             delete_stamp(owner, repo, cid)
 
     held = warn_held(stamps, sid, branch)
@@ -390,7 +395,7 @@ def do_claim(d, sid):
     # This session's own stamp, if it already has one on this card: patch it
     # rather than post a second. A session that restarts (a new SessionStart
     # on the same id) must not leave a trail of its own claims.
-    mine = next((cid for cid, s, _e, _m in stamps if s == sid8(sid)), "")
+    mine = next((cid for cid, s, _e, _m, _k in stamps if s == sid8(sid)), "")
     if mine:
         patch_stamp(owner, repo, mine, sid, branch)
         cid = mine
@@ -475,7 +480,7 @@ def do_release(d, sid, scan):
         if not parts:
             return
         owner, repo, number = parts
-        for cid, s, _e, _m in read_stamps(owner, repo, number)[1]:
+        for cid, s, _e, _m, _k in read_stamps(owner, repo, number)[1]:
             if s == sid8(sid):
                 delete_stamp(owner, repo, cid)
     else:
@@ -519,9 +524,9 @@ def do_read(d, url=""):
         print(f"unverified: could not read the stamps on {url}")
         return
     now = now_epoch()
-    for _id, s, e, m in stamps:
+    for _id, s, e, m, k in stamps:
         age = now - epoch_of(e)
-        state = "stale" if holder_gone(s, m, age) else "live"
+        state = "stale" if holder_gone(s, m, age, k != "card") else "live"
         print(f"{state}\t{s}\t{m}\t{tdiv(age, 60)}m\t{url}")
     # A card with no stamp says so, so a reader can tell "nobody holds it"
     # from a read that printed nothing because it never ran.
@@ -570,7 +575,7 @@ def card_ledger(url=""):
         if not ok or (url and u != url):
             continue
         age = now - epoch_of(e)
-        st = "stale" if holder_gone(s, m, age) else "live"
+        st = "stale" if holder_gone(s, m, age, False) else "live"
         out.append(f"{st}\t{s}\t{m}\t{tdiv(age, 60)}m\t{u}")
     return out
 
@@ -621,7 +626,7 @@ def _card_claim_locked(url, sid, s8, d, key):
     cid = ""
     if usable() and parts:
         owner, repo, number = parts
-        mine = next((i for i, s, _e, _m in read_stamps(owner, repo, number)[1] if s == s8), "")
+        mine = next((i for i, s, _e, _m, _k in read_stamps(owner, repo, number)[1] if s == s8), "")
         if mine:
             if patch_stamp(owner, repo, mine, sid, "card"):
                 cid = mine

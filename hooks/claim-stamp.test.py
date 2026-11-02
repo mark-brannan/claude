@@ -496,6 +496,22 @@ class ClaimStampTest(unittest.TestCase):
         self.assertEqual(self.cs("card-claim", "", "")[0], 1)
         self.assertEqual(self.cs("card-release")[0], 1)
 
+    def test_a_card_claim_from_another_machine_keeps_the_hour(self):
+        # prt's made-up sids are never refreshed by a Stop, so the 300 s grace
+        # does not apply to a card claim, in the ledger or as a stamp
+        self.cs("card-claim", CARD, "1111111100002222")
+        f = next(self.ledger.glob("*-11111111.tsv"))
+        p = f.read_text().rstrip("\n").split("\t")
+        p[2], p[3] = str(int(time.time()) - 360), "host-000000"
+        f.write_text("\t".join(p) + "\n")
+        self.assertRegex(self.out("card-claims", CARD), r"^live\t11111111")
+        self.assertEqual(self.cs("card-claim", CARD, "3333333300004444")[0], 1, "still taken")
+        self.reset_store()
+        (self.store / "comments" / "1.json").write_text(json.dumps({"id": 1, "body":
+            f"<!-- claim-stamp sid=22222222 epoch={int(time.time()) - 360} machine=host-000000 -->\n"
+            "**Claimed:** `22222222` · `card` · `host-000000` · now"}))
+        self.assertRegex(self.out("read", URL7), r"(?m)^live\t22222222")
+
     def test_refresh_bumps_card_claims(self):
         self.cs("card-claim", CARD, "1111111100002222")
         self.age_ledger("11111111")
