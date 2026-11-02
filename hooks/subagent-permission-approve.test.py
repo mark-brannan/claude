@@ -20,6 +20,9 @@ SUGGEST = [{"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "t
             "behavior": "allow", "destination": "localSettings"}]
 
 
+STUB = "def mask(text, extra=()):\n    return text, 0\n"
+
+
 def stamp(t):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 
@@ -33,6 +36,14 @@ class SubagentPermissionApproveTest(unittest.TestCase):
         repo = Path(self.tmp.name) / "staterepo"
         (repo / ".git").mkdir(parents=True)
         self.log = repo / "state/global/metrics/permission-approvals/ab/abc123.jsonl"
+        lang = Path(self.tmp.name) / "languette-stub" / "languette"
+        lang.mkdir(parents=True)
+        (lang / "__init__.py").write_text("")
+        (lang / "record.py").write_text(STUB)
+        plugins = Path(self.tmp.name) / ".claude" / "plugins"
+        plugins.mkdir(parents=True)
+        (plugins / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {
+            "languette@languette": [{"scope": "user", "installPath": str(lang.parent)}]}}))
         self.env = {**os.environ, "HOME": self.tmp.name, "XDG_STATE_HOME": str(self.state),
                     "CLAUDE_STATE_REPO": str(repo), "PYTHONDONTWRITEBYTECODE": "1"}
         self.env.pop("CLAUDE_CONFIG_DIR", None)
@@ -40,9 +51,11 @@ class SubagentPermissionApproveTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def record(self, verdict, session="abc123", t=None, path=None):
+    def record(self, verdict, session="abc123", t=None, path=None, tool="Bash", command=None):
         rec = {"v": 1, "t": stamp(time.time() if t is None else t), "session": session,
-               "event": "PreToolUse", "tool": "Bash", "verdict": verdict}
+               "event": "PreToolUse", "tool": tool, "verdict": verdict}
+        if command:
+            rec["command"] = {"text": command}
         with open(path or self.records, "a") as f:
             f.write(json.dumps(rec) + "\n")
 
@@ -51,9 +64,9 @@ class SubagentPermissionApproveTest(unittest.TestCase):
             return []
         return [json.loads(x)["verdict"] for x in self.log.read_text().splitlines()]
 
-    def run_hook(self, agent=True, suggestions=SUGGEST, stdin=None, agent_type=None):
+    def run_hook(self, agent=True, suggestions=SUGGEST, stdin=None, agent_type=None, mode="default"):
         ev = {"hook_event_name": "PermissionRequest", "session_id": "abc123", "cwd": "/w/repo",
-              "permission_mode": "default", "tool_name": "Bash", "tool_input": {"command": "touch x"}}
+              "permission_mode": mode, "tool_name": "Bash", "tool_input": {"command": "touch x"}}
         if agent:
             ev.update(agent_id="a4aadbe92e02e5780", agent_type="general-purpose")
         if agent_type:
@@ -73,6 +86,20 @@ class SubagentPermissionApproveTest(unittest.TestCase):
     def test_approved_with_no_languette_record_at_all(self):
         self.records.unlink(missing_ok=True)
         self.assertEqual(self.run_hook(), ALLOW)
+
+    def test_plan_and_accept_edits_modes_are_left_to_the_dialog(self):
+        self.assertIsNone(self.run_hook(mode="plan"))
+        self.assertIsNone(self.run_hook(mode="acceptEdits"))
+        self.assertEqual(self.verdicts(), [])
+
+    def test_another_tools_recent_ask_does_not_hold_it_back(self):
+        self.record("ask", tool="Write")
+        self.assertEqual(self.run_hook(), ALLOW)
+
+    def test_old_ask_for_the_same_command_holds_it_back(self):
+        # a queued dialog can show well after the ask; the command text places it
+        self.record("ask", t=time.time() - 60, command="touch x")
+        self.assertIsNone(self.run_hook())
 
     def test_main_session_request_is_left_to_the_dialog(self):
         self.assertIsNone(self.run_hook(agent=False))
@@ -103,7 +130,7 @@ class SubagentPermissionApproveTest(unittest.TestCase):
 
     def test_ask_with_an_unreadable_time_holds_it_back(self):
         with open(self.records, "a") as f:
-            f.write(json.dumps({"session": "abc123", "verdict": "ask", "t": "soon"}) + "\n")
+            f.write(json.dumps({"session": "abc123", "tool": "Bash", "verdict": "ask", "t": "soon"}) + "\n")
         self.assertIsNone(self.run_hook())
 
     def test_garbled_record_lines_are_skipped(self):

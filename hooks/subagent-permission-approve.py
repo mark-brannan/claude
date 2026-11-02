@@ -8,25 +8,29 @@ PreToolUse guards (languette first) are where calls are judged, so a request
 that only a permission rule raised is approved here.
 
 A PreToolUse hook's "ask" raises this same event, and its input does not say
-so. A request is approved only when all three hold; otherwise the hook prints
+so. A request is approved only when all four hold; otherwise the hook prints
 nothing and the dialog shows as it would have:
 
+- permission_mode is "default": the dropped-out case. In plan or acceptEdits
+  the user chose the mode, and plan's point is not acting;
 - agent_id is present: the call is a sub-agent's (a main-session call has
   none, even under --agent, which sets only agent_type; both carry the
   parent's session_id);
 - permission_suggestions is non-empty: a hook's ask carries none (seen on
   Claude Code 2.1.300, docs silent);
-- languette's decision record has no "ask" for this session in the last
-  WINDOW seconds. Best-effort: languette writes no record when
-  record_decisions is off and drops one under lock contention, so the check
-  above is the one that always holds. A guard's ask on a parallel sub-agent
-  holds this one back too.
+- languette's decision record has no "ask" for this request: same session and
+  tool, and either within the last WINDOW seconds or, for Bash, the same
+  masked command (a queued dialog can show after the window). Best-effort:
+  with record_decisions off there is no record at all, and a record can be
+  dropped under lock contention, so on such a machine the suggestions check
+  above is the only one that holds.
 
 Each sub-agent request's outcome is appended to the state dir's
 metrics/permission-approvals/<session>.jsonl, beside permission-request-log:
     {"ts": "...", "session_id": "...", "agent_id": "a4aa...", "agent_type":
      "general-purpose", "tool": "Bash", "verdict": "allow"}
-verdict is allow, no-suggestions or languette-ask.
+verdict is allow, no-suggestions or languette-ask (a request outside the
+default mode is not logged).
 
 Fails closed: any error before the answer prints nothing, so the dialog shows.
 """
@@ -45,9 +49,32 @@ WINDOW = 10        # seconds back from now that an ask counts
 TAIL = 256 << 10   # bytes read from the end of each record file
 
 
+def languette_record():
+    """languette's record module, as permission-request-log finds it; None if absent."""
+    try:
+        import importlib.util
+        here = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location(
+            "permission_request_log", os.path.join(here, "permission-request-log.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.languette_record()
+    except Exception:  # noqa: BLE001 -- no module, no masking; the window still holds
+        return None
+
+
+def records_name():
+    """The record file's name from languette (world.RECORDS), else its known one."""
+    try:
+        from languette import world
+        return world.RECORDS
+    except Exception:  # noqa: BLE001
+        return "decisions.jsonl"
+
+
 def records_path(env):
     base = env.get("XDG_STATE_HOME") or os.path.join(env["HOME"], ".local", "state")
-    return os.path.join(base, "languette", "decisions.jsonl")
+    return os.path.join(base, "languette", records_name())
 
 
 def tail_lines(path):
@@ -64,17 +91,32 @@ def tail_lines(path):
     return lines[1:] if size > TAIL else lines
 
 
-def languette_asked(session, now, path):
-    """True when languette recorded an ask for session within WINDOW seconds of now.
+def request_command(ev, record):
+    """The request's Bash command masked as languette records it; None when not Bash or unmaskable."""
+    cmd = (ev.get("tool_input") or {}).get("command")
+    if record is None or ev.get("tool_name") != "Bash" or not isinstance(cmd, str):
+        return None
+    try:
+        return record.mask(cmd)[0]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def languette_asked(ev, now, path, command=None):
+    """True when languette recorded an ask for this request: same session and tool,
+    within WINDOW seconds of now or with the same masked command.
     The rotated .1 is read too: a rotation can land between the ask and this hook."""
+    session = ev.get("session_id")
     for p in (path, path + ".1"):
         for ln in tail_lines(p):
             try:
                 r = json.loads(ln)
             except ValueError:
                 continue
-            if r.get("session") != session or r.get("verdict") != "ask":
+            if r.get("session") != session or r.get("verdict") != "ask" or r.get("tool") != ev.get("tool_name"):
                 continue
+            if command is not None and (r.get("command") or {}).get("text") == command:
+                return True
             try:
                 t = calendar.timegm(time.strptime(r.get("t", ""), "%Y-%m-%dT%H:%M:%SZ"))
             except ValueError:
@@ -84,13 +126,13 @@ def languette_asked(session, now, path):
     return False
 
 
-def verdict(ev, now, path):
-    """allow, or why not; None for a main-session request."""
-    if not ev.get("agent_id"):
+def verdict(ev, now, path, record=None):
+    """allow, or why not; None for a main-session request or one outside the default mode."""
+    if ev.get("permission_mode") != "default" or not ev.get("agent_id"):
         return None
     if not ev.get("permission_suggestions"):
         return "no-suggestions"
-    return "languette-ask" if languette_asked(ev.get("session_id"), now, path) else "allow"
+    return "languette-ask" if languette_asked(ev, now, path, request_command(ev, record)) else "allow"
 
 
 def log(ev, v):
@@ -113,7 +155,7 @@ def main():
     ev = lib_state.event()
     if ev.get("hook_event_name") != "PermissionRequest":
         return
-    v = verdict(ev, time.time(), records_path(os.environ))
+    v = verdict(ev, time.time(), records_path(os.environ), languette_record())
     if v == "allow":
         hookio.emit(hookio.specific("PermissionRequest", decision={"behavior": "allow"}))
     if v:
