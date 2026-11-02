@@ -313,6 +313,10 @@ class ClaimStampTest(unittest.TestCase):
         self.assertRegex(out, r"(?m)^stale\t11111111")
         self.assertRegex(out, r"(?m)^live\t22222222")
         self.assertRegex(out, r"(?m)^stale\t33333333")
+        # a running sub-agent has no registry entry: it reads unseen, never
+        # dead, so a fresh local stamp of its holds
+        self.plant_local(4, "55555555", int(time.time()) - 60)
+        self.assertRegex(self.out("read", URL7), r"(?m)^live\t55555555")
         # another machine's stamp is never read through the registry, even
         # when a local session has the same prefix and is dead
         self.reset_store()

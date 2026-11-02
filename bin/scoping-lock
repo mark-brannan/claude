@@ -75,7 +75,6 @@ def state_repo():
 SR = state_repo()
 try:
     import gitrun
-    import state
     import when
 except ImportError:  # main() says so after the usage line, which needs no git
     gitrun = when = None
@@ -111,7 +110,8 @@ def holder_dead(sid):
     """True when this machine's registry knows the session and its process
     is gone. Unknown to the registry is not dead: it may be another machine's."""
     try:
-        return state.sid_liveness(sid) == "dead"
+        import sidlive
+        return sidlive.verdict(sid) == "dead"
     except Exception:  # an odd registry reads as unknown
         return False
 

@@ -1048,17 +1048,6 @@ class LivenessTest(Base):
     def v(self, target, grace=0):
         return self.state.holder_liveness(str(target), grace, str(self.reg), str(self.proc), self.NOW)
 
-    def test_sid_prefix_finds_the_session_and_unseen_is_none(self):
-        self.entry(10, "abcdef12-0000-4000-8000-000000000000", status="busy")
-        sid = lambda p: self.state.sid_liveness(p, 0, str(self.reg), str(self.proc), self.NOW)
-        self.assertEqual(sid("abcdef12"), "live")
-        self.assertIsNone(sid("99999999"), "no such session here is unseen, not dead")
-        self.assertIsNone(sid(""), "an empty prefix matches nothing")
-        self.entry(11, "abcdef12-1111-4000-8000-000000000000", status="waiting")
-        self.assertEqual(sid("abcdef12"), "waiting", "the most held of the sessions sharing a prefix")
-        self.entry(12, "deadbeef-0000-4000-8000-000000000000", alive=False)
-        self.assertEqual(sid("deadbeef"), "dead")
-
     def test_no_entry_is_dead(self):
         self.assertEqual(self.v(self.wt), "dead")
         self.assertEqual(self.v("no-such-session"), "dead")

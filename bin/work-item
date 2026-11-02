@@ -178,8 +178,8 @@ def holder_gone(holder, last, cutoff):
     here and lapses by age), and holds until <cutoff> passes its last line."""
     if holder not in _VERDICT:
         try:
-            import state
-            _VERDICT[holder] = state.sid_liveness(holder)
+            import sidlive
+            _VERDICT[holder] = sidlive.verdict(holder)
         except Exception:  # no lib/state.py, an odd registry: unseen
             _VERDICT[holder] = None
     v = _VERDICT[holder]

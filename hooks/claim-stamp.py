@@ -158,8 +158,8 @@ def holder_gone(s8, machine, age):
     stamp's age against STALE_SECS."""
     if machine == machine_id():
         try:
-            import state
-            v = state.sid_liveness(s8)
+            import sidlive
+            v = sidlive.verdict(s8)
         except Exception:  # no lib/state.py, an odd registry: read the age
             v = None
         if v is not None:

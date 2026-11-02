@@ -1087,10 +1087,8 @@ _LIVENESS_RANK = {"dead": 0, "parked": 1, "live": 2, "waiting": 3}
 
 def sessions_dir():
     """This machine's session registry: one <pid>.json per session the
-    client started, written by the client, never by us. CLAUDE_SESSIONS_DIR
-    points the tools' tests at a fixture."""
-    return os.environ.get("CLAUDE_SESSIONS_DIR") or os.path.join(
-        os.path.expanduser("~"), ".claude", "sessions")
+    client started, written by the client, never by us."""
+    return os.path.join(os.path.expanduser("~"), ".claude", "sessions")
 
 
 def _registry(d):
@@ -1209,26 +1207,6 @@ def holder_liveness(target, grace=0, registry=None, proc_root="/proc", now=None)
         others = [o for o in rows if o.get("pid") != e.get("pid") and o.get("sessionId") != e.get("sessionId")]
         v = _entry_liveness(e, others, grace, proc_root, now_ms)
         if _LIVENESS_RANK[v] > _LIVENESS_RANK[best]:
-            best = v
-    return best
-
-
-def sid_liveness(prefix, grace=0, registry=None, proc_root=None, now=None):
-    """holder_liveness for a session known only by the start of its id (the
-    sid8 a work-item log line, a claim stamp or a lock line carries), or None
-    when this machine's registry holds no session with that prefix: the
-    holder is unseen here, which is not the same as dead (it may be another
-    machine's, or an entry the client has since removed), and the caller
-    falls back to the age of the holder's last mark. proc_root defaults to
-    CLAUDE_PROC_ROOT, then /proc (the tools' tests set the first)."""
-    registry = registry or sessions_dir()
-    proc_root = proc_root or os.environ.get("CLAUDE_PROC_ROOT") or "/proc"
-    ids = {e["sessionId"] for e in _registry(registry)
-           if prefix and isinstance(e.get("sessionId"), str) and e["sessionId"].startswith(prefix)}
-    best = None
-    for i in ids:
-        v = holder_liveness(i, grace, registry, proc_root, now)
-        if best is None or _LIVENESS_RANK[v] > _LIVENESS_RANK[best]:
             best = v
     return best
 
