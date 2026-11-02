@@ -32,12 +32,9 @@ list the open curiae as bare `/curia` does and take the newest. Say which
 target, and why, in the first line.
 
 The batch's driver is the Workflow tool unless `--subagents` rides with the
-target (`--workflow` is a no-op). That default is pen, the user's word of
-2026-11-02, with the comparison known thin: it rests on the user's intuition
-that Workflow runs a little smoother, and on cost (measured, driver cost only:
-4 Workflow drivers at a median $6.5 against 26 sub-agent drivers at a median
-$18). The comparison goes on being scored on dollars and on ease of use for the
-user. §6 logs the mode on the parent, and the driver reads it there.
+target (`--workflow` is a no-op). The choice is scored on dollars and on ease
+of use for the user; the record is in the decisions file. §6 logs the mode on
+the parent, and the driver reads it there.
 
 | Target | Its items, the input to plan | Lock folder |
 |---|---|---|
