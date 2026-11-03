@@ -45,7 +45,10 @@
       "Bash(~/.claude/bin/worklist *)",
       "Bash(~/.claude/bin/work-item *)",
       "Bash(~/.claude/bin/worker-start *)",
-      "Bash(/home/solace/.claude/bin/work-item *)"
+      "Bash(/home/solace/.claude/bin/work-item *)",
+      "Bash(work-item *)",
+      "Bash(pr-blockers *)",
+      "Bash(~/.claude/bin/gh-resolve-thread *)"
     ],
     "deny": [
       "Bash(git reset --hard:*)",

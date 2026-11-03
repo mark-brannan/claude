@@ -1334,6 +1334,83 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("and not again", "", w.msg(BP("bed3")))
         return self.done(w)
 
+    # --- 18. a batch driver and a live curia sitting are hushed ----------------------
+    # Nothing nags the model and the Stop block never asks for a hand-off; the
+    # crossings are still counted and recorded.
+    def section_hush(self):
+        w = self.world()
+        S = w.scratch
+        repo = w.repo("repo", "feat/nags", origin=True)
+        w.gh(GH_ONE)
+        hi = w.turn(S / "hi.jsonl", 152000)
+        lo = w.turn(S / "lo.jsonl", 1000)
+        again = {"METRICS_MODEL_CONTEXT_REPEAT": "1"}
+        items = w.state / "items"
+        items.mkdir(parents=True)
+
+        def claim(name, sid, driver=True):
+            lines = ["# t", "", "## Log", "2026-11-01T09:00:00Z 1215bf76 status=open owner=agent"]
+            if driver:
+                lines.append("2026-11-01T09:00:01Z 1215bf76 driver=subagents")
+            lines.append(f"2026-11-01T09:30:00Z {sid[:8]} status=claimed")
+            (items / name).write_text("\n".join(lines) + "\n")
+
+        def tool(sid, tp=hi):
+            return w.hook(w.payload(tp, sid, repo, "PostToolUse"), "posttooluse", env=again)
+
+        def stop(sid, tp=hi):
+            w.plant(sid)
+            return w.hook(w.payload(tp, sid, repo, "Stop"), "stop", show=True)
+
+        plain = "aaaaaaaa-plain"
+        w.has("a plain session past 105k is told a stopping point is due", "stopping point is due", w.ctx(tool(plain)))
+        w.t("and its Stop is blocked after the crossing", "block", w.decision(stop(plain)))
+
+        drv = "d0d0d0d0-driver"
+        claim("batch.md", drv)
+        w.t("a driver past 105k gets no model line", "", w.ctx(tool(drv)))
+        w.t("nor its repeat", "", w.ctx(tool(drv)))
+        w.t("the driver's crossings are still recorded", "100000\n150000",
+            "\n".join(str(r["at"]) for r in w.rows(drv, "context")))
+        w.t("and the driver's Stop is not blocked after a crossing", "", w.decision(stop(drv)))
+
+        drv2 = "d1d1d1d1-driver"
+        claim("batch2.md", drv2)
+        w.clock(121, 10)
+        w.has("a driver two hours in still sees the sitting line",
+              "⏱ 2h", w.msg(w.hook(w.payload(lo, drv2, repo), "prompt")))
+        w.t("two hours does not arm its Stop nag", "false", json.dumps(w.nag_field(drv2, "since_nag")))
+        w.t("and its Stop is not blocked", "", w.decision(stop(drv2, lo)))
+
+        drv3 = "d2d2d2d2-driver"
+        claim("batch3.md", drv3)
+        with open(items / "batch3.md", "a") as fh:
+            fh.write(f"2026-11-01T10:00:00Z {drv3[:8]} status=done evidence=x\n")
+        w.has("a driver whose claim was closed is nagged again", "stopping point is due", w.ctx(tool(drv3)))
+
+        # Only a claimed batch parent counts: neither half alone makes a driver.
+        w.clock(121, 10)
+        notparent = "e0e0e0e0-claimed"
+        claim("worker.md", notparent, driver=False)
+        w.has("a claimed item without a driver= line is no driver", "⏱ 2h",
+              w.msg(w.hook(w.payload(lo, notparent, repo), "prompt")))
+        w.has("and a driver= line claimed by another session leaves this one nagged", "stopping point is due",
+              w.ctx(tool("f0f0f0f0-other")))
+
+        cur = "c0c0c0c0-curia"
+        cx = w.state / "curia" / "cx"
+        cx.mkdir(parents=True)
+        (cx / "LIVE").write_text(f"{cur} {utc(time.time(), '%Y-%m-%dT%H:%M:%SZ')}\n")
+        w.hook(w.payload(hi, cur, repo), "prompt")
+        w.t("a live curia crossing 105k is counted", "100000\n150000",
+            "\n".join(str(r["at"]) for r in w.rows(cur, "context")))
+        w.t("but its Stop is not blocked", "", w.decision(stop(cur)))
+        w.t("a hushed curia prompt past 105k says nothing", "", w.ctx(w.hook(w.payload(hi, cur, repo), "prompt")))
+        (cx / "LIVE").unlink()
+        w.has("and once the curia is gone the next prompt gets its line", "stopping point is due",
+              w.ctx(w.hook(w.payload(hi, cur, repo), "prompt")))
+        return self.done(w)
+
     # --- beyond the bash suite: what the port added ---------------------------------
     def section_failure_is_traced(self):
         """A failure never blocks the tool call and never vanishes: the hook
