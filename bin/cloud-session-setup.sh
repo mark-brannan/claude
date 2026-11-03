@@ -134,6 +134,7 @@ hooks/metrics-rollup.py
 hooks/log-commit.py
 hooks/log-gh-writes.py
 hooks/permission-request-log.py
+hooks/subagent-permission-approve.py
 hooks/statusline-metrics.py
 hooks/connector-budget.py
 hooks/session-start-sync-status.py

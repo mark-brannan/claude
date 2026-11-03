@@ -334,6 +334,10 @@
           {
             "type": "command",
             "command": "h=\"$HOME/.claude/hooks/permission-request-log.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/subagent-permission-approve.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null || true"
           }
         ]
       }

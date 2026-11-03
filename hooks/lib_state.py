@@ -74,6 +74,25 @@ def languette_root():
     return ""
 
 
+def languette_record():
+    """languette's record module: the recorded install, else the interpreter's; None if neither.
+    A found install stays on sys.path, so its other modules import after this."""
+    roots = [r for r in (languette_root(),) if r] + [None]  # None: an installed package
+    for root in roots:
+        if root is not None:
+            if not os.path.isfile(os.path.join(root, "languette", "record.py")):
+                continue
+            sys.path.insert(0, root)
+        try:
+            from languette import record
+            return record
+        except Exception:  # noqa: BLE001 -- a broken copy is skipped
+            if root is not None:
+                sys.path.remove(root)
+            sys.modules.pop("languette", None)
+    return None
+
+
 def trace_failure(hook, event, err, stage="main", once=False):
     """A hook's handler for an error it swallows: trace it through
     lib/hooktrace.py under the session last read, or say it on stderr when
