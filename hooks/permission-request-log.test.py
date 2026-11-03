@@ -48,8 +48,8 @@ class PermissionRequestLogTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_hook(self, tool_input, tool="Bash", mode="auto", stdin=None):
-        ev = {"hook_event_name": "PermissionRequest", "session_id": "abc123", "cwd": "/w/repo",
+    def run_hook(self, tool_input, tool="Bash", mode="auto", stdin=None, **extra):
+        ev = {**extra, "hook_event_name": "PermissionRequest", "session_id": "abc123", "cwd": "/w/repo",
               "permission_mode": mode, "tool_name": tool, "tool_input": tool_input}
         r = subprocess.run([sys.executable, str(HOOK)], input=stdin if stdin is not None else json.dumps(ev),
                            capture_output=True, text=True, env=self.env)
@@ -66,6 +66,14 @@ class PermissionRequestLogTest(unittest.TestCase):
         self.assertEqual({k: rows[0][k] for k in ("session_id", "cwd", "permission_mode", "tool")},
                          {"session_id": "abc123", "cwd": "/w/repo", "permission_mode": "auto", "tool": "Bash"})
         self.assertEqual((rows[1]["tool"], rows[1]["permission_mode"]), ("Write", "default"))
+
+    def test_agent_fields_and_suggestion_count(self):
+        sugg = [{"type": "addRules"}, {"type": "setMode"}]
+        main = self.run_hook({"command": "ls"})[0]
+        self.assertEqual((main["agent_id"], main["agent_type"], main["suggestions"]), (None, None, 0))
+        sub = self.run_hook({"command": "ls"}, agent_id="a4aa", agent_type="general-purpose",
+                            permission_suggestions=sugg)[1]
+        self.assertEqual((sub["agent_id"], sub["agent_type"], sub["suggestions"]), ("a4aa", "general-purpose", 2))
 
     def test_secret_in_input_is_masked(self):
         row = self.run_hook({"command": "GH_TOKEN=SECRETVALUE git push", "description": "push"})[0]
