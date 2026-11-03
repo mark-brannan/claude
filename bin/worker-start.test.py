@@ -246,7 +246,7 @@ class Setup(unittest.TestCase):
         wt = self.tmp / "w1"
         self.assertFalse((wt / "node_modules").is_symlink())
         self.assertTrue((wt / "node_modules").is_dir())
-        self.assertEqual(self.npm_calls(), ["npm --prefix %s ci --no-audit --no-fund (in %s)" % (wt, wt.resolve())])
+        self.assertEqual(self.npm_calls(), ["npm --prefix %s ci --ignore-scripts --no-audit --no-fund (in %s)" % (wt, wt.resolve())])
         self.assertTrue((wt / "downloads").is_symlink())
 
     def test_no_main_node_modules_means_npm_ci(self):

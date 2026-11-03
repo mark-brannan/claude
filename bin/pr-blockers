@@ -257,6 +257,7 @@ def blockers(owner, repo, n):
 
 USAGE = "usage: pr-blockers [--wait [--timeout SECONDS]] <owner/repo#n | PR URL>\n"
 WAITING = ("check pending:", "GitHub has not yet computed")  # lines that time alone may clear
+IDLE = ("the PR is a draft",)  # lines that neither stop a wait nor clear with time
 
 
 def attempt(ref):
@@ -295,16 +296,18 @@ def wait(ref, timeout):
         else:
             failed, lines = False, got
             waiting = [x for x in got if x.startswith(WAITING)]
-            if len(waiting) != len(got) or not waiting:  # a real blocker, or CI has settled
+            idle = [x for x in got if x.startswith(IDLE)]
+            if len(waiting) + len(idle) != len(got) or not waiting:  # a real blocker, or CI has settled
                 return report(got)
             sys.stderr.write(f"pr-blockers: {time.strftime('%H:%M:%S')} {len(waiting)} still pending\n")
-        if time.monotonic() + interval > deadline:
+        left = deadline - time.monotonic()
+        if left <= 0:
             if lines is None:
                 return 2
             report(lines)
             print(f"pr-blockers: timed out after {timeout:g}s with checks still pending")
             return 4
-        time.sleep(interval)
+        time.sleep(min(interval, left))
 
 
 def main(argv):

@@ -78,6 +78,9 @@ def origin_slug(repo):
 def exclude_lines(repo, lines):
     """Append to the shared info/exclude whichever of <lines> it lacks."""
     common = git_out(["-C", repo, "rev-parse", "--path-format=absolute", "--git-common-dir"])
+    if not common:
+        sys.stderr.write("worker-start: cannot find the git common dir of %s; excludes not written\n" % repo)
+        return
     path = os.path.join(common, "info", "exclude")
     have = Path(path).read_text() if os.path.exists(path) else ""
     for line in lines:
@@ -111,7 +114,8 @@ def setup_portolani(repo, wt):
           and filecmp.cmp(lock, main_lock, shallow=False)):
         run(["ln", "-s", os.path.join(main, "node_modules"), nm])
     else:
-        run(["npm", "--prefix", wt, "ci", "--no-audit", "--no-fund"], cwd=wt)
+        # --ignore-scripts: a branch's install scripts are not what was reviewed here.
+        run(["npm", "--prefix", wt, "ci", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=wt)
 
 
 SETUP = {"mark-brannan/portolani": setup_portolani}

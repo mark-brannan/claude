@@ -257,13 +257,13 @@ class Test(unittest.TestCase):
         self.assertEqual(p.stdout, want)
         self.assertEqual(p.returncode, 1)
 
-    def run_wait(self, seq, *flags):
+    def run_wait(self, seq, *flags, interval="0"):
         """--wait over one view per read (the last repeating); returns (code, stdout, stderr, reads)."""
         (self.T / "seq").write_text(json.dumps(seq))
         (self.T / "count").unlink(missing_ok=True)
         (self.T / "threads.json").write_text(threads())
         (self.T / "commits.json").write_text(page(commit("a")))
-        env = {**self.env, "PRB_WAIT_INTERVAL": "0"}
+        env = {**self.env, "PRB_WAIT_INTERVAL": interval}
         try:
             p = subprocess.run([sys.executable, str(TOOL), "--wait", *flags, "o/r#5"],
                                capture_output=True, text=True, env=env, timeout=30)
@@ -298,6 +298,15 @@ class Test(unittest.TestCase):
     def test_wait_waits_out_a_mergeability_still_being_computed(self):
         code, out, _, reads = self.run_wait([view("UNKNOWN", "UNKNOWN"), view()])
         self.assertEqual((code, out, reads), (0, "", 2))
+
+    def test_wait_on_a_draft_waits_for_its_checks_then_stops(self):
+        code, out, _, reads = self.run_wait([view("DRAFT", checks=[self.SLOW]), view("DRAFT", checks=[self.OK])])
+        self.assertEqual((code, reads), (1, 2))
+        self.assertEqual(out.splitlines(), ["the PR is a draft; fix: mark it ready for review"])
+
+    def test_short_timeout_reads_again_at_the_deadline(self):
+        code, _, _, reads = self.run_wait([view(checks=[self.SLOW])], "--timeout", "0.5", interval="30")
+        self.assertEqual((code, reads), (4, 2))
 
     def test_wait_exits_three_when_the_pr_merges_mid_wait(self):
         code, out, err, _ = self.run_wait([view(checks=[self.SLOW]), view(pr_state="MERGED")])
