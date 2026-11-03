@@ -31,7 +31,7 @@ class SubagentPermissionApproveTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.state = Path(self.tmp.name) / "state"
-        self.records = self.state / "languette" / "decisions.jsonl"
+        self.records = self.state / "languette" / "other.jsonl"  # the name world.RECORDS gives
         self.records.parent.mkdir(parents=True)
         repo = Path(self.tmp.name) / "staterepo"
         (repo / ".git").mkdir(parents=True)
@@ -40,6 +40,7 @@ class SubagentPermissionApproveTest(unittest.TestCase):
         lang.mkdir(parents=True)
         (lang / "__init__.py").write_text("")
         (lang / "record.py").write_text(STUB)
+        (lang / "world.py").write_text('RECORDS = "other.jsonl"\n')
         plugins = Path(self.tmp.name) / ".claude" / "plugins"
         plugins.mkdir(parents=True)
         (plugins / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {

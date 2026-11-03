@@ -33,25 +33,6 @@ sys.dont_write_bytecode = True
 MAX_CHARS = 500
 
 
-def languette_record():
-    """languette's record module: the recorded install, else the interpreter's; None if neither."""
-    import lib_state
-    roots = [r for r in (lib_state.languette_root(),) if r] + [None]  # None: an installed package
-    for root in roots:
-        if root is not None:
-            if not os.path.isfile(os.path.join(root, "languette", "record.py")):
-                continue
-            sys.path.insert(0, root)
-        try:
-            from languette import record
-            return record
-        except Exception:  # noqa: BLE001 -- a broken copy is skipped
-            if root is not None:
-                sys.path.remove(root)
-            sys.modules.pop("languette", None)
-    return None
-
-
 def masked_input(ti, record):
     """(tool input with each string masked, secrets replaced) or (None, None)."""
     if record is None:
@@ -93,7 +74,7 @@ def main():
         return
     import when
     from state import append_row
-    rec = line(ev, languette_record(), when.stamp())
+    rec = line(ev, lib_state.languette_record(), when.stamp())
     append_row(os.path.join(sd, "metrics", "permission-requests"), rec["session_id"], rec)
 
 

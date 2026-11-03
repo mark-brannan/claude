@@ -20,7 +20,9 @@ nothing and the dialog shows as it would have:
   Claude Code 2.1.300, docs silent);
 - languette's decision record has no "ask" for this request: same session and
   tool, and either within the last WINDOW seconds or, for Bash, the same
-  masked command (a queued dialog can show after the window). Best-effort:
+  masked command (a queued dialog can show after the window). The command is
+  masked by the built-in rules only, so one a project rule masks falls back to
+  the window. Best-effort:
   with record_decisions off there is no record at all, and a record can be
   dropped under lock contention, so on such a machine the suggestions check
   above is the only one that holds.
@@ -49,22 +51,9 @@ WINDOW = 10        # seconds back from now that an ask counts
 TAIL = 256 << 10   # bytes read from the end of each record file
 
 
-def languette_record():
-    """languette's record module, as permission-request-log finds it; None if absent."""
-    try:
-        import importlib.util
-        here = os.path.dirname(os.path.abspath(__file__))
-        spec = importlib.util.spec_from_file_location(
-            "permission_request_log", os.path.join(here, "permission-request-log.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.languette_record()
-    except Exception:  # noqa: BLE001 -- no module, no masking; the window still holds
-        return None
-
-
 def records_name():
-    """The record file's name from languette (world.RECORDS), else its known one."""
+    """The record file's name from languette (world.RECORDS), else its known one.
+    Call after lib_state.languette_record(), which puts a plugin install on sys.path."""
     try:
         from languette import world
         return world.RECORDS
@@ -155,7 +144,8 @@ def main():
     ev = lib_state.event()
     if ev.get("hook_event_name") != "PermissionRequest":
         return
-    v = verdict(ev, time.time(), records_path(os.environ), languette_record())
+    record = lib_state.languette_record()
+    v = verdict(ev, time.time(), records_path(os.environ), record)
     if v == "allow":
         hookio.emit(hookio.specific("PermissionRequest", decision={"behavior": "allow"}))
     if v:
