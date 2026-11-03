@@ -586,3 +586,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261102t190656z
 - apply-edits writes only in the cwd's work tree under home, the state repo and the scratchpads, and refuses any .claude dir outside .claude/worktrees/<name>/ Undo: widen or narrow ROOTS in bin/apply-edits ([#375](https://github.com/mark-brannan/claude/pull/375))
+
+### 20261103t015229z
+- worker-start runs npm ci --ignore-scripts; portolani has no install scripts Undo: drop --ignore-scripts from worker-start's npm ci ([#375](https://github.com/mark-brannan/claude/pull/375#discussion_r4450032850)) ([#375](https://github.com/mark-brannan/claude/pull/375))
