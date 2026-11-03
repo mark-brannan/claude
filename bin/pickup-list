@@ -21,6 +21,9 @@
 #   pickup-list take <id>       mark an item taken (a session picked it up),
 #                               and every open item naming the same link
 #   pickup-list done|open <id>  set an item's status
+#   pickup-list handoff <id>    replace the body (below the first `---` line) with stdin,
+#                               the header kept byte for byte; refuses a card id, an empty
+#                               stdin, a file with no `---`
 #   pickup-list take|open <card> [<sid>]  claim or release a card by its id or link
 #                                         (an item in items/ through work-item)
 #   pickup-list show <card id>  the card, any section, and its claims
@@ -167,6 +170,25 @@ case "$cmd" in
   show)
     f=$(item_path "${2:-}") || exit 1
     cat "$f"; exit 0 ;;
+  handoff)
+    # The body is the hand-off a model writes over the hook's default; the Stop
+    # hook keeps an edited body across its rewrites. Nothing is committed here,
+    # as with take and done. Every refusal leaves the file as it was.
+    [ "$card" = 0 ] || { printf 'pickup-list handoff: %s is a card, not a pickup item\n' "$handle" >&2; exit 1; }
+    f=$(item_path "$handle") || exit 1
+    n=$(grep -n -m1 -x -e '---' "$f" | cut -d: -f1)
+    [ -n "$n" ] || { printf 'pickup-list handoff: %s has no --- line\n' "$handle" >&2; exit 1; }
+    tmp="$f.$$"
+    trap 'rm -f "$tmp" "$tmp.in"' EXIT
+    cat > "$tmp.in" || exit 1
+    grep -q '[^[:space:]]' "$tmp.in" || { printf 'pickup-list handoff: empty stdin, nothing written\n' >&2; exit 1; }
+    { head -n "$n" "$f"
+      # a head that ends without a newline would swallow the body's first byte
+      [ "$(wc -l < "$f")" -ge "$n" ] || printf '\n'
+      cat "$tmp.in"
+      [ -z "$(tail -c1 "$tmp.in")" ] || printf '\n'
+    } > "$tmp" && mv -f "$tmp" "$f" || { printf 'pickup-list handoff: write failed\n' >&2; exit 1; }
+    printf '%s\n' "$f"; exit 0 ;;
   -h|--help|help) usage; exit 0 ;;
 esac
 

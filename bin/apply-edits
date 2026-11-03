@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+# apply-edits -- exact-string edits to files as one command, so one allow-list
+# entry covers the `python3 - <<'EOF' ... s.replace(old, new) ... EOF` scripts
+# sessions otherwise write, each of which stops for a permission dialog.
+#
+#   apply-edits < edits.json
+#
+# stdin is a JSON list of {"path", "old", "new"}, or one such object. A
+# relative path resolves against the cwd; a leading ~/ is the user's home.
+# Each edit applies only if `old` occurs exactly once in its file as it
+# stands after the batch's earlier edits; edits to one file apply in order.
+# `old` may not be empty, and no file is created: a missing file fails.
+# All or nothing: one failing edit writes nothing, and every failing edit is
+# said on stderr by index (from 0), path and why. On success each changed
+# file is written atomically (a temp file beside it, renamed over it, its
+# mode kept) and named on stdout, one line per file.
+#
+# Where it writes: the allow entry means it runs with no dialog, so it must
+# never write where a session would otherwise be asked. A path is resolved
+# (symlinks followed) and must lie in one of
+#   - the git work tree holding the cwd (nearest ancestor with a .git), when
+#     that is strictly inside the home directory and not the live ~/.claude
+#   - ~/claude_prompts_scratch, the state repo
+#   - Claude Code's scratchpads: ~/.local/state/claude-tmpdir/claude-<uid>
+#     and /tmp/claude-<uid>, each only when it is a real directory we own
+# and is refused anywhere in the live ~/.claude, in any .git, in any .claude
+# dir other than through .claude/worktrees/<name>/ (settings, hooks, agents
+# and skills there run or instruct unasked), and on a .mcp.json. The roots
+# come from the passwd entry, never $HOME or other environment, and there is
+# no flag to add one.
+#
+# Exit: 0 all applied; 1 an edit failed, nothing written; 2 bad input
+# (not JSON, wrong shape), nothing written.
+import json
+import os
+import pwd
+import sys
+import tempfile
+
+sys.dont_write_bytecode = True
+
+KEYS = {"path", "old", "new"}
+TMP = "/tmp"
+
+
+def home():
+    return os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
+
+
+def inside(path, root):
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def work_tree(cwd):
+    """The nearest ancestor of cwd holding a .git entry, or None."""
+    d = cwd
+    while True:
+        if os.path.lexists(os.path.join(d, ".git")):
+            return d
+        up = os.path.dirname(d)
+        if up == d:
+            return None
+        d = up
+
+
+def own_dir(path):
+    """path, resolved, if it is a real directory (not a symlink) we own."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    if not os.path.isdir(path) or os.path.islink(path) or st.st_uid != os.getuid():
+        return None
+    return os.path.realpath(path)
+
+
+def roots(cwd):
+    h = home()
+    live = os.path.join(h, ".claude")
+    out = []
+    top = work_tree(cwd)
+    if top and inside(top, h) and top != h and not inside(top.casefold(), live.casefold()):
+        out.append(top)
+    out.append(os.path.join(h, "claude_prompts_scratch"))
+    uid = "claude-%d" % os.getuid()
+    for d in (os.path.join(h, ".local", "state", "claude-tmpdir", uid), os.path.join(TMP, uid)):
+        r = own_dir(d)
+        if r:
+            out.append(r)
+    return out
+
+
+def refusal(real, allowed):
+    """Why real (a resolved path) may not be written, or None."""
+    # Denials compare casefolded: on a case-insensitive filesystem .GIT is .git.
+    if inside(real.casefold(), os.path.join(home(), ".claude").casefold()):
+        return "is in the live ~/.claude"
+    parts = real.casefold().split("/")
+    for i, p in enumerate(parts):
+        if p == ".git":
+            return "is in a .git"
+        if p == ".claude" and not (parts[i + 1:i + 2] == ["worktrees"] and len(parts) > i + 3):
+            return "is in a .claude dir (only .claude/worktrees/<name>/ is open)"
+    if parts[-1] == ".mcp.json":
+        return "is a .mcp.json"
+    if not any(inside(real, r) for r in allowed):
+        return "is outside the cwd's work tree, ~/claude_prompts_scratch and the scratchpads"
+    return None
+
+
+def resolve(path, cwd):
+    if path == "~" or path.startswith("~/"):
+        path = home() + path[1:]
+    return os.path.realpath(os.path.join(cwd, path))
+
+
+def load():
+    try:
+        edits = json.loads(sys.stdin.read())
+    except ValueError as e:
+        return None, "stdin is not JSON: %s" % e
+    if isinstance(edits, dict):
+        edits = [edits]
+    if not isinstance(edits, list) or not edits:
+        return None, "stdin must be a non-empty list of {path, old, new}, or one"
+    for i, e in enumerate(edits):
+        if not isinstance(e, dict) or set(e) != KEYS or not all(isinstance(e[k], str) for k in KEYS):
+            return None, "edit %d: must have exactly path, old and new, all strings" % i
+    return edits, None
+
+
+def plan(edits, cwd):
+    """(files, failures): files maps resolved path -> [shown path, before, after]."""
+    allowed = roots(cwd)
+    files, failures = {}, []
+    for i, e in enumerate(edits):
+        shown, old = e["path"], e["old"]
+        real = resolve(shown, cwd)
+        why = None if old else "old is empty"
+        why = why or refusal(real, allowed)
+        if not why and real not in files:
+            try:
+                with open(real, encoding="utf-8", newline="") as f:
+                    text = f.read()
+                files[real] = [shown, text, text]
+            except FileNotFoundError:
+                why = "no such file"
+            except (OSError, UnicodeDecodeError) as err:
+                why = "cannot read: %s" % err
+        if not why:
+            n = files[real][2].count(old)
+            if n == 1:
+                files[real][2] = files[real][2].replace(old, e["new"], 1)
+            else:
+                why = "old matches %d times" % n
+        if why:
+            failures.append("edit %d (%s): %s" % (i, shown, why))
+    return files, failures
+
+
+def write_all(changed):
+    """Stage every temp file, then rename them all; a staging error writes nothing."""
+    staged = []
+    try:
+        for real, text in changed:
+            mode = os.stat(real).st_mode & 0o7777
+            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(real), prefix=".apply-edits.")
+            staged.append((tmp, real))
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+            os.chmod(tmp, mode)
+    except OSError:
+        for tmp, _ in staged:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        raise
+    for tmp, real in staged:
+        os.replace(tmp, real)
+
+
+def main():
+    edits, bad = load()
+    if bad:
+        sys.stderr.write("apply-edits: %s\n" % bad)
+        return 2
+    files, failures = plan(edits, os.getcwd())
+    if failures:
+        for f in failures:
+            sys.stderr.write("apply-edits: %s\n" % f)
+        sys.stderr.write("apply-edits: nothing written\n")
+        return 1
+    changed = [(real, after) for real, (_, before, after) in files.items() if after != before]
+    try:
+        write_all(changed)
+    except OSError as e:
+        sys.stderr.write("apply-edits: write failed, nothing written: %s\n" % e)
+        return 1
+    for real, (shown, before, after) in files.items():
+        if after != before:
+            print("edited %s" % shown)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

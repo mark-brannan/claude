@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
-# pr-blockers <owner/repo#n | PR URL>
+# pr-blockers [--wait [--timeout SECONDS]] <owner/repo#n | PR URL>
 #
 # One line per thing that keeps the pull request from merging, each naming its
 # cause and its remedy. Exit 0 when there are none, 1 when there are, 2 when
 # the PR cannot be read, for any reason, including a malformed reply or a
 # missing gh, never as an exit 1 with nothing on stdout. Exit 3, one stderr line and
 # nothing on stdout, when the ref is not an open PR: an issue, merged, or closed. Read-only: it calls gh only to read.
+#
+# --wait re-reads the PR every 30 s (PRB_WAIT_INTERVAL seconds, for tests) in place
+# of a hand-written polling loop, and stops at the first of: no check pending,
+# so CI has settled (prints the normal output, exits 0 or 1); any blocker that
+# is not a pending check, so there is no point waiting for the rest of CI
+# (prints all lines, exits 1); the PR leaving the open state (exit 3, as above).
+# Past --timeout seconds (default 540, under the Bash tool's ten-minute ceiling)
+# it prints the current blockers and one last line saying it timed out, exit 4.
+# A read that fails is retried once on the next tick, then exit 2. A pending
+# check and a mergeability GitHub has not yet computed count as still waiting.
+# One progress line per tick goes to stderr; stdout is the same contract.
 #
 # Lines come in priority order: open conversations (unresolved review threads,
 # requested changes) first, then merge conflicts, then everything else
@@ -89,7 +100,7 @@ def parse(ref):
     m = (re.fullmatch(r"([\w.-]+)/([\w.-]+)#(\d+)", ref)
          or re.fullmatch(r"https://github\.com/([\w.-]+)/([\w.-]+)/pull/(\d+)/?(?:[#?].*)?", ref))
     if not m:
-        sys.stderr.write("usage: pr-blockers <owner/repo#n | PR URL>\n")
+        sys.stderr.write(USAGE)
         sys.exit(2)
     return m[1], m[2], m[3]
 
@@ -244,25 +255,88 @@ def blockers(owner, repo, n):
     return out
 
 
-def main(argv):
-    if len(argv) != 1 or argv[0] in ("-h", "--help"):
-        sys.stderr.write("usage: pr-blockers <owner/repo#n | PR URL>\n")
-        return 2
-    ref = parse(argv[0])
+USAGE = "usage: pr-blockers [--wait [--timeout SECONDS]] <owner/repo#n | PR URL>\n"
+WAITING = ("check pending:", "GitHub has not yet computed")  # lines that time alone may clear
+IDLE = ("the PR is a draft",)  # lines that neither stop a wait nor clear with time
+
+
+def attempt(ref):
+    """One read: (lines, None), or ([], exit code) when the PR is not open (3) or unreadable (2)."""
     try:
-        lines = blockers(*ref)
+        return blockers(*ref), None
     except RateLimited:
-        lines = [f"GitHub API rate limit exceeded; pr-blockers cannot read the PR until {reset_time()}; "
-                 "fix: wait for the reset, then run pr-blockers again"]
+        return [f"GitHub API rate limit exceeded; pr-blockers cannot read the PR until {reset_time()}; "
+                "fix: wait for the reset, then run pr-blockers again"], None
     except NotOpen as e:
         sys.stderr.write(f"pr-blockers: {ref[0]}/{ref[1]}#{ref[2]} is {e}\n")
-        return 3
+        return [], 3
+    except SystemExit:  # gh() has already said why on stderr
+        return [], 2
     except Exception as e:  # exit 1 means "blockers"; an unreadable PR must never look like that
         sys.stderr.write(f"pr-blockers: could not read the PR: {type(e).__name__}: {e}\n")
-        return 2
+        return [], 2
+
+
+def report(lines):
     for line in lines:
         print(line)
     return 1 if lines else 0
+
+
+def wait(ref, timeout):
+    interval = float(os.environ.get("PRB_WAIT_INTERVAL", 30))
+    deadline = time.monotonic() + timeout
+    lines, failed = None, False
+    while True:
+        got, rc = attempt(ref)
+        if rc == 2 and not failed:
+            failed = True  # one transient failure is retried on the next tick
+        elif rc:
+            return rc
+        else:
+            failed, lines = False, got
+            waiting = [x for x in got if x.startswith(WAITING)]
+            idle = [x for x in got if x.startswith(IDLE)]
+            if len(waiting) + len(idle) != len(got) or not waiting:  # a real blocker, or CI has settled
+                return report(got)
+            sys.stderr.write(f"pr-blockers: {time.strftime('%H:%M:%S')} {len(waiting)} still pending\n")
+        left = deadline - time.monotonic()
+        if left <= 0:
+            if lines is None:
+                return 2
+            report(lines)
+            print(f"pr-blockers: timed out after {timeout:g}s with checks still pending")
+            return 4
+        time.sleep(min(interval, left))
+
+
+def main(argv):
+    do_wait, timeout, refs = False, 540.0, []
+    it = iter(argv)
+    for a in it:
+        if a == "--wait":
+            do_wait = True
+        elif a == "--timeout":
+            try:
+                timeout = float(next(it, ""))
+                if timeout < 0:
+                    raise ValueError
+            except ValueError:
+                sys.stderr.write(USAGE)
+                return 2
+        elif a in ("-h", "--help"):
+            sys.stderr.write(USAGE)
+            return 2
+        else:
+            refs.append(a)
+    if len(refs) != 1 or ("--timeout" in argv and not do_wait):
+        sys.stderr.write(USAGE)
+        return 2
+    ref = parse(refs[0])
+    if do_wait:
+        return wait(ref, timeout)
+    lines, rc = attempt(ref)
+    return rc or report(lines)
 
 
 if __name__ == "__main__":
