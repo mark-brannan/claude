@@ -15,8 +15,9 @@ A design file is screened out (neutral) when its change is mechanical:
   format       the diff's two sides match once whitespace and markdown
                punctuation are stripped
   typo         at most 3 tokens differ, each within edit distance 2
-  rename sync  every token that differs also appears in the implementation
-               files' changed lines or paths
+  rename sync  every token that differs is identifier-like (holds one of
+               / . _ - or sits in backticks) and also appears in the
+               implementation files' changed lines or paths
 Each rule judges the whole file. An added, deleted or renamed design file is
 never screened out.
 
@@ -143,6 +144,19 @@ def word_tokens(line):
     return [t for t in (w.strip(string.punctuation) for w in line.split()) if t]
 
 
+NOT_TICK = string.punctuation.replace("`", "")
+
+
+def backticked(line):
+    """Words with a backtick at either edge, other punctuation aside: `x`, (`y`), `z`."""
+    edges = (w.strip(NOT_TICK) for w in line.split())
+    return {t for w in edges if w[:1] == "`" or w[-1:] == "`" for t in word_tokens(w)}
+
+
+def identifier_like(token, ticked):
+    return token in ticked or any(c in token for c in "/._-")
+
+
 def code_tokens(line):
     toks = set(word_tokens(line))
     toks.update(t for t in (w.strip(string.punctuation) for w in CODE_SPLIT.split(line)) if t)
@@ -192,7 +206,8 @@ def screen(fd, impl_tokens):
     if len(pairs) <= MAX_TYPOS and all(levenshtein(a, b) <= MAX_TYPO_DISTANCE for a, b in pairs):
         return "typo"
     differing = {t for h in fd.hunks for p in changed_pairs(*sides(h, word_tokens)) for t in p if t}
-    if differing <= impl_tokens:
+    ticked = {t for h in fd.hunks for sign, text in h["lines"] if sign in "+-" for t in backticked(text)}
+    if differing <= impl_tokens and all(identifier_like(t, ticked) for t in differing):
         return "rename sync"
     return None
 

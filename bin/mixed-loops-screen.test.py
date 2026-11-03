@@ -119,6 +119,19 @@ class StillMixed(unittest.TestCase):
         self.assertEqual(len(files[0].hunks), 2)
         self.assertEqual(run(diff)[0], ["docs/widget.md"])
 
+    def test_a_doc_bullet_sharing_only_common_words_with_deleted_comments_is_not_rename_sync(self):
+        doc = modified("docs/guards.md",
+                       ["intro", "- the four guard hooks and their tests live here", "outro"],
+                       ["intro", "outro"])
+        code = deleted("hooks/old-guard.sh",
+                       ["#!/bin/sh", "# the four guard hooks and their tests live here", "exit 0"])
+        self.assertEqual(run(doc + code)[0], ["docs/guards.md"])
+
+    def test_a_backticked_plain_word_counts_as_an_identifier(self):
+        diff = modified("docs/a.md", ["run `widget` first, then the rest"], ["run `sprocket` first, then the rest"]) \
+            + modified("hooks/x.py", ["CMD = 'widget'"], ["CMD = 'sprocket'"])
+        self.assertEqual(run(diff)[2], [("docs/a.md", "rename sync")])
+
     def test_a_deleted_design_file_is_never_neutral(self):
         diff = deleted("docs/old-layer.md", ["state/widget.json"]) + IMPL
         self.assertEqual(run(diff)[0], ["docs/old-layer.md"])
