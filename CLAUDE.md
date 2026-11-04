@@ -141,6 +141,9 @@ logged, not what you remember. Validity is irrelevant. The dearest decision
 is a question I had to answer that should have been obvious to you: those
 are what long, tiring sessions are made of.
 
+**A plan assumes tick all.** A proposal of several items starts with every
+one in; my reply drops what I don't want, and one word takes the whole.
+
 **At a sitting rung, shape a good stop:** landed, or mid-work with a clear
 pickup; untangle, don't push. Name the time once; never ask "want a
 break", never end a session for me: the nag is for
