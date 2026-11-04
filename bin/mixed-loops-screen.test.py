@@ -5,6 +5,7 @@
 # fail, and a design file whose hunks are part rename sync, part new sentence.
 import importlib.machinery
 import importlib.util
+import io
 import os
 import subprocess
 import sys
@@ -136,6 +137,16 @@ class StillMixed(unittest.TestCase):
         diff = deleted("docs/old-layer.md", ["state/widget.json"]) + IMPL
         self.assertEqual(run(diff)[0], ["docs/old-layer.md"])
 
+    def test_an_added_image_under_docs_is_still_design(self):
+        diff = ("diff --git a/docs/arch.svg b/docs/arch.svg\nnew file mode 100644\n"
+                "Binary files /dev/null and b/docs/arch.svg differ\n") + IMPL
+        self.assertEqual(run(diff)[0], ["docs/arch.svg"])
+
+    def test_a_deleted_image_under_docs_is_still_design(self):
+        diff = ("diff --git a/docs/arch.png b/docs/arch.png\ndeleted file mode 100644\n"
+                "Binary files a/docs/arch.png and /dev/null differ\n") + IMPL
+        self.assertEqual(run(diff)[0], ["docs/arch.png"])
+
     def test_an_added_design_file_is_never_neutral(self):
         diff = added("docs/new.md", ["state/widget-cache.json"]) + IMPL
         self.assertEqual(run(diff)[0], ["docs/new.md"])
@@ -161,6 +172,13 @@ class Classification(unittest.TestCase):
         design, impl, _ = run(diff)
         self.assertEqual((design, impl), (["docs/a.md"], ["bin/tool"]))
 
+    def test_a_path_with_a_space_loses_the_tab_git_appends(self):
+        diff = ("diff --git a/hooks/a b-requirements.md b/hooks/a b-requirements.md\n"
+                "--- a/hooks/a b-requirements.md\t\n+++ b/hooks/a b-requirements.md\t\n"
+                "@@ -1 +1 @@\n-the cache lasts an hour\n+the cache lasts a day, then expires\n") + IMPL
+        design, impl, _ = run(diff)
+        self.assertEqual((design, impl), (["hooks/a b-requirements.md"], ["hooks/widget.py"]))
+
     def test_a_renamed_file_classifies_by_its_new_path(self):
         diff = ("diff --git a/docs/old.md b/notes/old.md\nsimilarity index 100%\n"
                 "rename from docs/old.md\nrename to notes/old.md\n")
@@ -183,6 +201,17 @@ class Cli(unittest.TestCase):
         diff = modified("docs/a.md", ["the widgit"], ["the widget"]) + IMPL
         r = self.tool("--diff", "-", stdin=diff)
         self.assertEqual((r.returncode, r.stdout.strip()), (0, "neutral: docs/a.md (typo)"))
+
+    def test_a_crash_exits_2_and_says_it_is_no_verdict(self):
+        real, err = mls.parse_diff, sys.stderr
+        mls.parse_diff = lambda text: 1 / 0
+        sys.stdin, sys.stderr = io.StringIO(""), io.StringIO()
+        try:
+            rc, said = mls.cli(["--diff", "-"]), sys.stderr.getvalue()
+        finally:
+            mls.parse_diff, sys.stdin, sys.stderr = real, sys.__stdin__, err
+        self.assertEqual(rc, 2)
+        self.assertIn("crashed, not a verdict", said)
 
     def test_bad_usage_exits_2(self):
         self.assertEqual(self.tool().returncode, 2)

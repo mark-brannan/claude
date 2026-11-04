@@ -23,7 +23,8 @@ never screened out.
 
 Prints one `neutral: <path> (<rule>)` line per screened-out file, then, when
 both sets remain non-empty, the design and implementation files.
-Exits 0 when they do not mix, 1 when they do, 2 on usage or a git failure.
+Exits 0 when they do not mix, 1 when they do, 2 on usage, a git failure or
+a crash.
 
 In --diff mode a shebang is read from the diff when a hunk shows line 1,
 otherwise from HEAD in the current directory if that is a git checkout.
@@ -117,9 +118,9 @@ def parse_diff(text):
             elif line.startswith("Binary files ") or line == "GIT binary patch":
                 cur.binary = True
             elif line.startswith("--- ") and line[4:] != "/dev/null":
-                cur.old = _strip_prefix(line[4:])
+                cur.old = _strip_prefix(line[4:].rstrip("\t"))
             elif line.startswith("+++ ") and line[4:] != "/dev/null":
-                cur.new = _strip_prefix(line[4:])
+                cur.new = _strip_prefix(line[4:].rstrip("\t"))
         elif line[:1] in ("+", "-", " "):
             hunk["lines"].append((line[0], line[1:]))
     return files
@@ -196,9 +197,11 @@ def levenshtein(a, b):
 
 def screen(fd, impl_tokens):
     """The rule that makes this design file's change mechanical, or None."""
+    if fd.status != "modified":
+        return None
     if fd.path.lower().endswith(IMAGE_EXT):
         return "image"
-    if fd.status != "modified" or fd.binary or not fd.hunks:
+    if fd.binary or not fd.hunks:
         return None
     pairs = [p for h in fd.hunks for p in changed_pairs(*sides(h, format_tokens))]
     if not pairs:
@@ -293,5 +296,14 @@ def main(argv):
     return 1
 
 
+def cli(argv):
+    # A crash must not read as a mix (exit 1), which the waiver label would pass.
+    try:
+        return main(argv)
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write(f"mixed-loops-screen: crashed, not a verdict: {type(e).__name__}: {e}\n")
+        return 2
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli(sys.argv[1:]))

@@ -16,7 +16,8 @@ name: Mixed loops guard
 # hooks/ and settings.json.
 # Everything else -- README, runbooks, tests, the other skills -- is
 # neutral and never trips the gate, and so is a design file whose change is
-# mechanical (bin/mixed-loops-screen.py says which changes those are).
+# mechanical (bin/mixed-loops-screen.py says which changes those are; the
+# base branch's copy of it runs, so a PR cannot loosen its own gate).
 #
 # Bypass is the `mixed-loops-ok` label, applied by a human. A session cannot
 # apply it: the languette plugin's guard-bypass-labels denies the label by name. A gate whose
@@ -56,8 +57,18 @@ jobs:
           # The classification and the mechanical screen live in the script;
           # it prints each screened-out design file and why, then the two sets
           # when both remain. Exit 1 is a mix; 2 is the script failing.
+          # The base branch's copy runs, never the PR's: a PR that edits the
+          # screen must not judge itself with the edit. The PR's copy runs only
+          # while the base has none.
+          screen=bin/mixed-loops-screen.py
           rc=0
-          python3 bin/mixed-loops-screen.py "$base" || rc=$?
+          if git cat-file -e "$base:$screen" 2>/dev/null; then
+            echo "screen: $screen from $base"
+            git show "$base:$screen" | python3 - "$base" || rc=$?
+          else
+            echo "screen: $screen from this PR ($base has none)"
+            python3 "$screen" "$base" || rc=$?
+          fi
           if [ "$rc" -eq 0 ]; then
             echo "ok: design and implementation do not mix here"
             exit 0
