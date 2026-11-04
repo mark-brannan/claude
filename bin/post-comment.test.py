@@ -73,11 +73,14 @@ elif "BLOCKME" in body:
 
 
 def real_languette():
-    """The real user-scope languette install path, or None."""
+    """The real user-scope languette install path, when it knows the blocked_terms_file
+    option (CI pins an older languette that does not), or None."""
     try:
         with open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")) as f:
             for i in json.load(f)["plugins"]["languette@languette"]:
-                if i.get("scope") == "user" and os.path.isfile(os.path.join(i["installPath"], "languette", "run.py")):
+                pkg = Path(i["installPath"]) / "languette"
+                if i.get("scope") == "user" and (pkg / "run.py").is_file() and any(
+                        "blocked_terms_file" in py.read_text(errors="replace") for py in pkg.rglob("*.py")):
                     return i["installPath"]
     except (OSError, ValueError, KeyError, TypeError):
         pass
@@ -244,7 +247,7 @@ class PostComment(unittest.TestCase):
     def test_marker_must_be_in_body(self):
         self.assertRefused(self.run_tool("pr", "1", "--marker", "MK", "--body-file", self.body("no mark")), "--marker")
 
-    @unittest.skipUnless(real_languette(), "no languette installed")
+    @unittest.skipUnless(real_languette(), "no languette installed that knows blocked_terms_file")
     def test_real_languette_blocks_a_blocked_term(self):
         self.install(real_languette())
         terms = self.tmp / "blocked.tsv"
