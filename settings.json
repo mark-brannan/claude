@@ -278,6 +278,16 @@
             "statusMessage": "Checking the turn does not end asking permission"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/demo-line-gate.py\"; [ -f \"$h\" ] && python3 \"$h\"; true",
+            "timeout": 30,
+            "statusMessage": "Checking any PR demo line is the exact Try it line"
+          }
+        ]
       }
     ],
     "PostToolUse": [
