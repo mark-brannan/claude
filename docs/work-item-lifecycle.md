@@ -79,7 +79,7 @@ mechanics.
 | The board's home is settled; its data structure is a directory: recency, stack or queue and other priorities are derived as needed | the items directory |
 | The board and the state repo stay markdown-in-git; measure, don't migrate, with ceilings of pack size 500 MiB and the hour of the next push throttle | — |
 | Awake / asleep replaces the sweep tick dialog, on condition that the counts (total, awake, asleep, by bucket and tag) are always shown and every count has a drill path | `worklist` |
-| One writer puts every worker-raised question on the board under Needs ruling; no separate questions file | the runner |
+| One writer puts every worker-raised question on the board under Needs decision; no separate questions file | the runner |
 | Scoping's in-flight step reads each open PR against the decided ledger: a PR whose scope a ruling closed gets the verdict "contradicts", with the ruling linked, in place of "in flight" | the scoping skill |
 | `worklist` keeps its name and roughly its shape: the combined list, lanes by owner; `grind --dry-run` keeps its own name for now, converging later | `worklist` |
 
@@ -105,13 +105,13 @@ notes, not here.
 | log | append-only, one line per touch, `key=value` facts, the last one wins; every view folds from it |
 | card | the one line a view shows for an item; the brief is its body |
 | board | the view folded from `state/global/items/`; kanban.md goes |
-| bucket | a lane of the board by owner: Needs ruling, the user's click work, the agent's queue |
+| bucket | a lane of the board by owner: Needs decision, the user's click work, the agent's queue |
 | item id | epoch seconds then the creating session's eight hex; opaque, never parsed, never reused |
 | pickup | the verb: claim an item and read it |
 | claim | a session's hold on an item; valid from any status, lapsing an hour after the holder's last Stop |
 | owner | human-ruling, human-click or agent: who the item exists for |
 | toil and judgment | an assessment, made when the item is created, of why it exists for a human, an agent, or between; the concept is incomplete |
-| agora | the quick sitting: rulings in batch, each with a default that holds; where a Needs ruling card is answered |
+| agora | the quick sitting: rulings in batch, each with a default that holds; where a Needs decision card is answered |
 | worklist | the combined list, lanes by owner; the name and roughly the shape kept |
 | ready, blocked, awaiting-human, salvage ref, band | the mechanical labels and refs: low priority, easy to evolve, not a key design question |
 | create | what code says where prose says mint |

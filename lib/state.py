@@ -213,7 +213,7 @@ def items_dir():
 
 def board_union(hook_dir=HOOK_DIR):
     """The store as one board text: every
-    item as a `- [ ] ` card under `## Needs ruling` (owner human-ruling,
+    item as a `- [ ] ` card under `## Needs decision` (owner human-ruling,
     `### <repo name>` as the group, else `### global`), `## Human's`
     (human-click) or `## Claude's` (agent). "" when the store is empty."""
     r, h, a = [], [], []
@@ -229,7 +229,7 @@ def board_union(hook_dir=HOOK_DIR):
         else:
             a.append(f"- [ ] {f[6]}")
     out = []
-    for head, cards in (("## Needs ruling", r), ("## Human's", h), ("## Claude's", a)):
+    for head, cards in (("## Needs decision", r), ("## Human's", h), ("## Claude's", a)):
         if cards:
             out += [head, *cards, ""]
     return "\n".join(out) + "\n" if out else ""
@@ -1010,7 +1010,7 @@ _REF = re.compile(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/(?:pull|issu
 
 
 def ruling_readiness(card):
-    """`ready` or `waiting` for one `## Needs ruling` card, its continuation
+    """`ready` or `waiting` for one `## Needs decision` card, its continuation
     lines already folded onto one line."""
     v = ruling_until(card)
     if v is None:

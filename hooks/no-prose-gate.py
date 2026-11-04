@@ -33,7 +33,7 @@ REASON = (
     'no-prose-gate: the turn ends asking permission ("%s") without AskUserQuestion. '
     "Inside the order: do it now, then report. A one-way door: ask with AskUserQuestion "
     "and options. Anything else: take the default, put a ruling card (default, undo, "
-    "until, risk) in the global board's ## Needs ruling via /card-write, and carry on. "
+    "until, risk) in the global board's ## Needs decision via /card-write, and carry on. "
     "Then end the turn again; this gate does not fire twice."
 )
 

@@ -7,7 +7,7 @@
 # does not; the cap holds; a launch claims each worked PR before writing
 # anything for it, and a PR it cannot claim gets nothing written; a second
 # run finds the first one's PRs claimed; the scope is a repo, a project, or
-# the checkout's project by default; a Decide line becomes one Needs-ruling
+# the checkout's project by default; a Decide line becomes one Needs-decision
 # card, and pull/1 is not pull/12; spend is priced from the agent's
 # transcript and recorded as one critical-review row; the queue line is only printed unless --merge, and --merge
 # refuses a desk PR; clean removes only the prt-* worktrees nothing claims.
@@ -359,7 +359,7 @@ class PrtTest(unittest.TestCase):
     def test_07_decide_tells_pull_1_from_pull_12(self):
         line = "- **risk** · The same question? default: a · undo: b · risk: c\n"
         twelve = self.prt("decide", f"{REPO}#12", "-", stdin=line).strip()
-        self.assertNotIn("Needs-ruling", self.prt("queue", f"{REPO}#1"))  # #12's card is not #1's
+        self.assertNotIn("Needs-decision", self.prt("queue", f"{REPO}#1"))  # #12's card is not #1's
         one = self.prt("decide", f"{REPO}#1", "-", stdin=line).strip()
         self.assertNotIn("exists", one)
         self.assertNotEqual(one, twelve)

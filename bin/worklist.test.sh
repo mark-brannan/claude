@@ -40,7 +40,7 @@ migrate() { # migrate <board text file> <items dir> [<first synthetic id number>
   mkdir -p "$2"
   awk '
     function flush() { if (txt != "") print owner "\t" repo "\t" txt; txt = "" }
-    /^## / { flush(); owner = ($0 ~ /Needs ruling/ ? "human-ruling" : $0 ~ /Human/ ? "human-click" : "agent"); repo = "-"; next }
+    /^## / { flush(); owner = ($0 ~ /Needs (ruling|decision)/ ? "human-ruling" : $0 ~ /Human/ ? "human-click" : "agent"); repo = "-"; next }
     /^### / { flush(); repo = "o/" substr($0, 5); if (repo == "o/global") repo = "-"; next }
     /^- \[[xX]\]/ { flush(); skip = 1; next }
     /^- \[ \] / { flush(); skip = 0; txt = substr($0, 7); next }
@@ -58,7 +58,7 @@ migrate() { # migrate <board text file> <items dir> [<first synthetic id number>
   done < "$S/migrate.tsv"
 }
 {
-  printf '# Board\n\n## Needs ruling\n'
+  printf '# Board\n\n## Needs decision\n'
   printf -- '### demo\n'
   printf -- '- [ ] **Board sections** — decide whether a question is a card or an issue ([o/r#90](https://github.com/o/r/pull/90))\n'
   printf -- '- [ ] **Later** — decide after the migration ([o/r#95](https://github.com/o/r/pull/95))\n'
@@ -209,41 +209,41 @@ lacks 'red PR not Human'"'"'s turn' 'alpha#13'
 lacks 'draft PR not Human'"'"'s turn' 'beta#5'
 OUT=$(section "Queued (auto-merge)"); has 'queued PR listed separately' '^\| \[alpha#11\].* \| Queued PR \|'
 OUT=$OUT_ALL
-has 'Needs ruling lists the ready cards by default' "^Needs ruling \(ready\), showing 2 of 2$"
+has 'Needs decision lists the ready cards by default' "^Needs decision \(ready\), showing 2 of 2$"
 has 'the counts line: in scope, ready, waiting, other projects, each section' \
-  "^Board: Needs ruling 3 \(2 ready, 1 waiting: --waiting, all: --all\), \+1 in other projects \(--all-rulings\); Human's 1; Claude's 10$"
-first_section=$(printf '%s\n' "$OUT_ALL" | grep -E "^(Board:|Needs ruling|Human's turn|Queued|Ready:|Board \()" | head -1)
+  "^Board: Needs decision 3 \(2 ready, 1 waiting: --waiting, all: --all\), \+1 in other projects \(--all-rulings\); Human's 1; Claude's 10$"
+first_section=$(printf '%s\n' "$OUT_ALL" | grep -E "^(Board:|Needs decision|Human's turn|Queued|Ready:|Board \()" | head -1)
 assert 'the board counts print before every GitHub bucket' [ "${first_section%% *}" = "Board:" ]
 assert 'and after the counts header' \
-  [ "$(printf '%s\n' "$OUT_ALL" | grep -nE '^(counts:|Needs ruling)' | head -1 | cut -d: -f1)" -lt \
-    "$(printf '%s\n' "$OUT_ALL" | grep -n '^Needs ruling' | cut -d: -f1)" ]
-OUT=$(section "Needs ruling")
+  [ "$(printf '%s\n' "$OUT_ALL" | grep -nE '^(counts:|Needs decision)' | head -1 | cut -d: -f1)" -lt \
+    "$(printf '%s\n' "$OUT_ALL" | grep -n '^Needs decision' | cut -d: -f1)" ]
+OUT=$(section "Needs decision")
 has 'a ruling card renders, unprefixed in its own project' '^- ([0-9a-f]{18} )?\*\*Board sections\*\* — decide whether a question is a card or an issue'
 has '### global is in scope everywhere' '^- 1790836842077c62eb \*\*Engine pin\*\*'
 lacks 'another project'"'"'s group is out of scope' 'Give-way rule'
 lacks 'a waiting card is hidden by default' 'Later'
 has 'the hidden groups are counted' '^- \+1 in other projects \(worklist --all-rulings\)$'
-lacks 'no issue reaches Needs ruling' 'alpha#'
+lacks 'no issue reaches Needs decision' 'alpha#'
 OUT=$OUT_ALL
 
 # --all-rulings: every group, each card named by its group.
 run --all-rulings
-has 'all rulings shows every group' '^Needs ruling \(ready\), showing 3 of 3$'
-OUT=$(section "Needs ruling")
+has 'all rulings shows every group' '^Needs decision \(ready\), showing 3 of 3$'
+OUT=$(section "Needs decision")
 has 'a card carries its group'      '^- demo: ([0-9a-f]{18} )?\*\*Board sections\*\*'
 has 'the other project is listed'   '^- colregs: ([0-9a-f]{18} )?\*\*Give-way rule\*\*'
 lacks 'nothing is hidden'           'in other projects'
 
 # --waiting and --all: the drill paths behind the counts line.
 run --waiting
-OUT=$(section "Needs ruling")
+OUT=$(section "Needs decision")
 has 'waiting lists the card whose until: is words' '^- ([0-9a-f]{18} )?\*\*Later\*\* — decide after the migration'
 lacks 'waiting hides the ready cards' 'Board sections|Engine pin'
 run --brief
-has 'brief carries the counts line too' '^Board: Needs ruling 3 \(2 ready, 1 waiting'
+has 'brief carries the counts line too' '^Board: Needs decision 3 \(2 ready, 1 waiting'
 run --all
-has 'all lists every in-scope ruling card' '^Needs ruling \(all\), showing 3 of 3$'
-OUT=$(section "Needs ruling")
+has 'all lists every in-scope ruling card' '^Needs decision \(all\), showing 3 of 3$'
+OUT=$(section "Needs decision")
 has 'all marks the waiting card' '^- \[waiting\] ([0-9a-f]{18} )?\*\*Later\*\*'
 has 'all leaves a ready card unmarked' '^- 1790836842077c62eb \*\*Engine pin\*\*'
 OUT=$OUT_ALL
@@ -481,7 +481,7 @@ rm -f "$S/state/state/global/kanban.md"
 run
 has 'the board'"'"'s Claude cards are pickup candidates' '^Pickup, newest first$'
 eq 'pickup is the first bucket' 'Pickup, newest first' \
-  "$(printf '%s\n' "$OUT" | grep -nE '^(Pickup|Needs ruling|Human|Queued|Ready|Blocked|Untriaged|Stranded)' | head -1 | cut -d: -f2-)"
+  "$(printf '%s\n' "$OUT" | grep -nE '^(Pickup|Needs decision|Human|Queued|Ready|Blocked|Untriaged|Stranded)' | head -1 | cut -d: -f2-)"
 mkdir -p "$S/state/state/global/pickup"
 printf 'status: open\nupdated: 2026-09-09T10:00:00Z\nsession: abcd1234\nmodel: claude-opus-5-5\nbranch: alpha claude/x (1 ahead, clean)\npr: none\nwhere: w\nprompt: p\n---\nFinish the thing\nlink: o/alpha#10\nmodel: opus\neffort: high\n' \
   > "$S/state/state/global/pickup/2026-09-09T10-00-abcd1234.md"
@@ -499,12 +499,12 @@ migrate "$S/linked.md" "$I" 500
 sh "$WL" --_refresh
 eq 'refresh caches the state of an until: link' issue-open "$(cut -d' ' -f2 "$XDG_CACHE_HOME/ruling-refs/o_r_7" 2>/dev/null)"
 run --brief
-has 'brief reads the warmed cache: the linked card waits' '^Board: Needs ruling 4 \(2 ready, 2 waiting'
+has 'brief reads the warmed cache: the linked card waits' '^Board: Needs decision 4 \(2 ready, 2 waiting'
 rm -f "$I"/1790837501*.md
 
 # --- a card id is a handle ----------------------------------------------------
 run card 1790836842077c62eb
-has 'card <id> names the section and group' '^## Needs ruling / global$'
+has 'card <id> names the section and group' '^## Needs decision / global$'
 has 'card <id> prints the card' 'Engine pin'
 run card 1790836842077c62ec; eq 'an unknown id exits 1' 1 "$RC"
 run card 179083684; eq 'a malformed id exits 2' 2 "$RC"

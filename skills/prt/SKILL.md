@@ -1,6 +1,6 @@
 ---
 name: prt
-description: PR triage — walk every open pull request in a repo, a project or all of the user's repos, work each one's CI critical review to the fixup contract, send what only the user can settle to the agora as Needs-ruling cards, and print a terminal summary. Use on "/prt", "/prt --dry-run", "/prt --project <name>", "triage the PRs", "drain the PR queue". Args that name PRs or repos are the whole job. Not for one PR (/critical-review, /pickup) and not for issues (/orchestrate). Merging is off. Fable or Opus; fixers Sonnet, Opus for a PR rated high.
+description: PR triage — walk every open pull request in a repo, a project or all of the user's repos, work each one's CI critical review to the fixup contract, send what only the user can settle to the agora as Needs-decision cards, and print a terminal summary. Use on "/prt", "/prt --dry-run", "/prt --project <name>", "triage the PRs", "drain the PR queue". Args that name PRs or repos are the whole job. Not for one PR (/critical-review, /pickup) and not for issues (/orchestrate). Merging is off. Fable or Opus; fixers Sonnet, Opus for a PR rated high.
 ---
 
 # PR triage
@@ -8,7 +8,7 @@ description: PR triage — walk every open pull request in a repo, a project or 
 Orchestrate fills the band of open PRs; this drains it. Every open PR is
 triaged, not only the ones waiting on the user: cleaned up, its CI review
 worked, fixed where an agent can, and the few that need the user funnelled to their
-desk. The desk is the agora: a Decide becomes a Needs-ruling card, and a PR
+desk. The desk is the agora: a Decide becomes a Needs-decision card, and a PR
 that touches a governing path goes to the user whatever its review says.
 
 `~/.claude/bin/prt` is the mechanical half: the scope, facts, score,
@@ -181,7 +181,7 @@ reversed:
 - **Spend**, one line on the PR's item, beside the estimate:
   `~/.claude/bin/prt spent <ref> <agent-id> --run <run id>`. It prices the
   agent's own transcript.
-- **Each Decide line** becomes a Needs-ruling card, linking its thread,
+- **Each Decide line** becomes a Needs-decision card, linking its thread,
   `until:` the PR's merge:
 
   ```sh
@@ -249,7 +249,7 @@ left, naming model and effort.
 `prt queue <ref> --merge` posts `@mergifyio queue`, and only after the
 same checks: no hand-off, no desk path, no open thread, no Pencil line, no
 Reversed line,
-green and mergeable, no Needs-ruling card on the PR. Pass `--merge` only on the
+green and mergeable, no Needs-decision card on the PR. Pass `--merge` only on the
 user's word in the current turn. Never `gh pr merge`; the queue re-checks
 against real main, and dequeue is the undo.
 

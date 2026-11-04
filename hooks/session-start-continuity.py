@@ -12,7 +12,7 @@ work, what the last sessions left behind, and how much deciding the user has
 already been asked to do this week.
 
 The board is not read here. `worklist --brief` owns that view -- live PR and
-issue state plus the `## Needs ruling` and `## Claude's` cards, <= 3 KB by its
+issue state plus the `## Needs decision` and `## Claude's` cards, <= 3 KB by its
 contract, served from cache so it is fast. This hook only caps the wait at
 6 s (a hung gh call must never hold session start) and clips the output at
 4 KB, so a broken worklist cannot become a 40 KB tax. A missing worklist is

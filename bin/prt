@@ -23,7 +23,7 @@
 #       log that spend on the PR's work item, the store's own cost line, and
 #       the review's row in metrics/critical-review/ (lib/critical_review.py)
 #   prt decide <o/r#n> -                  a review's Decide line on stdin
-#                                         becomes a Needs-ruling card
+#                                         becomes a Needs-decision card
 #   prt queue <o/r#n> [--merge]           print the `@mergifyio queue` line;
 #                                         post it only with --merge
 #
@@ -928,7 +928,7 @@ def queue(args):
     else:
         no.append("pr-blockers could not read the PR: " + ((blocked.stderr.strip().splitlines() or ["failed"])[-1]))
     if any(r.split("\t")[1:2] == ["human-ruling"] and links(pr["url"], r) for r in work_item("list").splitlines()):
-        no.append("a Needs-ruling card waits on it")
+        no.append("a Needs-decision card waits on it")
     line = f"{pr['url']}  @mergifyio queue"
     if not merge:
         print(line + ("  (would be refused: " + "; ".join(no) + ")" if no else ""))
