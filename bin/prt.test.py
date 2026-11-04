@@ -359,7 +359,7 @@ class PrtTest(unittest.TestCase):
     def test_07_decide_tells_pull_1_from_pull_12(self):
         line = "- **risk** · The same question? default: a · undo: b · risk: c\n"
         twelve = self.prt("decide", f"{REPO}#12", "-", stdin=line).strip()
-        self.assertNotIn("Needs-ruling", self.prt("queue", f"{REPO}#1"))  # #12's card is not #1's
+        self.assertNotIn("Needs-decision", self.prt("queue", f"{REPO}#1"))  # #12's card is not #1's
         one = self.prt("decide", f"{REPO}#1", "-", stdin=line).strip()
         self.assertNotIn("exists", one)
         self.assertNotEqual(one, twelve)
