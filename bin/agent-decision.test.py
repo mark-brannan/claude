@@ -310,6 +310,8 @@ exec {sys.executable} {AD} --repo {other} "rival $(date +%N)"
         p = subprocess.run([sys.executable, str(AD), "--repo", self.tmp.name, "a call"],
                            env=self.env, capture_output=True, text=True)
         self.assertEqual(p.returncode, 1)
+        self.assertIn("is not a git checkout directory", p.stderr)
+        self.assertIn(repr(self.tmp.name), p.stderr)
 
     def test_unknown_curia_writes_nothing(self):
         self.pr()
