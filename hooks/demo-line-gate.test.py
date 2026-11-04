@@ -75,6 +75,19 @@ class DemoLineGateTest(unittest.TestCase):
         self.assertIsNone(self.run_hook("No more `gh pr checkout N && npm …` lines; the check wants `pull/<N>/head`."))
         self.assertIsNone(self.run_hook("PR 221 is merged."))
 
+    def test_backslash_tail_does_not_leak_into_the_next_fence(self):
+        self.assertIsNone(self.run_hook("```bash\nnpm ci \\\n```\n" + fence(LINE)))
+
+    def test_no_checkout_takes_the_origin_name_not_the_clone_dir(self):
+        (self.repo / ".github/show-dont-tell.yml").write_text(CONFIG.replace("checkout: ~/searoom   # the clone\n", ""))
+        subprocess.run(["git", "-C", str(self.repo), "remote", "add", "origin",
+                        "git@github.com:mark-brannan/harbour.git"], check=True)
+        want = LINE.replace("~/searoom", "~/harbour")
+        self.assertIsNone(self.run_hook(fence(want)))
+        out = self.run_hook(fence(LINE))
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn(want, out.get("reason", ""))
+
     def test_retry_passes(self):
         self.assertIsNone(self.run_hook(fence("npm run try-it -- 221"), active=True))
 

@@ -79,6 +79,9 @@ def code_lines(msg):
     out, fence, buf = [], False, ""
     for line in msg.splitlines():
         if line.lstrip().startswith("```"):
+            if buf:
+                out.append(buf.strip())
+                buf = ""
             fence = not fence
             continue
         if fence:
@@ -92,9 +95,9 @@ def code_lines(msg):
     return [x for x in out if x]
 
 
-def misfits(msg, cfg, repo_name):
+def misfits(msg, cfg, cwd):
     """(bad line, the exact line) for the first candidate that misses."""
-    checkout = cfg.get("checkout") or f"~/{repo_name}"
+    checkout = cfg.get("checkout") or f"~/{origin_name(cwd)}"
     for line in code_lines(msg):
         for shape in SHAPES:
             m = shape.search(line)
@@ -106,24 +109,32 @@ def misfits(msg, cfg, repo_name):
     return None
 
 
-def repo_config(cwd):
-    """(config dict, repo name) when cwd's repo opts in with serve:, else None."""
+def git(cwd, *args):
     try:
-        top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-                             capture_output=True, text=True, timeout=5).stdout.strip()
-        common = subprocess.run(["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                                capture_output=True, text=True, timeout=5).stdout.strip()
+        return subprocess.run(["git", "-C", cwd, *args], capture_output=True,
+                              text=True, timeout=5).stdout.strip()
     except (OSError, subprocess.SubprocessError):
-        return None
+        return ""
+
+
+def origin_name(cwd):
+    """The GitHub repository's name, as the CI check reads it from REPO; the
+    clone's directory name can differ (~/.claude is mark-brannan/claude)."""
+    url = git(cwd, "remote", "get-url", "origin").rstrip("/")
+    name = re.sub(r"\.git$", "", re.split(r"[/:]", url)[-1]) if url else ""
+    return name or Path(git(cwd, "rev-parse", "--show-toplevel") or cwd).name
+
+
+def repo_config(cwd):
+    """The config dict when cwd's repo opts in with serve:, else None."""
+    top = git(cwd, "rev-parse", "--show-toplevel")
     if not top:
         return None
     path = Path(top) / CONFIG
     if not path.is_file():
         return None
     cfg = parse_config(path.read_text(encoding="utf-8", errors="replace"))
-    if not cfg.get("serve"):
-        return None
-    return cfg, Path(common).parent.name if common else Path(top).name
+    return cfg if cfg.get("serve") else None
 
 
 def main():
@@ -137,10 +148,10 @@ def main():
     cwd = ev.get("cwd")
     if not isinstance(msg, str) or not msg or not isinstance(cwd, str):
         return
-    found = repo_config(cwd)
-    if not found:
+    cfg = repo_config(cwd)
+    if not cfg:
         return
-    bad = misfits(msg, *found)
+    bad = misfits(msg, cfg, cwd)
     if bad:
         hookio.emit(hookio.block(REASON % bad))
 
