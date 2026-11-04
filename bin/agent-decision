@@ -279,11 +279,14 @@ def pr_record(root, tag):
         raise OSError(f"cannot read {url} with gh")
     out = []
     numbers = [str(r.get("number")) for r in view.get("closingIssuesReferences") or []]
+    closing = set(numbers)
     numbers += [n for n in re.findall(r"(?<![\w/])#(\d+)\b", view.get("body") or "") if n not in numbers]
     for n in numbers[:ISSUE_CAP]:
         issue = gh(root, "api", f"repos/{slug}/issues/{n}")
         if not isinstance(issue, dict):
-            raise OSError(f"cannot read issue #{n} with gh")
+            came = "closing reference of" if n in closing else "bare #n in the body of"
+            hint = "" if n in closing else f"; if it names another repo, write owner/repo#{n}"
+            raise OSError(f"cannot read issue #{n} in {slug} with gh ({came} {url}{hint})")
         if "pull_request" not in issue:  # a #n in the body may be a PR, which an agent wrote
             out.append((f"issue #{n}: {issue.get('title') or ''}", issue.get("body") or ""))
     paths = [f.get("path") for f in view.get("files") or [] if (f.get("path") or "").startswith(RECORD_PATHS)]
@@ -488,7 +491,11 @@ def main(argv):
         return 2
     root = repo_root(a.repo)
     if not root or not os.path.isdir(root):
-        print("agent-decision: not in a git checkout; pass --repo", file=sys.stderr)
+        if a.repo:
+            print(f"agent-decision: --repo {a.repo!r} is not a git checkout directory "
+                  "(--repo takes a checkout dir, not owner/name)", file=sys.stderr)
+        else:
+            print("agent-decision: not in a git checkout; pass --repo <checkout dir>", file=sys.stderr)
         return 1
     now = datetime.datetime.now(datetime.timezone.utc)
     try:
