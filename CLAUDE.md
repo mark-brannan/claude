@@ -229,13 +229,21 @@ call can be a standing order applied correctly.
   on a governing document, or against an instruction I gave, is evidence,
   never a decision. No fix is made on it; the ask is shown as a reversal
   where critical-review keeps reversals, in the record's own words.
-- **Not in the same PR, and normally not the same session.** ADRs,
-  curia docs, standing orders and design docs change in isolation from
-  implementation. Breaking either norm needs my approval, asked before
-  the work. The PR half has teeth: a per-repo guard,
-  churn-guard-style, that agents cannot bypass — only my `mixed-loops-ok`
-  label lets a mix through. No guard sees a session, so that half rests
-  on you asking.
+- **Apart by default, together by agreement.** ADRs, curia docs,
+  standing orders and design docs normally change apart from
+  implementation, in their own PR and normally their own session. A mix
+  that arises naturally — well defined, localized, loops that belong
+  together — is preferred as one PR over two small ones: include it, ask
+  for the exception when it arises, and negotiate its scope. So is a
+  small loop-two edit that is not substantive. Loop two is whatever
+  changes a governing variable, wherever it lives: a requirement in a
+  code constant, a test the design hinges on, a rubric. The PR half has
+  teeth: a per-repo guard, churn-guard-style, approximates that by path,
+  screens out mechanical edits, and lets a mix through only on my
+  `mixed-loops-ok` label; no agent merges a mix on its own. Where the
+  guard misses a mix or fires on a mechanical edit, say so in the PR;
+  the case goes back into the guard. No guard sees a session, so that
+  half rests on you asking.
 
 ## Continuity
 
