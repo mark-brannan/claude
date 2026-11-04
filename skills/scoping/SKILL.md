@@ -202,10 +202,10 @@ taken; never overwrite an earlier one. Commit it. Shape:
 
 Show the proposal and stop. Nothing is claimable before the user's yes.
 
-The yes scales with size. Pencil thresholds, the agent's default until
-ruled: up to 3 work items and 400 words in the work-items section, one
-word for the whole; above that, a tick per item, and an item over 150
-words is split before it is shown. Measure with `wc -w` from the
+The proposal assumes tick all: every item is in the batch unless the user
+says otherwise. One word takes the whole; a reply that names items drops or
+changes those and takes the rest. No tick dialog, at any size. An item over
+150 words is split before it is shown. Measure with `wc -w` from the
 work-items heading to the next heading of its level or higher, so an
 item's own `###` heading counts inside the section, not as its end. Count as
 [brief.md](../agora/brief.md) counts, and say the count.
