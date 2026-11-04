@@ -88,7 +88,7 @@ jobs:
           fi
 
           echo "::error::design and implementation in one PR"
-          echo "Split it: the design change lands alone, the implementation follows."
-          echo "The loops interleave on purpose; the PRs do not."
-          echo "Bypass is the mixed-loops-ok label, a human's to apply."
+          echo "A mix that belongs together stays one PR: ask the user for the"
+          echo "mixed-loops-ok label, a human's to apply. Split only by agreement,"
+          echo "at a seam where each half stands alone."
           exit 1
