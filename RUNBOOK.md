@@ -36,6 +36,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Re-sign a PR's commits by hand](#re-sign-a-prs-commits-by-hand)
 - [Waive the churn gate on a PR](#waive-the-churn-gate-on-a-pr)
 - [Waive the mixed-loops gate on a PR](#waive-the-mixed-loops-gate-on-a-pr)
+- [Post a PR or issue comment from a file](#post-a-pr-or-issue-comment-from-a-file)
 - [Grind a project](#grind-a-project)
 - [Run the PR fixer on a timer](#run-the-pr-fixer-on-a-timer)
 
@@ -763,6 +764,21 @@ If it fails with `'mixed-loops-ok' not found`, create the label once:
 ```bash
 gh label create mixed-loops-ok --repo mark-brannan/dotfiles --color BFD4F2 --description "Human waiver: design and implementation may land in this one PR"
 ```
+
+## Post a PR or issue comment from a file
+
+Write the body into the session scratchpad (or `$RUNNER_TEMP` in CI), then:
+
+```bash
+post-comment pr 42 --repo owner/name --body-file <scratchpad>/comment.md
+```
+
+It runs with no dialog. It takes a body file only from a scratchpad, at most
+65536 characters, and has the languette guards judge the equivalent
+`gh pr comment --body-file` call before it posts; a refusal prints the guard's
+reason and posts nothing. `issue` in place of `pr` comments on an issue;
+`--marker <text>` edits the newest own comment holding that text instead.
+The rules are in the script's header.
 
 ## Grind a project
 
