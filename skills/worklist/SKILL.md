@@ -57,7 +57,7 @@ Blocked                   `blocked` issues, with the updated date
 Not ready (agent's turn)  open PRs that are none of the above, with why
 Untriaged: N              unlabelled issues, table capped like every other
                           bucket — not count-only
-Needs decision              the board's `## Needs decision` cards, at most 8 —
+Needs decision            the board's `## Needs decision` cards, at most 8 —
                           one-way doors only, so normally empty
 Done                      items at `done`, any owner, at most 8: the agent
                           finished; only the user's acceptance remains
