@@ -589,3 +589,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261103t015229z
 - worker-start runs npm ci --ignore-scripts; portolani has no install scripts Undo: drop --ignore-scripts from worker-start's npm ci ([#375](https://github.com/mark-brannan/claude/pull/375#discussion_r4450032850)) ([#375](https://github.com/mark-brannan/claude/pull/375))
+
+### 20261104t054643z
+- mixed-loops screen: a token with no letter is a value, never a name, so a backticked number changed in spec and code is a mix Undo: drop the letter check in identifier_like ([#376](https://github.com/mark-brannan/claude/pull/376))
