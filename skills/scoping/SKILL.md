@@ -202,9 +202,10 @@ taken; never overwrite an earlier one. Commit it. Shape:
 
 Show the proposal and stop. Nothing is claimable before the user's yes.
 
-Every item is in the batch unless the user names it. One word takes the
-whole; a reply naming items drops or changes those and takes the rest. An item over
-150 words is split before it is shown. Measure with `wc -w` from the
+Ask which items to take; all is the default, and one word takes it. A
+reply may instead name items to take, items to leave out, or both, in
+plain words; read it as said. An item over 150 words is split before it
+is shown. Measure with `wc -w` from the
 work-items heading to the next heading of its level or higher, so an
 item's own `###` heading counts inside the section, not as its end. Count as
 [brief.md](../agora/brief.md) counts, and say the count.
