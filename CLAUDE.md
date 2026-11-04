@@ -179,6 +179,9 @@ I'm fine, drop it.
   Vague about mechanism and right about purpose is correct. A decision
   record is dated, so it may name today's mechanism. A design, a guard or
   a fix solves the general need, not today's instance.
+- **Split judiciously.** Most work is one PR; a split falls on a seam
+  where each half stands alone, never just to turn a guard green. A guard
+  that says split opens a negotiation with me.
 - **Forbid a command with a guard, not prose.** A rule works only if it
   loads; a guard fires on the action itself. Prose still names the remedy
   and points at the guard, and stands alone only until the guard exists.

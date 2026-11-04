@@ -83,6 +83,7 @@ jobs:
           fi
 
           echo "::error::churn over budget:$over"
-          echo "Split it, smallest piece first, or state the overrun in the PR body."
+          echo "State the overrun in the PR body and ask the user for churn-ok;"
+          echo "split only by agreement, at a seam where each half stands alone."
           echo "https://github.com/mark-brannan/dotfiles/issues/149"
           exit 1
