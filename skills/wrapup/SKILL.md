@@ -94,7 +94,7 @@ When you do write one, it must:
   every time, e.g. `Model: opus · Effort: high`. A hand-off prompt missing
   either is not finished;
 - name `/curia <id>` only for an id whose folder already exists. A hard
-  question the session left open is a `## Needs decision` card, never a
+  question the session left open is a `## Needs ruling` card, never a
   proposed new curia — only the user opens one, through the curia skill's
   gates;
 - be written so somebody who was not in this session can act on it.
@@ -162,7 +162,7 @@ session that archived in step 0 has nothing to do here.
 ## 5. The closing message
 
 Not before step 2b has passed its check. The closing message holds exactly
-two things: the hand-off prompt, and links to the `## Needs decision` and
+two things: the hand-off prompt, and links to the `## Needs ruling` and
 `## Human's` cards this session wrote. Nothing else. If nothing hit a
 one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.

@@ -265,7 +265,7 @@ waive.
    turn, ordering a curia open, pass this gate. The user's words in an
    earlier session are a record, not an order.
 2. **The question petitioned the agora first.** An agent that finds a
-   question too hard for the one-way-door test writes a `## Needs decision`
+   question too hard for the one-way-door test writes a `## Needs ruling`
    card in the house format — default, undo, until, risk, evidence,
    judgment — per
    `/card-write`. That card is the petition, and it must carry enough
@@ -504,7 +504,7 @@ read-back is wrong. A ruling read off such a sentence lands in
 
 A sitting that uncovers a second hard question does not open a second
 curia for it. It becomes a line under `## Open questions` here, or a
-`## Needs decision` card if it belongs to no curia — the petition at gate 2.
+`## Needs ruling` card if it belongs to no curia — the petition at gate 2.
 
 ## Closing (the user says when)
 

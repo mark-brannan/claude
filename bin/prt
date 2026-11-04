@@ -23,7 +23,7 @@
 #       log that spend on the PR's work item, the store's own cost line, and
 #       the review's row in metrics/critical-review/ (lib/critical_review.py)
 #   prt decide <o/r#n> -                  a review's Decide line on stdin
-#                                         becomes a Needs-decision card
+#                                         becomes a Needs-ruling card
 #   prt queue <o/r#n> [--merge]           print the `@mergifyio queue` line;
 #                                         post it only with --merge
 #

@@ -7,7 +7,7 @@
 # does not; the cap holds; a launch claims each worked PR before writing
 # anything for it, and a PR it cannot claim gets nothing written; a second
 # run finds the first one's PRs claimed; the scope is a repo, a project, or
-# the checkout's project by default; a Decide line becomes one Needs-decision
+# the checkout's project by default; a Decide line becomes one Needs-ruling
 # card, and pull/1 is not pull/12; spend is priced from the agent's
 # transcript and recorded as one critical-review row; the queue line is only printed unless --merge, and --merge
 # refuses a desk PR; clean removes only the prt-* worktrees nothing claims.

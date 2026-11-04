@@ -535,7 +535,7 @@ stranded_rows() {
 JQ_IDFIRST='def idfirst: (capture("^(?<t>.*?)[[:space:]]+id:[[:space:]]*(?<id>[0-9]{10}[0-9a-f]{8})[[:space:]]*$") | .id + " " + .t) // .; '
 
 # ruling_section <board> <project>
-# The board's counts line, then the ## Needs decision cards, grouped by the
+# The board's counts line, then the ## Needs ruling cards, grouped by the
 # "### <name>" heading above them -- one group per project, "### global" for
 # what no project owns. Inside a project's repo only that project's group and
 # global are shown, with a count of what was hidden; --all-rulings, or no
@@ -549,7 +549,7 @@ ruling_section() {
   # A card spans its indented continuation lines; until: may sit on one.
   rows=$(awk '
     function out() { if (t != "") print g "\t" t; t = "" }
-    /^## / { out(); f = ($0 ~ /^## Needs (ruling|decision)[[:space:]]*$/); g = "global"; next }
+    /^## / { out(); f = ($0 ~ /^## Needs ruling[[:space:]]*$/); g = "global"; next }
     !f { next }
     /^### / { out(); g = $0; sub(/^###[ \t]+/, "", g); sub(/[ \t]+$/, "", g); next }
     /^- \[ \]/ { out(); t = substr($0, 7); next }
@@ -618,7 +618,7 @@ section_of() {
 board_cards() {
   awk '
     /^## / { s = ""; g = "global"
-      if ($0 ~ /^## Needs (ruling|decision)[[:space:]]*$/) s = "rulings"
+      if ($0 ~ /^## Needs ruling[[:space:]]*$/) s = "rulings"
       else if ($0 ~ /^## Human/) s = "humans"
       else if ($0 ~ /^## Claude/) s = "claudes"
       next }

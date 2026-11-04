@@ -30,9 +30,9 @@ then `as of HH:MMZ` (`cached N min` when served from cache),
 then the repo set and the account-wide counts, then these buckets.
 An empty bucket prints `none` — that is "checked, nothing there", not a failure.
 
-Each GitHub bucket (everything but Needs decision and Board) renders as a
+Each GitHub bucket (everything but Needs ruling and Board) renders as a
 `Ref | Item | Notes` table, capped at 5 rows in `--brief` and 1000000
-otherwise, with a `+N more` row past the cap. Needs decision and Board stay
+otherwise, with a `+N more` row past the cap. Needs ruling and Board stay
 plain bullets — they're prose cards, not tabular data:
 
 ```
@@ -57,7 +57,7 @@ Blocked                   `blocked` issues, with the updated date
 Not ready (agent's turn)  open PRs that are none of the above, with why
 Untriaged: N              unlabelled issues, table capped like every other
                           bucket — not count-only
-Needs decision            the board's `## Needs decision` cards, at most 8 —
+Needs ruling              the board's `## Needs ruling` cards, at most 8 —
                           one-way doors only, so normally empty
 Done                      items at `done`, any owner, at most 8: the agent
                           finished; only the user's acceptance remains

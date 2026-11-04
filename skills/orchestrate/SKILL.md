@@ -33,7 +33,7 @@ Then rule on each row yourself:
   elsewhere; it is an epic (its sub-issues dispatch, the epic does not).
 - **`blocked` is checked, not trusted.** Most mean "after issue N" — an
   order inside a cluster, not a skip. Nothing from this pass goes to
-  `## Needs decision`; a genuine one becomes a card after wave 1 is out.
+  `## Needs ruling`; a genuine one becomes a card after wave 1 is out.
 - **A red or conflicting open PR gets a fixer** unless a live claim stamp
   (`claim-stamp.py read`, stale once its session is gone, or unrefreshed
   for 5 minutes from another machine, 1h otherwise) or a human's review

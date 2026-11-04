@@ -658,14 +658,14 @@ class StoreTest(Base):
 
     def test_board_card(self):
         self.assertEqual(self.st("board_card", "1790836862aaaaaaaa")[1],
-                         "Needs decision\tcolregs\t- [ ] **Stored ruling**: Decide it. repo: o/colregs id: 1790836862aaaaaaaa\n")
+                         "Needs ruling\tcolregs\t- [ ] **Stored ruling**: Decide it. repo: o/colregs id: 1790836862aaaaaaaa\n")
         self.assertEqual(self.st("board_card", "1790836861aaaaaaaa")[1].split("\t")[0], "Claude's")
         self.assertEqual(self.st("board_card", "1790836866aaaaaaaa")[1].split("\t")[0], "Done", "the done queue too")
         self.assertEqual(self.st("board_card", "1790836860aaaaaaaa")[:2], (1, ""), "a kanban.md card is not found")
 
     def test_board_union_is_the_items_by_section(self):
         heads = [ln for ln in self.st("board_union")[1].splitlines() if ln.startswith("##")]
-        self.assertEqual(heads, ["## Needs decision", "### colregs", "## Human's", "## Claude's"])
+        self.assertEqual(heads, ["## Needs ruling", "### colregs", "## Human's", "## Claude's"])
 
     def test_an_items_claim_is_its_logs(self):
         def rec(title):

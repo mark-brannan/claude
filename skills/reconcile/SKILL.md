@@ -18,7 +18,7 @@ at random (`shuf -n 50`). A card checked and still correct carries no mark,
 so a fixed order would re-check the same 50 every run; a random draw lets
 repeated runs reach the whole board. The output says how many it left.
 
-`/sweep` prunes and reranks `## Needs decision` / `## Human's`; reconcile
+`/sweep` prunes and reranks `## Needs ruling` / `## Human's`; reconcile
 corrects stale *facts* anywhere in the board or the memos, including
 `## Claude's`. Run one after the other, not instead of.
 

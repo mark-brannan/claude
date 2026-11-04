@@ -239,10 +239,10 @@ store_rc=0; prime_rows
 [ -z "$store_err" ] || { printf 'Pickup: BROKEN STORE -- %s; this is not an empty list\n' "$store_err"; store_rc=1; }
 [ -n "$hard" ] && printf 'Hard -- a fixer gave up on these; take one before any item\n\n%s\n\n' "$hard"
 
-# The agora docket is the human-ruling items (board_union's `## Needs decision`);
+# The agora docket is the human-ruling items (board_union's `## Needs ruling`);
 # one count, one drill path.
 docket() {
-  n=$(st board_union 2>/dev/null | awk '/^## / { f = ($0 ~ /^## Needs (ruling|decision)[[:space:]]*$/); next }
+  n=$(st board_union 2>/dev/null | awk '/^## / { f = ($0 ~ /^## Needs ruling[[:space:]]*$/); next }
            f && /^- \[ \]/ { n++ }
            END { print n + 0 }')
   [ "${n:-0}" -gt 0 ] || return 0

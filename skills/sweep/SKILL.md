@@ -6,7 +6,7 @@ description: Garbage-collect the global board's ruling and click-work cards (ite
 # Sweeping the board
 
 Garbage collection for the two kinds of card the user reads: rulings (owner
-`human-ruling`, once `## Needs decision`) and click work (owner `human-click`,
+`human-ruling`) and click work (owner `human-click`,
 once `## Human's`). It runs before the board is shown, and on its own. Cards
 owned `agent` are not swept here; that queue is yours to work, not to tidy.
 
