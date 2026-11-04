@@ -50,6 +50,8 @@
       "Bash(pr-blockers *)",
       "Bash(~/.claude/bin/apply-edits)",
       "Bash(apply-edits)",
+      "Bash(~/.claude/bin/post-comment *)",
+      "Bash(post-comment *)",
       "Bash(worker-start *)",
       "Bash(pickup-list handoff *)",
       "Bash(~/.claude/bin/gh-resolve-thread *)"
