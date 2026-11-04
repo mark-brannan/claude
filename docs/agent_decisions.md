@@ -595,3 +595,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261104t054704z
 - mixed-loops screen: list depth is leading spaces // 2, so re-indenting a whole list from 2 to 4 spaces reads as a change Undo: drop the depth token from format_tokens ([#376](https://github.com/mark-brannan/claude/pull/376))
+
+### 20261104t054720z
+- mixed-loops guard header: a mix lands only with a human's agreement, given by the mixed-loops-ok label Undo: revert the guard's header comment ([#376](https://github.com/mark-brannan/claude/pull/376))
