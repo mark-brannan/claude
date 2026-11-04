@@ -123,6 +123,7 @@ hooks/takeover-notice.py
 hooks/scratch-mirror.py
 hooks/npm-publish-auth.py
 hooks/no-prose-gate.py
+hooks/demo-line-gate.py
 hooks/no-unsigned-push.py
 hooks/no-update-branch.py
 hooks/spend-gate.py
