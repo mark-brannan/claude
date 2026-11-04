@@ -13,11 +13,12 @@ Tests and everything else are neutral.
 A design file is screened out (neutral) when its change is mechanical:
   image        an image or PDF, by extension
   format       the diff's two sides match once whitespace and markdown
-               punctuation are stripped
-  typo         at most 3 tokens differ, each within edit distance 2
-  rename sync  every token that differs is identifier-like (holds one of
-               / . _ - or sits in backticks) and also appears in the
-               implementation files' changed lines or paths
+               emphasis are stripped; a list item's nesting depth, a table
+               row's cells, strikethrough and comments still count
+  rename sync  every word that differs is one side of an old -> new pair,
+               both identifier-like (a letter, and one of / . _ - or
+               backticks; a number is a value, never a name), and the implementation files remove the old
+               name and add the new one, by path, basename or changed line
 Each rule judges the whole file. An added, deleted or renamed design file is
 never screened out.
 
@@ -42,11 +43,10 @@ TESTS = ("*.test.*", "*.examples.sh", "tests/*", "*/tests/*", "test_*.py", "*/te
 IMPL = ("*.jq", "*.py", ".github/workflows/*", "hooks/*", "settings.json")
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".pdf")
 
-MAX_TYPOS = 3
-MAX_TYPO_DISTANCE = 2
-
 LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
-MARKDOWN_PUNCT = str.maketrans("#*_-|>~`", " " * 8)
+# Emphasis and headings only: `|` is split out as a cell edge, and `~~` and
+# `<!--` are kept, since striking or commenting out a rule changes it.
+MARKDOWN_PUNCT = str.maketrans("#*_>`", " " * 5)
 # Code splits on these as well as whitespace, so `open("hooks/x.py")` yields hooks/x.py.
 CODE_SPLIT = re.compile(r"[\s\"'`()\[\]{},;=<>:$]+")
 HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
@@ -138,7 +138,9 @@ def classify(path, shebang):
 
 
 def format_tokens(line):
-    return LIST_MARKER.sub("", line).translate(MARKDOWN_PUNCT).split()
+    """Words without emphasis, plus a token for a list item's depth: re-nesting a bullet moves its scope."""
+    depth = [f"<list depth {(len(line) - len(line.lstrip())) // 2}>"] if LIST_MARKER.match(line) else []
+    return depth + LIST_MARKER.sub("", line).replace("|", " | ").translate(MARKDOWN_PUNCT).split()
 
 
 def word_tokens(line):
@@ -155,6 +157,9 @@ def backticked(line):
 
 
 def identifier_like(token, ticked):
+    """A name, never a bare value: a token without a letter (`3`, 1.5) is a number."""
+    if not any(c.isalpha() for c in token):
+        return False
     return token in ticked or any(c in token for c in "/._-")
 
 
@@ -185,32 +190,28 @@ def changed_pairs(old, new):
     return pairs
 
 
-def levenshtein(a, b):
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
+def _named(token, names):
+    return token in names or token.rsplit("/", 1)[-1] in names
 
 
-def screen(fd, impl_tokens):
-    """The rule that makes this design file's change mechanical, or None."""
+def screen(fd, code):
+    """The rule that makes this design file's change mechanical, or None.
+
+    code is (names the implementation files remove, names they add)."""
     if fd.status != "modified":
         return None
     if fd.path.lower().endswith(IMAGE_EXT):
         return "image"
     if fd.binary or not fd.hunks:
         return None
-    pairs = [p for h in fd.hunks for p in changed_pairs(*sides(h, format_tokens))]
-    if not pairs:
+    if not [p for h in fd.hunks for p in changed_pairs(*sides(h, format_tokens))]:
         return "format"
-    if len(pairs) <= MAX_TYPOS and all(levenshtein(a, b) <= MAX_TYPO_DISTANCE for a, b in pairs):
-        return "typo"
-    differing = {t for h in fd.hunks for p in changed_pairs(*sides(h, word_tokens)) for t in p if t}
+    pairs = [p for h in fd.hunks for p in changed_pairs(*sides(h, word_tokens))]
     ticked = {t for h in fd.hunks for sign, text in h["lines"] if sign in "+-" for t in backticked(text)}
-    if differing <= impl_tokens and all(identifier_like(t, ticked) for t in differing):
+    gone, came = code
+    # A pair, never a lone word: adding or dropping a name is a new or retired rule.
+    if pairs and all(a and b and identifier_like(a, ticked) and identifier_like(b, ticked)
+                     and _named(a, gone) and _named(b, came) for a, b in pairs):
         return "rename sync"
     return None
 
@@ -224,18 +225,21 @@ def evaluate(files, shebang):
             design.append(fd)
         elif kind == "impl":
             impl.append(fd)
-    impl_tokens = set()
+    gone, came = set(), set()  # names the code removes, names it adds
     for fd in impl:
-        for p in (fd.old, fd.new):
-            if p:
-                impl_tokens.update((p, p.rsplit("/", 1)[-1]))
+        if fd.status != "added" and fd.old:
+            gone.update((fd.old, fd.old.rsplit("/", 1)[-1]))
+        if fd.status != "deleted" and fd.new:
+            came.update((fd.new, fd.new.rsplit("/", 1)[-1]))
         for h in fd.hunks:
             for sign, text in h["lines"]:
-                if sign in "+-":
-                    impl_tokens |= code_tokens(text)
+                if sign == "-":
+                    gone |= code_tokens(text)
+                elif sign == "+":
+                    came |= code_tokens(text)
     remaining, neutral = [], []
     for fd in design:
-        rule = screen(fd, impl_tokens)
+        rule = screen(fd, (gone, came))
         if rule:
             neutral.append((fd.path, rule))
         else:

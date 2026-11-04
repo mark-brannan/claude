@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # Tests for mixed-loops-screen. Run: python3 bin/mixed-loops-screen.test.py
 #
-# Synthetic unified diffs, one per screen rule, a true mix that must still
-# fail, and a design file whose hunks are part rename sync, part new sentence.
+# Synthetic unified diffs, one per screen rule, true mixes that must still
+# fail (flipped words, numbers, struck rules, names added or dropped), and a design file whose hunks are part rename sync, part new sentence.
 import importlib.machinery
 import importlib.util
 import io
@@ -68,11 +68,12 @@ class Rules(unittest.TestCase):
                         ["the widget reads state", "and writes nothing"]) + IMPL
         self.assertEqual(run(diff)[2], [("rules/code.md", "format")])
 
-    def test_up_to_three_small_typos_are_neutral(self):
+    def test_a_typo_fix_beside_code_is_a_mix(self):
+        # No typo rule: a word a letter or two away is as often a flipped meaning as a typo.
         diff = modified("CLAUDE.md",
                         ["the widgit reads teh state and wirtes nothing"],
                         ["the widget reads the state and writes nothing"]) + IMPL
-        self.assertEqual(run(diff)[2], [("CLAUDE.md", "typo")])
+        self.assertEqual(run(diff)[0], ["CLAUDE.md"])
 
     def test_four_typos_are_not_typo_neutral(self):
         diff = modified("CLAUDE.md",
@@ -89,6 +90,13 @@ class Rules(unittest.TestCase):
                         ["The widget caches to `state/widget.json`, read on start."],
                         ["The widget caches to `state/widget-cache.json`, read on start."]) + IMPL
         self.assertEqual(run(diff)[2], [("hooks/widget-requirements.md", "rename sync")])
+
+    def test_a_prefixed_path_or_a_markdown_link_matches_the_code_by_basename(self):
+        diff = (modified("docs/token-budget.md",
+                         ["`claude/hooks/budget.sh` caps it; see [the hook](../hooks/budget.sh)."],
+                         ["`claude/hooks/budget.py` caps it; see [the hook](../hooks/budget.py)."])
+                + deleted("hooks/budget.sh", ["#!/bin/sh"]) + added("hooks/budget.py", ["#!/usr/bin/env python3"]))
+        self.assertEqual(run(diff)[2], [("docs/token-budget.md", "rename sync")])
 
     def test_a_script_renamed_from_sh_to_py_matches_by_its_path(self):
         diff = (modified("docs/hooks.md",
@@ -127,6 +135,42 @@ class StillMixed(unittest.TestCase):
         code = deleted("hooks/old-guard.sh",
                        ["#!/bin/sh", "# the four guard hooks and their tests live here", "exit 0"])
         self.assertEqual(run(doc + code)[0], ["docs/guards.md"])
+
+    def test_a_flipped_word_or_a_changed_number_is_a_mix(self):
+        for old, new in (("Agents never merge.", "Agents ever merge."),
+                         ("Jobs run under 5 minutes.", "Jobs run under 50 minutes."),
+                         ("The guard is on.", "The guard is off."),
+                         ("Agents need approval.", "Agents need no approval.")):
+            with self.subTest(new=new):
+                self.assertEqual(run(modified("CLAUDE.md", [old], [new]) + IMPL)[0], ["CLAUDE.md"])
+
+    def test_a_threshold_changed_in_spec_and_code_together_is_a_mix(self):
+        diff = modified("docs/spec.md", ["at most `3` typos"], ["at most `5` typos"]) \
+            + modified("bin/s.py", ["MAX = 3"], ["MAX = 5"])
+        self.assertEqual(run(diff)[0], ["docs/spec.md"])
+
+    def test_striking_or_commenting_out_a_rule_is_a_mix(self):
+        for new in ("~~We never push to main.~~", "<!-- We never push to main. -->"):
+            with self.subTest(new=new):
+                diff = modified("CLAUDE.md", ["We never push to main."], [new]) + IMPL
+                self.assertEqual(run(diff)[0], ["CLAUDE.md"])
+
+    def test_a_table_value_moved_to_another_column_is_a_mix(self):
+        diff = modified("docs/t.md", ["| merge | agent | |"], ["| merge | | agent |"]) + IMPL
+        self.assertEqual(run(diff)[0], ["docs/t.md"])
+
+    def test_a_bullet_nested_under_another_is_a_mix(self):
+        diff = modified("CLAUDE.md", ["- Applies to all repos.", "- Never force-push."],
+                        ["- Applies to all repos.", "  - Never force-push."]) + IMPL
+        self.assertEqual(run(diff)[0], ["CLAUDE.md"])
+
+    def test_a_name_dropped_or_added_is_not_a_rename(self):
+        retired = modified("rules/code.md", ["intro", "- `guard-push-main`", "outro"], ["intro", "outro"]) \
+            + deleted("hooks/guard-push-main.py", ["#!/usr/bin/env python3", "NAME = 'guard-push-main'"])
+        widened = modified("CLAUDE.md", ["Design set: `rules/`, `docs/`."], ["Design set: `rules/`, `docs/`, `checks/`."]) \
+            + modified("bin/s.py", ['DESIGN = ("rules/*", "docs/*")'], ['DESIGN = ("rules/*", "docs/*", "checks/*")'])
+        self.assertEqual(run(retired)[0], ["rules/code.md"])
+        self.assertEqual(run(widened)[0], ["CLAUDE.md"])
 
     def test_a_backticked_plain_word_counts_as_an_identifier(self):
         diff = modified("docs/a.md", ["run `widget` first, then the rest"], ["run `sprocket` first, then the rest"]) \
@@ -198,9 +242,9 @@ class Cli(unittest.TestCase):
         self.assertIn("  hooks/widget.py", r.stdout)
 
     def test_stdin_screened_out_exits_0_and_says_which_rule(self):
-        diff = modified("docs/a.md", ["the widgit"], ["the widget"]) + IMPL
+        diff = modified("docs/a.md", ["the widget"], ["the **widget**"]) + IMPL
         r = self.tool("--diff", "-", stdin=diff)
-        self.assertEqual((r.returncode, r.stdout.strip()), (0, "neutral: docs/a.md (typo)"))
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "neutral: docs/a.md (format)"))
 
     def test_a_crash_exits_2_and_says_it_is_no_verdict(self):
         real, err = mls.parse_diff, sys.stderr
@@ -224,16 +268,16 @@ class Cli(unittest.TestCase):
                                             check=True, capture_output=True, env=env)
             git("init", "-q", "-b", "main")
             Path(d, "docs").mkdir()
-            Path(d, "docs/a.md").write_text("intro\nthe widgit reads state\noutro\n")
+            Path(d, "docs/a.md").write_text("intro\nthe widget reads state\noutro\n")
             Path(d, "tool").write_text("#!/bin/sh\necho one\n")
             git("add", ".")
             git("commit", "-qm", "base")
             git("checkout", "-qb", "work")
-            Path(d, "docs/a.md").write_text("intro\nthe widget reads state\noutro\n")
+            Path(d, "docs/a.md").write_text("intro\nthe *widget* reads state\noutro\n")
             Path(d, "tool").write_text("#!/bin/sh\necho two\n")
-            git("commit", "-qam", "typo and code")
+            git("commit", "-qam", "emphasis and code")
             r = self.tool("main", cwd=d)
-            self.assertEqual((r.returncode, r.stdout.strip()), (0, "neutral: docs/a.md (typo)"), r.stderr)
+            self.assertEqual((r.returncode, r.stdout.strip()), (0, "neutral: docs/a.md (format)"), r.stderr)
             Path(d, "docs/a.md").write_text("intro\nthe widget reads state and writes a log\noutro\n")
             git("commit", "-qam", "a new rule")
             r = self.tool("main", cwd=d)

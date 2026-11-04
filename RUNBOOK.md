@@ -747,7 +747,7 @@ in one PR (`.github/workflows/mixed-loops-guard.yml`). Human-applied:
 the languette plugin's `guard-bypass-labels` blocks a session from adding it by
 `gh` or MCP.
 
-A design file whose change is mechanical (an image, format only, a typo, a
+A design file whose change is mechanical (an image, format only, a
 rename the code makes too) does not count, and the log says so:
 `neutral: <path> (<rule>)`. Read that before reaching for the label.
 
