@@ -570,7 +570,7 @@ ruling_section() {
   nwait=$((total - nready))
   nhum=$(awk '/^## /{f=($0 ~ /^## Human/)} f && /^- \[ \]/' "$1" | grep -c '^')
   ncla=$(awk '/^## /{f=($0 ~ /^## Claude/)} f && /^- \[ \]/' "$1" | grep -c '^')
-  printf 'Board: Needs ruling %s (%s ready, %s waiting: --waiting, all: --all)' "$total" "$nready" "$nwait"
+  printf 'Board: Needs decision %s (%s ready, %s waiting: --waiting, all: --all)' "$total" "$nready" "$nwait"
   [ "$other" -gt 0 ] && printf ', +%s in other projects (--all-rulings)' "$other"
   printf "; Human's %s; Claude's %s\n" "$nhum" "$ncla"
   case $view in
@@ -579,9 +579,9 @@ ruling_section() {
     *) shown=$inscope; cap=$total ;;
   esac
   n=$(count_lines "$shown")
-  if [ "$n" -eq 0 ]; then printf 'Needs ruling (%s): none\n' "$view"
+  if [ "$n" -eq 0 ]; then printf 'Needs decision (%s): none\n' "$view"
   else
-    printf 'Needs ruling (%s), showing %s of %s\n' "$view" "$( [ "$n" -gt "$cap" ] && echo "$cap" || echo "$n" )" "$n"
+    printf 'Needs decision (%s), showing %s of %s\n' "$view" "$( [ "$n" -gt "$cap" ] && echo "$cap" || echo "$n" )" "$n"
     # jq, not awk, for the cut: it counts codepoints, so an em-dash never splits
     printf '%s\n' "$shown" | head -n "$cap" | jq -Rr --arg brief "$brief" --arg all "$showall" --arg view "$view" "$JQ_IDFIRST"'
       split("\t") | (if $view == "all" and .[0] == "waiting" then "[waiting] " else "" end)

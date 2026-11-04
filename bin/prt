@@ -928,7 +928,7 @@ def queue(args):
     else:
         no.append("pr-blockers could not read the PR: " + ((blocked.stderr.strip().splitlines() or ["failed"])[-1]))
     if any(r.split("\t")[1:2] == ["human-ruling"] and links(pr["url"], r) for r in work_item("list").splitlines()):
-        no.append("a Needs-ruling card waits on it")
+        no.append("a Needs-decision card waits on it")
     line = f"{pr['url']}  @mergifyio queue"
     if not merge:
         print(line + ("  (would be refused: " + "; ".join(no) + ")" if no else ""))
