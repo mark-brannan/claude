@@ -592,3 +592,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261104t054643z
 - mixed-loops screen: a token with no letter is a value, never a name, so a backticked number changed in spec and code is a mix Undo: drop the letter check in identifier_like ([#376](https://github.com/mark-brannan/claude/pull/376))
+
+### 20261104t054704z
+- mixed-loops screen: list depth is leading spaces // 2, so re-indenting a whole list from 2 to 4 spaces reads as a change Undo: drop the depth token from format_tokens ([#376](https://github.com/mark-brannan/claude/pull/376))
