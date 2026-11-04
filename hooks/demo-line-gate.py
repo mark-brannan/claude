@@ -58,8 +58,9 @@ def parse_config(text):
 
 
 def try_it_line(pr, checkout, install, serve):
-    """A copy of tryItLine in show-dont-tell.mjs; the tests pin both to the
-    same string, so a change to one shows red until the other follows."""
+    """A copy of tryItLine in show-dont-tell.mjs. Each side's test pins its own
+    literal, so a change to one does not turn the other red; a drift shows as
+    a refused line whose reason quotes the wanted one (.github#114 thread)."""
     port = 10000 + int(pr)
     wt = f"{checkout}/.claude/worktrees/pr-{pr}"
     parts = [
