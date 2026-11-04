@@ -52,6 +52,9 @@ Weigh each finding it returns against the base
 instructions, then post the ones that stand yourself. Every comment is signed as
 an agent's, the way the code rules say, tagged `[blocker]`, `[should]`
 or `[nit]`, with the failure scenario and the wanted fix.
+A finding tells the reader something the PR page does not already show:
+a failing check, a label awaiting the user, or an ask the body already
+makes is never a thread.
 
 **Easy.** A finding you judge easy and unambiguous carries a second tag,
 `[easy]`, right after the first: `🤖 [nit] [easy] <what is wrong>`. Easy is a
@@ -118,9 +121,9 @@ direction, legal, people — so I can scan:
 `**direction** · what you did · undo: <the reversal> · [thread](link)`. A bot
 thread you answered with a default is one of these, so I see it without
 deciding it. My silence keeps them. Toil — names, structure, order,
-tooling, wording — is yours and goes nowhere. So is the churn guard: a red
-churn check means a smaller change; an overrun that stands is one line in
-the PR body, never a line to me, a card or a question.
+tooling, wording — is yours and goes nowhere. So is the churn guard: an overrun
+is one line in the PR body, never a line to me, a card or a question; a
+split happens only by agreement.
 
 **Decide** — a question only I can answer, that this PR cannot merge
 without. Kind first, then the ruling card's own line:
