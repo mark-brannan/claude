@@ -38,7 +38,10 @@ a = sys.argv[1:]
 stdin = sys.stdin.read() if "-" in a else ""
 with open(os.environ["FAKE_GH_LOG"], "a") as f:
     f.write(json.dumps({"argv": a, "stdin": stdin}) + "\\n")
-if a[:2] == ["api", "graphql"]:
+if a[:2] == ["api", "user"]:
+    if os.environ.get("FAKE_GH_NO_USER"):
+        sys.stderr.write("Resource not accessible by integration\\n")
+        sys.exit(1)
     print("me")
 elif a[:2] == ["api", "--paginate"]:
     for c in json.loads(os.environ.get("FAKE_GH_COMMENTS", "[]")):
@@ -238,6 +241,17 @@ class PostComment(unittest.TestCase):
         self.assertEqual(patch["argv"][:4], ["api", "-X", "PATCH", "repos/o/r/issues/comments/12"])
         self.assertEqual(json.loads(patch["stdin"]), {"body": "<!-- m --> new"})
         self.assertIn("--edit-last", self.log("run.log")[0]["payload"]["tool_input"]["command"])
+
+    def test_marker_user_lookup_fails_uses_github_actor(self):
+        comments = [{"id": 10, "login": "me[bot]", "body": "MK old"}, {"id": 11, "login": "other", "body": "MK x"}]
+        env = dict(FAKE_GH_COMMENTS=json.dumps(comments), FAKE_GH_NO_USER="1")
+        r = self.run_tool("pr", "1", "--marker", "MK", "--body-file", self.body("MK new"), GITHUB_ACTOR="me[bot]", **env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("issuecomment-10", r.stdout)
+        r = self.run_tool("pr", "1", "--marker", "MK", "--body-file", self.body("MK new"), GITHUB_ACTOR="", **env)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("authenticated account", r.stderr)
+        self.assertFalse([c for c in self.log("gh.log") if c["argv"][:2] == ["pr", "comment"]])
 
     def test_marker_none_found_posts_new(self):
         r = self.run_tool("pr", "1", "--repo", "o/r", "--marker", "MK", "--body-file", self.body("MK body"))

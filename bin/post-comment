@@ -211,10 +211,13 @@ def repo_of(args):
 def marked(repo, number, marker):
     """The id of the newest comment by the authenticated account holding marker, or
     None; raise ValueError when gh cannot say, so a failed lookup never posts twice."""
-    me = gh(["api", "graphql", "-f", "query={viewer{login}}", "--jq", ".data.viewer.login"])
-    login = me.stdout.strip()
-    if me.returncode != 0 or not login:
+    me = gh(["api", "user", "--jq", ".login"])
+    login = me.stdout.strip() if me.returncode == 0 else ""
+    if not login:  # an installation or Actions token has no user; the job names its actor
+        login = os.environ.get("GITHUB_ACTOR", "").strip()
+    if not login:
         raise ValueError("cannot read the authenticated account: %s" % me.stderr.strip())
+    login = login.removesuffix("[bot]")
     r = gh(["api", "--paginate", "repos/%s/issues/%s/comments" % (repo, number),
             "--jq", ".[] | {id, login: .user.login, body} | @json"])
     if r.returncode != 0:
