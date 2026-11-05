@@ -604,3 +604,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261105t222425z
 - cwhat scoping: a target with no proposal reads 'never started'; one whose newest proposal has no '## Filed' section, or that still holds a stale lock, reads 'half-done' (claude#388) Undo: change the marks in scoping() in bin/cwhat (no PR, branch cwhat-work)
+
+### 20261105t222428z
+- cwhat curia says 'last sitting not closed', never 'sitting now': LIVE stays after a close, so a missing or older CLOSED cannot prove a live sitting (claude#388) Undo: reword the marker (no PR, branch cwhat-work)
