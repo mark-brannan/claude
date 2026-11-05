@@ -137,8 +137,8 @@ def sync():
     # rebase killed before it began); --quit clears it, keeps HEAD and the
     # tree, and saves the autostash to the stash list. Either way the clone
     # is clean again, so one more pull settles a stale dir on this call.
-    if not git("rebase", "--abort"):
     if not git("rebase", "--abort") and git("rebase", "--quit"):
+        if git("pull", "--rebase", "--autostash", "-q", timeout=120):
             return True
         git("rebase", "--abort")
     return False
