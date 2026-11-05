@@ -51,21 +51,6 @@ WINDOW = 10        # seconds back from now that an ask counts
 TAIL = 256 << 10   # bytes read from the end of each record file
 
 
-def records_name():
-    """The record file's name from languette (world.RECORDS), else its known one.
-    Call after lib_state.languette_record(), which puts a plugin install on sys.path."""
-    try:
-        from languette import world
-        return world.RECORDS
-    except Exception:  # noqa: BLE001
-        return "decisions.jsonl"
-
-
-def records_path(env):
-    base = env.get("XDG_STATE_HOME") or os.path.join(env["HOME"], ".local", "state")
-    return os.path.join(base, "languette", records_name())
-
-
 def tail_lines(path):
     """The last TAIL bytes of path as lines, the first (likely cut) dropped; [] if absent."""
     try:
@@ -145,7 +130,7 @@ def main():
     if ev.get("hook_event_name") != "PermissionRequest":
         return
     record = lib_state.languette_record()
-    v = verdict(ev, time.time(), records_path(os.environ), record)
+    v = verdict(ev, time.time(), lib_state.records_path(os.environ), record)
     if v == "allow":
         hookio.emit(hookio.specific("PermissionRequest", decision={"behavior": "allow"}))
     if v:

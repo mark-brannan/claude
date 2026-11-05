@@ -1621,20 +1621,25 @@ class MetricsLiveTest(unittest.TestCase):
         spec.loader.exec_module(mod)
         tmp = tempfile.mkdtemp(prefix="metrics-live-test-")
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        self.addCleanup(os.environ.__setitem__, "XDG_STATE_HOME", os.environ.get("XDG_STATE_HOME", ""))
-        os.environ["XDG_STATE_HOME"] = tmp
-        self.assertEqual({}, mod.guard_denials())
+        from unittest import mock
+        patch = mock.patch.dict(os.environ, {"XDG_STATE_HOME": tmp})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.assertEqual({}, mod.guard_denials("s1"))
         d = Path(tmp) / "languette"
         d.mkdir()
 
-        def rec(call, verdict, *guards):
-            return json.dumps({"call": call, "verdict": verdict, "findings": [
+        def rec(call, verdict, *guards, session="s1"):
+            return json.dumps({"session": session, "call": call, "verdict": verdict, "findings": [
                 {"guard": g, "decision": "deny"} for g in guards] + [{"guard": "other", "decision": "none"}]},
                 separators=(",", ":")) + "\n"
         (d / "decisions.jsonl.1").write_text(rec("old", "deny", "guard-a"))
         (d / "decisions.jsonl").write_text(rec("c1", "deny", "guard-b", "guard-c") + rec("c2", "silent")
-                                          + rec("c3", "ask", "guard-d") + '{"verdict":"deny", torn\n')
-        self.assertEqual({"old": ["guard-a"], "c1": ["guard-b", "guard-c"]}, mod.guard_denials())
+                                          + rec("c3", "ask", "guard-d") + '{"verdict":"deny", torn\n'
+                                          + rec("c4", "deny", "guard-e", session="other")
+                                          + rec("c1", "deny", "guard-f", "guard-b"))
+        self.assertEqual({"old": ["guard-a"], "c1": ["guard-b", "guard-c", "guard-f"]},
+                         mod.guard_denials("s1"))
 
     SECTIONS = [n for n in list(locals()) if n.startswith("section_")]
 

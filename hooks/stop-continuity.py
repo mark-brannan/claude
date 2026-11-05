@@ -555,7 +555,7 @@ class Stop:
               f"{v('friction', 'pushback')} pushback)",
               f"- blocked: {v('blocked', 'total', default=Num('0'))} tool calls refused "
               f"({v('blocked', 'guard', default=Num('0'))} languette guard{guard_names}, "
-              f"{v('blocked', 'rule', default=Num('0'))} settings rule, "
+              f"{v('blocked', 'rule', default=Num('0'))} settings rule or other hook, "
               f"{v('blocked', 'classifier', default=Num('0'))} classifier, "
               f"{v('blocked', 'user', default=Num('0'))} user-declined)"]
 
