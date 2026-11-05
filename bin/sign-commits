@@ -22,6 +22,10 @@
 #      against a stale origin/<base> counts the base's newer commits as the
 #      branch's own; re-signing them makes duplicates, and the force-push
 #      sends them into the PR (dotfiles#583 review).
+#   1b. Bring the local branch to origin/<branch>, the PR's head: fast-forward
+#      when it is merely behind (a bot or another machine pushed), stop when
+#      the two have diverged. branch_brief reads the local branch, and a stale
+#      one briefs as signed while the PR is blocked (colregs-mcp#75).
 #   2. Print the brief in full, so the facts the command rests on are on screen.
 #   3. On the checked-out branch, run the recommended command, which signs with
 #      the key git is configured for (a passphrase prompt comes through).
@@ -99,6 +103,35 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
     if p.returncode:
         err.write("sign-commits: git fetch origin failed; nothing touched\n")
         return 1
+
+    # branch_brief reads the local branch, but the PR is origin's. A local
+    # branch left behind (a bot or another machine pushed to the PR) briefs as
+    # "nothing to re-sign" while the PR stays blocked (colregs-mcp#75).
+    has = lambda ref: git("rev-parse", "--verify", "-q", ref).returncode == 0  # noqa: E731
+    if has(f"refs/remotes/origin/{br}"):
+        if not has(f"refs/heads/{br}"):
+            err.write(f"sign-commits: no local branch {br}; `git switch {br}` makes it from origin/{br}, then re-run\n")
+            return 1
+        p = git("rev-list", "--left-right", "--count", f"refs/heads/{br}...refs/remotes/origin/{br}")
+        ahead, behind = (int(x) for x in p.stdout.split()) if p.returncode == 0 else (0, 0)
+        if ahead and behind:
+            err.write(f"sign-commits: {br} and origin/{br} have diverged ({ahead} local-only, {behind} origin-only "
+                      "commit(s)); reconcile them by hand first -- a leased push would drop origin's\n")
+            return 1
+        if behind:
+            if br != cur:
+                err.write(f"sign-commits: {br} is {behind} commit(s) behind origin/{br}; check it out and re-run\n")
+                return 1
+            ff = ["git", "merge", "--ff-only", f"origin/{br}"]
+            out.write(f"sign-commits: {br} is {behind} commit(s) behind origin/{br}, the PR's head\n+ {' '.join(ff)}\n")
+            if dry:
+                out.write("sign-commits: dry run, nothing touched; a real run fast-forwards first, then briefs\n")
+                return 0
+            out.flush()
+            p = run(["git", "-C", root, *ff[1:]])
+            if p.returncode:
+                err.write(f"sign-commits: fast-forward to origin/{br} failed (exit {p.returncode}); nothing else touched\n")
+                return 1
 
     rc, text = brief(root, br)
     if rc:

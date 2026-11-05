@@ -160,6 +160,55 @@ class SignCommitsTest(unittest.TestCase):
             self.assertEqual(sign_commits.main(argv, cwd=self.repo, brief=None, run=run, out=out, err=err), rc, argv)
             self.assertEqual(run.calls, [])
 
+    def origin_ahead(self, br="feature", local_extra=False):
+        """origin/<br> one commit past the local branch, as when a bot pushed to the PR."""
+        env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
+        g = lambda *a: subprocess.run(["git", "-C", self.repo, *a], check=True, env=env,  # noqa: E731
+                                      capture_output=True, text=True).stdout.strip()
+        tree = g("rev-parse", "HEAD^{tree}")
+        g("update-ref", f"refs/remotes/origin/{br}", g("commit-tree", tree, "-p", "HEAD", "-m", "bot"))
+        if local_extra:
+            g("commit", "-q", "--allow-empty", "-m", "local")
+
+    def test_a_branch_behind_origin_is_fast_forwarded_before_the_brief(self):
+        self.origin_ahead()
+        rc, calls, out, err = self.go([], REBASE)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(calls, [["fetch", "--quiet", "origin"],
+                                 ["merge", "--ff-only", "origin/feature"],
+                                 ["rebase", "-S", "--force-rebase", "0123abcd"],
+                                 ["push", "--force-with-lease", "origin", "feature"]])
+        self.assertIn("1 commit(s) behind origin/feature", out)
+
+    def test_dry_run_on_a_branch_behind_origin_touches_nothing(self):
+        self.origin_ahead()
+        rc, calls, out, err = self.go(["-n"], CLEAN)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(calls, [["fetch", "--quiet", "origin"]])
+        self.assertIn("+ git merge --ff-only origin/feature\n", out)
+        self.assertNotIn("nothing to re-sign", out)  # a stale branch never briefs as signed
+
+    def test_a_branch_diverged_from_origin_is_refused(self):
+        self.origin_ahead(local_extra=True)
+        rc, calls, out, err = self.go([], REBASE)
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, [["fetch", "--quiet", "origin"]])
+        self.assertIn("diverged", err)
+
+    def test_a_branch_behind_origin_and_not_checked_out_is_refused(self):
+        self.origin_ahead("other")
+        subprocess.run(["git", "-C", self.repo, "branch", "other", "main"], check=True, capture_output=True)
+        rc, calls, out, err = self.go(["other"], REBASE)
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, [["fetch", "--quiet", "origin"]])
+        self.assertIn("behind origin/other; check it out", err)
+
+    def test_no_local_branch_but_one_on_origin_says_how_to_make_it(self):
+        self.origin_ahead("remote-only")
+        rc, calls, out, err = self.go(["remote-only"], REBASE)
+        self.assertEqual(rc, 1)
+        self.assertIn("git switch remote-only", err)
+
     def test_recommendation_parsing(self):
         self.assertEqual(sign_commits.recommendation(brief_text(REBASE))[0], "git rebase -S --force-rebase 0123abcd")
         self.assertEqual(sign_commits.recommendation(brief_text(CLEAN))[0], CLEAN)
