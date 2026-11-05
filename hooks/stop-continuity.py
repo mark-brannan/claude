@@ -1278,10 +1278,16 @@ class Stop:
             # ordinary state never goes by PR, so the destination is main.
             pull = ("origin", "main") if cloud else ()
             # A conflicted rebase left in place wedges this clone for every
-            # later Stop and every hand commit; back out, and let the push
-            # below fail and say so.
+            # later Stop and every hand commit: back out, and let the push
+            # below fail and say so. A rebase killed before it began leaves
+            # rebase-merge/ holding only its autostash, which --abort refuses
+            # (no head-name); --quit clears it, keeps HEAD and the tree, and
+            # saves the autostash to the stash list. Pull again at once so
+            # the push below lands on this attempt, not the reserve one.
             if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
-                git_ok("rebase", "--abort")
+                if not git_ok("rebase", "--abort") and git_ok("rebase", "--quit"):
+                    if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
+                        git_ok("rebase", "--abort")
             if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
                 if cloud:
                     # Park the clone on main so the harness's own stop check
