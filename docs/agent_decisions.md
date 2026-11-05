@@ -598,3 +598,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261104t054720z
 - mixed-loops guard header: a mix lands only with a human's agreement, given by the mixed-loops-ok label Undo: revert the guard's header comment ([#376](https://github.com/mark-brannan/claude/pull/376))
+
+### 20261105t201518z
+- cwhat holds the human board view; worklist stays untouched because skills and hooks parse its output Undo: move the board view into a worklist flag ([#388](https://github.com/mark-brannan/claude/pull/388))
