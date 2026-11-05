@@ -40,10 +40,11 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 HERE = Path(os.path.realpath(__file__)).parent
-sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+sys.path[:0] = [str(HERE.parent / "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import state  # noqa: E402
+    import when  # noqa: E402
 except ImportError:
     sys.exit("cwhat: lib/state.py not found (looked beside the tool and in ~/.claude/lib)")
 
@@ -63,10 +64,9 @@ def _tool(name):
 WI = _tool("work-item")
 os.environ["RULING_REF_CACHE_ONLY"] = "1"  # ready/waiting from the local cache only: no gh call
 
-CARD_ID = re.compile(r"[0-9]{10}[0-9a-f]{8}")
 OWNER = {"agent": "Claude's queue", "human-ruling": "needs your decision",
          "human-click": "your click work"}
-LIVE_CARD = {"open", "ready", "claimed", "blocked"}
+LIVE_CARD = set(WI.STATUSES) - {"done", "closed"}
 TOOLS = [  # (command, what it answers, needs the network)
     ("worklist [project]", "the agents' board view; `worklist card <id>` for one card", True),
     ("pickup-list find <word>", "hand-offs matching a word, any status", False),
@@ -100,9 +100,15 @@ class Out:
     def say(self, s=""):
         self.lines.append(s)
 
-    def wrap(self, s, indent="  ", style=None):
-        for ln in textwrap.wrap(s, self.width - len(indent)) or [""]:
-            self.say(indent + (style(ln) if style else ln))
+    def wrap(self, s, lead="  ", rest=None, style=None, limit=None, more=None):
+        """s wrapped after lead, later lines indented by rest (default: lead's
+        width); at most limit lines, then "… N more lines: <more>" when more is given."""
+        rest = " " * len(lead) if rest is None else rest
+        lines = textwrap.wrap(s, self.width - max(len(lead), len(rest))) or [""]
+        for i, ln in enumerate(lines[:limit]):
+            self.say((rest if i else lead) + (style(ln) if style else ln))
+        if more and limit and len(lines) > limit:
+            self.say(self.dim(f"{rest}… {len(lines) - limit} more lines: {more}"))
 
     def flush(self, pager=True):
         text = "\n".join(self.lines) + "\n"
@@ -119,10 +125,10 @@ class Out:
 
 def ago(iso):
     try:
-        t = datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-    except ValueError:
+        t = when.parse(iso)
+    except (ValueError, AttributeError):
         return "?"
-    s = max(0, time.time() - t.timestamp())
+    s = max(0, time.time() - (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).timestamp())
     for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
         if s >= n:
             return f"{int(s // n)}{unit}"
@@ -139,18 +145,30 @@ def short_model(m):
 
 # -- the store ---------------------------------------------------------------
 
+def gdir():
+    return Path(state.state_dir())
+
+
 def items_dir():
     return Path(state.items_dir())
 
 
 def pickup_dir():
-    return Path(state.state_dir()) / "pickup"
+    return gdir() / "pickup"
 
 
-def card(path):
+def card(path, full=True):
+    """A card's fold; full adds its brief, notes and PRs (another two reads)."""
     f = dict(WI.fold(path))
     f["kind"] = "card"
     f["path"] = path
+    if full:
+        add_brief(f)
+    return f
+
+
+def add_brief(f):
+    path = f["path"]
     f["brief"] = WI.brief_text(path)
     notes, prs = [], []
     sec = ""
@@ -163,13 +181,12 @@ def card(path):
                 notes.append(ln[p + 6:])
             prs += re.findall(r"\b(?:pr|evidence)=(https?://\S+)", ln)
     f["notes"], f["prs"] = notes, list(dict.fromkeys(prs))
-    return f
 
 
 def pickup(path):
     # claims="": a hand-off's own status is the answer; the claims ledger costs a process per file
     rec = state.work_records([str(path)], claims="").rstrip("\n").split("\037")
-    keys = ("kind", "title", "status", "until", "claim", "model", "effort", "link", "id", "updated")
+    keys = ("_kind", "title", "status", "until", "claim", "model", "effort", "link", "id", "updated")
     f = dict(zip(keys, rec + [""] * (len(keys) - len(rec))))
     text = path.read_text(errors="replace")
     head, _, body = text.partition("\n---\n")
@@ -181,8 +198,8 @@ def pickup(path):
     return f
 
 
-def all_cards():
-    return [card(p) for p in sorted(items_dir().glob("*.md"))]
+def all_cards(full=True):
+    return [card(p, full) for p in sorted(items_dir().glob("*.md"))]
 
 
 def all_pickups():
@@ -191,7 +208,7 @@ def all_pickups():
 
 
 def find_one(key):
-    if CARD_ID.fullmatch(key):
+    if state.is_card_id(key):
         p = items_dir() / f"{key}.md"
         return [p] if p.is_file() else []
     if re.fullmatch(r"[0-9]{6,17}[0-9a-f]*", key):
@@ -211,6 +228,10 @@ def live(f):
     if f["kind"] == "card":
         return f["status"] in LIVE_CARD
     return f["status"] == "open"
+
+
+def keep(f, everything):
+    return everything or live(f)
 
 
 # -- views -------------------------------------------------------------------
@@ -236,13 +257,7 @@ def show_card(o, f, verbose):
         o.say(f"PR:       {pr}")
     o.say()
     o.say(o.bold("What it's for"))
-    brief = f["brief"]
-    limit = None if verbose else 6
-    lines = textwrap.wrap(brief, o.width - 2) or ["(no brief)"]
-    for ln in lines[:limit]:
-        o.say("  " + ln)
-    if limit and len(lines) > limit:
-        o.say(o.dim(f"  … {len(lines) - limit} more lines: cwhat -v {f['id']}"))
+    o.wrap(f["brief"] or "(no brief)", limit=None if verbose else 6, more=f"cwhat -v {f['id']}")
     if f["notes"]:
         o.say()
         o.say(o.bold("Latest note"))
@@ -271,11 +286,7 @@ def show_pickup(o, f, verbose):
     if rest:
         o.say()
         o.say(o.bold("The rest of the hand-off"))
-        lines = textwrap.wrap(rest, o.width - 2)
-        for ln in lines[: None if verbose else 8]:
-            o.say("  " + ln)
-        if not verbose and len(lines) > 8:
-            o.say(o.dim(f"  … {len(lines) - 8} more lines: cwhat -v {f['id']}"))
+        o.wrap(rest, limit=None if verbose else 8, more=f"cwhat -v {f['id']}")
     if h.get("prompt"):
         o.say()
         o.say(o.bold("Your last words in that session"))
@@ -289,10 +300,7 @@ def rows(o, items, verbose, cap=12):
     for f in shown:
         lead = f"  {short_model(f.get('model')):<7} {dash(f.get('effort')):<7} {f['status']:<8} " \
                f"{ago(f.get('updated', '')):>4}  "
-        wrapped = textwrap.wrap(f["title"] or "(untitled)", o.width - len(lead)) or [""]
-        o.say(lead + wrapped[0])
-        for ln in wrapped[1:]:
-            o.say(" " * len(lead) + ln)
+        o.wrap(f["title"] or "(untitled)", lead)
         repo = dash(f.get("repo")).rsplit("/", 1)[-1]
         o.say(" " * len(lead) + o.dim(f"{f['kind']} {f['id']} · {repo}"))
     if len(items) > len(shown):
@@ -300,19 +308,18 @@ def rows(o, items, verbose, cap=12):
 
 
 def board(o, verbose, everything):
-    cards = all_cards()
-    keep = (lambda f: True) if everything else live
+    cards = all_cards(full=False)
     o.say(o.bold("cwhat") + o.dim(f" · {datetime.now().strftime('%a %d %b %H:%M')} · local files only"))
     for owner in ("human-ruling", "human-click"):
-        mine = [f for f in cards if f["owner"] == owner and keep(f)]
+        mine = [f for f in cards if f["owner"] == owner and keep(f, everything)]
         o.say()
         o.say(o.bold(f"{OWNER[owner].capitalize()} ({len(mine)})"))
         rows(o, mine, verbose, cap=8)
-    hand = [f for f in all_pickups() if keep(f)]
+    hand = [f for f in all_pickups() if keep(f, everything)]
     o.say()
     o.say(o.bold(f"Hand-offs waiting ({len(hand)}), newest first"))
     rows(o, hand, verbose, cap=8)
-    agent = [f for f in cards if f["owner"] == "agent" and keep(f)]
+    agent = [f for f in cards if f["owner"] == "agent" and keep(f, everything)]
     held = sum(1 for f in agent if f["status"] == "claimed")
     o.say()
     o.say(o.bold(f"Claude's queue: {len(agent)} cards") + f", {held} held by a session now")
@@ -326,9 +333,8 @@ def board(o, verbose, everything):
 
 def search(o, words, verbose, everything):
     ws = [w.lower() for w in words]
-    keep = (lambda f: True) if everything else live
     hits = [f for f in all_cards() + all_pickups()
-            if keep(f) and all(w in f"{f['title']} {f['brief']} {f['id']}".lower() for w in ws)]
+            if keep(f, everything) and all(w in f"{f['title']} {f['brief']} {f['id']}".lower() for w in ws)]
     o.say(o.bold(f"{len(hits)} match{'es' if len(hits) != 1 else ''} for {' '.join(words)}")
           + ("" if everything else o.dim(" (live only; -a for all)")))
     if hits:
@@ -343,7 +349,7 @@ def tools(o):
     o.say()
     for cmd, what, net in TOOLS:
         o.say("  " + o.bold(cmd) + (o.dim("  needs GitHub") if net else ""))
-        o.wrap(what, indent="      ")
+        o.wrap(what, "      ")
     o.say()
     o.say(o.dim("The rest of ~/.claude/bin is plumbing the agents and hooks call."))
 
@@ -351,10 +357,6 @@ def tools(o):
 # -- curiae, the agora, scoping ---------------------------------------------
 # A curia's layout is the curia skill's "Where a curia lives"; a scoping
 # target's, the scoping skill's §1, §2 and §6.
-
-def gdir():
-    return Path(state.state_dir())
-
 
 def curia_dirs():
     return sorted(d for d in (gdir() / "curia").glob("*/") if (d / "digest.md").is_file())
@@ -411,35 +413,30 @@ def curia_list(o, verbose):
         now = " · last sitting not closed" if c["unclosed"] else ""
         lead = f"  {c['status']:<8} {c['opened']:<10} {(ago(c['touched']) if c['touched'] else '—'):>7}  "
         line = f"{c['id']}: {c['title']}{now}"
-        wrapped = textwrap.wrap(line, o.width - len(lead)) or [""]
-        o.say(lead + wrapped[0])
-        for ln in wrapped[1:] if verbose else wrapped[1:2]:
-            o.say(" " * len(lead) + ln)
+        o.wrap(line, lead, limit=None if verbose else 2)
 
 
 def curia_show(o, c, verbose):
     o.say(o.bold(c["id"]) + f"  {c['title']}")
     o.say(o.dim(f"status {c['status']} · opened {c['opened']} · {c['path']}"))
     if c["live"]:
-        state_now = "not closed" if c["unclosed"] else "closed"
-        closed = f", closed {c['closed'][1]}" if c["closed"] and not c["unclosed"] else ""
-        o.say(f"latest sitting: {c['live'][1]}{closed} ({state_now}) · session {c['live'][0][:8]}")
+        closed = " (not closed)" if c["unclosed"] else \
+            (f", closed {c['closed'][1]} (closed)" if c["closed"] else " (closed)")
+        o.say(f"latest sitting: {c['live'][1]}{closed} · session {c['live'][0][:8]}")
     else:
         o.say(o.dim("latest sitting: none recorded"))
     o.say()
     o.say(o.bold(f"Open questions ({len(c['questions'])})"))
     for q in c["questions"] if verbose else c["questions"][:10]:
-        lines = textwrap.wrap(q if verbose else q[:300], o.width - 4) or [""]
-        o.say("  " + lines[0])
-        for ln in lines[1:]:
-            o.say("     " + ln)
+        o.wrap(q if verbose else q[:300], "  ", "     ")
     if not verbose and len(c["questions"]) > 10:
         o.say(o.dim(f"  … {len(c['questions']) - 10} more: cwhat -v curia {c['id']}"))
 
 
 def agora(o, verbose, everything):
-    keep = (lambda f: True) if everything else live
-    cards = [f for f in all_cards() if f["owner"] == "human-ruling" and keep(f)]
+    cards = [f for f in all_cards(full=False) if f["owner"] == "human-ruling" and keep(f, everything)]
+    for f in cards:
+        add_brief(f)
     briefs = gdir() / "agora" / "briefs"
     split = {"ready": [], "waiting": []}
     for f in cards:
@@ -449,10 +446,7 @@ def agora(o, verbose, everything):
         o.say()
         o.say(o.bold(f"{k.capitalize()} ({len(split[k])})"))
         for f in sorted(split[k], key=lambda f: f.get("updated", ""), reverse=True):
-            lines = textwrap.wrap(f["title"] or "(untitled)", o.width - 4) or [""]
-            o.say("  - " + lines[0])
-            for ln in lines[1:]:
-                o.say("    " + ln)
+            o.wrap(f["title"] or "(untitled)", "  - ")
             b = briefs / f"{f['id']}.md"
             o.say("    " + o.dim(f"card {f['id']} · " + (f"brief {b}" if b.is_file() else "no agora brief")))
 
@@ -497,6 +491,15 @@ def scoping(o, verbose):
                 "or a stale lock left behind."))
 
 
+def show_many(o, items, show, rule=False):
+    for i, x in enumerate(items):
+        if i:
+            o.say()
+            if rule:
+                o.say(o.dim("─" * min(o.width, 60)))
+        show(x)
+
+
 def main(argv):
     ap = argparse.ArgumentParser(prog="cwhat", add_help=True,
                                  description="Cards and hand-offs, read by a human.")
@@ -521,21 +524,14 @@ def main(argv):
         if not hits:
             o.say(f"no curia matches {w[1]}")
             curia_list(o, a.verbose)
-        for i, d in enumerate(hits):
-            if i:
-                o.say()
-            curia_show(o, curia(d), a.verbose)
+        show_many(o, hits, lambda d: curia_show(o, curia(d), a.verbose))
     elif w in (["agora"], ["docket"]):
         agora(o, a.verbose, a.all)
     elif w == ["scoping"]:
         scoping(o, a.verbose)
     elif len(a.words) == 1 and (hits := find_one(a.words[0])):
-        for i, p in enumerate(hits):
-            if i:
-                o.say()
-                o.say(o.dim("─" * min(o.width, 60)))
-            (show_card if p.parent == items_dir() else show_pickup)(
-                o, card(p) if p.parent == items_dir() else pickup(p), a.verbose)
+        show_many(o, hits, lambda p: show_card(o, card(p), a.verbose) if p.parent == items_dir()
+                  else show_pickup(o, pickup(p), a.verbose), rule=True)
     else:
         search(o, a.words, a.verbose, a.all)
     o.flush(pager=not a.no_pager)
