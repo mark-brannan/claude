@@ -93,6 +93,22 @@ def languette_record():
     return None
 
 
+def records_name():
+    """The record file's name from languette (world.RECORDS), else its known one.
+    Call after languette_record(), which puts a plugin install on sys.path."""
+    try:
+        from languette import world
+        return world.RECORDS
+    except Exception:  # noqa: BLE001
+        return "decisions.jsonl"
+
+
+def records_path(env):
+    """languette's record file under $XDG_STATE_HOME, else ~/.local/state."""
+    base = env.get("XDG_STATE_HOME") or os.path.join(env.get("HOME") or os.path.expanduser("~"), ".local", "state")
+    return os.path.join(base, "languette", records_name())
+
+
 def trace_failure(hook, event, err, stage="main", once=False):
     """A hook's handler for an error it swallows: trace it through
     lib/hooktrace.py under the session last read, or say it on stderr when

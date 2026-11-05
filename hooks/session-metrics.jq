@@ -274,6 +274,13 @@ to_entries as $E
 # Correlated by tool_use_id, not by position: one assistant turn can issue
 # several tool_use blocks that all share its transcript index, so picking the
 # nearest preceding one mislabels which call in a parallel batch was refused.
+# A refusal languette's own record shows as its deny, by call id, is a
+# guard's, not a settings rule's: both arrive as `permission-rule`.
+# `--slurpfile guards` is one object, call id -> the guard names that denied it
+# (metrics-live.py reads languette's decisions record); absent, none are
+# labelled. Label, never sum: the record only relabels transcript denials,
+# so a denial is never counted twice.
+| ((($ARGS.named.guards // [])[0]) // {}) as $guardof
 | ([ ($E[] | .key as $i | .value | {i: $i, rec: .}),
      ($subonce[] | {i: null, rec: .})
     | .i as $i | .rec | select(.toolDenialKind != null)
@@ -283,10 +290,12 @@ to_entries as $E
     | ($tool_by_id[$tid] // {}) as $tu
     | {i: $i,
        kind: (if ($k | startswith("automode")) then "classifier"
+              elif $k == "permission-rule" and ($guardof[$tid] // null) != null then "guard"
               elif $k == "permission-rule" then "rule"
               elif $k == "user-rejected" then "user"
               else $k end),
        raw: $k,
+       guards: (if $k == "permission-rule" then ($guardof[$tid] // []) else [] end),
        tool: ($tu.name // ""),
        target: ((($tu.input.command // $tu.input.file_path // "") | tostring
                   # redact before truncating: a 160-char cut can land mid-token
@@ -734,6 +743,9 @@ def price:
         total:      ($blocked | length),
         classifier: ([ $blocked[] | select(.kind == "classifier") ] | length),
         rule:       ([ $blocked[] | select(.kind == "rule") ]       | length),
+        guard:      ([ $blocked[] | select(.kind == "guard") ]      | length),
+        guards:     ([ $blocked[] | select(.kind == "guard") | .guards[] ]
+                      | group_by(.) | map({key: .[0], value: length}) | from_entries),
         user:       ([ $blocked[] | select(.kind == "user") ]       | length)
       },
       friction: {

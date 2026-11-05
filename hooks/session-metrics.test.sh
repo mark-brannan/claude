@@ -303,5 +303,14 @@ eq "main file alone: one denial" '1' "$(rsess | jq -c '.session.blocked.total')"
 eq "a sub file repeating the main denial twice, and its own twice, adds one" '[2,2]' \
    "$(rsess --slurpfile subs "$rep_sub" | jq -c '[.session.blocked.total,.session.blocked.rule]')"
 
+# --- a denial languette's record shows is labelled guard (claude#363) --------
+# One object, call id -> guard names. tu1 is languette's; tu9 is not in it, so
+# it stays a settings rule. The guard count is a relabel, never an addition.
+guards="$S/guards.json"; echo '{"tu1":["no-rm-tree"]}' > "$guards"
+eq "a denial in the languette record counts under guard, named; total unchanged" '[2,1,1,{"no-rm-tree":1}]' \
+   "$(rsess --slurpfile subs "$rep_sub" --slurpfile guards "$guards" | jq -c '.session.blocked|[.total,.guard,.rule,.guards]')"
+eq "no record: nothing is labelled guard" '[2,0,2,{}]' \
+   "$(rsess --slurpfile subs "$rep_sub" | jq -c '.session.blocked|[.total,.guard,.rule,.guards]')"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

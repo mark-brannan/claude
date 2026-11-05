@@ -73,6 +73,36 @@ PACIFIC = "America/Los_Angeles"
 WHERE = {"event": "", "session_id": ""}
 
 
+def guard_denials(sid):
+    """call id -> the guards that denied it in this session, from languette's
+    decisions record (claude#363): the file and its rotated .1 next to it, none
+    there (the record_decisions option is off) an empty map. Only this
+    session's deny lines are parsed (sub-agent calls carry the parent's
+    session_id). Never raises."""
+    lib_state.languette_record()
+    path = lib_state.records_path(os.environ)
+    found = {}
+    for p in (path + ".1", path):
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if '"verdict":"deny"' not in line or f'"session":"{sid}"' not in line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except ValueError:
+                        continue
+                    if rec.get("verdict") != "deny" or not rec.get("call"):
+                        continue
+                    names = [x.get("guard") for x in rec.get("findings") or []
+                             if isinstance(x, dict) and x.get("decision") == "deny" and x.get("guard")]
+                    have = found.setdefault(rec["call"], [])
+                    have += [n for n in (names or ["languette"]) if n not in have]
+        except OSError:
+            continue
+    return found
+
+
 class Failed(Exception):
     """A child process that did not do its job."""
 
@@ -416,13 +446,14 @@ class Hook:
         # workers were never read, so their spend and denials went uncounted
         # (claude#363).
         sub_files = sorted(glob.glob(f"{base}/subagents/**/agent-*.jsonl", recursive=True))
+        guards = guard_denials(self.sid)
         try:
-            return self.slurp(self.tp, b"".join(read_bytes(f) + b"\n" for f in sub_files))
+            return self.slurp(self.tp, b"".join(read_bytes(f) + b"\n" for f in sub_files), guards)
         except Failed:
             time.sleep(0.05)
         subs = [read_bytes(f) for f in sub_files]
         try:
-            return self.slurp(self.tp, b"".join(s + b"\n" for s in subs))
+            return self.slurp(self.tp, b"".join(s + b"\n" for s in subs), guards)
         except Failed:
             # A missing transcript is no torn line: it raises as on main,
             # rather than parse as an empty session over the cache.
@@ -433,15 +464,22 @@ class Hook:
         try:
             with os.fdopen(fd, "wb") as fh:
                 fh.write(untorn(main))
-            return self.slurp(tmp, b"".join(untorn(s) + b"\n" for s in subs))
+            return self.slurp(tmp, b"".join(untorn(s) + b"\n" for s in subs), guards)
         finally:
             os.unlink(tmp)
 
-    def slurp(self, tp, subs):
-        out = run_out(["jq", "-s", "--slurpfile", "subs", "/dev/stdin",
-                       "--arg", "sid", self.sid, "--arg", "repo", self.work_repo,
-                       "--arg", "branch", self.work_branch, "--arg", "cwd", self.cwd,
-                       "--arg", "now", self.now, "-f", JQPROG, tp], stdin=subs or b"\n")
+    def slurp(self, tp, subs, guards):
+        gfd, gpath = tempfile.mkstemp(prefix="metrics-guards-", suffix=".json")
+        try:
+            with os.fdopen(gfd, "w", encoding="utf-8") as fh:
+                json.dump(guards, fh)
+            out = run_out(["jq", "-s", "--slurpfile", "subs", "/dev/stdin",
+                           "--slurpfile", "guards", gpath,
+                           "--arg", "sid", self.sid, "--arg", "repo", self.work_repo,
+                           "--arg", "branch", self.work_branch, "--arg", "cwd", self.cwd,
+                           "--arg", "now", self.now, "-f", JQPROG, tp], stdin=subs or b"\n")
+        finally:
+            os.unlink(gpath)
         metrics = json.loads(out)
         if not isinstance(metrics, dict):
             raise Failed(f"session-metrics.jq gave {type(metrics).__name__}, not an object")

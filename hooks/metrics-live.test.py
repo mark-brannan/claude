@@ -1611,6 +1611,36 @@ class MetricsLiveTest(unittest.TestCase):
         with self.assertRaises(mod.Failed):
             h.compute()
 
+    def test_guard_denials_read_languette_record_from_its_state_dir(self):
+        """claude#363: call id -> denying guards, from the record under
+        $XDG_STATE_HOME/languette (the file and its .1); silent and ask
+        verdicts, torn lines and a missing record add nothing."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("metrics_live_under_test", HOOK)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        tmp = tempfile.mkdtemp(prefix="metrics-live-test-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        from unittest import mock
+        patch = mock.patch.dict(os.environ, {"XDG_STATE_HOME": tmp})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.assertEqual({}, mod.guard_denials("s1"))
+        d = Path(tmp) / "languette"
+        d.mkdir()
+
+        def rec(call, verdict, *guards, session="s1"):
+            return json.dumps({"session": session, "call": call, "verdict": verdict, "findings": [
+                {"guard": g, "decision": "deny"} for g in guards] + [{"guard": "other", "decision": "none"}]},
+                separators=(",", ":")) + "\n"
+        (d / "decisions.jsonl.1").write_text(rec("old", "deny", "guard-a"))
+        (d / "decisions.jsonl").write_text(rec("c1", "deny", "guard-b", "guard-c") + rec("c2", "silent")
+                                          + rec("c3", "ask", "guard-d") + '{"verdict":"deny", torn\n'
+                                          + rec("c4", "deny", "guard-e", session="other")
+                                          + rec("c1", "deny", "guard-f", "guard-b"))
+        self.assertEqual({"old": ["guard-a"], "c1": ["guard-b", "guard-c", "guard-f"]},
+                         mod.guard_denials("s1"))
+
     SECTIONS = [n for n in list(locals()) if n.startswith("section_")]
 
     def test_sections(self):
