@@ -76,7 +76,7 @@ class ReadoutsTest(unittest.TestCase):
             f"session {SID}",
             "decisions ⚖5[1/2/2]  (scoping/inline/gate)",
             "friction  ⚡3[1/1/1]  (correction/override/rebuke)",
-            "blocked   ⛔2[0/1/1/0]  (guard/rule/classifier/user)",
+            "blocked   ⛔2[1/1/0]  (classifier/rule/user)",
             "tool calls 42",
             "git events:",
             "2 commit",
