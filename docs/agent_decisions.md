@@ -607,3 +607,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261105t222428z
 - cwhat curia says 'last sitting not closed', never 'sitting now': LIVE stays after a close, so a missing or older CLOSED cannot prove a live sitting (claude#388) Undo: reword the marker (no PR, branch cwhat-work)
+
+### 20261105t222430z
+- cwhat agora reads ready vs waiting from the ruling-ref cache only, as worklist --brief does; an uncached issue ref reads ready (claude#388) Undo: drop RULING_REF_CACHE_ONLY in bin/cwhat (no PR, branch cwhat-work)
