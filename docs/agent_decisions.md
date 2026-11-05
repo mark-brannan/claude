@@ -601,3 +601,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261105t201518z
 - cwhat holds the human board view; worklist stays untouched because skills and hooks parse its output Undo: move the board view into a worklist flag ([#388](https://github.com/mark-brannan/claude/pull/388))
+
+### 20261105t222425z
+- cwhat scoping: a target with no proposal reads 'never started'; one whose newest proposal has no '## Filed' section, or that still holds a stale lock, reads 'half-done' (claude#388) Undo: change the marks in scoping() in bin/cwhat (no PR, branch cwhat-work)
