@@ -44,7 +44,7 @@ echo "session $sid"
 jq -r '
   "decisions ⚖\(.decisions.total // 0)[\(.decisions.scoping // 0)/\(.decisions.inline // 0)/\(.decisions.gate // 0)]  (scoping/inline/gate)",
   "friction  ⚡\(.friction.total // 0)[\(.friction.correction // 0)/\(.friction.override // 0)/\(.friction.rebuke // 0)]  (correction/override/rebuke)",
-  "blocked   ⛔\(.blocked.total // 0)[\(.blocked.classifier // 0)/\(.blocked.rule // 0)/\(.blocked.user // 0)]  (classifier/rule/user)",
+  "blocked   ⛔\(.blocked.total // 0)[\(.blocked.guard // 0)/\(.blocked.rule // 0)/\(.blocked.classifier // 0)/\(.blocked.user // 0)]  (guard/rule/classifier/user)",
   "tool calls \(.tool_calls // 0)"
 ' "$F"
 

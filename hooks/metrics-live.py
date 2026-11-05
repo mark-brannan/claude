@@ -73,6 +73,34 @@ PACIFIC = "America/Los_Angeles"
 WHERE = {"event": "", "session_id": ""}
 
 
+def guard_denials():
+    """call id -> the guards that denied it, from languette's decisions record
+    (claude#363). The directory is languette's own: $XDG_STATE_HOME/languette,
+    else ~/.local/state/languette, the file and its rotated .1; none there (the
+    record_decisions option is off) is an empty map. Only deny verdicts are
+    parsed, so the read stays cheap. Never raises."""
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    found = {}
+    for name in ("decisions.jsonl.1", "decisions.jsonl"):
+        try:
+            with open(os.path.join(base, "languette", name), encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if '"verdict":"deny"' not in line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except ValueError:
+                        continue
+                    if rec.get("verdict") != "deny" or not rec.get("call"):
+                        continue
+                    names = [x.get("guard") for x in rec.get("findings") or []
+                             if isinstance(x, dict) and x.get("decision") == "deny" and x.get("guard")]
+                    found[rec["call"]] = names or ["languette"]
+        except OSError:
+            continue
+    return found
+
+
 class Failed(Exception):
     """A child process that did not do its job."""
 
@@ -438,10 +466,17 @@ class Hook:
             os.unlink(tmp)
 
     def slurp(self, tp, subs):
-        out = run_out(["jq", "-s", "--slurpfile", "subs", "/dev/stdin",
-                       "--arg", "sid", self.sid, "--arg", "repo", self.work_repo,
-                       "--arg", "branch", self.work_branch, "--arg", "cwd", self.cwd,
-                       "--arg", "now", self.now, "-f", JQPROG, tp], stdin=subs or b"\n")
+        gfd, gpath = tempfile.mkstemp(prefix="metrics-guards-", suffix=".json")
+        try:
+            with os.fdopen(gfd, "w", encoding="utf-8") as fh:
+                json.dump(guard_denials(), fh)
+            out = run_out(["jq", "-s", "--slurpfile", "subs", "/dev/stdin",
+                           "--slurpfile", "guards", gpath,
+                           "--arg", "sid", self.sid, "--arg", "repo", self.work_repo,
+                           "--arg", "branch", self.work_branch, "--arg", "cwd", self.cwd,
+                           "--arg", "now", self.now, "-f", JQPROG, tp], stdin=subs or b"\n")
+        finally:
+            os.unlink(gpath)
         metrics = json.loads(out)
         if not isinstance(metrics, dict):
             raise Failed(f"session-metrics.jq gave {type(metrics).__name__}, not an object")

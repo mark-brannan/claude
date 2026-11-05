@@ -542,6 +542,9 @@ class Stop:
         def v(*keys, default=None):
             x = get(s, *keys)
             return tostr(x if default is None else alt(x, default))
+        gmap = get(s, "blocked", "guards")
+        guard_names = (" (" + ", ".join(f"{k} x{tostr(n)}" for k, n in sorted(gmap.items())) + ")"
+                       if isinstance(gmap, dict) and gmap else "")
         o += [f"- session `{v('session_id')}` · {v('model', default='?')} · started {v('started_at', default='?')}",
               f"- {v('user_turns')} prompts, {v('assistant_turns')} turns, {v('tool_calls')} tool calls",
               f"- {v('output_tokens')} output tokens, context peak {v('context_peak')}",
@@ -551,8 +554,9 @@ class Stop:
               f"{v('friction', 'override')} override, {v('friction', 'rebuke')} rebuke, "
               f"{v('friction', 'pushback')} pushback)",
               f"- blocked: {v('blocked', 'total', default=Num('0'))} tool calls refused "
-              f"({v('blocked', 'classifier', default=Num('0'))} classifier, "
-              f"{v('blocked', 'rule', default=Num('0'))} rule, "
+              f"({v('blocked', 'guard', default=Num('0'))} languette guard{guard_names}, "
+              f"{v('blocked', 'rule', default=Num('0'))} settings rule, "
+              f"{v('blocked', 'classifier', default=Num('0'))} classifier, "
               f"{v('blocked', 'user', default=Num('0'))} user-declined)"]
 
         rate = state.decision_rate(self.s("decisions", "total", default=Num("0")),
