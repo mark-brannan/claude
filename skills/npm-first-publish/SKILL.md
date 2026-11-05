@@ -47,9 +47,11 @@ one, don't change the config. Any other version: fix the config.
 An E404 on the `PUT` during `npm publish` means no trusted publisher is
 registered for that name yet, or no auth at all — not a missing package
 and not a bad build. Check `npm view <name> version` against the registry
-before touching anything. Do not edit the release workflow to fix this; a
-workflow that is correct for every later release still fails on a name
-that was never claimed.
+before touching anything. An E422 on the same `PUT`, after a provenance
+statement was published, means `repository.url` is missing or doesn't
+match the repo: fix `package.json`, not the publisher. Do not edit the
+release workflow to fix either; a workflow that is correct for every later
+release still fails on a name that was never claimed.
 
 ## Preconditions before asking
 
@@ -58,6 +60,11 @@ until they are:
 
 - the package is at 0.0.0 on the branch to publish from;
 - the dry-run above proposes 0.0.1;
+- the package's `package.json` has a `repository.url` naming the GitHub
+  repo (`directory` too, for a workspace). The hand publish of 0.0.0
+  doesn't check it; CI's provenance-signed 0.0.1 does, and an empty or
+  wrong one fails the `PUT` with E422 "Error verifying sigstore provenance
+  bundle" after the tag and GitHub release already exist;
 - `npm run build` succeeds;
 - the tests pass;
 - `npm publish --dry-run` produced the tarball and its file list has been
