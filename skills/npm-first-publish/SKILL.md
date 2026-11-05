@@ -10,13 +10,9 @@ description: Walk a new npm package through its first release, which trusted-pub
 A new package's first release is **0.0.1, published by CI**. The hand step
 only claims the name: **0.0.0, published by hand**, before any release. Then
 the trusted publisher is registered, and release-please's 0.0.1 is the first
-release CI publishes. A new package never borrows the repo's version or
-another package's.
-
-Trusted publishing can't create a name that doesn't exist yet
-([npm/cli#8544](https://github.com/npm/cli/issues/8544)), so the 0.0.0
-placeholder exists to make every real release, 0.0.1 included, a CI
-release.
+release CI publishes (trusted publishing can't create a new name,
+[npm/cli#8544](https://github.com/npm/cli/issues/8544)). A new package
+never borrows the repo's version or another package's.
 
 ## Version setup, before the hand publish
 
@@ -27,24 +23,24 @@ In `release-please-config.json`, on the new package:
 and seed `.release-please-manifest.json` with `0.0.0`, with the package's
 `package.json` (and its lockfile entry) at `0.0.0`.
 
-A seed alone does not work: a package with no earlier release ignores its
-manifest entry and takes `initial-version`, or 1.0.0 when that is unset
-(release-please's `buildNewVersion`). `release-as` is not the remedy:
-left in place it pins every later release, so it needs a second PR to
-remove (languette#160, #165). `initial-version` applies only while no
-release exists and needs no cleanup.
+A seed alone yields 1.0.0 (a package with no release ignores its manifest
+entry). Don't use `release-as`: it pins every later release too.
+`initial-version` applies only while no release exists.
 
 A package that is not the repo's root is its own release-please component,
 with component tags (`<name>-vX.Y.Z`), and the shared release workflow's
 `publish-path` names it.
 
-Prove the version before any merge, against the branch:
+Prove the version before any merge. Push the branch first: the dry-run
+reads the config from GitHub, not the checkout.
 
     npx release-please@17 release-pr --dry-run \
       --token "$(gh auth token)" --repo-url <owner/repo> \
       --target-branch <branch>
 
-The proposal must read `<name>: 0.0.1`. Anything else, fix the config first.
+The proposal must read `<name>: 0.0.1`. No proposal at all means no
+releasable commit (`feat:` or `fix:`) touches the package's path yet: add
+one, don't change the config. Any other version: fix the config.
 
 ## Diagnose first
 
@@ -69,14 +65,13 @@ until they are:
 
 ## Ask inline, not a card
 
-Ask the user in chat for the 0.0.0 publish, with each command named in
-full, starting from a checkout that exists (create the worktree in the
-command if it may not):
+Make the checkout yourself before asking: a worktree at the branch whose
+package is at 0.0.0, installed and built, with `npm publish --dry-run`
+showing `version: 0.0.0`. A version once published can never be reused,
+so never hand over a `cd` into a directory you haven't just checked
+exists. Then ask the user in chat for one command:
 
-    cd ~/<repo>          # or the PR's worktree, at 0.0.0
-    git pull --rebase
-    npm login
-    npm publish          # scoped name: add --access public
+    cd <that worktree> && npm login && npm publish   # workspace: -w <dir>; scoped name: --access public
 
 `npm login` is named explicitly rather than left implicit — a past ask that
 omitted it left them unsure what it would do.  It opens (or prints) a
