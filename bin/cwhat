@@ -8,7 +8,13 @@
 #   cwhat <id>            one card or hand-off; a card's children too.
 #                         <id> may be a card id or its first 6+ characters,
 #                         a hand-off's file name, or a session's 8 hex
-#   cwhat <word>...       the live cards and hand-offs matching every word
+#   cwhat -s <word>...    the live cards and hand-offs matching every word;
+#                         bare words that are not a subcommand search too
+#   cwhat curia [<id>]    every curia, or one (a fuzzy id): its open questions
+#                         and latest sitting
+#   cwhat agora           the decisions waiting on you, ready then waiting,
+#                         each with its agora brief; `docket` is the same
+#   cwhat scoping         every scoping target: its proposal, its lock
 #   cwhat tools           the ~/.claude/bin tools worth running yourself
 #
 #   -v, --verbose         the whole brief, every row
@@ -16,7 +22,8 @@
 #   --no-pager            print straight through (a pipe never pages)
 #
 # The file formats have one home each: a card is folded by work-item's own
-# fold, a hand-off read by lib/state.py's pickup reader.
+# fold, a hand-off read by lib/state.py's pickup reader, a decision's
+# readiness by lib/state.py's ruling_readiness, a scoping lock by scoping-lock.
 import argparse
 import importlib.machinery
 import importlib.util
@@ -33,25 +40,28 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 HERE = Path(os.path.realpath(__file__)).parent
-sys.path[:0] = [str(HERE / ".." / "lib"), os.path.expanduser("~/.claude/lib")]
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import state  # noqa: E402
 except ImportError:
     sys.exit("cwhat: lib/state.py not found (looked beside the tool and in ~/.claude/lib)")
 
 
-def _work_item():
-    path = HERE / "work-item"
+def _tool(name):
+    path = HERE / name
     if not path.is_file():
-        path = Path(os.path.expanduser("~/.claude/bin/work-item"))
-    loader = importlib.machinery.SourceFileLoader("work_item", str(path))
-    spec = importlib.util.spec_from_loader("work_item", loader)
+        path = Path(os.path.expanduser(f"~/.claude/bin/{name}"))
+    mod_name = name.replace("-", "_")
+    loader = importlib.machinery.SourceFileLoader(mod_name, str(path))
+    spec = importlib.util.spec_from_loader(mod_name, loader)
     mod = importlib.util.module_from_spec(spec)
     loader.exec_module(mod)
     return mod
 
 
-WI = _work_item()
+WI = _tool("work-item")
+os.environ["RULING_REF_CACHE_ONLY"] = "1"  # ready/waiting from the local cache only: no gh call
 
 CARD_ID = re.compile(r"[0-9]{10}[0-9a-f]{8}")
 OWNER = {"agent": "Claude's queue", "human-ruling": "needs your decision",
@@ -338,6 +348,155 @@ def tools(o):
     o.say(o.dim("The rest of ~/.claude/bin is plumbing the agents and hooks call."))
 
 
+# -- curiae, the agora, scoping ---------------------------------------------
+# A curia's layout is the curia skill's "Where a curia lives"; a scoping
+# target's, the scoping skill's §1, §2 and §6.
+
+def gdir():
+    return Path(state.state_dir())
+
+
+def curia_dirs():
+    return sorted(d for d in (gdir() / "curia").glob("*/") if (d / "digest.md").is_file())
+
+
+def stamp_line(path):
+    """(session id, ISO time) from a LIVE or CLOSED file, or None."""
+    try:
+        text = path.read_text()
+    except OSError:
+        return None
+    at = re.search(r"\d{4}-\d{2}-\d{2}T[\d:]+Z?", text)
+    sid = re.search(r"\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b", text)
+    return (sid.group(0) if sid else "?", at.group(0)) if at else None
+
+
+def curia(d):
+    text = (d / "digest.md").read_text(errors="replace")
+    head = dict(re.findall(r"^- ([a-z]+): (.*)$", text.split("\n## ", 1)[0], re.M))
+    title = next((ln[2:] for ln in text.splitlines() if ln.startswith("# ")), d.name)
+    title = re.sub(r"^Curia:\s*", "", title)
+    oq = re.search(r"^## Open questions\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+    questions = []
+    for ln in re.sub(r"<!--.*?-->", "", oq.group(1) if oq else "", flags=re.S).splitlines():
+        if re.match(r"(?:[-*]|\d+\.)\s+", ln):
+            questions.append(ln.strip())
+        elif questions and ln.startswith((" ", "\t")) and ln.strip():
+            questions[-1] += " " + ln.strip()
+    live, closed = stamp_line(d / "LIVE"), stamp_line(d / "CLOSED")
+    opened = re.search(r"\d{4}-\d{2}-\d{2}", head.get("opened", ""))
+    return {"id": d.name, "title": title, "status": head.get("status", "open").split()[0],
+            "opened": opened.group(0) if opened else "?", "live": live, "closed": closed,
+            "touched": max((x[1] for x in (live, closed) if x), default=""),
+            "unclosed": bool(live and (not closed or closed[1] < live[1])),
+            "questions": questions, "path": d}
+
+
+def find_curia(key):
+    ds = {d.name: d for d in curia_dirs()}
+    if key in ds:
+        return [ds[key]]
+    hits = [d for n, d in ds.items() if n.startswith(key)] or [d for n, d in ds.items() if key in n]
+    if not hits:
+        import difflib
+        hits = [ds[n] for n in difflib.get_close_matches(key, list(ds), n=3, cutoff=0.5)]
+    return hits
+
+
+def curia_list(o, verbose):
+    cs = sorted((curia(d) for d in curia_dirs()), key=lambda c: c["touched"], reverse=True)
+    o.say(o.bold(f"Curiae ({len(cs)})") + o.dim(" · newest-touched first · cwhat curia <id> for one"))
+    o.say(o.dim(f"  {'status':<8} {'opened':<10} {'touched':>7}  id: question"))
+    for c in cs:
+        now = " · last sitting not closed" if c["unclosed"] else ""
+        lead = f"  {c['status']:<8} {c['opened']:<10} {(ago(c['touched']) if c['touched'] else '—'):>7}  "
+        line = f"{c['id']}: {c['title']}{now}"
+        wrapped = textwrap.wrap(line, o.width - len(lead)) or [""]
+        o.say(lead + wrapped[0])
+        for ln in wrapped[1:] if verbose else wrapped[1:2]:
+            o.say(" " * len(lead) + ln)
+
+
+def curia_show(o, c, verbose):
+    o.say(o.bold(c["id"]) + f"  {c['title']}")
+    o.say(o.dim(f"status {c['status']} · opened {c['opened']} · {c['path']}"))
+    if c["live"]:
+        state_now = "not closed" if c["unclosed"] else "closed"
+        closed = f", closed {c['closed'][1]}" if c["closed"] and not c["unclosed"] else ""
+        o.say(f"latest sitting: {c['live'][1]}{closed} ({state_now}) · session {c['live'][0][:8]}")
+    else:
+        o.say(o.dim("latest sitting: none recorded"))
+    o.say()
+    o.say(o.bold(f"Open questions ({len(c['questions'])})"))
+    for q in c["questions"] if verbose else c["questions"][:10]:
+        lines = textwrap.wrap(q if verbose else q[:300], o.width - 4) or [""]
+        o.say("  " + lines[0])
+        for ln in lines[1:]:
+            o.say("     " + ln)
+    if not verbose and len(c["questions"]) > 10:
+        o.say(o.dim(f"  … {len(c['questions']) - 10} more: cwhat -v curia {c['id']}"))
+
+
+def agora(o, verbose, everything):
+    keep = (lambda f: True) if everything else live
+    cards = [f for f in all_cards() if f["owner"] == "human-ruling" and keep(f)]
+    briefs = gdir() / "agora" / "briefs"
+    split = {"ready": [], "waiting": []}
+    for f in cards:
+        split[state.ruling_readiness(f"{f['title']} {f['brief']}".replace("\n", " "))].append(f)
+    o.say(o.bold(f"The agora docket ({len(cards)})") + o.dim(" · as worklist splits it, from cached refs"))
+    for k in ("ready", "waiting"):
+        o.say()
+        o.say(o.bold(f"{k.capitalize()} ({len(split[k])})"))
+        for f in sorted(split[k], key=lambda f: f.get("updated", ""), reverse=True):
+            lines = textwrap.wrap(f["title"] or "(untitled)", o.width - 4) or [""]
+            o.say("  - " + lines[0])
+            for ln in lines[1:]:
+                o.say("    " + ln)
+            b = briefs / f"{f['id']}.md"
+            o.say("    " + o.dim(f"card {f['id']} · " + (f"brief {b}" if b.is_file() else "no agora brief")))
+
+
+def scoping_targets():
+    """(target, folder, its proposals, newest last) for every scoping lock folder and every
+    curia with a scoping proposal or a lock."""
+    out = [(d.name, d, sorted(d.glob("*-scoping-proposal*.md")))
+           for d in sorted((gdir() / "scoping").glob("*/"))]
+    for d in curia_dirs():
+        props = sorted((d / "inputs").glob("*-scoping-proposal*.md"))
+        if props or (d / "LOCK").is_file():
+            out.append((f"curia {d.name}", d, props))
+    return out
+
+
+def scoping(o, verbose):
+    sl = _tool("scoping-lock")
+    rows_ = []
+    for name, d, props in scoping_targets():
+        last = props[-1] if props else None
+        filed = bool(last and re.search(r"^## Filed\b", last.read_text(errors="replace"), re.M))
+        lock = (d / "LOCK").read_text().strip() if (d / "LOCK").is_file() else ""
+        lk = sl.describe(lock) if lock else None
+        if not last:
+            mark = "never started"
+        elif not filed or (lk and lk[0] == "stale"):
+            mark = "half-done"
+        else:
+            mark = ""
+        rows_.append((last.name[:10] if last else "", name, "filed" if filed else ("proposed" if last else "—"),
+                      lk, mark, len(props)))
+    rows_.sort(key=lambda r: r[0], reverse=True)
+    o.say(o.bold(f"Scoping targets ({len(rows_)})") + o.dim(" · newest proposal first"))
+    o.say(o.dim(f"  {'proposal':<10} {'status':<9} {'lock':<18} target"))
+    for date, name, st, lk, mark, n in rows_:
+        lock = f"{lk[0]} {lk[1][:8]} {lk[4]}m" if lk else "—"
+        extra = (f"  ({n} proposals)" if n > 1 and verbose else "") + (f"  {mark}" if mark else "")
+        o.say(f"  {date or '—':<10} {st:<9} {lock:<18} {name}" + (o.bold(extra) if mark else o.dim(extra)))
+    o.say()
+    o.say(o.dim("filed: the proposal records what it filed. half-done: proposed and never filed, "
+                "or a stale lock left behind."))
+
+
 def main(argv):
     ap = argparse.ArgumentParser(prog="cwhat", add_help=True,
                                  description="Cards and hand-offs, read by a human.")
@@ -345,12 +504,31 @@ def main(argv):
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("-a", "--all", action="store_true")
     ap.add_argument("--no-pager", action="store_true")
+    ap.add_argument("-s", "--search", action="store_true", help="search for the words")
     a = ap.parse_args(argv)
     o = Out()
-    if not a.words:
+    w = a.words
+    if a.search and w:
+        search(o, w, a.verbose, a.all)
+    elif not w:
         board(o, a.verbose, a.all)
-    elif a.words == ["tools"]:
+    elif w == ["tools"]:
         tools(o)
+    elif w == ["curia"]:
+        curia_list(o, a.verbose)
+    elif w[0] == "curia" and len(w) == 2:
+        hits = find_curia(w[1])
+        if not hits:
+            o.say(f"no curia matches {w[1]}")
+            curia_list(o, a.verbose)
+        for i, d in enumerate(hits):
+            if i:
+                o.say()
+            curia_show(o, curia(d), a.verbose)
+    elif w in (["agora"], ["docket"]):
+        agora(o, a.verbose, a.all)
+    elif w == ["scoping"]:
+        scoping(o, a.verbose)
     elif len(a.words) == 1 and (hits := find_one(a.words[0])):
         for i, p in enumerate(hits):
             if i:
