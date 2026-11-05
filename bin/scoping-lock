@@ -138,8 +138,7 @@ def sync():
     # tree, and saves the autostash to the stash list. Either way the clone
     # is clean again, so one more pull settles a stale dir on this call.
     if not git("rebase", "--abort"):
-        git("rebase", "--quit")
-        if git("pull", "--rebase", "--autostash", "-q", timeout=120):
+    if not git("rebase", "--abort") and git("rebase", "--quit"):
             return True
         git("rebase", "--abort")
     return False
