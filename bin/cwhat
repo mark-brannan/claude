@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+# cwhat -- the cards and hand-offs, read by a human: what each one is for and
+# which model and effort to run it with. Reads the state repo's files only:
+# no tokens, no network, no writes.
+#
+#   cwhat                 the board: what needs you, the newest hand-offs,
+#                         and how big Claude's queue is
+#   cwhat <id>            one card or hand-off; a card's children too.
+#                         <id> may be a card id or its first 6+ characters,
+#                         a hand-off's file name, or a session's 8 hex
+#   cwhat <word>...       the live cards and hand-offs matching every word
+#   cwhat tools           the ~/.claude/bin tools worth running yourself
+#
+#   -v, --verbose         the whole brief, every row
+#   -a, --all             include done, closed and taken
+#   --no-pager            print straight through (a pipe never pages)
+#
+# The file formats have one home each: a card is folded by work-item's own
+# fold, a hand-off read by lib/state.py's pickup reader.
+import argparse
+import importlib.machinery
+import importlib.util
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import textwrap
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+HERE = Path(os.path.realpath(__file__)).parent
+sys.path[:0] = [str(HERE / ".." / "lib"), os.path.expanduser("~/.claude/lib")]
+try:
+    import state  # noqa: E402
+except ImportError:
+    sys.exit("cwhat: lib/state.py not found (looked beside the tool and in ~/.claude/lib)")
+
+
+def _work_item():
+    path = HERE / "work-item"
+    if not path.is_file():
+        path = Path(os.path.expanduser("~/.claude/bin/work-item"))
+    loader = importlib.machinery.SourceFileLoader("work_item", str(path))
+    spec = importlib.util.spec_from_loader("work_item", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+WI = _work_item()
+
+CARD_ID = re.compile(r"[0-9]{10}[0-9a-f]{8}")
+OWNER = {"agent": "Claude's queue", "human-ruling": "needs your decision",
+         "human-click": "your click work"}
+LIVE_CARD = {"open", "ready", "claimed", "blocked"}
+TOOLS = [  # (command, what it answers, needs the network)
+    ("worklist [project]", "the agents' board view; `worklist card <id>` for one card", True),
+    ("pickup-list find <word>", "hand-offs matching a word, any status", False),
+    ("work-item show <id>", "a card's raw file: brief and every log line", False),
+    ("self-check", "is the live ~/.claude the one on main, and are the hooks firing", True),
+    ("spend [--by repo|day|bot]", "what the sessions cost, by PR, repo, day or hour", False),
+    ("metrics-db && metrics-dashboard", "build the metrics SQLite, then its HTML page", False),
+    ("reply-length", "how long replies run and how long you take to answer", False),
+    ("pr-blockers <owner/repo#n>", "what still stands between a PR and your turn", True),
+    ("github-limits [dir] --offline", "a repo measured against GitHub's documented limits", False),
+    ("prune-branches / prune-worktrees", "what is safe to delete; nothing goes without --delete", True),
+]
+
+
+class Out:
+    def __init__(self):
+        self.tty = sys.stdout.isatty()
+        self.color = self.tty and not os.environ.get("NO_COLOR")
+        self.width = min(shutil.get_terminal_size((100, 24)).columns, 110)
+        self.lines = []
+
+    def _sgr(self, code, s):
+        return f"\033[{code}m{s}\033[0m" if self.color and s else s
+
+    def bold(self, s):
+        return self._sgr("1", s)
+
+    def dim(self, s):
+        return self._sgr("2", s)
+
+    def say(self, s=""):
+        self.lines.append(s)
+
+    def wrap(self, s, indent="  ", style=None):
+        for ln in textwrap.wrap(s, self.width - len(indent)) or [""]:
+            self.say(indent + (style(ln) if style else ln))
+
+    def flush(self, pager=True):
+        text = "\n".join(self.lines) + "\n"
+        rows = shutil.get_terminal_size((100, 24)).lines
+        if pager and self.tty and len(self.lines) >= rows:
+            cmd = os.environ.get("PAGER") or "less -FRX"
+            try:
+                subprocess.run(shlex.split(cmd), input=text, text=True)
+                return
+            except OSError:
+                pass
+        sys.stdout.write(text)
+
+
+def ago(iso):
+    try:
+        t = datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return "?"
+    s = max(0, time.time() - t.timestamp())
+    for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
+        if s >= n:
+            return f"{int(s // n)}{unit}"
+    return "now"
+
+
+def dash(v):
+    return v if v and v != "-" else "—"
+
+
+def short_model(m):
+    return state._mshort(m or "") or "—"
+
+
+# -- the store ---------------------------------------------------------------
+
+def items_dir():
+    return Path(state.items_dir())
+
+
+def pickup_dir():
+    return Path(state.state_dir()) / "pickup"
+
+
+def card(path):
+    f = dict(WI.fold(path))
+    f["kind"] = "card"
+    f["path"] = path
+    f["brief"] = WI.brief_text(path)
+    notes, prs = [], []
+    sec = ""
+    for ln in path.read_text().splitlines():
+        if ln.startswith("## "):
+            sec = ln[3:].strip()
+        elif sec == "Log":
+            p = ln.find(" note=")
+            if p >= 0:
+                notes.append(ln[p + 6:])
+            prs += re.findall(r"\b(?:pr|evidence)=(https?://\S+)", ln)
+    f["notes"], f["prs"] = notes, list(dict.fromkeys(prs))
+    return f
+
+
+def pickup(path):
+    # claims="": a hand-off's own status is the answer; the claims ledger costs a process per file
+    rec = state.work_records([str(path)], claims="").rstrip("\n").split("\037")
+    keys = ("kind", "title", "status", "until", "claim", "model", "effort", "link", "id", "updated")
+    f = dict(zip(keys, rec + [""] * (len(keys) - len(rec))))
+    text = path.read_text(errors="replace")
+    head, _, body = text.partition("\n---\n")
+    hf = dict(re.findall(r"^([a-z_]+): ?(.*)$", head, re.M))
+    f["kind"], f["path"], f["head"] = "hand-off", path, hf
+    f["brief"] = " ".join(ln.strip() for ln in body.splitlines()
+                          if ln.strip() and not re.match(r"(until|effort|link|model):", ln))
+    f["repo"] = hf.get("branch", "").split(" ")[0]
+    return f
+
+
+def all_cards():
+    return [card(p) for p in sorted(items_dir().glob("*.md"))]
+
+
+def all_pickups():
+    d = pickup_dir()
+    return [pickup(p) for p in sorted(list(d.glob("*.md")) + list(d.glob("*/*.md")))]
+
+
+def find_one(key):
+    if CARD_ID.fullmatch(key):
+        p = items_dir() / f"{key}.md"
+        return [p] if p.is_file() else []
+    if re.fullmatch(r"[0-9]{6,17}[0-9a-f]*", key):
+        hits = sorted(items_dir().glob(f"{key}*.md"))
+        if hits:
+            return hits
+    d = pickup_dir()
+    name = key[:-3] if key.endswith(".md") else key
+    hits = sorted(d.glob(f"{name}.md")) + sorted(d.glob(f"*/{name}.md"))
+    if not hits and re.fullmatch(r"[0-9a-f]{8}([0-9a-f-]{28})?", key):
+        sid8 = key.replace("-", "")[:8]
+        hits = sorted(d.glob(f"*-{sid8}.md")) + sorted(d.glob(f"*/*-{sid8}.md"))
+    return hits
+
+
+def live(f):
+    if f["kind"] == "card":
+        return f["status"] in LIVE_CARD
+    return f["status"] == "open"
+
+
+# -- views -------------------------------------------------------------------
+
+def run_with(o, f):
+    m, e = short_model(f.get("model")), dash(f.get("effort"))
+    return o.bold(f"{m} · {e}") if m != "—" or e != "—" else o.dim("— (none recorded)")
+
+
+def show_card(o, f, verbose):
+    o.say(o.bold(f["title"]))
+    where = dash(f["repo"]).rsplit("/", 1)[-1]
+    held = f" by {f['holder']}" if f["holder"] else ""
+    o.say(o.dim(f"card {f['id']} · {OWNER.get(f['owner'], f['owner'])} · "
+                f"{f['status']}{held} · {where}"))
+    o.say(f"run with: {run_with(o, f)}")
+    if f["parent"] not in ("", "-"):
+        pp = items_dir() / f"{f['parent']}.md"
+        title = WI.fold(pp)[1][1] if pp.is_file() else "(not in the store)"
+        o.say(f"part of:  {f['parent']}  {title}")
+    o.say(o.dim(f"created {ago(f['created'])} ago · updated {ago(f['updated'])} ago"))
+    for pr in f["prs"]:
+        o.say(f"PR:       {pr}")
+    o.say()
+    o.say(o.bold("What it's for"))
+    brief = f["brief"]
+    limit = None if verbose else 6
+    lines = textwrap.wrap(brief, o.width - 2) or ["(no brief)"]
+    for ln in lines[:limit]:
+        o.say("  " + ln)
+    if limit and len(lines) > limit:
+        o.say(o.dim(f"  … {len(lines) - limit} more lines: cwhat -v {f['id']}"))
+    if f["notes"]:
+        o.say()
+        o.say(o.bold("Latest note"))
+        o.wrap(f["notes"][-1])
+    kids = [card(p) for p in sorted(items_dir().glob("*.md"))
+            if f"parent={f['id']}" in p.read_text()]
+    kids = [k for k in kids if k["parent"] == f["id"]]
+    if kids:
+        o.say()
+        o.say(o.bold(f"Children ({len(kids)})"))
+        rows(o, kids, verbose=True)
+
+
+def show_pickup(o, f, verbose):
+    h = f["head"]
+    o.say(o.bold(f["title"] or "(empty hand-off)"))
+    o.say(o.dim(f"hand-off {f['id']} · {f['status']} · written by a "
+                f"{h.get('model', '?')} session"))
+    o.say(f"run with: {run_with(o, f)}")
+    if f["link"]:
+        o.say(f"link:     {f['link']}")
+    if h.get("branch"):
+        o.say(f"branch:   {h['branch']}")
+    o.say(o.dim(f"updated {ago(f['updated'])} ago · session {h.get('session', '?')}"))
+    rest = f["brief"][len(f["title"]):].strip() if f["brief"].startswith(f["title"]) else f["brief"]
+    if rest:
+        o.say()
+        o.say(o.bold("The rest of the hand-off"))
+        lines = textwrap.wrap(rest, o.width - 2)
+        for ln in lines[: None if verbose else 8]:
+            o.say("  " + ln)
+        if not verbose and len(lines) > 8:
+            o.say(o.dim(f"  … {len(lines) - 8} more lines: cwhat -v {f['id']}"))
+    if h.get("prompt"):
+        o.say()
+        o.say(o.bold("Your last words in that session"))
+        o.wrap(h["prompt"], style=o.dim)
+
+
+def rows(o, items, verbose, cap=12):
+    items = sorted(items, key=lambda f: f.get("updated", ""), reverse=True)
+    shown = items if verbose else items[:cap]
+    o.say(o.dim(f"  {'model':<7} {'effort':<7} {'status':<8} {'age':>4}  what"))
+    for f in shown:
+        lead = f"  {short_model(f.get('model')):<7} {dash(f.get('effort')):<7} {f['status']:<8} " \
+               f"{ago(f.get('updated', '')):>4}  "
+        wrapped = textwrap.wrap(f["title"] or "(untitled)", o.width - len(lead)) or [""]
+        o.say(lead + wrapped[0])
+        for ln in wrapped[1:]:
+            o.say(" " * len(lead) + ln)
+        repo = dash(f.get("repo")).rsplit("/", 1)[-1]
+        o.say(" " * len(lead) + o.dim(f"{f['kind']} {f['id']} · {repo}"))
+    if len(items) > len(shown):
+        o.say(o.dim(f"  … {len(items) - len(shown)} more (-v for all)"))
+
+
+def board(o, verbose, everything):
+    cards = all_cards()
+    keep = (lambda f: True) if everything else live
+    o.say(o.bold("cwhat") + o.dim(f" · {datetime.now().strftime('%a %d %b %H:%M')} · local files only"))
+    for owner in ("human-ruling", "human-click"):
+        mine = [f for f in cards if f["owner"] == owner and keep(f)]
+        o.say()
+        o.say(o.bold(f"{OWNER[owner].capitalize()} ({len(mine)})"))
+        rows(o, mine, verbose, cap=8)
+    hand = [f for f in all_pickups() if keep(f)]
+    o.say()
+    o.say(o.bold(f"Hand-offs waiting ({len(hand)}), newest first"))
+    rows(o, hand, verbose, cap=8)
+    agent = [f for f in cards if f["owner"] == "agent" and keep(f)]
+    held = sum(1 for f in agent if f["status"] == "claimed")
+    o.say()
+    o.say(o.bold(f"Claude's queue: {len(agent)} cards") + f", {held} held by a session now")
+    o.say(o.dim("  cwhat <word> searches it"))
+    o.say()
+    o.say(o.dim("ids: a card is 10 digits (when it was made, Unix seconds) + 8 hex, "
+                "e.g. 1793905381fff197bb;"))
+    o.say(o.dim("     a hand-off is <date>T<time>-<the session's first 8 hex>. "
+                "cwhat <id> explains either."))
+
+
+def search(o, words, verbose, everything):
+    ws = [w.lower() for w in words]
+    keep = (lambda f: True) if everything else live
+    hits = [f for f in all_cards() + all_pickups()
+            if keep(f) and all(w in f"{f['title']} {f['brief']} {f['id']}".lower() for w in ws)]
+    o.say(o.bold(f"{len(hits)} match{'es' if len(hits) != 1 else ''} for {' '.join(words)}")
+          + ("" if everything else o.dim(" (live only; -a for all)")))
+    if hits:
+        rows(o, hits, verbose)
+        if len(hits) == 1:
+            o.say()
+            (show_card if hits[0]["kind"] == "card" else show_pickup)(o, hits[0], verbose)
+
+
+def tools(o):
+    o.say(o.bold("Tools you can run yourself") + o.dim(" (all in ~/.claude/bin, on your PATH)"))
+    o.say()
+    for cmd, what, net in TOOLS:
+        o.say("  " + o.bold(cmd) + (o.dim("  needs GitHub") if net else ""))
+        o.wrap(what, indent="      ")
+    o.say()
+    o.say(o.dim("The rest of ~/.claude/bin is plumbing the agents and hooks call."))
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="cwhat", add_help=True,
+                                 description="Cards and hand-offs, read by a human.")
+    ap.add_argument("words", nargs="*")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("-a", "--all", action="store_true")
+    ap.add_argument("--no-pager", action="store_true")
+    a = ap.parse_args(argv)
+    o = Out()
+    if not a.words:
+        board(o, a.verbose, a.all)
+    elif a.words == ["tools"]:
+        tools(o)
+    elif len(a.words) == 1 and (hits := find_one(a.words[0])):
+        for i, p in enumerate(hits):
+            if i:
+                o.say()
+                o.say(o.dim("─" * min(o.width, 60)))
+            (show_card if p.parent == items_dir() else show_pickup)(
+                o, card(p) if p.parent == items_dir() else pickup(p), a.verbose)
+    else:
+        search(o, a.words, a.verbose, a.all)
+    o.flush(pager=not a.no_pager)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except BrokenPipeError:
+        sys.exit(0)
+    except WI.Exit as e:
+        sys.exit(f"cwhat: {e}")
