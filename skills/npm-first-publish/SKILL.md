@@ -51,6 +51,10 @@ before touching anything. Do not edit the release workflow to fix this; a
 workflow that is correct for every later release still fails on a name
 that was never claimed.
 
+An E422 on the same `PUT`, after a provenance statement was published,
+means `repository.url` is missing or doesn't match the repo: fix
+`package.json`; the workflow and the publisher are fine.
+
 ## Preconditions before asking
 
 All of these must already be green. Fix whichever is red; don't ask the user
@@ -58,6 +62,9 @@ until they are:
 
 - the package is at 0.0.0 on the branch to publish from;
 - the dry-run above proposes 0.0.1;
+- `npm pkg get repository` names the GitHub repo (with `directory` for a
+  workspace); the hand publish of 0.0.0 doesn't check it, CI's
+  provenance-signed 0.0.1 does;
 - `npm run build` succeeds;
 - the tests pass;
 - `npm publish --dry-run` produced the tarball and its file list has been
