@@ -1286,8 +1286,11 @@ class Stop:
             # moving HEAD or the tree and saves the autostash to the stash
             # list; the second attempt then pulls clean.
             if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
-                if not git_ok("rebase", "--abort"):
-                    git_ok("rebase", "--quit")
+                if not git_ok("rebase", "--abort") and git_ok("rebase", "--quit"):
+                    # Cleared, but still behind origin: pull again now so the
+                    # push below lands on this attempt, not the reserve one.
+                    if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
+                        git_ok("rebase", "--abort")
             if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
                 if cloud:
                     # Park the clone on main so the harness's own stop check

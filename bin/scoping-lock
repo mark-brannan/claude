@@ -135,9 +135,13 @@ def sync():
         return True
     # --abort refuses a rebase-merge dir left holding only an autostash (a
     # rebase killed before it began); --quit clears it, keeps HEAD and the
-    # tree, and saves the autostash to the stash list.
+    # tree, and saves the autostash to the stash list. Either way the clone
+    # is clean again, so one more pull settles a stale dir on this call.
     if not git("rebase", "--abort"):
         git("rebase", "--quit")
+        if git("pull", "--rebase", "--autostash", "-q", timeout=120):
+            return True
+        git("rebase", "--abort")
     return False
 
 

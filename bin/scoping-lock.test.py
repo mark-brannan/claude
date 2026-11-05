@@ -196,6 +196,31 @@ class ScopingLockTest(unittest.TestCase):
                            capture_output=True, text=True)
         self.assertEqual(0, p.returncode, p.stderr)
 
+    def test_12_a_stale_rebase_dir_costs_nothing(self):
+        # A rebase killed before it began leaves rebase-merge/autostash alone:
+        # `pull --rebase` refuses to start and `rebase --abort` refuses too.
+        # The first take must clear it, pull again and succeed.
+        S = self.S
+        git("clone", "-q", "origin.git", "d", cwd=S)
+        d2 = D + "-stale"
+        (S / "d" / d2).mkdir(parents=True)
+        (S / "d" / d2 / "digest.md").write_text("record\n")
+        for args in (["add", "."], ["commit", "-qm", "stale-case"], ["push", "-q", "origin", "HEAD:main"]):
+            git(*args, cwd=S / "d")
+        git("clone", "-q", "origin.git", "e", cwd=S)
+        # A local commit and an origin that moved make the pull a real rebase.
+        git("commit", "-q", "--allow-empty", "-m", "local", cwd=S / "e")
+        git("commit", "-q", "--allow-empty", "-m", "origin-ahead", cwd=S / "d")
+        git("push", "-q", "origin", "HEAD:main", cwd=S / "d")
+        gd = Path(subprocess.run(["git", "rev-parse", "--absolute-git-dir"], cwd=S / "e",
+                                 capture_output=True, text=True, check=True).stdout.strip())
+        (gd / "rebase-merge").mkdir()
+        (gd / "rebase-merge" / "autostash").write_text(
+            subprocess.run(["git", "rev-parse", "HEAD"], cwd=S / "e", capture_output=True, text=True).stdout)
+        rc, out = self.run_sl("e", "take", d2, "sid-stale", str(S / "e" / d2 / "digest.md"))
+        self.assertEqual(0, rc, out)
+        self.assertFalse((gd / "rebase-merge").is_dir(), "the stale dir is cleared")
+
 
 if __name__ == "__main__":
     unittest.main()
