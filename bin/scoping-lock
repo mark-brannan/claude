@@ -133,7 +133,11 @@ def sync():
     """Bring origin's copy of every lock in before reading this one."""
     if git("pull", "--rebase", "--autostash", "-q", timeout=120):
         return True
-    git("rebase", "--abort")
+    # --abort refuses a rebase-merge dir left holding only an autostash (a
+    # rebase killed before it began); --quit clears it, keeps HEAD and the
+    # tree, and saves the autostash to the stash list.
+    if not git("rebase", "--abort"):
+        git("rebase", "--quit")
     return False
 
 

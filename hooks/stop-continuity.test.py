@@ -979,6 +979,37 @@ class StopContinuityTest(unittest.TestCase):
         w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SREPO)
         self.assertEqual(pulls(), p0, "failed push: the next Stop in the window does not try again")
 
+        # --- a stale rebase-merge dir holding only an autostash is cleared ----
+        # A rebase killed before it began leaves just `autostash` behind:
+        # `pull --rebase` refuses to start and `rebase --abort` refuses too (no
+        # head-name), so every later Stop committed and none pushed. The Stop
+        # clears it, keeps the autostash in the stash list, and pushes.
+        STALE = w.S / "state-stale"
+        sh("git", "clone", "-q", "-b", "main", str(SRORIGIN), str(STALE), env=w.base)
+        w.git(STALE, "config", "user.name", "t")
+        w.git(STALE, "config", "user.email", "t@example.invalid")
+        w.gitq(SRCLONE, "pull", "-q", "--rebase")
+        (SRCLONE / "state" / "global" / "ahead.txt").write_text("ahead\n")
+        w.gitq(SRCLONE, "add", "state/global/ahead.txt")
+        w.gitq(SRCLONE, "commit", "-m", "origin-ahead")
+        w.gitq(SRCLONE, "push", "origin", "main")
+        (STALE / "untracked-keep.txt").write_text("keep\n")
+        sgd = Path(w.git(STALE, "rev-parse", "--absolute-git-dir"))
+        (STALE / "state" / "global" / "dirty.txt").write_text("dirty\n")
+        w.gitq(STALE, "add", "state/global/dirty.txt")
+        auto = w.git(STALE, "stash", "create")
+        w.gitq(STALE, "reset", "-q")
+        (STALE / "state" / "global" / "dirty.txt").unlink()
+        (sgd / "rebase-merge").mkdir()
+        (sgd / "rebase-merge" / "autostash").write_text(auto + "\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=STALE, CLAUDE_CODE_REMOTE="true")
+        self.assertFalse((sgd / "rebase-merge").is_dir(), "stale rebase: the dir is cleared")
+        self.assertIn(auto, w.git(STALE, "stash", "list", "--format=%H"), "stale rebase: the autostash is kept")
+        self.assertEqual(w.git(STALE, "rev-list", "--left-right", "--count", "HEAD...origin/main"), "0\t0",
+                         "stale rebase: the clone is even with origin")
+        self.assertEqual(subject(SRORIGIN), f"State: work session {SID[:8]}", "stale rebase: the Stop's commit landed")
+        self.assertTrue((STALE / "untracked-keep.txt").is_file(), "stale rebase: untracked files untouched")
+
         # --- the board's items/ are committed like any other state ------------
         # No lint stands between an item and the commit; the push lock is
         # still released. (The failed push above holds the window, so this

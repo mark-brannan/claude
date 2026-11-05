@@ -1279,9 +1279,15 @@ class Stop:
             pull = ("origin", "main") if cloud else ()
             # A conflicted rebase left in place wedges this clone for every
             # later Stop and every hand commit; back out, and let the push
-            # below fail and say so.
+            # below fail and say so. A rebase killed before it began leaves a
+            # rebase-merge dir holding only its autostash: --abort refuses
+            # that (no head-name), and every later pull refuses to start, so
+            # the clone commits and never pushes. --quit clears it without
+            # moving HEAD or the tree and saves the autostash to the stash
+            # list; the second attempt then pulls clean.
             if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
-                git_ok("rebase", "--abort")
+                if not git_ok("rebase", "--abort"):
+                    git_ok("rebase", "--quit")
             if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
                 if cloud:
                     # Park the clone on main so the harness's own stop check
