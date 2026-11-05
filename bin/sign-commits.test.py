@@ -188,6 +188,13 @@ class SignCommitsTest(unittest.TestCase):
         self.assertIn("+ git merge --ff-only origin/feature\n", out)
         self.assertNotIn("nothing to re-sign", out)  # a stale branch never briefs as signed
 
+    def test_a_failed_fast_forward_stops_before_the_brief(self):
+        self.origin_ahead()
+        rc, calls, out, err = self.go([], REBASE, fail=[("merge",)])
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls[-1][:2], ["merge", "--ff-only"])  # no rebase, no push after it
+        self.assertIn("fast-forward to origin/feature failed", err)
+
     def test_a_branch_diverged_from_origin_is_refused(self):
         self.origin_ahead(local_extra=True)
         rc, calls, out, err = self.go([], REBASE)

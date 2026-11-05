@@ -113,7 +113,10 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
             err.write(f"sign-commits: no local branch {br}; `git switch {br}` makes it from origin/{br}, then re-run\n")
             return 1
         p = git("rev-list", "--left-right", "--count", f"refs/heads/{br}...refs/remotes/origin/{br}")
-        ahead, behind = (int(x) for x in p.stdout.split()) if p.returncode == 0 else (0, 0)
+        if p.returncode:
+            err.write(f"sign-commits: could not compare {br} with origin/{br}; nothing touched\n")
+            return 1
+        ahead, behind = (int(x) for x in p.stdout.split())
         if ahead and behind:
             err.write(f"sign-commits: {br} and origin/{br} have diverged ({ahead} local-only, {behind} origin-only "
                       "commit(s)); reconcile them by hand first -- a leased push would drop origin's\n")
