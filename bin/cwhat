@@ -219,7 +219,7 @@ def show_card(o, f, verbose):
     o.say(f"run with: {run_with(o, f)}")
     if f["parent"] not in ("", "-"):
         pp = items_dir() / f"{f['parent']}.md"
-        title = WI.fold(pp)[1][1] if pp.is_file() else "(not in the store)"
+        title = dict(WI.fold(pp))["title"] if pp.is_file() else "(not in the store)"
         o.say(f"part of:  {f['parent']}  {title}")
     o.say(o.dim(f"created {ago(f['created'])} ago · updated {ago(f['updated'])} ago"))
     for pr in f["prs"]:

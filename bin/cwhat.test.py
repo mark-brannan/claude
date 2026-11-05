@@ -14,6 +14,8 @@ from pathlib import Path
 
 CW = Path(__file__).resolve().parent / "cwhat"
 PARENT, CHILD, DONE = "1793905381fff197bb", "1793905382406fcc69", "1793905383aaaaaaaa"
+ASK, ASKED = "1793905390bbbbbbbb", "1793905391cccccccc"
+LONG = " ".join(f"word{i}" for i in range(400))
 
 
 def card(d, cid, title, log, brief="A brief about zebras."):
@@ -34,7 +36,10 @@ class Cwhat(unittest.TestCase):
              f"2026-11-05T19:03:02Z bba7f7f1 status=ready owner=agent parent={PARENT} model=opus effort=high\n"
              "2026-11-05T19:32:45Z d94d2d56 pr=https://github.com/o/r/pull/354\n"
              "2026-11-05T19:50:29Z d94d2d56 note=parked: not reviewed")
-        card(items, DONE, "Old zebra work", "2026-11-01T00:00:00Z bba7f7f1 status=done owner=agent")
+        card(items, DONE, "Old zebra work", "2026-11-01T00:00:00Z bba7f7f1 status=done owner=agent",
+             brief=LONG)
+        card(items, ASK, "Pick a licence", "2026-11-05T00:00:00Z bba7f7f1 status=ready owner=human-ruling")
+        card(items, ASKED, "Pick a colour", "2026-11-04T00:00:00Z bba7f7f1 status=done owner=human-ruling")
         (self.g / "pickup" / "2026-11-05T19-24-b26633aa.md").write_text(
             "status: open\nupdated: 2026-11-05T19:50:04Z\nsession: b26633aa-0000\n"
             "model: claude-fable-5-1\n---\nRun the zebra research prompt.\n"
@@ -60,7 +65,8 @@ class Cwhat(unittest.TestCase):
 
     def test_driver_card_lists_children_with_their_model(self):
         out = self.run_cw(PARENT)
-        self.assertIn("none recorded", out)
+        run_with = next(l for l in out.splitlines() if l.startswith("run with:"))
+        self.assertNotRegex(run_with, r"opus|sonnet|fable|haiku")
         self.assertIn(CHILD, out)
         self.assertRegex(out, r"opus\s+high\s+ready")
 
@@ -77,9 +83,22 @@ class Cwhat(unittest.TestCase):
 
     def test_board_and_tools_run_and_write_nothing(self):
         before = sorted((p, p.stat().st_mtime) for p in self.g.rglob("*"))
-        self.assertIn("Claude's queue: 2 cards", self.run_cw())
+        board = self.run_cw()
+        self.assertIn(ASK, board)
+        self.assertNotIn(ASKED, board)
+        self.assertIn(ASKED, self.run_cw("-a"))
         self.assertIn("pickup-list", self.run_cw("tools"))
         self.assertEqual(before, sorted((p, p.stat().st_mtime) for p in self.g.rglob("*")))
+
+
+    def test_prefix_matching_several_cards_shows_each(self):
+        out = self.run_cw("1793905")
+        for cid in (PARENT, CHILD, DONE):
+            self.assertIn(cid, out)
+
+    def test_verbose_shows_the_whole_brief(self):
+        self.assertNotIn("word399", self.run_cw(DONE))
+        self.assertIn("word399", self.run_cw("-v", DONE))
 
 
 if __name__ == "__main__":
