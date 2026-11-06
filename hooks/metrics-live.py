@@ -1328,7 +1328,7 @@ class Hook:
         def face(r):
             return faces[r - 1] if r else "⏳"
 
-        clock = "⏰" if tr > self.k.sit_hot_rung else "⏱"
+        clock = "⏰" if tr > max(self.k.sit_hot_rung, 0) else "⏱"
         front = ("💸" if self.ctx_rungs > 0 else "🪙") + face(tr) + ("⚡" if fr else "🌌") \
             + ("🤔" if heavy else "🧘") + ("⛔" if blocked else "✅")
         tail = ("🤔" if heavy else "🧘") + (["⚡", "🙄", "😠", "😡", "🤬"][fr - 1] if fr else "🌌") \
