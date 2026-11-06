@@ -90,7 +90,7 @@ thing on the screen, so it repeats the front with more grades.
 
 | tail slot | good | progression |
 |---|---|---|
-| cognitive load | 🧘 | 🤔 once decisions reach 3, and it stops there |
+| cognitive load | 🧘 | 🤔 past the decisions rung, and it stops there |
 | friction | 🌌 | ⚡ 🙄 😠 😡 🤬, one per friction rung |
 | fatigue | ⏳ | ⏱️ or 🌙, 🫩, 😩, 😫, 😵‍💫, 😵, at the higher of the time and friction rungs |
 | fourth | absent | 🥀 at rung 3 of friction or fatigue, 💀 at rung 4 and above |
