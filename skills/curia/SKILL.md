@@ -398,13 +398,12 @@ The word cap is on trial from 2026-10-07, revisited once `status` has
 measured it over a period (card 179136412936a787ac): **a sitting reads
 at most 1,500 words at open** — Where this stands ≤ 250, Working memory
 ≤ 750, Open questions ≤ 500. Measured basis: the three sections 1,356
-words that day. The 70k-token cap on context at first question is
-superseded as a stop signal (the number is open); `status` shows that
-figure with no cap and no mark. Cost is context × turns.
+words that day. Context at first question has no cap; `status` shows
+the figure bare, with no mark. Cost is context × turns.
 
 <!-- pen (the user, 2026-10-07): facets lint, edit, status; the by-hand
      line; spawned at close, run by a routine, never only at close; the
-     caps and their basis; status not gauge; the curia's ledger
+     word cap and its basis; status not gauge; the curia's ledger
      holds the stamps. pencil: a facet commits its own fixes instead of
      handing a patch to a caller, since a background facet has no caller
      left to apply one; one runner in sequence instead of three parallel
