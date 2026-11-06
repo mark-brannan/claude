@@ -262,18 +262,34 @@ verdict reason; locally the commit is the promise.
 
 ## 14. The session's item
 
-The session's record is one work item in `state/global/items/`, written
+The session's item is one work item in `state/global/items/`, written
 through `work-item`. It replaces the pickup item, the claim stamp, the
 checkpoint's `## Resume` carry and the curia floor (question 16); once the
 hook writes items, `pickup/` is retired (question 14). Until item 5
 retires them, the hook writes the pickup file, the stamp and the floor as
 well (scoping item 3).
 
-- At its first Stop, a session that holds no claimed item mints one
-  (question 15, pen). A session holding a claimed item writes onto that
-  item and mints none (one id for the item's whole life, the sessions that
-  touch it listed on it in order, pen, roll `20261001t064716z`; the
-  claimed-item case is scoping item 3's reading, accepted at the yes).
+Session records are not work items: a record of a session with nothing
+continuing never becomes a card, and its trail is the checkpoint and log
+the hook already writes (easy-grind curia, 2026-11-06; it replaces the
+one-entry-point curia's bias for not losing the trail).
+
+- A session holding a claimed item writes onto that item and mints none
+  (one id for the item's whole life, the sessions that touch it listed on
+  it in order, pen, roll `20261001t064716z`; the claimed-item case is
+  scoping item 3's reading, accepted at the yes).
+- A session that holds no claimed item touches the board only in two ways
+  (easy-grind curia, 2026-11-06):
+  - **Through the PR's one item, when a PR exists**: the session's PR, or
+    the PR its hand-off links. The hook finds the open item whose `home=`
+    is that PR (`work-item by-home`) and writes the session's line onto
+    it; only when there is none does it mint one with that home. One item
+    per PR, never a second.
+  - **When the session states that work continues**: it mints at the first
+    Stop that sees the statement. Today the statement is a hand-off the
+    session wrote over its pickup item's default body (wrapup step 2b),
+    the item left open.
+  - Neither: no item.
 - A later Stop of the session that writes writes onto the same item,
   never a new one; how often it writes is open (below). The hook's
   hand-off is the item's log entry (question 14, pen).
@@ -292,8 +308,9 @@ well (scoping item 3).
   under a fresh id (pen).
 - The write lands before job 12, so the same Stop commits it.
 - A refused or failed item write never stops the later jobs.
-- Orphaned minted items are the sweep's to retire, on the same path as old
-  cards (question 15).
+- An age sweep is the backstop: a minted item no session touched past an
+  age is the sweep's to retire, on the same path as old cards (question 15,
+  card 1791081938dc217c9b).
 
 ### Open, unruled
 
@@ -407,12 +424,15 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 13.4 | a pull that conflicts | Stop | rebase aborted, no rebase left in progress | test |
 | 13.5 | cloud, the push fails | Stop | `not archivable: state-repo push failed` | test |
 | 13.6 | local, the push fails | Stop | verdict unchanged; the next Stop in the window does not retry | test |
-| 14.1 | a session with no item | first Stop | one new item; its first log line `status=open` from this session | test |
+| 14.1 | a session with no item, on a PR no open item is homed at | first Stop | one new item; its first log line `status=open` from this session | test |
 | 14.2 | 14.1 | a later Stop that writes | it writes the same item; no second item is minted | test |
 | 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | test |
 | 14.4 | a minted item | any Stop | no `status=ready` line from the hook | test |
 | 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | test |
 | 14.6 | a fresh session | first Stop | the minted item's brief is the prompt's first line; later Stops leave it unchanged | test |
 | 14.7 | the store refuses the write, or `work-item` crashes | Stop | the state commit is made; exit 0 | test |
-| 14.8 | a fresh session | first Stop | the item is in that Stop's state commit | test |
+| 14.8 | a fresh session on a PR | first Stop | the item is in that Stop's state commit | test |
 | 14.9 | the hook writes items and the duplicates are retired | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | item 5 |
+| 14.10 | an open item homed at the session's PR, or at the PR its hand-off links | Stop | that item gets this session's `stop` line; nothing minted | test |
+| 14.11 | no PR, no claimed item, no hand-off | Stop | no item; the checkpoint says why | test |
+| 14.12 | 14.11, then the session writes a hand-off into its pickup item | the next Stop | one new item, its brief linking the checkpoint | test |

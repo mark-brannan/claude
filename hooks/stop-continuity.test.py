@@ -484,7 +484,7 @@ class StopContinuityTest(unittest.TestCase):
 
     # ------------------------------------------------- the session's item
     def session_item(self):
-        # Requirements section 14, cases 14.1 to 14.6. stop-item.py decides;
+        # Requirements section 14, cases 14.1 to 14.6 and 14.10 to 14.12. stop-item.py decides;
         # every write goes through bin/work-item. Session ids here start with
         # eight hex, as a real one does: the store names its writer by them.
         w = self.world("items")
@@ -545,12 +545,41 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(nlog(MINT), n0, "14.2: and no line is logged")
         self.hasnt("14.4: the hook writes no status=ready", "status=ready", MINT)
 
-        # No PR yet: the link is the session's checkpoint log, and there is no home.
+        # 14.10: a second session on the same PR writes onto the PR's one item.
+        w.run_hook("d1d2d3d4-0000-1111-2222", WORK, GH_PRS=PR7)
+        self.assertEqual(mine("d1d2d3d4"), [], "14.10: a second session on the PR mints nothing")
+        self.has("14.10: the PR's item gets its stop line", r" d1d2d3d4 stop$", MINT)
+        self.has("14.10: the checkpoint names the PR's item", rf"^{MID} \(homed\): stop$", w.ckpt("d1d2d3d4"))
+        n0 = nlog(MINT)
+        w.run_hook("d1d2d3d4-0000-1111-2222", WORK, GH_PRS=PR7)
+        self.assertEqual(nlog(MINT), n0, "14.10: and once while nothing changes")
+
+        def hand_off(sid8, text):  # what wrapup's `pickup-list handoff` writes
+            f = sorted(glob.glob(f"{w.PICKD}/*-{sid8}.md"))[0]
+            head = read(f).split("\n---\n", 1)[0]
+            Path(f).write_text(f"{head}\n---\n{text}\n")
+
+        # 14.11: no PR and nothing continues: no item, and the checkpoint says so.
+        w.run_hook("c9c8c7c6-0000-1111-2222", WORK)
+        self.assertEqual(mine("c9c8c7c6"), [], "14.11: no PR, no hand-off, no item")
+        self.has("14.11: the checkpoint says why", r"^no item: no PR, and the session states no work continues$",
+                 w.ckpt("c9c8c7c6"))
+
+        # 14.12: the session writes a hand-off: work continues, so it mints;
+        # no PR yet, so the link is the session's checkpoint log and there is no home.
+        hand_off("c9c8c7c6", "Finish the fixture work.\nlink: https://example.invalid/card\nmodel: sonnet\neffort: low")
         w.run_hook("c9c8c7c6-0000-1111-2222", WORK)
         NOPR = mine("c9c8c7c6")[0]
         self.has("no PR: the brief links the checkpoint",
                  r"^Checkpoint: \[checkpoint\]\(\.\./log/auto/.*c9c8c7c6\.md\)$", NOPR)
         self.hasnt("no PR: no home line", "home=", NOPR)
+
+        # 14.10: a hand-off whose link is a PR writes onto that PR's item.
+        w.run_hook("c1c2c3c4-0000-1111-2222", WORK)
+        hand_off("c1c2c3c4", "Merge it.\nlink: https://github.com/o/r/pull/7\nmodel: sonnet\neffort: low")
+        w.run_hook("c1c2c3c4-0000-1111-2222", WORK)
+        self.assertEqual(mine("c1c2c3c4"), [], "14.10: a hand-off linking the PR mints nothing")
+        self.has("14.10: the linked PR's item gets its stop line", r" c1c2c3c4 stop$", MINT)
 
         # 14.3: a session that claimed an item writes onto it and mints nothing.
         CARD = wi("99990000-aaaa", "create", "--id", "178557840199990000", "--brief",
@@ -582,8 +611,8 @@ class StopContinuityTest(unittest.TestCase):
         TPD = w.transcript("dash-transcript.jsonl",
                            '{"type":"queue-operation","operation":"enqueue","content":"-h",'
                            '"timestamp":"2026-09-26T12:00:00.000Z"}')
-        w.run_hook("e5e6e7e8-0000-1111-2222", WORK, tp=TPD, GH_PRS=PR7)
-        self.has("a dash-led last prompt still mints", r"^[0-9]*e5e6e7e8: minted, home=o/r#7$", w.ckpt("e5e6e7e8"))
+        w.run_hook("e5e6e7e8-0000-1111-2222", WORK, tp=TPD, GH_PRS=PR7.replace("/7", "/8"))
+        self.has("a dash-led last prompt still mints", r"^[0-9]*e5e6e7e8: minted, home=o/r#8$", w.ckpt("e5e6e7e8"))
 
         # A session id that is not hex: skipped, and the checkpoint says so.
         w.run_hook(SID, WORK, GH_PRS=PR7)

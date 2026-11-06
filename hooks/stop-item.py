@@ -12,8 +12,15 @@ Which item, in order:
   2. the one this session minted: its id is the session's start second plus
      its eight hex, so every Stop names the same id without a lookup file.
   3. one this session's Stop already wrote onto (a `stop` line from it): a
-     claim since released, so the session still has one id per life.
-  4. none: mint it, `open`, owner `agent`. Never `ready`, no status line ever.
+     claim since released, or its PR's item, so the session still has one id
+     per life.
+  4. its PR's one item: the open item whose `home=` is the session's PR, or
+     the PR its hand-off links (`work-item by-home`); the newest if several.
+     It gets this session's `stop` line; none there, mint it with that home.
+  5. no PR: mint only when the session states that work continues, which is
+     a hand-off it wrote over its pickup item's default body (`--handoff`).
+     Otherwise no item: a session record is not a work item.
+A mint is `open`, owner `agent`. Never `ready`, no status line ever.
 
 What it writes (pencil):
   - a minted item's brief is written once, at the mint: the first line of
@@ -105,6 +112,24 @@ def brief_for(text, pr, ckpt_link):
     return f"{body}\n\n{link}" if body else link
 
 
+def continues(handoff):
+    """Whether the session states that work continues. The one place to widen
+    the gate (a branch with unpushed commits, say)."""
+    return bool(handoff.strip())
+
+
+def handoff_home(handoff):
+    """The PR a hand-off's `link:` line names, as o/r#n, else ''."""
+    m = re.search(r"^link:\s*(\S+)", handoff or "", re.M)
+    return pr_home(m[1]) if m else ""
+
+
+def homed_item(env, home):
+    """The newest open item homed at <home>, or ''."""
+    rows = [r.split("\t")[0] for r in work_item(env, "by-home", home).splitlines() if r.strip()]
+    return max(rows) if rows else ""
+
+
 def stop_lines(path, sid8):
     """Whether this session's Stop already wrote a line onto the item."""
     pat = re.compile(r"^\S+ " + sid8 + r" stop(\s|$)", re.M)
@@ -155,10 +180,19 @@ def step(a):
         return f"skipped: session id {a.session} does not start with eight hex"
     env = dict(os.environ, CLAUDE_CODE_SESSION_ID=a.session, WORK_ITEM_DIR=a.items)
     pr = a.pr if pr_home(a.pr) else ""
-    home = pr_home(pr)
+    home = pr_home(pr) or handoff_home(a.handoff)
+    if home and not pr:
+        pr = "https://github.com/{}/{}/pull/{}".format(*re.split(r"[/#]", home))
     item, how = find_item(env, a.items, sid8, a.started)
 
+    if how is None and home:
+        homed = homed_item(env, home)
+        if homed:
+            work_item(env, "log", homed, "stop")
+            return f"{homed} (homed): stop"
     if how is None:
+        if not home and not continues(a.handoff):
+            return "no item: no PR, and the session states no work continues"
         if not item:
             raise Failed("no session start time, so no id to mint under")
         text = handoff(a.prompt)
@@ -195,7 +229,7 @@ def step(a):
 def main(argv):
     p = argparse.ArgumentParser(description="Write the session's work item.")
     for name in ("session", "items", "prompt", "pr", "checkpoint", "work-root",
-                 "repo", "model", "started"):
+                 "repo", "model", "started", "handoff"):
         p.add_argument(f"--{name}", default="")
     try:
         a = p.parse_args(argv)
