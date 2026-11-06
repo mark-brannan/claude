@@ -649,3 +649,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t080300z
 - substantive-check: the criterion-8 PR-body heading is '## Method of evaluation:', the card's wording, until the owner picks between it and '## Substantive:' Undo: rename the heading in the skill and its check file ([#401](https://github.com/mark-brannan/claude/pull/401))
+
+### 20261106t085916z
+- scoping-lock keeps its 120 s git timeouts under the push lock; a killed rebase wedges the clone, a skipped Stop push does not Undo: give sync() a shorter timeout while the push lock is held ([#403](https://github.com/mark-brannan/claude/pull/403#discussion_r4490694461)) ([#403](https://github.com/mark-brannan/claude/pull/403))
