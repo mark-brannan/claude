@@ -700,3 +700,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t222818z
 - grind skips an item whose price lookup fails, with a warning, rather than stopping the run Undo: exit 2 instead of continue at bin/grind's per-item rate lookup ([#417](https://github.com/mark-brannan/claude/pull/417))
+
+### 20261106t222823z
+- share_of_week stays with no caller yet: seam E (scoping: % of week on estimates) is its planned caller Undo: delete share_of_week and its test ([#417](https://github.com/mark-brannan/claude/pull/417))
