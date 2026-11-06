@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+# handoff-start -- start the next session from a session-end hand-off on the
+# user's word "start": one background session on this box that runs
+# `/pickup <item-id>`, with Remote Control on, so nothing is pasted. The
+# wrapup skill offers the word beside the paste prompt.
+#
+#   handoff-start [--cwd <dir>] [--wait <seconds>] [--title <words>] <pickup-item-id>
+#
+# Refused (exit 1) when the item cannot be read or is not open: a taken item
+# already has its session. The item is taken before the launch, so a second
+# word starts nothing, and reopened if the launch fails.
+#
+# The session runs in the main worktree of the git repo at --cwd (default:
+# here), never in a linked worktree that its own session may be about to
+# release; outside git, in --cwd itself. Model and effort are the hand-off
+# body's `model:` and `effort:` lines, when it has them. The session is named
+# "Hand-off <id>: <title>": --title, else the body's `title:` line, else the
+# slug of the item's `where:` log, so the session list reads as the work, not
+# the id. Prints how to attach, as driver-start does, whose helpers it uses.
+#
+# Exit 2 on bad arguments; a `claude --bg` that fails passes its code through.
+import argparse
+import os
+import re
+import shlex
+import subprocess
+import sys
+from importlib.machinery import SourceFileLoader
+
+sys.dont_write_bytecode = True
+HERE = os.path.dirname(os.path.realpath(__file__))
+PICKUP_LIST = os.path.join(HERE, "pickup-list")
+ds = SourceFileLoader("driver_start", os.path.join(HERE, "driver-start")).load_module()
+
+
+def die(msg, code=1):
+    sys.stderr.write("handoff-start: %s\n" % msg)
+    sys.exit(code)
+
+
+def session_name(item, title, where):
+    """"Hand-off <id>: <title>", else the slug of the log's file name; the bare id when neither."""
+    if title:
+        return "Hand-off %s: %s" % (item, title)
+    stem = re.sub(r"\.md$", "", os.path.basename(where))
+    stem = re.sub(r"^\d{4}-\d{2}-\d{2}-", "", stem)
+    slug = re.sub(r"(-(?=[0-9a-f]*\d)[0-9a-f]{6,8})+$", "", stem)
+    return "Hand-off %s: %s" % (item, slug) if slug else "Hand-off %s" % item
+
+
+def field(text, key):
+    """The value of the `<key>:` line in <text>, or ""."""
+    m = re.search(r"^%s:[ \t]*(.*?)\s*$" % key, text, re.M)
+    return m.group(1) if m else ""
+
+
+def item_facts(item):
+    """The item's status and log path (header), and the model, effort and title (body)."""
+    r = subprocess.run([PICKUP_LIST, "show", item], text=True, capture_output=True)
+    if r.returncode:
+        die("cannot read pickup item %s: %s" % (item, r.stderr.strip() or "pickup-list failed"))
+    head, sep, body = r.stdout.partition("\n---\n")
+    if not sep:
+        die("%s is not a pickup item (no --- line)" % item)
+    facts = {k: field(head, k) for k in ("status", "where")}
+    facts.update({k: field(body, k) for k in ("model", "effort", "title")})
+    return facts
+
+
+def main_worktree(cwd):
+    """The main worktree of the repo at <cwd>, or <cwd> outside git."""
+    r = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                       text=True, capture_output=True, cwd=cwd)
+    common = r.stdout.strip()
+    if r.returncode or os.path.basename(common) != ".git":
+        return cwd
+    return os.path.dirname(common)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="handoff-start")
+    ap.add_argument("item")
+    ap.add_argument("--cwd", default=os.getcwd())
+    ap.add_argument("--wait", type=float, default=45.0)
+    ap.add_argument("--title", default="", help="names the session; overrides the body's title: line")
+    a = ap.parse_args()
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9A-Za-z-]+", a.item):
+        die("not a pickup item id: %r" % a.item, 2)
+    if not os.path.isdir(a.cwd):
+        die("no such directory: %s" % a.cwd, 2)
+
+    facts = item_facts(a.item)
+    if facts["status"] != "open":
+        die("%s is %s, not open: it already has its session" % (a.item, facts["status"] or "unmarked"))
+
+    cwd = main_worktree(a.cwd)
+    name = session_name(a.item, a.title or facts["title"], facts["where"])
+    cmd = ["claude", "--bg", "--remote-control", name, "-n", name]
+    for key in ("model", "effort"):
+        if facts[key]:
+            cmd += ["--" + key, facts[key]]
+    cmd.append("/pickup %s" % a.item)
+    t = subprocess.run([PICKUP_LIST, "take", a.item], text=True, capture_output=True)
+    if t.returncode:
+        die("cannot take %s: %s" % (a.item, t.stderr.strip() or "pickup-list failed"))
+    print("$ (cd %s && %s)" % (shlex.quote(cwd), shlex.join(cmd)), flush=True)
+    r = subprocess.run(cmd, text=True, capture_output=True, cwd=cwd)
+    if r.returncode:
+        subprocess.run([PICKUP_LIST, "open", a.item], capture_output=True)
+        sys.stderr.write(r.stdout + r.stderr)
+        die("claude --bg failed; %s reopened" % a.item, r.returncode)
+    m = re.search(r"backgrounded\W+([0-9a-f]{8})", ds.ANSI.sub("", r.stdout))
+    if not m:
+        sys.stderr.write(r.stdout)
+        die("claude --bg printed no session id; `claude agents` lists what runs")
+    short = m.group(1)
+
+    sid = ds.session_uuid(short) or short
+    link = ds.remote_link(short, a.wait)
+    print("pickup started: %s, session %s, in %s" % (name, sid, cwd))
+    print("  Claude Desktop: the session list, \"%s\"" % name)
+    print("  browser:        %s" % (link or "claude.ai/code, \"%s\" (no link yet)" % name))
+    print("  this terminal:  claude attach %s" % short)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
