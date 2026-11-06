@@ -178,7 +178,7 @@ output-tokens badge — settled after repeated attempts on
 re-propose them.
 
 ```
-💸⏳🌌🧘✅ $  1.28 ⛁  20/152k ⏱0h00 🧘🌌⏳
+💸⏳🌌🧘✅ $  1.28 ⛁  20k/152k ⏱0h00 🧘🌌⏳
 💸💸💸💸
 ```
 
