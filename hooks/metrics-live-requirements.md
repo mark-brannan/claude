@@ -92,7 +92,7 @@ thing on the screen, so it repeats the front with more grades.
 |---|---|---|
 | cognitive load | 🧘 | 🤔 past the decisions rung, and it stops there |
 | friction | 🌌 | ⚡ 🙄 😠 😡 🤬, one per friction rung |
-| fatigue | ⏳ | ⏱️ or 🌙, 🫩, 😩, 😫, 😵‍💫, 😵, at the time rung; friction lifts it only from rung 3 |
+| fatigue | ⏳ | ⏱️ or 🌙, 🫩, 😩, 😫, 😵‍💫, 😵, at the time rung; from friction rung 3 on, one rung above the time rung (time rung 1 with friction rung 3 shows 🫩) |
 | fourth | absent | 🥀 at rung 3 of friction or fatigue, 💀 at rung 4 and above |
 
 Cognitive load tops out at 🤔 and never earns a face or a skull: a session
