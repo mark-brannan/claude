@@ -12,16 +12,23 @@ Which item, in order:
   2. the one this session minted: its id is the session's start second plus
      its eight hex, so every Stop names the same id without a lookup file.
   3. one this session's Stop already wrote onto (a `stop` line from it): a
-     claim since released, so the session still has one id per life.
-  4. none: mint it, `open`, owner `agent`. Never `ready`, no status line ever.
+     claim since released, or its PR's item, so the session still has one id
+     per life.
+  4. its PR's one item: the newest item whose `home=` is the session's PR,
+     or the PR its hand-off links (`work-item by-home --all`). Open, it gets
+     this session's `stop` line; done or closed, nothing is written; none
+     there, mint it with that home.
+  5. no PR: mint only when the session states that work continues, which is
+     a hand-off it wrote over its pickup item's default body (`--handoff`).
+     Otherwise no item: a session record is not a work item.
+A mint is `open`, owner `agent`. Never `ready`, no status line ever.
 
 What it writes (pencil):
   - a minted item's brief is written once, at the mint: the first line of
-    the prompt that Stop sees (the session's first, unless an earlier mint
-    was refused), with one link line: the PR when there is one, else the
-    session's checkpoint log in the state repo. Never rewritten; the hook
-    decides nothing about the hand-off. Later Stops log only `stop`, with
-    `home=` when the PR changed.
+    the hand-off when the session wrote one, else of the prompt that Stop
+    sees, with one link line: the PR when there is one, else the session's
+    checkpoint log in the state repo. Never rewritten. Later Stops log only
+    `stop`, with `home=` when the PR changed.
   - a claimed item keeps its brief; it gets one `stop` line on its first
     Stop, and `home=` the PR only while it has no home of its own.
 
@@ -79,10 +86,13 @@ def pr_home(url):
     return f"{m[1]}/{m[2]}#{m[3]}" if m else ""
 
 
-def handoff(prompt):
-    """The hand-off a pickup body starts as: the prompt's first line. At the
-    mint that is the latest prompt, which at a first Stop is the first."""
-    return next((l.strip() for l in (prompt or "").splitlines() if l.strip()), "")
+def home_url(home):
+    """o/r#7 -> https://github.com/o/r/pull/7; the inverse of pr_home."""
+    return "https://github.com/{}/{}/pull/{}".format(*re.split(r"[/#]", home))
+
+
+def first_line(text):
+    return next((l.strip() for l in (text or "").splitlines() if l.strip()), "")
 
 
 def checkpoint_link(ckpt, items):
@@ -103,6 +113,24 @@ def brief_for(text, pr, ckpt_link):
     body = "\n".join(lines).strip("\n")
     link = f"PR: {pr}" if pr else f"Checkpoint: {ckpt_link}"
     return f"{body}\n\n{link}" if body else link
+
+
+def continues(handoff):
+    """Whether the session states that work continues. The one place to widen
+    the gate (a branch with unpushed commits, say)."""
+    return bool(handoff.strip())
+
+
+def handoff_home(handoff):
+    """The PR a hand-off's `link:` line names, as o/r#n, else ''."""
+    m = re.search(r"^link:\s*(\S+)", handoff or "", re.M)
+    return pr_home(m[1]) if m else ""
+
+
+def homed_item(env, home):
+    """(id, status) of the newest item homed at <home>, in any status, or None."""
+    rows = [r.split("\t")[:2] for r in work_item(env, "by-home", "--all", home).splitlines() if r.strip()]
+    return max(rows) if rows else None
 
 
 def stop_lines(path, sid8):
@@ -155,15 +183,26 @@ def step(a):
         return f"skipped: session id {a.session} does not start with eight hex"
     env = dict(os.environ, CLAUDE_CODE_SESSION_ID=a.session, WORK_ITEM_DIR=a.items)
     pr = a.pr if pr_home(a.pr) else ""
-    home = pr_home(pr)
+    home = pr_home(pr) or handoff_home(a.handoff)
+    if home and not pr:
+        pr = home_url(home)
     item, how = find_item(env, a.items, sid8, a.started)
 
+    if how is None and home:
+        homed = homed_item(env, home)
+        if homed:
+            hid, status = homed
+            if status in ("done", "closed"):  # one item per PR, never a second
+                return f"{hid} (homed, {status}): unchanged"
+            work_item(env, "log", hid, "stop")
+            return f"{hid} (homed): stop"
     if how is None:
+        if not home and not continues(a.handoff):
+            return "no item: no PR, and the session states no work continues"
         if not item:
             raise Failed("no session start time, so no id to mint under")
-        text = handoff(a.prompt)
-        brief = brief_for(text, pr, checkpoint_link(a.checkpoint, a.items))
-        first = next((l.strip() for l in text.splitlines() if l.strip()), "")
+        first = first_line(a.handoff) or first_line(a.prompt)
+        brief = brief_for(first, pr, checkpoint_link(a.checkpoint, a.items))
         if len(first) > 72:
             first = first[:71].rstrip() + "…"
         title = f"{a.repo or 'session'}: {first}" if first else f"{a.repo or 'session'} session {sid8}"
@@ -195,7 +234,7 @@ def step(a):
 def main(argv):
     p = argparse.ArgumentParser(description="Write the session's work item.")
     for name in ("session", "items", "prompt", "pr", "checkpoint", "work-root",
-                 "repo", "model", "started"):
+                 "repo", "model", "started", "handoff"):
         p.add_argument(f"--{name}", default="")
     try:
         a = p.parse_args(argv)

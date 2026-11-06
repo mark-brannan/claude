@@ -12,7 +12,7 @@
 #   work-item show <id>                            print the file
 #   work-item fold <id>                            print its folded state
 #   work-item list [--all]                         every live item as a card row
-#   work-item by-home <o/r#n>                      the open items homed there: id status holder
+#   work-item by-home [--all] <o/r#n>              the open items homed there: id status holder
 #   work-item dir                                  print the items directory
 #
 # The format, ruled in pen (one-entry-point curia, 2026-10-01/02):
@@ -364,27 +364,32 @@ def card_line(f, brief):
 HOME = re.compile(r"([\w.-]+)/([\w.-]+)#(\d+)")
 
 
-def open_homed(home):
-    """The folded items, not done or closed, whose home is <home>."""
+def open_homed(home, every=False):
+    """The folded items whose home is <home>: not done or closed, unless every."""
     d = items_dir()
     cutoff = iso(time.time() - stale_secs())
     for p in sorted(d.glob("*.md")) if d.is_dir() else []:
         if not is_item_id(p.name[:-3]):
             continue
         try:
+            if f"home={home}" not in p.read_text():  # narrows only; fold decides
+                continue
             f = dict(fold(p, cutoff))
         except OSError:
             continue
-        if f["home"] == home and f["status"] not in ("done", "closed"):
+        if f["home"] == home and (every or f["status"] not in ("done", "closed")):
             yield f
 
 
 def by_home(args):
     """id, status and live holder of every open item homed at <o/r#n>: the
-    reverse lookup a dispatcher reads beside the claim stamps."""
+    reverse lookup a dispatcher reads beside the claim stamps. --all keeps
+    done and closed ones too."""
+    every = "--all" in args
+    args = [x for x in args if x != "--all"]
     if len(args) != 1 or not HOME.fullmatch(args[0]):
-        die("by-home takes one owner/repo#n")
-    for f in open_homed(args[0]):
+        die("by-home takes [--all] and one owner/repo#n")
+    for f in open_homed(args[0], every):
         live = f["holder"] if f["holder_stale"] == "no" else ""
         print("\t".join((f["id"], f["status"], live)))
 
