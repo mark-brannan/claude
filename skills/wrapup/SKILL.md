@@ -171,8 +171,8 @@ one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.
 
 Under the prompt, one line: `start` launches it, and nothing is pasted.
-On that word, run `~/.claude/bin/handoff-start <this session's item id>`
-once and relay the lines it prints; a refusal is relayed with the paste
+On that word, run `~/.claude/bin/handoff-start --title "<the title>" <this session's item id>`
+once, the title being the few words the hand-off gives the session (its `title:` line), and relay the lines it prints. A refusal is relayed with the paste
 prompt still standing. Offering the word is not a question; it opens
 nothing.
 

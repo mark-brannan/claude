@@ -84,6 +84,12 @@ class HandoffStart(unittest.TestCase):
         self.assertEqual(self.bg()[0].split(" -n ")[1].split(" --model")[0],
                          "Hand-off %s: Check PR 415 CI" % ID)
 
+    def test_a_title_argument_names_the_session(self):
+        self.write("open", "model: sonnet\ntitle: Check PR 415 CI\n")
+        self.run_tool(ID, "--title", "Reviewer model difficulty")
+        self.assertEqual(self.bg()[0].split(" -n ")[1].split(" --model")[0],
+                         "Hand-off %s: Reviewer model difficulty" % ID)
+
     def test_no_log_names_the_session_by_id_alone(self):
         self.pickup.write_text((ITEM % ("open", "model: sonnet\n")).replace(WHERE, ""))
         self.run_tool(ID)
