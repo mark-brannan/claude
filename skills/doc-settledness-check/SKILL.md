@@ -48,7 +48,7 @@ brief; neither verdict stands in for the other.
 ## Steps
 
 1. **Resolve the one target.** Exactly one of:
-   - **curia id** — `~/claude_prompts_scratch/state/global/curia/<id>/digest.md`
+   - **curia id** — the state repo's `state/global/curia/<id>/digest.md`
      exists, or `thread.md` where the folder has no `digest.md` (a closed
      curia from before the split). Kind `curia`. Read-set: the folder
      (`digest.md` or `thread.md`, `decided.md` and any form sidecar if it

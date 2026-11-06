@@ -16,7 +16,7 @@ same and spends the caller's context on the read-set.
 
 **For callers.** The check writes nothing; the brief it returns is its
 whole output. A caller that wants the brief kept across runs writes it
-itself to `~/claude_prompts_scratch/state/global/arete/<slug>/<time>.md`
+itself to the state repo's `state/global/arete/<slug>/<time>.md`
 and commits it there by path, where `<slug>` names the target
 (`claude-264`, `curia-loop`, `skills-arete-check`, a stack's parent id)
 and `<time>` is UTC `YYYY-MM-DDTHHMMZ`, so a same-day rerun keeps the
@@ -85,7 +85,7 @@ from here.
 1. **Resolve the one target.** Whatever its kind, the areas are read
    against what it does or changes; the kinds are
    `doc-settledness-check`'s, widened.
-   - **curia id** — `~/claude_prompts_scratch/state/global/curia/<id>/`
+   - **curia id** — the state repo's `state/global/curia/<id>/`
      exists. Kind `curia`. Read-set: the folder.
    - **path** — a file or directory in any repo on this machine. Kind
      `adr` under an `adr/` directory or named `*.adr.md`; `design` for

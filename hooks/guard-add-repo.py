@@ -17,13 +17,18 @@ sys.dont_write_bytecode = True
 
 import lib_state  # noqa: E402  (puts lib/ on sys.path)
 import hookio  # noqa: E402
+import config  # noqa: E402
 
 
 def main():
     ti = hookio.read().get("tool_input")
     if not isinstance(ti, dict):
         return
-    if ti.get("owner") == "mark-brannan" and ti.get("repo") == "claude_prompts_scratch":
+    try:
+        owner, repo = config.state_repo_github().split("/")
+    except config.ConfigError:
+        return  # no config, no standing allow: the normal permission flow decides
+    if ti.get("owner") == owner and ti.get("repo") == repo:
         hookio.emit(hookio.specific(
             "PreToolUse", permissionDecision="allow",
             permissionDecisionReason="continuity state repo -- standing allow"))

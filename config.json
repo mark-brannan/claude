@@ -1,0 +1,12 @@
+{
+  "state_repo": {
+    "github": "mark-brannan/claude_prompts_scratch",
+    "search": ["/home/user", "/workspace", "~", "~/src", "~/Projects", "~/code"]
+  },
+  "plan": {
+    "week_usd": 2000,
+    "fable_week_usd": 510,
+    "resets": "Tuesday 14:00 UTC",
+    "source": "estimated: /usage on 2026-11-05 showed $947 priced at 47% of the all-models week and Fable's $253 at 50% of its own"
+  }
+}

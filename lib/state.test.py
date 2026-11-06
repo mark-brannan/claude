@@ -89,7 +89,7 @@ class LookupTest(Base):
 
     def test_a_lib_dir_on_its_own_answers(self):
         (self.T / "lib").mkdir()
-        for f in ("state.py", "gitrun.py", "atomic.py", "jsonl.py"):
+        for f in ("state.py", "gitrun.py", "atomic.py", "jsonl.py", "config.py"):
             shutil.copy(LIB.parent / f, self.T / "lib" / f)
         repo = self.T / "repo"
         (repo / ".git").mkdir(parents=True)
@@ -699,7 +699,7 @@ class StoreTest(Base):
     def test_a_missing_work_item_is_a_broken_store(self):
         lib = self.T / "lib"
         lib.mkdir()
-        for f in ("state.py", "gitrun.py", "atomic.py", "jsonl.py"):
+        for f in ("state.py", "gitrun.py", "atomic.py", "jsonl.py", "config.py"):
             shutil.copy(LIB.parent / f, lib / f)
         rc, _, err = cli("item_rows", lib=lib / "state.py",
                          env={"WORK_ITEM_DIR": str(self.items), "WORK_ITEM_BIN": "", "HOOK_DIR": "", "HOME": "/nonexistent"})
