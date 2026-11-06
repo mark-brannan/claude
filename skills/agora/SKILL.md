@@ -198,8 +198,27 @@ petitions the agora first; no lower-level session creates a curia. The
 agora is one gate of several; a curia opens only when
 the user says so inside the confer session, at the curia skill's gates.
 
-At the end of the sitting, print one confer prompt per deferred item,
-ready to paste, each naming model and effort:
+Then start the confer at once, in the background, and keep sitting:
+
+```bash
+~/.claude/bin/confer-start --model <m> --effort <e> --title '<short name>' <id>
+```
+
+It starts one session on this box with Remote Control on, whose prompt is
+the confer hand-off for the card, logs `confer_session=<id>` on it, and
+prints how to attach. Model and effort are the sitting's rating of the
+item (see Difficulty and model): an agent rating of high is fable · high,
+medium is opus · high, low is sonnet · medium (pencil). The confer reads
+the card itself and waits on its first question, so the user can answer
+it in parallel or after the sitting; nothing is pasted. Relay its
+`confer started:` lines in one line: the session's name and link. Once
+that line has printed the confer is running, whatever the exit code; a
+`confer_session` it could not log is relayed as its warning, never
+answered with a second start. Commit the card with the ruling's other
+paths, as in step 4.
+
+A start that is refused, or whose `claude --bg` failed, falls back: at
+the end of the sitting, print its confer prompt, ready to paste:
 
 ```
 Confer on <short name>: <the card's question, one sentence> (<card link>).
@@ -225,7 +244,8 @@ then continue.
 
 Per item: the question, the outcome, the link. At the end, one line:
 how many ruled, spawned, unblocked, folded, deferred to a confer, still
-open, out of the docket's total.
+open, out of the docket's total; then each confer started, by name and
+link, and any paste prompt a failed start left.
 
 ## Open (design doc, open question on the agora procedure)
 

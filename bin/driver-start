@@ -20,6 +20,7 @@
 # is running and listed by name. Exit 2 on bad arguments; a `claude --bg`
 # that fails passes its code through; a driver_session that cannot be logged
 # exits 1 after the attach lines, since the session is already running.
+# confer-start reuses start() for the agora's confer sessions.
 import argparse
 import json
 import os
@@ -38,7 +39,7 @@ LINK = re.compile(r"https://claude\.ai/code/session_[A-Za-z0-9]+")
 
 
 def die(msg, code=1):
-    sys.stderr.write("driver-start: %s\n" % msg)
+    sys.stderr.write("%s: %s\n" % (os.path.basename(sys.argv[0]), msg))
     sys.exit(code)
 
 
@@ -83,30 +84,21 @@ def remote_link(short, wait):
         time.sleep(min(2.0, left))
 
 
-def main():
-    ap = argparse.ArgumentParser(prog="driver-start")
-    ap.add_argument("parent")
-    ap.add_argument("--cwd", default=os.getcwd())
-    ap.add_argument("--wait", type=float, default=45.0)
-    a = ap.parse_args()
-    if not re.fullmatch(r"[0-9a-f]+", a.parent):
-        die("not a work-item id: %r" % a.parent, 2)
-    if not os.path.isdir(a.cwd):
-        die("no such directory: %s" % a.cwd, 2)
-
-    text, facts = parent_facts(a.parent)
-    held = re.search(r"\bdriver_session=(\S+)", text)
+def start(item, text, name, prompt, key, facts, cwd, wait):
+    """Start one background session named <name> running <prompt> in <cwd>,
+    log `<key>=<session uuid>` on <item>, and print how to attach. Refused
+    when <text> already carries <key>=. Returns the exit code."""
+    held = re.search(r"\b%s=(\S+)" % re.escape(key), text)
     if held:
-        die("%s already has a driver, session %s: one driver per yes" % (a.parent, held.group(1)))
+        die("%s already has one, session %s: one session per yes" % (item, held.group(1)))
 
-    name = "Driver %s" % a.parent
     cmd = ["claude", "--bg", "--remote-control", name, "-n", name]
-    for key in ("model", "effort"):
-        if key in facts:
-            cmd += ["--" + key, facts[key]]
-    cmd.append("/pickup %s" % a.parent)
+    for k in ("model", "effort"):
+        if facts.get(k):
+            cmd += ["--" + k, facts[k]]
+    cmd.append(prompt)
     print("$ " + shlex.join(cmd), flush=True)
-    r = subprocess.run(cmd, text=True, capture_output=True, cwd=a.cwd)
+    r = subprocess.run(cmd, text=True, capture_output=True, cwd=cwd)
     if r.returncode:
         sys.stderr.write(r.stdout + r.stderr)
         die("claude --bg failed", r.returncode)
@@ -117,19 +109,37 @@ def main():
     short = m.group(1)
 
     sid = session_uuid(short) or short
-    w = subprocess.run([WORK_ITEM, "log", a.parent, "driver_session=%s" % sid],
+    w = subprocess.run([WORK_ITEM, "log", item, "%s=%s" % (key, sid)],
                        text=True, capture_output=True)
     if w.returncode:
-        sys.stderr.write("driver-start: driver_session not logged on %s: %s\n"
-                         % (a.parent, w.stderr.strip()))
+        sys.stderr.write("%s: %s not logged on %s: %s\n"
+                         % (os.path.basename(sys.argv[0]), key, item, w.stderr.strip()))
 
-    link = remote_link(short, a.wait)
-    print("driver started: %s, session %s" % (name, sid))
+    link = remote_link(short, wait)
+    print("%s started: %s, session %s" % (name.split()[0].lower(), name, sid))
     print("  Claude Desktop: the session list, \"%s\"" % name)
     print("  browser:        %s" % (link or "claude.ai/code, \"%s\" (no link yet)" % name))
     print("  this terminal:  claude attach %s" % short)
     return 1 if w.returncode else 0
 
+
+def check_args(a, item):
+    if not re.fullmatch(r"[0-9a-f]+", item):
+        die("not a work-item id: %r" % item, 2)
+    if not os.path.isdir(a.cwd):
+        die("no such directory: %s" % a.cwd, 2)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="driver-start")
+    ap.add_argument("parent")
+    ap.add_argument("--cwd", default=os.getcwd())
+    ap.add_argument("--wait", type=float, default=45.0)
+    a = ap.parse_args()
+    check_args(a, a.parent)
+    text, facts = parent_facts(a.parent)
+    return start(a.parent, text, "Driver %s" % a.parent, "/pickup %s" % a.parent,
+                 "driver_session", facts, a.cwd, a.wait)
 
 if __name__ == "__main__":
     sys.exit(main())
