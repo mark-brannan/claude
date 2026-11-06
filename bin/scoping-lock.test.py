@@ -221,6 +221,24 @@ class ScopingLockTest(unittest.TestCase):
         self.assertEqual(0, rc, out)
         self.assertFalse((gd / "rebase-merge").is_dir(), "the stale dir is cleared")
 
+    def test_13_waits_on_the_push_lock(self):
+        # scoping-lock runs git in the same clone as the Stop hook and session
+        # start, so it takes their push lock, in the clone's git dir, first.
+        S = self.S
+        git("clone", "-q", "origin.git", "f", cwd=S)
+        lock = S / "f" / ".git" / "claude-state-push.lock.d"
+        lock.mkdir()
+        (lock / "meta").write_text(f"pid={os.getpid()}\nhostname={os.uname().nodename}\n")
+        import threading
+        t = threading.Timer(2, shutil.rmtree, (lock,))
+        t.start()
+        t0 = time.time()
+        rc, out = self.run_sl("f", "release", D, "nobody")
+        t.join()
+        self.assertGreaterEqual(time.time() - t0, 1.5, "it waited for the holder")
+        self.assertIn(rc, (0, 1), out)
+        self.assertFalse(lock.exists(), "and released the lock after")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -912,8 +912,10 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(subject(SRORIGIN), f"State: work session {SID[:8]}",
                          "no flock: the state repo got the session commit")
         self.assertFalse(flock_called.exists(), "no flock: the fake flock was never called")
-        self.assertFalse((w.TMPDIR / "claude-state-push.lock.d").exists(),
+        self.assertFalse((SREPO / ".git" / "claude-state-push.lock.d").exists(),
                          "no flock: the push lock is released after the Stop")
+        self.assertFalse((w.TMPDIR / "claude-state-push.lock.d").exists(),
+                         "the push lock lives in the clone, not under TMPDIR")
         (w.BIN / "flock").unlink()
 
         # --- cloud: a clone on the harness's claude/* branch lands on main ------
@@ -1020,7 +1022,7 @@ class StopContinuityTest(unittest.TestCase):
         w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SREPO)
         self.assertEqual(subprocess.run(["git", "-C", str(SREPO), "cat-file", "-e", f"HEAD:{it}"], env=w.base,
                                         capture_output=True).returncode, 0, "items/: a new item is committed")
-        self.assertFalse((w.TMPDIR / "claude-state-push.lock.d").exists(), "items/: the push lock is released")
+        self.assertFalse((SREPO / ".git" / "claude-state-push.lock.d").exists(), "items/: the push lock is released")
 
     def state_signing(self):
         # --- the state-repo commit is signed iff this machine has a signing key

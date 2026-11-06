@@ -462,7 +462,7 @@ class Stop:
         # One pusher at a time. Parallel sessions are the norm, and two
         # concurrent rebase-and-push loops in the same worktree corrupt each
         # other's index. main()'s finally releases it.
-        if not state.state_lock_wait(state.STATE_PUSH_LOCK, 90):
+        if not state.state_lock_wait(state.state_push_lock(), 90):
             return
 
         self.sc_salvage()

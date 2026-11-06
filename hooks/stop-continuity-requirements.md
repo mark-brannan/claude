@@ -42,8 +42,9 @@ is under Interfaces.
   `GIT_AUTHOR_EMAIL` (the state commit's author), `TMPDIR`,
   `STATE_LOCK_DIR`, `STATE_LOCK_STALE_SECS`, `WORK_ITEM_DIR`,
   `WORK_ITEM_BIN`.
-- Files under `${TMPDIR:-/tmp}`: `claude-state-push.lock.d` (job 5),
-  `claude-stop-home.<pid>` (the home line, job 6 to job 9),
+- The state repo clone's git dir: `claude-state-push.lock.d` (job 5;
+  under `${TMPDIR:-/tmp}` when there is no state repo).
+- Files under `${TMPDIR:-/tmp}`: `claude-stop-home.<pid>` (the home line, job 6 to job 9),
   `claude-branch-home.*` (the gate's own), `claude-pickup-pr-miss.*`
   (job 9's 10-minute miss).
 - Scripts called: `branch-home-gate.py --check` prints `home:<…>` or
@@ -95,8 +96,9 @@ session's item replaces that carry (question 16); the rest of the file stays.
 
 ## 5. Take the push lock
 
-Waits up to 90 s for the state-push lock, one pusher per `TMPDIR`
-(`claude-state-push.lock.d`). The 90 s is fixed in the code. Not taken,
+Waits up to 90 s for the state-push lock, one per state repo clone
+(`claude-state-push.lock.d` in its git dir), shared with every actor that
+runs git in that clone. The 90 s is fixed in the code. Not taken,
 the hook exits: jobs 6 to 13 do not run and the checkpoint keeps its
 placeholder verdict. The exit releases every lock the hook holds.
 
@@ -351,7 +353,7 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 4.1 | a fresh session | Stop | the checkpoint's `**Verdict:**` line is the verdict | test |
 | 4.2 | a checkpoint with a `## Resume` block and a `- consumed:` line | Stop | both survive verbatim, and the section after the block is still there | test |
 | 5.1 | the state-push lock held past 90 s | Stop | exit 0; no salvage, no state commit; verdict line reads `the Stop hook did not finish` | code |
-| 5.2 | `flock` missing | Stop | the state repo is still committed and pushed | test |
+| 5.2 | `flock` missing | Stop | the state repo is still committed and pushed, and the clone's push lock is released | test |
 | 6.1 | clean, pushed, an open PR, no foreign stamp | Stop | `archivable`, in the checkpoint and in `sessions/<id>.json` with `verdict_at` | test |
 | 6.2 | a dirty tree with unpushed commits | Stop | reasons name dirty, then unpushed, in that order | test |
 | 6.3 | no PR and no pointer | Stop | `no PR and no pointer for <branch>` | test |

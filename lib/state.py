@@ -472,10 +472,20 @@ def state_unlock():
 
 # state_lock_wait -- state_lock, retried once a second for up to secs: the
 # portable `flock -w`. A bare `flock` here silently exited every Stop hook
-# on macOS before the state-repo push. STATE_PUSH_LOCK is the push lock
-# stop-continuity.py, abandon-branch.py and the agora skill share, fixed at
-# import.
-STATE_PUSH_LOCK = f"{os.environ.get('TMPDIR') or '/tmp'}/claude-state-push.lock.d"
+# on macOS before the state-repo push.
+PUSH_LOCK_NAME = "claude-state-push.lock.d"
+
+
+def state_push_lock():
+    """The push lock every actor that runs git in the state repo's clone
+    shares: the Stop hook, abandon-branch, session start's freshen,
+    scoping-lock and the agora skill. It lives in the clone's own git dir, so
+    one clone has one lock whatever TMPDIR each caller runs under; with no
+    state repo here, it falls back to TMPDIR."""
+    repo = state_repo()
+    if repo is not None:
+        return f"{repo}/.git/{PUSH_LOCK_NAME}"
+    return f"{os.environ.get('TMPDIR') or '/tmp'}/{PUSH_LOCK_NAME}"
 
 
 def state_lock_wait(d, secs=90):
@@ -489,9 +499,9 @@ def state_lock_wait(d, secs=90):
 
 
 def push_locked(command):
-    """(exit status, "") of `sh -c command` run under STATE_PUSH_LOCK; 1 when
+    """(exit status, "") of `sh -c command` run under the push lock; 1 when
     the lock is still held after 90s."""
-    if not state_lock_wait(STATE_PUSH_LOCK, 90):
+    if not state_lock_wait(state_push_lock(), 90):
         return 1, "state.py push_locked: the push lock is held\n"
     try:
         return subprocess.call(["sh", "-c", command]), ""

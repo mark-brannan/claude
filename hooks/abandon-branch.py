@@ -98,7 +98,7 @@ def main(argv):
     # Same lock stop-continuity.py takes before it commits and pushes, so the
     # two never interleave and a salvage push cannot resurrect the branch we
     # are deleting. Best effort: a lock not taken in 90s proceeds unlocked.
-    state.state_lock_wait(state.STATE_PUSH_LOCK, 90)
+    state.state_lock_wait(state.state_push_lock(), 90)
     try:
         return abandon(work_root, branch)
     finally:

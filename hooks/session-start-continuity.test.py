@@ -14,6 +14,7 @@ needed). Cost per push: about 7 s, one of them the 6 s hung-worklist case.
 """
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -314,6 +315,117 @@ class Brief(unittest.TestCase):
     def test_nothing_held_back_says_nothing(self):
         self.worklist("echo BOARD")
         self.assertNotIn("Held back", self.run_hook())
+
+
+def load_hook():
+    import importlib.util
+    sys.path.insert(0, str(HOOK.parent))
+    spec = importlib.util.spec_from_file_location("ssc_under_test", HOOK)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class Freshen(unittest.TestCase):
+    """The courtesy freshen: a fetch and a fast-forward under the clone's push
+    lock, never a rebase, so a kill can never leave rebase-merge/ behind."""
+
+    GIT = shutil.which("git")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        T = self.T = Path(self.tmp.name)
+        self.saved = dict(os.environ)
+        os.environ.update({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+                           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+                           "HOME": str(T / "home"), "TMPDIR": str(T)})
+        self.g("init", "-q", "--bare", "-b", "main", str(T / "origin.git"))
+        self.g("clone", "-q", str(T / "origin.git"), str(T / "up"))
+        (T / "up" / "a.md").write_text("one\n")
+        self.g("-C", str(T / "up"), "add", "a.md")
+        self.g("-C", str(T / "up"), "commit", "-qm", "one")
+        self.g("-C", str(T / "up"), "push", "-q", "origin", "HEAD:main")
+        self.g("clone", "-q", str(T / "origin.git"), str(T / "sr"))
+        self.sr = T / "sr"
+        os.environ["CLAUDE_STATE_REPO"] = str(self.sr)
+        self.lock = self.sr / ".git" / "claude-state-push.lock.d"
+        self.hook = load_hook()
+
+    def tearDown(self):
+        self.hook.state.state_unlock()
+        os.environ.clear()
+        os.environ.update(self.saved)
+        self.tmp.cleanup()
+
+    def g(self, *args):
+        return subprocess.run([self.GIT, *args], check=True, capture_output=True, text=True).stdout.strip()
+
+    def upstream_moves(self):
+        (self.T / "up" / "a.md").write_text("two\n")
+        self.g("-C", str(self.T / "up"), "commit", "-qam", "two")
+        self.g("-C", str(self.T / "up"), "push", "-q", "origin", "HEAD:main")
+        return self.g("-C", str(self.T / "up"), "rev-parse", "HEAD")
+
+    def shim(self, body):
+        """A git on PATH that runs body before handing over to the real one."""
+        (self.T / "bin").mkdir(exist_ok=True)
+        p = self.T / "bin" / "git"
+        p.write_text(f"#!/bin/sh\n{body}\nexec {self.GIT} \"$@\"\n")
+        p.chmod(0o755)
+        os.environ["PATH"] = f"{self.T / 'bin'}:{self.saved['PATH']}"
+
+    def head(self):
+        return self.g("-C", str(self.sr), "rev-parse", "HEAD")
+
+    def assert_unwedged(self):
+        gd = self.sr / ".git"
+        self.assertFalse((gd / "rebase-merge").exists(), "no rebase-merge/ left behind")
+        self.assertFalse((gd / "rebase-apply").exists(), "no rebase-apply/ left behind")
+        self.assertEqual(self.g("-C", str(self.sr), "stash", "list"), "", "nothing stranded in a stash")
+        self.assertFalse(self.lock.exists(), "the push lock is released")
+
+    def test_fast_forwards_around_a_dirty_tree(self):
+        want = self.upstream_moves()
+        (self.sr / "dirty.md").write_text("hook write\n")
+        self.hook.pull(str(self.sr))
+        self.assertEqual(self.head(), want, "a clean fast-forward lands")
+        self.assertEqual((self.sr / "dirty.md").read_text(), "hook write\n", "the dirty file is untouched")
+        self.assert_unwedged()
+
+    def test_diverged_clone_is_left_for_the_stop_hook(self):
+        self.upstream_moves()
+        self.g("-C", str(self.sr), "commit", "-q", "--allow-empty", "-m", "local")
+        before = self.head()
+        self.hook.pull(str(self.sr))
+        self.assertEqual(self.head(), before, "a refused fast-forward is skipped, never rebased")
+        self.assert_unwedged()
+
+    def test_a_killed_fetch_leaves_no_wedge(self):
+        self.upstream_moves()
+        (self.sr / "dirty.md").write_text("hook write\n")
+        before = self.head()
+        self.shim('case "$1 $2 $3" in *fetch*) sleep 30 ;; esac')
+        self.hook.PULL_CAP = 1
+        t0 = time.time()
+        self.hook.pull(str(self.sr))
+        self.assertLess(time.time() - t0, 5, "the cap bounds the freshen")
+        self.assertEqual(self.head(), before)
+        self.assertEqual((self.sr / "dirty.md").read_text(), "hook write\n")
+        self.assert_unwedged()
+
+    def test_a_held_lock_skips_the_freshen(self):
+        self.upstream_moves()
+        before = self.head()
+        self.lock.mkdir()
+        (self.lock / "meta").write_text(f"pid={os.getpid()}\nhostname={os.uname().nodename}\n")
+        calls = self.T / "calls"
+        self.shim(f'echo "$@" >> {calls}')
+        self.hook.LOCK_WAIT = 0
+        self.hook.pull(str(self.sr))
+        self.assertFalse(calls.exists(), "no git runs while another actor holds the lock")
+        self.assertEqual(self.head(), before)
+        self.assertTrue(self.lock.is_dir(), "the other holder's lock is left alone")
 
 
 if __name__ == "__main__":
