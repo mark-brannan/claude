@@ -21,6 +21,11 @@
 # that fails passes its code through; a driver_session that cannot be logged
 # exits 1 after the attach lines, since the session is already running.
 # confer-start reuses start() for the agora's confer sessions.
+#
+# The name, <name>, is "Driver <parent-id>: <slug> <date>", so the session list
+# says what the batch is about: <slug> is --about (what scoping planned, in
+# a few words) or else the parent's title, made a short slug; <date> is the
+# day the parent was filed.
 import argparse
 import json
 import os
@@ -55,6 +60,29 @@ def parent_facts(parent):
         if v and v.group(1) != "-":
             facts[key] = v.group(1)
     return r.stdout, facts
+
+
+DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+SLUG_MAX = 40
+
+
+def slug(words):
+    """<words> lower-cased and hyphenated, cut at a word to SLUG_MAX."""
+    s = re.sub(r"[^a-z0-9]+", "-", words.lower()).strip("-")
+    if len(s) > SLUG_MAX:
+        s = s[:SLUG_MAX + 1].rsplit("-", 1)[0] if "-" in s[:SLUG_MAX + 1] else s[:SLUG_MAX]
+    return s
+
+
+def session_name(parent, text, about):
+    """Driver <parent>: <slug> <date>, each part left out when it is empty."""
+    if not about:
+        title = re.search(r"^# (.+)$", text, re.M)
+        about = DATE.sub(" ", title.group(1)) if title else ""
+        about = re.sub(r"^\s*drive( the)?\b", "", about, flags=re.I)
+    filed = re.search(r"^(\d{4}-\d{2}-\d{2})T\S+ \S+ status=open\b", text, re.M)
+    tail = " ".join(x for x in (slug(about), filed.group(1) if filed else "") if x)
+    return "Driver %s: %s" % (parent, tail) if tail else "Driver %s" % parent
 
 
 def session_uuid(short):
@@ -135,10 +163,12 @@ def main():
     ap.add_argument("parent")
     ap.add_argument("--cwd", default=os.getcwd())
     ap.add_argument("--wait", type=float, default=45.0)
+    ap.add_argument("--about", default="")
     a = ap.parse_args()
     check_args(a, a.parent)
     text, facts = parent_facts(a.parent)
-    return start(a.parent, text, "Driver %s" % a.parent, "/pickup %s" % a.parent,
+    name = session_name(a.parent, text, a.about)
+    return start(a.parent, text, name, "/pickup %s" % a.parent,
                  "driver_session", facts, a.cwd, a.wait)
 
 

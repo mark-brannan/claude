@@ -99,7 +99,14 @@ Then it is my turn. Merging is mine too, by the `merge` label, unless I
 say otherwise for a PR or a repo.
 
 - **Threads before checks.** A running check or a long local suite is
-  background: start it and work the threads while it runs.
+  background: start it and work the threads while it runs. A running fixer
+  job is the exception below: wait it out before you push.
+- **An unreplied `[easy]` thread on the current head is the fixer's.**
+  While the review run's fixer job is queued or running, the author neither
+  replies to such a thread nor pushes. Work the other threads locally, wait
+  with `pr-blockers --wait --leave-easy`, pull the fixer's commit, then push
+  once. The author takes an `[easy]` thread only once the fixer has replied
+  declining it, or the run ended with no fixer.
 - **Before the push,** the suite runs locally on the commit being pushed:
   whole when it takes about a minute; narrowed above that, with output
   showing the changed tests ran (a `-k` that selects none is green by

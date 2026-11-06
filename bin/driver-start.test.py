@@ -19,6 +19,7 @@ from pathlib import Path
 
 TOOL = Path(__file__).resolve().parent / "driver-start"
 PARENT = "17939595623168262a"
+NAME = "Driver %s: hooks-guards-languette-batch-6-children 2026-11-06" % PARENT
 UUID = "3aa1df25-b265-443b-8cc2-40e2313ef52c"
 
 # claude stub: logs argv and cwd; --bg prints what the real one prints;
@@ -45,7 +46,7 @@ case "$1" in
 esac
 '''
 
-ITEM = """# Batch: a batch
+ITEM = """# Drive the 2026-11-06 hooks-guards + languette batch: 6 children
 
 ## Brief
 The driver brief. https://example.com/plan
@@ -93,7 +94,7 @@ class DriverStart(unittest.TestCase):
         r = self.run_tool(PARENT)
         self.assertEqual(r.returncode, 0, r.stderr)
         bg = [c for c in self.calls() if c.startswith("--bg")]
-        self.assertEqual(bg, ["--bg --remote-control Driver %s -n Driver %s /pickup %s" % (PARENT, PARENT, PARENT)])
+        self.assertEqual(bg, ["--bg --remote-control %s -n %s /pickup %s" % (NAME, NAME, PARENT)])
         self.assertEqual(Path(str(self.claude_log) + ".pwd").read_text().splitlines()[0], str(self.cwd.resolve()))
 
     def test_logs_the_full_session_id_on_the_parent(self):
@@ -102,10 +103,22 @@ class DriverStart(unittest.TestCase):
 
     def test_prints_how_to_attach(self):
         out = self.run_tool(PARENT).stdout
-        self.assertIn("driver started: Driver %s, session %s" % (PARENT, UUID), out)
-        self.assertIn('Claude Desktop: the session list, "Driver %s"' % PARENT, out)
+        self.assertIn("driver started: %s, session %s" % (NAME, UUID), out)
+        self.assertIn('Claude Desktop: the session list, "%s"' % NAME, out)
         self.assertIn("https://claude.ai/code/session_01YKXwAD8LvCtzSVyNvDgUcb\n", out)
         self.assertIn("claude attach 3aa1df25", out)
+
+    def test_about_names_the_session(self):
+        self.run_tool("--about", "Hooks-guards curia + languette", PARENT)
+        bg = [c for c in self.calls() if c.startswith("--bg")][0]
+        self.assertIn("-n Driver %s: hooks-guards-curia-languette 2026-11-06 /pickup" % PARENT, bg)
+
+    def test_a_long_title_is_cut_at_a_word(self):
+        self.item.write_text(ITEM.replace("hooks-guards + languette batch: 6 children",
+                                          "every open issue in the signalk-noaa repo, oldest first") % ("-", "-"))
+        self.run_tool(PARENT)
+        bg = [c for c in self.calls() if c.startswith("--bg")][0]
+        self.assertIn("-n Driver %s: every-open-issue-in-the-signalk-noaa 2026-11-06 /pickup" % PARENT, bg)
 
     def test_a_missing_link_is_said_not_failed(self):
         r = self.run_tool(PARENT, STUB_NO_LINK="1")
