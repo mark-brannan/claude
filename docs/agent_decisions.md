@@ -658,3 +658,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t192402z
 - driver session slug capped at 40 chars, cut at a word Undo: change SLUG_MAX in bin/driver-start ([#412](https://github.com/mark-brannan/claude/pull/412))
+
+### 20261106t192406z
+- driver session date is the parent card's filing date Undo: take the date from driver start time instead ([#412](https://github.com/mark-brannan/claude/pull/412))
