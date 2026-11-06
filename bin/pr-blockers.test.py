@@ -10,6 +10,8 @@
 # with a 403 (a Claude Code cloud session) the REST reads print the same lines.
 # --wait polls until CI settles (0 or 1), stops at once on a non-pending
 # blocker (1), on a PR that left the open state (3), or on timeout (4).
+# --leave-easy prints an unanswered claude[bot] [easy] thread on the head as the
+# fixer's while its check pends, never as a blocker or a stop to --wait.
 # `gh` is a stub serving fixtures.
 import json
 import os
@@ -74,8 +76,19 @@ def page(*commits):
 
 
 def view(state="CLEAN", mergeable="MERGEABLE", checks=(), decision="", pr_state="OPEN"):
-    return {"mergeStateStatus": state, "mergeable": mergeable, "headRefName": "feat",
+    return {"mergeStateStatus": state, "mergeable": mergeable, "headRefName": "feat", "headRefOid": HEAD,
             "statusCheckRollup": list(checks), "reviewDecision": decision, "state": pr_state}
+
+
+HEAD = "h" * 40
+
+
+def easy(on=HEAD, replies=0, path="b.py"):
+    """claude[bot]'s [easy] finding, as the fixer's GraphQL read sees it."""
+    return {"isResolved": False, "isOutdated": False, "path": path, "line": 3,
+            "comments": {"totalCount": 1 + replies, "nodes": [{
+                "author": {"__typename": "Bot", "login": "claude"}, "url": f"https://github.com/o/r/pull/5#d{path}",
+                "body": "\U0001F916 [nit] [easy] typo\n\U0001F916 m", "originalCommit": {"oid": on}}]}}
 
 
 def threads(*nodes):
@@ -100,11 +113,11 @@ class Test(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def run_tool(self, v, commits_text, ref="o/r#5", th=None, err=None):
+    def run_tool(self, v, commits_text, ref="o/r#5", th=None, err=None, flags=()):
         (self.T / "view.json").write_text(json.dumps(v))
         (self.T / "threads.json").write_text(th or threads())
         (self.T / "commits.json").write_text(commits_text)
-        p = subprocess.run([sys.executable, str(TOOL), ref], capture_output=True, text=True, env=self.env)
+        p = subprocess.run([sys.executable, str(TOOL), *flags, ref], capture_output=True, text=True, env=self.env)
         if err is not None:
             err.append(p.stderr)
         return p.returncode, p.stdout
@@ -257,11 +270,11 @@ class Test(unittest.TestCase):
         self.assertEqual(p.stdout, want)
         self.assertEqual(p.returncode, 1)
 
-    def run_wait(self, seq, *flags, interval="0"):
+    def run_wait(self, seq, *flags, interval="0", th=None):
         """--wait over one view per read (the last repeating); returns (code, stdout, stderr, reads)."""
         (self.T / "seq").write_text(json.dumps(seq))
         (self.T / "count").unlink(missing_ok=True)
-        (self.T / "threads.json").write_text(threads())
+        (self.T / "threads.json").write_text(th or threads())
         (self.T / "commits.json").write_text(page(commit("a")))
         env = {**self.env, "PRB_WAIT_INTERVAL": interval}
         try:
@@ -336,6 +349,55 @@ class Test(unittest.TestCase):
             env = {**self.env, "PATH": empty}  # no gh on it
             p = subprocess.run([sys.executable, str(TOOL), "o/r#5"], capture_output=True, text=True, env=env)
         self.assertEqual((p.returncode, p.stdout), (2, ""))
+
+    # --leave-easy: the CI fixer's [easy] threads are its own while its check runs.
+    FIXER = {"name": "review / fixer", "status": "QUEUED", "conclusion": ""}
+    FIXED = {"name": "review / fixer", "status": "COMPLETED", "conclusion": "SUCCESS"}
+
+    def test_leave_easy_names_the_fixers_thread_and_never_blocks_on_it(self):
+        for fixer in (self.FIXER, {"name": "fixer", "status": "IN_PROGRESS", "conclusion": ""}):
+            code, out = self.run_tool(view(checks=[fixer]), page(commit("a")), th=threads(easy()), flags=["--leave-easy"])
+            lines = out.splitlines()
+            self.assertEqual(len(lines), 2, fixer)
+            self.assertTrue(lines[0].startswith("fixer's: "), lines[0])
+            self.assertIn("b.py:3 https://github.com/o/r/pull/5#db.py", lines[0])
+            self.assertIn(f"check pending: {fixer['name']}", lines[1])
+            self.assertEqual(code, 1)  # from the pending check alone
+
+    def test_leave_easy_threads_are_ordinary_without_a_pending_fixer(self):
+        for checks in ([], [self.FIXED], [self.SLOW]):
+            code, out = self.run_tool(view(checks=checks), page(commit("a")), th=threads(easy()), flags=["--leave-easy"])
+            self.assertEqual(code, 1)
+            self.assertNotIn("fixer's:", out, checks)
+            self.assertIn("unresolved review thread at b.py:3 by claude", out)
+
+    def test_leave_easy_takes_only_unanswered_easy_threads_on_this_head(self):
+        th = threads(easy(replies=1, path="replied.py"), easy(on="0" * 40, path="old.py"), thread(),
+                     easy(path="mine.py"))
+        code, out = self.run_tool(view(checks=[self.FIXER]), page(commit("a")), th=th, flags=["--leave-easy"])
+        lines = out.splitlines()
+        self.assertEqual(code, 1)
+        for name in ("replied.py", "old.py", "a.py"):
+            self.assertTrue(any(x.startswith(f"unresolved review thread at {name}") for x in lines), name)
+        self.assertEqual([x for x in lines if x.startswith("fixer's:")][0].split()[5], "mine.py:3")
+
+    def test_without_leave_easy_an_easy_thread_is_an_ordinary_thread(self):
+        code, out = self.run_tool(view(checks=[self.FIXER]), page(commit("a")), th=threads(easy()))
+        self.assertEqual(code, 1)
+        self.assertNotIn("fixer's:", out)
+        self.assertIn("unresolved review thread at b.py:3 by claude", out)
+
+    def test_wait_leave_easy_waits_out_the_fixer_then_stops(self):
+        seq = [view(checks=[self.FIXER, self.SLOW]), view(checks=[self.FIXER]), view(checks=[self.FIXED])]
+        code, out, _, reads = self.run_wait(seq, "--leave-easy", th=threads(easy()))
+        self.assertEqual((code, reads), (1, 3))
+        self.assertEqual(len(out.splitlines()), 1)
+        self.assertIn("unresolved review thread at b.py:3 by claude", out)
+
+    def test_wait_without_leave_easy_stops_at_once_on_an_easy_thread(self):
+        code, out, _, reads = self.run_wait([view(checks=[self.FIXER]), view()], th=threads(easy()))
+        self.assertEqual((code, reads), (1, 1))
+        self.assertIn("unresolved review thread at b.py:3", out)
 
     def test_bad_ref_exits_two(self):
         self.assertEqual(self.run_tool(view(), page(), ref="nonsense")[0], 2)
