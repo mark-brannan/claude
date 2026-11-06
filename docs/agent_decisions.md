@@ -616,3 +616,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t035325z
 - Dollars lead the event block's turns line, not the first line Undo: move the field in block() ([#390](https://github.com/mark-brannan/claude/pull/390))
+
+### 20261106t061212z
+- tail fatigue grades at the higher of time and friction rungs, as drawn ([#393](https://github.com/mark-brannan/claude/pull/393))
