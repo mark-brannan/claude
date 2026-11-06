@@ -400,13 +400,24 @@ the rulings to date:
   it re-readied. A batch whose parent is not done is one its driver never
   finished (2026-11-02).
 
-The run's last line is the one line that starts the driver:
+**The start.** After the yes the driver starts on its own; the user
+manages none of it, and pastes nothing (2026-11-06). Run, last:
+
+```bash
+~/.claude/bin/driver-start <parent-id>
+```
+
+It starts one background session on this box that runs
+`/pickup <parent-id>`, with Remote Control on so the user can open it from
+the Claude Desktop app, logs `driver_session=<id>` on the parent, and prints
+how to attach. `/pickup` already takes a card id, and the parent's brief is
+the whole hand-off (pencil on the how: the plan as a card, not a path
+`/pickup` learns); long term the same item is what an unattended run
+picks up. The run's last lines are what `driver-start` printed: the
+session's name in the Desktop session list and its link. A start that is
+refused or fails ends the run with its message and, in its place, the one
+line that starts the driver by hand:
 
 ```
 /pickup <parent-id>
 ```
-
-`/pickup` already takes a card id, and the parent's brief is the whole
-hand-off (pencil on the how: the plan as a card, not a path `/pickup`
-learns). Near term that line opens an interactive session the user
-watches; long term the same item is what an unattended run picks up.
