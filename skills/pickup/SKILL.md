@@ -59,6 +59,11 @@ the user typed `--subagents`. On `driver=subagents`, or a
 parent filed before the fact existed, run it with sub-agents. A worker's
 first command is `~/.claude/bin/worker-start`, alone in its Bash call (flags
 in its header): where a chain of fetch, branch and log asks, it is allow-listed.
+Each worker's prompt also carries, verbatim: "One action per Bash call, with
+literal paths: no `for`/`while` loop, `$var`, `$(...)` or subshell. A loop
+goes in a script in your scratchpad, run as `python3 <path>`; an edit goes
+through `~/.claude/bin/apply-edits`." Claude Code can offer no rule for those
+shapes, so each one is a dialog for the user.
 
 ## 2. Restate it, in three lines
 
