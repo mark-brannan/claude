@@ -1093,6 +1093,10 @@ class Hook:
         n = sit_min // k.sit_every_min * k.sit_every_min
         if not (n >= k.sit_every_min and n > self.time_line):
             return
+        # Two hours arms the Stop block's hand-off, unless work is in flight:
+        # landing it comes first. Its own threshold, apart from the hot rung.
+        if n >= k.sit_every_min * 2 and not self.in_flight() and not self.hush:
+            self.since_nag = True
         t = f"⏱ {hm(sit_min)} · context {kfmt(ctx)}"
         tail = self.sit_tail()
         if tail:
@@ -1134,7 +1138,7 @@ class Hook:
     def sitting_model(self):
         """The model side of the sitting clock: silent up to the hot rung, then
         the stop-shaping line on each later time-ladder rung, sit_every_min
-        apart past the last. The same rung arms the Stop hand-off. A rung of 0
+        apart past the last. A rung of 0
         means the clock restarted, which spends the injection. m_sit_said
         gates the repeat (dotfiles#282); m_sit_at is the last rung whose stop
         was shaped, left unspent by work in flight."""
@@ -1154,7 +1158,6 @@ class Hook:
         elif not self.sit_quiet and not self.in_flight() and r > self.m_sit_at and not self.driver:
             self.model_lines.append(f"Sitting {hm(m_min)} at this machine, past {hm(r)}. {self.stop_shape}")
             self.m_sit_at = self.m_sit_said = r
-            self.since_nag = True
 
     def bedtime(self):
         """After the reply: the warning bed_warn_min before it, and the hour

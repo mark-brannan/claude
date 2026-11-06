@@ -684,14 +684,14 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("below the first sitting rung, nothing reaches the model", "", P())
         w.clock(61, 10)
         w.t("up to the hot rung the clock only reads: nothing reaches the model", "", P())
-        w.t("and the Stop hand-off stays unarmed", "false", json.dumps(w.nag_field(sid, "since_nag")))
+        w.t("and the Stop hand-off stays unarmed below its own threshold", "false", json.dumps(w.nag_field(sid, "since_nag")))
         w.clock(91, 10)
         out6f = P()
         w.has("past the hot rung the stop is shaped: a landing, the pickup and a pointer",
               r'^Sitting 1h31 at this machine, past 1h30\. Shape a good stop: reduce the stack .*pickup item.*'
               r'without showing it, and end the turn where leaving is easy\. Standing orders: "At a sitting rung"\.$',
               out6f)
-        w.t("and the same rung arms the Stop hand-off", "true", json.dumps(w.nag_field(sid, "since_nag")))
+        w.t("and the hot rung does not arm the Stop hand-off: it has its own 2h00 threshold", "false", json.dumps(w.nag_field(sid, "since_nag")))
         w.has("and names the pickup item by this session's short id", rf"pickup/\*-{sid[:8]}\.md", out6f)
         # The pointer is only as good as its target.
         anchor = re.search(r'Standing orders: "([^"]*)"', out6f).group(1)
