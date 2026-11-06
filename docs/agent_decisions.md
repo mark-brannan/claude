@@ -625,3 +625,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t061219z
 - line 1 widths: 6 for dollars, 4 per token figure, compact past that ([#393](https://github.com/mark-brannan/claude/pull/393))
+
+### 20261106t063251z
+- The ⛔ run ladders like the other counted runs (⛔⛔⛔(x4) at line 66, agreeing with line 29); code's single ⛔ catches up later Undo: revert the ⛔ line in hooks/metrics-live-requirements.md to ⛔(x4) and drop the body's Pencil entry ([#393](https://github.com/mark-brannan/claude/pull/393))
