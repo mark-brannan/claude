@@ -57,7 +57,9 @@ def compact(n):
     for unit, div in (("M", 1e6), ("k", 1e3)):
         if n >= div:
             v = n / div
-            return f"{v:.1f}{unit}" if v < 10 else f"{int(v)}{unit}"
+            if v < 9.95:  # :.1f would round 9.95..9.99 up to "10.0", a column too wide
+                return f"{v:.1f}{unit}"
+            return f"{10 if v < 10 else int(v)}{unit}"
     return str(int(n))
 
 
