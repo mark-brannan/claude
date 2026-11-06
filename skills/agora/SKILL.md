@@ -174,7 +174,7 @@ a PR or comments on an issue just to record a private ruling.
    staged. Under the Stop hook's push lock, in one Bash call:
 
    ```bash
-   python3 ~/.claude/lib/state.py push_locked 'cd ~/claude_prompts_scratch \
+   python3 ~/.claude/lib/state.py push_locked 'd=$(python3 ~/.claude/lib/state.py state_repo) && cd "$d" \
      && git add -- <paths> && git commit -q -m "State: agora session <sid8> (<date>)" -- <paths> \
      && git pull -q --rebase --autostash && git push -q origin HEAD'
    ```

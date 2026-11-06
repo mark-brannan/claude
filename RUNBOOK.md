@@ -113,10 +113,9 @@ source. There is no environment setting that does this for you.
 2. Clone it to `/workspace/claude_prompts_scratch` — a path `state_repo()`
    in `.claude/lib/state.py` already searches.
 
-The other paths it searches, in order: `$CLAUDE_STATE_REPO`,
-`/home/user/claude_prompts_scratch`, `/workspace/claude_prompts_scratch`,
-`~/claude_prompts_scratch`, `~/src/…`, `~/Projects/…`, `~/code/…`. Setting
-`CLAUDE_STATE_REPO` wins over all of them if the clone landed somewhere else.
+The places it searches are `state_repo.search` in `config.json`, after
+`$CLAUDE_STATE_REPO`, which wins if the clone landed somewhere else. The
+repo's name and owner are `state_repo.github` there too.
 
 ## Add a file to the cloud seed
 

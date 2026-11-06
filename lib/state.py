@@ -26,6 +26,7 @@ import time
 import atomic
 import gitrun
 import jsonl
+import config
 
 HOOK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks")
 
@@ -55,14 +56,11 @@ def _git(*args):
 # on a network round trip. Absence is reported, not repaired.
 def state_repo():
     """The private state repo's working tree, or None if it isn't here."""
-    home = os.environ.get("HOME", "")
-    for d in (os.environ.get("CLAUDE_STATE_REPO", ""),
-              "/home/user/claude_prompts_scratch",
-              "/workspace/claude_prompts_scratch",
-              f"{home}/claude_prompts_scratch",
-              f"{home}/src/claude_prompts_scratch",
-              f"{home}/Projects/claude_prompts_scratch",
-              f"{home}/code/claude_prompts_scratch"):
+    try:
+        search = config.state_repo_dirs(os.environ.get("HOME", ""))
+    except config.ConfigError:
+        search = []
+    for d in [os.environ.get("CLAUDE_STATE_REPO", "")] + search:
         if d and os.path.isdir(f"{d}/.git"):
             return d
     return None

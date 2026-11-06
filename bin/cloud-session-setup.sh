@@ -64,6 +64,7 @@ DRY_RUN=no
 # the hook silently stops running, not that a stranger's copy runs instead.
 INSTALL="
 settings.json
+config.json
 CLAUDE.md
 rules/code.md
 rules/writing.md
@@ -89,6 +90,7 @@ skills/prt/SKILL.md
 skills/critical-review/SKILL.md
 hooks/lib_state.py
 lib/state.py
+lib/config.py
 lib/sidlive.py
 lib/ids.py
 lib/lock.py
@@ -182,7 +184,7 @@ OWNED_DIRS='hooks rules bin lib'
 OWNED_NEVER='. state projects todos plugins'
 
 # The continuity hooks read and write the private state repo
-# (claude_prompts_scratch). This script cannot clone it -- a VM has no
+# (named in config.json). This script cannot clone it -- a VM has no
 # credentials for a private repo at setup time -- so it must be added as a
 # SECOND SOURCE on the cloud environment alongside claude. Without it the
 # hooks still run, but they write to ~/.claude/state/global, which dies with

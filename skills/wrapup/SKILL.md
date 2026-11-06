@@ -39,7 +39,7 @@ that is the pickup item's hand-off (step 2b, four lines), not a wrap-up.
 ## 1. Narrative log
 
 Write `log/YYYY-MM-DD-<slug>.md` under the state directory
-(`~/claude_prompts_scratch/state/global/`). The auto-checkpoint records what
+(the state repo's `state/global/`). The auto-checkpoint records what
 happened; only you can record what it meant and what should happen next. The
 machine one is evidence, not a substitute. Put in it:
 

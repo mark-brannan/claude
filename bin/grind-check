@@ -95,7 +95,7 @@ ref_num()  { printf '%s' "${1##*#}"; }
 slugify() { jq -Rr 'ascii_downcase | gsub("[^a-z0-9]+"; "-") | ltrimstr("-") | rtrimstr("-") | .[:40] | rtrimstr("-")'; }
 # card_file <slug> -- the work item whose title (or brief) slugs to this card's slug.
 card_file() {
-  local dir=${WORK_ITEM_DIR:-$HOME/claude_prompts_scratch/state/global/items}
+  local dir=${WORK_ITEM_DIR:-$(python3 "$(dirname "$(realpath "$0")")/../lib/state.py" items_dir 2>/dev/null)}
   [ -d "$dir" ] || return 1
   awk 'FNR == 1 { t = $0; sub(/^# /, "", t); print FILENAME "\t" t }
        FNR > 1 && prev == "## Brief" { print FILENAME "\t" substr($0, 1, 60) }
