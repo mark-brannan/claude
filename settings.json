@@ -33,6 +33,8 @@
       "Bash(~/.claude/bin/card-id *)",
       "Bash(~/.claude/bin/pickup-list find *)",
       "Bash(~/.claude/bin/scoping-lock check *)",
+      "Bash(~/.claude/bin/driver-start *)",
+      "Bash(~/.claude/bin/confer-start *)",
       "Bash(~/.claude/bin/pickup-list)",
       "Bash(~/.claude/bin/pickup-list *)",
       "Bash(~/.claude/bin/pickup-list --all)",
