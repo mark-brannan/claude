@@ -236,11 +236,11 @@ estimate:
 ```
  #  Item                          Est.   Actual  Status     Model
  1  config file                  $8.00   $10.00  done       opus·med
- 2  statusline share            $16.00   $21.00  done       sonnet·med
- 3  cost table in scoping       $15.00    $4.00  running    opus·high
+ 2  statusline share            $16.00   $22.00  done       sonnet·med
+ 3  cost table in scoping       $15.00        —  running    opus·high
  4  walk spend table            $12.00        —  waiting    fable·med
-    Total, 4 items              $51.00   $35.00
-      % of week                   2.6%     1.8%
+    Total, 4 items              $51.00   $32.00
+      % of week                   2.6%     1.6%
     Fable items (4)             $12.00    $0.00
       % of Fable week             2.4%     0.0%
 ```
