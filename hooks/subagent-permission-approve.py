@@ -8,8 +8,10 @@ PreToolUse guards (languette first) are where calls are judged, so a request
 that only a permission rule raised is approved here.
 
 A PreToolUse hook's "ask" raises this same event, and its input does not say
-so. A request is approved only when all four hold; otherwise the hook prints
-nothing and the dialog shows as it would have:
+so. A request is approved when the first two below hold and either
+suggestions are present or languette's record passed the same command, and
+never over a languette ask; otherwise the hook prints nothing and the dialog
+shows as it would have:
 
 - permission_mode is "default": the dropped-out case. In plan or acceptEdits
   the user chose the mode, and plan's point is not acting;
@@ -20,9 +22,10 @@ nothing and the dialog shows as it would have:
   Claude Code 2.1.300, docs silent). Claude Code also offers none for a
   Bash command it cannot turn into a rule (a loop, `$var` or `$(...)`, a
   subshell: measured, CC 2.1.317), so a request without suggestions is
-  still approved when languette's record holds a verdict other than ask for
-  this session's same masked command. That is positive evidence the only
-  hook that asks did not; a record with no such line leaves the dialog;
+  still approved when languette's record holds a pass (PASSES) for this
+  session's same masked command. That is positive evidence the only hook
+  that asks did not; a record with no such line, or a command a project
+  rule masks (it never equals the record's text), leaves the dialog;
 - languette's decision record has no "ask" for this request: same session and
   tool, and either within the last WINDOW seconds or, for Bash, the same
   masked command (a queued dialog can show after the window). The command is
@@ -82,47 +85,45 @@ def request_command(ev, record):
         return None
 
 
-def languette_asked(ev, now, path, command=None):
-    """True when languette recorded an ask for this request: same session and tool,
-    within WINDOW seconds of now or with the same masked command.
-    The rotated .1 is read too: a rotation can land between the ask and this hook."""
-    session = ev.get("session_id")
+PASSES = ("silent", "allow", "context")  # languette's verdicts that let a call through
+
+
+def rows(ev, path):
+    """This session's and tool's parsed record lines, both files.
+    The rotated .1 is read too: a rotation can land between the record and this hook."""
     for p in (path, path + ".1"):
         for ln in tail_lines(p):
             try:
                 r = json.loads(ln)
             except ValueError:
                 continue
-            if r.get("session") != session or r.get("verdict") != "ask" or r.get("tool") != ev.get("tool_name"):
-                continue
-            if command is not None and (r.get("command") or {}).get("text") == command:
-                return True
-            try:
-                t = calendar.timegm(time.strptime(r.get("t", ""), "%Y-%m-%dT%H:%M:%SZ"))
-            except ValueError:
-                return True  # an ask we cannot place in time is an ask
-            if now - t <= WINDOW:
-                return True
+            if r.get("session") == ev.get("session_id") and r.get("tool") == ev.get("tool_name"):
+                yield r
+
+
+def languette_asked(recs, now, command=None):
+    """True when languette recorded an ask for this request:
+    within WINDOW seconds of now or with the same masked command."""
+    for r in recs:
+        if r.get("verdict") != "ask":
+            continue
+        if command is not None and (r.get("command") or {}).get("text") == command:
+            return True
+        try:
+            t = calendar.timegm(time.strptime(r.get("t", ""), "%Y-%m-%dT%H:%M:%SZ"))
+        except ValueError:
+            return True  # an ask we cannot place in time is an ask
+        if now - t <= WINDOW:
+            return True
     return False
 
 
-def languette_cleared(ev, path, command):
-    """True when languette recorded a PreToolUse verdict other than ask for this
-    session's same masked Bash command; False when command is None."""
-    if command is None:
-        return False
-    session = ev.get("session_id")
-    for p in (path, path + ".1"):
-        for ln in tail_lines(p):
-            try:
-                r = json.loads(ln)
-            except ValueError:
-                continue
-            if (r.get("session") == session and r.get("event") == "PreToolUse"
-                    and r.get("tool") == ev.get("tool_name") and r.get("verdict") not in (None, "ask")
-                    and (r.get("command") or {}).get("text") == command):
-                return True
-    return False
+def languette_cleared(recs, command):
+    """True when languette recorded a PreToolUse pass for this same masked
+    Bash command; False when command is None."""
+    return command is not None and any(
+        r.get("event") == "PreToolUse" and r.get("verdict") in PASSES
+        and (r.get("command") or {}).get("text") == command for r in recs)
 
 
 def verdict(ev, now, path, record=None):
@@ -130,11 +131,12 @@ def verdict(ev, now, path, record=None):
     if ev.get("permission_mode") != "default" or not ev.get("agent_id"):
         return None
     command = request_command(ev, record)
-    if languette_asked(ev, now, path, command):
+    recs = list(rows(ev, path))
+    if languette_asked(recs, now, command):
         return "languette-ask"
     if ev.get("permission_suggestions"):
         return "allow"
-    return "allow-recorded" if languette_cleared(ev, path, command) else "no-suggestions"
+    return "allow-recorded" if languette_cleared(recs, command) else "no-suggestions"
 
 
 def log(ev, v):

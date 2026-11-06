@@ -65,9 +65,9 @@ class SubagentPermissionApproveTest(unittest.TestCase):
             return []
         return [json.loads(x)["verdict"] for x in self.log.read_text().splitlines()]
 
-    def run_hook(self, agent=True, suggestions=SUGGEST, stdin=None, agent_type=None, mode="default"):
+    def run_hook(self, agent=True, suggestions=SUGGEST, stdin=None, agent_type=None, mode="default", tool="Bash"):
         ev = {"hook_event_name": "PermissionRequest", "session_id": "abc123", "cwd": "/w/repo",
-              "permission_mode": mode, "tool_name": "Bash", "tool_input": {"command": "touch x"}}
+              "permission_mode": mode, "tool_name": tool, "tool_input": {"command": "touch x"}}
         if agent:
             ev.update(agent_id="a4aadbe92e02e5780", agent_type="general-purpose")
         if agent_type:
@@ -125,6 +125,16 @@ class SubagentPermissionApproveTest(unittest.TestCase):
         self.record("silent", command="touch y")
         self.record("silent", session="other", command="touch x")
         self.assertIsNone(self.run_hook(suggestions=[]))
+
+    def test_no_suggestions_and_a_deny_for_the_same_command_is_left_alone(self):
+        self.record("deny", command="touch x")
+        self.assertIsNone(self.run_hook(suggestions=[]))
+        self.assertEqual(self.verdicts(), ["no-suggestions"])
+
+    def test_non_bash_request_without_suggestions_is_left_alone(self):
+        self.record("silent", tool="Write", command="touch x")
+        self.assertIsNone(self.run_hook(suggestions=[], tool="Write"))
+        self.assertEqual(self.verdicts(), ["no-suggestions"])
 
     def test_no_suggestions_and_a_languette_ask_is_left_alone(self):
         self.record("silent", command="touch x")
