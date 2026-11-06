@@ -682,3 +682,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t194718z
 - handoff-start reuses driver-start helpers on main, not #413's start(), to avoid stacking; a pickup item's open status is the second-start guard; session named Pickup <id> Undo: fold into #413's start() after it lands ([#415](https://github.com/mark-brannan/claude/pull/415))
+
+### 20261106t210649z
+- the seven new criteria's names and titles, in the record's own words Undo: rename the files ([#416](https://github.com/mark-brannan/claude/pull/416))
