@@ -187,7 +187,7 @@ so — with its stamp, and moves on:
 | pencil | pen, marked as lint's | the line's link resolves to a merged commit, spec row or decisions line and the user has not reversed it | lint, shown in its diff and listed in its findings |
 | pen, governs code | a spec row in the public repo beside the code, citing its repo's decisions line; the ledger line links the row. The steering rung of embedded, below | the spec PR merges | the spec PR's author; lint deletes the ledger line |
 | pen, governs how we work, not code | the standing orders or `rules/code.md` | the user's hand | the user |
-| pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line with a brief because | an agora or the user's hand | lint deletes the ledger line |
+| pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line in [the agora's format](../agora/SKILL.md#where-a-ruling-lands) | an agora or the user's hand | lint deletes the ledger line |
 | pen, private, no work to file | stays | scoping promotes it when it files the work | scoping |
 | refused name or discarded idea | one line in agent-notes Working memory (*refused: …*) | the prune | lint |
 | superseded | the **Superseded** group, then deleted at the prune; git and the roll keep it | the prune | lint |
