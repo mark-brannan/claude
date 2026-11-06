@@ -71,7 +71,7 @@ no GitHub home. Take the first line that fits:
   private-terms check — the redacted and blocked term files languette's
   options name, read by path, never copied — **and** a stranger could read it without
   learning a plan, a finding or a draft you would not hand them. Otherwise
-  `mark-brannan/claude_prompts_scratch`; the public-issue guard refuses the
+  the state repo; the public-issue guard refuses the
   first half anyway, the second half is yours to judge.
 - **Agent-startable work** → an issue labelled `ready`. Unlabelled is
   untriaged, and only ever a count.
@@ -104,7 +104,7 @@ no GitHub home. Take the first line that fits:
 
 ## Where the card lands
 
-One item per card, in `~/claude_prompts_scratch/state/global/items/`, written
+One item per card, in the state repo's `state/global/items/`, written
 only through `~/.claude/bin/work-item`. Never hand-write an item file, and
 never put a card anywhere else, `kanban.md` included. The store is private, so boats, hosts and services may appear in it; nothing else
 may carry cards. "Project" means the `project-<name>` GitHub topic that

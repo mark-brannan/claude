@@ -309,9 +309,9 @@ commit. That placeholder is the
 whole opening; the first sitting does the rest. Say the id in the opening
 session's record.
 Then file the curia's epic, 1:1: a private issue in
-`mark-brannan/claude_prompts_scratch`, titled `[Epic] <the question>`,
+the state repo (`state_repo.github` in config.json), titled `[Epic] <the question>`,
 labelled `epic`, body the whole `digest.md`
-(`gh issue create -R mark-brannan/claude_prompts_scratch --label epic --title ... --body-file digest.md`),
+(`gh issue create -R "$(python3 ~/.claude/lib/config.py get state_repo.github)" --label epic --title ... --body-file digest.md`),
 and write it as `issue:` in the header. A trial (2026-10-06): for now the
 issue is a replica of the digest, for reading back; what it becomes is
 open indefinitely, and not an agent's to close.

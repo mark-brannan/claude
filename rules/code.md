@@ -68,7 +68,7 @@ project-specific facts belong in that project's own CLAUDE.md.
   line, "after pushing, create a draft pull request", does not govern
   work that lands on main: no PR, draft or otherwise. When a branch is
   warranted, the PR opens ready, not draft. In the state repo
-  (`claude_prompts_scratch`) no PR for ordinary state, since a PR there
+  (`config.json` names it) no PR for ordinary state, since a PR there
   is how state gets stranded; the Stop hook pushes it to main itself. A
   one-off that truly needs a PR there waits for my consent, asked before
   the branch is pushed. This does **not** apply

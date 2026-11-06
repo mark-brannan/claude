@@ -206,7 +206,7 @@ hand-off, then offer the break, once.
 ```
 /pickup the <repo> review backlog. <n> PRs are open from the <date>
 orchestration session; list, stacks and deferrals are in
-claude_prompts_scratch state/global/log/<date>-<repo>-orchestration.md.
+the state repo's state/global/log/<date>-<repo>-orchestration.md.
 Work them oldest-first: threads, conflicts, checks, hand over. Skip any PR
 the user has a thread on. Model: sonnet. Effort: medium.
 ```

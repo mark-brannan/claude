@@ -5,6 +5,7 @@ jq parses the transcript; it does not write what you read on screen
 an f-string here -- no jq program, no module include, no -L path. A field
 with nothing to say returns "" rather than a zero or a "null".
 """
+import math
 
 
 def fmt_turns(turns=0, tools=0):
@@ -26,3 +27,23 @@ def fmt_work(commits=0, dirty=0, unpushed=0):
     if unpushed and unpushed > 0:
         s += f"{unpushed}↑unpushed  ← not safe to kill"
     return f"⎇ {s}" if s else ""
+
+
+def fmt_usd(cost):
+    """"$2.39" -- the session's estimated cost in dollars, sub-agents
+    included. Cents below $100, whole dollars from there, where cents are
+    noise; "<$0.01" for a cost that rounds to no cents, so a priced session
+    never reads as free. Empty when the cache carries no number, so a cache
+    from before the field drops it rather than printing "$None".
+    Rounds half away from zero, as jq's `round` does: the `usd` def in
+    lib-metrics-fmt.jq must print the same bytes."""
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+        return ""
+    if cost <= 0:
+        return "$0.00"
+    cents = math.floor(cost * 100 + 0.5)
+    if cents == 0:
+        return "<$0.01"
+    if cents >= 10000:
+        return f"${math.floor(cost + 0.5)}"
+    return f"${cents // 100}.{cents % 100:02d}"

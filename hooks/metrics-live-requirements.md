@@ -33,6 +33,14 @@ renders one block with four ⛁ in it.
 and nothing else. The threshold lines rendered `context_peak/rung` — the same
 shape, one line away, meaning something different.
 
+**The session's dollars appear once in each readout.** `$2.39`, sub-agents
+included, from the live cache's `cost_usd`; a cache without it shows no dollars.
+
+```
+⛁⛁ 46k/155k ⚖⚖(x2) 🌌(x0) 🔧✅(x0) ⏱1h33⏱️⏱️⏱️⏱️ — 💸
+$2.39 ⇢ 3 ⚙ 31 ⎇ 2c1~3↑unpushed  ← not safe to kill
+```
+
 **A counted field never vanishes; zero is a state with a glyph.** 🧘
 decisions, 🌌 friction, ✅ blocked — the field keeps its slot and its `(x0)`,
 so "nothing happened" and "this is not measured" never look the same. See [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137).

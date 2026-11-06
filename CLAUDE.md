@@ -372,7 +372,7 @@ Hooks handle the mechanics unprompted.
 **A finding that reads like a real security or credential exposure never
 goes into a public repo's tracked files** — board, log, doc, commit
 message, anywhere — until I've made the call on severity and disclosure.
-Write it to the private `claude_prompts_scratch` state repo instead
+Write it to the private state repo (`config.json` names it) instead
 (a public-repo card may point at it vaguely, with no specifics) and tell me
 directly, in the same turn you found it. Git history doesn't forgive a
 guess here — undoing a public push means a force-push rewrite, real

@@ -190,7 +190,7 @@ to_entries as $E
 # A friction event is a human turn that contradicts, corrects, overrides or
 # rebukes the assistant turn before it. Anchored at the human enqueue index,
 # same as $humans, so friction and decisions share one timeline. Full spec:
-# claude_prompts_scratch/state/global/log/2026-08-21-friction-metric-spec.md
+# the state repo's state/global/log/2026-08-21-friction-metric-spec.md
 
 # Text of every human enqueue, keyed by turn index -- same source as $humans.
 | ([ $E[] | select(.value.type == "queue-operation" and .value.operation == "enqueue"

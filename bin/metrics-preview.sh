@@ -22,12 +22,12 @@
 #   row       the statusline row
 #   friction  session-metrics.jq's friction counts against the two fixtures
 #             in .claude/hooks/fixtures/ -- see the spec that number is
-#             calibrated against: claude_prompts_scratch/state/global/log/
+#             calibrated against: the state repo's state/global/log/
 #             2026-08-21-friction-metric-spec.md. The fixtures are fully
 #             synthetic (no real transcript text -- dotfiles is public); a
 #             from-the-real-transcripts version can be run locally by
 #             pointing $FRICTION_REAL_CONTENTIOUS / $FRICTION_REAL_CALM at
-#             copies kept in the private claude_prompts_scratch repo.
+#             copies kept in the private state repo.
 # Exits non-zero if any check fails, so it is usable in a pre-commit or CI.
 #
 # Reads the newest local transcript, so the numbers are a real session's.
@@ -207,7 +207,7 @@ check_blocked "$FIXDIR/friction-calm.jsonl"    "calm fixture"    0 0 0 0
 
 # Optional and advisory only: the real calibration transcripts, kept private
 # (redacted content in a public fixture was ruled out -- see
-# claude_prompts_scratch). Point these at local copies to compare against the
+# the state repo). Point these at local copies to compare against the
 # real sessions. Report-only, not gating -- the spec's S2/S8 phrase lists are
 # a fixed vocabulary and don't literally match every real phrasing (e.g. "The
 # pad-to-75 approach was wrong" vs the regex's "that (claim|was) wrong"), so
@@ -232,7 +232,8 @@ if [ -n "$FIELDS" ]; then
   say ""
   say "--- fields (name, width, |value|)"
   jq -r -L "$HOOKS" 'include "lib-metrics-fmt";
-    [ {n:"env",  v:env},  {n:"cost",  v:cost},  {n:"time", v:time},
+    [ {n:"env",  v:env},  {n:"cost",  v:cost},  {n:"usd", v:(usd // "(no cost_usd)")},
+      {n:"time", v:time},
       {n:"dec",  v:dec},  {n:"turns", v:turns},
       {n:"work", v:(work // "(empty on a clean tree)")},
       {n:"split",v:split} ]

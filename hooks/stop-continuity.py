@@ -13,7 +13,7 @@ state_shard_path)
   metrics/sessions/<id>.json    cost and shape of the session
   metrics/decisions/<id>.jsonl  each decision pushed to the user, typed by cost
   metrics/friction/<id>.jsonl   each friction event, typed by cost -- see
-                                 claude_prompts_scratch/state/global/log/
+                                 <state repo>/state/global/log/
                                  2026-08-21-friction-metric-spec.md
   metrics/blocked/<id>.jsonl    each tool call the permission layer refused
   metrics/critical-review/<id>.jsonl  each /critical-review typed, its cost
