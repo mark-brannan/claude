@@ -10,8 +10,8 @@ sorting is a change to the governing variables however small the case.
 
 Lineage: 10 CFR 50.59 itself is a rule about who decides, the licensee
 alone or with the regulator's prior approval; the screen's whole
-purpose is routing. Here the record names a functional hierarchy (the
-curia-loop's ledger, 2026-11-04): the user final over all, agent layers
+purpose is routing. Here the record names a functional hierarchy: the
+user final over all, agent layers
 with authority over other agents where it serves a purpose and has
 measurable value, with oversight and escalation up the chain.
 

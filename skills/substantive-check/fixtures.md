@@ -2,7 +2,7 @@
 
 Each case is a literal diff, small enough to read whole, with the
 verdict and criteria the check must return. The first two are the
-user's smoke tests of 2026-11-06. A case the check gets wrong in the
+smoke tests the criteria must pass. A case the check gets wrong in the
 field goes here with the review finding that caught it, and the
 criterion that should have fired grows a detector. A runner may walk
 these one day; until then a change to any criterion is read against
@@ -147,7 +147,7 @@ Same words, same strength, a new heading. Verdict `form`. A heading
 others link to would make it criterion 7; grep finds no anchor to the
 old position.
 
-## 8. A guard's path class gains a glob — substantive (8, and 2)
+## 8. A guard's path class gains a glob — substantive (2, 8)
 
 ```diff
 --- a/bin/mixed-loops-screen.py

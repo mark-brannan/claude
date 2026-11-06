@@ -84,8 +84,8 @@ review.
 ## Never
 
 - edit, commit, push, comment, label, or take a worktree;
-- write any file but the summary file a CI brief names, or the PR
-  body's declaration: the author writes it;
+- write any file but the one summary file a CI run grants it, or the
+  PR body's declaration: the author writes it;
 - spawn an agent;
 - run a `gh` call that writes;
 - print a change without the lines that show it, old beside new;
@@ -156,7 +156,10 @@ One line per file the check rows, under one section in the PR body:
 
 The value is `form`, or `substantive (<criteria>): <what moves>`. A
 criterion 8 row's clause is one of 50.59(a)(2)'s three, `essentially
-the same`, `more conservative` or `less conservative: <what moves>`.
+the same`, `more conservative` or `less conservative: <what moves>`; a
+method change whose results are `essentially the same` judges nothing
+differently and is form, so that file reads `form` unless another
+criterion fired. The other two are substantive.
 The section goes into the merge commit with the rest of the PR body, so
 the record carries it in both places.
 
@@ -215,13 +218,13 @@ what the read-set left out, or `none`. No other line follows.
 
 ## In CI
 
-The shared review workflow runs this check once per review run, on
-Sonnet, before it picks the reviewer's tier, and reads the verdict:
-`substantive` sends the PR to the deep tier (Opus, or Fable where Opus
-co-authored it) and `form` to the default tier (Sonnet, or Haiku where
-Sonnet co-authored it); `unknown` fails open to deep when the diff
-touches a governing document. The brief names a summary file; the check
-writes it with line 1 as one JSON object and the report after:
+The shared review workflow runs this check once per review run before
+it picks the reviewer's tier, and reads the verdict; the tier rule lives
+in that workflow, not here. It runs the check headless with an Edit
+grant on one summary file under the runner's temp directory, the way
+maxims-check and arete-check are run, so the check writes that file
+and nothing else; run as Explore elsewhere it writes nothing. Line 1 of
+the file is one JSON object and the rest is the report:
 
 ```
 {"verdict":"substantive","criteria":[2,5,8],"governing":true,"files":{"CLAUDE.md":"substantive","bin/mixed-loops-screen.py":"substantive",".github/workflows/review.yml":"substantive","hooks/stop.py":"form","docs/plan.md":"mu"}}
@@ -230,10 +233,12 @@ writes it with line 1 as one JSON object and the report after:
 `governing` is true when any touched file is a governing document: a
 CLAUDE.md, a `rules/` or `.claude/rules` file, an ADR, a decisions
 file, a curia folder, a SKILL.md, a skill's `checks/`, `areas.md` or
-rubric. That is the only path judgment the check makes, and only so
-that an `unknown` verdict has a side to fail to. The reviewer's tier is
-the workflow's rule, not this check's; the user's eye is still the gate
-after a `form` verdict on a governing document.
+rubric, a design document (`docs/`, a `*-requirements.md`, a document
+a curia, ADR or rules file names as a design). The workflow keeps its
+own class of governing paths and takes the union; this flag exists so
+that an `unknown` verdict has a side to fail to even when the diff
+could not be listed. The user's eye is still the gate after a `form`
+verdict on a governing document.
 
 ## Fixtures
 
