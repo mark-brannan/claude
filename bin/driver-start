@@ -4,12 +4,12 @@
 # can open it from the Claude Desktop app, claude.ai/code or a phone, and
 # nothing to paste. Scoping's §6 runs it on the yes.
 #
-#   driver-start [--cwd <dir>] [--wait <seconds>] <parent-id>
+#   driver-start [--cwd <dir>] [--wait <seconds>] [--about <words>] <parent-id>
 #
 # Refused (exit 1) when the parent cannot be read, or its log already carries
 # `driver_session=`: one driver per yes. Otherwise it runs
 #
-#   claude --bg --remote-control "Driver <parent-id>" -n "Driver <parent-id>"
+#   claude --bg --remote-control "<name>" -n "<name>"
 #          [--model <m>] [--effort <e>] "/pickup <parent-id>"
 #
 # in --cwd (default: here), with the model and effort the parent's create
@@ -20,6 +20,11 @@
 # is running and listed by name. Exit 2 on bad arguments; a `claude --bg`
 # that fails passes its code through; a driver_session that cannot be logged
 # exits 1 after the attach lines, since the session is already running.
+#
+# The name, <name>, is "Driver <parent-id>: <slug> <date>", so the session list
+# says what the batch is about: <slug> is --about (what scoping planned, in
+# a few words) or else the parent's title, made a short slug; <date> is the
+# day the parent was filed.
 import argparse
 import json
 import os
@@ -56,6 +61,29 @@ def parent_facts(parent):
     return r.stdout, facts
 
 
+DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+SLUG_MAX = 40
+
+
+def slug(words):
+    """<words> lower-cased and hyphenated, cut at a word to SLUG_MAX."""
+    s = re.sub(r"[^a-z0-9]+", "-", words.lower()).strip("-")
+    if len(s) > SLUG_MAX:
+        s = s[:SLUG_MAX + 1].rsplit("-", 1)[0] if "-" in s[:SLUG_MAX + 1] else s[:SLUG_MAX]
+    return s
+
+
+def session_name(parent, text, about):
+    """Driver <parent>: <slug> <date>, each part left out when it is empty."""
+    if not about:
+        title = re.search(r"^# (.+)$", text, re.M)
+        about = DATE.sub(" ", title.group(1)) if title else ""
+        about = re.sub(r"^\s*drive( the)?\b", "", about, flags=re.I)
+    filed = re.search(r"^(\d{4}-\d{2}-\d{2})T\S+ \S+ status=open\b", text, re.M)
+    tail = " ".join(x for x in (slug(about), filed.group(1) if filed else "") if x)
+    return "Driver %s: %s" % (parent, tail) if tail else "Driver %s" % parent
+
+
 def session_uuid(short):
     """The full session id `claude agents --json` lists for <short>, or ""."""
     r = subprocess.run(["claude", "agents", "--json"], text=True, capture_output=True)
@@ -88,6 +116,7 @@ def main():
     ap.add_argument("parent")
     ap.add_argument("--cwd", default=os.getcwd())
     ap.add_argument("--wait", type=float, default=45.0)
+    ap.add_argument("--about", default="")
     a = ap.parse_args()
     if not re.fullmatch(r"[0-9a-f]+", a.parent):
         die("not a work-item id: %r" % a.parent, 2)
@@ -99,7 +128,7 @@ def main():
     if held:
         die("%s already has a driver, session %s: one driver per yes" % (a.parent, held.group(1)))
 
-    name = "Driver %s" % a.parent
+    name = session_name(a.parent, text, a.about)
     cmd = ["claude", "--bg", "--remote-control", name, "-n", name]
     for key in ("model", "effort"):
         if key in facts:
