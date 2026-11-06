@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""review-subset: the review threads and pull requests that reach the user,
+across the vended repos, one row each.
+
+Usage: review-subset [--repo NAME]... [--list FILE] [--rounds N] [--json]
+
+The subset is a three-part filter over every open pull request:
+  judgment  an open review thread whose first line carries `[judgment]`, the
+            tag the critical-review skill puts on a Decide thread
+  apart     an open review thread that a fixer has replied to, on a pull
+            request with N review rounds or more (default 3): the reviewer
+            and the fixer are still apart after the cap
+  blocked   a pull request labelled `blocked`, the parked state
+A thread that is both judgment and apart is listed once, as judgment.
+
+A review round is one comment by claude[bot] on the pull request's
+conversation, less the checks' briefs (their `<!-- claude-review-check:`
+marker): the count the shared review workflow itself keeps. A fixer reply is
+a later comment in the thread, signed as an agent's (it opens with the robot
+emoji the code rules require), by someone other than the thread's opener.
+
+Repos are names under mark-brannan, read fresh from
+~/.local/share/vended-repos.txt unless --repo or --list says otherwise.
+Read-only: one GraphQL read per repo through gh, eight at a time. A pull
+request with more comments or threads than one read takes is named on stderr.
+
+Output, one row per item, then nothing else:
+  part      PR             rounds  where              what
+  judgment  claude#405     2       bin/x:12           [should] [judgment] Is ...  <url>
+An empty subset prints one line saying so. --json prints the rows as a list.
+
+Exits 0 when every repo was read, whatever the rows; 2 on usage or when any
+repo could not be read (the rows that were read still print, and stderr names
+each repo that failed).
+"""
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+
+NAME = "review-subset"
+OWNER = "mark-brannan"
+REPO_LIST = os.path.expanduser("~/.local/share/vended-repos.txt")
+REVIEWER = "claude"  # claude[bot]; GraphQL gives a Bot's login without [bot]
+CHECK_MARKER = "<!-- claude-review-check:"
+SIGNED = "\U0001f916"  # the robot emoji every agent's comment opens with
+# `[judgment]` right after the first tag, as the critical-review skill places it
+JUDGMENT = re.compile(r"^(?:\U0001f916\s*)?\[[\w-]+\]\s*\[judgment\]", re.I)
+BLOCKED = "blocked"
+ROUNDS = 3
+WHAT_WIDTH = 72
+
+QUERY = """
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage }
+      nodes {
+        number title url
+        labels(first: 30) { nodes { name } }
+        comments(last: 100) { pageInfo { hasPreviousPage } nodes { author { login } body } }
+        reviewThreads(first: 100) {
+          pageInfo { hasNextPage }
+          nodes {
+            isResolved path line
+            comments(first: 30) { pageInfo { hasNextPage } nodes { author { login } body url } }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def read_repos(text):
+    return [r.strip() for r in text.splitlines() if r.strip() and not r.lstrip().startswith("#")]
+
+
+def login(node):
+    return ((node or {}).get("author") or {}).get("login") or ""
+
+
+def nodes(obj, key):
+    return ((obj or {}).get(key) or {}).get("nodes") or []
+
+
+def rounds(pr):
+    """Review rounds on a pull request, counted the way the review workflow does."""
+    return sum(1 for c in nodes(pr, "comments")
+               if login(c) == REVIEWER and not (c.get("body") or "").startswith(CHECK_MARKER))
+
+
+def first_line(body):
+    for line in (body or "").splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return ""
+
+
+def fixer_replied(comments):
+    opener = login(comments[0])
+    return any(login(c) != opener and (c.get("body") or "").lstrip().startswith(SIGNED)
+               for c in comments[1:])
+
+
+def classify(repo, prs, cap=ROUNDS):
+    """The subset's rows for one repo's open pull requests, in PR order."""
+    rows = []
+    for pr in prs:
+        ref = "%s#%s" % (repo, pr["number"])
+        n = rounds(pr)
+        if any(lb.get("name") == BLOCKED for lb in nodes(pr, "labels")):
+            rows.append({"part": "blocked", "pr": ref, "rounds": n, "where": "",
+                         "what": pr.get("title") or "", "url": pr.get("url") or ""})
+        for t in nodes(pr, "reviewThreads"):
+            comments = nodes(t, "comments")
+            if t.get("isResolved") or not comments:
+                continue
+            head = first_line(comments[0].get("body"))
+            if JUDGMENT.match(head):
+                part = "judgment"
+            elif n >= cap and fixer_replied(comments):
+                part = "apart"
+            else:
+                continue
+            where = t.get("path") or ""
+            if where and t.get("line"):
+                where += ":%s" % t["line"]
+            rows.append({"part": part, "pr": ref, "rounds": n, "where": where,
+                         "what": head.removeprefix(SIGNED).strip(),
+                         "url": comments[0].get("url") or pr.get("url") or ""})
+    return rows
+
+
+def fetch(repo, owner=OWNER):
+    """(prs, error) for one repo: the open pull requests, or why they could not be read."""
+    cmd = ["gh", "api", "graphql", "-f", "query=" + QUERY, "-F", "owner=" + owner, "-F", "name=" + repo]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, str(e)
+    if p.returncode != 0:
+        return None, (p.stderr.strip().splitlines() or ["gh exited %d" % p.returncode])[-1]
+    try:
+        data = json.loads(p.stdout)
+        page = data["data"]["repository"]["pullRequests"]
+    except (ValueError, KeyError, TypeError):
+        return None, "unreadable reply from GitHub"
+    if page.get("pageInfo", {}).get("hasNextPage"):
+        sys.stderr.write("%s: %s has more than 50 open pull requests; the 50 updated last were read\n"
+                         % (NAME, repo))
+    prs = page.get("nodes") or []
+    for pr in prs:
+        if truncated(pr):
+            sys.stderr.write("%s: %s#%s has more comments or threads than one read takes; its rows may be short\n"
+                             % (NAME, repo, pr.get("number")))
+    return prs, None
+
+
+def truncated(pr):
+    """Whether any connection on a pull request held more than the query read."""
+    pages = [(pr.get("comments") or {}).get("pageInfo", {}).get("hasPreviousPage"),
+             (pr.get("reviewThreads") or {}).get("pageInfo", {}).get("hasNextPage")]
+    pages += [(t.get("comments") or {}).get("pageInfo", {}).get("hasNextPage") for t in nodes(pr, "reviewThreads")]
+    return any(pages)
+
+
+def clip(text, width=WHAT_WIDTH):
+    return text if len(text) <= width else text[:width - 1] + "…"
+
+
+def render(rows, nrepos):
+    if not rows:
+        return "review-subset: nothing reaches you across %d repos\n" % nrepos
+    cols = [("part", "part"), ("pr", "PR"), ("rounds", "rounds"), ("where", "where"), ("what", "what")]
+    cells = [[str(r[k]) if k != "what" else clip(r[k]) for k, _ in cols] for r in rows]
+    widths = [max(len(h), *(len(c[i]) for c in cells)) for i, (_, h) in enumerate(cols)]
+    lines = ["  ".join(h.ljust(widths[i]) for i, (_, h) in enumerate(cols)).rstrip()]
+    for r, c in zip(rows, cells):
+        lines.append("  ".join(c[i].ljust(widths[i]) for i in range(len(cols))) + "  " + r["url"])
+    return "\n".join(lines) + "\n"
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog=NAME, description="List the review subset that reaches the user.")
+    p.add_argument("--repo", action="append", help="a repo name under %s; repeatable (default: the vended list)" % OWNER)
+    p.add_argument("--list", default=REPO_LIST, help="the repo list to read (default %(default)s)")
+    p.add_argument("--rounds", type=int, default=ROUNDS, help="the review-round cap (default %(default)s)")
+    p.add_argument("--json", action="store_true", help="print the rows as JSON")
+    a = p.parse_args(argv)
+    repos = a.repo
+    if not repos:
+        try:
+            with open(a.list) as f:
+                repos = read_repos(f.read())
+        except OSError as e:
+            sys.stderr.write("%s: %s: %s\n" % (NAME, a.list, e.strerror))
+            return 2
+    rows, failed = [], []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        replies = list(pool.map(fetch, repos))  # map keeps the repo list's order
+    for repo, (prs, err) in zip(repos, replies):
+        if err:
+            failed.append(repo)
+            sys.stderr.write("%s: %s/%s not read: %s\n" % (NAME, OWNER, repo, err))
+            continue
+        rows += classify(repo, prs, a.rounds)
+    order = {"judgment": 0, "apart": 1, "blocked": 2}
+    rows.sort(key=lambda r: order[r["part"]])
+    sys.stdout.write(json.dumps(rows, indent=2, ensure_ascii=False) + "\n" if a.json else render(rows, len(repos)))
+    return 2 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

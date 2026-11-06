@@ -155,8 +155,10 @@ first that fits:
    issue under its bar.
 5. **Decide.** Nothing above fit, and you can name which of the five
    kinds of judgment it is. Post
-   it as a PR thread first; the thread is its home and stays open until I
-   answer. A bot thread that lands here stays open the same way.
+   it as a PR thread first, tagged `[judgment]` right after the first tag
+   (`🤖 [should] [judgment] <the question>`); the tag is how
+   `bin/review-subset` finds it, and the thread is its home and stays open
+   until I answer. A bot thread that lands here stays open the same way.
 
 Empty is the usual Decide. A question whose answer would be obvious to me
 is the dearest thing a review can produce.
