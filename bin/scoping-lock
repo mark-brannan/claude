@@ -129,8 +129,22 @@ def describe(line):
     return ("stale" if age >= LEASE or holder_dead(f[0]) else "live"), f[0], f[1], (f[2] if len(f) > 2 else "?"), age // 60
 
 
+def locked(fn):
+    """fn() under lib/state.py's push lock, the one every actor that runs git
+    in this clone shares, held for the whole of fn: the sync, the write, the
+    commit, the push and a failed push's reset never interleave with the Stop
+    hook's. Exits 2 when the lock is not taken in time; die() inside fn
+    releases it on the way out."""
+    import state
+    with state.push_lock(repo=str(SR)) as held:
+        if not held:
+            die("the state clone's push lock is held; try again once the Stop hook has pushed")
+        return fn()
+
+
 def sync():
-    """Bring origin's copy of every lock in before reading this one."""
+    """Bring origin's copy of every lock in before reading this one. The
+    caller holds the push lock."""
     if git("pull", "--rebase", "--autostash", "-q", timeout=120):
         return True
     # --abort refuses a rebase-merge dir left holding only an autostash (a
@@ -279,11 +293,13 @@ def main(argv):
     if cmd == "take":
         if len(args) != 3:
             die("take needs <dir> <session-id> <record-file|read>")
-        return take(lock, args[1], args[2])
+        return locked(lambda: take(lock, args[1], args[2]))
     if cmd in ("check", "release"):
         if len(args) < 2 or not args[1]:
             die(f"{cmd} needs <dir> <session-id>")
-        return (check if cmd == "check" else release)(lock, args[1])
+        if cmd == "check":
+            return check(lock, args[1])
+        return locked(lambda: release(lock, args[1]))
     die(f"unknown command {cmd}")
 
 

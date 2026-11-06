@@ -45,7 +45,8 @@ import state  # noqa: E402
 
 WORKLIST_CAP = 6  # seconds a `worklist --brief` may take
 BOARD_CLIP = 4096  # bytes of its output kept
-PULL_CAP = 25  # seconds the courtesy `git pull` may take
+PULL_CAP = 25  # seconds the courtesy freshen (lock wait, fetch, fast-forward) may take
+LOCK_WAIT = 10  # seconds of PULL_CAP the freshen waits for the push lock
 
 NO_STATE = """## Continuity: state repo NOT available
 
@@ -135,18 +136,35 @@ def kill(p):
     p.wait()
 
 
-def pull(sr):
-    """Freshen the state repo, never blocking session start on it."""
+def bounded_git(sr, args, budget):
+    """`git -C sr <args>` killed after budget seconds; True when it exits 0."""
+    if budget <= 0:
+        return False
     try:
-        p = subprocess.Popen(["git", "-C", sr, "pull", "--rebase", "--autostash", "-q"],
+        p = subprocess.Popen(["git", "-C", sr, *args],
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
     except OSError:
-        return
+        return False
     try:
-        p.wait(PULL_CAP)
+        return p.wait(budget) == 0
     except subprocess.TimeoutExpired:
         kill(p)
+        return False
+
+
+def pull(sr):
+    """Freshen the state repo, never blocking session start on it and never
+    rebasing: a fetch, then a fast-forward, under the push lock the other
+    actors in this clone share. A rebase killed between its autostash and
+    its reset wedges every later pull; a killed fetch or a refused
+    fast-forward leaves nothing behind, and the Stop hook reconciles a clone
+    that is ahead or dirty. The lock wait and both commands share
+    PULL_CAP; a lock not taken in LOCK_WAIT skips the freshen."""
+    t0 = time.monotonic()
+    with state.push_lock(LOCK_WAIT, sr) as held:
+        if held and bounded_git(sr, ["fetch", "-q"], PULL_CAP - (time.monotonic() - t0)):
+            bounded_git(sr, ["merge", "--ff-only", "-q", "@{u}"], PULL_CAP - (time.monotonic() - t0))
 
 
 def board_view(home):

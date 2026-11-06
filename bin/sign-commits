@@ -186,7 +186,7 @@ def sign_pr(spec, dry, cwd=None, brief=state.branch_brief, run=subprocess.run, o
         git(root, "branch", "-D", scratch)
 
 
-def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.stdout, err=sys.stderr):
+def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.stdout, err=sys.stderr, gh=None):
     """`brief` reads; `run` is every subprocess that acts (fetch, the
     recommended command, push), so a test can watch them without a key."""
     dry, br = False, None
@@ -203,7 +203,7 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
             br = a
 
     if br and PR_RE.match(br) and (br.isdigit() or "#" in br or "/pull/" in br):
-        return sign_pr(br, dry, cwd=cwd, brief=brief, run=run, out=out, err=err)
+        return sign_pr(br, dry, cwd=cwd, brief=brief, run=run, out=out, err=err, gh=gh)
 
     def git(*a):
         return subprocess.run(["git", *a], cwd=cwd, text=True, capture_output=True)
@@ -218,6 +218,17 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
     if not br:
         err.write("sign-commits: HEAD is detached; name the branch to re-sign\n")
         return 2
+
+    # A named branch that is not checked out is signed through its open PR,
+    # which never reads or moves the local copy.
+    slug = origin_slug(root) if br != cur else ""
+    if slug:
+        gh = gh or (lambda a: subprocess.run(["gh", *a], text=True, capture_output=True))
+        p = gh(["pr", "list", "-R", slug, "--head", br, "--state", "open", "--json", "number,isCrossRepository",
+                "-q", ".[] | select(.isCrossRepository | not) | .number"])
+        nums = p.stdout.split() if p.returncode == 0 else []
+        if len(nums) == 1:
+            return sign_pr(f"{slug}#{nums[0]}", dry, cwd=cwd, brief=brief, run=run, out=out, err=err, gh=gh)
 
     p = run(["git", "-C", root, "fetch", "--quiet", "origin"])
     if p.returncode:

@@ -35,9 +35,13 @@ Find and fix, mechanically, in one commit of the derived files:
   has not reversed, becomes pen, marked `pen (lint, <date>)` so it stays
   distinguishable from a line the user made pen, and listed in your
   findings; a pen line whose spec row or decisions line now exists is
-  deleted here; a refused name or discarded idea becomes part
+  pruned here; a refused name or discarded idea becomes part
   of the one *refused:* line in Working memory; a Superseded line is
-  deleted. Show every move in the diff;
+  pruned. Every pruned line is appended whole to `pruned.md` in the
+  curia's folder (created at the first prune, append-only, never edited,
+  read by no sitting) with the date and its reason: the spec row or
+  decisions line, what superseded it, or *refused*. Nothing is deleted
+  outright; existing curiae get no backfill. Show every move in the diff;
 - embedded and effective (SKILL.md, The ledger as a queue): run
   `ledger-review --json`, take this curia's entries, and write under
   *Embedded and effective* in the findings one line with the count of
@@ -52,7 +56,7 @@ Find and fix, mechanically, in one commit of the derived files:
   digest carries — a Design section, **The problem** or **Vocabulary** —
   since a newer one waits for `edit`, a promoted section's lines are
   carried by its ADR link line, and a Superseded line is carried by
-  nothing and deleted above: a finding for `edit`, not a fix;
+  nothing and pruned above: a finding for `edit`, not a fix;
 - a digest from before the ledger split that still carries `## Decided`:
   move it whole to `decided.md`;
 - `related:` in the header, rewritten from the overlap you find with the
@@ -66,6 +70,15 @@ Find and fix, mechanically, in one commit of the derived files:
   what has stopped earning its place, moving a long open question's text
   to a file under `inputs/` with a link; never cut a ruling or the user's
   words;
+- survey first (SKILL.md, Survey first): read every file under `inputs/`
+  and every Design section that costs a build — an effort or price on
+  building something, a build-our-own row, a fork-or-invest table — and
+  list under *Survey first* in the findings each one that cites no
+  `inputs/*-survey-*.md`; each survey that leaves an axis of the skill's
+  list neither searched nor under *could not determine*; each cost cell
+  with an adjective and no measured number beside it; and each candidate
+  refused on values with no later survey citing the one it reopens.
+  Findings for the sitting, never a fix;
 - flip candidates: run `curia-quotes --flips <curia folder> --since
   <the roll's read-from stamp>` and list its sentences in the findings
   file under *Flip candidates*, for the next open's short list; a trial
