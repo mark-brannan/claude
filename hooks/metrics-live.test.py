@@ -684,6 +684,7 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("below the first sitting rung, nothing reaches the model", "", P())
         w.clock(61, 10)
         w.t("up to the hot rung the clock only reads: nothing reaches the model", "", P())
+        w.t("and the Stop hand-off stays unarmed", "false", json.dumps(w.nag_field(sid, "since_nag")))
         w.clock(91, 10)
         out6f = P()
         w.has("past the hot rung the stop is shaped: a landing, the pickup and a pointer",
