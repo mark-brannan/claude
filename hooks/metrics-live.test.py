@@ -285,10 +285,10 @@ class MetricsLiveTest(unittest.TestCase):
         w.hook(w.payload(tp, "ctx1", S), "prompt")
         out2 = w.hook(w.payload(tp, "ctx1", S), "posttooluse", show=True)
         w.t("a crossing on a prompt says nothing at all", "", w.msg(out1))
-        w.has("the block counts both rungs", "^⛁⛁ ", w.msg(out2))
+        w.has("the block counts both rungs", "(?m)^💸💸$", w.msg(out2))
         w.hasnt("and never names the rung it crossed", "/(100|150)k", w.msg(out2))
         w.hasnt("no threshold line rides in front of it", "still room", w.msg(out2))
-        w.has("the stop rung still reaches the verdict", "— 💸$", w.msg(out2))
+        w.has("the stop rung still reaches the front context slot", "^💸", w.msg(out2))
         w.hasnt("and the tail carries no words", "propose|stopping", w.msg(out2))
 
         # A tool hook inside a sub-agent carries agent_id but reads the PARENT's
@@ -298,7 +298,7 @@ class MetricsLiveTest(unittest.TestCase):
                       "posttooluse", show=True)
         w.t("a tool hook inside a sub-agent is silent", "", outa)
         outp = w.hook(w.payload(tpa, "agent1", S, "PostToolUse"), "posttooluse", show=True)
-        w.has("and the parent still gets its block afterwards", "^⛁⛁ ", w.msg(outp))
+        w.has("and the parent still gets its block afterwards", "(?m)^💸💸$", w.msg(outp))
 
         # #206: once a sub-agent transcript sits beside the parent's, the
         # parent's block must keep coming, not go silent for the session.
@@ -306,7 +306,7 @@ class MetricsLiveTest(unittest.TestCase):
         (S / "withsubs" / "subagents").mkdir(parents=True)
         w.turn(S / "withsubs" / "subagents" / "agent-a1b2c3.jsonl", 5000)
         outs = w.hook(w.payload(tps, "subs1", S, "PostToolUse"), "posttooluse", show=True)
-        w.has("a session with sub-agent transcripts still gets its block", "^⛁⛁ ", w.msg(outs))
+        w.has("a session with sub-agent transcripts still gets its block", "(?m)^💸💸$", w.msg(outs))
         # claude#363: a Workflow run's workers sit one level down, under
         # subagents/workflows/<run>/, and are read too. The harness numbers a
         # request id by line, so a one-turn file repeats the main file's id and
@@ -487,7 +487,7 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("an unedited pickup item still blocks", "block", w.decision(o))
         w.has("the notice names the item, without its directory, as unwritten",
               r"^📄 2026-09-09T09-00-stopn\.md \(p\)$", w.msg(o))
-        w.has("the notice still carries the metrics block", "^» ", w.msg(o))
+        w.has("the notice still carries the metrics block", "^🪙", w.msg(o))
         w.has("the reason gives the model the full path",
               r"Item: `/.*/pickup/2026-09-09T09-00-stopn\.md`\. Then answer with the body you wrote", w.reason(o))
         w.hasnt("and no item lines in the reason", "📄", w.reason(o))
@@ -586,7 +586,7 @@ class MetricsLiveTest(unittest.TestCase):
         def first(mark):
             return next((i + 1 for i, ln in enumerate(lines) if mark in ln), 0)
 
-        status_at, block_at, arch_at = first("— "), first("⇢ "), first("📦")
+        status_at, block_at, arch_at = first(" ⛁ "), first("⇢ "), first("📦")
         w.t("both sections are present", "yes", "yes" if status_at and block_at and arch_at else "no")
         w.t("the block opens the message, no line in front of it", 1, status_at)
         w.t("the archival verdict renders after the block", "yes", "yes" if block_at < arch_at else "no")
@@ -608,7 +608,7 @@ class MetricsLiveTest(unittest.TestCase):
         ctx2 = w.ctx(w.hook(w.payload(FIX, "fric", S), "prompt", env=fric_env))
         w.t("and fires once, not every turn", "0", str(ctx2.count("corrections or rebukes")))
         scr = w.msg(w.hook(w.payload(FIX, "fric2", S), "posttooluse", show=True))
-        w.has("friction past its nag threshold trips the reason cluster", "— [^ ]*⚡", scr)
+        w.has("friction shows its run with the count", r"⚡+\(x[0-9]+\)", scr)
 
         # --- 4b. with work in flight: land it, then the capacity rule (dotfiles#194).
         fwt = S / "fricflight"
@@ -639,7 +639,7 @@ class MetricsLiveTest(unittest.TestCase):
         w.hook(w.payload(tp5, "ladder", S), "prompt")
         out5 = w.hook(w.payload(tp5, "ladder", S), "posttooluse", show=True)
         w.has("the ladder reaches past the last configured line", "/350k", w.msg(out5))
-        w.has("and the glyph count is capped, with the total after it", r"⛁⛁⛁⛁⛁\(x6\)", w.msg(out5))
+        w.has("and the glyph count is capped, with the total after it", r"💸💸💸💸💸\(x6\)", w.msg(out5))
         w.t("six rungs cross in one jump, in order", "100000\n150000\n200000\n250000\n300000\n350000",
             "\n".join(str(r["at"]) for r in w.rows("ladder", "context")))
         return self.done(w)
@@ -1000,7 +1000,7 @@ class MetricsLiveTest(unittest.TestCase):
         o9 = w.msg(w.hook(w.payload(tp9, "show9", repo9, "Stop"), "stop", show=True, env=stop24))
         w.has("a clean tree still prints the turns line", "⇢ [0-9]+ ⚙ [0-9]+", o9)
         w.hasnt("and says nothing about git state", "⎇", o9)
-        w.has("the session's dollars lead the turns line", r"(?m)^(\$[0-9]+\.[0-9]{2}|<\$0\.01|\$[0-9]+) ⇢ ", o9)
+        w.has("the session's dollars lead line 1's numbers", "^\\S+ (\\$\u2007*[0-9]+\\.[0-9]{2}|\u2007*<\\$0\\.01) ⛁ ", o9)
         (repo9 / "scratch-file").touch()
         o9b = w.msg(w.hook(w.payload(tp9, "show9b", repo9, "Stop"), "stop", show=True, env=stop24))
         w.has("a dirty tree appends git state to the same line", "⇢ [0-9]+ ⚙ [0-9]+ ⎇ 1~", o9b)
@@ -1044,11 +1044,11 @@ class MetricsLiveTest(unittest.TestCase):
         if out10.exists():
             out10.unlink()
         o10, err = p.communicate(timeout=120)
-        w.has("the block still opens with $OUT removed mid-run", "^(»|⛁)", w.msg(o10))
+        w.has("the block still opens with $OUT removed mid-run", "^(🪙|💸)", w.msg(o10))
         w.t("$OUT was actually gone when the hook read it", "absent", "present" if out10.exists() else "absent")
         return self.done(w)
 
-    # --- 11. calm states, and the ⏰ tier ---------------------------------------
+    # --- 11. calm states, and the time ladder -----------------------------------
     # DAY forces the night window shut, so a real Pacific hour past 22:00
     # cannot trip the night reason (#362, #347).
     def section_calm(self):
@@ -1061,25 +1061,28 @@ class MetricsLiveTest(unittest.TestCase):
             return w.msg(w.hook(w.payload(tp11, sid, S), "posttooluse", show=True, env=env))
 
         o11 = T("calm", **day)
-        w.has("friction at zero shows its calm glyph", r"🌌\(x0\)", o11)
-        w.has("decisions at zero show theirs", r"🧘\(x0\)", o11)
-        w.has("and blocked is unchanged", r"🔧✅\(x0\)", o11)
-        w.hasnt("a calm block carries no verdict tail", " — ", o11)
+        w.has("friction at zero shows its calm glyph", "^🪙⏳🌌", o11)
+        w.has("decisions at zero show theirs", "🌌🧘✅ ", o11)
+        w.has("and blocked shows its calm glyph", "🧘✅ \\$", o11)
+        w.hasnt("a calm block carries no fourth glyph", "[🥀💀]", o11)
         tp11p = w.turn(S / "calm-prompt.jsonl", 1000)
         o11p = w.msg(w.hook(w.payload(tp11p, "calmprompt", S), "prompt", show=True))
-        w.has("UserPromptSubmit renders the block too", "^(»|⛁)", o11p)
+        w.has("UserPromptSubmit renders the block too", "^(🪙|💸)", o11p)
 
         s = int(time.time()) - 9000
         w.write(w.sitf, {"sitting_start": s, "last_prompt": s})
         o11b = T("calm2", **day)
-        w.has("past the hot rung the glyph changes", "⏱2h30(⏱️|🌙){3}⏰⏰", o11b)
+        w.has("2h30 earns five faces on the time ladder", "(?m)^⏱️🫩😩😫😵‍💫$", o11b)
         o11c = T("calm3", METRICS_SIT_HOT_RUNG="9", **day)
-        w.has("and the rung is a knob like every other", "⏱2h30(⏱️|🌙){5}", o11c)
-        w.has("the sitting reason glyph trips at the hot rung", "— [^ ]*⏱️", o11b)
+        w.t("METRICS_SIT_HOT_RUNG leaves the block alone", o11b, o11c)
+        w.has("fatigue rung 5 shows its face and 💀", "(?m)⏱2h30 🧘🌌😵‍💫💀$", o11b)
         o11d = T("calm4", METRICS_SIT_HOT_RUNG="9", **day)
-        w.hasnt("and stays quiet while the rung is raised past it", " — ", o11d)
+        w.hasnt("the old reason tail is gone", " — ", o11d)
         o11n = T("calm5", METRICS_STOP_HOUR="0", METRICS_NIGHT_END_HOUR="24", METRICS_SIT_HOT_RUNG="9")
-        w.has("at night a sitting clock alone trips the night reason", "— 🌙$", o11n)
+        w.has("at night the time ladder leads with the moon", "(?m)^🌙🫩", o11n)
+        s = int(time.time()) - 170 * 60
+        w.write(w.sitf, {"sitting_start": s, "last_prompt": s})
+        w.has("165 min earns the sixth face", "(?m)^⏱️🫩😩😫😵‍💫😵$", T("calm6", **day))
         return self.done(w)
 
     # --- 12. PostToolUse drives the engine and may carry an injection ------------
@@ -1093,11 +1096,11 @@ class MetricsLiveTest(unittest.TestCase):
         w.has("a rung crossed by a tool call injects on that call", "Context at 152k", w.ctx(o12))
         w.t("and the injection names PostToolUse, not the prompt event", "PostToolUse",
             w.field(o12, "hookSpecificOutput", "hookEventName"))
-        w.has("while the block still renders in the same object", "— 💸", w.msg(o12))
+        w.has("while the block still renders in the same object", "^💸", w.msg(o12))
         w.turn(tp12, 153000)
         o12b = w.hook(w.payload(tp12, "ptu", S), "posttooluse", show=True)
         w.t("the next tool call injects nothing -- no new rung", "", w.ctx(o12b))
-        w.has("though the block is unaffected", "— 💸", w.msg(o12b))
+        w.has("though the block is unaffected", "^💸", w.msg(o12b))
         # The repeat arm, at 3 rather than the shipped 20.
         for n in (2, 3):
             w.turn(tp12, 153000 + n)
@@ -1447,7 +1450,7 @@ class MetricsLiveTest(unittest.TestCase):
         stages = [json.loads(ln)["stage"] for ln in w.errors()]
         w.t("a part that raises exits 0", 0, rc)
         w.t("and is traced under its own stage", ["sitting_line"], stages)
-        w.has("and the block still prints", r"^⛁ ", w.msg(out))
+        w.has("and the block still prints", "^(🪙|💸)", w.msg(out))
         w.t("and the nag file is still saved", 100000, w.nag_field("part1", "context_line"))
         (w.state / "outside.txt").rmdir()
 
@@ -1460,7 +1463,7 @@ class MetricsLiveTest(unittest.TestCase):
 
         (w.state / "location.json").write_text('{"tz": "Not/AZone"}\n')
         out = w.hook(w.payload(tp, "part3", S, "UserPromptSubmit", "hi"), "prompt", show=True)
-        w.has("a time zone that does not exist still prints the block", r"^(⛁|») ", w.msg(out))
+        w.has("a time zone that does not exist still prints the block", "^(🪙|💸)", w.msg(out))
         w.t("and is traced once", 1, sum(1 for ln in w.errors() if '"stage":"zone"' in ln))
         return w.checks
 
