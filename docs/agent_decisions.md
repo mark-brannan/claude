@@ -667,3 +667,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t192742z
 - confer model map: agent high = fable high, medium = opus high, low = sonnet medium Undo: revert in PR 413 ([#413](https://github.com/mark-brannan/claude/pull/413))
+
+### 20261106t192748z
+- confer-start is its own tool sharing driver-start's start() Undo: revert in PR 413 ([#413](https://github.com/mark-brannan/claude/pull/413))
