@@ -21,7 +21,8 @@ emoji the code rules require), by someone other than the thread's opener.
 
 Repos are names under mark-brannan, read fresh from
 ~/.local/share/vended-repos.txt unless --repo or --list says otherwise.
-Read-only: one GraphQL read per repo through gh.
+Read-only: one GraphQL read per repo through gh, eight at a time. A pull
+request with more comments or threads than one read takes is named on stderr.
 
 Output, one row per item, then nothing else:
   part      PR             rounds  where              what
@@ -33,6 +34,7 @@ repo could not be read (the rows that were read still print, and stderr names
 each repo that failed).
 """
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -47,7 +49,8 @@ REPO_LIST = os.path.expanduser("~/.local/share/vended-repos.txt")
 REVIEWER = "claude"  # claude[bot]; GraphQL gives a Bot's login without [bot]
 CHECK_MARKER = "<!-- claude-review-check:"
 SIGNED = "\U0001f916"  # the robot emoji every agent's comment opens with
-JUDGMENT = re.compile(r"\[judgment\]", re.I)
+# `[judgment]` right after the first tag, as the critical-review skill places it
+JUDGMENT = re.compile(r"^(?:\U0001f916\s*)?\[[\w-]+\]\s*\[judgment\]", re.I)
 BLOCKED = "blocked"
 ROUNDS = 3
 WHAT_WIDTH = 72
@@ -60,11 +63,12 @@ query($owner: String!, $name: String!) {
       nodes {
         number title url
         labels(first: 30) { nodes { name } }
-        comments(first: 100) { nodes { author { login } body } }
+        comments(last: 100) { pageInfo { hasPreviousPage } nodes { author { login } body } }
         reviewThreads(first: 100) {
+          pageInfo { hasNextPage }
           nodes {
             isResolved path line
-            comments(first: 30) { nodes { author { login } body url } }
+            comments(first: 30) { pageInfo { hasNextPage } nodes { author { login } body url } }
           }
         }
       }
@@ -120,7 +124,7 @@ def classify(repo, prs, cap=ROUNDS):
             if t.get("isResolved") or not comments:
                 continue
             head = first_line(comments[0].get("body"))
-            if JUDGMENT.search(head):
+            if JUDGMENT.match(head):
                 part = "judgment"
             elif n >= cap and fixer_replied(comments):
                 part = "apart"
@@ -152,7 +156,20 @@ def fetch(repo, owner=OWNER):
     if page.get("pageInfo", {}).get("hasNextPage"):
         sys.stderr.write("%s: %s has more than 50 open pull requests; the 50 updated last were read\n"
                          % (NAME, repo))
-    return page.get("nodes") or [], None
+    prs = page.get("nodes") or []
+    for pr in prs:
+        if truncated(pr):
+            sys.stderr.write("%s: %s#%s has more comments or threads than one read takes; its rows may be short\n"
+                             % (NAME, repo, pr.get("number")))
+    return prs, None
+
+
+def truncated(pr):
+    """Whether any connection on a pull request held more than the query read."""
+    pages = [(pr.get("comments") or {}).get("pageInfo", {}).get("hasPreviousPage"),
+             (pr.get("reviewThreads") or {}).get("pageInfo", {}).get("hasNextPage")]
+    pages += [(t.get("comments") or {}).get("pageInfo", {}).get("hasNextPage") for t in nodes(pr, "reviewThreads")]
+    return any(pages)
 
 
 def clip(text, width=WHAT_WIDTH):
@@ -187,8 +204,9 @@ def main(argv=None):
             sys.stderr.write("%s: %s: %s\n" % (NAME, a.list, e.strerror))
             return 2
     rows, failed = [], []
-    for repo in repos:
-        prs, err = fetch(repo)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        replies = list(pool.map(fetch, repos))  # map keeps the repo list's order
+    for repo, (prs, err) in zip(repos, replies):
         if err:
             failed.append(repo)
             sys.stderr.write("%s: %s/%s not read: %s\n" % (NAME, OWNER, repo, err))

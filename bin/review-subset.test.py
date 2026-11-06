@@ -82,6 +82,16 @@ class ClassifyTest(unittest.TestCase):
     def test_judgment_past_the_cap_listed_once(self):
         self.assertEqual(self.parts([pr(1, [thread(JUDGE, FIX)], reviews=4)]), [("judgment", "r#1")])
 
+    def test_judgment_tag_must_follow_the_first(self):
+        stray = comment("claude", BOT + " [nit] rename [judgment] in the docs")
+        self.assertEqual(self.parts([pr(1, [thread(stray)], reviews=1)]), [])
+
+    def test_truncated_connections_are_seen(self):
+        full = pr(1, [thread(NIT)])
+        self.assertFalse(rs.truncated(full))
+        full["comments"]["pageInfo"] = {"hasPreviousPage": True}
+        self.assertTrue(rs.truncated(full))
+
     def test_blocked_label(self):
         self.assertEqual(self.parts([pr(1, labels=["merge"]), pr(2, labels=["blocked"])]), [("blocked", "r#2")])
 
