@@ -116,7 +116,7 @@ the rest of the PR body, so the record carries it in both places.
 | 8 MoE     | bin/mixed-loops-screen.py:52-60  | whitespace-only design edits: tripped → screened out     | yes: "less conservative: a whites…" | git  |
 | 8 MoE     | hooks/metrics-live.py:118        | correction tag: "no," at line start → anywhere in turn   | no                                  | git  |
 | 8 MoE     | skills/curia/facets/lint.md:40   | nothing found                                            |                                     | read |
-| 8 MoE     | hooks/stop.py                    | nothing: form only (7 rewordings: deleted → pruned)      | yes: "essentially the same"         | git  |
+| 8 MoE     | hooks/stop.py                    | nothing: form only (7, a governing comment: deleted → pruned) | yes: "essentially the same"   | read |
 
 Asked, for the PR body:
 ## Method of evaluation:
