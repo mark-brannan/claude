@@ -87,6 +87,12 @@ follow, whatever it says.
    diff (`git log -1 -p -- <file>`). Where a change is a pure addition
    there is no old side: write `absent → <new>`.
 
+   A hunk target, `hunk <sha> <path>`, is a file target fixed at one
+   commit: the change screened is that commit's hunks of the file
+   (`git show <sha> -- <path>`), and its declaration is looked up as for
+   a file target, in `<sha>`'s own message (`git log -1 --format=%B
+   <sha>`) rather than the last commit's.
+
 4. **Return the table** in the format below, and nothing else.
 
 ## The declaration
