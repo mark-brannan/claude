@@ -275,6 +275,27 @@ class SignPrTest(unittest.TestCase):
         return [ln for ln in self.g("worktree", "list").split("\n") if "sign-commits-" in ln] + \
             [b for b in self.g("branch", "--list", "sign-commits/*").split("\n") if b]
 
+    def test_a_named_branch_not_checked_out_is_signed_through_its_open_pr(self):
+        # `sign-commits chore/up` from main, as on colregs-mcp#75.
+        pr = {"headRefName": "chore/up", "baseRefName": "main", "isCrossRepository": False,
+              "state": "OPEN", "url": "https://github.com/me/boat/pull/7"}
+        asked = []
+
+        def gh(a):
+            asked.append(a[:2])
+            return subprocess.CompletedProcess(a, 0, "7\n" if a[:2] == ["pr", "list"] else json.dumps(pr), "")
+
+        def brief(root, br, base=None):
+            return 0, brief_text(REBASE).replace("feature", br)
+
+        run, out, err = Recorder(), io.StringIO(), io.StringIO()
+        rc = sign_commits.main(["chore/up"], cwd=self.repo, brief=brief, run=run, out=out, err=err, gh=gh)
+        self.assertEqual(rc, 0, err.getvalue())
+        self.assertEqual(asked, [["pr", "list"], ["pr", "view"]])
+        self.assertEqual(run.calls[-1][-1], "HEAD:refs/heads/chore/up")  # pushed from the scratch worktree
+        self.assertEqual(self.g("rev-parse", "chore/up"), self.g("rev-parse", "main"))  # local copy untouched
+        self.assertEqual(self.left_behind(), [])
+
     def test_signs_origins_head_in_a_scratch_worktree_and_pushes_it_leased(self):
         rc, calls, out, err, seen = self.go("me/boat#7", REBASE)
         self.assertEqual(rc, 0, err)
