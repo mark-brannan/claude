@@ -135,7 +135,7 @@ class DriverStart(unittest.TestCase):
         self.item.write_text(ITEM % ("-", "-") + "2026-11-06T10:07:00Z c116ad7b driver_session=%s\n" % UUID)
         r = self.run_tool(PARENT)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("one driver per yes", r.stderr)
+        self.assertIn("one session per yes", r.stderr)
         self.assertEqual(self.calls(), [])
         self.assertEqual(self.logged(), [])
 
