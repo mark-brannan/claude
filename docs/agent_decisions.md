@@ -664,3 +664,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t192737z
 - confer starts at once on the word, not at the end of the sitting Undo: revert in PR 413 ([#413](https://github.com/mark-brannan/claude/pull/413))
+
+### 20261106t192742z
+- confer model map: agent high = fable high, medium = opus high, low = sonnet medium Undo: revert in PR 413 ([#413](https://github.com/mark-brannan/claude/pull/413))
