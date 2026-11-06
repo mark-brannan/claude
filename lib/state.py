@@ -14,6 +14,7 @@ each other.
 The one home for this lookup (dotfiles#517). hooks/lib_state.py re-exports
 it; bin tools put this directory on sys.path and `import state`.
 """
+import contextlib
 import inspect
 import json
 import os
@@ -476,13 +477,18 @@ def state_unlock():
 PUSH_LOCK_NAME = "claude-state-push.lock.d"
 
 
-def state_push_lock():
+PUSH_LOCK_SECS = 90  # how long an actor waits for the push lock by default
+
+
+def state_push_lock(repo=None):
     """The push lock every actor that runs git in the state repo's clone
     shares: the Stop hook, abandon-branch, session start's freshen,
     scoping-lock and the agora skill. It lives in the clone's own git dir, so
     one clone has one lock whatever TMPDIR each caller runs under; with no
-    state repo here, it falls back to TMPDIR."""
-    repo = state_repo()
+    state repo here, it falls back to TMPDIR. A caller that already holds the
+    clone's path passes it, so the lock and the git it guards name one clone."""
+    if repo is None:
+        repo = state_repo()
     if repo is not None:
         return f"{repo}/.git/{PUSH_LOCK_NAME}"
     return f"{os.environ.get('TMPDIR') or '/tmp'}/{PUSH_LOCK_NAME}"
@@ -498,15 +504,26 @@ def state_lock_wait(d, secs=90):
     return True
 
 
+@contextlib.contextmanager
+def push_lock(secs=PUSH_LOCK_SECS, repo=None):
+    """`with push_lock() as held:` -- the push lock for the block, taken
+    within secs; held is False when it was not. Released on the way out,
+    an exception or sys.exit included."""
+    held = state_lock_wait(state_push_lock(repo), secs)
+    try:
+        yield held
+    finally:
+        if held:
+            state_unlock()
+
+
 def push_locked(command):
     """(exit status, "") of `sh -c command` run under the push lock; 1 when
-    the lock is still held after 90s."""
-    if not state_lock_wait(state_push_lock(), 90):
-        return 1, "state.py push_locked: the push lock is held\n"
-    try:
+    the lock is still held after PUSH_LOCK_SECS."""
+    with push_lock() as held:
+        if not held:
+            return 1, "state.py push_locked: the push lock is held\n"
         return subprocess.call(["sh", "-c", command]), ""
-    finally:
-        state_unlock()
 
 
 _NUM = re.compile(r"[ \t\n]*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][-+]?[0-9]+)?")

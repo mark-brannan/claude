@@ -353,7 +353,7 @@ class LockTest(Base):
         self.assertIn(f"pid={os.getpid()}\n", Path(self.LOCK, "meta").read_text())
 
     def test_push_locked_refuses_a_held_lock_and_runs_then_releases_a_free_one(self):
-        self.state.state_push_lock = lambda: self.LOCK
+        self.state.state_push_lock = lambda repo=None: self.LOCK
         self.hold(os.getpid())
         orig = self.state.state_lock_wait
         with mock.patch.object(self.state, "state_lock_wait", lambda d, secs: orig(d, 0)):

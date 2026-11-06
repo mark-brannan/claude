@@ -129,22 +129,22 @@ def describe(line):
     return ("stale" if age >= LEASE or holder_dead(f[0]) else "live"), f[0], f[1], (f[2] if len(f) > 2 else "?"), age // 60
 
 
-PUSH_LOCK_WAIT = 90  # lib/state.py's push-lock wait, as the Stop hook takes it
-
-
 def locked(fn):
-    """Run fn under lib/state.py's push lock, the one every actor that runs
-    git in this clone shares; False when the lock is not taken in time."""
+    """fn() under lib/state.py's push lock, the one every actor that runs git
+    in this clone shares, held for the whole of fn: the sync, the write, the
+    commit, the push and a failed push's reset never interleave with the Stop
+    hook's. Exits 2 when the lock is not taken in time; die() inside fn
+    releases it on the way out."""
     import state
-    if not state.state_lock_wait(state.state_push_lock(), PUSH_LOCK_WAIT):
-        return False
-    try:
+    with state.push_lock(repo=str(SR)) as held:
+        if not held:
+            die("the state clone's push lock is held; try again once the Stop hook has pushed")
         return fn()
-    finally:
-        state.state_unlock()
 
 
-def _sync():
+def sync():
+    """Bring origin's copy of every lock in before reading this one. The
+    caller holds the push lock."""
     if git("pull", "--rebase", "--autostash", "-q", timeout=120):
         return True
     # --abort refuses a rebase-merge dir left holding only an autostash (a
@@ -158,22 +158,14 @@ def _sync():
     return False
 
 
-def sync():
-    """Bring origin's copy of every lock in before reading this one."""
-    return locked(_sync)
-
-
 def push():
-    """Mirrors stop-continuity.py: two tries, never leave a rebase wedged.
-    Both tries run under one hold of the push lock."""
-    def tries():
-        for attempt in (1, 2):
-            _sync()
-            if git("push", "-q", "origin", "HEAD", timeout=120):
-                return True
-            time.sleep(attempt)
-        return False
-    return locked(tries)
+    """Mirrors stop-continuity.py: two tries, never leave a rebase wedged."""
+    for attempt in (1, 2):
+        sync()
+        if git("push", "-q", "origin", "HEAD", timeout=120):
+            return True
+        time.sleep(attempt)
+    return False
 
 
 def commit_lock(lock, message):
@@ -301,11 +293,13 @@ def main(argv):
     if cmd == "take":
         if len(args) != 3:
             die("take needs <dir> <session-id> <record-file|read>")
-        return take(lock, args[1], args[2])
+        return locked(lambda: take(lock, args[1], args[2]))
     if cmd in ("check", "release"):
         if len(args) < 2 or not args[1]:
             die(f"{cmd} needs <dir> <session-id>")
-        return (check if cmd == "check" else release)(lock, args[1])
+        if cmd == "check":
+            return check(lock, args[1])
+        return locked(lambda: release(lock, args[1]))
     die(f"unknown command {cmd}")
 
 

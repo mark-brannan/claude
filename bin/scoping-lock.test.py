@@ -239,6 +239,27 @@ class ScopingLockTest(unittest.TestCase):
         self.assertIn(rc, (0, 1), out)
         self.assertFalse(lock.exists(), "and released the lock after")
 
+    def test_14_every_git_call_runs_under_one_hold(self):
+        # The sync, the commit, the push and a failed push's reset all run in
+        # the clone the Stop hook pulls in; none of them may fall between holds.
+        S = self.S
+        git("clone", "-q", "origin.git", "g", cwd=S)
+        lock = S / "g" / ".git" / "claude-state-push.lock.d"
+        calls, real = S / "g-calls", shutil.which("git")
+        shim = S / "g-bin"
+        shim.mkdir()
+        (shim / "git").write_text(f'#!/bin/sh\n[ -d "{lock}" ] && echo "held $1" >> {calls} || echo "free $1" >> {calls}\n'
+                                  f'exec {real} "$@"\n')
+        (shim / "git").chmod(0o755)
+        path = f"{shim}:{os.environ['PATH']}"
+        for args in (("take", "state/global/curia/one-hold", "g-sid", "read"), ("release", "state/global/curia/one-hold", "g-sid")):
+            rc, out = self.run_sl("g", *args, PATH=path)
+            self.assertEqual(0, rc, out)
+        seen = calls.read_text().split("\n")
+        self.assertIn("held push", seen, "the shim saw the push")
+        self.assertEqual([c for c in seen if c.startswith("free")], [], "no git call ran outside the lock")
+        self.assertFalse(lock.exists(), "and the lock is released after each command")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -162,13 +162,9 @@ def pull(sr):
     that is ahead or dirty. The lock wait and both commands share
     PULL_CAP; a lock not taken in LOCK_WAIT skips the freshen."""
     t0 = time.monotonic()
-    if not state.state_lock_wait(state.state_push_lock(), LOCK_WAIT):
-        return
-    try:
-        if bounded_git(sr, ["fetch", "-q"], PULL_CAP - (time.monotonic() - t0)):
+    with state.push_lock(LOCK_WAIT, sr) as held:
+        if held and bounded_git(sr, ["fetch", "-q"], PULL_CAP - (time.monotonic() - t0)):
             bounded_git(sr, ["merge", "--ff-only", "-q", "@{u}"], PULL_CAP - (time.monotonic() - t0))
-    finally:
-        state.state_unlock()
 
 
 def board_view(home):

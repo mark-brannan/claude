@@ -343,7 +343,8 @@ class Freshen(unittest.TestCase):
         self.g("init", "-q", "--bare", "-b", "main", str(T / "origin.git"))
         self.g("clone", "-q", str(T / "origin.git"), str(T / "up"))
         (T / "up" / "a.md").write_text("one\n")
-        self.g("-C", str(T / "up"), "add", "a.md")
+        (T / "up" / "b.md").write_text("shard\n")
+        self.g("-C", str(T / "up"), "add", "a.md", "b.md")
         self.g("-C", str(T / "up"), "commit", "-qm", "one")
         self.g("-C", str(T / "up"), "push", "-q", "origin", "HEAD:main")
         self.g("clone", "-q", str(T / "origin.git"), str(T / "sr"))
@@ -391,6 +392,24 @@ class Freshen(unittest.TestCase):
         self.hook.pull(str(self.sr))
         self.assertEqual(self.head(), want, "a clean fast-forward lands")
         self.assertEqual((self.sr / "dirty.md").read_text(), "hook write\n", "the dirty file is untouched")
+        self.assert_unwedged()
+
+    def test_fast_forwards_around_a_tracked_edit_upstream_did_not_touch(self):
+        # The clone's real dirt: a tracked shard a hook appended to.
+        want = self.upstream_moves()
+        (self.sr / "b.md").write_text("shard\nappended\n")
+        self.hook.pull(str(self.sr))
+        self.assertEqual(self.head(), want, "the fast-forward carries the edit")
+        self.assertEqual((self.sr / "b.md").read_text(), "shard\nappended\n", "the edit survives")
+        self.assert_unwedged()
+
+    def test_a_tracked_edit_upstream_also_touched_refuses_the_fast_forward(self):
+        self.upstream_moves()
+        (self.sr / "a.md").write_text("local\n")
+        before = self.head()
+        self.hook.pull(str(self.sr))
+        self.assertEqual(self.head(), before, "the fast-forward is refused, never forced")
+        self.assertEqual((self.sr / "a.md").read_text(), "local\n", "the local edit is intact")
         self.assert_unwedged()
 
     def test_diverged_clone_is_left_for_the_stop_hook(self):
