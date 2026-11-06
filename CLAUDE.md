@@ -334,8 +334,12 @@ Hooks handle the mechanics unprompted.
   call; otherwise it goes. Provenance is a line in the repo's decisions
   file, never a stamp in the prose.
 - **A decision is a statement.** A decisions line, a decision card's
-  answer, a 'rules' line: the date, the statement, the link. No deciding
-  verb on it, ever: no "ruled by", "ruled", "ruling", "decided", "approved". The
+  answer, a 'rules' line: the date, the statement, the link; a public
+  decisions line adds a brief because, one clause, the agent's
+  derivation of the reason from the question and the evidence, never
+  omitted, its source said once in the file's header. It is there for
+  my later "why?" when scoping or deciding. No deciding verb on it,
+  ever: no "ruled by", "ruled", "ruling", "decided", "approved". The
   file's header says once whose the lines are; a line says only what is
   not that default: deferred, current thinking, paraphrase.
 - **My words go public at the weight I gave them.** Most of my opinions

@@ -124,10 +124,16 @@ The decision is as public as the question that drove it.
 
 - **The question was already public** (a public issue or PR argued it):
   the decision is public, a dated line
-  `- YYYY-MM-DD — <short name>: <the answer> ([link])`, newest first, in
-  `docs/decisions.md` of the project's primary repo — the repo whose name
-  the `project-<name>` topic shares, else the repo the card links. The
-  line passes the private-terms check; failing it, the ruling is private.
+  `- YYYY-MM-DD — <short name>: <the answer>, because <the reason> ([link])`,
+  newest first, in `docs/decisions.md` of the project's primary repo — the
+  repo whose name the `project-<name>` topic shares, else the repo the card
+  links. The because is brief, one clause, and is the agent's derivation
+  of the reason from the question and the evidence, never the user's own
+  words quoted; the file's header says so once, so a reader knows its
+  source. It exists so the user can later answer "why?" when scoping or
+  deciding, so it is never omitted. Lines already in the file are not
+  rewritten. The line passes the private-terms check; failing it,
+  the ruling is private.
 - **The driving force is non-public** (a card, a curia, a private
   session): the decision stays private, in the state repo, with the
   user's words verbatim where there are any: the sitting's log,
