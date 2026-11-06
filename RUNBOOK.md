@@ -701,11 +701,11 @@ prints a warning naming the first at start-up; `/wrapup` the first and
 
 ## Re-sign a PR's commits by hand
 
-A PR blocked on unsigned commits, on the machine that holds the signing key.
-From any checkout of the repo, with the PR's branch checked out:
+A PR blocked on unsigned commits ("Commits must have verified signatures"),
+on the machine that holds the signing key. Name the PR; no checkout needed:
 
 ```bash
-sign-commits --dry-run
+sign-commits owner/repo#n --dry-run
 ```
 
 It fetches, prints the branch's facts (ahead, behind, conflicts, unsigned,
@@ -713,7 +713,7 @@ merges) and the one command `branch_brief` recommends. When that is a signing
 rebase or amend, run it for real:
 
 ```bash
-sign-commits
+sign-commits owner/repo#n
 ```
 
 That runs the command and `git push --force-with-lease`. Anything else the

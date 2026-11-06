@@ -2,6 +2,16 @@
 # sign-commits -- re-sign a branch's unsigned commits and push it, by hand.
 #
 #   sign-commits [branch] [-n | --dry-run]
+#   sign-commits <owner/repo#n | PR URL | n> [-n | --dry-run]
+#
+# The PR form is the one to reach for when GitHub says "Commits must have
+# verified signatures": it reads the PR's head and base from GitHub, works in
+# a throwaway worktree on a scratch branch at origin/<head>, and pushes back
+# to <head> under a lease on the sha it fetched. No local branch is read or
+# moved, so a stale local copy cannot brief as signed, and a worktree that
+# still holds the branch -- a dead session's, say -- is not in the way. Run
+# it from a clone of the PR's repo, or from anywhere when the clone is at
+# ~/<repo>. A PR from a fork is refused: its head is not on origin.
 #
 # For a person at a shell, on the machine that holds the signing key, when a
 # PR is blocked on unsigned commits. The agents' gate, hooks/no-unsigned-push.py,
@@ -39,8 +49,11 @@
 # Exit: 0 pushed, or nothing to re-sign; 1 the brief recommends something this
 # does not run by itself, the branch is not the one checked out, or a step
 # failed; 2 usage.
+import json
 import os
+import re
 import shlex
+import tempfile
 import subprocess
 import sys
 
@@ -53,7 +66,7 @@ except ImportError:
     sys.stderr.write("sign-commits: lib/state.py not found (looked beside the tool and in ~/.claude/lib)\n")
     sys.exit(2)
 
-USAGE = "usage: sign-commits [branch] [-n | --dry-run]\n"
+USAGE = "usage: sign-commits [branch | owner/repo#n | PR URL | n] [-n | --dry-run]\n"
 
 # The recommendation forms this runs. Anything else is for a person to read.
 RUNS = ("git rebase -S ", "git commit --amend -S ")
@@ -67,6 +80,110 @@ def recommendation(brief):
             rec = ln[len("recommend: "):]
             return rec.split("   #", 1)[0].strip(), rec
     return "", ""
+
+
+PR_RE = re.compile(r"^(?:https://github\.com/)?(?:([\w.-]+)/([\w.-]+)(?:#|/pull/))?#?(\d+)/?$")
+
+
+def origin_slug(root):
+    """owner/repo of root's origin, lower-cased, or '' when it is not GitHub."""
+    p = subprocess.run(["git", "-C", root, "remote", "get-url", "origin"], text=True, capture_output=True)
+    m = re.search(r"github\.com[:/]([^/]+)/(.+?)(?:\.git)?/?$", p.stdout.strip()) if p.returncode == 0 else None
+    return f"{m.group(1)}/{m.group(2)}".lower() if m else ""
+
+
+def sign_pr(spec, dry, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.stdout, err=sys.stderr,
+            gh=None, home=None):
+    """The PR form: brief and re-sign origin/<head> in a throwaway worktree,
+    push to <head> leased on the fetched sha, remove the worktree."""
+    m = PR_RE.match(spec)
+    owner, repo, num = m.groups()
+
+    def git(root, *a):
+        return subprocess.run(["git", "-C", root, *a], text=True, capture_output=True)
+
+    here = git(cwd or ".", "rev-parse", "--show-toplevel")
+    here = here.stdout.strip() if here.returncode == 0 else ""
+    if owner:
+        slug = f"{owner}/{repo}".lower()
+        root = next((r for r in (here, os.path.join(home or os.path.expanduser("~"), repo))
+                     if r and os.path.isdir(r) and origin_slug(r) == slug), "")
+        if not root:
+            err.write(f"sign-commits: no clone of {owner}/{repo} here or at ~/{repo}; cd into one and re-run\n")
+            return 1
+    else:
+        root, slug = here, origin_slug(here) if here else ""
+        if not slug:
+            err.write(f"sign-commits: PR {num} names no repo, and this is not a clone of a GitHub repo; "
+                      "say owner/repo#n\n")
+            return 1
+
+    gh = gh or (lambda a: subprocess.run(["gh", *a], text=True, capture_output=True))
+    p = gh(["pr", "view", num, "-R", slug, "--json", "headRefName,baseRefName,isCrossRepository,state,url"])
+    if p.returncode:
+        err.write(f"sign-commits: gh could not read {slug}#{num}: {p.stderr.strip()}\n")
+        return 1
+    pr = json.loads(p.stdout)
+    head, base = pr["headRefName"], pr["baseRefName"]
+    if pr["state"] != "OPEN":
+        err.write(f"sign-commits: {pr['url']} is {pr['state'].lower()}; nothing to sign\n")
+        return 1
+    if pr["isCrossRepository"]:
+        err.write(f"sign-commits: {pr['url']} comes from a fork; its head is not on origin, so this cannot push it\n")
+        return 1
+    out.write(f"sign-commits: {pr['url']}  {head} -> {base}\n")
+
+    p = run(["git", "-C", root, "fetch", "--quiet", "origin"])
+    if p.returncode:
+        err.write("sign-commits: git fetch origin failed; nothing touched\n")
+        return 1
+    sha = git(root, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{head}").stdout.strip()
+    if not sha:
+        err.write(f"sign-commits: origin/{head} not found after the fetch; nothing touched\n")
+        return 1
+
+    scratch = f"sign-commits/{num}-{os.getpid()}"
+    wt = tempfile.mkdtemp(prefix="sign-commits-")
+    os.rmdir(wt)  # git worktree add makes it
+    p = git(root, "worktree", "add", "-q", "-b", scratch, wt, sha)
+    if p.returncode:
+        err.write(f"sign-commits: could not make a scratch worktree: {p.stderr.strip()}\n")
+        return 1
+    try:
+        rc, text = brief(wt, scratch, base=base)
+        if rc:
+            err.write(f"sign-commits: {text}")
+            return 1
+        # The worktrees line would only name the scratch worktree; the PR's head is what matters.
+        out.write("".join(ln.replace(scratch, head) for ln in text.splitlines(True) if not ln.startswith("worktrees: ")))
+        cmd, rec = recommendation(text)
+        if rec.startswith("nothing on the base"):
+            out.write(f"sign-commits: nothing to re-sign on {head}\n")
+            return 0
+        if not cmd.startswith(RUNS):
+            err.write(f"sign-commits: not a step this runs by itself -- {rec.replace(scratch, head) or 'no recommendation'}\n")
+            return 1
+        push = ["git", "push", f"--force-with-lease=refs/heads/{head}:{sha}", "origin", f"HEAD:refs/heads/{head}"]
+        out.write(f"+ {cmd}\n+ {' '.join(push)}\n")
+        if dry:
+            out.write("sign-commits: dry run, nothing pushed\n")
+            return 0
+        out.flush()
+        p = run(["git", "-C", wt, *shlex.split(cmd)[1:]])
+        if p.returncode:
+            git(wt, "rebase", "--abort")
+            err.write(f"sign-commits: `{cmd}` failed (exit {p.returncode}); nothing pushed\n")
+            return 1
+        p = run(["git", "-C", wt, *push[1:]])
+        if p.returncode:
+            err.write(f"sign-commits: push failed (exit {p.returncode}); a refused lease means someone pushed "
+                      f"to {head} since the fetch -- re-run to sign what is there now\n")
+            return 1
+        out.write(f"sign-commits: {head} re-signed and pushed; {pr['url']}\n")
+        return 0
+    finally:
+        git(root, "worktree", "remove", "--force", wt)
+        git(root, "branch", "-D", scratch)
 
 
 def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.stdout, err=sys.stderr):
@@ -84,6 +201,9 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
             return 2
         else:
             br = a
+
+    if br and PR_RE.match(br) and (br.isdigit() or "#" in br or "/pull/" in br):
+        return sign_pr(br, dry, cwd=cwd, brief=brief, run=run, out=out, err=err)
 
     def git(*a):
         return subprocess.run(["git", *a], cwd=cwd, text=True, capture_output=True)
