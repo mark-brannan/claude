@@ -48,7 +48,7 @@ do, which files you write, or what you run. Every commit you make ends with the 
    each child's epic as the skill's gates say (the user's order to split
    is the order to open). Commit per child.
 5. **Post the redline.** Refresh the epic body:
-   `gh issue edit <n> -R mark-brannan/claude_prompts_scratch --body-file digest.md`,
+   `gh issue edit <n> -R "$(python3 ~/.claude/lib/config.py get state_repo.github)" --body-file digest.md`,
    cutting from the end past GitHub's 65,536-character limit and saying so
    in the last line with a link to the file; then one comment on the epic
    holding the diff of what you rewrote, so the user can redline there or

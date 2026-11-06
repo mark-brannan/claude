@@ -31,6 +31,7 @@ it go live from `main`, never by editing the live clone in place.
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | the standing orders, in every session |
 | `.claude/CLAUDE.md` | `~/.claude/.claude/CLAUDE.md` | the repo map, only in this repo, its worktrees and `~/.claude` |
 | `settings.json`, `hooks/` | `~/.claude/settings.json`, `~/.claude/hooks/` | every session; hooks always run from the live clone |
+| `config.json` | `~/.claude/config.json` | settings more than one tool reads: the state repo's name and search places, the plan figures; `lib/config.py` reads it |
 | `rules/`, `skills/` | `~/.claude/rules/`, `~/.claude/skills/` | every session, by path or by name |
 | `bin/` | `~/.claude/bin/` | when a hook, skill or person calls a tool |
 
