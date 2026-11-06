@@ -610,3 +610,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261105t222430z
 - cwhat agora reads ready vs waiting from the ruling-ref cache only, as worklist --brief does; an uncached issue ref reads ready (claude#388) Undo: drop RULING_REF_CACHE_ONLY in bin/cwhat (no PR, branch cwhat-work)
+
+### 20261106t035322z
+- Dollar format: <$0.01 below a cent, cents under $100, whole dollars from $100 Undo: change fmt_usd and usd ([#390](https://github.com/mark-brannan/claude/pull/390))
