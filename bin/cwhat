@@ -40,7 +40,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 HERE = Path(os.path.realpath(__file__)).parent
-sys.path[:0] = [str(HERE.parent / "lib"),
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import state  # noqa: E402
