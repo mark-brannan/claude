@@ -17,7 +17,7 @@ them by hand, and the PR says so.
 | 5 | A hook's missing-input path turned from fail-closed to fail-open | substantive | 6 |
 | 6 | A standing order's "never" softened to "avoid" | substantive | 2 |
 | 7 | A skill's "Never" list moved to its own section, unchanged | form | — |
-| 8 | A guard's path class gains a glob | substantive | 8 (and 2) |
+| 8 | A guard's path class gains a glob | substantive | 2, 8 |
 | 9 | A label name changed in code that applies it | substantive | 7 |
 | 10 | A cron step added that posts a summary to the PR | substantive | 5 |
 | 11 | A tenet's weight reversed | substantive | 1 |

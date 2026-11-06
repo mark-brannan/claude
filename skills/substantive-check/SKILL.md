@@ -224,7 +224,7 @@ touches a governing document. The brief names a summary file; the check
 writes it with line 1 as one JSON object and the report after:
 
 ```
-{"verdict":"substantive","criteria":[2,5,8],"governing":true,"files":{"CLAUDE.md":"substantive",".github/workflows/review.yml":"substantive","hooks/stop.py":"form","docs/plan.md":"mu"}}
+{"verdict":"substantive","criteria":[2,5,8],"governing":true,"files":{"CLAUDE.md":"substantive","bin/mixed-loops-screen.py":"substantive",".github/workflows/review.yml":"substantive","hooks/stop.py":"form","docs/plan.md":"mu"}}
 ```
 
 `governing` is true when any touched file is a governing document: a
