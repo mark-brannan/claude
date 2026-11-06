@@ -1220,7 +1220,7 @@ def liveness(target, grace="0"):
     return holder_liveness(target, g) + "\n"
 
 
-def branch_brief(root, br, registry=None, proc_root="/proc"):
+def branch_brief(root, br, registry=None, proc_root="/proc", base=None):
     """(status, text): the facts a session starting on an existing branch
     keeps getting wrong, one per line, ending in exactly one recommended
     command. Read-only: it never fetches, commits or pushes.
@@ -1234,7 +1234,10 @@ def branch_brief(root, br, registry=None, proc_root="/proc"):
     allowed-signers file. The recommendation ladder is ordered by what is
     unrecoverable: hand-resolved merge commits outrank everything (a rebase drops what
     lives only in a hand-resolved merge's tree), then conflicts, then
-    signing; a branch merely behind is left to the queue."""
+    signing; a branch merely behind is left to the queue.
+
+    `base` names the base outright, for a caller that already holds the PR
+    (sign-commits on a PR briefs a scratch branch no PR names)."""
     def g(*a):
         return _git("-C", root, *a)
 
@@ -1249,10 +1252,13 @@ def branch_brief(root, br, registry=None, proc_root="/proc"):
             wts += f"{cur} ({holder_liveness(cur, 0, registry, proc_root)}) "
     out.append(f"worktrees: {wts or 'none'}")
 
-    bases = pr_base_refs(root, br)
+    named, base = base, ""
+    bases = named or pr_base_refs(root, br)
     nb = "unknown" if bases is None else str(len([x for x in bases.split("\n") if x]))
-    base = ""
-    if nb == "1":
+    if named:
+        base = named
+        out.append(f"base: {base} (the PR's)")
+    elif nb == "1":
         base = bases
         out.append(f"base: {base} (open PR)")
     elif nb == "0":
