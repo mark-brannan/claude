@@ -33,6 +33,21 @@ def dec: "⚖ \(.decisions.total)"
 
 def cost:  "\(.output_tokens | k)/\(.context_peak | k)";
 
+# Dollars, not the ratio above (which is named `cost` for older reasons).
+# The same bytes as fmt_usd in metrics_format.py, which says why each band;
+# metrics_format.test.py holds the two to parity. Empty on a cache from
+# before cost_usd existed.
+def usd:
+  if (.cost_usd | type) != "number" then empty
+  else .cost_usd as $c | ($c * 100 | round) as $ct
+    | if   $c <= 0      then "$0.00"
+      elif $ct == 0     then "<$0.01"
+      elif $ct >= 10000 then "$\($c | round)"
+      else "$\($ct / 100 | floor).\($ct % 100 | tostring
+                                     | if length < 2 then "0" + . else . end)"
+      end
+  end;
+
 # ⚡ pairs with ⚖ (decisions) but is not a warning glyph -- friction is a
 # measurement, not an alarm. Pushback is a weekly number, like `split`; it
 # lives in the session JSON only, not this row. Null-guarded the same way as
@@ -104,7 +119,7 @@ def split: " ☺ \(.human_seconds | dur)/⚙ \(.agent_seconds | dur)";
 # wraps around 75 columns and the two groups together run past 90, so the
 # break is placed rather than left to the renderer -- an accidental wrap
 # lands mid-field, a deliberate one does not.
-def fields:  [cost, dec, fric, blk];
+def fields:  [cost, usd, dec, fric, blk];
 def fields2: [time, turns, work];
 
 # One row, for the statusline; no 'event'

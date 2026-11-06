@@ -232,7 +232,8 @@ if [ -n "$FIELDS" ]; then
   say ""
   say "--- fields (name, width, |value|)"
   jq -r -L "$HOOKS" 'include "lib-metrics-fmt";
-    [ {n:"env",  v:env},  {n:"cost",  v:cost},  {n:"time", v:time},
+    [ {n:"env",  v:env},  {n:"cost",  v:cost},  {n:"usd", v:(usd // "(no cost_usd)")},
+      {n:"time", v:time},
       {n:"dec",  v:dec},  {n:"turns", v:turns},
       {n:"work", v:(work // "(empty on a clean tree)")},
       {n:"split",v:split} ]
