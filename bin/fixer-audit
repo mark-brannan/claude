@@ -6,8 +6,9 @@
 #
 # Usage: fixer-audit [--days N] [--date YYYY-MM-DD] [--repos FILE] [--json] [--write]
 #
-#   --days N     window length ending now, default 7
-#   --date D     the report's date (its title and file name), default today UTC
+#   --days N     window length, default 7
+#   --date D     the report's date (its title and file name), default today UTC;
+#                the window ends with that day (UTC), or now if that is sooner
 #   --repos FILE one repo name per line, default ~/.local/share/vended-repos.txt,
 #                read fresh; a bare name is mark-brannan/<name>
 #   --json       print the rows as JSON instead of the markdown report
@@ -33,7 +34,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 NAME = "fixer-audit"
 OWNER = "mark-brannan"
@@ -50,9 +51,9 @@ query($owner: String!, $name: String!, $after: String) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number title url updatedAt
-        commits(last: 50) { nodes { commit { oid committedDate messageHeadline messageBody url } } }
-        reviewThreads(first: 50) { nodes { isResolved
-          comments(first: 20) { nodes { url body createdAt author { login } } } } }
+        commits(last: 50) { totalCount nodes { commit { oid committedDate messageHeadline messageBody url } } }
+        reviewThreads(first: 50) { totalCount nodes { isResolved
+          comments(first: 20) { totalCount nodes { url body createdAt author { login } } } } }
       }
     }
   }
@@ -60,7 +61,8 @@ query($owner: String!, $name: String!, $after: String) {
 """
 
 TRAILER = re.compile(r"^Claude-Fixer-Run:\s*\S+", re.M)
-SIGNED = re.compile(r"claude-fixer", re.I)
+# A signature opens its own line with the robot, so a human quoting the name does not count.
+SIGNED = re.compile(r"^🤖 claude-fixer\b", re.M)
 REJECTED = re.compile(r"\brejected\b", re.I)
 
 
@@ -81,6 +83,24 @@ def reason(body, limit=160):
     text = " ".join(ln.strip() for ln in (body or "").splitlines() if ln.strip() and not SIGNED.search(ln))
     text = re.sub(r"\s+", " ", text)
     return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+CAPS = (("commits", 50), ("reviewThreads", 50))
+COMMENT_CAP = 20
+
+
+def short_reads(pr):
+    """What a pull request holds past the query's caps, so the report says its counts are short."""
+    out = []
+    for key, cap in CAPS:
+        if pr[key].get("totalCount", 0) > cap:
+            out.append("#%d has %d %s, the first %d read" % (pr["number"], pr[key]["totalCount"], key, cap)
+                       if key == "reviewThreads" else
+                       "#%d has %d commits, the last %d read" % (pr["number"], pr[key]["totalCount"], cap))
+    for t in pr["reviewThreads"]["nodes"]:
+        if t["comments"].get("totalCount", 0) > COMMENT_CAP:
+            out.append("#%d has a thread of %d comments, the first %d read" % (pr["number"], t["comments"]["totalCount"], COMMENT_CAP))
+    return out
 
 
 def rows_from_pr(repo, pr, since):
@@ -116,7 +136,7 @@ def gh_graphql(repo, after):
 
 def collect(repo, since, fetch=gh_graphql):
     """(rows, note) for one repo; note is '' or why the read is short."""
-    rows, after, seen = [], None, set()
+    rows, after, seen, notes = [], None, set(), []
     for page in range(MAX_PAGES):
         data = fetch(repo, after)
         prs = (data.get("data") or {}).get("repository")
@@ -125,12 +145,18 @@ def collect(repo, since, fetch=gh_graphql):
         prs = prs["pullRequests"]
         for pr in prs["nodes"]:
             if parse_time(pr["updatedAt"]) < since:
-                return dedupe(rows, seen), ""
+                return dedupe(rows, seen), joined(notes)
             rows += rows_from_pr(repo, pr, since)
+            notes += short_reads(pr)
         if not prs["pageInfo"]["hasNextPage"]:
-            return dedupe(rows, seen), ""
+            return dedupe(rows, seen), joined(notes)
         after = prs["pageInfo"]["endCursor"]
-    return dedupe(rows, seen), "stopped after %d pages of pull requests; older ones in the window are not counted" % MAX_PAGES
+    notes.append("stopped after %d pages of pull requests; older ones in the window are not counted" % MAX_PAGES)
+    return dedupe(rows, seen), joined(notes)
+
+
+def joined(notes):
+    return "; ".join(notes[:5]) + ("; and %d more" % (len(notes) - 5) if len(notes) > 5 else "")
 
 
 def dedupe(rows, seen):
@@ -209,6 +235,8 @@ def main(argv, fetch=gh_graphql, now=None):
     until = now or datetime.now(timezone.utc)
     try:
         day = date.fromisoformat(a.date).isoformat() if a.date else until.date().isoformat()
+        if a.date:  # a rerun of a missed week reads the days ending then, not now
+            until = min(until, datetime.combine(date.fromisoformat(day) + timedelta(days=1), time.min, timezone.utc))
         repos = read_repos(a.repos)
     except (ValueError, OSError) as e:
         print("%s: %s" % (NAME, e), file=sys.stderr)

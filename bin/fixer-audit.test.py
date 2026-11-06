@@ -53,6 +53,7 @@ class PureTest(unittest.TestCase):
         self.assertFalse(fa.is_rejection("Fixed (suggestion applied)\n\n" + SIGN))
         self.assertFalse(fa.is_rejection("I rejected this."))
         self.assertFalse(fa.is_rejection("Unrejected\n" + SIGN))
+        self.assertFalse(fa.is_rejection("claude-fixer rejected this, but the finding was right"))
 
     def test_reason_drops_signature_and_cuts(self):
         self.assertEqual(fa.reason("Rejected: moot.\n\n" + SIGN), "Rejected: moot.")
@@ -94,6 +95,16 @@ class CollectTest(unittest.TestCase):
         rows, note = fa.collect("o/r", SINCE, lambda repo, after: page([pr(1, "2026-11-05T00:00:00Z")], more=True))
         self.assertIn("stopped after", note)
 
+    def test_caps_are_reported(self):
+        p = pr(9, "2026-11-05T00:00:00Z")
+        p["commits"]["totalCount"] = 80
+        p["reviewThreads"]["totalCount"] = 51
+        p["reviewThreads"]["nodes"] = [{"isResolved": False, "comments": {"totalCount": 21, "nodes": [comment("f", "x")]}}]
+        rows, note = fa.collect("o/r", SINCE, lambda repo, after: page([p]))
+        self.assertIn("#9 has 80 commits, the last 50 read", note)
+        self.assertIn("51 reviewThreads", note)
+        self.assertIn("thread of 21 comments", note)
+
     def test_missing_repo_raises(self):
         with self.assertRaises(RuntimeError):
             fa.collect("o/r", SINCE, lambda repo, after: {"data": {"repository": None}, "errors": [{"message": "Not found"}]})
@@ -134,6 +145,10 @@ class MainTest(unittest.TestCase):
         self.assertIn("| mark-brannan/alpha | 1 | 1 |", out)
         self.assertIn("Rejected \\| moot", out)
         self.assertIn("(thread open)", out)
+
+    def test_date_ends_the_window_that_day(self):
+        rc, out, _ = self.run_main(["--repos", self.repos, "--date", "2026-11-01"], lambda repo, after: page([]))
+        self.assertIn("Window: 2026-10-26 00:00 to 2026-11-02 00:00 UTC", out)
 
     def test_empty_week(self):
         rc, out, _ = self.run_main(["--repos", self.repos], lambda repo, after: page([]))
