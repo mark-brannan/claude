@@ -697,3 +697,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t215610z
 - package named claude_costing Undo: rename before the repo move ([#417](https://github.com/mark-brannan/claude/pull/417))
+
+### 20261106t222818z
+- grind skips an item whose price lookup fails, with a warning, rather than stopping the run Undo: exit 2 instead of continue at bin/grind's per-item rate lookup ([#417](https://github.com/mark-brannan/claude/pull/417))
