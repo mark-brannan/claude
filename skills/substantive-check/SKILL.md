@@ -100,7 +100,7 @@ the rest of the PR body, so the record carries it in both places.
 ## Format
 
 ```
-## Substantive · mark-brannan/claude#401
+## Substantive · owner/repo#n
 
 | criterion | file:lines                       | what moves (old → new)                                   | declared                            | how  |
 |-----------|----------------------------------|----------------------------------------------------------|-------------------------------------|------|
