@@ -31,6 +31,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 
 **PRs**
 - [Find all PRs awaiting human review](#find-all-prs-awaiting-human-review)
+- Count the week's fixer commits and signed rejections across the vended repos: `~/.claude/bin/fixer-audit` (`--write` files it under the state repo's `reports/`; `--json` for machines)
 - [Audit the `awaiting-human` label](#audit-the-awaiting-human-label)
 - [Find out which session holds a branch](#find-out-which-session-holds-a-branch)
 - [Re-sign a PR's commits by hand](#re-sign-a-prs-commits-by-hand)

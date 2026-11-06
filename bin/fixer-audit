@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+# fixer-audit: the week's fixer commits and signed rejections across the
+# vended repos, one row each, for reading at leisure. The count is what the
+# value counter reads: how often the fixer acted without a human, and how often
+# it said no.
+#
+# Usage: fixer-audit [--days N] [--date YYYY-MM-DD] [--repos FILE] [--json] [--write]
+#
+#   --days N     window length, default 7
+#   --date D     the report's date (its title and file name), default today UTC;
+#                the window ends with that day (UTC), or now if that is sooner
+#   --repos FILE one repo name per line, default ~/.local/share/vended-repos.txt,
+#                read fresh; a bare name is mark-brannan/<name>
+#   --json       print the rows as JSON instead of the markdown report
+#   --write      write the markdown to <state repo>/reports/fixer-audit-<date>.md
+#                (overwritten if it exists) and print the path. Committing it
+#                is the caller's: the weekly sweeper.
+#
+# What counts, both read from GitHub as the fixer wrote them (the shared
+# claude-review.yml's fixer job, mark-brannan/.github):
+#   commit     a commit on a pull request whose message carries a
+#              `Claude-Fixer-Run:` trailer
+#   rejection  a review-thread reply signed "claude-fixer" that says the
+#              finding was rejected
+# Both are matched in pull requests updated inside the window, and kept only
+# when their own timestamp is inside it.
+#
+# Exit 0 when every repo was read, 1 when some could not be (the report names
+# them and says its counts are lower bounds), 2 on usage, 3 when gh is missing.
+# Python 3 stdlib only; needs gh logged in.
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import date, datetime, time, timedelta, timezone
+
+NAME = "fixer-audit"
+OWNER = "mark-brannan"
+REPO_LIST = "~/.local/share/vended-repos.txt"
+MAX_PAGES = 6  # 50 pull requests a page, newest update first
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+
+QUERY = """
+query($owner: String!, $name: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: 50, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number title url updatedAt
+        commits(last: 50) { totalCount nodes { commit { oid committedDate messageHeadline messageBody url } } }
+        reviewThreads(first: 50) { totalCount nodes { isResolved
+          comments(first: 20) { totalCount nodes { url body createdAt author { login } } } } }
+      }
+    }
+  }
+}
+"""
+
+TRAILER = re.compile(r"^Claude-Fixer-Run:\s*\S+", re.M)
+# A signature opens its own line with the robot, so a human quoting the name does not count.
+SIGNED = re.compile(r"^🤖 claude-fixer\b", re.M)
+REJECTED = re.compile(r"\brejected\b", re.I)
+
+
+def is_fixer_commit(message):
+    return bool(TRAILER.search(message or ""))
+
+
+def is_rejection(body):
+    return bool(SIGNED.search(body or "") and REJECTED.search(body or ""))
+
+
+def parse_time(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def reason(body, limit=160):
+    """The reply's why: its text without the signature line, one line, cut."""
+    text = " ".join(ln.strip() for ln in (body or "").splitlines() if ln.strip() and not SIGNED.search(ln))
+    text = re.sub(r"\s+", " ", text)
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+CAPS = (("commits", 50), ("reviewThreads", 50))
+COMMENT_CAP = 20
+
+
+def short_reads(pr):
+    """What a pull request holds past the query's caps, so the report says its counts are short."""
+    out = []
+    for key, cap in CAPS:
+        if pr[key].get("totalCount", 0) > cap:
+            out.append("#%d has %d %s, the first %d read" % (pr["number"], pr[key]["totalCount"], key, cap)
+                       if key == "reviewThreads" else
+                       "#%d has %d commits, the last %d read" % (pr["number"], pr[key]["totalCount"], cap))
+    for t in pr["reviewThreads"]["nodes"]:
+        if t["comments"].get("totalCount", 0) > COMMENT_CAP:
+            out.append("#%d has a thread of %d comments, the first %d read" % (pr["number"], t["comments"]["totalCount"], COMMENT_CAP))
+    return out
+
+
+def rows_from_pr(repo, pr, since):
+    """The fixer's rows on one pull request node."""
+    out = []
+    for n in pr["commits"]["nodes"]:
+        c = n["commit"]
+        msg = c["messageHeadline"] + "\n\n" + (c["messageBody"] or "")
+        if is_fixer_commit(msg) and parse_time(c["committedDate"]) >= since:
+            threads = len(re.findall(r"^- https?://", c["messageBody"] or "", re.M))
+            out.append({"kind": "commit", "repo": repo, "pr": pr["number"], "when": c["committedDate"],
+                        "url": c["url"], "resolved": None,
+                        "detail": "%s (%d thread%s)" % (c["messageHeadline"], threads, "" if threads == 1 else "s")})
+    for t in pr["reviewThreads"]["nodes"]:
+        for c in t["comments"]["nodes"][1:]:  # a reply, never the finding itself
+            if is_rejection(c["body"]) and parse_time(c["createdAt"]) >= since:
+                out.append({"kind": "rejection", "repo": repo, "pr": pr["number"], "when": c["createdAt"],
+                            "url": c["url"], "resolved": t["isResolved"], "detail": reason(c["body"])})
+    return out
+
+
+def gh_graphql(repo, after):
+    owner, name = repo.split("/")
+    cmd = ["gh", "api", "graphql", "-f", "query=" + QUERY, "-F", "owner=" + owner, "-F", "name=" + name]
+    if after:
+        cmd += ["-F", "after=" + after]
+    done = subprocess.run(cmd, capture_output=True, text=True)
+    if done.returncode != 0:
+        tail = (done.stderr or done.stdout).strip().splitlines()
+        raise RuntimeError(tail[-1] if tail else "gh failed")
+    return json.loads(done.stdout)
+
+
+def collect(repo, since, fetch=gh_graphql):
+    """(rows, note) for one repo; note is '' or why the read is short."""
+    rows, after, seen, notes = [], None, set(), []
+    for page in range(MAX_PAGES):
+        data = fetch(repo, after)
+        prs = (data.get("data") or {}).get("repository")
+        if prs is None:
+            raise RuntimeError("; ".join(e.get("message", "?") for e in data.get("errors", [])) or "no repository")
+        prs = prs["pullRequests"]
+        for pr in prs["nodes"]:
+            if parse_time(pr["updatedAt"]) < since:
+                return dedupe(rows, seen), joined(notes)
+            rows += rows_from_pr(repo, pr, since)
+            notes += short_reads(pr)
+        if not prs["pageInfo"]["hasNextPage"]:
+            return dedupe(rows, seen), joined(notes)
+        after = prs["pageInfo"]["endCursor"]
+    notes.append("stopped after %d pages of pull requests; older ones in the window are not counted" % MAX_PAGES)
+    return dedupe(rows, seen), joined(notes)
+
+
+def joined(notes):
+    return "; ".join(notes[:5]) + ("; and %d more" % (len(notes) - 5) if len(notes) > 5 else "")
+
+
+def dedupe(rows, seen):
+    out = []
+    for r in rows:
+        if r["url"] not in seen:
+            seen.add(r["url"])
+            out.append(r)
+    return out
+
+
+def read_repos(path):
+    out = []
+    with open(os.path.expanduser(path)) as f:
+        for ln in f:
+            ln = ln.strip()
+            if ln and not ln.startswith("#"):
+                out.append(ln if "/" in ln else OWNER + "/" + ln)
+    return out
+
+
+def render(day, since, until, rows, repos, problems):
+    commits = [r for r in rows if r["kind"] == "commit"]
+    rejs = [r for r in rows if r["kind"] == "rejection"]
+    lines = ["# Fixer audit, %s" % day, "",
+             "Window: %s to %s UTC. Repos read: %d of %d."
+             % (since.strftime("%Y-%m-%d %H:%M"), until.strftime("%Y-%m-%d %H:%M"),
+                len(repos) - sum(1 for p in problems if p["failed"]), len(repos)), "",
+             "**%d fixer commit%s, %d rejection%s.**" % (len(commits), "" if len(commits) == 1 else "s",
+                                                         len(rejs), "" if len(rejs) == 1 else "s"), ""]
+    if problems:
+        lines += ["Counts below are lower bounds:", ""]
+        lines += ["- %s: %s" % (p["repo"], p["note"]) for p in problems]
+        lines.append("")
+    per = {}
+    for r in rows:
+        per.setdefault(r["repo"], [0, 0])[0 if r["kind"] == "commit" else 1] += 1
+    if per:
+        lines += ["| Repo | Commits | Rejections |", "|---|---|---|"]
+        lines += ["| %s | %d | %d |" % (k, v[0], v[1]) for k, v in sorted(per.items())]
+        lines.append("")
+        lines += ["| When (UTC) | Kind | PR | Detail | Link |", "|---|---|---|---|---|"]
+        for r in sorted(rows, key=lambda r: (r["repo"], r["when"])):
+            detail = r["detail"].replace("|", "\\|")
+            if r["kind"] == "rejection":
+                detail += " (thread %s)" % ("resolved" if r["resolved"] else "open")
+            lines.append("| %s | %s | %s#%d | %s | %s |" % (r["when"][:16].replace("T", " "), r["kind"],
+                                                            r["repo"], r["pr"], detail, r["url"]))
+    else:
+        lines.append("No rows.")
+    return "\n".join(lines) + "\n"
+
+
+def report_path(day):
+    import state  # noqa: E402  (lib/, found beside the tool or in ~/.claude/lib)
+    root = state.state_repo()
+    if not root:
+        raise RuntimeError("the state repo is not on this machine (set CLAUDE_STATE_REPO)")
+    return os.path.join(root, "reports", "fixer-audit-%s.md" % day)
+
+
+def main(argv, fetch=gh_graphql, now=None):
+    ap = argparse.ArgumentParser(prog=NAME, add_help=True)
+    ap.add_argument("--days", type=int, default=7)
+    ap.add_argument("--date")
+    ap.add_argument("--repos", default=REPO_LIST)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--write", action="store_true")
+    try:
+        a = ap.parse_args(argv)
+    except SystemExit as e:
+        return 2 if e.code else 0
+    if a.days < 1:
+        print("%s: --days must be at least 1" % NAME, file=sys.stderr)
+        return 2
+    until = now or datetime.now(timezone.utc)
+    try:
+        day = date.fromisoformat(a.date).isoformat() if a.date else until.date().isoformat()
+        if a.date:  # a rerun of a missed week reads the days ending then, not now
+            until = min(until, datetime.combine(date.fromisoformat(day) + timedelta(days=1), time.min, timezone.utc))
+        repos = read_repos(a.repos)
+    except (ValueError, OSError) as e:
+        print("%s: %s" % (NAME, e), file=sys.stderr)
+        return 2
+    since = until - timedelta(days=a.days)
+    rows, problems = [], []
+    for repo in repos:
+        try:
+            got, note = collect(repo, since, fetch)
+            rows += got
+            if note:
+                problems.append({"repo": repo, "note": note, "failed": False})
+        except (RuntimeError, ValueError, KeyError, OSError) as e:
+            problems.append({"repo": repo, "note": "could not be read: %s" % e, "failed": True})
+    if a.json:
+        print(json.dumps({"date": day, "since": since.isoformat(), "rows": rows, "problems": problems}, indent=2))
+    else:
+        text = render(day, since, until, rows, repos, problems)
+        if a.write:
+            try:
+                path = report_path(day)
+            except (RuntimeError, ImportError) as e:
+                print("%s: %s" % (NAME, e), file=sys.stderr)
+                return 2
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(text)
+            print(path)
+        else:
+            sys.stdout.write(text)
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    try:
+        subprocess.run(["gh", "--version"], capture_output=True, check=True)
+    except (OSError, subprocess.CalledProcessError):
+        print("%s: gh is required" % NAME, file=sys.stderr)
+        sys.exit(3)
+    sys.exit(main(sys.argv[1:]))
