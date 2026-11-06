@@ -694,3 +694,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t215607z
 - prices unified on session-metrics.jq's table: unknown model at top tier, fable-5-1 cache read 0.25, sonnet-4-6 3/15 Undo: revert the PR ([#417](https://github.com/mark-brannan/claude/pull/417))
+
+### 20261106t215610z
+- package named claude_costing Undo: rename before the repo move ([#417](https://github.com/mark-brannan/claude/pull/417))
