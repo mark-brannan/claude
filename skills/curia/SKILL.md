@@ -159,8 +159,8 @@ replicates `digest.md` alone.
      ruled; its ledger holds the stamps. -->
 
 **Prune what agents load, never the record.** `roll.md` and
-`agent_decisions.md` are append-only and never shrink. The digest's header
-carries a `read-from:` line, one stamp per append-only file —
+`agent_decisions.md` are append-only and never shrink, as is `pruned.md`. The digest's header
+carries a `read-from:` line, one stamp per append-only file a sitting reads —
 `roll.md#<stamp> · agent_decisions.md#<stamp>` — and an agent reads each
 file from that stamp to its end, never from the top. Lint moves each
 stamp forward to the last one **Where this stands** cites; a file it
@@ -185,9 +185,9 @@ so — with its stamp, and moves on:
 | From | To | Trigger | Who |
 |---|---|---|---|
 | pencil | pen, marked as lint's | the line's link resolves to a merged commit, spec row or decisions line and the user has not reversed it | lint, shown in its diff and listed in its findings |
-| pen, governs code | a spec row in the public repo beside the code, citing its repo's decisions line; the ledger line links the row. The steering rung of embedded, below | the spec PR merges | the spec PR's author; lint deletes the ledger line |
+| pen, governs code | a spec row in the public repo beside the code, citing its repo's decisions line; the ledger line links the row. The steering rung of embedded, below | the spec PR merges | the spec PR's author; lint moves the ledger line to `pruned.md` |
 | pen, governs how we work, not code | the standing orders or `rules/code.md` | the user's hand | the user |
-| pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line | an agora or the user's hand | lint deletes the ledger line |
+| pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line | an agora or the user's hand | lint moves the ledger line to `pruned.md` |
 | pen, private, no work to file | stays | scoping promotes it when it files the work | scoping |
 | refused name or discarded idea | one line in agent-notes Working memory (*refused: …*), and the line itself to `pruned.md` with its reason | the prune | lint |
 | superseded | the **Superseded** group, then to `pruned.md` with what replaced it | the prune | lint |
@@ -199,10 +199,11 @@ refused). Nothing in it is edited or deleted, and no sitting reads it, at
 open or after: it is the record, not what agents load, and no `read-from:`
 points at it. Existing curiae get no backfill.
 
-One home per fact: a pruned line is moved, never copied, so it lives in
-the archive alone. Its public destination carries no stamp and keeps its
+One home per fact: the ledger line itself is moved whole to the archive,
+never copied. Its public destination carries no stamp and keeps its
 brief *because*; the digest's Rulings resolve through the ledger line,
-which stays until the prune and then through `pruned.md`.
+which stays until the prune and then through its spec row or decisions
+line.
 Beyond the table, one more hop: a decisions log is periodically pruned and
 rewritten as a spec or a requirement. Settled decisions leave every curia;
 nothing accumulates here for its own sake.
