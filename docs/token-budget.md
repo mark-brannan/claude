@@ -58,9 +58,9 @@ pass 10% of the context window; under that they load in full. Measured
 The cost that remains is the right-hand column, paid wherever deferral is
 off or unsupported, and claude.ai chat may still be such a place. Under `auto`, a set
 of servers whose schemas total under the threshold loads in full too, up to
-about 10% of context; that is what `.claude/hooks/connector-budget.py`'s
-warning above 5 still guards, since the hook cannot see which side of the
-threshold a session lands on.
+about 10% of context. `.claude/hooks/connector-budget.py`'s warning above 5
+still guards both cases, since the hook cannot see whether deferral is on or
+which side of the threshold a session lands on.
 
 ### Dead end, tested and rejected
 
