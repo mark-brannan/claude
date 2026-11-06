@@ -673,3 +673,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t192904z
 - pr-blockers --leave-easy matches the fixer check by a check-run name equal to 'fixer' or ending in '/ fixer', and the [easy] tag by the fixer's own regex and bot test. Undo: edit fixer_pending and EASY in bin/pr-blockers ([#414](https://github.com/mark-brannan/claude/pull/414))
+
+### 20261106t192925z
+- pr-blockers --leave-easy prints a held thread as 'fixer's: [easy] review thread at <where> <url>; fix: none of yours while <check> runs; take it once the fixer replies or ends'. Undo: change FIXERS line text in bin/pr-blockers ([#414](https://github.com/mark-brannan/claude/pull/414))
