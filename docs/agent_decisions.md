@@ -676,3 +676,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t192925z
 - pr-blockers --leave-easy prints a held thread as 'fixer's: [easy] review thread at <where> <url>; fix: none of yours while <check> runs; take it once the fixer replies or ends'. Undo: change FIXERS line text in bin/pr-blockers ([#414](https://github.com/mark-brannan/claude/pull/414))
+
+### 20261106t193823z
+- The prompt-time pr-blockers hook and fixup contract step 1 run pr-blockers with --leave-easy; no new guard enforces the fixer contract. Undo: drop --leave-easy from hooks/pr-blockers-prompt.py and pickup §6 step 1 ([#414](https://github.com/mark-brannan/claude/pull/414#discussion_r4496707048)) ([#414](https://github.com/mark-brannan/claude/pull/414))
