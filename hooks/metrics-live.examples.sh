@@ -157,7 +157,7 @@ show "bedtime: the prompt after that (silent)"
 bedshow "$(bedp "go on")"
 printf '{"lat": 0, "lon": %s}\n' "$sun_lon" > "$STATE/location.json"
 
-show "sitting cluster: the ⏰ tier past the 90-minute rung"
+show "sitting 2h30: the time ladder on line 2"
 jq -n --argjson ss "$((now - 9000))" '{sitting_start: $ss, last_prompt: $ss}' > "$SITFILE"
 printf '%s\n' "$(msg "$(block "$TP5" f)")" | sed 's/^/  /'
 
