@@ -1343,7 +1343,7 @@ class Hook:
         if reason:
             main = f"{main} — {reason}"
         second = fmt_lines(num(sess.get("user_turns")), num(sess.get("tool_calls")),
-                           self.ncommits, self.dirty, self.unpushed)
+                           self.ncommits, self.dirty, self.unpushed, sess.get("cost_usd"))
         return f"{main}\n{second}" if second else main
 
 
@@ -1396,10 +1396,15 @@ def item_field(path, key):
     return "?"
 
 
-def fmt_lines(turns, tools, commits, dirty, unpushed):
+def fmt_lines(turns, tools, commits, dirty, unpushed, cost_usd=None):
     """The block's second line, from metrics_format.py: display text stays
-    plain f-strings the user can edit unassisted."""
+    plain f-strings the user can edit unassisted. The dollars lead it, not
+    the first line: that one already runs past 75 columns at its high rungs,
+    and the second has room to spare."""
     turns_line = metrics_format.fmt_turns(turns, tools)
+    usd = metrics_format.fmt_usd(cost_usd)
+    if usd:
+        turns_line = f"{usd} {turns_line}"
     work = metrics_format.fmt_work(commits, dirty, unpushed)
     return f"{turns_line} {work}" if work else turns_line
 

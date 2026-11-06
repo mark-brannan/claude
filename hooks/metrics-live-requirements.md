@@ -32,6 +32,9 @@ renders one block with four ⛁ in it.
 `output_tokens/context_peak`; a rung reaches the reader as glyph repetitions
 and nothing else. The threshold lines rendered `context_peak/rung` — the same
 shape, one line away, meaning something different.
+The session's estimated cost, sub-agents included, is the one dollar
+figure, `$2.39`, in both readouts: beside the ratio in the row, leading the
+turns line in the block, every block line under 75 columns.
 
 **A counted field never vanishes; zero is a state with a glyph.** 🧘
 decisions, 🌌 friction, ✅ blocked — the field keeps its slot and its `(x0)`,

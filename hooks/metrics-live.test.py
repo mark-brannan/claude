@@ -1000,6 +1000,7 @@ class MetricsLiveTest(unittest.TestCase):
         o9 = w.msg(w.hook(w.payload(tp9, "show9", repo9, "Stop"), "stop", show=True, env=stop24))
         w.has("a clean tree still prints the turns line", "⇢ [0-9]+ ⚙ [0-9]+", o9)
         w.hasnt("and says nothing about git state", "⎇", o9)
+        w.has("the session's dollars lead the turns line", r"(?m)^(\$[0-9]+\.[0-9]{2}|<\$0\.01|\$[0-9]+) ⇢ ", o9)
         (repo9 / "scratch-file").touch()
         o9b = w.msg(w.hook(w.payload(tp9, "show9b", repo9, "Stop"), "stop", show=True, env=stop24))
         w.has("a dirty tree appends git state to the same line", "⇢ [0-9]+ ⚙ [0-9]+ ⎇ 1~", o9b)
