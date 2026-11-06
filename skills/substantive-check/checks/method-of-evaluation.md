@@ -46,9 +46,12 @@ this check exists for.
   success metric or an exit condition in a design document, curia,
   card or ADR, where the new words would pass work the old ones would
   not, or fail work they passed. `read`, both wordings quoted.
-- **A governing statement the change leaves false** — the diff changes the
-  code or the doc so a rule, threshold or behavior the doc states no longer
-  matches what the code does. `read`, both quoted.
+- **A governing statement the code contradicts** — a rule, threshold or
+  behavior a doc states that the code does not do. `read`, both quoted.
+  Where the change made the contradiction, it is a row like any other.
+  Where it stood before the change, it is still called out, but in the
+  output's standing block, not as a row: it asks the author for no
+  declaration.
 - **A governing comment** — a code comment that states what a guard
   requires, what it may not loosen, or why a measure is shaped as it
   is, changed so that the rule it states changes. `read`.

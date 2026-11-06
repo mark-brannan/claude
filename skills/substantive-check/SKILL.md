@@ -128,6 +128,9 @@ Asked, for the PR body:
 ## Method of evaluation:
 - hooks/metrics-live.py: <essentially the same | more conservative | less conservative: what moves>
 
+Standing, asked of no one:
+- docs/stop-hook.md:40 "the nag fires once per session" ↔ hooks/stop.py:212 fires on every crossing
+
 Not screened: criteria 1-7 (no check file yet).
 Not looked at: the CI history; callers outside this repo.
 ```
@@ -147,6 +150,12 @@ found anywhere, one row reads `nothing found` with the files looked at.
 `how` is one of `git` (old line beside new), `grep`, `gh` or `read`
 (judgment on reading), or blank on a `mu` row. The asked block lists only the files with
 no declaration; with none missing it reads `Asked: none`. The
+standing block lists what a detector found that the change did not
+make, such as a doc the code already contradicted: both sides quoted,
+no declaration asked, never in the asked block, and `Standing: none`
+when empty. It requires nothing of the author. Whether one climbs
+further, to a card, then a reviewer's call to decide or look, then the
+agora, is a judgement call for whoever reads it, not this check's. The
 not-screened line names every criterion with no file in `checks/`; the
 not-looked-at line names what the read-set left out, or `none`. No other
 line follows.
