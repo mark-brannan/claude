@@ -41,7 +41,7 @@ REPO_LIST = "~/.local/share/vended-repos.txt"
 MAX_PAGES = 6  # 50 pull requests a page, newest update first
 sys.dont_write_bytecode = True
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
-                os.path.expanduser("~/.claude/lib")]
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 
 QUERY = """
 query($owner: String!, $name: String!, $after: String) {
