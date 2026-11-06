@@ -640,3 +640,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t070308z
 - event block: no sitting clock renders ⏱0h00; no cost_usd renders blank figure spaces; front ⚡/⛔ bad at first event; context 💸 at first rung ([#395](https://github.com/mark-brannan/claude/pull/395))
+
+### 20261106t080247z
+- substantive-check: the whole PR body becomes the squash commit body, since Mergify's per-section template is removed and its replacement copies the whole body or nothing Undo: revert .mergify.yml ([#401](https://github.com/mark-brannan/claude/pull/401))
