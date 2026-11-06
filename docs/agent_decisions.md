@@ -646,3 +646,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t080253z
 - substantive-check: the shared default queue rule is restated in this repo's .mergify.yml rather than changed in the shared config, so other repos keep their merge commits Undo: move commit_message_format into the shared config, or drop the local rule ([#401](https://github.com/mark-brannan/claude/pull/401))
+
+### 20261106t080300z
+- substantive-check: the criterion-8 PR-body heading is '## Method of evaluation:', the card's wording, until the owner picks between it and '## Substantive:' Undo: rename the heading in the skill and its check file ([#401](https://github.com/mark-brannan/claude/pull/401))
