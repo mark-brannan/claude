@@ -348,6 +348,7 @@ class Stop:
         self.home = None     # and the home line it read, for the pickup item
         self.pi_branch_line = "none"
         self.pi_pr = "none"
+        self.handoff = ""    # the hand-off a model wrote into the pickup item
 
     def s(self, *keys, default=""):
         """$(printf '%s' "$metrics" | jq -r '.session.<keys> // <default>')"""
@@ -970,6 +971,10 @@ class Stop:
         # is what the next session picks up, whatever the item said before.
         if not status or prompt != old_prompt:
             status = "open"
+        # A session states that work continues by writing a hand-off over the
+        # hook's default body (wrapup step 2b) and leaving the item open; the
+        # session's item reads it (requirements section 14).
+        self.handoff = body if status == "open" and body.strip() != prompt.strip() else ""
 
         self.pi_pr = old_pr or "none"
         if work_root:
@@ -1023,8 +1028,9 @@ class Stop:
 
     # ------------------------------------------------------- the session's item
     # The session's record as one work item in items/ (requirements section
-    # 14): minted at its first Stop, or written onto the item it claimed,
-    # before the state commit below so this Stop commits it. The deciding is
+    # 14): written onto the item it claimed, or its PR's one item, or minted
+    # once the session states that work continues; a session with neither
+    # gets no item. Before the state commit below, so this Stop commits it. The deciding is
     # stop-item.py's; every write goes through bin/work-item. It fails open:
     # its one outcome line, or why it did not run, goes in the checkpoint,
     # and the pickup item above stands either way.
@@ -1035,7 +1041,7 @@ class Stop:
                           f"--items={self.SD}/items", f"--pr={self.pi_pr}", f"--checkpoint={self.ckpt}",
                           f"--work-root={self.work_root}", f"--repo={self.work_repo}",
                           f"--started={self.started}", f"--prompt={self.s('last_prompt')}",
-                          f"--model={self.s('model')}"], 60, capture=True)[1]
+                          f"--model={self.s('model')}", f"--handoff={self.handoff}"], 60, capture=True)[1]
         append(self.ckpt, f"\n## Session item\n\n{si_out or 'failed: stop-item.py did not run'}\n")
 
     # ------------------------------------------------------- curia digests
