@@ -110,9 +110,10 @@ line keeps every face it has earned. The front's time slot shows the latest.
 ```
 
 **The runs follow the front's slot order:** 💸 context, ⚡ friction, ⚖
-decisions, ⛔ blocked. Time is not here; it has line 2. Decisions lead with
-🤔 once they reach 3. A counted field carries its count, `⚡⚡(x2)`; context
-carries one only at overflow.
+decisions, ⛔ blocked. Time is not here; it has line 2. A run's length is
+the count ladder's rung, not the count. Decisions lead with 🤔 past their
+rung. A counted field carries its count, `⚡⚡(x2)`; context carries one
+only at overflow.
 
 **A rung value is never a number on screen.** The block's only `a/b` is
 `output_tokens/context_peak`; a rung reaches the reader as glyph repetitions
