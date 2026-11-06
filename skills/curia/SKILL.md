@@ -253,7 +253,8 @@ count did not move is a finding for the sitting, never lint's fix.
      ledger holds the stamps. The Superseded row joins the trial's
      Superseded group to the proposal's prune; the agent's
      reconciliation. The archive's shape (`pruned.md`, append-only, a
-     reason per line, read by no sitting) is pencil, the agent's default. Lint marks a line it promotes as its own, so a pen
+     reason per line, read by no sitting) is pencil, the agent's default.
+     Lint marks a line it promotes as its own, so a pen
      line the user made stays distinguishable; making the promotion a
      finding instead is the undo. -->
 
