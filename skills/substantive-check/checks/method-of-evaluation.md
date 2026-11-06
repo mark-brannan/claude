@@ -66,9 +66,12 @@ them, so the author can declare `essentially the same` in one line.
 
 ## Declared looks like
 
-A line under the PR body's `## Method of evaluation:` section naming
-the file and one of `essentially the same`, `more conservative`, or
-`less conservative: <what moves>`.
+A line under the PR body's `## Substantive:` section naming the file,
+`substantive (8)`, and one of 50.59(a)(2)'s three values: `essentially
+the same`, `more conservative`, or `less conservative: <what moves>`.
+Criterion 8 keeps those words because they are its lineage's: a method
+change is a departure only when its results are not conservative or
+not essentially the same.
 
 ## `mu` when
 
