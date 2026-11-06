@@ -404,9 +404,11 @@ the rulings to date:
 manages none of it, and pastes nothing (2026-11-06). Run, last:
 
 ```bash
-~/.claude/bin/driver-start <parent-id>
+~/.claude/bin/driver-start --about "<the target, in a few words>" <parent-id>
 ```
 
+`--about` names what was planned (the curia, epic or repo, as the user
+would say it); it becomes the session's name in every list.
 It starts one background session on this box that runs
 `/pickup <parent-id>`, with Remote Control on so the user can open it from
 the Claude Desktop app, logs `driver_session=<id>` on the parent, and prints
