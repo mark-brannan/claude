@@ -68,6 +68,9 @@ class HandoffStart(unittest.TestCase):
     def bg(self):
         return [c for c in self.calls() if c.startswith("--bg")]
 
+    def name(self):
+        return self.bg()[0].split(" -n ")[1].split(" --model")[0]
+
     def bg_cwd(self):
         return Path(str(self.claude_log) + ".pwd").read_text().splitlines()[0]
 
@@ -81,19 +84,17 @@ class HandoffStart(unittest.TestCase):
     def test_a_title_line_in_the_body_names_the_session(self):
         self.write("open", "model: sonnet\ntitle: Check PR 415 CI\n")
         self.run_tool(ID)
-        self.assertEqual(self.bg()[0].split(" -n ")[1].split(" --model")[0],
-                         "Hand-off %s: Check PR 415 CI" % ID)
+        self.assertEqual(self.name(), "Hand-off %s: Check PR 415 CI" % ID)
 
     def test_a_title_argument_names_the_session(self):
         self.write("open", "model: sonnet\ntitle: Check PR 415 CI\n")
         self.run_tool(ID, "--title", "Reviewer model difficulty")
-        self.assertEqual(self.bg()[0].split(" -n ")[1].split(" --model")[0],
-                         "Hand-off %s: Reviewer model difficulty" % ID)
+        self.assertEqual(self.name(), "Hand-off %s: Reviewer model difficulty" % ID)
 
     def test_no_log_names_the_session_by_id_alone(self):
         self.pickup.write_text((ITEM % ("open", "model: sonnet\n")).replace(WHERE, ""))
         self.run_tool(ID)
-        self.assertEqual(self.bg()[0].split(" -n ")[1].split(" --model")[0], "Hand-off %s" % ID)
+        self.assertEqual(self.name(), "Hand-off %s" % ID)
 
     def test_no_model_line_passes_no_model(self):
         self.write("open", "")

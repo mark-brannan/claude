@@ -119,8 +119,7 @@ message. **Push the branch first** (`git push -u origin <branch>`): the item
 points at a branch, and a `/pickup` on another machine fetches a branch
 that is not on origin and finds nothing. Same four lines as `/pickup`'s
 spec, plus an optional `title:`, a few words a person would name the session
-by. `handoff-start` names the session from it when present, else from the
-item's log slug. `link` is the home step 2 found and the first line is the prompt's
+by, which `handoff-start` names the session with. `link` is the home step 2 found and the first line is the prompt's
 first action — one derivation, not a second one that can drift from the
 prose. Replace everything below the `---` with
 `~/.claude/bin/pickup-list handoff <id>`, the four lines on stdin; one
