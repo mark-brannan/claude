@@ -17,7 +17,12 @@ nothing and the dialog shows as it would have:
   none, even under --agent, which sets only agent_type; both carry the
   parent's session_id);
 - permission_suggestions is non-empty: a hook's ask carries none (seen on
-  Claude Code 2.1.300, docs silent);
+  Claude Code 2.1.300, docs silent). Claude Code also offers none for a
+  Bash command it cannot turn into a rule (a loop, `$var` or `$(...)`, a
+  subshell: measured, CC 2.1.317), so a request without suggestions is
+  still approved when languette's record holds a verdict other than ask for
+  this session's same masked command. That is positive evidence the only
+  hook that asks did not; a record with no such line leaves the dialog;
 - languette's decision record has no "ask" for this request: same session and
   tool, and either within the last WINDOW seconds or, for Bash, the same
   masked command (a queued dialog can show after the window). The command is
@@ -31,7 +36,8 @@ Each sub-agent request's outcome is appended to the state dir's
 metrics/permission-approvals/<session>.jsonl, beside permission-request-log:
     {"ts": "...", "session_id": "...", "agent_id": "a4aa...", "agent_type":
      "general-purpose", "tool": "Bash", "verdict": "allow"}
-verdict is allow, no-suggestions or languette-ask (a request outside the
+verdict is allow, allow-recorded (approved without suggestions, on
+languette's record), no-suggestions or languette-ask (a request outside the
 default mode is not logged).
 
 Fails closed: any error before the answer prints nothing, so the dialog shows.
@@ -100,13 +106,35 @@ def languette_asked(ev, now, path, command=None):
     return False
 
 
+def languette_cleared(ev, path, command):
+    """True when languette recorded a PreToolUse verdict other than ask for this
+    session's same masked Bash command; False when command is None."""
+    if command is None:
+        return False
+    session = ev.get("session_id")
+    for p in (path, path + ".1"):
+        for ln in tail_lines(p):
+            try:
+                r = json.loads(ln)
+            except ValueError:
+                continue
+            if (r.get("session") == session and r.get("event") == "PreToolUse"
+                    and r.get("tool") == ev.get("tool_name") and r.get("verdict") not in (None, "ask")
+                    and (r.get("command") or {}).get("text") == command):
+                return True
+    return False
+
+
 def verdict(ev, now, path, record=None):
     """allow, or why not; None for a main-session request or one outside the default mode."""
     if ev.get("permission_mode") != "default" or not ev.get("agent_id"):
         return None
-    if not ev.get("permission_suggestions"):
-        return "no-suggestions"
-    return "languette-ask" if languette_asked(ev, now, path, request_command(ev, record)) else "allow"
+    command = request_command(ev, record)
+    if languette_asked(ev, now, path, command):
+        return "languette-ask"
+    if ev.get("permission_suggestions"):
+        return "allow"
+    return "allow-recorded" if languette_cleared(ev, path, command) else "no-suggestions"
 
 
 def log(ev, v):
@@ -131,7 +159,7 @@ def main():
         return
     record = lib_state.languette_record()
     v = verdict(ev, time.time(), lib_state.records_path(os.environ), record)
-    if v == "allow":
+    if v in ("allow", "allow-recorded"):
         hookio.emit(hookio.specific("PermissionRequest", decision={"behavior": "allow"}))
     if v:
         log(ev, v)
