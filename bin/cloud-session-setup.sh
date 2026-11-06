@@ -91,6 +91,9 @@ skills/critical-review/SKILL.md
 hooks/lib_state.py
 lib/state.py
 lib/config.py
+lib/claude_costing/__init__.py
+lib/claude_costing/__main__.py
+lib/claude_costing/prices.json
 lib/sidlive.py
 lib/ids.py
 lib/lock.py

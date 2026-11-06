@@ -1416,6 +1416,7 @@ unset WORK_ITEM_DIR GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMM
 # blocked wants the fixup-hard label the contract's stop rule promises.
 prroot="$S/prroot"; prrepo="$S/prrepo"; prorigin="$S/remote/o/alpha.git"
 mkdir -p "$prroot/bin" "$prroot/hooks" "$prroot/lib" "$prroot/skills/pickup" "$S/remote/o"
+cp -R "$(dirname "$GRIND")/../lib/claude_costing" "$prroot/lib/"
 export GRIND_ROOT="$prroot"
 
 # The real contract, read from the skill exactly as grind reads it in anger.

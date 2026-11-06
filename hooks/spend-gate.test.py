@@ -7,6 +7,7 @@
 # JSON on stdin, against a throwaway transcript.
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -180,9 +181,9 @@ class SpendGateTest(unittest.TestCase):
 
     def test_model_prices(self):
         # 1M output tokens on each model: opus $25, fable $50, haiku $5,
-        # an unknown name at Sonnet's $10.
+        # sonnet $10, an unknown name at the top tier's $50.
         for model, usd in (("claude-opus-5-5", 25), ("claude-fable-5-1", 50),
-                           ("claude-haiku-5", 5), ("mystery", 10)):
+                           ("claude-haiku-5", 5), ("claude-sonnet-5", 10), ("mystery", 50)):
             self.transcript.write_text(json.dumps(assistant("m", model, out=1_000_000)) + "\n")
             self.assertEqual(self.run_hook(*self.BASH, SPEND_GATE_USD=str(usd))[0], "deny", model)
             self.assertEqual(self.run_hook(*self.BASH, SPEND_GATE_USD=str(usd + 0.01))[0],
@@ -223,6 +224,9 @@ class WrapperTest(unittest.TestCase):
         d = self.home / ".claude" / "hooks"
         d.mkdir(parents=True)
         (d / "spend-gate.py").write_text(HOOK.read_text())
+        (d / "lib_state.py").write_text((HOOK.parent / "lib_state.py").read_text())
+        shutil.copytree(HOOK.parent.parent / "lib" / "claude_costing",
+                        self.home / ".claude" / "lib" / "claude_costing")
 
     def test_hook_missing_and_no_line_allows(self):
         self.assertEqual(self.run_wrapper("Bash", {"command": "ls"}), "allow")
