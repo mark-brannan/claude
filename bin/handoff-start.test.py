@@ -3,8 +3,9 @@
 #
 # What matters: one background session per open item, Remote Control on,
 # `/pickup <id>` as its prompt, the hand-off's model and effort when named;
-# it runs in the repo's main worktree, never a linked one; an item that is
-# not open is refused and nothing starts. `claude` is driver-start's stub;
+# it runs in the repo's main worktree, never a linked one; the item taken
+# before the launch and reopened if it fails; an item that is not open is
+# refused and nothing starts. `claude` is driver-start's stub;
 # `pickup-list` is a stub beside a copy of the tool.
 import importlib.util
 import shutil
@@ -20,9 +21,12 @@ dst.__file__ = str(HERE / "driver-start.test.py")
 exec((HERE / "driver-start.test.py").read_text(), dst.__dict__)
 
 ID = "2026-11-06T19-27-94e9fcb0"
+# pickup-list stub: `show` prints $STUB_PICKUP; take and open log to $STUB_PICKUP.log.
 PICKUP_LIST = r'''#!/bin/sh
-[ "$1" = show ] && [ -f "$STUB_PICKUP" ] || { echo "no item" >&2; exit 1; }
-cat "$STUB_PICKUP"
+case "$1" in
+  show) [ -f "$STUB_PICKUP" ] || { echo "no item" >&2; exit 1; }; cat "$STUB_PICKUP" ;;
+  take|open) echo "$*" >> "$STUB_PICKUP.log" ;;
+esac
 '''
 ITEM = """status: %s
 session: 94e9fcb0-c89a-43c1-bfb1-0248dc3cfc6e
@@ -101,9 +105,18 @@ class HandoffStart(unittest.TestCase):
         self.run_tool(ID)
         self.assertEqual(self.bg_cwd(), str(self.cwd.resolve()))
 
-    def test_a_failing_start_passes_its_code(self):
+    def marks(self):
+        p = Path(str(self.pickup) + ".log")
+        return p.read_text().splitlines() if p.exists() else []
+
+    def test_takes_the_item_before_the_launch(self):
+        self.run_tool(ID)
+        self.assertEqual(self.marks(), ["take %s" % ID])
+
+    def test_a_failing_start_reopens_and_passes_its_code(self):
         self.env["STUB_BG_RC"] = "3"
         self.assertEqual(self.run_tool(ID).returncode, 3)
+        self.assertEqual(self.marks(), ["take %s" % ID, "open %s" % ID])
 
 
 if __name__ == "__main__":

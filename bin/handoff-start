@@ -7,7 +7,8 @@
 #   handoff-start [--cwd <dir>] [--wait <seconds>] <pickup-item-id>
 #
 # Refused (exit 1) when the item cannot be read or is not open: a taken item
-# already has its session. The session runs in the main worktree of the git
+# already has its session. The item is taken before the launch, so a second
+# word starts nothing, and reopened if the launch fails. The session runs in the main worktree of the git
 # repo at --cwd (default: here), never in a linked worktree that its own
 # session may be about to release; outside git, in --cwd itself. Model and
 # effort are the hand-off body's `model:` and `effort:` lines, when it has
@@ -81,11 +82,15 @@ def main():
         if key in facts:
             cmd += ["--" + key, facts[key]]
     cmd.append("/pickup %s" % a.item)
+    t = subprocess.run([PICKUP_LIST, "take", a.item], text=True, capture_output=True)
+    if t.returncode:
+        die("cannot take %s: %s" % (a.item, t.stderr.strip() or "pickup-list failed"))
     print("$ (cd %s && %s)" % (shlex.quote(cwd), shlex.join(cmd)), flush=True)
     r = subprocess.run(cmd, text=True, capture_output=True, cwd=cwd)
     if r.returncode:
+        subprocess.run([PICKUP_LIST, "open", a.item], capture_output=True)
         sys.stderr.write(r.stdout + r.stderr)
-        die("claude --bg failed", r.returncode)
+        die("claude --bg failed; %s reopened" % a.item, r.returncode)
     m = re.search(r"backgrounded\W+([0-9a-f]{8})", ds.ANSI.sub("", r.stdout))
     if not m:
         sys.stderr.write(r.stdout)
