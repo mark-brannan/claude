@@ -643,3 +643,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t080247z
 - substantive-check: the whole PR body becomes the squash commit body, since Mergify's per-section template is removed and its replacement copies the whole body or nothing Undo: revert .mergify.yml ([#401](https://github.com/mark-brannan/claude/pull/401))
+
+### 20261106t080253z
+- substantive-check: the shared default queue rule is restated in this repo's .mergify.yml rather than changed in the shared config, so other repos keep their merge commits Undo: move commit_message_format into the shared config, or drop the local rule ([#401](https://github.com/mark-brannan/claude/pull/401))
