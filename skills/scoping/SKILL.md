@@ -329,10 +329,11 @@ the rulings to date:
   `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
   the spend facts' shape, pencil), and the brief repeats it as dollars and
   share of the plan week, so the driver knows what the batch was set
-  against. Through the batch, as each child's PR opens and again at the
-  walk, the driver reports actual beside estimate in the cost table's form:
-  each child's two shares side by side, the batch's in dollars and share,
-  plan figures read from config as above. A child's actual is its
+  against. Through the batch, as each child's worker ends and again at
+  the walk, the driver reports actual beside estimate in the cost table's
+  form: each child's dollars, the batch's totals in dollars with their
+  shares under them, plan figures read from config as above. A child
+  reads `running` until its worker's Stop writes its cost. Its actual is its
   sessions' priced `cost_usd`, or `~/.claude/bin/spend --by pr` once the
   PR is in the metrics. Running over is reported, never a reason to
   stop. The walk logs the batch's actual on the parent the same way,
