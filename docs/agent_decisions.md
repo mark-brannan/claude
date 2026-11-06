@@ -619,3 +619,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t061212z
 - tail fatigue grades at the higher of time and friction rungs, as drawn ([#393](https://github.com/mark-brannan/claude/pull/393))
+
+### 20261106t061216z
+- front friction slot two-state; anger faces tail-only ([#393](https://github.com/mark-brannan/claude/pull/393))
