@@ -47,3 +47,34 @@ def fmt_usd(cost):
     if cents >= 10000:
         return f"${math.floor(cost + 0.5)}"
     return f"${cents // 100}.{cents % 100:02d}"
+
+
+FIG = "\u2007"  # figure space: one digit wide, so a padded figure keeps its column
+
+
+def compact(n):
+    """"1.2k", "12k", "1.2M": a figure past its fixed width, at that width."""
+    for unit, div in (("M", 1e6), ("k", 1e3)):
+        if n >= div:
+            v = n / div
+            return f"{v:.1f}{unit}" if v < 10 else f"{int(v)}{unit}"
+    return str(int(n))
+
+
+def fmt_usd_fixed(cost):
+    """"$  2.39" -- the event block's dollars, cents at every size, padded
+    with figure spaces to seven columns; blank at that width with no number."""
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+        return FIG * 7
+    cents = max(0, math.floor(cost * 100 + 0.5))
+    if cost > 0 and cents == 0:
+        return "<$0.01".rjust(7, FIG)
+    body = f"{cents // 100}.{cents % 100:02d}" if cents < 100000 else compact(cost)
+    return "$" + body.rjust(6, FIG)
+
+
+def fmt_tokens_fixed(n):
+    """" 46k" -- a token count in four columns: 999k, then 1.2M."""
+    n = int(n or 0)
+    s = str(n) if n < 1000 else f"{n // 1000}k" if n < 1_000_000 else compact(n)
+    return s.rjust(4, FIG)
