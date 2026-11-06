@@ -99,14 +99,7 @@ def main(argv):
             return 1
         print(v if isinstance(v, str) else json.dumps(v))
         return 0
-    if argv == ["state_repo_name"]:
-        try:
-            print(state_repo_name())
-        except ConfigError as e:
-            print(f"config.py: {e}", file=sys.stderr)
-            return 1
-        return 0
-    print("usage: config.py get <dotted.key> | state_repo_name", file=sys.stderr)
+    print("usage: config.py get <dotted.key>", file=sys.stderr)
     return 2
 
 

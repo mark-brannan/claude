@@ -27,7 +27,8 @@
 # dir other than through .claude/worktrees/<name>/ (settings, hooks, agents
 # and skills there run or instruct unasked), and on a .mcp.json. The roots
 # come from the passwd entry, never $HOME or other environment, and there is
-# no flag to add one.
+# no flag to add one. The one exception is the module search path, whose
+# ~/.claude/lib entry is lib/libpath.py's bootstrap text.
 #
 # Exit: 0 all applied; 1 an edit failed, nothing written; 2 bad input
 # (not JSON, wrong shape), nothing written.
@@ -89,7 +90,9 @@ def roots(cwd):
         out.append(top)
     if config is not None:
         try:
-            out.append(os.path.join(h, config.state_repo_name()))
+            places = (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "config.json"),
+                      os.path.join(h, ".claude", "config.json"))
+            out.append(os.path.join(h, config.state_repo_name(places)))
         except config.ConfigError:
             pass
     uid = "claude-%d" % os.getuid()
