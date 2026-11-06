@@ -661,3 +661,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t192406z
 - driver session date is the parent card's filing date Undo: take the date from driver start time instead ([#412](https://github.com/mark-brannan/claude/pull/412))
+
+### 20261106t192737z
+- confer starts at once on the word, not at the end of the sitting Undo: revert in PR 413 ([#413](https://github.com/mark-brannan/claude/pull/413))
