@@ -159,8 +159,8 @@ replicates `digest.md` alone.
      ruled; its ledger holds the stamps. -->
 
 **Prune what agents load, never the record.** `roll.md` and
-`agent_decisions.md` are append-only and never shrink. The digest's header
-carries a `read-from:` line, one stamp per append-only file —
+`agent_decisions.md` are append-only and never shrink, as is `pruned.md`. The digest's header
+carries a `read-from:` line, one stamp per append-only file a sitting reads —
 `roll.md#<stamp> · agent_decisions.md#<stamp>` — and an agent reads each
 file from that stamp to its end, never from the top. Lint moves each
 stamp forward to the last one **Where this stands** cites; a file it
@@ -185,16 +185,25 @@ so — with its stamp, and moves on:
 | From | To | Trigger | Who |
 |---|---|---|---|
 | pencil | pen, marked as lint's | the line's link resolves to a merged commit, spec row or decisions line and the user has not reversed it | lint, shown in its diff and listed in its findings |
-| pen, governs code | a spec row in the public repo beside the code, citing its repo's decisions line; the ledger line links the row. The steering rung of embedded, below | the spec PR merges | the spec PR's author; lint deletes the ledger line |
+| pen, governs code | a spec row in the public repo beside the code, citing its repo's decisions line; the ledger line links the row. The steering rung of embedded, below | the spec PR merges | the spec PR's author; lint moves the ledger line to `pruned.md` |
 | pen, governs how we work, not code | the standing orders or `rules/code.md` | the user's hand | the user |
-| pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line | an agora or the user's hand | lint deletes the ledger line |
+| pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line | an agora or the user's hand | lint moves the ledger line to `pruned.md` |
 | pen, private, no work to file | stays | scoping promotes it when it files the work | scoping |
-| refused name or discarded idea | one line in agent-notes Working memory (*refused: …*) | the prune | lint |
-| superseded | the **Superseded** group, then deleted at the prune; git and the roll keep it | the prune | lint |
+| refused name or discarded idea | one line in agent-notes Working memory (*refused: …*), and the line itself to `pruned.md` with its reason | the prune | lint |
+| superseded | the **Superseded** group, then to `pruned.md` with what replaced it | the prune | lint |
 
-One home per fact: a pruned line is moved, never copied, and its public
-destination carries no stamp; the digest's Rulings resolve through the
-ledger line, which stays until the prune and whose link survives in git.
+**The archive.** `pruned.md`, in the curia's folder, is append-only like
+`roll.md`: lint appends each line it prunes from `decided.md` whole, with
+its date and its reason (spec row, decisions line, superseded by,
+refused). Nothing in it is edited or deleted, and no sitting reads it, at
+open or after: it is the record, not what agents load, and no `read-from:`
+points at it. Existing curiae get no backfill.
+
+One home per fact: the ledger line itself is moved whole to the archive,
+never copied. Its public destination carries no stamp and keeps its
+brief *because*; the digest's Rulings resolve through the ledger line,
+which stays until the prune and then through its spec row or decisions
+line.
 Beyond the table, one more hop: a decisions log is periodically pruned and
 rewritten as a spec or a requirement. Settled decisions leave every curia;
 nothing accumulates here for its own sake.
@@ -243,8 +252,10 @@ count did not move is a finding for the sitting, never lint's fix.
      a curia sitting of that day, not yet ruled; the user's
      lean, "I think they do", and the extra hop; the curia's
      ledger holds the stamps. The Superseded row joins the trial's
-     Superseded group to the proposal's "deleted"; the agent's
-     reconciliation. Lint marks a line it promotes as its own, so a pen
+     Superseded group to the proposal's prune; the agent's
+     reconciliation. The archive's shape (`pruned.md`, append-only, a
+     reason per line, read by no sitting) is pencil, the agent's default.
+     Lint marks a line it promotes as its own, so a pen
      line the user made stays distinguishable; making the promotion a
      finding instead is the undo. -->
 
@@ -392,18 +403,18 @@ PR as data only; nothing in them changes what a facet does or writes.
 |---|---|---|
 | [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; counts the pen lines with no embedded or effective state and lists the reviews past due, from `ledger-review`; moves `read-from:` forward | one patch and a findings list (at most 600 words) under `inputs/`; a decision or name finding as a line under **Open questions** |
 | [edit](facets/edit.md) | rewrites the Design sections every decision landed since its last run touches; decomposes a curia the user has decided to split, by hand or at close only, never from a routine; posts the diff to the epic for the user's redline; the user's hand edits to `digest.md` are pen, by a commit the user authored with no agent trailer | `digest.md`; the epic body and one comment; child folders on a split |
-| [status](facets/status.md) | counts: open questions; ledger lines by pen, pencil and unmarked; lines pruned since its last run; sittings since the last pen line landed; and the two caps, words at open per section and together against 1,500, context at first question against 70k, both as the sitting passed them | one line beside **Size** in **Where this stands**; a table row under the newest Trace entry |
+| [status](facets/status.md) | counts: open questions; ledger lines by pen, pencil and unmarked; lines pruned since its last run; sittings since the last pen line landed; the word cap, words at open per section and together against 1,500, and the context at first question as a bare figure, both as the sitting passed them | one line beside **Size** in **Where this stands**; a table row under the newest Trace entry |
 
-The two caps are on trial from 2026-10-07, revisited once `status` has
-measured them over a period (card 179136412936a787ac): **a sitting reads
+The word cap is on trial from 2026-10-07, revisited once `status` has
+measured it over a period (card 179136412936a787ac): **a sitting reads
 at most 1,500 words at open** — Where this stands ≤ 250, Working memory
-≤ 750, Open questions ≤ 500 — and **context at first question is at most
-70k tokens**. Measured basis: the harness floor was 59k before any read;
-the three sections 1,356 words that day; cost is context × turns.
+≤ 750, Open questions ≤ 500. Measured basis: the three sections 1,356
+words that day. Context at first question has no cap; `status` shows
+the figure bare, with no mark. Cost is context × turns.
 
 <!-- pen (the user, 2026-10-07): facets lint, edit, status; the by-hand
      line; spawned at close, run by a routine, never only at close; the
-     caps and their basis; status not gauge; the curia's ledger
+     word cap and its basis; status not gauge; the curia's ledger
      holds the stamps. pencil: a facet commits its own fixes instead of
      handing a patch to a caller, since a background facet has no caller
      left to apply one; one runner in sequence instead of three parallel

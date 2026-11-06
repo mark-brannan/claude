@@ -1,1 +1,18 @@
 extends: .github
+
+# Restates mark-brannan/.github's `default` queue rule, which a same-named
+# local rule replaces whole, so the PR body becomes the squash commit body.
+# Every key but commit_message_format is a copy; keep it matching the shared file.
+queue_rules:
+  - name: default
+    merge_method: squash
+    batch_size: 1
+    queue_conditions:
+      - check-success=ci-gate / gate
+    merge_conditions:
+      - check-success=ci-gate / gate
+    commit_message_format:
+      title: inherit
+      body: pr-body
+      trailers:
+        - co-authored-by

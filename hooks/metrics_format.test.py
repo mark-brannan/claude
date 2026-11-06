@@ -36,6 +36,19 @@ class FieldsTest(unittest.TestCase):
            (99.99, "$99.99"), (99.996, "$100"), (100, "$100"), (123.45, "$123"),
            (123.5, "$124"), (1234.4, "$1234")]
 
+    F = "\u2007"
+    USD_FIXED = [(None, F * 7), (0, f"${F*2}0.00"), (0.004, f"{F}<$0.01"), (2.39, f"${F*2}2.39"),
+                 (123, "$123.00"), (999.994, "$999.99"), (999.998, f"${F*2}1.0k"), (1234.5, f"${F*2}1.2k"), (12345, f"${F*3}12k"), (9960, f"${F*3}10k")]
+    TOKENS_FIXED = [(0, F * 3 + "0"), (10, F * 2 + "10"), (46000, F + "46k"), (999999, "999k"),
+                    (1_200_000, "1.2M"), (12_000_000, F + "12M"), (9_960_000, F + "10M")]
+
+    def test_fixed_widths(self):
+        for cost, want in self.USD_FIXED:
+            self.assertEqual(mf.fmt_usd_fixed(cost), want, cost)
+            self.assertEqual(len(mf.fmt_usd_fixed(cost)), 7, cost)
+        for n, want in self.TOKENS_FIXED:
+            self.assertEqual(mf.fmt_tokens_fixed(n), want, n)
+
     def test_usd(self):
         for cost, want in self.USD:
             self.assertEqual(mf.fmt_usd(cost), want, cost)

@@ -35,9 +35,13 @@ Find and fix, mechanically, in one commit of the derived files:
   has not reversed, becomes pen, marked `pen (lint, <date>)` so it stays
   distinguishable from a line the user made pen, and listed in your
   findings; a pen line whose spec row or decisions line now exists is
-  deleted here; a refused name or discarded idea becomes part
+  pruned here; a refused name or discarded idea becomes part
   of the one *refused:* line in Working memory; a Superseded line is
-  deleted. Show every move in the diff;
+  pruned. Every pruned line is appended whole to `pruned.md` in the
+  curia's folder (created at the first prune, append-only, never edited,
+  read by no sitting) with the date and its reason: the spec row or
+  decisions line, what superseded it, or *refused*. Nothing is deleted
+  outright; existing curiae get no backfill. Show every move in the diff;
 - embedded and effective (SKILL.md, The ledger as a queue): run
   `ledger-review --json`, take this curia's entries, and write under
   *Embedded and effective* in the findings one line with the count of
@@ -52,7 +56,7 @@ Find and fix, mechanically, in one commit of the derived files:
   digest carries — a Design section, **The problem** or **Vocabulary** —
   since a newer one waits for `edit`, a promoted section's lines are
   carried by its ADR link line, and a Superseded line is carried by
-  nothing and deleted above: a finding for `edit`, not a fix;
+  nothing and pruned above: a finding for `edit`, not a fix;
 - a digest from before the ledger split that still carries `## Decided`:
   move it whole to `decided.md`;
 - `related:` in the header, rewritten from the overlap you find with the
