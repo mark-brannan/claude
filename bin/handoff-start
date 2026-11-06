@@ -12,7 +12,9 @@
 # repo at --cwd (default: here), never in a linked worktree that its own
 # session may be about to release; outside git, in --cwd itself. Model and
 # effort are the hand-off body's `model:` and `effort:` lines, when it has
-# them. Prints how to attach, as driver-start does, whose helpers it uses.
+# them. The session is named "Hand-off <id>: <slug>", the slug from the item's
+# `where:` log, so the session list reads as the work, not the id. Prints how
+# to attach, as driver-start does, whose helpers it uses.
 # Exit 2 on bad arguments; a `claude --bg` that fails passes its code through.
 import argparse
 import os
@@ -33,8 +35,16 @@ def die(msg, code=1):
     sys.exit(code)
 
 
+def session_name(item, where):
+    """"Hand-off <id>: <slug>", the slug from the log's file name; the bare id when there is none."""
+    stem = re.sub(r"\.md$", "", os.path.basename(where or ""))
+    stem = re.sub(r"^\d{4}-\d{2}-\d{2}-", "", stem)
+    slug = re.sub(r"(-(?=[0-9a-f]*\d)[0-9a-f]{6,8})+$", "", stem)
+    return "Hand-off %s: %s" % (item, slug) if slug else "Hand-off %s" % item
+
+
 def item_facts(item):
-    """The item's status, and the model and effort its hand-off body names."""
+    """The item's status, and the model, effort and log path its header and body name."""
     r = subprocess.run([PICKUP_LIST, "show", item], text=True, capture_output=True)
     if r.returncode:
         die("cannot read pickup item %s: %s" % (item, r.stderr.strip() or "pickup-list failed"))
@@ -47,6 +57,8 @@ def item_facts(item):
         v = re.search(r"^%s:\s*(\S+)\s*$" % key, body, re.M)
         if v:
             facts[key] = v.group(1)
+    where = re.search(r"^where:\s*(\S+)", head, re.M)
+    facts["where"] = where.group(1) if where else ""
     return status.group(1) if status else "", facts
 
 
@@ -76,7 +88,7 @@ def main():
         die("%s is %s, not open: it already has its session" % (a.item, status or "unmarked"))
 
     cwd = main_worktree(a.cwd)
-    name = "Pickup %s" % a.item
+    name = session_name(a.item, facts.get("where"))
     cmd = ["claude", "--bg", "--remote-control", name, "-n", name]
     for key in ("model", "effort"):
         if key in facts:
