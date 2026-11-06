@@ -12,10 +12,6 @@
 #   claude --bg --remote-control "<name>" -n "<name>"
 #          [--model <m>] [--effort <e>] "/pickup <parent-id>"
 #
-# where <name> is "Driver <parent-id>: <slug> <date>", so the session list
-# says what the batch is about: <slug> is --about (what scoping planned, in
-# a few words) or else the parent's title, made a short slug; <date> is the
-# day the parent was filed.
 # in --cwd (default: here), with the model and effort the parent's create
 # line names, when it names them; the permission mode is settings.json's. It
 # logs `driver_session=<session uuid>` on the parent, then waits up to --wait
@@ -24,6 +20,11 @@
 # is running and listed by name. Exit 2 on bad arguments; a `claude --bg`
 # that fails passes its code through; a driver_session that cannot be logged
 # exits 1 after the attach lines, since the session is already running.
+#
+# The name, <name>, is "Driver <parent-id>: <slug> <date>", so the session list
+# says what the batch is about: <slug> is --about (what scoping planned, in
+# a few words) or else the parent's title, made a short slug; <date> is the
+# day the parent was filed.
 import argparse
 import json
 import os
