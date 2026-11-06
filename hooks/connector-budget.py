@@ -79,10 +79,11 @@ def main():
         "\n"
         f"Enabled: {', '.join(enabled)}\n"
         "\n"
-        "Tell the user this in your FIRST reply, before anything he asked for.\n"
-        "In a local CLI every one of these loads its full tool schemas into\n"
-        "the floor of every session. Offer to disable the ones this task does\n"
-        "not need (`deniedMcpServers` in settings.json), then continue.\n"
+        "Tell the user this in your FIRST reply, before anything they asked for.\n"
+        "Deferred, each of these costs only its tool names; where deferral is\n"
+        "off (ENABLE_TOOL_SEARCH=false) every one loads its full schemas, tens of\n"
+        "thousands of tokens. Offer to disable the ones this task does not need\n"
+        "(`deniedMcpServers` in settings.json), then continue.\n"
     )
     hookio.emit(hookio.context("SessionStart", text))
 
