@@ -261,10 +261,10 @@ hush is about what reaches the model, never the record.
 
 ## The sitting clock, and getting out of the chair
 
-Settled in conversation on 2026-10-01, after the earlier wording ("stand
-up", "stop here, run /wrapup", "want a break?", repeats with "last offered
-at") kept the user at the keyboard. The standing orders carry the short
-form under "Decision load"; this section is the readout's side of it.
+No line tells the user to stop: not "stand up", "stop here, run /wrapup"
+or "want a break?", and no repeat with "last offered at". The standing
+orders carry the short form under "Decision load"; this section is the
+readout's side of it.
 
 **The nag is not for making the user stop. It is for making stopping feel
 good.** A forced end makes things worse: "if you force the session to end,
@@ -277,12 +277,13 @@ at a good stopping point… Landing work can feel like a good stop, but also
 landing in the middle of something with a very clear pickup for tomorrow
 can be a good stopping point. Landing at a frustrating and confusing,
 entangled 'deep in a recursion stack' point produces a desire to overcome
-it." So at a rung the model-facing line asks for one thing: reduce the
+it." So at a rung the model-facing line asks for a landing: reduce the
 stack depth, name the single next step, write the pickup item, and leave
 the turn where leaving is easy. It never asks whether to stop.
 
 **The screen line is a reading, never an order.** No imperative verb, no
-question, and the time is said once per rung with no repeat. "Your call"
+question about stopping or staying, and the time is said once per rung
+with no repeat. "Your call"
 is out too: "I see through it though… it still feels like a nag." The elapsed
 time stays on every rung line: "I do want the elapsed time. It is helpful;
 I don't think we'd have even had this conversation if we hadn't evolved
@@ -300,14 +301,15 @@ otherwise a plain random line from the user's own static list in the
 private state repo. The tail is never a phrase of the engine's own.
 
 ```
-⏱ 1h00 · <a line from the user's list>
-⏱ 2h05 · sun sets in 38 min
-⏱ 2h10 · what did you eat today?
+⏱ 1h00 · context 31k · <a line from the user's list>
+⏱ 2h05 · context 42k · sun sets in 38 min
+⏱ 2h10 · context 44k · what did you eat today?
 ```
 
 **Staying is a word, not an argument.** `stay` or `stay <minutes>` as the
 whole prompt is the user's explicit choice to remain; the engine answers
-in one line and is quiet on the sitting side until the stretch is up. A
+in one line and is quiet on the sitting side for that stretch, a default
+one for bare `stay`. A
 choice made is not a freedom threatened, and each use is a data point.
 
 ```
@@ -319,28 +321,31 @@ choice made is not a freedom threatened, and each use is a data point.
 evening, machine-wide, the first prompt after the night hour asks what
 time the user would like to go to bed; a bare local time is the answer,
 and no answer means silence, never a re-ask. Five minutes before that time
-the stop-shaping line fires, the same as a sitting rung. The first prompt
+the stop-shaping line fires, the same as a sitting rung. The first event
 after it says once "ok, it's 23:12, you said 23:00", in that shape, and
-nothing more. The question costs nothing at the moment the user is least
-able to decide, and the sentence quoted back is the user's own.
+nothing more. Asked early, the question leaves nothing to decide at the
+moment the user is least able to, and the sentence quoted back is the
+user's own.
 
 ```
-⏱ 21:40 · what time would you like to go to bed?
+21:40, the first prompt after the night hour
+what time would you like to go to bed?
 > 23:00
-⏱ 21:41 · bed at 23:00 noted
+bed at 23:00 noted
 
-⏱ 22:55 · 5 min to 23:00
-⏱ 23:12 · ok, it's 23:12, you said 23:00
+22:55
+5 min to 23:00
+23:12
+ok, it's 23:12, you said 23:00
 ```
 
-**The hot rung is one knob, not two.** Below it the clock only reads;
-from it the time glyph goes louder and the model-facing stop-shaping line
-fires at the rung above. It was set at rung 3 in 2026-09 from a
-distribution of real sitting stretches, machine-wide and gap-split, after
-a first per-session cut was caught as the wrong unit. It is a guess until
-measured: the record of every rung crossing (minutes to the next prompt,
-whether that prompt was a `stay`, whether the sitting ended) is what moves
-it. "It's complicated by the fact that we haven't even established what
+**The hot rung is one knob, not two.** Up to it the clock only reads;
+past it the time glyph turns ⏰ and the model-facing stop-shaping line
+fires, both on the same rung. Its value comes from the distribution of
+real sitting stretches, machine-wide and gap-split, never per session, and
+is a guess until measured: the record of every rung crossing (minutes to
+the next prompt, whether that prompt was a `stay`, whether the sitting
+ended) is what moves it. "It's complicated by the fact that we haven't even established what
 the right time limits or decision counts are yet." Thresholds come from
 that record, never from this document.
 
@@ -348,8 +353,8 @@ that record, never from this document.
 say how the user is likely to feel; a face at a rung is a reading of the
 chair, in the same spirit as the elapsed time, and the one place the
 readout may show feeling at all. A face says nothing about what to do.
-The clock, the faces and the tail together are the whole of the sitting
-side's voice: a number, a mirror, and a window.
+The clock, the faces and the rung line's outside fact are the whole of the
+sitting side's voice: the number and the mirror, and the window out.
 
 ## Thresholds
 
