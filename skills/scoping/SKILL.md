@@ -192,11 +192,61 @@ taken; never overwrite an earlier one. Commit it. Shape:
    sequence; anything uncertain is a research item with its questions and
    its output. The estimates summed are the batch's allocation, on the
    parent.
+   The estimates show as cost against the plan week (below).
 5. **Pencil and new words.** How many items rest on pencil, and which
    pencil; whether any item needs a new word or idea. If one does, name
    it and its two exits, a veto here or back to the curia or agora; that
    item is not filed on the yes.
 6. **The yes.** The form it takes, from the size (below).
+
+**Cost against the plan week.** The point is to show where the money
+goes, before the batch and during it; it is visibility, never a stop
+rule. A share of a week is the unit that reads: about 1% is noise, 5% to
+20% is the signal. The cost table is an account: one row per work item,
+numbered in batch order, its dollars in one column, so the totals sit at
+the foot of that column; a share of the week sits under each total, never
+on an item row. An item is spoken of by number and name, "3 (cost table
+in scoping)", never the number alone. The model and effort column comes
+last, so it is the one a narrow screen loses. When any child runs on
+Fable, those children get their own total and share of the Fable week.
+The plan figures are read fresh each run, never written down here:
+
+```bash
+python3 ~/.claude/lib/config.py get plan.week_usd        # all-models week, API-priced
+python3 ~/.claude/lib/config.py get plan.fable_week_usd  # Fable's own week
+```
+
+On screen, the proposal the user says yes to carries it like this:
+
+```
+ #  Item                          Est.   Model
+ 1  config file                  $8.00   opus·med
+ 2  statusline share            $16.00   sonnet·med
+ 3  cost table in scoping       $15.00   opus·high
+ 4  walk spend table            $12.00   fable·med
+    Total, 4 items              $51.00
+      % of week                   2.6%
+    Fable items (4)             $12.00
+      % of Fable week             2.4%
+```
+
+During the batch and in the walk, actual and status sit beside the
+estimate:
+
+```
+ #  Item                          Est.   Actual  Status     Model
+ 1  config file                  $8.00   $10.00  done       opus·med
+ 2  statusline share            $16.00   $22.00  done       sonnet·med
+ 3  cost table in scoping       $15.00        —  running    opus·high
+ 4  walk spend table            $12.00        —  waiting    fable·med
+    Total, 4 items              $51.00   $32.00
+      % of week                   2.6%     1.6%
+    Fable items (4)             $12.00    $0.00
+      % of Fable week             2.4%     0.0%
+```
+
+Dollars show cents; a share rounds to one decimal, and under 0.1% shows
+as `<0.1%`. Effort is abbreviated low, med, high.
 
 ## 5. Stop and show
 
@@ -277,9 +327,17 @@ the rulings to date:
 - **Estimate and actual.** Each child carries its estimate; the parent
   carries the batch's allocation, logged at filing as
   `~/.claude/bin/work-item log <parent-id> allocation=<n>usd` (a trial of
-  the spend facts' shape, pencil). The walk reports each child's actual,
-  and the batch's, against them, and logs the batch's on the parent the
-  same way, `actual=<n>usd`.
+  the spend facts' shape, pencil), and the brief repeats it as dollars and
+  share of the plan week, so the driver knows what the batch was set
+  against. Through the batch, as each child's worker ends and again at
+  the walk, the driver reports actual beside estimate in the cost table's
+  form: each child's dollars, the batch's totals in dollars with their
+  shares under them, plan figures read from config as above. A child
+  reads `running` until its worker's Stop writes its cost. Its actual is its
+  sessions' priced `cost_usd`, or `~/.claude/bin/spend --by pr` once the
+  PR is in the metrics. Running over is reported, never a reason to
+  stop. The walk logs the batch's actual on the parent the same way,
+  `actual=<n>usd`.
 - **Reviews,** after the PR opens, as the human cycle runs (2026-10-23).
   The worker builds, tests, gets the gates green, posts the PR, sees CI
   green and marks it ready. CI runs the critical review (claude[bot]) on
@@ -331,9 +389,9 @@ the rulings to date:
   the arete brief beside it as `<date>-arete-<parent-id>.md`, and logs the
   walk on the parent as `walk=<path>`. It holds each child's PR and actual,
   the batch's actual against its allocation, the arete brief and the
-  maxims table, and per batch: hours from `/pickup` to the last merge on main, idle
-  hours, sessions used, the user's turns, and dollars per merged PR
-  (2026-10-24).
+  maxims table, the spend table in the form above, and per batch: hours
+  from `/pickup` to the last merge on main, idle hours, sessions used,
+  the user's turns, and dollars per merged PR (2026-10-24).
 - **The close.** With the walk logged, the driver logs each child whose PR
   merged `status=done evidence=<PR>`, and each that did not
   `~/.claude/bin/work-item log <id> status=ready note=<why>`, where it stays
