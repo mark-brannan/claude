@@ -613,3 +613,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t035322z
 - Dollar format: <$0.01 below a cent, cents under $100, whole dollars from $100 Undo: change fmt_usd and usd ([#390](https://github.com/mark-brannan/claude/pull/390))
+
+### 20261106t035325z
+- Dollars lead the event block's turns line, not the first line Undo: move the field in block() ([#390](https://github.com/mark-brannan/claude/pull/390))
