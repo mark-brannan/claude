@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pr-blockers [--wait [--timeout SECONDS]] <owner/repo#n | PR URL>
+# pr-blockers [--wait [--timeout SECONDS]] [--leave-easy] <owner/repo#n | PR URL>
 #
 # One line per thing that keeps the pull request from merging, each naming its
 # cause and its remedy. Exit 0 when there are none, 1 when there are, 2 when
@@ -17,6 +17,14 @@
 # A read that fails is retried once on the next tick, then exit 2. A pending
 # check and a mergeability GitHub has not yet computed count as still waiting.
 # One progress line per tick goes to stderr; stdout is the same contract.
+#
+# --leave-easy leaves the CI fixer its threads: while a check named `fixer`
+# (or `<caller job> / fixer`, a reusable workflow's) is queued or running, an
+# unresolved thread whose only comment is claude[bot]'s `[easy]` finding on
+# the PR's current head prints as a `fixer's:` line, which sets no exit code
+# and does not stop --wait. With no fixer pending it is an ordinary thread
+# line again: the fixer has replied, or will not come. The PR-ownership
+# section of rules/code.md holds the contract this serves.
 #
 # Lines come in priority order: open conversations (unresolved review threads,
 # requested changes) first, then merge conflicts, then everything else
@@ -129,7 +137,8 @@ def reset_time():
 
 THREADS = """query($o:String!,$r:String!,$n:Int!,$endCursor:String){repository(owner:$o,name:$r){
 pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
-nodes{isResolved isOutdated path line comments(first:1){nodes{author{login} body}}}}}}}"""
+nodes{isResolved isOutdated path line comments(first:1){totalCount
+nodes{author{__typename login} body url originalCommit{oid}}}}}}}}"""
 
 
 def oneline(s, n=80):
@@ -143,7 +152,35 @@ def graphql_threads(owner, repo, n):
     return [t for page in values(text) for t in page["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]]
 
 
-def conversations(threads, decision):
+# The fixer's own test (mark-brannan/.github, .github/actions/easy-fixes/fixer.py,
+# easy_threads); a drift between the two only delays a thread, never loses it.
+EASY = re.compile(r"^\s*(?:\U0001F916\s*)?\[(?:nit|should)\]\s*\[easy\]")
+BOT_LOGINS = {"claude", "claude[bot]"}  # GraphQL drops the [bot] that REST keeps
+
+
+def fixer_pending(checks):
+    """The name of a fixer check still queued or running, else None."""
+    for r in checks or []:
+        name = r.get("name") or ""
+        if (name == "fixer" or name.endswith("/ fixer")) and (
+                r.get("status") not in (None, "COMPLETED") or (r.get("conclusion") or "") in PENDING):
+            return name
+    return None
+
+
+def fixers(t, head):
+    """True when the thread is the fixer's to answer: claude[bot]'s [easy] finding on this head, unanswered."""
+    comments = t["comments"]
+    c = (comments["nodes"] or [{}])[0]
+    author = c.get("author") or {}
+    return (author.get("login") in BOT_LOGINS and author.get("__typename") == "Bot"
+            and bool(EASY.match(c.get("body") or ""))
+            and bool(head) and (c.get("originalCommit") or {}).get("oid") == head
+            and comments.get("totalCount", len(comments["nodes"])) == 1)
+
+
+def conversations(threads, decision, head=None, fixer=None):
+    """fixer: the pending fixer check's name when --leave-easy holds its threads back, else None."""
     out = []
     if decision == "CHANGES_REQUESTED":
         out.append("a reviewer requested changes; fix: address the review, then re-request it")
@@ -155,6 +192,10 @@ def conversations(threads, decision):
         body = oneline(((c.get("body") or "").strip().splitlines() or [""])[0])
         path = oneline(t["path"], 120)
         where = f"{path}:{int(t['line'])}" if t.get("line") else path
+        if fixer and fixers(t, head):
+            out.append(f"fixer's: [easy] review thread at {where} {oneline(c.get('url') or '', 200)}; "
+                       f"fix: none of yours while {oneline(fixer, 60)} runs; take it once the fixer replies or ends")
+            continue
         out.append(f"unresolved review thread at {where} by {who}{' (outdated)' if t['isOutdated'] else ''}: "
                    f"{json.dumps(body)}; fix: answer or act on it, then resolve the thread")
     return out
@@ -168,7 +209,7 @@ def must_be_open(state, merged=False):
 
 def graphql_read(owner, repo, n):
     pr = json.loads(gh("pr", "view", n, "--repo", f"{owner}/{repo}", "--json",
-                       "mergeStateStatus,mergeable,statusCheckRollup,headRefName,reviewDecision,state"))
+                       "mergeStateStatus,mergeable,statusCheckRollup,headRefName,headRefOid,reviewDecision,state"))
     must_be_open(pr.get("state"))
     replies = values(gh("api", "graphql", "--paginate", "-f", f"query={COMMITS}",
                         "-f", f"owner={owner}", "-f", f"name={repo}", "-F", f"n={n}"))
@@ -200,7 +241,7 @@ def rest_read(owner, repo, n):
                for s in ghrest.rest(run_gh, f"{r}/commits/{sha}/status").get("statuses") or []]
     view = {"mergeStateStatus": pr["mergeable_state"].upper(),
             "mergeable": {True: "MERGEABLE", False: "CONFLICTING"}.get(pr["mergeable"], "UNKNOWN"),
-            "statusCheckRollup": checks, "headRefName": pr["head"]["ref"],
+            "statusCheckRollup": checks, "headRefName": pr["head"]["ref"], "headRefOid": sha,
             "reviewDecision": "CHANGES_REQUESTED" if "CHANGES_REQUESTED" in latest.values() else ""}
     commits = [{"oid": c["sha"], "author": {"name": c["commit"]["author"]["name"],
                                             "user": {"login": (c.get("author") or {}).get("login")}},
@@ -215,19 +256,25 @@ def rest_read(owner, repo, n):
         if t["resolved"]:
             continue
         c = ghrest.rest(run_gh, f"{r}/pulls/comments/{t['comment_ids'][0]}") if t["comment_ids"] else {}
+        user = c.get("user") or {}
         threads.append({"isResolved": False, "path": c.get("path"), "line": c.get("line"),
                         "isOutdated": bool(c) and c.get("line") is None and c.get("position") is None,
-                        "comments": {"nodes": [{"author": c.get("user"), "body": c.get("body")}]}})
+                        "comments": {"totalCount": len(t["comment_ids"]), "nodes": [{
+                            "author": {"__typename": user.get("type"), "login": user.get("login")},
+                            "body": c.get("body"), "url": c.get("html_url"),
+                            "originalCommit": {"oid": c.get("original_commit_id")}}]}})
     return view, commits, threads
 
 
-def blockers(owner, repo, n):
+def blockers(owner, repo, n, leave_easy=False):
     try:
         pr, commits, threads = graphql_read(owner, repo, n)
     except NoGraphQL:
         pr, commits, threads = rest_read(owner, repo, n)
     head, state = pr["headRefName"], pr["mergeStateStatus"]
-    conflicts, talk, out = [], conversations(threads, pr.get("reviewDecision")), []
+    fixer = fixer_pending(pr.get("statusCheckRollup")) if leave_easy else None
+    conflicts, out = [], []
+    talk = conversations(threads, pr.get("reviewDecision"), pr.get("headRefOid"), fixer)
     for c in commits:
         v = c.get("signature") or {}
         if not v.get("isValid"):
@@ -255,15 +302,16 @@ def blockers(owner, repo, n):
     return out
 
 
-USAGE = "usage: pr-blockers [--wait [--timeout SECONDS]] <owner/repo#n | PR URL>\n"
+USAGE = "usage: pr-blockers [--wait [--timeout SECONDS]] [--leave-easy] <owner/repo#n | PR URL>\n"
 WAITING = ("check pending:", "GitHub has not yet computed")  # lines that time alone may clear
 IDLE = ("the PR is a draft",)  # lines that neither stop a wait nor clear with time
+FIXERS = "fixer's:"  # --leave-easy: not the caller's, so no exit code and no stop to a wait
 
 
-def attempt(ref):
+def attempt(ref, leave_easy=False):
     """One read: (lines, None), or ([], exit code) when the PR is not open (3) or unreadable (2)."""
     try:
-        return blockers(*ref), None
+        return blockers(*ref, leave_easy=leave_easy), None
     except RateLimited:
         return [f"GitHub API rate limit exceeded; pr-blockers cannot read the PR until {reset_time()}; "
                 "fix: wait for the reset, then run pr-blockers again"], None
@@ -280,15 +328,15 @@ def attempt(ref):
 def report(lines):
     for line in lines:
         print(line)
-    return 1 if lines else 0
+    return 1 if any(not x.startswith(FIXERS) for x in lines) else 0
 
 
-def wait(ref, timeout):
+def wait(ref, timeout, leave_easy=False):
     interval = float(os.environ.get("PRB_WAIT_INTERVAL", 30))
     deadline = time.monotonic() + timeout
     lines, failed = None, False
     while True:
-        got, rc = attempt(ref)
+        got, rc = attempt(ref, leave_easy)
         if rc == 2 and not failed:
             failed = True  # one transient failure is retried on the next tick
         elif rc:
@@ -296,7 +344,7 @@ def wait(ref, timeout):
         else:
             failed, lines = False, got
             waiting = [x for x in got if x.startswith(WAITING)]
-            idle = [x for x in got if x.startswith(IDLE)]
+            idle = [x for x in got if x.startswith(IDLE + (FIXERS,))]
             if len(waiting) + len(idle) != len(got) or not waiting:  # a real blocker, or CI has settled
                 return report(got)
             sys.stderr.write(f"pr-blockers: {time.strftime('%H:%M:%S')} {len(waiting)} still pending\n")
@@ -311,11 +359,13 @@ def wait(ref, timeout):
 
 
 def main(argv):
-    do_wait, timeout, refs = False, 540.0, []
+    do_wait, leave_easy, timeout, refs = False, False, 540.0, []
     it = iter(argv)
     for a in it:
         if a == "--wait":
             do_wait = True
+        elif a == "--leave-easy":
+            leave_easy = True
         elif a == "--timeout":
             try:
                 timeout = float(next(it, ""))
@@ -334,8 +384,8 @@ def main(argv):
         return 2
     ref = parse(refs[0])
     if do_wait:
-        return wait(ref, timeout)
-    lines, rc = attempt(ref)
+        return wait(ref, timeout, leave_easy)
+    lines, rc = attempt(ref, leave_easy)
     return rc or report(lines)
 
 
