@@ -268,8 +268,12 @@ def fib_rungs(total):
     return sum(1 for L in (1, 2, 3, 5, 8) if total >= L)
 
 
+# The time ladder's rungs in sitting minutes: one face each on the block.
+TIME_LADDER = (25, 47, 62, 90, 120, 165)
+
+
 def time_rungs(total):
-    return sum(1 for L in (25, 47, 62, 90, 120, 165) if total >= L)
+    return sum(1 for L in TIME_LADDER if total >= L)
 
 
 def rung_of(ladder, step, v):
@@ -302,7 +306,8 @@ class Knobs:
         self.context_step = self.number("METRICS_CONTEXT_STEP", 35000)
         self.sit_every_min = self.number("METRICS_SIT_EVERY_MIN", 60)
         self.sit_gap_min = self.number("METRICS_SIT_GAP_MIN", 15)
-        # Sitting rungs from here up draw ⏰ instead of ⏱️/🌙. 3 = past 90 min.
+        # The hot rung: past it the clock turns ⏰ and the stop-shaping line
+        # fires, on the time ladder's later rungs. 3 = from 90 min.
         self.sit_hot_rung = self.number("METRICS_SIT_HOT_RUNG", 3)
         # The sitting line's tail, picked by the clock first and the list second.
         # Meal windows are local hours, start inclusive, end exclusive; "" disables.
@@ -1088,10 +1093,6 @@ class Hook:
         n = sit_min // k.sit_every_min * k.sit_every_min
         if not (n >= k.sit_every_min and n > self.time_line):
             return
-        # Two hours arms the Stop block's hand-off, unless work is in flight:
-        # landing it comes first.
-        if n >= k.sit_every_min * 2 and not self.in_flight() and not self.hush:
-            self.since_nag = True
         t = f"⏱ {hm(sit_min)} · context {kfmt(ctx)}"
         tail = self.sit_tail()
         if tail:
@@ -1107,26 +1108,31 @@ class Hook:
         self.time_line = n
 
     @property
-    def pickup_duty(self):
-        # The file is named by its suffix: the Stop hook keys it on the
-        # session's short id, and a model that has to guess picks another's.
-        return (f"Write the single next step as the body (below `---`) of this session's "
-                f"pickup item, {self.sdir}/pickup/*-{self.sid[:8]}.md, without showing it.")
+    def stop_shape(self):
+        """The stop-shaping line: a landing, never a question about stopping.
+        The item is named by its suffix: the Stop hook keys it on the
+        session's short id, and a model that has to guess picks another's."""
+        return ("Shape a good stop: reduce the stack to one open thread, write that single next "
+                f"step as the body (below `---`) of this session's pickup item, "
+                f"{self.sdir}/pickup/*-{self.sid[:8]}.md, without showing it, and end the turn "
+                f"where leaving is easy. {self.SIT_ORDERS}")
 
     # A pointer, not a procedure: the orders say how to stop. The test checks
     # the lead still exists in the standing orders.
     SIT_ORDERS = 'Standing orders: "At a sitting rung".'
 
     def sitting_model(self):
-        """The model side of the sitting clock, on the screen line's
-        thresholds. A rung of 0 means the clock restarted, which spends the
-        injection. m_sit_said gates the repeat (dotfiles#282); m_sit_at is the
-        last rung whose stop was shaped, left unspent by work in flight."""
+        """The model side of the sitting clock: silent up to the hot rung, then
+        the stop-shaping line on each later time-ladder rung, sit_every_min
+        apart past the last. The same rung arms the Stop hand-off. A rung of 0
+        means the clock restarted, which spends the injection. m_sit_said
+        gates the repeat (dotfiles#282); m_sit_at is the last rung whose stop
+        was shaped, left unspent by work in flight."""
         k = self.k
         if not (k.sit_every_min > 0 and self.sit_start > 0 and not self.curia_live):
             return
         m_min = (self.now_ts - self.sit_start) // 60
-        r = rung_of([k.sit_every_min], k.sit_every_min, m_min)
+        r = rung_of(list(TIME_LADDER[max(k.sit_hot_rung, 0):]), k.sit_every_min, m_min)
         if r == 0:
             self.m_sit_at = self.m_sit_said = 0
         elif not self.sit_quiet and self.in_flight() and r > self.m_sit_said and not self.driver:
@@ -1136,9 +1142,9 @@ class Hook:
                 f"asking -- commit, push, open the PR. This rung comes back once it lands. {self.SIT_ORDERS}")
             self.m_sit_said = r
         elif not self.sit_quiet and not self.in_flight() and r > self.m_sit_at and not self.driver:
-            self.model_lines.append(f"Sitting {hm(m_min)} at this machine, past {hm(r)}. "
-                                    f"{self.pickup_duty} {self.SIT_ORDERS}")
+            self.model_lines.append(f"Sitting {hm(m_min)} at this machine, past {hm(r)}. {self.stop_shape}")
             self.m_sit_at = self.m_sit_said = r
+            self.since_nag = True
 
     def bedtime(self):
         """After the reply: the warning bed_warn_min before it, and the hour
@@ -1154,7 +1160,7 @@ class Hook:
                 self.sys_lines.append(t)
                 self.crossing("bed_past", (now - bed) // 60, t)
                 self.model_lines.append(f"It's {self.lhhmm(now)}; the user said bed at {self.lhhmm(bed)}. "
-                                        f"Say that once. {self.pickup_duty} {self.SIT_ORDERS}")
+                                        f"Say that once. {self.stop_shape}")
             else:
                 self.hold("bed", t)
             self.bed_past_at = self.bed_warn_at = bed
@@ -1165,7 +1171,7 @@ class Hook:
                 self.sys_lines.append(t)
                 self.crossing("bed_warn", bed_left, t)
                 self.model_lines.append(f"Bedtime {self.lhhmm(bed)} is {bed_left} minutes away. "
-                                        f"{self.pickup_duty} {self.SIT_ORDERS}")
+                                        f"{self.stop_shape}")
             elif not self.held("bed"):
                 self.hold("bed", t)
             self.bed_warn_at = bed
@@ -1319,6 +1325,7 @@ class Hook:
         def face(r):
             return faces[r - 1] if r else "⏳"
 
+        clock = "⏰" if tr > self.k.sit_hot_rung else "⏱"
         front = ("💸" if self.ctx_rungs > 0 else "🪙") + face(tr) + ("⚡" if fr else "🌌") \
             + ("🤔" if heavy else "🧘") + ("⛔" if blocked else "✅")
         tail = ("🤔" if heavy else "🧘") + (["⚡", "🙄", "😠", "😡", "🤬"][fr - 1] if fr else "🌌") \
@@ -1326,7 +1333,7 @@ class Hook:
         lines = [f"{front} {metrics_format.fmt_usd_fixed(sess.get('cost_usd'))} "
                  f"⛁ {metrics_format.fmt_tokens_fixed(num(sess.get('output_tokens')))}"
                  f"/{metrics_format.fmt_tokens_fixed(num(sess.get('context_peak')))} "
-                 f"⏱{sit_min // 60}h{sit_min % 60:02d} {tail}"]
+                 f"{clock}{sit_min // 60}h{sit_min % 60:02d} {tail}"]
         if tr:
             lines.append("".join(faces[:tr]))
         runs = []
