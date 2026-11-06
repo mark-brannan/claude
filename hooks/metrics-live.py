@@ -1121,6 +1121,16 @@ class Hook:
     # the lead still exists in the standing orders.
     SIT_ORDERS = 'Standing orders: "At a sitting rung".'
 
+    def hot_ladder(self):
+        """The time ladder from the hot rung on, grown by sit_every_min when
+        the knob sits past its length. The glyph and the model side both read
+        it, so they turn on the same rung."""
+        k = self.k
+        ladder = list(TIME_LADDER)
+        while len(ladder) <= k.sit_hot_rung:
+            ladder.append(ladder[-1] + k.sit_every_min)
+        return ladder[max(k.sit_hot_rung, 0):]
+
     def sitting_model(self):
         """The model side of the sitting clock: silent up to the hot rung, then
         the stop-shaping line on each later time-ladder rung, sit_every_min
@@ -1132,10 +1142,7 @@ class Hook:
         if not (k.sit_every_min > 0 and self.sit_start > 0 and not self.curia_live):
             return
         m_min = (self.now_ts - self.sit_start) // 60
-        ladder = list(TIME_LADDER)
-        while len(ladder) <= k.sit_hot_rung:
-            ladder.append(ladder[-1] + k.sit_every_min)
-        r = rung_of(ladder[max(k.sit_hot_rung, 0):], k.sit_every_min, m_min)
+        r = rung_of(self.hot_ladder(), k.sit_every_min, m_min)
         if r == 0:
             self.m_sit_at = self.m_sit_said = 0
         elif not self.sit_quiet and self.in_flight() and r > self.m_sit_said and not self.driver:
@@ -1328,7 +1335,7 @@ class Hook:
         def face(r):
             return faces[r - 1] if r else "⏳"
 
-        clock = "⏰" if tr > max(self.k.sit_hot_rung, 0) else "⏱"
+        clock = "⏰" if sit_min >= self.hot_ladder()[0] else "⏱"
         front = ("💸" if self.ctx_rungs > 0 else "🪙") + face(tr) + ("⚡" if fr else "🌌") \
             + ("🤔" if heavy else "🧘") + ("⛔" if blocked else "✅")
         tail = ("🤔" if heavy else "🧘") + (["⚡", "🙄", "😠", "😡", "🤬"][fr - 1] if fr else "🌌") \

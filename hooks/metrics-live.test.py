@@ -1093,6 +1093,8 @@ class MetricsLiveTest(unittest.TestCase):
         w.has("a hot rung past the ladder grows it by sit_every_min", r"past 3h45\. Shape a good stop",
               w.ctx(w.hook(w.payload(tp11, "calm7", S, "UserPromptSubmit", "go"), "prompt",
                            env={"METRICS_SIT_HOT_RUNG": "6", **day})))
+        w.has("and the clock glyph turns on that same rung", r"⏰3h46",
+              T("calm7", METRICS_SIT_HOT_RUNG="6", **day))
         return self.done(w)
 
     # --- 12. PostToolUse drives the engine and may carry an injection ------------
