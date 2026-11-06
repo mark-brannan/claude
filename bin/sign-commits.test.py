@@ -10,6 +10,7 @@
 import importlib.machinery
 import importlib.util
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -220,6 +221,106 @@ class SignCommitsTest(unittest.TestCase):
         self.assertEqual(sign_commits.recommendation(brief_text(REBASE))[0], "git rebase -S --force-rebase 0123abcd")
         self.assertEqual(sign_commits.recommendation(brief_text(CLEAN))[0], CLEAN)
         self.assertEqual(sign_commits.recommendation("ahead: 1\n"), ("", ""))
+
+
+class SignPrTest(unittest.TestCase):
+    """The PR form: head and base from GitHub, work in a scratch worktree off
+    origin/<head>, push leased on the fetched sha, leave nothing behind."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+        self.repo = os.path.join(self.home, "boat")
+        os.mkdir(self.repo)
+        self.env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
+        g = self.g
+        for a in (["init", "-q", "-b", "main"], ["config", "user.email", "t@x"], ["config", "user.name", "t"],
+                  ["config", "commit.gpgsign", "false"], ["commit", "-q", "--allow-empty", "-m", "one"],
+                  ["remote", "add", "origin", "git@github.com:me/boat.git"]):
+            g(*a)
+        # The PR's head is on origin only, one bot commit past main; the local branch
+        # is stale and checked out by another worktree, as on colregs-mcp#75.
+        g("update-ref", "refs/remotes/origin/main", g("rev-parse", "HEAD"))
+        self.sha = g("commit-tree", g("rev-parse", "HEAD^{tree}"), "-p", "HEAD", "-m", "bot")
+        g("update-ref", "refs/remotes/origin/chore/up", self.sha)
+        g("branch", "chore/up", "main")
+        g("worktree", "add", "-q", os.path.join(self.home, "held"), "chore/up")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def g(self, *a):
+        return subprocess.run(["git", "-C", self.repo, *a], check=True, env=self.env,
+                              capture_output=True, text=True).stdout.strip()
+
+    def go(self, spec, rec, pr=None, fail=(), cwd=None, extra=()):
+        pr = dict({"headRefName": "chore/up", "baseRefName": "main", "isCrossRepository": False,
+                   "state": "OPEN", "url": "https://github.com/me/boat/pull/7"}, **(pr or {}))
+        seen = {}
+
+        def brief(root, br, base=None):
+            seen.update(root=root, br=br, base=base,
+                        head=subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True,
+                                            text=True).stdout.strip())
+            return 0, f"worktrees: {root} (dead)\n" + brief_text(rec).split("\n", 1)[1].replace("feature", br)
+
+        gh = lambda a: subprocess.CompletedProcess(a, 0, json.dumps(pr), "")  # noqa: E731
+        run, out, err = Recorder(fail), io.StringIO(), io.StringIO()
+        rc = sign_commits.sign_pr(spec, False, cwd=cwd or self.repo, brief=brief, run=run, out=out, err=err,
+                                  gh=gh, home=self.home) if not extra else sign_commits.main(
+            [spec, *extra], cwd=cwd or self.repo, brief=brief, run=run, out=out, err=err)
+        return rc, run.calls, out.getvalue(), err.getvalue(), seen
+
+    def left_behind(self):
+        return [ln for ln in self.g("worktree", "list").split("\n") if "sign-commits-" in ln] + \
+            [b for b in self.g("branch", "--list", "sign-commits/*").split("\n") if b]
+
+    def test_signs_origins_head_in_a_scratch_worktree_and_pushes_it_leased(self):
+        rc, calls, out, err, seen = self.go("me/boat#7", REBASE)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(seen["head"], self.sha)  # origin's head, not the stale local branch
+        self.assertEqual(seen["base"], "main")
+        self.assertEqual(calls, [["fetch", "--quiet", "origin"],
+                                 ["rebase", "-S", "--force-rebase", "0123abcd"],
+                                 ["push", f"--force-with-lease=refs/heads/chore/up:{self.sha}", "origin",
+                                  "HEAD:refs/heads/chore/up"]])
+        self.assertNotIn("worktrees:", out)
+        self.assertNotIn("sign-commits/", out)  # the scratch name never shows
+        self.assertEqual(self.left_behind(), [])
+
+    def test_found_from_anywhere_when_the_clone_is_at_home(self):
+        rc, calls, out, err, seen = self.go("https://github.com/me/boat/pull/7", CLEAN, cwd=self.home)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("nothing to re-sign on chore/up", out)
+        self.assertEqual(self.left_behind(), [])
+
+    def test_no_clone_is_refused_before_github_is_asked(self):
+        rc, calls, out, err, seen = self.go("me/other#7", REBASE)
+        self.assertEqual((rc, calls), (1, []))
+        self.assertIn("no clone of me/other", err)
+
+    def test_a_fork_is_refused(self):
+        rc, calls, out, err, seen = self.go("7", REBASE, pr={"isCrossRepository": True})
+        self.assertEqual((rc, calls), (1, []))
+        self.assertIn("fork", err)
+
+    def test_a_handover_is_printed_and_nothing_pushed(self):
+        rc, calls, out, err, seen = self.go("me/boat#7", HANDOVER)
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, [["fetch", "--quiet", "origin"]])
+        self.assertEqual(self.left_behind(), [])
+
+    def test_a_refused_lease_says_someone_pushed(self):
+        rc, calls, out, err, seen = self.go("me/boat#7", REBASE, fail=[("push",)])
+        self.assertEqual(rc, 1)
+        self.assertIn("someone pushed", err)
+        self.assertEqual(self.left_behind(), [])
+
+    def test_main_routes_a_pr_spec_and_leaves_branch_names_alone(self):
+        self.assertTrue(sign_commits.PR_RE.match("me/boat#7"))
+        self.assertTrue(sign_commits.PR_RE.match("#7"))
+        self.assertFalse(sign_commits.PR_RE.match("chore/up"))
+        self.assertFalse(sign_commits.PR_RE.match("feature"))
 
 
 if __name__ == "__main__":
