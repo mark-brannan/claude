@@ -34,10 +34,13 @@ this check exists for.
   differs from what it counted. `git`, the old line beside the new.
 - **A threshold moved** — a cutoff, budget, cap, window or sample size
   in a guard, check or readout. Name both values. `git`.
-- **A check's reach changed** — a test assertion loosened or tightened,
-  a case skipped or added, a path class or file pattern added to or
-  removed from a guard, a new waiver or bypass, an exit code that now
-  passes. `git`, both sides cited.
+- **A check's reach changed** — only where the test or guard is itself a
+  method (see above): it decides whether a rule is kept or work is done.
+  Its assertion loosened or tightened, a case skipped or added, a path
+  class or file pattern added to or removed from it, a new waiver or
+  bypass, an exit code that now passes. A test of a tool's own behavior
+  (a new case for a new code path) is not a method. `git`, both sides
+  cited.
 - **An evaluator changed** — the read-set a review or check reads
   (whole files to excerpts, a section dropped), the model or effort it
   runs at, or who supplies the measure (a human's call to an agent's,
@@ -71,4 +74,6 @@ the file and one of `essentially the same`, `more conservative`, or
 
 The target measures nothing and is measured by nothing that changed: a
 typo fix in prose no check reads, a new file no test, guard or readout
-names.
+names. Also a tool that acts and judges nothing, and tests that only
+pin its own behavior: a new branch in `bin/sign-commits` that signs a
+PR's commits, with cases for it, moves no rule's measure.

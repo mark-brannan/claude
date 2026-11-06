@@ -353,7 +353,7 @@ class LockTest(Base):
         self.assertIn(f"pid={os.getpid()}\n", Path(self.LOCK, "meta").read_text())
 
     def test_push_locked_refuses_a_held_lock_and_runs_then_releases_a_free_one(self):
-        self.state.STATE_PUSH_LOCK = self.LOCK
+        self.state.state_push_lock = lambda repo=None: self.LOCK
         self.hold(os.getpid())
         orig = self.state.state_lock_wait
         with mock.patch.object(self.state, "state_lock_wait", lambda d, secs: orig(d, 0)):
@@ -387,11 +387,24 @@ class LockTest(Base):
         os.makedirs(self.LOCK)
         self.assertFalse(self.state.state_lock(self.LOCK))
 
-    def test_push_lock_path_is_the_shells(self):
+    def test_push_lock_lives_in_the_state_repos_clone(self):
+        # One clone, one lock, whatever TMPDIR each actor runs under.
+        repo = self.T / "repo"
+        (repo / ".git").mkdir(parents=True)
+        os.environ["CLAUDE_STATE_REPO"] = str(repo)
+        os.environ["TMPDIR"] = str(self.T / "elsewhere")
+        self.assertEqual(self.state.state_push_lock(), f"{repo}/.git/claude-state-push.lock.d")
+        self.assertEqual(self.state.push_locked("test -d \"$CLAUDE_STATE_REPO/.git/claude-state-push.lock.d\""),
+                         (0, ""), "push_locked holds the clone's lock while it runs")
+        self.assertFalse((repo / ".git" / "claude-state-push.lock.d").exists(), "and releases it")
+
+    def test_push_lock_falls_back_to_tmpdir_with_no_state_repo(self):
+        if any(os.path.isdir(d + "/.git") for d in CLOUD):
+            self.skipTest("a cloud path holds a state repo here")
         os.environ["TMPDIR"] = str(self.T)
-        self.assertEqual(load(LIB).STATE_PUSH_LOCK, f"{self.T}/claude-state-push.lock.d")
+        self.assertEqual(self.state.state_push_lock(), f"{self.T}/claude-state-push.lock.d")
         os.environ.pop("TMPDIR")
-        self.assertEqual(load(LIB).STATE_PUSH_LOCK, "/tmp/claude-state-push.lock.d")
+        self.assertEqual(self.state.state_push_lock(), "/tmp/claude-state-push.lock.d")
 
 
 class DayDecisionsTest(Base):
