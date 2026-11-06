@@ -637,3 +637,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t065249z
 - sign-commits treats a bare number as a PR in the current clone Undo: require owner/repo#n or #n, drop bare digits ([#394](https://github.com/mark-brannan/claude/pull/394))
+
+### 20261106t070308z
+- event block: no sitting clock renders ⏱0h00; no cost_usd renders blank figure spaces; front ⚡/⛔ bad at first event; context 💸 at first rung ([#395](https://github.com/mark-brannan/claude/pull/395))
