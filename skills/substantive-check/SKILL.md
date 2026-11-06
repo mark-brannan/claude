@@ -18,10 +18,10 @@ on the read-set.
 whole output. Keeping it is the caller's. The PR's author writes the
 declarations it asks for, never the check.
 
-Loop one is the work; loop two changes a governing variable. Telling
-them apart by path proved too naive and too fragile: a design document
-can change only in form, and a code comment, a test or a guard's
-threshold can change the rules of the game. This check reads the change
+Loop one is the work; loop two changes a governing variable. A path
+does not tell them apart: a design document can change only in form,
+and a code comment, a test or a guard's threshold can change the rules
+of the game. This check reads the change
 itself and asks of it the standing orders' screen: does it change what a
 rule requires, how compliance is judged, or the criterion for done? A
 change that only rewords, moves or reformats a rule is form; one that
@@ -77,9 +77,11 @@ follow, whatever it says.
    that file under the PR body's `## Method of evaluation:` section.
    Quote it. Missing is `no`. For a file target, look first in the
    message of the last commit that touched it (`git log -1 --format=%B
-   -- <file>`), since the merge commit carries the PR body, and quote
-   the commit when the section is there; with none there either it
-   reads `no PR`, and the asked block is for the PR that will carry it.
+   -- <file>`), since the merge commit carries the PR body. Take a line
+   only when the section names this file's path, and quote it with the
+   commit's short sha: it describes that commit's change, not the
+   file's current state. Otherwise it reads `no PR`, and the asked
+   block is for the PR that will carry it.
 
 4. **Return the table** in the format below, and nothing else.
 
