@@ -269,7 +269,7 @@ def fib_rungs(total):
 
 
 def time_rungs(total):
-    return sum(1 for L in (25, 47, 62, 90, 120) if total >= L)
+    return sum(1 for L in (25, 47, 62, 90, 120, 165) if total >= L)
 
 
 def rung_of(ladder, step, v):
@@ -1300,8 +1300,53 @@ class Hook:
 
     # -- the event block -------------------------------------------------------
     def block(self):
-        """Shown to the user, never sent to the model. Any crossing line rides
-        in front of it rather than arriving as a second message."""
+        """Shown to the user, never sent to the model: the four-line event
+        block of metrics-live-requirements.md, "The block's shape"."""
+        sess = obj(self.metrics.get("session"))
+        dec = num(obj(sess.get("decisions")).get("total"))
+        fric = num(obj(sess.get("friction")).get("total"))
+        blocked = num(obj(sess.get("blocked")).get("total"))
+        sit_min = (self.now_ts - self.sit_start) // 60 if self.sit_start > 0 else 0
+        tr, fr = time_rungs(sit_min), fib_rungs(fric)
+        heavy = dec > 3  # the decisions rung: 🤔 in front, in the tail and on the runs line
+        # Night by Pacific time, not the host's: a cloud session runs UTC.
+        pac_hour = at(time.time(), PACIFIC).hour
+        night = pac_hour >= self.k.stop_hour or pac_hour < self.k.night_end_hour
+        faces = ["🌙" if night else "⏱️", "🫩", "😩", "😫", "😵‍💫", "😵"]
+        fat = min(tr + 1, len(faces)) if fr >= 3 else tr
+        worst = max(fr, fat)
+
+        def face(r):
+            return faces[r - 1] if r else "⏳"
+
+        front = ("💸" if self.ctx_rungs > 0 else "🪙") + face(tr) + ("⚡" if fr else "🌌") \
+            + ("🤔" if heavy else "🧘") + ("⛔" if blocked else "✅")
+        tail = ("🤔" if heavy else "🧘") + (["⚡", "🙄", "😠", "😡", "🤬"][fr - 1] if fr else "🌌") \
+            + face(fat) + ("💀" if worst >= 4 else "🥀" if worst == 3 else "")
+        lines = [f"{front} {metrics_format.fmt_usd_fixed(sess.get('cost_usd'))} "
+                 f"⛁ {metrics_format.fmt_tokens_fixed(num(sess.get('output_tokens')))}"
+                 f"/{metrics_format.fmt_tokens_fixed(num(sess.get('context_peak')))} "
+                 f"⏱{sit_min // 60}h{sit_min % 60:02d} {tail}"]
+        if tr:
+            lines.append("".join(faces[:tr]))
+        runs = []
+        if self.ctx_rungs > 0:
+            runs.append(glyphs(self.ctx_rungs, "💸"))
+        if fric > 0:
+            runs.append(f"{'⚡' * fr}(x{fric})")
+        if dec > 0:
+            runs.append(f"{'🤔' if heavy else ''}{'⚖' * fib_rungs(dec)}(x{dec})")
+        if blocked > 0:
+            runs.append(f"{'⛔' * fib_rungs(blocked)}(x{blocked})")
+        if runs:
+            lines.append(" ".join(runs))
+        lines.append(fmt_lines(num(sess.get("user_turns")), num(sess.get("tool_calls")),
+                               self.ncommits, self.dirty, self.unpushed))
+        return "\n".join(lines)
+
+    def block_v1(self):
+        """The two-line block before the four-line one, unused: kept for its
+        glyphs (⏰, the reason tail) as reference."""
         k, sess = self.k, obj(self.metrics.get("session"))
         dec = num(obj(sess.get("decisions")).get("total"))
         fric = num(obj(sess.get("friction")).get("total"))
@@ -1398,9 +1443,9 @@ def item_field(path, key):
 
 def fmt_lines(turns, tools, commits, dirty, unpushed, cost_usd=None):
     """The block's second line, from metrics_format.py: display text stays
-    plain f-strings the user can edit unassisted. The dollars lead it, not
-    the first line: that one already runs past 75 columns at its high rungs,
-    and the second has room to spare."""
+    plain f-strings the user can edit unassisted. `cost_usd` is read only by
+    `block_v1`; `block()` puts the dollars on its first line and passes none,
+    so passing them here too would print them twice."""
     turns_line = metrics_format.fmt_turns(turns, tools)
     usd = metrics_format.fmt_usd(cost_usd)
     if usd:
