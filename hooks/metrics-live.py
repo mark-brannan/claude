@@ -1308,6 +1308,7 @@ class Hook:
         blocked = num(obj(sess.get("blocked")).get("total"))
         sit_min = (self.now_ts - self.sit_start) // 60 if self.sit_start > 0 else 0
         tr, fr = time_rungs(sit_min), fib_rungs(fric)
+        heavy = dec > 3  # the decisions rung: 🤔 in front, in the tail and on the runs line
         # Night by Pacific time, not the host's: a cloud session runs UTC.
         pac_hour = at(time.time(), PACIFIC).hour
         night = pac_hour >= self.k.stop_hour or pac_hour < self.k.night_end_hour
@@ -1319,8 +1320,8 @@ class Hook:
             return faces[r - 1] if r else "⏳"
 
         front = ("💸" if self.ctx_rungs > 0 else "🪙") + face(tr) + ("⚡" if fr else "🌌") \
-            + ("🤔" if dec > 3 else "🧘") + ("⛔" if blocked else "✅")
-        tail = ("🤔" if dec > 3 else "🧘") + (["⚡", "🙄", "😠", "😡", "🤬"][fr - 1] if fr else "🌌") \
+            + ("🤔" if heavy else "🧘") + ("⛔" if blocked else "✅")
+        tail = ("🤔" if heavy else "🧘") + (["⚡", "🙄", "😠", "😡", "🤬"][fr - 1] if fr else "🌌") \
             + face(fat) + ("💀" if worst >= 4 else "🥀" if worst == 3 else "")
         lines = [f"{front} {metrics_format.fmt_usd_fixed(sess.get('cost_usd'))} "
                  f"⛁ {metrics_format.fmt_tokens_fixed(num(sess.get('output_tokens')))}"
@@ -1334,7 +1335,7 @@ class Hook:
         if fric > 0:
             runs.append(f"{'⚡' * fr}(x{fric})")
         if dec > 0:
-            runs.append(f"{'🤔' if dec > 3 else ''}{'⚖' * fib_rungs(dec)}(x{dec})")
+            runs.append(f"{'🤔' if heavy else ''}{'⚖' * fib_rungs(dec)}(x{dec})")
         if blocked > 0:
             runs.append(f"{'⛔' * fib_rungs(blocked)}(x{blocked})")
         if runs:
@@ -1442,9 +1443,9 @@ def item_field(path, key):
 
 def fmt_lines(turns, tools, commits, dirty, unpushed, cost_usd=None):
     """The block's second line, from metrics_format.py: display text stays
-    plain f-strings the user can edit unassisted. The dollars lead it, not
-    the first line: that one already runs past 75 columns at its high rungs,
-    and the second has room to spare."""
+    plain f-strings the user can edit unassisted. `cost_usd` is read only by
+    `block_v1`; `block()` puts the dollars on its first line and passes none,
+    so passing them here too would print them twice."""
     turns_line = metrics_format.fmt_turns(turns, tools)
     usd = metrics_format.fmt_usd(cost_usd)
     if usd:

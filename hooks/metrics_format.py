@@ -69,7 +69,7 @@ def fmt_usd_fixed(cost):
     cents = max(0, math.floor(cost * 100 + 0.5))
     if cost > 0 and cents == 0:
         return "<$0.01".rjust(7, FIG)
-    body = f"{cents // 100}.{cents % 100:02d}" if cents < 100000 else compact(cost)
+    body = f"{cents // 100}.{cents % 100:02d}" if cents < 100000 else compact(cents / 100)
     return "$" + body.rjust(6, FIG)
 
 
