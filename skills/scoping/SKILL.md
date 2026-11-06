@@ -212,7 +212,7 @@ python3 ~/.claude/lib/config.py get plan.week_usd        # all-models week, API-
 python3 ~/.claude/lib/config.py get plan.fable_week_usd  # Fable's own week
 ```
 
-On screen, the docket the user says yes to opens like this:
+On screen, the proposal the user says yes to opens like this:
 
 ```
 Batch: 4 items · $45 · 2.3% of week · 1.6% of Fable week
@@ -225,11 +225,11 @@ Batch: 4 items · $45 · 2.3% of week · 1.6% of Fable week
 During the batch and in the walk, actual sits beside the estimate:
 
 ```
-Batch: $45 est · $52 so far · 2.6% of week (est 2.3%)
+Batch: $45 est · $52 so far · 2.6% of week (est 2.3%) · <0.1% of Fable week (est 1.6%)
   1. config file ................ 0.4%  actual 0.5%
   2. statusline share ........... 0.8%  actual 1.1%
   3. docket in scoping .......... 0.7%  running
-```
+  4. walk spend table (Fable) ... 0.4%  waiting
 
 A share rounds to one decimal; under 0.1% shows as `<0.1%`.
 
@@ -374,8 +374,8 @@ the rulings to date:
   walk on the parent as `walk=<path>`. It holds each child's PR and actual,
   the batch's actual against its allocation, the arete brief and the
   maxims table, the spend table in the form above, and per batch: hours
-  from `/pickup` to the last merge on main, idle hours, sessions used, the user's turns, and dollars per merged PR
-  (2026-10-24).
+  from `/pickup` to the last merge on main, idle hours, sessions used,
+  the user's turns, and dollars per merged PR (2026-10-24).
 - **The close.** With the walk logged, the driver logs each child whose PR
   merged `status=done evidence=<PR>`, and each that did not
   `~/.claude/bin/work-item log <id> status=ready note=<why>`, where it stays
