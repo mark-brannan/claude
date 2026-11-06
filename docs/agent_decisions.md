@@ -631,3 +631,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t063837z
 - The ⛔ run ladders like the other counted runs (⛔⛔⛔(x4)); the code's single ⛔ catches up. Undo: revert the ⛔ line in metrics-live-requirements.md. ([#393](https://github.com/mark-brannan/claude/pull/393))
+
+### 20261106t065245z
+- sign-commits PR form falls back to ~/<repo> when run outside a clone, origin checked Undo: drop the ~/<repo> fallback in sign_pr ([#394](https://github.com/mark-brannan/claude/pull/394))
