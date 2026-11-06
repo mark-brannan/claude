@@ -1089,6 +1089,10 @@ class MetricsLiveTest(unittest.TestCase):
         s = int(time.time()) - 170 * 60
         w.write(w.sitf, {"sitting_start": s, "last_prompt": s})
         w.has("165 min earns the sixth face", "(?m)^⏱️🫩😩😫😵‍💫😵$", T("calm6", **day))
+        w.sitting("calm7", 226, 5)
+        w.has("a hot rung past the ladder grows it by sit_every_min", r"past 3h45\. Shape a good stop",
+              w.ctx(w.hook(w.payload(tp11, "calm7", S, "UserPromptSubmit", "go"), "prompt",
+                           env={"METRICS_SIT_HOT_RUNG": "6", **day})))
         return self.done(w)
 
     # --- 12. PostToolUse drives the engine and may carry an injection ------------

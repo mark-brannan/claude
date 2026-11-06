@@ -1132,7 +1132,10 @@ class Hook:
         if not (k.sit_every_min > 0 and self.sit_start > 0 and not self.curia_live):
             return
         m_min = (self.now_ts - self.sit_start) // 60
-        r = rung_of(list(TIME_LADDER[max(k.sit_hot_rung, 0):]), k.sit_every_min, m_min)
+        ladder = list(TIME_LADDER)
+        while len(ladder) <= k.sit_hot_rung:
+            ladder.append(ladder[-1] + k.sit_every_min)
+        r = rung_of(ladder[max(k.sit_hot_rung, 0):], k.sit_every_min, m_min)
         if r == 0:
             self.m_sit_at = self.m_sit_said = 0
         elif not self.sit_quiet and self.in_flight() and r > self.m_sit_said and not self.driver:
