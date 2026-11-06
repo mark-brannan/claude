@@ -345,9 +345,9 @@ fires, both on the same rung. Its value comes from the distribution of
 real sitting stretches, machine-wide and gap-split, never per session, and
 is a guess until measured: the record of every rung crossing (minutes to
 the next prompt, whether that prompt was a `stay`, whether the sitting
-ended) is what moves it. "It's complicated by the fact that we haven't even established what
-the right time limits or decision counts are yet." Thresholds come from
-that record, never from this document.
+ended) is what moves it. "It's complicated by the fact that we haven't
+even established what the right time limits or decision counts are yet."
+Thresholds come from that record, never from this document.
 
 **The faces are the mirror, not the nag.** The tail and the time ladder
 say how the user is likely to feel; a face at a rung is a reading of the
