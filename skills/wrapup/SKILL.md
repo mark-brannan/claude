@@ -167,6 +167,12 @@ two things: the hand-off prompt, and links to the `## Needs ruling` and
 one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.
 
+Under the prompt, one line: `start` launches it, and nothing is pasted.
+On that word, run `~/.claude/bin/handoff-start <this session's item id>`
+once and relay the lines it prints; a refusal is relayed with the paste
+prompt still standing. Offering the word is not a question; it opens
+nothing.
+
 It **opens nothing**: no new question, no doubt, no hint, no "one thing to
 consider". A closing message may say *"next time we discuss X"* — with X
 already in the log's `## For next time` list — and never *"hold this in

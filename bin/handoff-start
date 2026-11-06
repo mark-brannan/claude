@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+# handoff-start -- start the next session from a session-end hand-off on the
+# user's word "start": one background session on this box that runs
+# `/pickup <item-id>`, with Remote Control on, so nothing is pasted. The
+# wrapup skill offers the word beside the paste prompt.
+#
+#   handoff-start [--cwd <dir>] [--wait <seconds>] <pickup-item-id>
+#
+# Refused (exit 1) when the item cannot be read or is not open: a taken item
+# already has its session. The session runs in the main worktree of the git
+# repo at --cwd (default: here), never in a linked worktree that its own
+# session may be about to release; outside git, in --cwd itself. Model and
+# effort are the hand-off body's `model:` and `effort:` lines, when it has
+# them. Prints how to attach, as driver-start does, whose helpers it uses.
+# Exit 2 on bad arguments; a `claude --bg` that fails passes its code through.
+import argparse
+import os
+import re
+import shlex
+import subprocess
+import sys
+from importlib.machinery import SourceFileLoader
+
+sys.dont_write_bytecode = True
+HERE = os.path.dirname(os.path.realpath(__file__))
+PICKUP_LIST = os.path.join(HERE, "pickup-list")
+ds = SourceFileLoader("driver_start", os.path.join(HERE, "driver-start")).load_module()
+
+
+def die(msg, code=1):
+    sys.stderr.write("handoff-start: %s\n" % msg)
+    sys.exit(code)
+
+
+def item_facts(item):
+    """The item's status, and the model and effort its hand-off body names."""
+    r = subprocess.run([PICKUP_LIST, "show", item], text=True, capture_output=True)
+    if r.returncode:
+        die("cannot read pickup item %s: %s" % (item, r.stderr.strip() or "pickup-list failed"))
+    head, sep, body = r.stdout.partition("\n---\n")
+    if not sep:
+        die("%s is not a pickup item (no --- line)" % item)
+    status = re.search(r"^status:\s*(\S+)", head, re.M)
+    facts = {}
+    for key in ("model", "effort"):
+        v = re.search(r"^%s:\s*(\S+)\s*$" % key, body, re.M)
+        if v:
+            facts[key] = v.group(1)
+    return status.group(1) if status else "", facts
+
+
+def main_worktree(cwd):
+    """The main worktree of the repo at <cwd>, or <cwd> outside git."""
+    r = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                       text=True, capture_output=True, cwd=cwd)
+    common = r.stdout.strip()
+    if r.returncode or os.path.basename(common) != ".git":
+        return cwd
+    return os.path.dirname(common)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="handoff-start")
+    ap.add_argument("item")
+    ap.add_argument("--cwd", default=os.getcwd())
+    ap.add_argument("--wait", type=float, default=45.0)
+    a = ap.parse_args()
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9A-Za-z-]+", a.item):
+        die("not a pickup item id: %r" % a.item, 2)
+    if not os.path.isdir(a.cwd):
+        die("no such directory: %s" % a.cwd, 2)
+
+    status, facts = item_facts(a.item)
+    if status != "open":
+        die("%s is %s, not open: it already has its session" % (a.item, status or "unmarked"))
+
+    cwd = main_worktree(a.cwd)
+    name = "Pickup %s" % a.item
+    cmd = ["claude", "--bg", "--remote-control", name, "-n", name]
+    for key in ("model", "effort"):
+        if key in facts:
+            cmd += ["--" + key, facts[key]]
+    cmd.append("/pickup %s" % a.item)
+    print("$ (cd %s && %s)" % (shlex.quote(cwd), shlex.join(cmd)), flush=True)
+    r = subprocess.run(cmd, text=True, capture_output=True, cwd=cwd)
+    if r.returncode:
+        sys.stderr.write(r.stdout + r.stderr)
+        die("claude --bg failed", r.returncode)
+    m = re.search(r"backgrounded\W+([0-9a-f]{8})", ds.ANSI.sub("", r.stdout))
+    if not m:
+        sys.stderr.write(r.stdout)
+        die("claude --bg printed no session id; `claude agents` lists what runs")
+    short = m.group(1)
+
+    sid = ds.session_uuid(short) or short
+    link = ds.remote_link(short, a.wait)
+    print("pickup started: %s, session %s, in %s" % (name, sid, cwd))
+    print("  Claude Desktop: the session list, \"%s\"" % name)
+    print("  browser:        %s" % (link or "claude.ai/code, \"%s\" (no link yet)" % name))
+    print("  this terminal:  claude attach %s" % short)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

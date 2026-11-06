@@ -361,7 +361,8 @@ Hooks handle the mechanics unprompted.
   afterward doesn't substitute.
 - A loop not worth a card is not worth telling me about.
 - **End with a prompt, not a status bullet or observation.** Work remaining
-  → hand-off prompt; a decision or click-work card → its link. Nothing else
+  → hand-off prompt, with the word `start` beside it, which starts the next
+  session for me; a decision or click-work card → its link. Nothing else
   in a closing message; `/wrapup` has the spec.
 - **The last word is mine.** A closing message opens
   nothing: no new question, doubt, hint or "one more thing" — the log's
