@@ -36,7 +36,7 @@ as posed.
 - **The user's last words:** (none yet; then a reference, `<id>/roll.md#<stamp>`)
 - **Unsettled:** the question as posed above (then pointers: an open question's number, a Design section's number)
 - **The one big thing:** the question as posed above (then what the next sitting's proposal is for)
-- **Size:** (none yet; then the line the status facet writes: the counts, words at open per section and together against 1,500, context at first question against 70k)
+- **Size:** (none yet; then the line the status facet writes: the counts, words at open per section and together against 1,500, context at first question as a bare figure)
 
 ## The problem
 
