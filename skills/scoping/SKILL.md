@@ -414,9 +414,12 @@ how to attach. `/pickup` already takes a card id, and the parent's brief is
 the whole hand-off (pencil on the how: the plan as a card, not a path
 `/pickup` learns); long term the same item is what an unattended run
 picks up. The run's last lines are what `driver-start` printed: the
-session's name in the Desktop session list and its link. A start that is
-refused or fails ends the run with its message and, in its place, the one
-line that starts the driver by hand:
+session's name in the Desktop session list and its link. Once it has
+printed `driver started:` the driver is running, whatever the exit code: a
+`driver_session` it could not log is relayed as its warning, never answered
+with a second start. A start that is refused, or whose `claude --bg`
+failed, ends the run with its message and, in its place, the one line that
+starts the driver by hand:
 
 ```
 /pickup <parent-id>
