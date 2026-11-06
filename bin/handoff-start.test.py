@@ -78,6 +78,12 @@ class HandoffStart(unittest.TestCase):
                                      "--model sonnet --effort low /pickup %s" % (NAME, NAME, ID)])
         self.assertIn("claude.ai/code/session_", r.stdout)
 
+    def test_a_title_line_in_the_body_names_the_session(self):
+        self.write("open", "model: sonnet\ntitle: Check PR 415 CI\n")
+        self.run_tool(ID)
+        self.assertEqual(self.bg()[0].split(" -n ")[1].split(" --model")[0],
+                         "Hand-off %s: Check PR 415 CI" % ID)
+
     def test_no_log_names_the_session_by_id_alone(self):
         self.pickup.write_text((ITEM % ("open", "model: sonnet\n")).replace(WHERE, ""))
         self.run_tool(ID)
