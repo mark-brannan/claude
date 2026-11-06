@@ -118,7 +118,8 @@ So every wrap-up that produced a hand-off in step 2 — the one-line
 message. **Push the branch first** (`git push -u origin <branch>`): the item
 points at a branch, and a `/pickup` on another machine fetches a branch
 that is not on origin and finds nothing. Same four lines as `/pickup`'s
-spec. `link` is the home step 2 found and the first line is the prompt's
+spec, plus an optional `title:`, a few words a person would name the session
+by, which `handoff-start` names the session with. `link` is the home step 2 found and the first line is the prompt's
 first action — one derivation, not a second one that can drift from the
 prose. Replace everything below the `---` with
 `~/.claude/bin/pickup-list handoff <id>`, the four lines on stdin; one
@@ -129,6 +130,7 @@ hand-off per item, never two:
 link: <the branch, PR, issue or card the prompt names>
 model: <opus | sonnet | haiku>
 effort: <low | medium | high>
+title: <optional, e.g. Reviewer model difficulty>
 ```
 
 Then check it landed:
@@ -166,6 +168,12 @@ two things: the hand-off prompt, and links to the `## Needs ruling` and
 `## Human's` cards this session wrote. Nothing else. If nothing hit a
 one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.
+
+Under the prompt, one line: `start` launches it, and nothing is pasted.
+On that word, run `~/.claude/bin/handoff-start --title "<the title>" <this session's item id>`
+once, the title being the few words the hand-off gives the session (its `title:` line), and relay the lines it prints. A refusal is relayed with the paste
+prompt still standing. Offering the word is not a question; it opens
+nothing.
 
 It **opens nothing**: no new question, no doubt, no hint, no "one thing to
 consider". A closing message may say *"next time we discuss X"* — with X
