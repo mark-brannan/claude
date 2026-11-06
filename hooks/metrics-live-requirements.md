@@ -63,7 +63,7 @@ day, 50 min, friction at rung 3
 night, 3h05, everything maxed
 💸😵⚡🤔⛔ $123.00 ⛁ 650k/850k ⏱3h05 🤔🤬😵💀
 🌙🫩😩😫😵‍💫😵
-💸💸💸💸💸(x9) ⚡⚡⚡⚡⚡(x9) 🤔⚖⚖⚖⚖⚖(x12) ⛔(x4)
+💸💸💸💸💸(x9) ⚡⚡⚡⚡⚡(x9) 🤔⚖⚖⚖⚖⚖(x12) ⛔⛔⛔(x4)
 ⇢ 103 ⚙ 1310 ⎇ 12c14~3↑unpushed  ← not safe to kill
 ```
 
@@ -92,13 +92,14 @@ thing on the screen, so it repeats the front with more grades.
 |---|---|---|
 | cognitive load | 🧘 | 🤔 past the decisions rung, and it stops there |
 | friction | 🌌 | ⚡ 🙄 😠 😡 🤬, one per friction rung |
-| fatigue | ⏳ | ⏱️ or 🌙, 🫩, 😩, 😫, 😵‍💫, 😵, at the higher of the time and friction rungs |
+| fatigue | ⏳ | ⏱️ or 🌙, 🫩, 😩, 😫, 😵‍💫, 😵, at the time rung; friction lifts it only from rung 3 |
 | fourth | absent | 🥀 at rung 3 of friction or fatigue, 💀 at rung 4 and above |
 
 Cognitive load tops out at 🤔 and never earns a face or a skull: a session
 heavy with decisions is expected and fine. Paired with friction or fatigue,
 it is the mirror the tail exists for. Fatigue can show 😩 in daylight,
-because friction alone can drive it.
+because friction at rung 3 or above can drive it; below rung 3 friction
+leaves fatigue on the time rung.
 
 **The time ladder leads with the hour.** Its first rung is ⏱️ by day and
 🌙 by night, a soft limit after ⏳; the faces follow, one per rung, and the
