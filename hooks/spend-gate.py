@@ -60,8 +60,8 @@ def measure(path):
     main transcript cannot be read."""
     # Imported only once a line is set, so the gate stays inert without lib/;
     # past a line, a failed import crashes and the settings.json wrapper denies.
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import lib_state  # noqa: F401  (puts lib/ on sys.path)
+    sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                    os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
     import claude_costing
     return claude_costing.session_spend(path)
 
