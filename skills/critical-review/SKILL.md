@@ -59,9 +59,8 @@ makes is never a thread.
 **Easy.** A finding you judge easy and unambiguous carries a second tag,
 `[easy]`, right after the first: `🤖 [nit] [easy] <what is wrong>`. Easy is a
 nit, typo, name, one-line fix, the PR title, a missing "try it". Never `[easy]`
-on a risky path (a hook, a permission, a credential, remote content), a
-`[blocker]`, a Judgment line or a reversal. Where the fix replaces whole lines
-of the file, the comment is an inline thread on those lines and carries a
+on a `[blocker]`, a Judgment line or a reversal. Where the fix replaces whole
+lines of the file, the comment is an inline thread on those lines and carries a
 suggestion fence holding the replacement, before the signature:
 
 ````
