@@ -206,9 +206,8 @@ Then start the confer at once, in the background, and keep sitting:
 
 It starts one session on this box with Remote Control on, whose prompt is
 the confer hand-off for the card, logs `confer_session=<id>` on it, and
-prints how to attach. Model and effort are the sitting's rating of the
-item (see Difficulty and model): an agent rating of high is fable · high,
-medium is opus · high, low is sonnet · medium (pencil). The confer reads
+prints how to attach. Model and effort come from the item's agent
+rating (see Difficulty and model). The confer reads
 the card itself and waits on its first question, so the user can answer
 it in parallel or after the sitting; nothing is pasted. Relay its
 `confer started:` lines in one line: the session's name and link. Once
@@ -238,7 +237,8 @@ Before the first item, rate each candidate twice from its `default:` /
 high-stakes agent's, each low / medium / high. If the running model is
 weaker than the hardest agent rating calls for, print one line offering a
 model switch or an `Agent` call with a `model` override for that item,
-then continue.
+then continue. A confer starts at the agent rating's model and effort:
+high is fable · high, medium is opus · high, low is sonnet · medium.
 
 ## Output
 

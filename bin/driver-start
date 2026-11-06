@@ -139,6 +139,7 @@ def main():
     check_args(a, a.parent)
     text, facts = parent_facts(a.parent)
     return start(a.parent, text, "Driver %s" % a.parent, "/pickup %s" % a.parent,
+                 "driver_session", facts, a.cwd, a.wait)
 
 
 if __name__ == "__main__":
