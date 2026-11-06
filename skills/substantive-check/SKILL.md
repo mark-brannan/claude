@@ -83,6 +83,10 @@ follow, whatever it says.
    file's current state. Otherwise it reads `no PR`, and the asked
    block is for the PR that will carry it.
 
+   The change screened for a file target is the file's last commit
+   diff (`git log -1 -p -- <file>`). Where a change is a pure addition
+   there is no old side: write `absent → <new>`.
+
 4. **Return the table** in the format below, and nothing else.
 
 ## The declaration
@@ -112,6 +116,7 @@ the rest of the PR body, so the record carries it in both places.
 | 8 MoE     | bin/mixed-loops-screen.py:52-60  | whitespace-only design edits: tripped → screened out     | yes: "less conservative: a whites…" | git  |
 | 8 MoE     | hooks/metrics-live.py:118        | correction tag: "no," at line start → anywhere in turn   | no                                  | git  |
 | 8 MoE     | skills/curia/facets/lint.md:40   | nothing found                                            |                                     | read |
+| 8 MoE     | hooks/stop.py                    | nothing: form only (7 rewordings: deleted → pruned)      | yes: "essentially the same"         | git  |
 
 Asked, for the PR body:
 ## Method of evaluation:
@@ -121,9 +126,16 @@ Not screened: criteria 1-7 (no check file yet).
 Not looked at: the CI history; callers outside this repo.
 ```
 
+A file target's header is `## Substantive · file <path> @ <short sha>`;
+a hunk's is `## Substantive · hunk <sha> <path>`.
+
 A row per change found; a file with none gets no row unless a detector
 looked at it on purpose, then `nothing found` and how it looked, or
-`mu:` and its reason in "what moves" with `how` blank. With no change
+`mu:` and its reason in "what moves" with `how` and `declared` blank; a
+`mu` row is not listed in the asked block. Form-only changes in a file
+collapse to one row: "what moves" reads `nothing: form only`, a count
+and the detectors that found them, `how` the most-used one. A file with
+substance rows still gets those rows separately. With no change
 found anywhere, one row reads `nothing found` with the files looked at.
 `how` is one of `git` (old line beside new), `grep`, `gh` or `read`
 (judgment on reading), or blank on a `mu` row. The asked block lists only the files with
