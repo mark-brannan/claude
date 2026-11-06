@@ -32,9 +32,14 @@ renders one block with four ⛁ in it.
 `output_tokens/context_peak`; a rung reaches the reader as glyph repetitions
 and nothing else. The threshold lines rendered `context_peak/rung` — the same
 shape, one line away, meaning something different.
-The session's estimated cost, sub-agents included, is the one dollar
-figure, `$2.39`, in both readouts: beside the ratio in the row, leading the
-turns line in the block, every block line under 75 columns.
+
+**The session's dollars appear once in each readout.** `$2.39`, sub-agents
+included, from the live cache's `cost_usd`; a cache without it shows no dollars.
+
+```
+⛁⛁ 46k/155k ⚖⚖(x2) 🌌(x0) 🔧✅(x0) ⏱1h33⏱️⏱️⏱️⏱️ — 💸
+$2.39 ⇢ 3 ⚙ 31 ⎇ 2c1~3↑unpushed  ← not safe to kill
+```
 
 **A counted field never vanishes; zero is a state with a glyph.** 🧘
 decisions, 🌌 friction, ✅ blocked — the field keeps its slot and its `(x0)`,
