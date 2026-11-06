@@ -137,8 +137,9 @@ a hunk's is `## Substantive · hunk <sha> <path>`.
 
 A row per change found; a file with none gets no row unless a detector
 looked at it on purpose, then `nothing found` and how it looked, or
-`mu:` and its reason in "what moves" with `how` and `declared` blank; a
-`mu` row is not listed in the asked block. Form-only changes in a file
+`mu:` and its reason in "what moves" with `how` blank; a `mu` file
+with no declaration is still listed in the asked block, so a wrong `mu`
+call has someone to answer for it. Form-only changes in a file
 collapse to one row: "what moves" reads `nothing: form only`, a count
 and the detectors that found them, `how` the most-used one. A file with
 substance rows still gets those rows separately. With no change
