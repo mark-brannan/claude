@@ -20,7 +20,10 @@
 # (symlinks followed) and must lie in one of
 #   - the git work tree holding the cwd (nearest ancestor with a .git), when
 #     that is strictly inside the home directory and not the live ~/.claude
-#   - ~/<the state repo's name in config.json>, the state repo
+#   - ~/<the state repo's name>, the state repo, when that is a git work
+#     tree and its name is no dotfile; the name is read only from the live
+#     ~/.claude/config.json, a file this tool refuses to write, never from a
+#     checkout's copy, which sits inside a root and could name a new one
 #   - Claude Code's scratchpads: ~/.local/state/claude-tmpdir/claude-<uid>
 #     and /tmp/claude-<uid>, each only when it is a real directory we own
 # and is refused anywhere in the live ~/.claude, in any .git, in any .claude
@@ -89,12 +92,14 @@ def roots(cwd):
     if top and inside(top, h) and top != h and not inside(top.casefold(), live.casefold()):
         out.append(top)
     if config is not None:
+        # The live config only: a root's source must lie outside every root.
         try:
-            places = (os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "config.json"),
-                      os.path.join(h, ".claude", "config.json"))
-            out.append(os.path.join(h, config.state_repo_name(places)))
+            name = config.state_repo_name((os.path.join(live, "config.json"),))
         except config.ConfigError:
-            pass
+            name = ""
+        state = os.path.join(h, name)
+        if name and not name.startswith(".") and os.path.lexists(os.path.join(state, ".git")):
+            out.append(state)
     uid = "claude-%d" % os.getuid()
     for d in (os.path.join(h, ".local", "state", "claude-tmpdir", uid), os.path.join(TMP, uid)):
         r = own_dir(d)

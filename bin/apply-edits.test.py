@@ -183,8 +183,13 @@ class ApplyEdits(unittest.TestCase):
         r = self.run_tool({"path": str(f), "old": "a", "new": "b"})
         self.assertRefused(r, "is outside")
 
+    def live_config(self, github):
+        self.file("config.json", json.dumps({"state_repo": {"github": github}}), base=self.home / ".claude")
+
     def test_state_repo_and_scratchpads_open(self):
         uid = "claude-%d" % os.getuid()
+        self.live_config("o/claude_prompts_scratch")
+        (self.home / "claude_prompts_scratch" / ".git").mkdir(parents=True)
         s = self.file("state/x.md", "a\n", base=self.home / "claude_prompts_scratch")
         p = self.file("sess/scratchpad/y.mjs", "a\n", base=self.home / ".local/state/claude-tmpdir" / uid)
         q = self.file("sess/z.txt", "a\n", base=self.systmp / uid)
@@ -194,6 +199,26 @@ class ApplyEdits(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual([x.read_text() for x in (s, p, q)], ["b\n"] * 3)
         self.assertEqual(len(r.stdout.splitlines()), 3)
+
+    def test_state_repo_name_from_live_config_only(self):
+        # The checkout's config.json is inside a write root, so a name there
+        # must not add a root; a dotfile name or a non-repo must not either.
+        f = self.file("secret", "a\n", base=self.home / ".ssh")
+        bashrc = self.file(".bashrc", "a\n", base=self.home)
+        notes = self.file("n.txt", "a\n", base=self.home / "notes")
+        edits = [{"path": "~/.ssh/secret", "old": "a", "new": "b"},
+                 {"path": "~/.bashrc", "old": "a", "new": "b"},
+                 {"path": "~/notes/n.txt", "old": "a", "new": "b"}]
+        for github in (None, "o/.ssh", "o/.bashrc", "o/notes"):
+            if github:
+                self.live_config(github)
+            for e in edits:
+                r = self.run_tool(e, cwd=self.outside)
+                self.assertRefused(r, "is outside")
+        (self.home / "notes" / ".git").mkdir()
+        r = self.run_tool(edits[2], cwd=self.outside)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([x.read_text() for x in (f, bashrc, notes)], ["a\n", "a\n", "b\n"])
 
     def test_symlinked_tmp_root_not_trusted(self):
         uid = "claude-%d" % os.getuid()
