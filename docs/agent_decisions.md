@@ -679,3 +679,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t193823z
 - The prompt-time pr-blockers hook and fixup contract step 1 run pr-blockers with --leave-easy; no new guard enforces the fixer contract. Undo: drop --leave-easy from hooks/pr-blockers-prompt.py and pickup §6 step 1 ([#414](https://github.com/mark-brannan/claude/pull/414#discussion_r4496707048)) ([#414](https://github.com/mark-brannan/claude/pull/414))
+
+### 20261106t194718z
+- handoff-start reuses driver-start helpers on main, not #413's start(), to avoid stacking; a pickup item's open status is the second-start guard; session named Pickup <id> Undo: fold into #413's start() after it lands ([#415](https://github.com/mark-brannan/claude/pull/415))
