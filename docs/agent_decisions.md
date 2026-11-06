@@ -634,3 +634,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t065245z
 - sign-commits PR form falls back to ~/<repo> when run outside a clone, origin checked Undo: drop the ~/<repo> fallback in sign_pr ([#394](https://github.com/mark-brannan/claude/pull/394))
+
+### 20261106t065249z
+- sign-commits treats a bare number as a PR in the current clone Undo: require owner/repo#n or #n, drop bare digits ([#394](https://github.com/mark-brannan/claude/pull/394))
