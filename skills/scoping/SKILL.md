@@ -202,36 +202,51 @@ taken; never overwrite an earlier one. Commit it. Shape:
 **Cost against the plan week.** The point is to show where the money
 goes, before the batch and during it; it is visibility, never a stop
 rule. A share of a week is the unit that reads: about 1% is noise, 5% to
-20% is the signal. Each work item shows its estimate as `% of week`
-alone; the batch total shows dollars and the share, and, when any child
-runs on Fable, those children's sum as a share of the Fable week. The
-plan figures are read fresh each run, never written down here:
+20% is the signal. The cost table is an account: one row per work item,
+numbered in batch order, its dollars in one column, so the totals sit at
+the foot of that column; a share of the week sits under each total, never
+on an item row. An item is spoken of by number and name, "3 (cost table
+in scoping)", never the number alone. The model and effort column comes
+last, so it is the one a narrow screen loses. When any child runs on
+Fable, those children get their own total and share of the Fable week.
+The plan figures are read fresh each run, never written down here:
 
 ```bash
 python3 ~/.claude/lib/config.py get plan.week_usd        # all-models week, API-priced
 python3 ~/.claude/lib/config.py get plan.fable_week_usd  # Fable's own week
 ```
 
-On screen, the proposal the user says yes to opens like this:
+On screen, the proposal the user says yes to carries it like this:
 
 ```
-Batch: 4 items · $45 · 2.3% of week · 1.6% of Fable week
-  1. config file ................ 0.4%
-  2. statusline share ........... 0.8%
-  3. docket in scoping .......... 0.7%
-  4. walk spend table (Fable) ... 0.4%
+ #  Item                          Est.   Model
+ 1  config file                  $8.00   opus·med
+ 2  statusline share            $16.00   sonnet·med
+ 3  cost table in scoping       $15.00   opus·high
+ 4  walk spend table            $12.00   fable·med
+    Total, 4 items              $51.00
+      % of week                   2.6%
+    Fable items (4)             $12.00
+      % of Fable week             2.4%
 ```
 
-During the batch and in the walk, actual sits beside the estimate:
+During the batch and in the walk, actual and status sit beside the
+estimate:
 
 ```
-Batch: $45 est · $52 so far · 2.6% of week (est 2.3%) · <0.1% of Fable week (est 1.6%)
-  1. config file ................ 0.4%  actual 0.5%
-  2. statusline share ........... 0.8%  actual 1.1%
-  3. docket in scoping .......... 0.7%  running
-  4. walk spend table (Fable) ... 0.4%  waiting
+ #  Item                          Est.   Actual  Status     Model
+ 1  config file                  $8.00   $10.00  done       opus·med
+ 2  statusline share            $16.00   $21.00  done       sonnet·med
+ 3  cost table in scoping       $15.00    $4.00  running    opus·high
+ 4  walk spend table            $12.00        —  waiting    fable·med
+    Total, 4 items              $51.00   $35.00
+      % of week                   2.6%     1.8%
+    Fable items (4)             $12.00    $0.00
+      % of Fable week             2.4%     0.0%
+```
 
-A share rounds to one decimal; under 0.1% shows as `<0.1%`.
+Dollars show cents; a share rounds to one decimal, and under 0.1% shows
+as `<0.1%`. Effort is abbreviated low, med, high.
 
 ## 5. Stop and show
 
@@ -315,7 +330,7 @@ the rulings to date:
   the spend facts' shape, pencil), and the brief repeats it as dollars and
   share of the plan week, so the driver knows what the batch was set
   against. Through the batch, as each child's PR opens and again at the
-  walk, the driver reports actual beside estimate in the docket's form:
+  walk, the driver reports actual beside estimate in the cost table's form:
   each child's two shares side by side, the batch's in dollars and share,
   plan figures read from config as above. A child's actual is its
   sessions' priced `cost_usd`, or `~/.claude/bin/spend --by pr` once the
