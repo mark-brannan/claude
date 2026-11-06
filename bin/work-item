@@ -372,6 +372,8 @@ def open_homed(home, every=False):
         if not is_item_id(p.name[:-3]):
             continue
         try:
+            if f"home={home}" not in p.read_text():  # narrows only; fold decides
+                continue
             f = dict(fold(p, cutoff))
         except OSError:
             continue
@@ -383,8 +385,8 @@ def by_home(args):
     """id, status and live holder of every open item homed at <o/r#n>: the
     reverse lookup a dispatcher reads beside the claim stamps. --all keeps
     done and closed ones too."""
-    every = args[:1] == ["--all"]
-    args = args[1:] if every else args
+    every = "--all" in args
+    args = [x for x in args if x != "--all"]
     if len(args) != 1 or not HOME.fullmatch(args[0]):
         die("by-home takes [--all] and one owner/repo#n")
     for f in open_homed(args[0], every):

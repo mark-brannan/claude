@@ -86,6 +86,11 @@ def pr_home(url):
     return f"{m[1]}/{m[2]}#{m[3]}" if m else ""
 
 
+def home_url(home):
+    """o/r#7 -> https://github.com/o/r/pull/7; the inverse of pr_home."""
+    return "https://github.com/{}/{}/pull/{}".format(*re.split(r"[/#]", home))
+
+
 def first_line(text):
     return next((l.strip() for l in (text or "").splitlines() if l.strip()), "")
 
@@ -125,7 +130,7 @@ def handoff_home(handoff):
 def homed_item(env, home):
     """(id, status) of the newest item homed at <home>, in any status, or None."""
     rows = [r.split("\t")[:2] for r in work_item(env, "by-home", "--all", home).splitlines() if r.strip()]
-    return tuple(max(rows)) if rows else None
+    return max(rows) if rows else None
 
 
 def stop_lines(path, sid8):
@@ -180,7 +185,7 @@ def step(a):
     pr = a.pr if pr_home(a.pr) else ""
     home = pr_home(pr) or handoff_home(a.handoff)
     if home and not pr:
-        pr = "https://github.com/{}/{}/pull/{}".format(*re.split(r"[/#]", home))
+        pr = home_url(home)
     item, how = find_item(env, a.items, sid8, a.started)
 
     if how is None and home:
