@@ -224,7 +224,8 @@ def main(argv, cwd=None, brief=state.branch_brief, run=subprocess.run, out=sys.s
     slug = origin_slug(root) if br != cur else ""
     if slug:
         gh = gh or (lambda a: subprocess.run(["gh", *a], text=True, capture_output=True))
-        p = gh(["pr", "list", "-R", slug, "--head", br, "--state", "open", "--json", "number", "-q", ".[].number"])
+        p = gh(["pr", "list", "-R", slug, "--head", br, "--state", "open", "--json", "number,isCrossRepository",
+                "-q", ".[] | select(.isCrossRepository | not) | .number"])
         nums = p.stdout.split() if p.returncode == 0 else []
         if len(nums) == 1:
             return sign_pr(f"{slug}#{nums[0]}", dry, cwd=cwd, brief=brief, run=run, out=out, err=err, gh=gh)

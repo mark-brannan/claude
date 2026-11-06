@@ -296,6 +296,21 @@ class SignPrTest(unittest.TestCase):
         self.assertEqual(self.g("rev-parse", "chore/up"), self.g("rev-parse", "main"))  # local copy untouched
         self.assertEqual(self.left_behind(), [])
 
+    def test_a_fork_pr_sharing_the_branch_name_leaves_the_branch_path(self):
+        asked = []
+
+        def gh(a):
+            asked.append(a)
+            return subprocess.CompletedProcess(a, 0, "", "")  # only a fork PR matched; the filter drops it
+
+        def brief(root, br, base=None):
+            return 0, brief_text(REBASE).replace("feature", br)
+
+        run, out, err = Recorder(), io.StringIO(), io.StringIO()
+        sign_commits.main(["chore/up"], cwd=self.repo, brief=brief, run=run, out=out, err=err, gh=gh)
+        self.assertEqual([a[:2] for a in asked], [["pr", "list"]])  # no sign_pr, so no pr view
+        self.assertIn("select(.isCrossRepository | not)", asked[0][-1])
+
     def test_signs_origins_head_in_a_scratch_worktree_and_pushes_it_leased(self):
         rc, calls, out, err, seen = self.go("me/boat#7", REBASE)
         self.assertEqual(rc, 0, err)
