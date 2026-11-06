@@ -4,8 +4,8 @@
 Connectors are the one line of the token floor that can grow without limit and
 without being noticed. Deferred, a server costs only its tool names; below
 tool search's threshold, or with it off, its schemas load in full, up to tens
-of thousands of tokens. Measured
-floor breakdown and the reasoning: .claude/docs/token-budget.md
+of thousands of tokens. Measured floor breakdown and the reasoning:
+.claude/docs/token-budget.md
 
 Counts the distinct server names in ~/.claude.json (global, and the ones
 under projects[cwd]) and in the cwd's .mcp.json, less any named in
