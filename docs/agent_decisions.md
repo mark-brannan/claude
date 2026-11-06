@@ -691,3 +691,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t210657z
 - Sonnet runs the substantive check in CI: where it errs it errs strict, which sends the change up a tier Undo: a model input on the review workflow ([#416](https://github.com/mark-brannan/claude/pull/416))
+
+### 20261106t215607z
+- prices unified on session-metrics.jq's table: unknown model at top tier, fable-5-1 cache read 0.25, sonnet-4-6 3/15 Undo: revert the PR ([#417](https://github.com/mark-brannan/claude/pull/417))
