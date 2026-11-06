@@ -7,6 +7,11 @@ import from the rest of lib/, and settings (the plan figures) come in as
 arguments, never read here. hooks/session-metrics.jq reads the same table,
 prices.json, as jq data.
 
+The table was checked against Claude Code's own figure: the claude#69 test
+run's total_cost_usd ($0.41907) reproduces to the cent at these input, output
+and cache multipliers (cache reads 0.1x input, writes 1.25x for the 5-minute
+cache and 2x for the 1-hour one, which Claude Code writes by default).
+
 Usage folds into a dict of messages keyed by message id: a message's content
 blocks each arrive as a transcript event carrying the same usage, so each
 field keeps its largest value rather than summing.
@@ -25,11 +30,14 @@ with open(os.path.join(HERE, "prices.json"), encoding="utf-8") as _f:
 
 
 def rates(model):
-    """{input, output, cache_read} in USD per 1M tokens for a model name."""
+    """{input, output, cache_read, cache_write_5m, cache_write_1h} in USD per
+    1M tokens for a model name."""
     name = model or ""
     rule = next((r for r in TABLE["rules"] if re.search(r["match"], name)), TABLE["fallback"])
     return {"input": rule["input"], "output": rule["output"],
-            "cache_read": rule.get("cache_read", rule["input"] * TABLE["cache_read_ratio"])}
+            "cache_read": rule.get("cache_read", rule["input"] * TABLE["cache_read_ratio"]),
+            "cache_write_5m": rule["input"] * TABLE["cache_write_5m"],
+            "cache_write_1h": rule["input"] * TABLE["cache_write_1h"]}
 
 
 def add_usage(e, msgs):
@@ -81,8 +89,7 @@ def price(msgs):
         w5m = write - w1h  # unsplit writes price as the 5-minute cache
         spend += (u["input_tokens"] * r["input"] + u["output_tokens"] * r["output"]
                   + u["cache_read_input_tokens"] * r["cache_read"]
-                  + w5m * r["input"] * TABLE["cache_write_5m"]
-                  + w1h * r["input"] * TABLE["cache_write_1h"])
+                  + w5m * r["cache_write_5m"] + w1h * r["cache_write_1h"])
     return spend / 1e6
 
 

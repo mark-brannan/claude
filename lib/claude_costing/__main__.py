@@ -1,5 +1,5 @@
 """Shell's way in: python3 lib/claude_costing rates <model> prints
-input, output and cache_read in USD per 1M tokens."""
+input, output, cache_read and cache_write_5m in USD per 1M tokens."""
 import os
 import sys
 
@@ -10,7 +10,7 @@ import claude_costing  # noqa: E402
 def main(argv):
     if len(argv) == 2 and argv[0] == "rates":
         r = claude_costing.rates(argv[1])
-        print(f'{r["input"]:g} {r["output"]:g} {r["cache_read"]:g}')
+        print(f'{r["input"]:g} {r["output"]:g} {r["cache_read"]:g} {r["cache_write_5m"]:g}')
         return 0
     print(__doc__.strip(), file=sys.stderr)
     return 2

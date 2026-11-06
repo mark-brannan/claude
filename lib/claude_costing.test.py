@@ -71,7 +71,7 @@ class ShellTest(unittest.TestCase):
     def test_rates_from_the_command_line(self):
         out = subprocess.run([sys.executable, str(LIB / "claude_costing"), "rates", "fable-5-1"],
                              capture_output=True, text=True, check=True, cwd=os.sep).stdout
-        self.assertEqual(out.split(), ["10", "50", "0.25"])
+        self.assertEqual(out.split(), ["10", "50", "0.25", "12.5"])
 
 
 class JqTest(unittest.TestCase):
@@ -86,6 +86,30 @@ class JqTest(unittest.TestCase):
                                capture_output=True, text=True, cwd=os.sep)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertAlmostEqual(json.loads(p.stdout)["session"]["cost_usd"], 50.25)
+
+    def test_jq_and_python_price_every_rule_alike(self):
+        # The lookup is written twice, once per language; this holds them to
+        # one answer for every rule and for a name no rule matches.
+        jqf = LIB.parent / "hooks" / "session-metrics.jq"
+        usage = {"input_tokens": 1_000_000, "output_tokens": 1_000_000,
+                 "cache_read_input_tokens": 1_000_000, "cache_creation_input_tokens": 3_000_000,
+                 "cache_creation": {"ephemeral_5m_input_tokens": 1_000_000,
+                                    "ephemeral_1h_input_tokens": 2_000_000}}
+        models = ["claude-fable-5-1", "claude-mythos-6", "claude-opus-5-5", "claude-sonnet-4-6",
+                  "claude-sonnet-5-5", "claude-haiku-5-5", "some-new-model"]
+        self.assertEqual(len(models) - 1, len(cc.TABLE["rules"]))
+        with tempfile.TemporaryDirectory() as d:
+            for model in models:
+                t = Path(d) / "t.jsonl"
+                t.write_text(json.dumps(event("m", model, **usage)) + "\n")
+                p = subprocess.run(["jq", "-s", "--arg", "sid", "x", "--arg", "repo", "r", "--arg", "branch", "b",
+                                    "--arg", "now", "t", "--arg", "cwd", "/", "-f", str(jqf), str(t)],
+                                   capture_output=True, text=True, cwd=os.sep)
+                self.assertEqual(p.returncode, 0, p.stderr)
+                msgs = {}
+                cc.add_usage(event("m", model, **usage), msgs)
+                self.assertAlmostEqual(json.loads(p.stdout)["session"]["cost_usd"], cc.price(msgs),
+                                       places=3, msg=model)
 
 
 if __name__ == "__main__":

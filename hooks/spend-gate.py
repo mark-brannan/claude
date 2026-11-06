@@ -54,14 +54,16 @@ import json
 import os
 import sys
 
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+
+
 def measure(path):
     """(spend in USD, context tokens of the last call) for the session, its
     sub-agents included, priced by lib/claude_costing. Raises OSError if the
     main transcript cannot be read."""
     # Imported only once a line is set, so the gate stays inert without lib/;
     # past a line, a failed import crashes and the settings.json wrapper denies.
-    sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
-                    os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
     import claude_costing
     return claude_costing.session_spend(path)
 

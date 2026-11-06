@@ -891,17 +891,19 @@ fi
 
 # --- live cost estimate (heartbeat only; the final line uses the exact
 # total_cost_usd from the result event) --------------------------------------
-# model_rates <model> -> "input output cache_read" in USD per 1M tokens, from
-# lib/claude_costing, the one price table. Cache writes price at 1.25x input
-# here: the heartbeat's usage does not split them by TTL.
-model_rates() { python3 "$costing" rates "$1"; }
+# model_rates <model> -> "input output cache_read cache_write_5m" in USD per 1M
+# tokens, from lib/claude_costing, the one price table; non-zero when it gives
+# nothing. Cache writes price at the 5-minute rate here: the heartbeat's usage
+# does not split them by TTL.
+model_rates() { mr=$(python3 "$costing" rates "$1") && [ -n "$mr" ] && echo "$mr"; }
 model_price_out() { model_rates "$1" | cut -d' ' -f2; }
-# estimate_cost <model> <input> <output> <cache_read> <cache_creation>
+# estimate_cost <rates> <input> <output> <cache_read> <cache_creation>, with
+# <rates> as model_rates prints them, looked up once per item.
 estimate_cost() {
-  # shellcheck disable=SC2046  # three words; splitting them is the point
-  set -- "$@" $(model_rates "$1")
-  awk -v i="$2" -v o="$3" -v cr="$4" -v cc="$5" -v ip="$6" -v op="$7" -v rp="$8" \
-    'BEGIN { printf "%.4f", (i*ip + o*op + cr*rp + cc*(ip*1.25)) / 1000000 }'
+  # shellcheck disable=SC2086  # four words; splitting them is the point
+  set -- $1 "$2" "$3" "$4" "$5"
+  awk -v ip="$1" -v op="$2" -v rp="$3" -v wp="$4" -v i="$5" -v o="$6" -v cr="$7" -v cc="$8" \
+    'BEGIN { printf "%.4f", (i*ip + o*op + cr*rp + cc*wp) / 1000000 }'
 }
 
 effort_weight() { case $1 in low) echo 0.5 ;; high) echo 2 ;; xhigh) echo 3 ;; max) echo 4 ;; *) echo 1 ;; esac; }
@@ -1609,6 +1611,9 @@ while [ "$i" -lt "$count" ]; do
   # shellcheck disable=SC2086  # three words; splitting them is the point
   set -- $terms
   model=$1; effort=$2
+  # One price lookup per item, for the heartbeat and the no-result fallback: a
+  # failed one is seen here, not recorded later as a $0 attempt.
+  rates=$(model_rates "$model") || { warn "skipping $ref -- no price for model $model from lib/claude_costing"; continue; }
   item_cap=$(item_soft_cap "$kind" "$model" "$effort" "$3")
   item_hard=$(awk -v c="$item_cap" 'BEGIN { printf "%.2f", 3 * c }')
 
@@ -1742,7 +1747,7 @@ while [ "$i" -lt "$count" ]; do
         # usage, so output_tokens there reads a handful per message.
         ltotal=$((li + lcr + lcc))
         if [ "$ltotal" -gt 0 ]; then
-          lcost=$(estimate_cost "$model" "$li" 0 "$lcr" "$lcc")
+          lcost=$(estimate_cost "$rates" "$li" 0 "$lcr" "$lcc")
           info "still working on $ref (${elapsed_m}m elapsed, ~$(fmt_tokens "$ltotal") input tokens, ~$(fmt_usd "$lcost") so far, input only)"
         else
           info "still working on $ref (${elapsed_m}m elapsed)"
@@ -1894,7 +1899,7 @@ while [ "$i" -lt "$count" ]; do
   else
     no_result=1; cost_estimated=true; is_error=true
     set -- $live_now
-    cost=$(estimate_cost "$model" "${1:-0}" 0 "${3:-0}" "${4:-0}")
+    cost=$(estimate_cost "$rates" "${1:-0}" 0 "${3:-0}" "${4:-0}")
     tokens=$(( ${1:-0} + ${3:-0} + ${4:-0} ))
     text="claude invocation did not complete (no result event)"
   fi
