@@ -71,9 +71,10 @@ Find and fix, mechanically, in one commit of the derived files:
   building something, a build-our-own row, a fork-or-invest table — and
   list under *Survey first* in the findings each one that cites no
   `inputs/*-survey-*.md`; each survey that leaves an axis of the skill's
-  list neither searched nor under *could not determine*; each cost cell that holds no digit; and
-  each candidate refused on values with no later survey citing the one it
-  reopens. Findings for the sitting, never a fix;
+  list neither searched nor under *could not determine*; each cost cell
+  with an adjective and no measured number beside it; and each candidate
+  refused on values with no later survey citing the one it reopens.
+  Findings for the sitting, never a fix;
 - flip candidates: run `curia-quotes --flips <curia folder> --since
   <the roll's read-from stamp>` and list its sentences in the findings
   file under *Flip candidates*, for the next open's short list; a trial
