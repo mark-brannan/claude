@@ -1,0 +1,15 @@
+{
+  "about": "List prices in USD per 1M tokens. Rules are tried in order, the first whose regex is found in the model name wins; a model no rule names prices at the fallback, the most expensive tier, so a new model reads as expensive rather than free. cache_read is a flat rate where a rule gives one, else cache_read_ratio of input. Cache writes are input times cache_write_5m or cache_write_1h by TTL. An estimate for comparing work, not an invoice; the prices drift.",
+  "rules": [
+    {"match": "fable-5-1|mythos-5-1", "input": 10, "output": 50, "cache_read": 0.25},
+    {"match": "fable|mythos", "input": 10, "output": 50},
+    {"match": "opus", "input": 5, "output": 25},
+    {"match": "sonnet-4-6", "input": 3, "output": 15},
+    {"match": "sonnet", "input": 2, "output": 10},
+    {"match": "haiku", "input": 1, "output": 5}
+  ],
+  "fallback": {"input": 10, "output": 50},
+  "cache_read_ratio": 0.1,
+  "cache_write_5m": 1.25,
+  "cache_write_1h": 2.0
+}
