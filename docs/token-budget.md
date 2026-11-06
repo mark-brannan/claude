@@ -17,7 +17,7 @@ before the first word of work.
 | `.claude/CLAUDE.md` | 4,123 | **yes** |
 | `settings.json` + 10 hooks + SessionStart brief | 318 | yes |
 | skills listing (9 skills) | 79 | yes |
-| MCP | 0 when off | yes |
+| MCP | 0 when off; ~0.4k-1.4k per deferred server (2026-11-06) | yes |
 
 Remote/managed session (desktop or web routed through a cloud container):
 **47,796 tokens**. The +11,139 is harness text I do not control — container
@@ -44,10 +44,19 @@ returns a paragraph. A 60-line directory dump should have been one.
 
 **4. Read less per call.** Codified in CLAUDE.md under "Execution".
 
-**5. Connectors: on for remote sessions, off for local ones.** In a managed
-remote session MCP tools arrive *deferred* — ~110 tool names, no schemas
-until one is requested. In a local CLI they load in full. That asymmetry is
-the whole rule. `.claude/hooks/connector-budget.py` warns above 5.
+**5. Connectors: deferred everywhere in Claude Code, so idle ones are cheap.**
+MCP tools arrive *deferred* — names only, no schemas until one is requested
+— in local sessions as well as remote ones. Measured 2026-11-06, `claude`
+2.1.300, local, one headless turn over a 49,406-token floor:
+
+| server | deferred | loaded in full (`ENABLE_TOOL_SEARCH=false`) |
+|---|---|---|
+| colregs (9 tools) | +388 | +67,982 |
+| github-pat | +1,358 | +42,541 |
+
+The cost that remains is the right-hand column, paid wherever deferral is
+off or unsupported, and claude.ai chat may still be such a place. Count
+connectors there, not here. `.claude/hooks/connector-budget.py` still warns above 5.
 
 ### Dead end, tested and rejected
 

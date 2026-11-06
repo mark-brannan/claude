@@ -2,7 +2,8 @@
 """SessionStart: shout if too many MCP connectors are enabled.
 
 Connectors are the one line of the token floor that can grow without limit and
-without being noticed -- in a local CLI their schemas load in full. Measured
+without being noticed. Deferred, a server costs only its tool names; where
+deferral is off its schemas load in full, tens of thousands of tokens. Measured
 floor breakdown and the reasoning: .claude/docs/token-budget.md
 
 Counts the distinct server names in ~/.claude.json (global, and the ones
