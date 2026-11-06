@@ -65,9 +65,9 @@ class SubagentPermissionApproveTest(unittest.TestCase):
             return []
         return [json.loads(x)["verdict"] for x in self.log.read_text().splitlines()]
 
-    def run_hook(self, agent=True, suggestions=SUGGEST, stdin=None, agent_type=None, mode="default"):
+    def run_hook(self, agent=True, suggestions=SUGGEST, stdin=None, agent_type=None, mode="default", tool="Bash"):
         ev = {"hook_event_name": "PermissionRequest", "session_id": "abc123", "cwd": "/w/repo",
-              "permission_mode": mode, "tool_name": "Bash", "tool_input": {"command": "touch x"}}
+              "permission_mode": mode, "tool_name": tool, "tool_input": {"command": "touch x"}}
         if agent:
             ev.update(agent_id="a4aadbe92e02e5780", agent_type="general-purpose")
         if agent_type:
@@ -110,10 +110,37 @@ class SubagentPermissionApproveTest(unittest.TestCase):
         # --agent sets agent_type on the main session but no agent_id (measured, CC 2.1.300)
         self.assertIsNone(self.run_hook(agent=False, agent_type="prober"))
 
-    def test_request_without_suggestions_is_left_alone_as_a_hook_ask(self):
+    def test_request_without_suggestions_or_a_record_is_left_alone_as_a_hook_ask(self):
         self.assertIsNone(self.run_hook(suggestions=None))
         self.assertIsNone(self.run_hook(suggestions=[]))
         self.assertEqual(self.verdicts(), ["no-suggestions", "no-suggestions"])
+
+    def test_no_suggestions_but_languette_passed_the_same_command_is_approved(self):
+        # CC offers no rule for a loop or a $var, though no hook asked (measured, CC 2.1.317)
+        self.record("silent", command="touch x")
+        self.assertEqual(self.run_hook(suggestions=[]), ALLOW)
+        self.assertEqual(self.verdicts(), ["allow-recorded"])
+
+    def test_no_suggestions_and_a_pass_for_another_command_is_left_alone(self):
+        self.record("silent", command="touch y")
+        self.record("silent", session="other", command="touch x")
+        self.assertIsNone(self.run_hook(suggestions=[]))
+
+    def test_no_suggestions_and_a_deny_for_the_same_command_is_left_alone(self):
+        self.record("deny", command="touch x")
+        self.assertIsNone(self.run_hook(suggestions=[]))
+        self.assertEqual(self.verdicts(), ["no-suggestions"])
+
+    def test_non_bash_request_without_suggestions_is_left_alone(self):
+        self.record("silent", tool="Write", command="touch x")
+        self.assertIsNone(self.run_hook(suggestions=[], tool="Write"))
+        self.assertEqual(self.verdicts(), ["no-suggestions"])
+
+    def test_no_suggestions_and_a_languette_ask_is_left_alone(self):
+        self.record("silent", command="touch x")
+        self.record("ask", command="touch x")
+        self.assertIsNone(self.run_hook(suggestions=[]))
+        self.assertEqual(self.verdicts(), ["languette-ask"])
 
     def test_recent_languette_ask_in_this_session_holds_it_back(self):
         self.record("ask")

@@ -8,8 +8,10 @@ PreToolUse guards (languette first) are where calls are judged, so a request
 that only a permission rule raised is approved here.
 
 A PreToolUse hook's "ask" raises this same event, and its input does not say
-so. A request is approved only when all four hold; otherwise the hook prints
-nothing and the dialog shows as it would have:
+so. A request is approved when the first two below hold and either
+suggestions are present or languette's record passed the same command, and
+never over a languette ask; otherwise the hook prints nothing and the dialog
+shows as it would have:
 
 - permission_mode is "default": the dropped-out case. In plan or acceptEdits
   the user chose the mode, and plan's point is not acting;
@@ -17,7 +19,13 @@ nothing and the dialog shows as it would have:
   none, even under --agent, which sets only agent_type; both carry the
   parent's session_id);
 - permission_suggestions is non-empty: a hook's ask carries none (seen on
-  Claude Code 2.1.300, docs silent);
+  Claude Code 2.1.300, docs silent). Claude Code also offers none for a
+  Bash command it cannot turn into a rule (a loop, `$var` or `$(...)`, a
+  subshell: measured, CC 2.1.317), so a request without suggestions is
+  still approved when languette's record holds a pass (PASSES) for this
+  session's same masked command. That is positive evidence the only hook
+  that asks did not; a record with no such line, or a command a project
+  rule masks (it never equals the record's text), leaves the dialog;
 - languette's decision record has no "ask" for this request: same session and
   tool, and either within the last WINDOW seconds or, for Bash, the same
   masked command (a queued dialog can show after the window). The command is
@@ -31,7 +39,8 @@ Each sub-agent request's outcome is appended to the state dir's
 metrics/permission-approvals/<session>.jsonl, beside permission-request-log:
     {"ts": "...", "session_id": "...", "agent_id": "a4aa...", "agent_type":
      "general-purpose", "tool": "Bash", "verdict": "allow"}
-verdict is allow, no-suggestions or languette-ask (a request outside the
+verdict is allow, allow-recorded (approved without suggestions, on
+languette's record), no-suggestions or languette-ask (a request outside the
 default mode is not logged).
 
 Fails closed: any error before the answer prints nothing, so the dialog shows.
@@ -76,37 +85,58 @@ def request_command(ev, record):
         return None
 
 
-def languette_asked(ev, now, path, command=None):
-    """True when languette recorded an ask for this request: same session and tool,
-    within WINDOW seconds of now or with the same masked command.
-    The rotated .1 is read too: a rotation can land between the ask and this hook."""
-    session = ev.get("session_id")
+PASSES = ("silent", "allow", "context")  # languette's verdicts that let a call through
+
+
+def rows(ev, path):
+    """This session's and tool's parsed record lines, both files.
+    The rotated .1 is read too: a rotation can land between the record and this hook."""
     for p in (path, path + ".1"):
         for ln in tail_lines(p):
             try:
                 r = json.loads(ln)
             except ValueError:
                 continue
-            if r.get("session") != session or r.get("verdict") != "ask" or r.get("tool") != ev.get("tool_name"):
-                continue
-            if command is not None and (r.get("command") or {}).get("text") == command:
-                return True
-            try:
-                t = calendar.timegm(time.strptime(r.get("t", ""), "%Y-%m-%dT%H:%M:%SZ"))
-            except ValueError:
-                return True  # an ask we cannot place in time is an ask
-            if now - t <= WINDOW:
-                return True
+            if r.get("session") == ev.get("session_id") and r.get("tool") == ev.get("tool_name"):
+                yield r
+
+
+def languette_asked(recs, now, command=None):
+    """True when languette recorded an ask for this request:
+    within WINDOW seconds of now or with the same masked command."""
+    for r in recs:
+        if r.get("verdict") != "ask":
+            continue
+        if command is not None and (r.get("command") or {}).get("text") == command:
+            return True
+        try:
+            t = calendar.timegm(time.strptime(r.get("t", ""), "%Y-%m-%dT%H:%M:%SZ"))
+        except ValueError:
+            return True  # an ask we cannot place in time is an ask
+        if now - t <= WINDOW:
+            return True
     return False
+
+
+def languette_cleared(recs, command):
+    """True when languette recorded a PreToolUse pass for this same masked
+    Bash command; False when command is None."""
+    return command is not None and any(
+        r.get("event") == "PreToolUse" and r.get("verdict") in PASSES
+        and (r.get("command") or {}).get("text") == command for r in recs)
 
 
 def verdict(ev, now, path, record=None):
     """allow, or why not; None for a main-session request or one outside the default mode."""
     if ev.get("permission_mode") != "default" or not ev.get("agent_id"):
         return None
-    if not ev.get("permission_suggestions"):
-        return "no-suggestions"
-    return "languette-ask" if languette_asked(ev, now, path, request_command(ev, record)) else "allow"
+    command = request_command(ev, record)
+    recs = list(rows(ev, path))
+    if languette_asked(recs, now, command):
+        return "languette-ask"
+    if ev.get("permission_suggestions"):
+        return "allow"
+    return "allow-recorded" if languette_cleared(recs, command) else "no-suggestions"
 
 
 def log(ev, v):
@@ -131,7 +161,7 @@ def main():
         return
     record = lib_state.languette_record()
     v = verdict(ev, time.time(), lib_state.records_path(os.environ), record)
-    if v == "allow":
+    if v in ("allow", "allow-recorded"):
         hookio.emit(hookio.specific("PermissionRequest", decision={"behavior": "allow"}))
     if v:
         log(ev, v)
