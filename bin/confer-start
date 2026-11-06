@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+# confer-start -- start an agora item's confer on its own: one background
+# session on this box, Remote Control on, whose prompt is the confer hand-off
+# for the card, so the user can answer it in parallel with the sitting and
+# nothing is pasted. The agora skill runs it on the word "confer".
+#
+#   confer-start [--cwd <dir>] [--wait <seconds>] [--model <m>] [--effort <e>]
+#                [--title <short name>] <card-id>
+#
+# Model and effort are the sitting's rating of the item (default fable, high).
+# Refused (exit 1) when the card cannot be read, or its log already carries
+# `confer_session=`: one confer per word. Otherwise it logs
+# `confer_session=<session uuid>` on the card and prints how to attach, the
+# same as driver-start, whose start() it uses.
+import argparse
+import os
+import sys
+from importlib.machinery import SourceFileLoader
+
+sys.dont_write_bytecode = True
+HERE = os.path.dirname(os.path.realpath(__file__))
+ds = SourceFileLoader("driver_start", os.path.join(HERE, "driver-start")).load_module()
+
+PROMPT = (
+    "Confer on work item {id}{title}: read it first with "
+    "`~/.claude/bin/work-item show {id}`. A one-off session, opened by an agora "
+    "sitting on the user's word \"confer\" -- a few rounds of question and answer, "
+    "one at a time. It ends in a ruling, a spawned issue or a sharper card; open "
+    "no curia unless the user says so, and then only through the gates in the "
+    "curia skill."
+)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="confer-start")
+    ap.add_argument("card")
+    ap.add_argument("--cwd", default=os.getcwd())
+    ap.add_argument("--wait", type=float, default=45.0)
+    ap.add_argument("--model", default="fable")
+    ap.add_argument("--effort", default="high")
+    ap.add_argument("--title", default="")
+    a = ap.parse_args()
+    ds.check_args(a, a.card)
+    text, _ = ds.parent_facts(a.card)
+    title = " ".join(a.title.split())
+    name = "Confer %s" % (title or a.card)
+    prompt = PROMPT.format(id=a.card, title=" (%s)" % title if title else "")
+    return ds.start(a.card, text, name, prompt, "confer_session",
+                    {"model": a.model, "effort": a.effort}, a.cwd, a.wait)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
