@@ -655,3 +655,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t105131z
 - review-subset counts a round as the review workflow does and a fixer reply as a signed agent reply by someone other than the opener Undo: change rounds() and fixer_replied() in bin/review-subset ([#411](https://github.com/mark-brannan/claude/pull/411))
+
+### 20261106t192402z
+- driver session slug capped at 40 chars, cut at a word Undo: change SLUG_MAX in bin/driver-start ([#412](https://github.com/mark-brannan/claude/pull/412))
