@@ -484,7 +484,7 @@ class StopContinuityTest(unittest.TestCase):
 
     # ------------------------------------------------- the session's item
     def session_item(self):
-        # Requirements section 14, cases 14.1 to 14.6 and 14.10 to 14.12. stop-item.py decides;
+        # Requirements section 14, cases 14.1 to 14.6 and 14.10 to 14.13. stop-item.py decides;
         # every write goes through bin/work-item. Session ids here start with
         # eight hex, as a real one does: the store names its writer by them.
         w = self.world("items")
@@ -573,6 +573,8 @@ class StopContinuityTest(unittest.TestCase):
         self.has("no PR: the brief links the checkpoint",
                  r"^Checkpoint: \[checkpoint\]\(\.\./log/auto/.*c9c8c7c6\.md\)$", NOPR)
         self.hasnt("no PR: no home line", "home=", NOPR)
+        self.assertEqual(brief_of(NOPR).split("\n")[0], "Finish the fixture work.",
+                         "14.6: the brief is the hand-off's first line, not the prompt's")
 
         # 14.10: a hand-off whose link is a PR writes onto that PR's item.
         w.run_hook("c1c2c3c4-0000-1111-2222", WORK)
@@ -580,6 +582,17 @@ class StopContinuityTest(unittest.TestCase):
         w.run_hook("c1c2c3c4-0000-1111-2222", WORK)
         self.assertEqual(mine("c1c2c3c4"), [], "14.10: a hand-off linking the PR mints nothing")
         self.has("14.10: the linked PR's item gets its stop line", r" c1c2c3c4 stop$", MINT)
+
+        # 14.13: the PR's item is done: nothing written, no second item.
+        DONE = wi("99990000-aaaa", "create", "--id", "178557840399990000", "--home", "o/r#9",
+                  "--brief", "see https://example.invalid/9", "a finished PR's card")
+        for line in ("status=ready", "status=claimed", "status=done evidence=https://example.invalid/9"):
+            wi("99990000-aaaa", "log", DONE, *line.split())
+        n9 = nlog(ITEMS / f"{DONE}.md")
+        w.run_hook("e1e2e3e4-0000-1111-2222", WORK, GH_PRS='[{"url":"https://github.com/o/r/pull/9"}]')
+        self.assertEqual(mine("e1e2e3e4"), [], "14.13: a done PR item gets no second item")
+        self.assertEqual(nlog(ITEMS / f"{DONE}.md"), n9, "14.13: and nothing is written onto it")
+        self.has("14.13: the checkpoint says so", rf"^{DONE} \(homed, done\): unchanged$", w.ckpt("e1e2e3e4"))
 
         # 14.3: a session that claimed an item writes onto it and mints nothing.
         CARD = wi("99990000-aaaa", "create", "--id", "178557840199990000", "--brief",

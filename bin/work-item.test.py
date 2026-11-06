@@ -382,6 +382,8 @@ class WorkItemTest(unittest.TestCase):
         ok(A, "log", first, "status=ready")
         ok(A, "claim", first)
         ok(A, "log", first, "status=done", "evidence=" + LINK)
+        self.assertEqual(ok(A, "by-home", "o/r#5"), "", "a done item is not open")
+        self.assertEqual(ok(A, "by-home", "--all", "o/r#5").split("\t")[:2], [first, "done"], "--all keeps it")
         ok(A, "create", "--id", "1700000003077c62eb", "--home", "o/r#5", "--brief", LINK, "After done")
 
     def stamp_stub(self, out):

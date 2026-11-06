@@ -281,10 +281,10 @@ one-entry-point curia's bias for not losing the trail).
 - A session that holds no claimed item touches the board only in two ways
   (easy-grind curia, 2026-11-06):
   - **Through the PR's one item, when a PR exists**: the session's PR, or
-    the PR its hand-off links. The hook finds the open item whose `home=`
-    is that PR (`work-item by-home`) and writes the session's line onto
-    it; only when there is none does it mint one with that home. One item
-    per PR, never a second.
+    the PR its hand-off links. The hook finds the item whose `home=` is
+    that PR (`work-item by-home --all`) and writes the session's line onto
+    it when it is open, nothing when it is done or closed; only when there
+    is none does it mint one with that home. One item per PR, never a second.
   - **When the session states that work continues**: it mints at the first
     Stop that sees the statement. Today the statement is a hand-off the
     session wrote over its pickup item's default body (wrapup step 2b),
@@ -298,9 +298,9 @@ one-entry-point curia's bias for not losing the trail).
 - The hook never claims the item. A session that takes it up logs `ready`,
   then `claimed` (`docs/work-item-lifecycle.md`): `open` never goes
   straight to `claimed`.
-- Its brief is written once, at the mint, from the prompt's first line
-  (job 9's default body), and never rewritten: the hook decides nothing
-  about the hand-off; its home is the session's PR,
+- Its brief is written once, at the mint, from the hand-off's first line
+  where the session wrote one, else the prompt's (job 9's default body),
+  and never rewritten; its home is the session's PR,
   `home=<owner/repo#n>`, once there is one (pencil, question 13).
 - The brief carries one link; the store refuses a brief without one. Which
   link, when the session has no PR yet, is open (below).
@@ -429,10 +429,11 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | test |
 | 14.4 | a minted item | any Stop | no `status=ready` line from the hook | test |
 | 14.5 | the session's branch has an open PR | Stop | the item carries `home=<owner/repo#n>` | test |
-| 14.6 | a fresh session | first Stop | the minted item's brief is the prompt's first line; later Stops leave it unchanged | test |
+| 14.6 | a fresh session | first Stop | the minted item's brief is the hand-off's first line where the session wrote one, else the prompt's; later Stops leave it unchanged | test |
 | 14.7 | the store refuses the write, or `work-item` crashes | Stop | the state commit is made; exit 0 | test |
 | 14.8 | a fresh session on a PR | first Stop | the item is in that Stop's state commit | test |
 | 14.9 | the hook writes items and the duplicates are retired | Stop | no `pickup/` file, no claim-stamp call, no floor block, no `## Resume` carry | item 5 |
 | 14.10 | an open item homed at the session's PR, or at the PR its hand-off links | Stop | that item gets this session's `stop` line; nothing minted | test |
+| 14.13 | the item homed at the session's PR is done or closed | Stop | nothing written, nothing minted | test |
 | 14.11 | no PR, no claimed item, no hand-off | Stop | no item; the checkpoint says why | test |
 | 14.12 | 14.11, then the session writes a hand-off into its pickup item | the next Stop | one new item, its brief linking the checkpoint | test |

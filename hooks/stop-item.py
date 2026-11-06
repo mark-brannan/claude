@@ -14,9 +14,10 @@ Which item, in order:
   3. one this session's Stop already wrote onto (a `stop` line from it): a
      claim since released, or its PR's item, so the session still has one id
      per life.
-  4. its PR's one item: the open item whose `home=` is the session's PR, or
-     the PR its hand-off links (`work-item by-home`); the newest if several.
-     It gets this session's `stop` line; none there, mint it with that home.
+  4. its PR's one item: the newest item whose `home=` is the session's PR,
+     or the PR its hand-off links (`work-item by-home --all`). Open, it gets
+     this session's `stop` line; done or closed, nothing is written; none
+     there, mint it with that home.
   5. no PR: mint only when the session states that work continues, which is
      a hand-off it wrote over its pickup item's default body (`--handoff`).
      Otherwise no item: a session record is not a work item.
@@ -24,11 +25,10 @@ A mint is `open`, owner `agent`. Never `ready`, no status line ever.
 
 What it writes (pencil):
   - a minted item's brief is written once, at the mint: the first line of
-    the prompt that Stop sees (the session's first, unless an earlier mint
-    was refused), with one link line: the PR when there is one, else the
-    session's checkpoint log in the state repo. Never rewritten; the hook
-    decides nothing about the hand-off. Later Stops log only `stop`, with
-    `home=` when the PR changed.
+    the hand-off when the session wrote one, else of the prompt that Stop
+    sees, with one link line: the PR when there is one, else the session's
+    checkpoint log in the state repo. Never rewritten. Later Stops log only
+    `stop`, with `home=` when the PR changed.
   - a claimed item keeps its brief; it gets one `stop` line on its first
     Stop, and `home=` the PR only while it has no home of its own.
 
@@ -86,10 +86,8 @@ def pr_home(url):
     return f"{m[1]}/{m[2]}#{m[3]}" if m else ""
 
 
-def handoff(prompt):
-    """The hand-off a pickup body starts as: the prompt's first line. At the
-    mint that is the latest prompt, which at a first Stop is the first."""
-    return next((l.strip() for l in (prompt or "").splitlines() if l.strip()), "")
+def first_line(text):
+    return next((l.strip() for l in (text or "").splitlines() if l.strip()), "")
 
 
 def checkpoint_link(ckpt, items):
@@ -125,9 +123,9 @@ def handoff_home(handoff):
 
 
 def homed_item(env, home):
-    """The newest open item homed at <home>, or ''."""
-    rows = [r.split("\t")[0] for r in work_item(env, "by-home", home).splitlines() if r.strip()]
-    return max(rows) if rows else ""
+    """(id, status) of the newest item homed at <home>, in any status, or None."""
+    rows = [r.split("\t")[:2] for r in work_item(env, "by-home", "--all", home).splitlines() if r.strip()]
+    return tuple(max(rows)) if rows else None
 
 
 def stop_lines(path, sid8):
@@ -188,16 +186,18 @@ def step(a):
     if how is None and home:
         homed = homed_item(env, home)
         if homed:
-            work_item(env, "log", homed, "stop")
-            return f"{homed} (homed): stop"
+            hid, status = homed
+            if status in ("done", "closed"):  # one item per PR, never a second
+                return f"{hid} (homed, {status}): unchanged"
+            work_item(env, "log", hid, "stop")
+            return f"{hid} (homed): stop"
     if how is None:
         if not home and not continues(a.handoff):
             return "no item: no PR, and the session states no work continues"
         if not item:
             raise Failed("no session start time, so no id to mint under")
-        text = handoff(a.prompt)
-        brief = brief_for(text, pr, checkpoint_link(a.checkpoint, a.items))
-        first = next((l.strip() for l in text.splitlines() if l.strip()), "")
+        first = first_line(a.handoff) or first_line(a.prompt)
+        brief = brief_for(first, pr, checkpoint_link(a.checkpoint, a.items))
         if len(first) > 72:
             first = first[:71].rstrip() + "…"
         title = f"{a.repo or 'session'}: {first}" if first else f"{a.repo or 'session'} session {sid8}"
