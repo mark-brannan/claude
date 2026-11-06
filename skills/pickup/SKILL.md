@@ -240,11 +240,19 @@ One text, two runners: this section is what a session works a PR to, and it
 is the same text `grind --prs` hands its headless workers. Lift it verbatim;
 do not paraphrase it into a second version that can drift from this one.
 
-1. **Threads first.** Run `~/.claude/bin/pr-blockers <PR>`; its lines are
-   the work list, in its order. Address every unresolved review thread, reply
-   on it, resolve it. Before the checks, always: a session watching CI with an
+1. **Threads first.** Run `~/.claude/bin/pr-blockers --leave-easy <PR>`; its
+   lines are the work list, in its order. Address every unresolved review
+   thread, reply on it, resolve it; a `fixer's:` line is the CI fixer's, left
+   to it under the PR-ownership rules in `rules/code.md`. Before the checks, always: a session watching CI with an
    unanswered comment on the PR is spending the only resource that matters on
    the lowest-priority thing there is.
+   Each round first reads the maxims-check and arete-check summaries that
+   github-actions[bot] posts on the PR, and the full reports they link in
+   the state repo when those are readable, as inputs to the revision before
+   any code changes: a KISS break suggests `/simplify` on the item, a DRY
+   break suggests lifting the repeated literals, and arete's recommendation
+   can mean the PR body or the change's justification needs rework, not a
+   line fix.
 
 2. **Base second.** Only a conflict needs a hand. A branch that is merely
    behind its base is left as is: the queue brings it up to date when it
