@@ -16,13 +16,14 @@ sys.dont_write_bytecode = True
 HOOK = Path(__file__).resolve().parent / "pr-blockers-prompt.py"
 
 STUB = """#!/bin/sh
-case "$1" in
+[ "$1" = --leave-easy ] || { echo "called without --leave-easy" >&2; exit 2; }
+case "$2" in
   o/r#1) echo 'unresolved review thread at a.md:3 by claude: "x"; fix: answer or act on it, then resolve the thread'
          echo 'merge conflict with main; fix: merge'; exit 1 ;;
   o/r#2) exit 0 ;;
   o/r#3) echo 'pr-blockers: gh pr view: not found' >&2; exit 2 ;;
   o/r#4) echo 'pr-blockers: o/r#4 is merged' >&2; exit 3 ;;
-  *) echo "called $1" >> "$(dirname "$0")/calls"; exit 0 ;;
+  *) echo "called $2" >>"$(dirname "$0")/calls"; exit 0 ;;
 esac
 """
 

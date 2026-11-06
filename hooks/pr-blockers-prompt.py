@@ -58,13 +58,14 @@ def run(ref, exe):
     if not exe:
         return ref, "unread", ["pr-blockers not found beside this hook or in ~/.claude/bin"]
     try:
-        p = subprocess.run([exe, ref], capture_output=True, text=True, timeout=TIMEOUT_S)
+        # --leave-easy: a running CI fixer's [easy] threads are not the session's (rules/code.md, PR ownership)
+        p = subprocess.run([exe, "--leave-easy", ref], capture_output=True, text=True, timeout=TIMEOUT_S)
     except subprocess.TimeoutExpired:
         return ref, "unread", [f"pr-blockers timed out after {TIMEOUT_S}s"]
     lines = [x for x in p.stdout.splitlines() if x.strip()]
     if p.returncode == 0 and not lines:
         return ref, "clear", []
-    if p.returncode == 1 and lines:
+    if p.returncode in (0, 1) and lines:  # 0 with lines: only the fixer's
         return ref, "blocked", lines
     tail = (p.stderr.strip().splitlines() or [f"exit {p.returncode}"])[-1].removeprefix("pr-blockers: ")
     if p.returncode == 3:  # an issue, a merged or a closed PR: named, never worked

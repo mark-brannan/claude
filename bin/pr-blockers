@@ -70,6 +70,11 @@ FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STAR
 PENDING = {"PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"}
 
 
+def is_pending(r):
+    """A check run (status) or a commit status (state) still queued or running."""
+    return r.get("status") not in (None, "COMPLETED") or (r.get("conclusion") or r.get("state") or "") in PENDING
+
+
 COMMITS = """query($owner:String!,$name:String!,$n:Int!,$endCursor:String){
   repository(owner:$owner,name:$name){pullRequest(number:$n){
     commits(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
@@ -162,8 +167,7 @@ def fixer_pending(checks):
     """The name of a fixer check still queued or running, else None."""
     for r in checks or []:
         name = r.get("name") or ""
-        if (name == "fixer" or name.endswith("/ fixer")) and (
-                r.get("status") not in (None, "COMPLETED") or (r.get("conclusion") or "") in PENDING):
+        if (name == "fixer" or name.endswith("/ fixer")) and is_pending(r):
             return name
     return None
 
@@ -290,7 +294,7 @@ def blockers(owner, repo, n, leave_easy=False):
     for r in pr.get("statusCheckRollup") or []:
         name = r.get("name") or r.get("context") or "?"
         done = r.get("conclusion") or r.get("state") or ""
-        if r.get("status") not in (None, "COMPLETED") or done in PENDING:
+        if is_pending(r):
             out.append(f"check pending: {name}; fix: wait for it, or read why it hangs")
         elif done in FAILED:
             out.append(f"check failing: {name} ({done.lower()}); fix: read its log and repair the cause")
