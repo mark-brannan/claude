@@ -496,10 +496,10 @@ def fetch_ci_reviews(cx, sd):
                         with zipfile.ZipFile(io.BytesIO(z)) as zf:
                             info = zf.getinfo("headless-run.jsonl")
                             text = zf.open(info).read(1 << 20).decode("utf-8", "replace")
-                        size = info.file_size
-                        for kind in ("maxims", "arete"):  # text from the run: kept as bytes, never parsed
-                            if f".claude-{kind}.md" in zf.namelist():
-                                reports[kind] = zf.open(f".claude-{kind}.md").read(1 << 20)
+                            size = info.file_size
+                            for kind in ("maxims", "arete"):  # text from the run: kept as bytes, never parsed
+                                if f".claude-{kind}.md" in zf.namelist():
+                                    reports[kind] = zf.open(f".claude-{kind}.md").read(1 << 20)
                     except (OSError, subprocess.CalledProcessError, LookupError, zipfile.BadZipFile):
                         continue
                 stamp = {"repo": repo, "run": rid, "artifact": art["id"], "head_sha": run.get("head_sha"),
