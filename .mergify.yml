@@ -1,12 +1,8 @@
 extends: .github
 
-# The shared `default` queue rule, restated here only to carry the PR body
-# into the squash commit, so a "## Method of evaluation:" section (the
-# substantive-check skill's declaration) lands in the PR body and in the
-# merge commit both. A same-named local rule replaces the shared one whole,
-# so every other key is a copy of mark-brannan/.github's .mergify.yml and
-# changes with it. Mergify's per-section template is gone; the whole body is
-# the narrowest copy it offers.
+# Restates mark-brannan/.github's `default` queue rule, which a same-named
+# local rule replaces whole, so the PR body becomes the squash commit body.
+# Every key but commit_message_format is a copy; keep it matching the shared file.
 queue_rules:
   - name: default
     merge_method: squash

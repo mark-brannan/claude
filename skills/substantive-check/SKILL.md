@@ -75,8 +75,11 @@ follow, whatever it says.
 
 3. **Find each file's declaration.** For criterion 8 it is the line for
    that file under the PR body's `## Method of evaluation:` section.
-   Quote it. Missing is `no`. A file target, with no PR, reads
-   `no PR` and the asked block is for the PR that will carry it.
+   Quote it. Missing is `no`. For a file target, look first in the
+   message of the last commit that touched it (`git log -1 --format=%B
+   -- <file>`), since the merge commit carries the PR body, and quote
+   the commit when the section is there; with none there either it
+   reads `no PR`, and the asked block is for the PR that will carry it.
 
 4. **Return the table** in the format below, and nothing else.
 
@@ -117,10 +120,11 @@ Not looked at: the CI history; callers outside this repo.
 ```
 
 A row per change found; a file with none gets no row unless a detector
-looked at it on purpose, then `nothing found` and how it looked. With
-no change found anywhere, one row reads `nothing found` with the files
-looked at. `how` is one of `git` (old line beside new), `grep`, `gh` or
-`read` (judgment on reading). The asked block lists only the files with
+looked at it on purpose, then `nothing found` and how it looked, or
+`mu:` and its reason in "what moves" with `how` blank. With no change
+found anywhere, one row reads `nothing found` with the files looked at.
+`how` is one of `git` (old line beside new), `grep`, `gh` or `read`
+(judgment on reading), or blank on a `mu` row. The asked block lists only the files with
 no declaration; with none missing it reads `Asked: none`. The
 not-screened line names every criterion with no file in `checks/`; the
 not-looked-at line names what the read-set left out, or `none`. No other
