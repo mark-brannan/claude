@@ -2,8 +2,9 @@
 """SessionStart: shout if too many MCP connectors are enabled.
 
 Connectors are the one line of the token floor that can grow without limit and
-without being noticed. Deferred, a server costs only its tool names; where
-deferral is off its schemas load in full, tens of thousands of tokens. Measured
+without being noticed. Deferred, a server costs only its tool names; below
+tool search's threshold, or with it off, its schemas load in full, up to tens
+of thousands of tokens. Measured
 floor breakdown and the reasoning: .claude/docs/token-budget.md
 
 Counts the distinct server names in ~/.claude.json (global, and the ones
@@ -80,10 +81,11 @@ def main():
         f"Enabled: {', '.join(enabled)}\n"
         "\n"
         "Tell the user this in your FIRST reply, before anything they asked for.\n"
-        "Deferred, each of these costs only its tool names; where deferral is\n"
-        "off (ENABLE_TOOL_SEARCH=false) every one loads its full schemas, tens of\n"
-        "thousands of tokens. Offer to disable the ones this task does not need\n"
-        "(`deniedMcpServers` in settings.json), then continue.\n"
+        "Deferred, each of these costs only its tool names; deferral starts only\n"
+        "once their schemas together pass ENABLE_TOOL_SEARCH's threshold (auto:\n"
+        "10% of context), and with it off every one loads in full. Offer to\n"
+        "disable the ones this task does not need (`deniedMcpServers` in\n"
+        "settings.json), then continue.\n"
     )
     hookio.emit(hookio.context("SessionStart", text))
 

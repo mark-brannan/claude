@@ -44,10 +44,11 @@ returns a paragraph. A 60-line directory dump should have been one.
 
 **4. Read less per call.** Codified in CLAUDE.md under "Execution".
 
-**5. Connectors: deferred everywhere in Claude Code, so idle ones are cheap.**
-MCP tools arrive *deferred* — names only, no schemas until one is requested
-— in local sessions as well as remote ones. Measured 2026-11-06, `claude`
-2.1.300, local, one headless turn over a 49,406-token floor:
+**5. Connectors: deferred above a threshold, so idle ones are cheap.** Tool
+search (`ENABLE_TOOL_SEARCH`, default `auto`) defers MCP tools — names only, no
+schemas until one is requested — local or remote, once their schemas together
+pass 10% of the context window; under that they load in full. Measured
+2026-11-06, `claude` 2.1.300, local, one headless turn over a 49,406-token floor:
 
 | server | deferred | loaded in full (`ENABLE_TOOL_SEARCH=false`) |
 |---|---|---|
@@ -55,8 +56,11 @@ MCP tools arrive *deferred* — names only, no schemas until one is requested
 | github-pat | +1,358 | +42,541 |
 
 The cost that remains is the right-hand column, paid wherever deferral is
-off or unsupported, and claude.ai chat may still be such a place. Count
-connectors there, not here. `.claude/hooks/connector-budget.py` still warns above 5.
+off or unsupported, and claude.ai chat may still be such a place. Here, a set
+of servers whose schemas total under the threshold loads in full too, up to
+about 10% of context; that is what `.claude/hooks/connector-budget.py`'s
+warning above 5 still guards, since the hook cannot see which side of the
+threshold a session lands on.
 
 ### Dead end, tested and rejected
 
