@@ -683,10 +683,15 @@ class MetricsLiveTest(unittest.TestCase):
         w.sitting(sid, 40, 10)
         w.t("below the first sitting rung, nothing reaches the model", "", P())
         w.clock(61, 10)
+        w.t("up to the hot rung the clock only reads: nothing reaches the model", "", P())
+        w.t("and the Stop hand-off stays unarmed below its own threshold", "false", json.dumps(w.nag_field(sid, "since_nag")))
+        w.clock(91, 10)
         out6f = P()
-        w.has("the first sitting crossing is the time, the pickup and a pointer",
-              r'^Sitting 1h01 at this machine, past 1h00\. Write the single next step .*pickup item.*without '
-              r'showing it\. Standing orders: "At a sitting rung"\.$', out6f)
+        w.has("past the hot rung the stop is shaped: a landing, the pickup and a pointer",
+              r'^Sitting 1h31 at this machine, past 1h30\. Shape a good stop: reduce the stack .*pickup item.*'
+              r'without showing it, and end the turn where leaving is easy\. Standing orders: "At a sitting rung"\.$',
+              out6f)
+        w.t("and the hot rung does not arm the Stop hand-off: it has its own 2h00 threshold", "false", json.dumps(w.nag_field(sid, "since_nag")))
         w.has("and names the pickup item by this session's short id", rf"pickup/\*-{sid[:8]}\.md", out6f)
         # The pointer is only as good as its target.
         anchor = re.search(r'Standing orders: "([^"]*)"', out6f).group(1)
@@ -696,14 +701,14 @@ class MetricsLiveTest(unittest.TestCase):
         w.clock(121, 10)
         out6g = P()
         w.has("a later sitting crossing shapes the stop again at the new rung",
-              r"Sitting 2h01 at this machine, past 2h00\. Write the single next step", out6g)
+              r"Sitting 2h01 at this machine, past 2h00\. Shape a good stop", out6g)
         w.hasnt('with no "last offered" repeat line', "last offered", out6g)
         w.clock(125, 10)
         w.t("and the next prompt inside the same rung says nothing", "", P())
         w.clock(5, 2)
         w.t("a sitting-clock restart resets the model side too", "", P())
-        w.clock(61, 10)
-        w.has("so the next real crossing shapes a stop again", r"past 1h00\. Write the single", P())
+        w.clock(91, 10)
+        w.has("so the next real crossing shapes a stop again", r"past 1h30\. Shape a good stop", P())
 
         # --- 6b2. with work in flight: land it; the rung stays unspent.
         wt = S / "inflight"
@@ -715,21 +720,21 @@ class MetricsLiveTest(unittest.TestCase):
         def F():
             return w.ctx(w.hook(w.payload(tp2, "sitflight", wt), "prompt"))
 
-        w.sitting("sitflight", 61, 10)
+        w.sitting("sitflight", 91, 10)
         out6j = F()
         w.has("with work in flight the rung is held until it lands",
               r"with work in flight .*land this first, without asking.*comes back once it lands\. Standing orders",
               out6j)
-        w.hasnt("and does not point at the stop yet", r"past 1h00\. Write the single", out6j)
+        w.hasnt("and does not point at the stop yet", r"past 1h30\. Shape a good stop", out6j)
         w.clock(121, 10)
         out6k = F()
         w.has("two hours in flight still holds the rung", "comes back once it lands", out6k)
-        w.hasnt("and still does not point at the stop", r"past 2h00\. Write the single", out6k)
+        w.hasnt("and still does not point at the stop", r"past 2h00\. Shape a good stop", out6k)
         w.clock(125, 10)
         w.t("the in-flight line does not repeat inside its rung", "", F())
         w.git(wt, "commit", "-q", "--allow-empty", "-m", "init")
         (wt / "dirty.txt").unlink()
-        w.has("and once the work lands the unspent shaping fires", r"past 2h00\. Write the single", F())
+        w.has("and once the work lands the unspent shaping fires", r"past 2h00\. Shape a good stop", F())
         return self.done(w)
 
     # --- 6b3. the sitting line's tail: clock first, list second ------------------
@@ -809,7 +814,7 @@ class MetricsLiveTest(unittest.TestCase):
         w.update(w.sitf, quiet_until=1)
         o = say("stay1", "go on")
         w.has("after the quiet the rung it covered is said", "^⏱ 2h01", w.msg(o))
-        w.has("and the stop is shaped then", r"past 2h00\. Write the single", w.ctx(o))
+        w.has("and the stop is shaped then", r"past 2h00\. Shape a good stop", w.ctx(o))
 
         w.sitting("stay2", 10, 2)
         w.has("bare stay quiets for the default 30", "staying 30, quiet until 40m$", w.msg(say("stay2", "stay")))
@@ -875,7 +880,7 @@ class MetricsLiveTest(unittest.TestCase):
         o = BP("bed1", "go on")
         w.has("inside the warning window the minutes left are on screen", "^4 min to [0-9][0-9]:[0-9][0-9]$", w.msg(o))
         w.has("and the model gets the sitting rung's shaping instruction",
-              r"Bedtime [0-9:]+ is 4 minutes away\. Write the single next step.*Standing orders", w.ctx(o))
+              r"Bedtime [0-9:]+ is 4 minutes away\. Shape a good stop.*Standing orders", w.ctx(o))
         w.hasnt("which never asks", r"\?", w.ctx(o))
         o = BP("bed1", "go on")
         w.t("the warning is said once", "", w.msg(o) + w.ctx(o))
@@ -885,7 +890,7 @@ class MetricsLiveTest(unittest.TestCase):
         o = BP("bed1", "go on")
         w.has("past the hour: the time now, and the time named", "^ok, it's [0-9:]+, you said [0-9:]+$", w.msg(o))
         w.has("the model says it once and shapes the stop",
-              r"^It's [0-9:]+; the user said bed at [0-9:]+\. Say that once\. Write the single next step.*Standing orders",
+              r"^It's [0-9:]+; the user said bed at [0-9:]+\. Say that once\. Shape a good stop.*Standing orders",
               w.ctx(o))
         o = BP("bed1", "go on")
         w.t("then silence", "", w.msg(o) + w.ctx(o))
@@ -1073,9 +1078,10 @@ class MetricsLiveTest(unittest.TestCase):
         w.write(w.sitf, {"sitting_start": s, "last_prompt": s})
         o11b = T("calm2", **day)
         w.has("2h30 earns five faces on the time ladder", "(?m)^⏱️🫩😩😫😵‍💫$", o11b)
+        w.has("past the hot rung the clock turns ⏰", "(?m)⏰2h30 🧘🌌😵‍💫💀$", o11b)
         o11c = T("calm3", METRICS_SIT_HOT_RUNG="9", **day)
-        w.t("METRICS_SIT_HOT_RUNG leaves the block alone", o11b, o11c)
-        w.has("fatigue rung 5 shows its face and 💀", "(?m)⏱2h30 🧘🌌😵‍💫💀$", o11b)
+        w.has("and up to it the clock stays ⏱, faces unchanged", "(?m)⏱2h30 🧘🌌😵‍💫💀$", o11c)
+        w.t("METRICS_SIT_HOT_RUNG moves only the clock glyph", o11b.replace("⏰", "⏱"), o11c)
         o11d = T("calm4", METRICS_SIT_HOT_RUNG="9", **day)
         w.hasnt("the old reason tail is gone", " — ", o11d)
         o11n = T("calm5", METRICS_STOP_HOUR="0", METRICS_NIGHT_END_HOUR="24", METRICS_SIT_HOT_RUNG="9")
@@ -1083,6 +1089,12 @@ class MetricsLiveTest(unittest.TestCase):
         s = int(time.time()) - 170 * 60
         w.write(w.sitf, {"sitting_start": s, "last_prompt": s})
         w.has("165 min earns the sixth face", "(?m)^⏱️🫩😩😫😵‍💫😵$", T("calm6", **day))
+        w.sitting("calm7", 226, 5)
+        w.has("a hot rung past the ladder grows it by sit_every_min", r"past 3h45\. Shape a good stop",
+              w.ctx(w.hook(w.payload(tp11, "calm7", S, "UserPromptSubmit", "go"), "prompt",
+                           env={"METRICS_SIT_HOT_RUNG": "6", **day})))
+        w.has("and the clock glyph turns on that same rung", r"⏰3h46",
+              T("calm7", METRICS_SIT_HOT_RUNG="6", **day))
         return self.done(w)
 
     # --- 12. PostToolUse drives the engine and may carry an injection ------------
