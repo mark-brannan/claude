@@ -21,12 +21,98 @@ lines *per event*: "more lines, not fewer... do not coalesce, dedupe or fire
 at the right time", so a jump across four rungs printed four lines. See [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137):
 that was never the ask. The user was pushing back on repeated attempts to make the
 readout appear **less often**. Frequency, not line count. A four-rung jump
-renders one block with four ⛁ in it.
+renders one block with four 💸 in it.
 
 ```
-⛁⛁⛁⛁ 46k/155k ⚖(x1) 🔧⛔(x2) ⏱1h33⏱️⏱️⏱️⏱️ — 💸
+💸😫🌌🧘⛔ $  2.39 ⛁  46k/155k ⏱1h33 🧘🌌😫💀
+⏱️🫩😩😫
+💸💸💸💸 ⛔⛔(x2)
 ⇢ 1 ⚙ 59
 ```
+
+## The block's shape
+
+**Four lines, each with one job.** Line 1 is the steady one: five state
+slots, the numbers, and a tail saying how the user is likely to feel. Line 2
+is the time ladder. Line 3 is the glyph runs, the messy part that grows as
+things get worse. Line 4 is turns and git. Lines 2 and 3 appear only once
+they have something on them; lines 1 and 4 are always there.
+
+```
+day, 10 min, nothing crossed
+🪙⏳🌌🧘✅ $  0.42 ⛁   3k/ 12k ⏱0h10 🧘🌌⏳
+⇢ 1 ⚙ 4
+
+night, 40 min, nothing else crossed
+🪙🌙🌌🧘✅ $  0.81 ⛁   9k/ 30k ⏱0h40 🧘🌌🌙
+🌙
+⇢ 2 ⚙ 12
+
+day, 35 min, 4 decisions, friction at rung 2
+🪙⏱️⚡🤔✅ $  0.95 ⛁  12k/ 40k ⏱0h35 🤔🙄⏱️
+⏱️
+⚡⚡(x2) 🤔⚖⚖⚖(x4)
+⇢ 2 ⚙ 14
+
+day, 50 min, friction at rung 3
+🪙🫩⚡🧘✅ $  1.10 ⛁  20k/ 60k ⏱0h50 🧘😠😩🥀
+⏱️🫩
+⚡⚡⚡(x3)
+⇢ 2 ⚙ 20
+
+night, 3h05, everything maxed
+💸😵⚡🤔⛔ $123.00 ⛁ 650k/850k ⏱3h05 🤔🤬😵💀
+🌙🫩😩😫😵‍💫😵
+💸💸💸💸💸(x9) ⚡⚡⚡⚡⚡(x9) 🤔⚖⚖⚖⚖⚖(x12) ⛔(x4)
+⇢ 103 ⚙ 1310 ⎇ 12c14~3↑unpushed  ← not safe to kill
+```
+
+**The front is five slots, each good or bad.** A slot keeps its place and
+shows its calm glyph until its field crosses a rung, then its bad one.
+
+| slot | good | bad |
+|---|---|---|
+| context | 🪙 | 💸 |
+| time | ⏳ | the time ladder's latest face: ⏱️ or 🌙, 🫩, 😩, 😫, 😵‍💫, 😵 |
+| friction | 🌌 | ⚡ |
+| decisions | 🧘 | 🤔 |
+| blocked | ✅ | ⛔ |
+
+**The numbers keep a constant width.** Dollars, then
+`output_tokens/context_peak`, then the clock, padded with figure spaces
+(U+2007, one digit wide) so line 1 is the same width in every case up to
+the tail's fourth glyph. The clock is always `H"h"MM`. Past `$999.99` or
+`999k` a figure turns compact (`1.2k`, `1.2M`) at the same width.
+
+**The tail is how the user is likely to feel:** cognitive load, friction,
+fatigue, and a fourth glyph once things are bad. It is the most important
+thing on the screen, so it repeats the front with more grades.
+
+| tail slot | good | progression |
+|---|---|---|
+| cognitive load | 🧘 | 🤔 once decisions reach 3, and it stops there |
+| friction | 🌌 | ⚡ 🙄 😠 😡 🤬, one per friction rung |
+| fatigue | ⏳ | ⏱️ or 🌙, 🫩, 😩, 😫, 😵‍💫, 😵, at the higher of the time and friction rungs |
+| fourth | absent | 🥀 at rung 3 of friction or fatigue, 💀 at rung 4 and above |
+
+Cognitive load tops out at 🤔 and never earns a face or a skull: a session
+heavy with decisions is expected and fine. Paired with friction or fatigue,
+it is the mirror the tail exists for. Fatigue can show 😩 in daylight,
+because friction alone can drive it.
+
+**The time ladder leads with the hour.** Its first rung is ⏱️ by day and
+🌙 by night, a soft limit after ⏳; the faces follow, one per rung, and the
+line keeps every face it has earned. The front's time slot shows the latest.
+
+```
+⏱️🫩😩😫
+🌙🫩😩😫😵‍💫😵
+```
+
+**The runs follow the front's slot order:** 💸 context, ⚡ friction, ⚖
+decisions, ⛔ blocked. Time is not here; it has line 2. Decisions lead with
+🤔 once they reach 3. A counted field carries its count, `⚡⚡(x2)`; context
+carries one only at overflow.
 
 **A rung value is never a number on screen.** The block's only `a/b` is
 `output_tokens/context_peak`; a rung reaches the reader as glyph repetitions
@@ -37,36 +123,30 @@ shape, one line away, meaning something different.
 included, from the live cache's `cost_usd`; a cache without it shows no dollars.
 
 ```
-⛁⛁ 46k/155k ⚖⚖(x2) 🌌(x0) 🔧✅(x0) ⏱1h33⏱️⏱️⏱️⏱️ — 💸
-$2.39 ⇢ 3 ⚙ 31 ⎇ 2c1~3↑unpushed  ← not safe to kill
+💸😫🌌🧘✅ $  2.39 ⛁  46k/155k ⏱1h33 🧘🌌😫💀
+⏱️🫩😩😫
+💸💸💸💸 ⚖⚖(x2)
+⇢ 3 ⚙ 31 ⎇ 2c1~3↑unpushed  ← not safe to kill
 ```
 
 **A counted field never vanishes; zero is a state with a glyph.** 🧘
-decisions, 🌌 friction, ✅ blocked — the field keeps its slot and its `(x0)`,
-so "nothing happened" and "this is not measured" never look the same. See [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137).
+decisions, 🌌 friction, ✅ blocked hold their front slots when nothing has
+happened, so "nothing happened" and "this is not measured" never look the
+same. See [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137).
 Each calm glyph names its own field, so it carries no family prefix.
-
-**The sitting cluster gets louder past its hot rung.** ⏱️ or 🌙 for the
-first rungs, ⏰ beyond `METRICS_SIT_HOT_RUNG` — night or day, so a long
-evening still reads as an evening.
-
-```
-⏱2h30⏱️⏱️⏱️⏰⏰
-⏱2h30🌙🌙🌙⏰⏰
-```
 
 **The persistent block appears on every displayed event,** with no counter
 or throttle. It always has its status line and its turns line. The turns
 line never disappears on a clean tree; git state is appended only when
 there is some.
 
-**The verdict tail only appears when something is wrong.** No "still room"
-filler, no replacement wording — the whole `— …` tail is absent when nothing
-proposes stopping. See
+**Nothing is wrong reads as calm glyphs, never words.** No "still room"
+filler: a session with nothing to report shows the five good slots, the
+calm tail, and lines 1 and 4 only. See
 [dotfiles#137](https://github.com/mark-brannan/dotfiles/issues/137).
 
 ```
-» 20/41k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m
+🪙⏳🌌🧘✅ $  0.12 ⛁  20k/ 41k ⏱0h05 🧘🌌⏳
 ⇢ 3 ⚙ 0 ⎇ 1~
 ```
 
@@ -76,7 +156,7 @@ at the top rather than going quiet; the overflow count is the settled
 shape for that.
 
 ```
-⛁⛁⛁⛁⛁(x9) 10/350k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸
+💸💸💸💸💸(x9)
 ```
 
 **Bias toward more information.** Adding a number or a line never needs a
@@ -90,7 +170,7 @@ measured output. Until then, more.
 The ratio shown is two real, measured numbers from the session:
 `output_tokens` on top, `context_peak` on bottom.
 
-Rung crossings drive only the leading glyph, never the numbers.
+Rung crossings drive glyphs only, never the numbers.
 
 No rung value, no ladder value, no window-size lookup, and no separate
 output-tokens badge — settled after repeated attempts on
@@ -98,7 +178,8 @@ output-tokens badge — settled after repeated attempts on
 re-propose them.
 
 ```
-⛁⛁⛁⛁ 20/152k 🧘(x0) 🌌(x0) 🔧✅(x0) ⏱0m — 💸
+💸⏳🌌🧘✅ $  1.28 ⛁  20/152k ⏱0h00 🧘🌌⏳
+💸💸💸💸
 ```
 
 ## Stop output
