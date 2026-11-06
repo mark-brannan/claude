@@ -688,3 +688,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t210653z
 - one PR-body section '## Substantive:' for all criteria; criterion 8 rows keep 50.59(a)(2)'s three values Undo: split the heading per criterion ([#416](https://github.com/mark-brannan/claude/pull/416))
+
+### 20261106t210657z
+- Sonnet runs the substantive check in CI: where it errs it errs strict, which sends the change up a tier Undo: a model input on the review workflow ([#416](https://github.com/mark-brannan/claude/pull/416))
