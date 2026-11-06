@@ -19,7 +19,6 @@ rows read that printed line back from the transcript. Stdlib only.
 """
 import collections
 import datetime
-import importlib.util
 import json
 import os
 import re
@@ -29,6 +28,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import claude_costing  # noqa: E402
 import gitrun  # noqa: E402
 import jsonl  # noqa: E402
 import lock  # noqa: E402
@@ -110,15 +110,6 @@ def chosen(evs):
                 m = CHOSEN.search(text_of(b.get("content")))
                 found = (m[1], m[2]) if m else found
     return dict(zip(("coder_model", "reviewer_model"), found))
-
-
-def spend_gate():
-    """hooks/spend-gate.py, the one home of the price table and the usage reader."""
-    path = os.path.join(os.path.dirname(HERE), "hooks", "spend-gate.py")
-    spec = importlib.util.spec_from_file_location("spend_gate", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def events(path):
@@ -237,11 +228,10 @@ def subagents(transcript, spawned):
 
 def measure(main, subs):
     """The row's cost and shape fields, from the review's own events and its sub-agents'."""
-    sg = spend_gate()
     msgs, calls = {}, set()
     for evs in [main] + [s for _, s in subs]:
         for e in evs:
-            sg.add_usage(e, msgs)
+            claude_costing.add_usage(e, msgs)
         calls |= tool_ids(evs)
     times = [t for t in (stamp(e.get("timestamp")) for e in main) if t]
     asst = [e for e in main if e.get("type") == "assistant"]
@@ -250,7 +240,7 @@ def measure(main, subs):
            "effort": most_common(e.get("effort") for e in asst)}
     for k in USAGE:
         row[k] = sum(u[k] for u in msgs.values())
-    row.update({"usd": round(sg.price(msgs), 4), "turns": len(msgs), "tool_calls": len(calls),
+    row.update({"usd": round(claude_costing.price(msgs), 4), "turns": len(msgs), "tool_calls": len(calls),
                 "subagents": len(subs),
                 "wall_s": round((max(times) - min(times)).total_seconds()) if times else None})
     return row

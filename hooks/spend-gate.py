@@ -50,120 +50,20 @@ Two failures, two answers; neither locks the hand-off out:
     than running to its hard cap (3x the soft cap) unwatched, the claude#59
     shape this gate exists to end. With no line set, the wrapper allows.
 """
-import glob
 import json
 import os
 import sys
 
-# Dollars per 1M tokens, by model name substring; unrecognised names price as
-# Sonnet. The same base prices as bin/grind's model_price_in/model_price_out
-# (its live heartbeat estimate) -- change both together. Cache reads are 0.1x
-# input; cache writes 1.25x for the 5-minute cache and 2x for the 1-hour one,
-# which is what Claude Code writes by default: the claude#69 test run's
-# total_cost_usd ($0.41907) reproduces to the cent at these figures.
-PRICES = (
-    ("opus", 5.00, 25.00),
-    ("fable", 10.00, 50.00),
-    ("mythos", 10.00, 50.00),
-    ("haiku", 1.00, 5.00),
-)
-SONNET = (2.00, 10.00)
-FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
-          "cache_creation_input_tokens", "cache_5m", "cache_1h")
-
-
-def price_of(model):
-    for key, pin, pout in PRICES:
-        if key in (model or ""):
-            return pin, pout
-    return SONNET
-
-
-def read_usage(path, msgs):
-    """Fold one transcript's assistant usage into msgs, keyed by message id.
-
-    Raises OSError if the transcript cannot be read."""
-    with open(path, "rb") as f:
-        for line in f:
-            # Cheap prefilter: most lines are tool results and user turns.
-            if b'"assistant"' not in line or b'"usage"' not in line:
-                continue
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            add_usage(e, msgs)
-
-
-def add_usage(e, msgs):
-    """Fold one transcript event's assistant usage into msgs, keyed by message id."""
-    if not isinstance(e, dict) or e.get("type") != "assistant":
-        return
-    m = e.get("message") or {}
-    u = m.get("usage") or {}
-    mid = m.get("id") or e.get("uuid")
-    cur = msgs.get(mid)
-    if cur is None:
-        cur = msgs[mid] = dict.fromkeys(FIELDS, 0)
-        cur["model"] = m.get("model") or ""
-    split = u.get("cache_creation") or {}
-    vals = {
-        "input_tokens": u.get("input_tokens"),
-        "output_tokens": u.get("output_tokens"),
-        "cache_read_input_tokens": u.get("cache_read_input_tokens"),
-        "cache_creation_input_tokens": u.get("cache_creation_input_tokens"),
-        "cache_5m": split.get("ephemeral_5m_input_tokens"),
-        "cache_1h": split.get("ephemeral_1h_input_tokens"),
-    }
-    for k, v in vals.items():
-        if isinstance(v, (int, float)) and v > cur[k]:
-            cur[k] = v
-
-
-def price(msgs):
-    spend = 0.0
-    for u in msgs.values():
-        pin, pout = price_of(u["model"])
-        write = u["cache_creation_input_tokens"]
-        w1h = min(u["cache_1h"], write)
-        w5m = write - w1h  # unsplit writes price as the 5-minute cache
-        spend += (u["input_tokens"] * pin + u["output_tokens"] * pout
-                  + u["cache_read_input_tokens"] * pin * 0.1
-                  + w5m * pin * 1.25 + w1h * pin * 2.0)
-    return spend / 1e6
-
-
-def session_transcript(path):
-    """<session>/subagents/agent-<id>.jsonl, a subagent's own transcript, names
-    the session's <session>.jsonl when that exists; any other path is itself."""
-    head, sep, _ = path.partition(os.sep + "subagents" + os.sep)
-    if sep and head and os.path.exists(head + ".jsonl"):
-        return head + ".jsonl"
-    return path
-
-
 def measure(path):
-    """(spend in USD, context tokens of the last call) for a session.
-
-    Spend counts the session's subagents too: Claude Code writes each one's
-    transcript to <session>/subagents/agent-<id>.jsonl beside <session>.jsonl.
-    Context is the main transcript's last call only. Raises OSError if the
-    main transcript cannot be read; an unreadable subagent one is skipped."""
-    path = session_transcript(path)
-    msgs = {}
-    read_usage(path, msgs)
-    ctx = 0
-    if msgs:
-        u = next(reversed(msgs.values()))  # insertion order: the last is newest
-        ctx = u["input_tokens"] + u["cache_read_input_tokens"] + u["cache_creation_input_tokens"]
-    base = path[:-len(".jsonl")] if path.endswith(".jsonl") else path
-    for sub in glob.glob(os.path.join(glob.escape(base), "subagents", "**", "*.jsonl"),
-                         recursive=True):
-        try:
-            read_usage(sub, msgs)
-        except OSError:
-            continue
-    return price(msgs), ctx
+    """(spend in USD, context tokens of the last call) for the session, its
+    sub-agents included, priced by lib/claude_costing. Raises OSError if the
+    main transcript cannot be read."""
+    # Imported only once a line is set, so the gate stays inert without lib/;
+    # past a line, a failed import crashes and the settings.json wrapper denies.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import lib_state  # noqa: F401  (puts lib/ on sys.path)
+    import claude_costing
+    return claude_costing.session_spend(path)
 
 
 SEEN = {}  # the hook input once read, so a trace can name its session

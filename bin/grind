@@ -371,6 +371,9 @@ find_beside() {  # find_beside <path relative to the Claude layer's tree>
 }
 audit_bin=$(find_beside bin/pr-label-audit) || audit_bin=""
 state_py=$(find_beside lib/state.py) || state_py=""
+costing=$(find_beside lib/claude_costing/__main__.py) \
+  || { echo "grind: lib/claude_costing not found beside grind or in ~/.claude" >&2; exit 2; }
+costing=${costing%/__main__.py}
 contract_file=$(find_beside skills/pickup/SKILL.md) || contract_file=""
 claim_stamp=$(find_beside hooks/claim-stamp.py) || claim_stamp=""
 blockers_bin=$(command -v pr-blockers 2>/dev/null || find_beside bin/pr-blockers) || blockers_bin=""
@@ -888,32 +891,17 @@ fi
 
 # --- live cost estimate (heartbeat only; the final line uses the exact
 # total_cost_usd from the result event) --------------------------------------
-# List price in USD per 1M tokens, by model alias/name substring. Cache
-# write/read aren't looked up per model here -- they use Anthropic's
-# standard ratios off the base input price (1.25x for a cache write, 0.1x
-# for a cache read). Unrecognized names fall back to Sonnet pricing.
-# hooks/spend-gate.py carries the same base prices in Python -- change both.
-model_price_in() {
-  case "$1" in
-    *opus*) printf '5.00' ;;
-    *fable*|*mythos*) printf '10.00' ;;
-    *haiku*) printf '1.00' ;;
-    *) printf '2.00' ;;
-  esac
-}
-model_price_out() {
-  case "$1" in
-    *opus*) printf '25.00' ;;
-    *fable*|*mythos*) printf '50.00' ;;
-    *haiku*) printf '5.00' ;;
-    *) printf '10.00' ;;
-  esac
-}
+# model_rates <model> -> "input output cache_read" in USD per 1M tokens, from
+# lib/claude_costing, the one price table. Cache writes price at 1.25x input
+# here: the heartbeat's usage does not split them by TTL.
+model_rates() { python3 "$costing" rates "$1"; }
+model_price_out() { model_rates "$1" | cut -d' ' -f2; }
 # estimate_cost <model> <input> <output> <cache_read> <cache_creation>
 estimate_cost() {
-  ip=$(model_price_in "$1"); op=$(model_price_out "$1")
-  awk -v ip="$ip" -v op="$op" -v i="$2" -v o="$3" -v cr="$4" -v cc="$5" \
-    'BEGIN { printf "%.4f", (i*ip + o*op + cr*(ip*0.1) + cc*(ip*1.25)) / 1000000 }'
+  # shellcheck disable=SC2046  # three words; splitting them is the point
+  set -- "$@" $(model_rates "$1")
+  awk -v i="$2" -v o="$3" -v cr="$4" -v cc="$5" -v ip="$6" -v op="$7" -v rp="$8" \
+    'BEGIN { printf "%.4f", (i*ip + o*op + cr*rp + cc*(ip*1.25)) / 1000000 }'
 }
 
 effort_weight() { case $1 in low) echo 0.5 ;; high) echo 2 ;; xhigh) echo 3 ;; max) echo 4 ;; *) echo 1 ;; esac; }
