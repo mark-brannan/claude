@@ -189,12 +189,20 @@ so — with its stamp, and moves on:
 | pen, governs how we work, not code | the standing orders or `rules/code.md` | the user's hand | the user |
 | pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line | an agora or the user's hand | lint deletes the ledger line |
 | pen, private, no work to file | stays | scoping promotes it when it files the work | scoping |
-| refused name or discarded idea | one line in agent-notes Working memory (*refused: …*) | the prune | lint |
-| superseded | the **Superseded** group, then deleted at the prune; git and the roll keep it | the prune | lint |
+| refused name or discarded idea | one line in agent-notes Working memory (*refused: …*), and the line itself to `pruned.md` with its reason | the prune | lint |
+| superseded | the **Superseded** group, then to `pruned.md` with what replaced it | the prune | lint |
 
-One home per fact: a pruned line is moved, never copied, and its public
-destination carries no stamp; the digest's Rulings resolve through the
-ledger line, which stays until the prune and whose link survives in git.
+**The archive.** `pruned.md`, in the curia's folder, is append-only like
+`roll.md`: lint appends each line it prunes from `decided.md` whole, with
+its date and its reason (spec row, decisions line, superseded by,
+refused). Nothing in it is edited or deleted, and no sitting reads it, at
+open or after: it is the record, not what agents load, and no `read-from:`
+points at it. Existing curiae get no backfill.
+
+One home per fact: a pruned line is moved, never copied, so it lives in
+the archive alone. Its public destination carries no stamp and keeps its
+brief *because*; the digest's Rulings resolve through the ledger line,
+which stays until the prune and then through `pruned.md`.
 Beyond the table, one more hop: a decisions log is periodically pruned and
 rewritten as a spec or a requirement. Settled decisions leave every curia;
 nothing accumulates here for its own sake.
@@ -243,8 +251,9 @@ count did not move is a finding for the sitting, never lint's fix.
      a curia sitting of that day, not yet ruled; the user's
      lean, "I think they do", and the extra hop; the curia's
      ledger holds the stamps. The Superseded row joins the trial's
-     Superseded group to the proposal's "deleted"; the agent's
-     reconciliation. Lint marks a line it promotes as its own, so a pen
+     Superseded group to the proposal's prune; the agent's
+     reconciliation. The archive's shape (`pruned.md`, append-only, a
+     reason per line, read by no sitting) is pencil, the agent's default. Lint marks a line it promotes as its own, so a pen
      line the user made stays distinguishable; making the promotion a
      finding instead is the undo. -->
 

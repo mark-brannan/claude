@@ -4,7 +4,7 @@
      line per ruling, landed at once in the sitting: what was ruled, who
      settled it and how firmly (pen / pencil), the date, the reference
      `<id>/roll.md#<stamp>`, and a link to what it produced, if anything.
-     Grouped by topic under bold headings. A queue, not an archive
+     Grouped by topic under bold headings. A queue; the archive is `pruned.md`
      (SKILL.md, The ledger as a queue): lint moves pencil to pen, marked
      as lint's, where the line's link resolves to a merged commit, spec
      row or decisions line, and a pen line leaves for its spec row or
@@ -18,7 +18,9 @@
      line as `ledger-review` reads it:
      - A runaway worker is bounded by context size and by spend — pen, 2026-10-22, [roll.md#20261022t074012z](roll.md#20261022t074012z). embedded: `hooks/spend-gate.py` (2026-10-22). effective when: sessions past the spend cap 4 → 0 by 2026-11-22; effective: pending, review 2026-11-22
      A line a later decision replaces
-     moves under Superseded, prefixed with what replaced it, and is
-     deleted at the next prune; git and the roll keep it. -->
+     moves under Superseded, prefixed with what replaced it, and at the
+     next prune lint appends it to `pruned.md` beside this file, with its
+     reason: append-only, read by no sitting. Every line lint prunes goes
+     there; none is deleted outright. -->
 
 **Superseded**
