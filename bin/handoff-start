@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-# handoff-start -- start the next session from a session-end hand-off on the
-# user's word "start": one background session on this box that runs
-# `/pickup <item-id>`, with Remote Control on, so nothing is pasted. The
-# wrapup skill offers the word beside the paste prompt.
+# handoff-start -- start the next session from a hand-off, in the turn that
+# writes it: one background session on this box that runs
+# `/pickup <item-id>`, with Remote Control on, so nothing is pasted and no
+# second turn is asked for. The handoff skill runs it.
 #
-#   handoff-start [--cwd <dir>] [--wait <seconds>] [--title <words>] <pickup-item-id>
+#   handoff-start [--body <file>|-] [--cwd <dir>] [--wait <seconds>] [--title <words>] [<pickup-item-id>]
 #
-# Refused (exit 1) when the item cannot be read or is not open: a taken item
-# already has its session. The item is taken before the launch, so a second
-# word starts nothing, and reopened if the launch fails.
+# With no item id, this session's own item (CLAUDE_CODE_SESSION_ID). --body
+# writes the hand-off over the item's body first, through `pickup-list
+# handoff`. Refused (exit 1) when the item cannot be found or read, or is not
+# open: a taken item already has its session. The item is taken before the
+# launch, so a second run starts nothing, and reopened if the launch fails.
 #
 # The session runs in the main worktree of the git repo at --cwd (default:
 # here), never in a linked worktree that its own session may be about to
@@ -67,6 +69,18 @@ def item_facts(item):
     return facts
 
 
+def own_item():
+    """This session's pickup item id, from CLAUDE_CODE_SESSION_ID."""
+    sid8 = os.environ.get("CLAUDE_CODE_SESSION_ID", "").replace("-", "")[:8].lower()
+    if not re.fullmatch(r"[0-9a-f]{8}", sid8):
+        die("no item id given and no CLAUDE_CODE_SESSION_ID to find this session's own", 2)
+    r = subprocess.run([PICKUP_LIST, "find", sid8], text=True, capture_output=True)
+    m = re.search(r"\b([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-%s)\b" % sid8, r.stdout)
+    if not m:
+        die("no pickup item for session %s yet: the Stop hook writes it at the end of a turn" % sid8)
+    return m.group(1)
+
+
 def main_worktree(cwd):
     """The main worktree of the repo at <cwd>, or <cwd> outside git."""
     r = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -79,15 +93,25 @@ def main_worktree(cwd):
 
 def main():
     ap = argparse.ArgumentParser(prog="handoff-start")
-    ap.add_argument("item")
+    ap.add_argument("item", nargs="?", default="")
+    ap.add_argument("--body", default="", help="a file, or - for stdin: written over the item's body first")
     ap.add_argument("--cwd", default=os.getcwd())
     ap.add_argument("--wait", type=float, default=45.0)
     ap.add_argument("--title", default="", help="names the session; overrides the body's title: line")
     a = ap.parse_args()
-    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9A-Za-z-]+", a.item):
+    if a.item and not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9A-Za-z-]+", a.item):
         die("not a pickup item id: %r" % a.item, 2)
     if not os.path.isdir(a.cwd):
         die("no such directory: %s" % a.cwd, 2)
+    a.item = a.item or own_item()
+    if a.body:
+        try:
+            body = sys.stdin.read() if a.body == "-" else open(a.body).read()
+        except OSError as e:
+            die("cannot read --body %s: %s" % (a.body, e), 2)
+        w = subprocess.run([PICKUP_LIST, "handoff", a.item], input=body, text=True, capture_output=True)
+        if w.returncode:
+            die("cannot write the hand-off into %s: %s" % (a.item, w.stderr.strip() or "pickup-list failed"))
 
     facts = item_facts(a.item)
     if facts["status"] != "open":

@@ -482,6 +482,13 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(body(ITEM), "pick up the fixture work and finish it", "an untouched body follows the new prompt")
         self.assertEqual(field(ITEM, "status"), "open", "a new prompt reopens the item")
 
+        # A taken hand-off stays taken through the prompt that launched it.
+        Path(ITEM).write_text(f"status: taken\nupdated: x\nsession: {SID}\nmodel: m\nbranch: b\npr: none\n"
+                              "where: w\nprompt: old prompt\n---\nfinish it\nlink: b\n")
+        w.run_hook(SID, WORK, tp=TP2, GH_PRS=PR7)
+        self.assertEqual(field(ITEM, "status"), "taken", "a new prompt does not reopen a taken hand-off")
+        self.assertEqual(body(ITEM), "finish it\nlink: b", "the hand-off body is kept")
+
     # ------------------------------------------------- the session's item
     def session_item(self):
         # Requirements section 14, cases 14.1 to 14.6 and 14.10 to 14.13. stop-item.py decides;

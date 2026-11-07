@@ -287,7 +287,7 @@ one-entry-point curia's bias for not losing the trail).
     is none does it mint one with that home. One item per PR, never a second.
   - **When the session states that work continues**: it mints at the first
     Stop that sees the statement. Today the statement is a hand-off the
-    session wrote over its pickup item's default body (wrapup step 2b),
+    session wrote over its pickup item's default body (the handoff skill),
     the item left open.
   - Neither: no item.
 - A later Stop of the session that writes writes onto the same item,
@@ -404,6 +404,7 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 9.3 | an `until:` header; or none | Stop again | carried; or no `until:` line | test |
 | 9.4 | `status: done`, the prompt unchanged | Stop again | still `done` | test |
 | 9.5 | the hook's own body, a new prompt | Stop again | body is the new prompt, `status: open` | test |
+| 9.7 | `status: taken`, a hand-off body, a new prompt | Stop again | still `taken`, the body kept | test |
 | 9.6 | `pr: none`, nothing ahead, a lookup missed under 10 minutes ago | Stop | no `gh` call | code |
 | 10.1 | a prompt naming `confer <id>`, its digest exists | Stop | one floor block closing `## Where this stands`; text above unchanged | test |
 | 10.2 | 10.1 | Stop again | one block, never two | test |

@@ -253,8 +253,8 @@ call can be a standing order applied correctly.
 Chats are ephemeral; what lives only in the conversation is already lost.
 Hooks handle the mechanics unprompted.
 
-- **On "wrap up", "log it" or a hand-off, invoke `/wrapup`** — where state
-  lands, the narrative log, the hand-off prompt spec.
+- **On a hand-off, invoke `/handoff`:** one turn, and the next session is
+  running. "Wrap up" and "log it", and a curia sitting's close, are `/wrapup`.
 - **Capture ≠ activation.** Off-goal but real → card at discovery; trivial
   → drop; important and urgent → suggest a parallel session or subagent.
   Never a new workstream mid-session yet do not 'card' the 'small stuff'
@@ -360,10 +360,9 @@ Hooks handle the mechanics unprompted.
   a prior decision — **gets a card the moment it's made.** A PR comment
   afterward doesn't substitute.
 - A loop not worth a card is not worth telling me about.
-- **End with a prompt, not a status bullet or observation.** Work remaining
-  → hand-off prompt, with the word `start` beside it, which starts the next
-  session for me; a decision or click-work card → its link. Nothing else
-  in a closing message; `/wrapup` has the spec.
+- **End with the next session running, not a status bullet or
+  observation.** Work remaining → `/handoff` launches it in that turn; a
+  decision or click-work card → its link. Nothing else in a closing message.
 - **The last word is mine.** A closing message opens
   nothing: no new question, doubt, hint or "one more thing" — the log's
   `## For next time` list before the close, or nowhere, never my head. When I
@@ -371,7 +370,7 @@ Hooks handle the mechanics unprompted.
   one line at most. Then stop.
 - **Every hand-off prompt names a recommended model and difficulty (effort)
   setting,** and for a verify step past seconds, its measured cost or a cheap
-  form. Not optional, not only under `/wrapup` — any prompt meant to be
+  form. Not optional, not only under `/handoff` — any prompt meant to be
   pasted into a new session. A hand-off without these is unfinished.
 
 **A finding that reads like a real security or credential exposure never
