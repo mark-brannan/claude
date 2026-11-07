@@ -16,5 +16,5 @@ ExecStart=/bin/sh -c '%h/.claude/bin/metrics-db --github --quiet && %h/.claude/b
 StateDirectory=metrics-dashboard
 StandardOutput=append:%S/metrics-dashboard/timer.log
 StandardError=append:%S/metrics-dashboard/timer.log
-# Measured 55 s from a cold database with --github, 3.5 s warm.
-TimeoutStartSec=2m
+# Measured 3m39s with --github on NucBoxK12, 2026-11-06 (artifact harvest across 17 repos).
+TimeoutStartSec=5m

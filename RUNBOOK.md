@@ -453,7 +453,8 @@ is not in `metrics/dashboard/workflow-verdicts.json`; warm, one call per repo. E
 A timer rebuilds both every four hours, and it is the only thing that harvests the CI
 artifacts before they expire. It is per machine: dotfiles does not install it, and a new or
 rebuilt machine has none until someone runs the two commands below. First check whether
-this machine has it; `0 timers listed` means it does not:
+this machine runs it; `0 timers listed` means it does not. If `link` below then says the
+file exists, skip to `enable --now`:
 
 ```bash
 systemctl --user list-timers metrics-dashboard.timer --no-pager
@@ -475,6 +476,13 @@ path with no error.
 
 ```bash
 tail -3 ~/.local/state/metrics-dashboard/timer.log
+```
+
+Without the timer, harvest by hand well inside every 90 days (3m39s on
+NucBoxK12, 2026-11-06, mostly GitHub calls):
+
+```bash
+~/.claude/bin/metrics-db --github --quiet
 ```
 
 ## Read the pickup items
