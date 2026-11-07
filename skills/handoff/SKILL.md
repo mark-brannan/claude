@@ -14,9 +14,7 @@ session that takes it.
 
 - a curia sitting (`/curia <id>` ran this session), whose meaning belongs
   in a narrative log;
-- the user said "wrap up" or "log it";
-- the work has no home: no PR, no issue, no card, and no branch worth
-  pushing. Give it one first (a card through `/card-write`, or push the
+- the work has no home: no PR, issue, card or pushed branch. Give it one first; then it is a hand-off.
   branch); then it is a hand-off again.
 
 ## Steps, all in one turn
