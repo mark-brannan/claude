@@ -17,7 +17,7 @@ before the first word of work.
 | `.claude/CLAUDE.md` | 4,123 | **yes** |
 | `settings.json` + 10 hooks + SessionStart brief | 318 | yes |
 | skills listing (9 skills) | 79 | yes |
-| MCP | 0 when off | yes |
+| MCP | 0 when off; ~0.4k-1.4k per server once deferred, see rule 5 (2026-11-06) | yes |
 
 Remote/managed session (desktop or web routed through a cloud container):
 **47,796 tokens**. The +11,139 is harness text I do not control — container
@@ -44,10 +44,23 @@ returns a paragraph. A 60-line directory dump should have been one.
 
 **4. Read less per call.** Codified in CLAUDE.md under "Execution".
 
-**5. Connectors: on for remote sessions, off for local ones.** In a managed
-remote session MCP tools arrive *deferred* — ~110 tool names, no schemas
-until one is requested. In a local CLI they load in full. That asymmetry is
-the whole rule. `.claude/hooks/connector-budget.py` warns above 5.
+**5. Connectors: deferred above a threshold, so idle ones are cheap.** Tool
+search (`ENABLE_TOOL_SEARCH`, default `auto`) defers MCP tools — names only, no
+schemas until one is requested — local or remote, once their schemas together
+pass 10% of the context window; under that they load in full. Measured
+2026-11-06, `claude` 2.1.300, local, one headless turn over a 49,406-token floor:
+
+| server | deferred | loaded in full (`ENABLE_TOOL_SEARCH=false`) |
+|---|---|---|
+| colregs (9 tools) | +388 | +67,982 |
+| github-pat | +1,358 | +42,541 |
+
+The cost that remains is the right-hand column, paid wherever deferral is
+off or unsupported, and claude.ai chat may still be such a place. Under `auto`, a set
+of servers whose schemas total under the threshold loads in full too, up to
+about 10% of context. `.claude/hooks/connector-budget.py`'s warning above 5
+still guards both cases, since the hook cannot see whether deferral is on or
+which side of the threshold a session lands on.
 
 ### Dead end, tested and rejected
 
