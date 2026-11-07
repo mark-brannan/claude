@@ -486,7 +486,7 @@ def build(db, out, ndays):
     notes = {
         "open": "Issues and PRs are reconstructed from GitHub timestamps, so the history is complete; board cards start when the item store did.",
         "sessions": f"Daily series cover the last {ndays} days; weekly series the whole record.",
-        "friction": "Friction is the one alarm. Per keyboard hour, so a busier week does not read as a rougher one. Engaged means 60 s or more at the keyboard; a repeat is friction on something already corrected.",
+        "friction": "Per keyboard hour, so a busier week does not read as a rougher one. Engaged means 60 s or more at the keyboard; a repeat is friction on something already corrected.",
         "decisions": "Decisions are measured, not alarmed: no wanted direction is set for them.",
         "typing": "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing. Each transcript is counted on the day its first prompt was typed, so a session that runs past midnight or is resumed later keeps all its prompts on that first day.",
         "input": f"Per-minute counts from ActivityWatch on each host that exports them (input-export); counts and app categories only. A minute is active input at {ACTIVE_KEYS_PER_MIN}+ key presses; present is time ActivityWatch did not call away. A session's minutes are those between its start and end on the host whose home holds its cwd. Days with no data are gaps, never zeros; the coverage tile says how many there were.",

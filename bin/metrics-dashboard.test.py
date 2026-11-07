@@ -142,6 +142,8 @@ class RenderTest(DashboardFixture):
         for label in ("decisions per keyboard hour, 7d", "PRs merged, 7d"):
             small = self.kpi(label)[2]
             if small: self.assertIn('class="flat"', small)
+        self.assertIn('class="flat"', md.delta(3, 1, None))
+        self.assertIn('class="good"', md.delta(3, 1, "up"))
 
     def test_every_tab_label_points_at_a_radio_and_a_panel(self):
         for t in re.findall(r'<label for="tab-(\w+)">', self.page):
