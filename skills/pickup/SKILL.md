@@ -306,8 +306,8 @@ do not paraphrase it into a second version that can drift from this one.
 The other half, for a session that is *leaving* work: the Stop hook already
 wrote **your own** pickup item — `state/global/pickup/<start>-<sid8>.md`,
 body defaulted to the last prompt line — and it keeps any edit you make to
-the body, forever. Edit it at `/wrapup` step 2b (every wrap-up that hands
-anything off), when the Stop nag blocks once, or when the user says "update
+the body, forever. `/handoff` writes it (and `/wrapup` step 2b), as does a
+session when the Stop nag blocks once, or when the user says "update
 the hand-off". The nag is a backstop, not the trigger: it arms on a
 context, clock or friction crossing, and a session that ends cleanly never
 sees it. Replace everything below the `---` with four lines, house hand-off
@@ -333,6 +333,6 @@ half done". No state adjectives: the link carries state, live, at the other
 end.
 
 This is not a wrap-up. The hand-off costs four lines; `/wrapup` costs a
-log, a sweep and a prompt, and is for a session holding something no issue,
-PR or card carries. If the checkpoint's verdict line says `archivable`, the
-four lines are usually all that is wanted, and often not even that.
+log and is for a curia sitting or a session the user asks to log. If the
+checkpoint's verdict line says `archivable`, the four lines are usually all
+that is wanted, and often not even that.

@@ -1,6 +1,6 @@
 ---
 name: wrapup
-description: Close a session — write the narrative log to the state repo, list the issues the session opened or labelled, and end with a paste-ready hand-off prompt. Use when the user says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
+description: Close a curia sitting, or a session the user asks to log — write the narrative log to the state repo, list the issues the session opened or labelled, and launch the next session. Use when the user says "wrap up" or "log it", or at the end of a curia sitting. A plain hand-off is /handoff, not this.
 ---
 
 # Wrapping up
@@ -34,7 +34,7 @@ Read the verdict line at the top of this session's auto-checkpoint
   wrap-up and sometimes turns it into an archive.
 
 If the session's only remaining need is "the next session should start here",
-that is the pickup item's hand-off (step 2b, four lines), not a wrap-up.
+that is `/handoff`, not a wrap-up.
 
 ## 1. Narrative log
 
@@ -169,11 +169,10 @@ two things: the hand-off prompt, and links to the `## Needs ruling` and
 one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.
 
-Under the prompt, one line: `start` launches it, and nothing is pasted.
-On that word, run `~/.claude/bin/handoff-start --title "<the title>" <this session's item id>`
-once, the title being the few words the hand-off gives the session (its `title:` line), and relay the lines it prints. A refusal is relayed with the paste
-prompt still standing. Offering the word is not a question; it opens
-nothing.
+In the same turn, launch it: `~/.claude/bin/handoff-start`, with no
+arguments (it finds this session's item), and relay the lines it prints.
+No `start` word, no second turn. A refusal is relayed with the prompt still
+standing for a paste.
 
 It **opens nothing**: no new question, no doubt, no hint, no "one thing to
 consider". A closing message may say *"next time we discuss X"* — with X

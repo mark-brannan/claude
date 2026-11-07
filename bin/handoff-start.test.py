@@ -28,6 +28,9 @@ PICKUP_LIST = r'''#!/bin/sh
 case "$1" in
   show) [ -f "$STUB_PICKUP" ] || { echo "no item" >&2; exit 1; }; cat "$STUB_PICKUP" ;;
   take|open) echo "$*" >> "$STUB_PICKUP.log" ;;
+  find) [ "$2" = 94e9fcb0 ] && printf '  * text\n    %s\n' "$STUB_ID" ;;
+  handoff) body=$(cat); sed -i '/^---$/q' "$STUB_PICKUP"; printf '%s\n' "$body" >> "$STUB_PICKUP"
+           echo "handoff $2" >> "$STUB_PICKUP.log" ;;
 esac
 '''
 ITEM = """status: %s
@@ -55,15 +58,16 @@ class HandoffStart(unittest.TestCase):
         self.tool = tools / "handoff-start"
         self.pickup = self.tmp / "pickup.md"
         self.env["STUB_PICKUP"] = str(self.pickup)
+        self.env["STUB_ID"] = ID
         self.write("open", "model: sonnet\neffort: low\n")
 
     def write(self, status, tail):
         self.pickup.write_text(ITEM % (status, tail))
 
-    def run_tool(self, *args, cwd=None):
+    def run_tool(self, *args, cwd=None, stdin=None):
         return subprocess.run([sys.executable, str(self.tool), "--wait", "0",
                                "--cwd", str(cwd or self.cwd), *args],
-                              text=True, capture_output=True, env=self.env)
+                              text=True, capture_output=True, env=self.env, input=stdin)
 
     def bg(self):
         return [c for c in self.calls() if c.startswith("--bg")]
@@ -138,6 +142,25 @@ class HandoffStart(unittest.TestCase):
         self.env["STUB_BG_RC"] = "3"
         self.assertEqual(self.run_tool(ID).returncode, 3)
         self.assertEqual(self.marks(), ["take %s" % ID, "open %s" % ID])
+
+
+    def test_no_id_starts_this_sessions_own_item(self):
+        self.env["CLAUDE_CODE_SESSION_ID"] = "94e9fcb0-c89a-43c1-bfb1-0248dc3cfc6e"
+        self.assertEqual(self.run_tool().returncode, 0)
+        self.assertEqual(self.marks(), ["take %s" % ID])
+
+    def test_no_own_item_yet_is_refused_and_starts_nothing(self):
+        self.env["CLAUDE_CODE_SESSION_ID"] = "11112222-c89a-43c1-bfb1-0248dc3cfc6e"
+        r = self.run_tool()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no pickup item", r.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_body_is_written_before_the_launch_and_read_for_model(self):
+        r = self.run_tool(ID, "--body", "-", stdin="Finish it.\nlink: b\nmodel: haiku\neffort: high\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.marks(), ["handoff %s" % ID, "take %s" % ID])
+        self.assertIn("--model haiku --effort high", self.bg()[0])
 
 
 if __name__ == "__main__":
