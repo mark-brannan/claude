@@ -450,7 +450,16 @@ the shared `headless-run-cost` action, a `headless-run` upload nor a call of the
 `claude-review.yml`. One contents listing per repo plus one fetch per workflow file whose blob sha
 is not in `metrics/dashboard/workflow-verdicts.json`; warm, one call per repo. Exit status is unchanged.
 
-A timer rebuilds both every four hours. Install once:
+A timer rebuilds both every four hours, and it is the only thing that harvests the CI
+artifacts before they expire. It is per machine: dotfiles does not install it, and a new or
+rebuilt machine has none until someone runs the two commands below. First check whether
+this machine has it; `0 timers listed` means it does not:
+
+```bash
+systemctl --user list-timers metrics-dashboard.timer --no-pager
+```
+
+Install once:
 
 ```bash
 systemctl --user link ~/.claude/systemd/metrics-dashboard.service ~/.claude/systemd/metrics-dashboard.timer
@@ -460,8 +469,16 @@ systemctl --user link ~/.claude/systemd/metrics-dashboard.service ~/.claude/syst
 systemctl --user enable --now metrics-dashboard.timer
 ```
 
-Verify: the page's header shows a `built` time within the last four hours,
-and the log's last lines are the page path with no error.
+Verify: `list-timers` above now shows a `NEXT` time, the page's header shows a
+`built` time within the last four hours, and the log's last lines are the page
+path with no error.
+
+Without the timer, harvest by hand at least once every 90 days (about four
+minutes, mostly GitHub calls):
+
+```bash
+~/.claude/bin/metrics-db --github --quiet
+```
 
 ```bash
 tail -3 ~/.local/state/metrics-dashboard/timer.log
