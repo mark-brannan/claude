@@ -1,6 +1,7 @@
 ---
 name: wrapup
-description: Close a curia sitting, or a session the user asks to log — write the narrative log to the state repo, list the issues the session opened or labelled, and launch the next session. Use when the user says "wrap up" or "log it", or at the end of a curia sitting. A plain hand-off is /handoff, not this.
+disable-model-invocation: true
+description: Deprecated; the user's own, typed by the user only. Close a curia sitting or a session logged by request — write the narrative log to the state repo and list the issues the session opened or labelled. The agent cannot invoke it. A plain hand-off is the user's /handoff, not this.
 ---
 
 # Wrapping up
@@ -118,7 +119,7 @@ So every wrap-up that produced a hand-off in step 2 — the one-line
 message. **Push the branch first** (`git push -u origin <branch>`): the item
 points at a branch, and a `/pickup` on another machine fetches a branch
 that is not on origin and finds nothing. Same five lines as `/pickup`'s
-spec; `title:` names the session `handoff-start` launches. `link` is the home
+spec; `title:` names the session the user's `/handoff` later launches. `link` is the home
 step 2 found and the first line is the prompt's first action — one derivation, not a second one that can drift from the
 prose. Replace everything below the `---` with
 `~/.claude/bin/pickup-list handoff <id>`, the five lines on stdin; one
@@ -167,11 +168,6 @@ two things: the hand-off prompt, and links to the `## Needs ruling` and
 `## Human's` cards this session wrote. Nothing else. If nothing hit a
 one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.
-
-In the same turn, launch it: `~/.claude/bin/handoff-start`, with no
-arguments (it finds this session's item), and relay the lines it prints.
-No `start` word, no second turn. A refusal is relayed with the prompt still
-standing for a paste.
 
 It **opens nothing**: no new question, no doubt, no hint, no "one thing to
 consider". A closing message may say *"next time we discuss X"* — with X

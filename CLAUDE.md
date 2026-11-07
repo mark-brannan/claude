@@ -253,8 +253,9 @@ call can be a standing order applied correctly.
 Chats are ephemeral; what lives only in the conversation is already lost.
 Hooks handle the mechanics unprompted.
 
-- **On a hand-off, invoke `/handoff`:** one turn, and the next session is
-  running. "Wrap up" and "log it", and a curia sitting's close, are `/wrapup`.
+- **`/handoff` is mine.** Typed by me, it ends this session's work and
+  starts the next in one turn. No agent launches a session or wraps one up;
+  `/wrapup` is deprecated and also mine.
 - **Capture ≠ activation.** Off-goal but real → card at discovery; trivial
   → drop; important and urgent → suggest a parallel session or subagent.
   Never a new workstream mid-session yet do not 'card' the 'small stuff'
@@ -360,9 +361,10 @@ Hooks handle the mechanics unprompted.
   a prior decision — **gets a card the moment it's made.** A PR comment
   afterward doesn't substitute.
 - A loop not worth a card is not worth telling me about.
-- **End with the next session running, not a status bullet or
-  observation.** Work remaining → `/handoff` launches it in that turn; a
-  decision or click-work card → its link. Nothing else in a closing message.
+- **End with what remains, in one line, not a status bullet or
+  observation.** Work remaining → name it; `/handoff` is mine and launches
+  the next session. A decision or click-work card → its link. Nothing else
+  in a closing message.
 - **The last word is mine.** A closing message opens
   nothing: no new question, doubt, hint or "one more thing" — the log's
   `## For next time` list before the close, or nowhere, never my head. When I

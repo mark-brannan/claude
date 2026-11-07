@@ -306,7 +306,7 @@ do not paraphrase it into a second version that can drift from this one.
 The other half, for a session that is *leaving* work: the Stop hook already
 wrote **your own** pickup item — `state/global/pickup/<start>-<sid8>.md`,
 body defaulted to the last prompt line — and it keeps any edit you make to
-the body, forever. `/handoff` writes it (and `/wrapup` step 2b), as does a
+the body, forever. the user's `/handoff` writes it (and `/wrapup` step 2b), as does a
 session when the Stop nag blocks once, or when the user says "update
 the hand-off". The nag is a backstop, not the trigger: it arms on a
 context, clock or friction crossing, and a session that ends cleanly never

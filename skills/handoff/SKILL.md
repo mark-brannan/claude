@@ -1,6 +1,7 @@
 ---
 name: handoff
-description: Hand the session off and start the next one, all in this turn — push the branch, write the hand-off into this session's pickup item and launch a background session that runs /pickup on it. No second turn, no paste. Use on "/handoff", "hand off", "hand it off", "call it there", or when a session ends with work still open. Not for a curia sitting (that is /wrapup).
+disable-model-invocation: true
+description: The user's own /handoff, typed by the user only — push the branch, write the hand-off into this session's pickup item and launch a background session that runs /pickup on it, all in one turn. The agent cannot invoke it and never runs handoff-start on its own. Not for a curia sitting (that is /wrapup).
 ---
 
 # Hand off
