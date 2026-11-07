@@ -541,6 +541,7 @@ class GithubTest(FixtureTest):
 b = io.BytesIO()
 with zipfile.ZipFile(b, "w") as z:
     z.writestr("headless-run.jsonl", sys.argv[1] if sys.argv[1:] else "")
+    if sys.argv[2:]: z.writestr(".claude-arete.md", sys.argv[2])
 sys.stdout.buffer.write(b.getvalue())
 """)
         good = "\n".join(json.dumps(r) for r in rows) + "\n"
@@ -552,7 +553,7 @@ sys.stdout.buffer.write(b.getvalue())
 case "$1" in
   api) case "$2" in
          repos/acme/widgets/actions/artifacts/144/zip) python3 {zipper} '[1, "junk"';;
-         repos/acme/widgets/actions/artifacts/*/zip) python3 {zipper} "$(cat {self.fx.bin}/good.jsonl)";;
+         repos/acme/widgets/actions/artifacts/*/zip) python3 {zipper} "$(cat {self.fx.bin}/good.jsonl)" 'arete brief';;
          repos/acme/widgets/actions/artifacts\?*) echo '{listing}';;
          repos/*) echo '{{"artifacts": []}}';;
          *) gh-real "$@";;
@@ -572,6 +573,8 @@ esac
         self.assertEqual([r["what"] for r in got["ci-42.jsonl"]], ["claude-review", "claude-maxims", "claude-arete", "claude-review"])
         self.assertEqual({r["repo"] for r in got["ci-42.jsonl"]}, {"acme/widgets"})  # the artifact cannot name its repo
         self.assertEqual(got["ci-43.jsonl"][0]["trusted"], False)
+        kept = sorted(p.name for p in (self.fx.sd / "metrics" / "headless-runs").glob("*/ci-*-arete.md"))
+        self.assertEqual(kept, ["ci-42-arete.md", "ci-43-arete.md"])  # an artifact carrying a report no longer crashes the harvest
         self.assertEqual((got["ci-44.jsonl"][0]["unparsed"], got["ci-44.jsonl"][0]["text"]), (True, '[1, "junk"'))
 
     def test_a_failing_gh_is_a_failed_build(self):
