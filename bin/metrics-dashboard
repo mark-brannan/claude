@@ -2,15 +2,9 @@
 # metrics-dashboard -- render the metrics SQLite file (see metrics-db) as one
 # self-contained HTML page: inline SVG, no scripts, no network, so it opens
 # from file://, survives being mailed to a phone, and reads the same in the
-# dark. Six sections, one per question the page exists to answer:
-#   open work      issues, PRs and board cards over time
-#   sessions       hours at the keyboard vs agent hours, friction, decisions
-#   typing         prompts and words the user typed, per day
-#   input          keys, clicks and presence from ActivityWatch, in and out of sessions
-#   agent work     how much lands with how few touches
-#   cost           API-equivalent dollars by model and per merged PR, and the session
-#                  shape behind them: cold context, context per turn, length
-#   ci checks      the CI review checks' cost per check, week, repo and model
+# dark. Five tabs, switched by CSS radios: an overview of one number per aim, then
+# the charts behind each (your time, decisions and friction, work landed, cost).
+# What each figure means: docs/metrics-dashboard-spec.md.
 #
 # Usage: metrics-dashboard [--db FILE] [--out FILE] [--days N]
 #   --days   the daily window (default 56); weekly series cover the whole span.
@@ -135,16 +129,40 @@ def usd(v):
 
 CI_CHECKS = ["claude-review", "claude-maxims", "claude-arete"]
 
-def tile(label, now, prev=None, unit="", good="down"):
-    delta = ""
+def delta(now, prev, good):
+    """good: "up", "down", or None when no direction is wanted (the delta stays uncoloured)."""
     if prev not in (None, 0) and now is not None:
         pct = (now - prev) / prev * 100
-        cls = "good" if (pct > 0) == (good == "up") else "bad"
-        if abs(pct) < 1: cls = "flat"
-        delta = f'<small class="{cls}">{"+" if pct >= 0 else ""}{pct:.0f}% vs prior</small>'
-    elif prev is not None:
-        delta = '<small class="flat">prior: ' + fmt(prev) + '</small>'
-    return f'<div class="tile"><b>{fmt(now)}{unit}</b><span>{html.escape(label)}</span>{delta}</div>'
+        cls = "flat" if good is None or abs(pct) < 1 else "good" if (pct > 0) == (good == "up") else "bad"
+        return f'<small class="{cls}">{"+" if pct >= 0 else ""}{pct:.0f}% vs prior</small>'
+    if prev is not None:
+        return '<small class="flat">prior: ' + fmt(prev) + '</small>'
+    return ""
+
+def tile(label, now, prev=None, unit="", good="down"):
+    return f'<div class="tile"><b>{fmt(now)}{unit}</b><span>{html.escape(label)}</span>{delta(now, prev, good)}</div>'
+
+def spark(vals):
+    """A 12-step trend line, no axes: the shape, not the values (hover the tab's charts for those)."""
+    pts = [(i, v) for i, v in enumerate(vals) if v is not None]
+    if len(pts) < 2: return ""
+    lo, hi = min(v for _, v in pts), max(v for _, v in pts); span = (hi - lo) or 1
+    sx = lambda i: 2 + 116 * i / max(len(vals) - 1, 1); sy = lambda v: 26 - 24 * (v - lo) / span
+    d = "M" + " L".join(f"{sx(i):.1f},{sy(v):.1f}" for i, v in pts)
+    x, y = sx(pts[-1][0]), sy(pts[-1][1])
+    return f'<svg class="spark" viewBox="0 0 120 28" aria-hidden="true"><path d="{d}"/><circle cx="{x:.1f}" cy="{y:.1f}" r="2.2"/></svg>'
+
+def kpi(aim, label, vals, tab, unit="", good="down", nd=1):
+    """One overview card: an aim, its headline number for the last 7 days, the change on the 7
+    before, and twelve 7-day windows of trend. The card is a label for its tab's radio."""
+    r = lambda v: None if v is None else round(v, nd) if nd else round(v)
+    now, prev = r(vals[-1]), r(vals[-2])
+    return (f'<label class="kpi" for="tab-{tab}"><span class="aim">{html.escape(aim)}</span><b>{fmt(now)}{unit}</b>'
+            f'<span>{html.escape(label)}</span>{delta(now, prev, good)}{spark([r(v) for v in vals])}</label>')
+
+# Tabs in order: (id, label). The overview's cards point into the other four.
+TABS = [("overview", "Overview"), ("time", "Your time"), ("friction", "Decisions & friction"),
+        ("work", "Work landed"), ("cost", "Cost")]
 
 # --- data ----------------------------------------------------------------------
 def days(n, end):
@@ -248,7 +266,9 @@ def build(db, out, ndays):
               "sum(dec_scoping) ds, sum(dec_inline) di, sum(dec_gate) dg, sum(blk_total) b, sum(typed) ut, sum(tool_calls) tc, sum(commits) cm "
               "from sv where started_at >= ? group by d", start)
     weekly = q(f"select {wk('started_at')} w, count(*) n, sum(tool_calls) tc, sum(commits) cm, sum(fr_total) fr, sum(dec_total) dec, "
-               "sum(human_seconds)/3600.0 hh, sum(agent_seconds)/3600.0 ah, "
+               "sum(human_seconds)/3600.0 hh, sum(agent_seconds)/3600.0 ah, sum(fr_repeat) rep, "
+               "sum(human_seconds >= 60) eng, sum(human_seconds >= 60 and coalesce(fr_total, 0) = 0) eng0, "
+               "sum(blk_classifier) bc, sum(blk_rule) br, sum(blk_user) bu, "
                "coalesce(sum(typed=0), 0) t0, coalesce(sum(typed=1), 0) t1, coalesce(sum(typed between 2 and 5), 0) t2, coalesce(sum(typed>=6), 0) t3 from sv group by w")
     typing_d = q("select substr(first_ts,1,10) d, sum(prompts) p, sum(words) w, sum(chars) c from typing where first_ts >= ? group by d", start)
     typing_w = q(f"select {wk('first_ts')} w, sum(prompts) p, sum(words) wd from typing group by w")
@@ -361,43 +381,77 @@ def build(db, out, ndays):
     def per_turn(a, b):
         turns = win(S7 % "sum(assistant_turns)", a, b)
         return win(S7 % f"sum({CTX})", a, b) / turns / 1000 if turns else None
-    tiles = [
-        tile("sessions, 7d", win(S7 % "count(*)", a7, b7), win(S7 % "count(*)", a14, b14), good="up"),
-        tile("of them headless, 7d", win(S7 % "sum(typed=0)", a7, b7), win(S7 % "sum(typed=0)", a14, b14), good="up"),
-        tile("hours at the keyboard, 7d", round(win(S7 % "sum(human_seconds)/3600.0", a7, b7), 1), round(win(S7 % "sum(human_seconds)/3600.0", a14, b14), 1), good="down"),
-        tile("agent hours, 7d", round(win(S7 % "sum(agent_seconds)/3600.0", a7, b7), 1), round(win(S7 % "sum(agent_seconds)/3600.0", a14, b14), 1), good="up"),
-        tile("prompts typed, 7d", win(T7 % "sum(prompts)", a7, b7), win(T7 % "sum(prompts)", a14, b14), good="down"),
-        tile("words typed, 7d", win(T7 % "sum(words)", a7, b7), win(T7 % "sum(words)", a14, b14), good="down"),
-        tile("friction events, 7d", win(S7 % "sum(fr_total)", a7, b7), win(S7 % "sum(fr_total)", a14, b14), good="down"),
-        tile("gate decisions, 7d", win(S7 % "sum(dec_gate)", a7, b7), win(S7 % "sum(dec_gate)", a14, b14), good="down"),
-        tile("active input hours, 7d", round(in7(active, a7, b7), 1), round(in7(active, a14, b14), 1), good="down"),
-        tile("keys outside Claude, 7d", int(in7(keys_out, a7, b7)), int(in7(keys_out, a14, b14)), good="down"),
-        tile("chars to Claude per key, 7d", round(win(TH7, a7, b7) / in7(keys_in, a7, b7), 2) if in7(keys_in, a7, b7) else None,
-             round(win(TH7, a14, b14) / in7(keys_in, a14, b14), 2) if in7(keys_in, a14, b14) else None, good="up"),
-        tile("days with input data, 7d", sum(1 for d in cover if dkeys[a7] <= d <= dkeys[b7]), sum(1 for d in cover if dkeys[a14] <= d <= dkeys[b14]), good="up"),
-        tile("open issues", open_on("issue", dkeys[-1]), open_on("issue", dkeys[-8]), good="down"),
-        tile("open PRs", open_on("pr", dkeys[-1]), open_on("pr", dkeys[-8]), good="down"),
-        tile("rulings waiting", cards_open(dkeys[-1], "human-ruling"), cards_open(dkeys[-8], "human-ruling") if dkeys[-8] >= card_first else None, good="down"),
-        tile("API-equivalent $, 7d", round(win(S7 % "sum(cost_usd)", a7, b7)), round(win(S7 % "sum(cost_usd)", a14, b14)), good="down"),
-        tile("cold context share, 7d", r0(cold(a7, b7)), r0(cold(a14, b14)), unit="%", good="down"),
-        tile("context per turn, 7d", r0(per_turn(a7, b7)), r0(per_turn(a14, b14)), unit="k", good="down"),
+    tiles = [  # (tab, tile)
+        ("time", tile("sessions, 7d", win(S7 % "count(*)", a7, b7), win(S7 % "count(*)", a14, b14), good="up")),
+        ("time", tile("of them headless, 7d", win(S7 % "sum(typed=0)", a7, b7), win(S7 % "sum(typed=0)", a14, b14), good="up")),
+        ("time", tile("hours at the keyboard, 7d", round(win(S7 % "sum(human_seconds)/3600.0", a7, b7), 1), round(win(S7 % "sum(human_seconds)/3600.0", a14, b14), 1), good="down")),
+        ("time", tile("agent hours, 7d", round(win(S7 % "sum(agent_seconds)/3600.0", a7, b7), 1), round(win(S7 % "sum(agent_seconds)/3600.0", a14, b14), 1), good="up")),
+        ("time", tile("prompts typed, 7d", win(T7 % "sum(prompts)", a7, b7), win(T7 % "sum(prompts)", a14, b14), good="down")),
+        ("time", tile("words typed, 7d", win(T7 % "sum(words)", a7, b7), win(T7 % "sum(words)", a14, b14), good="down")),
+        ("friction", tile("friction events, 7d", win(S7 % "sum(fr_total)", a7, b7), win(S7 % "sum(fr_total)", a14, b14), good="down")),
+        ("friction", tile("gate decisions, 7d", win(S7 % "sum(dec_gate)", a7, b7), win(S7 % "sum(dec_gate)", a14, b14), good="down")),
+        ("time", tile("active input hours, 7d", round(in7(active, a7, b7), 1), round(in7(active, a14, b14), 1), good="down")),
+        ("time", tile("keys outside Claude, 7d", int(in7(keys_out, a7, b7)), int(in7(keys_out, a14, b14)), good="down")),
+        ("time", tile("chars to Claude per key, 7d", round(win(TH7, a7, b7) / in7(keys_in, a7, b7), 2) if in7(keys_in, a7, b7) else None,
+             round(win(TH7, a14, b14) / in7(keys_in, a14, b14), 2) if in7(keys_in, a14, b14) else None, good="up")),
+        ("time", tile("days with input data, 7d", sum(1 for d in cover if dkeys[a7] <= d <= dkeys[b7]), sum(1 for d in cover if dkeys[a14] <= d <= dkeys[b14]), good="up")),
+        ("work", tile("open issues", open_on("issue", dkeys[-1]), open_on("issue", dkeys[-8]), good="down")),
+        ("work", tile("open PRs", open_on("pr", dkeys[-1]), open_on("pr", dkeys[-8]), good="down")),
+        ("friction", tile("rulings waiting", cards_open(dkeys[-1], "human-ruling"), cards_open(dkeys[-8], "human-ruling") if dkeys[-8] >= card_first else None, good="down")),
+        ("cost", tile("API-equivalent $, 7d", round(win(S7 % "sum(cost_usd)", a7, b7)), round(win(S7 % "sum(cost_usd)", a14, b14)), good="down")),
+        ("cost", tile("cold context share, 7d", r0(cold(a7, b7)), r0(cold(a14, b14)), unit="%", good="down")),
+        ("cost", tile("context per turn, 7d", r0(per_turn(a7, b7)), r0(per_turn(a14, b14)), unit="k", good="down")),
     ]
+
+    # overview: one number per aim, over twelve 7-day windows ending today ---------
+    W12 = [((today - dt.timedelta(days=7 * k + 6)).isoformat(), (today - dt.timedelta(days=7 * k)).isoformat()) for k in range(11, -1, -1)]
+    def dsum(sql, lo, hi): return q(sql, lo, hi)[0][0] or 0
+    def hours(lo, hi): return dsum(S7 % "sum(human_seconds)/3600.0", lo, hi)
+    def per_hour(col):
+        return lambda lo, hi: dsum(S7 % f"sum({col})", lo, hi) / hours(lo, hi) if hours(lo, hi) else None
+    def merged_in(lo, hi): return dsum("select count(*) from gh_items where kind='pr' and substr(merged_at,1,10) between ? and ?", lo, hi)
+    def words_per_pr(lo, hi):
+        m = merged_in(lo, hi)
+        return dsum(T7 % "sum(words)", lo, hi) / m if m else None
+    def waiting(lo, hi):
+        return None if hi < card_first else cards_open(hi, "human-ruling") + cards_open(hi, "human-click")
+    over = lambda fn: [fn(lo, hi) for lo, hi in W12]
+    kpis = [
+        kpi("Your time", "hours at the keyboard, 7d", over(hours), "time", "h"),
+        kpi("Smoothness", "friction events per keyboard hour, 7d", over(per_hour("fr_total")), "friction", nd=2),
+        kpi("Decision load", "decisions per keyboard hour, 7d", over(per_hour("dec_total")), "friction", good=None, nd=2),
+        kpi("Waiting on you", "board cards owned by you, today", over(waiting), "friction", nd=0),
+        kpi("What lands", "PRs merged, 7d", over(merged_in), "work", good=None, nd=0),
+        kpi("Leverage", "words you typed per merged PR, 7d", over(words_per_pr), "work", nd=0),
+        kpi("Cost", "API-equivalent $, 7d", over(lambda lo, hi: dsum(S7 % "sum(cost_usd)", lo, hi)), "cost", nd=0),
+    ]
+    wsafe = lambda num, den, scale=1, nd=1: {r["w"]: round(scale * (r[num] or 0) / r[den], nd) for r in weekly if r[den]}
+    merged_w = {r["w"]: (r["agent"] or 0) + (r["other"] or 0) for r in merged}
+    words_pr_w = {r["w"]: round(r["wd"] / merged_w[r["w"]]) for r in typing_w if merged_w.get(r["w"]) and r["wd"]}
 
     figs = {
         "open": [
             lines("Open issues, by project", dkeys, issue_series),
             lines("Open pull requests, all repos", dkeys, [pr_open]),
             bars("PRs merged per week: agent branch vs other", wkeys, [("claude/* branch", series(merged, "w", "agent")), ("other", series(merged, "w", "other"))], every=4),
-            lines("Board cards waiting on the user, by section", ckeys, user_cards, every=max(len(ckeys) // 8, 1)),
             lines("Board cards in the agent's queue", ckeys, agent_cards, every=max(len(ckeys) // 8, 1)),
         ],
         "sessions": [
             lines("Hours per day: at the keyboard vs agent", dkeys, [("keyboard", series(daily, "d", "hh")), ("agent", series(daily, "d", "ah"))], unit="h"),
             bars("Sessions per day: headless vs interactive", dkeys, [("headless (nothing typed)", series(daily, "d", "headless")), ("interactive", series(daily, "d", "interactive"))]),
+        ],
+        "friction": [
+            lines("Friction per keyboard hour, weekly", wkeys, [("friction/h", wsafe("fr", "hh", nd=2))], every=4),
+            lines("Engaged sessions with no friction, weekly", wkeys, [("zero-friction %", wsafe("eng0", "eng", 100.0))], every=4, unit="%"),
+            lines("Repeat share of friction, weekly", wkeys, [("repeat %", wsafe("rep", "fr", 100.0))], every=4, unit="%"),
             bars("Friction events per day, by type", dkeys, [("correction", series(daily, "d", "c")), ("override", series(daily, "d", "o")), ("rebuke", series(daily, "d", "r")), ("pushback", series(daily, "d", "p"))]),
-            bars("Decisions pushed per day, by type", dkeys, [("scoping", series(daily, "d", "ds")), ("inline", series(daily, "d", "di")), ("gate", series(daily, "d", "dg"))]),
             lines("Friction per 100 prompts, weekly", wkeys, [("friction/100", per_prompt("fr", 100.0, 1))], every=4),
-            lines("Decisions per keyboard hour, weekly", wkeys, [("decisions/h", {r["w"]: round(r["dec"] / r["hh"], 2) for r in weekly if r["hh"]})], every=4),
+            bars("Tool calls refused per week, by who refused", wkeys, [("classifier", series(weekly, "w", "bc")), ("settings rule or hook", series(weekly, "w", "br")), ("you declined", series(weekly, "w", "bu"))], every=4),
+        ],
+        "decisions": [
+            lines("Decisions per keyboard hour, weekly", wkeys, [("decisions/h", wsafe("dec", "hh", nd=2))], every=4),
+            bars("Decisions pushed per day, by type", dkeys, [("scoping", series(daily, "d", "ds")), ("inline", series(daily, "d", "di")), ("gate", series(daily, "d", "dg"))]),
+            lines("Board cards waiting on the user, by section", ckeys, user_cards, every=max(len(ckeys) // 8, 1)),
         ],
         "typing": [
             bars("Prompts typed per day (by first-prompt day)", dkeys, [("prompts", series(typing_d, "d", "p"))]),
@@ -412,6 +466,7 @@ def build(db, out, ndays):
             lines("Clicks per day", dkeys, [("clicks", dict(clicks_d))]),
         ],
         "agent": [
+            lines("Words you typed per merged PR, weekly", wkeys, [("words/PR", words_pr_w)], every=4),
             bars("Sessions per week, by prompts typed", wkeys, [("0 (headless)", series(weekly, "w", "t0")), ("1", series(weekly, "w", "t1")), ("2–5", series(weekly, "w", "t2")), ("6+", series(weekly, "w", "t3"))], every=4),
             bars("Merged PRs per week, by prompts typed on the branch", wkeys, [(b, touches.get(b, {})) for b in touch_order], every=4),
             lines("Tool calls per prompt, weekly", wkeys, [("tool calls/prompt", per_prompt("tc", 1, 1))], every=4),
@@ -428,17 +483,33 @@ def build(db, out, ndays):
             bars("Sessions per week, by length", wkeys, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
         ],
     }
-    sections = [("open", "Open work", "Issues and PRs are reconstructed from GitHub timestamps, so the history is complete; board cards start when the item store did."),
-                ("sessions", "Sessions and friction", f"Daily series cover the last {ndays} days; weekly series the whole record."),
-                ("typing", "Typing", "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing. Each transcript is counted on the day its first prompt was typed, so a session that runs past midnight or is resumed later keeps all its prompts on that first day."),
-                ("input", "Input", f"Per-minute counts from ActivityWatch on each host that exports them (input-export); counts and app categories only. A minute is active input at {ACTIVE_KEYS_PER_MIN}+ key presses; present is time ActivityWatch did not call away. A session's minutes are those between its start and end on the host whose home holds its cwd. Days with no data are gaps, never zeros; the coverage tile says how many there were."),
-                ("agent", "Agent work vs touches", "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch."),
-                ("cost", "Cost", "Dollars are the Stop hook's estimate at API list price, pricing each session's four token counts per model (hooks/session-metrics.jq): a weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. Cold context is the share of context tokens written to the cache instead of re-read from it; a write is priced far above a re-read, and a gap past the cache window makes the next turn cold for the whole context. A merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session are left out of the mean.")]
-    sections.append(("ci", "CI review checks", ci_note))
-    body = "".join(f'<h2 id="{k}">{html.escape(t)}</h2><p class="note">{html.escape(n)}</p><div class="grid">{"".join(figs[k])}</div>' for k, t, n in sections)
-    page = PAGE.format(tiles="".join(tiles), body=body,
-                       built=html.escape(meta.get("built_at", "?")), gh=html.escape(meta.get("gh_refreshed_at", "never")),
-                       nav=" · ".join(f'<a href="#{k}">{html.escape(t)}</a>' for k, t, _ in sections))
+    notes = {
+        "open": "Issues and PRs are reconstructed from GitHub timestamps, so the history is complete; board cards start when the item store did.",
+        "sessions": f"Daily series cover the last {ndays} days; weekly series the whole record.",
+        "friction": "Friction is the one alarm. Per keyboard hour, so a busier week does not read as a rougher one. Engaged means 60 s or more at the keyboard; a repeat is friction on something already corrected.",
+        "decisions": "Decisions are measured, not alarmed: no wanted direction is set for them.",
+        "typing": "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing. Each transcript is counted on the day its first prompt was typed, so a session that runs past midnight or is resumed later keeps all its prompts on that first day.",
+        "input": f"Per-minute counts from ActivityWatch on each host that exports them (input-export); counts and app categories only. A minute is active input at {ACTIVE_KEYS_PER_MIN}+ key presses; present is time ActivityWatch did not call away. A session's minutes are those between its start and end on the host whose home holds its cwd. Days with no data are gaps, never zeros; the coverage tile says how many there were.",
+        "agent": "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch. Words per merged PR divides all words typed in the week by the PRs merged in it.",
+        "cost": "Dollars are the Stop hook's estimate at API list price, pricing each session's four token counts per model (hooks/session-metrics.jq): a weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. Cold context is the share of context tokens written to the cache instead of re-read from it; a write is priced far above a re-read, and a gap past the cache window makes the next turn cold for the whole context. A merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session are left out of the mean.",
+        "ci": ci_note,
+    }
+    titles = {"open": "Open work", "sessions": "Sessions", "friction": "Friction", "decisions": "Decisions",
+              "typing": "Typing", "input": "Input", "agent": "Agent work vs touches", "cost": "Session cost", "ci": "CI review checks"}
+    layout = {"time": ["sessions", "typing", "input"], "friction": ["friction", "decisions"],
+              "work": ["open", "agent"], "cost": ["cost", "ci"]}
+    section = lambda k: f'<h2 id="{k}">{html.escape(titles[k])}</h2><p class="note">{html.escape(notes[k])}</p><div class="grid">{"".join(figs[k])}</div>'
+    panels = {"overview": (f'<div class="kpis">{"".join(kpis)}</div><p class="note">Each card is the last 7 days against the 7 before, '
+                           'with twelve such windows as its trend; click one for its tab. Green moves the wanted way; '
+                           'decisions and merged PRs have no wanted direction, so they stay grey.</p>')}
+    for t, ks in layout.items():
+        panels[t] = f'<div class="tiles">{"".join(x for tt, x in tiles if tt == t)}</div>' + "".join(section(k) for k in ks)
+    radios = "".join(f'<input type="radio" name="tab" id="tab-{t}"{" checked" if i == 0 else ""}>' for i, (t, _) in enumerate(TABS))
+    tabnav = "".join(f'<label for="tab-{t}">{html.escape(n)}</label>' for t, n in TABS)
+    body = "".join(f'<section class="panel" id="p-{t}">{panels[t]}</section>' for t, _ in TABS)
+    tabcss = " ".join(f'#tab-{t}:checked ~ main #p-{t} {{ display:block }} #tab-{t}:checked ~ header label[for="tab-{t}"] {{ color:var(--ink); border-color:var(--s1) }}' for t, _ in TABS)
+    page = PAGE.format(radios=radios, tabs=tabnav, body=body, tabcss=tabcss,
+                       built=html.escape(meta.get("built_at", "?")), gh=html.escape(meta.get("gh_refreshed_at", "never")))
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         f.write(page)
@@ -454,7 +525,16 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 :root[data-theme="dark"] {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --grid:#2c2c2a; --base:#383835; --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --good:#0ca30c; --bad:#e66767; }}
 * {{ box-sizing:border-box }} body {{ margin:0; padding:16px; background:var(--page); color:var(--ink); font:14px/1.4 system-ui,sans-serif }}
 header {{ display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; margin-bottom:12px }} h1 {{ font-size:20px; margin:0 }} header small, .note {{ color:var(--ink2) }}
-nav a {{ color:var(--ink2); text-decoration:none }} nav a:hover {{ color:var(--ink) }}
+input[name=tab] {{ position:absolute; opacity:0; pointer-events:none }}
+nav.tabs {{ display:flex; flex-wrap:wrap; gap:4px 18px; width:100%; border-bottom:1px solid var(--grid) }}
+nav.tabs label {{ color:var(--ink2); cursor:pointer; padding:6px 0; border-bottom:2px solid transparent; margin-bottom:-1px }} nav.tabs label:hover {{ color:var(--ink) }}
+.panel {{ display:none }} {tabcss}
+.kpis {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin:12px 0 }}
+.kpi {{ background:var(--surface); border:1px solid var(--grid); border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:2px; cursor:pointer }}
+.kpi:hover {{ border-color:var(--base) }} .kpi .aim {{ font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted) }}
+.kpi b {{ font-size:30px; font-weight:600 }} .kpi span {{ color:var(--ink2); font-size:13px }} .kpi small {{ font-size:12px; color:var(--muted) }}
+.kpi .good {{ color:var(--good) }} .kpi .bad {{ color:var(--bad) }}
+svg.spark {{ width:100%; height:32px; margin-top:6px }} .spark path {{ fill:none; stroke:var(--s1); stroke-width:1.6 }} .spark circle {{ fill:var(--s1) }}
 .tiles {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; margin:8px 0 20px }}
 .tile {{ background:var(--surface); border:1px solid var(--grid); border-radius:6px; padding:10px 12px; display:flex; flex-direction:column }}
 .tile b {{ font-size:22px; font-weight:600 }} .tile span {{ color:var(--ink2); font-size:12px }} .tile small {{ font-size:11px; color:var(--muted) }}
@@ -473,10 +553,10 @@ rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--
 figure.wide {{ grid-column:1/-1 }} table {{ border-collapse:collapse; width:100%; font-size:13px }} th, td {{ text-align:left; padding:3px 10px 3px 0; border-bottom:1px solid var(--grid) }} th {{ color:var(--ink2); font-weight:500 }} td.num, th.num {{ text-align:right }}
 footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}
 </style></head><body>
-<header><h1>Metrics</h1><small>built {built} · GitHub refreshed {gh}</small><nav>{nav}</nav></header>
-<div class="tiles">{tiles}</div>
-{body}
-<footer>Rendered by metrics-dashboard from metrics.db (metrics-db). Hover any step for its values. Green deltas move in the wanted direction.</footer>
+{radios}
+<header><h1>Metrics</h1><small>built {built} · GitHub refreshed {gh}</small><nav class="tabs">{tabs}</nav></header>
+<main>{body}</main>
+<footer>Rendered by metrics-dashboard from metrics.db (metrics-db). Hover any step for its values. Green deltas move in the wanted direction; grey has none set.</footer>
 </body></html>"""
 
 def main():
