@@ -26,7 +26,7 @@ Read the verdict line at the top of this session's auto-checkpoint
   home (an issue, a PR or a card): say so in one line, name where the work
   lives, and **stop**. No log, no hand-off prompt. Archivable means archive;
   it does not mean silent: if a next session should continue there, write
-  the four-line block (spec in step 2b) with `link` = where the work lives
+  the five-line block (spec in step 2b) with `link` = where the work lives
   and `next` = the one thing that session does there first. There is no
   step-2 prompt on this path to derive from, and none is needed.
 - **`not archivable: <reasons>`**, or a loop with no home: continue below.
@@ -117,12 +117,11 @@ So every wrap-up that produced a hand-off in step 2 — the one-line
 `continue <link>` form included — also edits the body, before the closing
 message. **Push the branch first** (`git push -u origin <branch>`): the item
 points at a branch, and a `/pickup` on another machine fetches a branch
-that is not on origin and finds nothing. Same four lines as `/pickup`'s
-spec, plus an optional `title:`, a few words a person would name the session
-by, which `handoff-start` names the session with. `link` is the home step 2 found and the first line is the prompt's
-first action — one derivation, not a second one that can drift from the
+that is not on origin and finds nothing. Same five lines as `/pickup`'s
+spec; `title:` names the session `handoff-start` launches. `link` is the home
+step 2 found and the first line is the prompt's first action — one derivation, not a second one that can drift from the
 prose. Replace everything below the `---` with
-`~/.claude/bin/pickup-list handoff <id>`, the four lines on stdin; one
+`~/.claude/bin/pickup-list handoff <id>`, the five lines on stdin; one
 hand-off per item, never two:
 
 ```
@@ -130,7 +129,7 @@ hand-off per item, never two:
 link: <the branch, PR, issue or card the prompt names>
 model: <opus | sonnet | haiku>
 effort: <low | medium | high>
-title: <optional, e.g. Reviewer model difficulty>
+title: <a few words a person would name the session by>
 ```
 
 Then check it landed:

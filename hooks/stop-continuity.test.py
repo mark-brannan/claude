@@ -583,6 +583,15 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(brief_of(NOPR).split("\n")[0], "Finish the fixture work.",
                          "14.6: the brief is the hand-off's first line, not the prompt's")
 
+        # 14.14: handoff-start takes the item before the first Stop sees the
+        # hand-off; a taken hand-off mints too.
+        w.run_hook("f1f2f3f4-0000-1111-2222", WORK)
+        hand_off("f1f2f3f4", "Finish the taken work.\nlink: https://example.invalid/card\nmodel: sonnet\neffort: low")
+        tf = sorted(glob.glob(f"{w.PICKD}/*-f1f2f3f4.md"))[0]
+        Path(tf).write_text(re.sub(r"^status: open$", "status: taken", read(tf), flags=re.M))
+        w.run_hook("f1f2f3f4-0000-1111-2222", WORK)
+        self.assertEqual(len(mine("f1f2f3f4")), 1, "14.14: a taken hand-off mints its item")
+
         # 14.10: a hand-off whose link is a PR writes onto that PR's item.
         w.run_hook("c1c2c3c4-0000-1111-2222", WORK)
         hand_off("c1c2c3c4", "Merge it.\nlink: https://github.com/o/r/pull/7\nmodel: sonnet\neffort: low")

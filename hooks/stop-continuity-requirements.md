@@ -187,8 +187,8 @@ Stop. A header (`status`, `updated`, `session`, `model`, `branch`, `pr`,
 
 - The body becomes the last prompt only when empty or still the hook's last
   write; a body a model wrote survives every rewrite.
-- `status` is `open` on the first Stop and whenever the prompt changes;
-  otherwise carried.
+- `status` is `open` on the first Stop and whenever the prompt changes,
+  unless the item is `taken` with a hand-off body (9.7); otherwise carried.
 - `until` is carried, never written.
 - `pr` is looked up only while `none` and once nothing is ahead of origin;
   it reuses the verdict's home check, and a miss is not asked again for
@@ -438,3 +438,4 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 14.13 | the item homed at the session's PR is done or closed | Stop | nothing written, nothing minted | test |
 | 14.11 | no PR, no claimed item, no hand-off | Stop | no item; the checkpoint says why | test |
 | 14.12 | 14.11, then the session writes a hand-off into its pickup item | the next Stop | one new item, its brief linking the checkpoint | test |
+| 14.14 | a hand-off body and `status: taken`, as `handoff-start` leaves it | Stop | one new item, as 14.12 | test |

@@ -74,11 +74,11 @@ def own_item():
     sid8 = os.environ.get("CLAUDE_CODE_SESSION_ID", "").replace("-", "")[:8].lower()
     if not re.fullmatch(r"[0-9a-f]{8}", sid8):
         die("no item id given and no CLAUDE_CODE_SESSION_ID to find this session's own", 2)
-    r = subprocess.run([PICKUP_LIST, "find", sid8], text=True, capture_output=True)
-    m = re.search(r"\b([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-%s)\b" % sid8, r.stdout)
-    if not m:
+    # stdin is the --body heredoc, read only after this call: keep the child off it
+    r = subprocess.run([PICKUP_LIST, "own", sid8], text=True, capture_output=True, stdin=subprocess.DEVNULL)
+    if r.returncode:
         die("no pickup item for session %s yet: the Stop hook writes it at the end of a turn" % sid8)
-    return m.group(1)
+    return r.stdout.strip()
 
 
 def main_worktree(cwd):
@@ -104,6 +104,10 @@ def main():
     if not os.path.isdir(a.cwd):
         die("no such directory: %s" % a.cwd, 2)
     a.item = a.item or own_item()
+    # refuse before --body rewrites anything: a refused run leaves the item as it was
+    facts = item_facts(a.item)
+    if facts["status"] != "open":
+        die("%s is %s, not open: it already has its session" % (a.item, facts["status"] or "unmarked"))
     if a.body:
         try:
             body = sys.stdin.read() if a.body == "-" else open(a.body).read()
@@ -112,10 +116,7 @@ def main():
         w = subprocess.run([PICKUP_LIST, "handoff", a.item], input=body, text=True, capture_output=True)
         if w.returncode:
             die("cannot write the hand-off into %s: %s" % (a.item, w.stderr.strip() or "pickup-list failed"))
-
-    facts = item_facts(a.item)
-    if facts["status"] != "open":
-        die("%s is %s, not open: it already has its session" % (a.item, facts["status"] or "unmarked"))
+        facts = item_facts(a.item)  # model, effort and title come from the new body
 
     cwd = main_worktree(a.cwd)
     name = session_name(a.item, a.title or facts["title"], facts["where"])

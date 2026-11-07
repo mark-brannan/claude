@@ -310,7 +310,7 @@ the body, forever. `/handoff` writes it (and `/wrapup` step 2b), as does a
 session when the Stop nag blocks once, or when the user says "update
 the hand-off". The nag is a backstop, not the trigger: it arms on a
 context, clock or friction crossing, and a session that ends cleanly never
-sees it. Replace everything below the `---` with four lines, house hand-off
+sees it. Replace everything below the `---` with five lines, house hand-off
 spec, through `~/.claude/bin/pickup-list handoff <id>` with the lines on
 stdin:
 
@@ -319,6 +319,7 @@ stdin:
 link: <the branch, PR, issue or card it acts on>
 model: <opus | sonnet | haiku>
 effort: <low | medium | high>
+title: <a few words a person would name the session by>
 ```
 
 Push before you write it — the item points at a branch, and a branch that
@@ -332,7 +333,7 @@ not a status — "add the fixture for a taken item", never "pickup-list is
 half done". No state adjectives: the link carries state, live, at the other
 end.
 
-This is not a wrap-up. The hand-off costs four lines; `/wrapup` costs a
+This is not a wrap-up. The hand-off costs five lines; `/wrapup` costs a
 log and is for a curia sitting or a session the user asks to log. If the
-checkpoint's verdict line says `archivable`, the four lines are usually all
+checkpoint's verdict line says `archivable`, the five lines are usually all
 that is wanted, and often not even that.

@@ -28,7 +28,7 @@ PICKUP_LIST = r'''#!/bin/sh
 case "$1" in
   show) [ -f "$STUB_PICKUP" ] || { echo "no item" >&2; exit 1; }; cat "$STUB_PICKUP" ;;
   take|open) echo "$*" >> "$STUB_PICKUP.log" ;;
-  find) [ "$2" = 94e9fcb0 ] && printf '  * text\n    %s\n' "$STUB_ID" ;;
+  own) [ "$2" = 94e9fcb0 ] && echo "$STUB_ID" || exit 1 ;;
   handoff) body=$(cat); sed -i '/^---$/q' "$STUB_PICKUP"; printf '%s\n' "$body" >> "$STUB_PICKUP"
            echo "handoff $2" >> "$STUB_PICKUP.log" ;;
 esac
@@ -161,6 +161,21 @@ class HandoffStart(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.marks(), ["handoff %s" % ID, "take %s" % ID])
         self.assertIn("--model haiku --effort high", self.bg()[0])
+
+    def test_the_skills_exact_command_finds_its_item_with_the_body_on_stdin(self):
+        self.env["CLAUDE_CODE_SESSION_ID"] = "94e9fcb0-c89a-43c1-bfb1-0248dc3cfc6e"
+        r = self.run_tool("--body", "-", stdin="Finish it.\nlink: b\nmodel: haiku\neffort: high\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.marks(), ["handoff %s" % ID, "take %s" % ID])
+        self.assertIn("--model haiku --effort high", self.bg()[0])
+
+    def test_a_refused_run_leaves_the_item_as_it_was(self):
+        self.pickup.write_text(ITEM % ("taken", ""))
+        before = self.pickup.read_text()
+        r = self.run_tool(ID, "--body", "-", stdin="Other.\nlink: b\n")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(self.pickup.read_text(), before)
+        self.assertEqual(self.marks(), [])
 
 
 if __name__ == "__main__":
