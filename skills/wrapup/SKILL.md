@@ -1,6 +1,6 @@
 ---
 name: wrapup
-description: Close a session — write the narrative log to the state repo, list the issues the session opened or labelled, and end with a paste-ready hand-off prompt. Use when the user says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
+description: Close a curia sitting, or a session whose work has no home yet — write the narrative log to the state repo, list the issues the session opened or labelled, and start the next session. Use when the user says "wrap up" or "log it", at the end of a curia sitting, or when a session ends with work that has no PR, issue or card. A plain hand-off of homed work is /handoff, not this.
 ---
 
 # Wrapping up
@@ -164,16 +164,16 @@ session that archived in step 0 has nothing to do here.
 ## 5. The closing message
 
 Not before step 2b has passed its check. The closing message holds exactly
-two things: the hand-off prompt, and links to the `## Needs ruling` and
+two things: the launched hand-off (or, on a refusal, the prompt), and links to the `## Needs ruling` and
 `## Human's` cards this session wrote. Nothing else. If nothing hit a
 one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.
 
-Under the prompt, one line: `start` launches it, and nothing is pasted.
-On that word, run `~/.claude/bin/handoff-start --title "<the title>" <this session's item id>`
-once, the title being the few words the hand-off gives the session (its `title:` line), and relay the lines it prints. A refusal is relayed with the paste
-prompt still standing. Offering the word is not a question; it opens
-nothing.
+Then start the next session, in the same turn, with no word to wait for:
+run `~/.claude/bin/handoff-start --title "<the title>" <this session's item id>`
+once, the title being the hand-off's `title:` line, and put the lines it
+prints in the closing message in place of the prompt. A refusal is relayed
+with the paste prompt still standing.
 
 It **opens nothing**: no new question, no doubt, no hint, no "one thing to
 consider". A closing message may say *"next time we discuss X"* — with X
