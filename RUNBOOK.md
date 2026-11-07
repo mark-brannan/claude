@@ -473,13 +473,6 @@ Verify: `list-timers` above now shows a `NEXT` time, the page's header shows a
 `built` time within the last four hours, and the log's last lines are the page
 path with no error.
 
-Without the timer, harvest by hand at least once every 90 days (about four
-minutes, mostly GitHub calls):
-
-```bash
-~/.claude/bin/metrics-db --github --quiet
-```
-
 ```bash
 tail -3 ~/.local/state/metrics-dashboard/timer.log
 ```
