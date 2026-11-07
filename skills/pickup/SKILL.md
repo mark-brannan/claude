@@ -333,5 +333,6 @@ half done". No state adjectives: the link carries state, live, at the other
 end.
 
 This is not a wrap-up. The hand-off costs four lines; `/wrapup` costs a
-log and is for a curia sitting or a session the user asks to log. If the checkpoint's verdict line says `archivable`, the
-four lines are usually all that is wanted, and often not even that.
+log and is for a curia sitting or a session the user asks to log. If the
+checkpoint's verdict line says `archivable`, the four lines are usually all
+that is wanted, and often not even that.

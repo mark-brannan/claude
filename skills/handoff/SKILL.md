@@ -39,5 +39,5 @@ session with no home hands off the same way, with the branch as the link.
 ## 3. Close
 
 Relay the lines `handoff-start` prints, and nothing else: no summary, no
-question, no new loop. If it refuses, give its one-line reason and the four
+question, no new loop. If it refuses, give its one-line reason and the five
 lines above in a fenced block, so the user can paste them into a new session.
