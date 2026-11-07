@@ -314,7 +314,7 @@ def build(db, out, ndays):
     for m in ranked[len(named):]:
         for w, v in mweek[m].items(): mweek["other"][w] += v
     model_series = [(m, {w: round(v, 2) for w, v in mweek[m].items()}) for m in named + (["other"] if len(named) < len(ranked) else [])]
-    ratio = lambda num, den, scale=1: {r["w"]: round(scale * (r[num] or 0) / r[den], 1) for r in costw if r[den]}
+    ratio = lambda rows, num, den, scale=1, nd=1: {r["w"]: round(scale * (r[num] or 0) / r[den], nd) for r in rows if r[den]}
 
     # ci checks: one row per check per workflow run (view ci_checks, metrics-db) ---
     has_ci = bool(q("select 1 from sqlite_master where name='ci_checks'"))
@@ -422,10 +422,9 @@ def build(db, out, ndays):
         kpi("Decision load", "decisions per keyboard hour, 7d", over(per_hour("dec_total")), "friction", good=None, nd=2),
         kpi("Waiting on you", "board cards owned by you, today", over(waiting), "friction", nd=0),
         kpi("What lands", "PRs merged, 7d", over(merged_in), "work", good=None, nd=0),
-        kpi("Leverage", "words you typed per merged PR, 7d", over(words_per_pr), "work", nd=0),
+        kpi("Your words", "words you typed per merged PR, 7d", over(words_per_pr), "work", nd=0),
         kpi("Cost", "API-equivalent $, 7d", over(lambda lo, hi: dsum(S7 % "sum(cost_usd)", lo, hi)), "cost", nd=0),
     ]
-    wsafe = lambda num, den, scale=1, nd=1: {r["w"]: round(scale * (r[num] or 0) / r[den], nd) for r in weekly if r[den]}
     merged_w = {r["w"]: (r["agent"] or 0) + (r["other"] or 0) for r in merged}
     words_pr_w = {r["w"]: round(r["wd"] / merged_w[r["w"]]) for r in typing_w if merged_w.get(r["w"]) and r["wd"]}
 
@@ -441,15 +440,15 @@ def build(db, out, ndays):
             bars("Sessions per day: headless vs interactive", dkeys, [("headless (nothing typed)", series(daily, "d", "headless")), ("interactive", series(daily, "d", "interactive"))]),
         ],
         "friction": [
-            lines("Friction per keyboard hour, weekly", wkeys, [("friction/h", wsafe("fr", "hh", nd=2))], every=4),
-            lines("Engaged sessions with no friction, weekly", wkeys, [("zero-friction %", wsafe("eng0", "eng", 100.0))], every=4, unit="%"),
-            lines("Repeat share of friction, weekly", wkeys, [("repeat %", wsafe("rep", "fr", 100.0))], every=4, unit="%"),
+            lines("Friction per keyboard hour, weekly", wkeys, [("friction/h", ratio(weekly, "fr", "hh", nd=2))], every=4),
+            lines("Engaged sessions with no friction, weekly", wkeys, [("zero-friction %", ratio(weekly, "eng0", "eng", 100.0))], every=4, unit="%"),
+            lines("Repeat share of friction, weekly", wkeys, [("repeat %", ratio(weekly, "rep", "fr", 100.0))], every=4, unit="%"),
             bars("Friction events per day, by type", dkeys, [("correction", series(daily, "d", "c")), ("override", series(daily, "d", "o")), ("rebuke", series(daily, "d", "r")), ("pushback", series(daily, "d", "p"))]),
             lines("Friction per 100 prompts, weekly", wkeys, [("friction/100", per_prompt("fr", 100.0, 1))], every=4),
             bars("Tool calls refused per week, by who refused", wkeys, [("classifier", series(weekly, "w", "bc")), ("settings rule or hook", series(weekly, "w", "br")), ("you declined", series(weekly, "w", "bu"))], every=4),
         ],
         "decisions": [
-            lines("Decisions per keyboard hour, weekly", wkeys, [("decisions/h", wsafe("dec", "hh", nd=2))], every=4),
+            lines("Decisions per keyboard hour, weekly", wkeys, [("decisions/h", ratio(weekly, "dec", "hh", nd=2))], every=4),
             bars("Decisions pushed per day, by type", dkeys, [("scoping", series(daily, "d", "ds")), ("inline", series(daily, "d", "di")), ("gate", series(daily, "d", "dg"))]),
             lines("Board cards waiting on the user, by section", ckeys, user_cards, every=max(len(ckeys) // 8, 1)),
         ],
@@ -470,7 +469,7 @@ def build(db, out, ndays):
             bars("Sessions per week, by prompts typed", wkeys, [("0 (headless)", series(weekly, "w", "t0")), ("1", series(weekly, "w", "t1")), ("2–5", series(weekly, "w", "t2")), ("6+", series(weekly, "w", "t3"))], every=4),
             bars("Merged PRs per week, by prompts typed on the branch", wkeys, [(b, touches.get(b, {})) for b in touch_order], every=4),
             lines("Tool calls per prompt, weekly", wkeys, [("tool calls/prompt", per_prompt("tc", 1, 1))], every=4),
-            lines("Agent hours per keyboard hour, weekly", wkeys, [("agent h / keyboard h", {r["w"]: round(r["ah"] / r["hh"], 2) for r in weekly if r["hh"]})], every=4),
+            lines("Agent hours per keyboard hour, weekly", wkeys, [("agent h / keyboard h", ratio(weekly, "ah", "hh", nd=2))], every=4),
             lines("Commits per prompt, weekly", wkeys, [("commits/prompt", per_prompt("cm", 1, 2))], every=4),
         ],
         "ci": ci_figs,
@@ -478,8 +477,8 @@ def build(db, out, ndays):
             bars("API-equivalent $ per week, by model", wkeys, model_series, every=4),
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
             lines("Cold context share, weekly", wkeys, [("cold %", {r["w"]: round(100.0 * (r["cw"] or 0) / ((r["cw"] or 0) + (r["cr"] or 0)), 1) for r in costw if r["cw"] or r["cr"]})], every=4, unit="%"),
-            lines("Context per turn, weekly mean", wkeys, [("k tokens/turn", ratio("ctx", "turns", 0.001))], every=4, unit="k"),
-            lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio("turns", "n"))], every=4),
+            lines("Context per turn, weekly mean", wkeys, [("k tokens/turn", ratio(costw, "ctx", "turns", 0.001))], every=4, unit="k"),
+            lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),
             bars("Sessions per week, by length", wkeys, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
         ],
     }

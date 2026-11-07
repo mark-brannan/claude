@@ -48,7 +48,7 @@ wanted direction keeps its delta grey.
 | Decision load | decisions per keyboard hour, 7d | sum `dec_total` / keyboard hours | none | Decisions & friction |
 | Waiting on you | board cards owned by you, today | open cards owned `human-ruling` or `human-click` | down | Decisions & friction |
 | What lands | PRs merged, 7d | PRs with `merged_at` in window | none | Work landed |
-| Leverage | words you typed per merged PR, 7d | typed words / PRs merged, same window | down | Work landed |
+| Your words | words you typed per merged PR, 7d | typed words / PRs merged, same window | down | Work landed |
 | Cost | API-equivalent $, 7d | sum of session `cost_usd` | down | Cost |
 
 ## Tiles
@@ -76,7 +76,7 @@ Delta colour: green when the change moves in the wanted direction.
 
 ## Sections and charts
 
-### Open work
+### Open work (tab: Work landed)
 
 Issues and PRs are rebuilt from GitHub created and closed timestamps, so
 history is complete. Board cards start when the item store did.
@@ -114,7 +114,7 @@ history is complete. Board cards start when the item store did.
 | Decisions pushed per day, by type | scoping, inline, gate counts | Which decisions reach me, and when? |
 | Board cards waiting on the user | open cards per day owned `human-ruling` and `human-click` | What do I owe the board? |
 
-### Typing
+### Typing (tab: Your time)
 
 | Chart | Formula | Question |
 |---|---|---|
@@ -123,7 +123,7 @@ history is complete. Board cards start when the item store did.
 | Words per prompt, weekly | words / prompts | Am I saying more per touch? |
 | Characters per prompt, daily | chars / prompts, rounded | How long is a single touch? |
 
-### Agent work vs touches
+### Agent work vs touches (tab: Work landed)
 
 | Chart | Formula | Question |
 |---|---|---|
@@ -136,7 +136,8 @@ history is complete. Board cards start when the item store did.
 
 A session counts toward a branch when it committed on the head branch.
 
-### Cost
+### Cost (tab: Cost)
+
 
 | Chart | Formula | Question |
 |---|---|---|
