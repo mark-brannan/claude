@@ -703,3 +703,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261106t222823z
 - share_of_week stays with no caller yet: seam E (scoping: % of week on estimates) is its planned caller Undo: delete share_of_week and its test ([#417](https://github.com/mark-brannan/claude/pull/417))
+
+### 20261107t085445z
+- A session with no PR, issue or card hands off the same way, with the branch as the link Undo: revert the skill's no-home line ([#422](https://github.com/mark-brannan/claude/pull/422))
