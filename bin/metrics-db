@@ -14,7 +14,7 @@
 #                                 allocation=/actual= lines            -> item_money; views card_cost, batch_cost
 #   ~/.claude/projects/**/*.jsonl the user's own typed prompts         -> typing
 #                                 (local transcripts; incremental by mtime+size)
-#                                 and one row per typed prompt, by minute -> typed_prompts
+#                                 and one row per typed prompt, with its timestamp -> typed_prompts
 #   metrics/input/<host>/*.jsonl  per-minute input counts, from bin/input-export
 #                                 on each host running ActivityWatch -> input, input_win, hosts;
 #                                 sessions.host is the host whose $HOME holds the session's cwd
@@ -127,7 +127,6 @@ create table if not exists typing(path text primary key, session_id text, mtime 
   cwd text, first_ts text, last_ts text, prompts int, chars int, words int, pasted_chars int);
 create table if not exists typed_prompts(path text, session_id text, ts text, words int, chars int, pasted_chars int);
 create index if not exists typed_prompts_path on typed_prompts(path);
-create index if not exists typed_prompts_ts on typed_prompts(ts);
 create table if not exists gh_repos(repo text primary key, topics text, archived int, private int);
 create table if not exists gh_items(repo text, number int, kind text, created_at text, closed_at text,
   merged_at text, state text, draft int, head_ref text, author text, title text,
@@ -648,7 +647,7 @@ def main():
         cx.execute("drop table typing")
     # A database from before typed_prompts has typing rows the incremental
     # scan would skip, so forget them and let the next scan fill both tables.
-    if cx.execute("select 1 from sqlite_master where name='typing'").fetchone() and \
+    if not a.no_typing and cx.execute("select 1 from sqlite_master where name='typing'").fetchone() and \
        not cx.execute("select 1 from sqlite_master where name='typed_prompts'").fetchone():
         cx.execute("delete from typing")
     # sessions is rebuilt on every run, so a table from before a new column
