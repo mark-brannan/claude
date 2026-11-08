@@ -225,10 +225,12 @@ the end of the sitting, print its confer prompt, ready to paste:
 
 ```
 Confer on <short name>: <the card's question, one sentence> (<card link>).
-A one-off session — a few rounds of question and answer, one at a time.
-It ends in a ruling, a spawned issue or a sharper card; open no curia
-unless the user says so, and then only through the gates in the curia
-skill. Model: fable · Effort: high
+A one-off session — a discussion held in chat. Set out the item, give
+your recommendation and one question about the item as text, never a
+permission ask; the user answers in their own words. Never use the
+AskUserQuestion dialog. It ends in a ruling, a spawned issue or a
+sharper card; open no curia unless the user says so, and then only
+through the gates in the curia skill. Model: fable · Effort: high
 ```
 
 The sitting never opens the hard discussion itself; that would bloat its
