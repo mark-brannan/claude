@@ -143,7 +143,7 @@ def areas(title, keys, series, every=7, unit="", wide=False):
 def pie(title, items, unit="$"):
     """items: [(name, value)] largest first; a pie with its legend inside the figure."""
     total = sum(v for _, v in items) or 1
-    cx, cy, r, a0, body = 100, H / 2, 70, -math.pi / 2, []
+    cx, cy, r, a0, body = 180, 170, 150, -math.pi / 2, []
     for i, (name, v) in enumerate(items):
         a1 = a0 + 2 * math.pi * v / total
         big = 1 if a1 - a0 > math.pi else 0
@@ -151,16 +151,16 @@ def pie(title, items, unit="$"):
         d = f"M{cx},{cy} L{pt(a0)} A{r},{r} 0 {big} 1 {pt(min(a1, a0 + 2 * math.pi - 1e-4))}Z" if len(items) > 1 else \
             f"M{cx-r},{cy} a{r},{r} 0 1 0 {2*r},0 a{r},{r} 0 1 0 {-2*r},0Z"
         body.append(f'<path class="a{i+1}" d="{d}"><title>{html.escape(name)}: {usd(v)} ({100*v/total:.0f}%)</title></path>')
-        ly = 18 + i * 20
-        body.append(f'<rect class="s{i+1}" x="200" y="{ly-9}" width="10" height="10" rx="2"/>'
-                    f'<text class="lbl" x="216" y="{ly}">{html.escape(name)} · {usd(v)} · {100*v/total:.0f}%</text>')
+        ly = 60 + i * 38
+        body.append(f'<rect class="s{i+1}" x="380" y="{ly-16}" width="20" height="20" rx="3"/>'
+                    f'<text class="pl" x="410" y="{ly}">{html.escape(name)} · {usd(v)} · {100*v/total:.0f}%</text>')
         a0 = a1
-    return card(title, "".join(body), [])
+    return card(title, "".join(body), [], True, (900, 340))
 
-def card(title, svg_body, legend, wide=False):
+def card(title, svg_body, legend, wide=False, vb=None):
     leg = "".join(f'<span><i class="s{i+1}"></i>{html.escape(n)}</span>' for i, n in enumerate(legend))
     return (f'<figure{" class=wide" if wide else ""}><figcaption>{html.escape(title)}</figcaption>'
-            f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{html.escape(title)}">{svg_body}</svg>'
+            f'<svg viewBox="0 0 {vb[0] if vb else W} {vb[1] if vb else H}" role="img" aria-label="{html.escape(title)}">{svg_body}</svg>'
             f'{"<div class=leg>" + leg + "</div>" if leg else ""}</figure>')
 
 def table_card(title, head, rows, labels=1):
@@ -635,7 +635,7 @@ h2 {{ font-size:16px; margin:24px 0 2px }} .note {{ margin:0 0 10px; font-size:1
 .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px }}
 figure {{ margin:0; background:var(--surface); border:1px solid var(--grid); border-radius:6px; padding:10px 12px 8px }}
 figcaption {{ font-size:13px; color:var(--ink2); margin-bottom:4px }} svg {{ width:100%; height:auto; display:block; overflow:visible }}
-.grid line {{ stroke:var(--grid); stroke-width:1 }} line.base {{ stroke:var(--base) }} .ax {{ fill:var(--muted); font-size:10px }} .lbl {{ fill:var(--ink2); font-size:10px }}
+.grid line {{ stroke:var(--grid); stroke-width:1 }} line.base {{ stroke:var(--base) }} .ax {{ fill:var(--muted); font-size:10px }} .lbl {{ fill:var(--ink2); font-size:10px }} .pl {{ fill:var(--ink); font-size:20px }}
 .ln {{ fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round }}
 path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }}
 path.a1 {{ fill:var(--s1) }} path.a2 {{ fill:var(--s2) }} path.a3 {{ fill:var(--s3) }} path.a4 {{ fill:var(--s4) }} path.a5 {{ fill:var(--muted) }} path.a6 {{ fill:var(--ink2) }} rect.s6 {{ fill:var(--ink2) }} path[class^=a] {{ fill-opacity:.7; stroke:var(--surface); stroke-width:1 }}
