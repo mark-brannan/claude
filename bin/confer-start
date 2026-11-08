@@ -25,11 +25,11 @@ PROMPT = (
     "Confer on work item {id}{title}: read it first with "
     "`~/.claude/bin/work-item show {id}`. A one-off session, opened by an agora "
     "sitting on the user's word \"confer\" -- a discussion held in chat. Set out "
-    "the item, give your recommendation and one question as text; the user answers "
-    "in their own words. Never use the AskUserQuestion dialog. It ends in a ruling, "
-    "a spawned issue or a sharper card; open "
-    "no curia unless the user says so, and then only through the gates in the "
-    "curia skill."
+    "the item, give your recommendation and one question about the item as text, "
+    "never a permission ask; the user answers in their own words. Never use the "
+    "AskUserQuestion dialog. It ends in a ruling, a spawned issue or a sharper "
+    "card; open no curia unless the user says so, and then only through the gates "
+    "in the curia skill."
 )
 
 
