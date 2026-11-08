@@ -450,6 +450,18 @@ class WindowsAndBucketsTest(unittest.TestCase):
         self.assertIn(f"<title>{self.monday(120)}\nwords/prompt: 2", page)
         self.assertRegex(page, rf"<title>{self.monday(100)}\nclaude/\* branch: 1\n")
 
+    def test_overview_carries_the_lanes_block_and_an_empty_database_still_renders(self):
+        page = self.render("lanes-empty", lambda cx: None)
+        self.assertIn('class="lanes"', page)
+        self.assertIn("No keyboard and mouse minutes", page)
+        def setup(cx):
+            now = int(dt.datetime.now(dt.timezone.utc).timestamp() // 60)
+            cx.executemany("insert into input(host, minute, keys, clicks, scroll, move, afk, seen) values ('h', ?, 40, 1, 2, 3, 0, 1)",
+                           [(now - i,) for i in (0, 1, 2, 30, 31)])
+        page = self.render("lanes", setup)
+        self.assertIn('id="lr3"', page)
+        self.assertIn("Keystrokes per minute", page)
+
     def test_session_length_buckets_leave_no_gap(self):
         def setup(cx):
             for i, secs in enumerate((299.9, 300, 3599.5, 3600, 3600.5)):
