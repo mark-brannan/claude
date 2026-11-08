@@ -70,14 +70,17 @@ grows fastest.
   the child card's model and effort (scoping set them), and the numbers CI
   already posts on the PR. One call returns each headline (the complexity,
   coverage and maxims-check comments; a repo with no coverage job has none):
-  `gh api repos/<o>/<r>/issues/<n>/comments --paginate --jq '.[]|select(.body|test("complexity-report|### Coverage:|check:maxims-check"))|.body|split("\n")|map(select(test("^### |breaks, ")))|join(" | ")'`,
+  `gh api repos/<o>/<r>/issues/<n>/comments --paginate --jq '.[]|select(.body|test("complexity-report|### Coverage:|check:maxims-check"))|.body as $b|$b|split("\n")|map(select(test("^### |breaks, ") or (($b|test("check:maxims-check")) and test("^- ")))|sub("^- (?<m>[^,]+),.*";"\(.m)"))|join(" | ")'`
+  (the maxims headline ends with each undeclared break's maxim, name only),
   plus `gh pr view <n> --json changedFiles,reviewDecision,statusCheckRollup`
   for files and failing check names. Read: complexity delta (`+N across M
-  functions`), coverage of changed lines and the total's move, undeclared
-  maxims breaks, failing checks. The card's model stands; a fixer goes up one
-  tier (Sonnet to Opus) on any of (guesses, not measured): complexity +20 or
-  more, changed-line coverage under 60% or total down over 2 points, 2 or more
-  undeclared breaks, 3 or more failing checks. No signal posted, or a verdict
+  functions`), coverage of changed lines and the total's move, which maxims
+  have undeclared breaks, failing checks. The card's model stands; a fixer
+  goes up one tier (Sonnet to Opus) on any of (guesses, not measured):
+  complexity +20 or more, changed-line coverage under 60% or total down over
+  2 points, an undeclared fail-fast, Chesterton's fence, SOLID or SoC break,
+  3 or more failing checks. Other maxims never escalate alone: they are
+  flagged too often to tell PRs apart. No signal posted, or a verdict
   these cannot settle: a Haiku sub-agent returns a one-line triage.
 - **Every worker gets its model by name.** On `driver=workflow`, each
   `agent()` call sets `model` explicitly, never the default; on
