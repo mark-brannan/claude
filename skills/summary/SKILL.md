@@ -1,9 +1,9 @@
 ---
-name: summarize
+name: summary
 description: STUB, not yet built. A terse, in-the-agent's-words account of the session so far — the goal as set, whether it was reached, changed course or left open, the state it is in, and where a fresh session would take it next. No log, no launch. For a hot context, or between steps of a session composed in parts.
 ---
 
-# Summarize
+# Summary
 
 Stub. Design: the hand-off design session (`handoff-workflow-design`), where
 this was named as the piece the hot-context nag should ask for in place of a
