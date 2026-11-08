@@ -63,28 +63,29 @@ def x_labels(keys, every):
             out.append((i, k[5:] if len(k) == 10 else k))
     return out
 
-def frame(keys, vmax, every):
-    tk = ticks(vmax); top = tk[-1] or 1
+def frame(keys, vmax, every, tk=None, lab=fmt):
+    tk = tk or ticks(vmax); top = tk[-1] or 1
     pw, ph = W - ML - MR, H - MT - MB
     y = lambda v: MT + ph - ph * v / top
     g = []
     for t in tk:
         g.append(f'<line class="grid" x1="{ML}" x2="{W-MR}" y1="{y(t):.1f}" y2="{y(t):.1f}"/>'
-                 f'<text class="ax" x="{ML-6}" y="{y(t)+3.5:.1f}" text-anchor="end">{fmt(t)}</text>')
-    for i, lab in x_labels(keys, every):
+                 f'<text class="ax" x="{ML-6}" y="{y(t)+3.5:.1f}" text-anchor="end">{lab(t)}</text>')
+    for i, xl in x_labels(keys, every):
         xx = ML + pw * (i + 0.5) / max(len(keys), 1)
-        g.append(f'<text class="ax" x="{xx:.1f}" y="{H-8}" text-anchor="middle">{lab}</text>')
+        g.append(f'<text class="ax" x="{xx:.1f}" y="{H-8}" text-anchor="middle">{xl}</text>')
     g.append(f'<line class="base" x1="{ML}" x2="{W-MR}" y1="{y(0):.1f}" y2="{y(0):.1f}"/>')
     return "".join(g), y, pw, ph, top
 
-def lines(title, keys, series, every=7, unit="", right=None):
+def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None):
     """series: [(name, {key: value})]; one y axis, same unit for every series."""
     vmax = max([v for _, s in series for v in s.values() if v is not None] or [0])
-    g, y, pw, ph, top = frame(keys, vmax, every)
+    tk = [i * ystep for i in range(int(ycap / ystep) + 1)] if ycap else None  # a fixed, fine axis; values above it ride the top edge
+    g, y, pw, ph, top = frame(keys, vmax, every, tk, (lambda t: f"${t:,.2f}") if ycap else fmt)
     n = max(len(keys), 1); xs = lambda i: ML + pw * (i + 0.5) / n
     body = [g]
     for si, (name, s) in enumerate(series):
-        pts = [(xs(i), y(s[k])) for i, k in enumerate(keys) if s.get(k) is not None]
+        pts = [(xs(i), y(min(s[k], top) if ycap else s[k])) for i, k in enumerate(keys) if s.get(k) is not None]
         if not pts: continue
         d = "M" + " L".join(f"{px:.1f},{py:.1f}" for px, py in pts)
         body.append(f'<path class="s{si+1} ln" d="{d}"/>')
@@ -382,6 +383,8 @@ def build(db, out, ndays):
     cost_w = {r["w"]: r for r in costw}
     def per_w(num, den_rows, den, scale=1.0):  # words that week over a per-week figure from another table; weeks with none are gaps
         return {w: round(words_w[w] * scale / den_rows[w][den], 1) for w in words_w if w in den_rows and den_rows[w][den]}
+    allsc = [v for d in sc.values() for v in d]
+    SCAP = max(3, math.ceil(pctl(allsc, .75) * 1.5)) if allsc else 3  # left axis: whole dollars, about 1.5x the 75th-percentile session; spikes ride the top
     ratio = lambda rows, num, den, scale=1, nd=1: {r["w"]: round(scale * (r[num] or 0) / r[den], nd) for r in rows if r[den]}
 
     # ci checks: one row per check per workflow run (view ci_checks, metrics-db) ---
@@ -560,8 +563,8 @@ def build(db, out, ndays):
         "cost": [
             areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", wkeys[-13:], model_series, every=1, wide=True),
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
-            lines("Session $ per day: avg and p10 (left axis); p90, p99 and max (right axis)", dkeys, stats(1)[0], unit="$", right=stats(1)[1]),
-            lines("Session $, rolling 7 days: avg and p10 (left axis); p90, p99 and max (right axis)", dkeys, stats(7)[0], unit="$", right=stats(7)[1]),
+            lines("Session $ per day: avg and p10 (left axis, spikes clipped at the top); p90, p99 and max (right axis)", dkeys, stats(1)[0], unit="$", right=stats(1)[1], ycap=SCAP, ystep=1),
+            lines("Session $, rolling 7 days: avg and p10 (left axis, spikes clipped at the top); p90, p99 and max (right axis)", dkeys, stats(7)[0], unit="$", right=stats(7)[1], ycap=SCAP, ystep=1),
             lines("Cold context share, weekly, by session length", wkeys, cold_g, every=4, unit="%"),
             lines("Context per turn, weekly mean, by session length", wkeys, ctx_g, every=4, unit="k"),
             lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),
