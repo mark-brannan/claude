@@ -447,6 +447,16 @@ def build(db, out, ndays):
         ci_figs.append(areas("CI check $ per day, stacked by check (review, arete, maxims, fixer, substantive)", cdays,
                              [(nm(c), {d: round(v, 3) for d, v in ci_day[c].items()}) for c in sorted(order, key=lambda c: -tot[c])[:5]],
                              every=max(len(cdays) // 8, 1), unit="$", wide=True))
+        mord = [m for m, _ in sorted({model_name(r["model"]): 0 for r in ci}.items())]
+        mrank = sorted(mord, key=lambda m: -sum(r["cost_usd"] for r in ci if model_name(r["model"]) == m))
+        for c in order:  # per check: $ per day by model, and under it runs per day by model
+            usd_d, run_d = defaultdict(lambda: defaultdict(float)), defaultdict(lambda: defaultdict(float))
+            for r in ci:
+                if r["what"] != c: continue
+                m = model_name(r["model"]); usd_d[m][r["ts"][:10]] += r["cost_usd"]; run_d[m][r["ts"][:10]] += 1
+            ms = [m for m in mrank if m in usd_d]; ev = max(len(cdays) // 8, 1)
+            ci_figs.append("<div>" + bars(f"{nm(c)}: $ per day, by model", cdays, [(m, {d: round(v, 3) for d, v in usd_d[m].items()}) for m in ms], every=ev, unit="$")
+                           + bars(f"{nm(c)}: runs per day, by model", cdays, [(m, dict(run_d[m])) for m in ms], every=ev) + "</div>")
         rr = sorted(repo_tot.items(), key=lambda kv: -kv[1])
         top = rr[:5] + ([("other", sum(v for _, v in rr[5:]))] if len(rr) > 5 else [])
         ci_figs.append(pie("CI check cost by repo, all collected runs", [(k.split("/")[-1], v) for k, v in top]))
