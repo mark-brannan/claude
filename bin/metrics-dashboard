@@ -633,6 +633,7 @@ svg.spark {{ width:100%; height:32px; margin-top:6px }} .spark path {{ fill:none
 h2 {{ font-size:16px; margin:24px 0 2px }} .note {{ margin:0 0 10px; font-size:12px }}
 .cols {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr)); gap:16px; align-items:start }}
 .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px }}
+#p-cost .grid {{ grid-template-columns:repeat(auto-fill,minmax(min(100%,640px),1fr)) }}
 figure {{ margin:0; background:var(--surface); border:1px solid var(--grid); border-radius:6px; padding:10px 12px 8px }}
 figcaption {{ font-size:13px; color:var(--ink2); margin-bottom:4px }} svg {{ width:100%; height:auto; display:block; overflow:visible }}
 .grid line {{ stroke:var(--grid); stroke-width:1 }} line.base {{ stroke:var(--base) }} .ax {{ fill:var(--muted); font-size:10px }} .lbl {{ fill:var(--ink2); font-size:10px }} .pl {{ fill:var(--ink); font-size:20px }}
