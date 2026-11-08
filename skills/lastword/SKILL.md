@@ -1,48 +1,91 @@
 ---
 name: lastword
 disable-model-invocation: true
-description: DRAFT, not yet wired. The user's own, typed by the user only — close a curia sitting so the user's words come last and the sitting reads as closed until the next one. Carries over from /wrapup the parts that give closure; will replace /wrapup for curia sessions. Not for a plain hand-off (that is /handoff).
+description: The user's own /lastword, typed by the user only — close a curia sitting so the user's words come last and the sitting reads as closed until the next one. Runs the curia skill's Closing, writes the next sitting into this session's pickup item, and then answers whatever the user says with one line. The agent cannot invoke it. Not for a plain hand-off (that is /handoff); replaces /wrapup for a curia.
 ---
 
 # Last word
 
-Draft. Design: the hand-off design session (`handoff-workflow-design`).
-The user wants, from a curia, one thing no other skill gives: the sense of
-getting their words in last, and that the sitting is closed until they are
-ready to discuss again.
+The user wants one thing from the end of a curia sitting that no other
+skill gives: the sense of getting their words in last, and that the sitting
+is closed until they are ready to discuss again. Typing `/lastword` is the
+moment the curia skill's Closing calls "the user says when".
 
-The curia is not redesigned here. The curia skill's Closing section already
-owns the mechanics (land edits, rewrite the two sections the next opening
-reads, spawn the runner in the background, print the paste-again prompt,
-write `CLOSED`). This skill adds the closure around them and does not copy
-them: run that Closing, then the steps below.
+The curia skill owns the closing mechanics; this skill runs them and adds
+what makes the close hold. It copies none of them.
 
-## Carried over from /wrapup
+## 0. Is a sitting live in this session
 
-- **Say what is still open, by concept, and nothing new.** The closing
-  message opens no question, doubt, hint or "one more thing". Anything
-  uncaptured goes first into the sitting's `## For next time` list (one line
-  each: threads and questions opened and not closed); a closing message may
-  say "next time we discuss X" only for an X already on that list.
-- **The closing message holds exactly two things:** the paste-again prompt
-  (`/curia <id>`, model and effort from the document's header) and links to
-  any decision or click-work cards the sitting wrote.
-- **Never ask the user to review or merge.** The PR is where that lives.
-- **The user speaks last.** Whatever they reply after the closing message is
-  recorded verbatim, dated, under `## Final words (verbatim)`; answer with
-  one line naming where it landed. If the words change the next action,
-  update the hand-off's first line and say so inside that same line. Then
-  stop, and stay stopped: a Stop-hook block after this point is answered
-  with the block it asks for and the same one line.
-- **Release the branch:**
-  `~/.claude/hooks/claim-stamp.py release -C . --scan <session id>`, unless
-  the sitting is pausing mid-work and keeping its worktree.
+Find the curia whose `LIVE` file (`state/global/curia/<id>/LIVE`) names
+this session. None: say in one line that no sitting is live here, and stop.
+Closure for a confer or the agora is not built yet.
 
-## Open (not carried over yet)
+## 1. Capture before closing
 
-- Whether a narrative log earns its keep for a curia, given what `roll.md`
-  and the Trace already hold. `/wrapup` wrote one; until decided, the
-  Final-words section goes where the curia keeps the user's words.
-- Whether `confer` sessions and the agora want the same closure.
-- `/wrapup` retires only once this and `/handoff` cover its uses and the
-  flag shows it unused.
+Anything opened in the sitting and not closed — a thread, a question, a
+doubt — goes into the curia's own document now, where its next opening
+reads it: an open question under **Open questions**, the rest in **Where
+this stands** (step 2). Nothing is carried in the closing message that is
+not written there first.
+
+## 2. Run the curia skill's Closing
+
+All six steps, in order, as the curia skill writes them: land the edits and
+rewrite the two sections, spawn the runner in the background, say what is
+open, print the paste-again prompt, write `CLOSED`, open nothing.
+
+## 3. Write the next sitting into the pickup item
+
+Before the closing message. The Stop hook asks for a hand-off when a
+context or clock line has been crossed, and it stays silent only when this
+session's pickup item already has one; without it, the hook's ask lands
+after the close and the agent, not the user, speaks last.
+
+```
+~/.claude/bin/pickup-list handoff <this session's item id> <<'EOF'
+Open the next sitting: /curia <id>
+link: state/global/curia/<id>/
+model: <from the curia document's header>
+effort: <from the curia document's header>
+title: <id> curia, next sitting
+EOF
+```
+
+This writes the hand-off only; it launches nothing. The next sitting starts
+when the user types `/curia <id>`.
+
+## 4. Release the branch
+
+`~/.claude/hooks/claim-stamp.py release -C . --scan $CLAUDE_CODE_SESSION_ID`
+— a no-op when the sitting held no claim.
+
+## 5. The closing message
+
+Exactly two things: the paste-again prompt from Closing, and links to any
+decision or click-work cards the sitting wrote. It opens nothing: no new
+question, doubt, hint or "one more thing". It may say "next time we discuss
+X" only for an X already written in step 1. It never asks the user to
+review or merge.
+
+## 6. The user speaks last
+
+`LIVE` stays in place after `CLOSED`, so the roll hook keeps appending what
+the user types to the curia's `roll.md`, verbatim and stamped. The agent
+writes nothing for it.
+
+Answer whatever the user says next with one line at most, naming where it
+landed (`<id>/roll.md`). If the words change the next sitting's first
+action, update the pickup item's first line and say so inside that same
+line. Then stop, and stay stopped: a Stop-hook block after this point is
+answered with what it asks for and the same one line.
+
+## Open
+
+- **A narrative log.** `/wrapup` wrote one; this writes none. The user's
+  final words are in `roll.md`, the meaning in **Where this stands** and
+  **Working memory**, the sitting in the Trace. Add one only if a sitting
+  turns up something none of those holds.
+- **Confer sessions and the agora.** Whether they want the same closure;
+  step 0 refuses them for now.
+- **Retiring `/wrapup`.** Once this and `/handoff` cover its uses and its
+  user-only flag shows it unused.

@@ -1,7 +1,7 @@
 ---
 name: handoff
 disable-model-invocation: true
-description: The user's own /handoff, typed by the user only — push the branch, write the hand-off into this session's pickup item and launch a background session that runs /pickup on it, all in one turn. The agent cannot invoke it and never runs handoff-start on its own. Not for a curia sitting (that is /wrapup).
+description: The user's own /handoff, typed by the user only — push the branch, write the hand-off into this session's pickup item and launch a background session that runs /pickup on it, all in one turn. The agent cannot invoke it and never runs handoff-start on its own. Not for a curia sitting (that is /lastword).
 ---
 
 # Hand off

@@ -570,7 +570,7 @@ cites the one it reopens.
      file name and the measured-row form, from the retrospective's
      scenarios. The curia's ledger holds the stamps. -->
 
-## Closing (the user says when)
+## Closing (the user says when, by typing `/lastword`)
 
 1. Land every edit, applying any unapplied lint patch under `inputs/` (see lint),
    its commit carrying the `Co-Authored-By` trailer; then rewrite the two sections the next opening reads:
