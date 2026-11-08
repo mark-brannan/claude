@@ -348,6 +348,11 @@ def build(db, out, ndays):
               f"sum(cache_read_tokens) cr, sum({CTX}) ctx, sum(assistant_turns) turns, "
               "sum(elapsed_seconds < 300) short, sum(elapsed_seconds between 300 and 3600) mid, "
               "sum(elapsed_seconds > 3600) long from sessions group by w")
+    BUCKETS = (("under 5 min", "elapsed_seconds < 300"), ("5 min to 1 h", "elapsed_seconds between 300 and 3600"), ("over 1 h", "elapsed_seconds > 3600"))
+    grp = {n: q(f"select {wk('started_at')} w, sum(cache_creation_tokens) cw, sum(cache_read_tokens) cr, sum({CTX}) ctx, sum(assistant_turns) turns "
+                f"from sessions where {cond} group by w") for n, cond in BUCKETS}
+    cold_g = [(n, {r["w"]: round(100.0 * (r["cw"] or 0) / ((r["cw"] or 0) + (r["cr"] or 0)), 1) for r in rows if r["cw"] or r["cr"]}) for n, rows in grp.items()]
+    ctx_g = [(n, {r["w"]: round(r["ctx"] / r["turns"] / 1000.0, 1) for r in rows if r["turns"]}) for n, rows in grp.items()]
     mtot, mweek = defaultdict(float), defaultdict(lambda: defaultdict(float))
     for r in q(f"select {wk('s.started_at')} w, c.model m, sum(c.cost_usd) usd from session_cost c "
                "join sessions s on s.session_id = c.session_id group by w, m"):
@@ -556,8 +561,8 @@ def build(db, out, ndays):
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
             lines("Session $ per day: p10, avg, p90, p99 (left axis) and max (right axis)", dkeys, stats(1)[0], unit="$", right=stats(1)[1]),
             lines("Session $, rolling 7 days: p10, avg, p90, p99 (left axis) and max (right axis)", dkeys, stats(7)[0], unit="$", right=stats(7)[1]),
-            lines("Cold context share, weekly", wkeys, [("cold %", {r["w"]: round(100.0 * (r["cw"] or 0) / ((r["cw"] or 0) + (r["cr"] or 0)), 1) for r in costw if r["cw"] or r["cr"]})], every=4, unit="%"),
-            lines("Context per turn, weekly mean", wkeys, [("k tokens/turn", ratio(costw, "ctx", "turns", 0.001))], every=4, unit="k"),
+            lines("Cold context share, weekly, by session length", wkeys, cold_g, every=4, unit="%"),
+            lines("Context per turn, weekly mean, by session length", wkeys, ctx_g, every=4, unit="k"),
             lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),
             bars("Sessions per week, by length", wkeys, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
         ],
@@ -574,7 +579,7 @@ def build(db, out, ndays):
         "typing": "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing. Each transcript is counted on the day its first prompt was typed, so a session that runs past midnight or is resumed later keeps all its prompts on that first day.",
         "input": f"Per-minute counts from ActivityWatch on each host that exports them (input-export); counts and app categories only. A minute is active input at {ACTIVE_KEYS_PER_MIN}+ key presses; present is time ActivityWatch did not call away. A session's minutes are those between its start and end on the host whose home holds its cwd. Days with no data are gaps, never zeros; the coverage tile says how many there were.",
         "agent": "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch. Words per merged PR divides all words typed in the week by the PRs merged in it.",
-        "cost": cost_note + "Dollars are the Stop hook's estimate at API list price, pricing each session's four token counts per model (hooks/session-metrics.jq): a weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. Cold context is the share of context tokens written to the cache instead of re-read from it; a write is priced far above a re-read, and a gap past the cache window makes the next turn cold for the whole context. A merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session are left out of the mean.",
+        "cost": cost_note + "Dollars are the Stop hook's estimate at API list price, pricing each session's four token counts per model (hooks/session-metrics.jq): a weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. Cold context and context per turn are split by session length, because a one-shot fixer and a long sitting are different work and their mean says nothing about either. Cold context is the share of context tokens written to the cache instead of re-read from it; a write is priced far above a re-read, and a gap past the cache window makes the next turn cold for the whole context. A merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session are left out of the mean.",
         "ci": ci_note,
     }
     titles = {"open": "Open work", "sessions": "Sessions", "friction": "Friction", "decisions": "Decisions",
