@@ -91,16 +91,17 @@ def lines(title, keys, series, every=7, unit="", right=None):
         if 1 < len(series) <= 3:  # direct label at the line's end
             body.append(f'<text class="lbl" x="{pts[-1][0]+4:.1f}" y="{pts[-1][1]+3.5:.1f}">{html.escape(name)}</text>')
     if right:  # one series on its own right-hand axis (dotted, labelled), for an outlier that would flatten the rest
-        rname, rs = right; rmax = max([v for v in rs.values() if v is not None] or [0]); rtop = ticks(rmax)[-1] or 1
+        rmax = max([v for _, rs in right for v in rs.values() if v is not None] or [0]); rtop = ticks(rmax)[-1] or 1
         ry = lambda v: MT + ph - ph * v / rtop
-        pts = [(xs(i), ry(rs[k])) for i, k in enumerate(keys) if rs.get(k) is not None]
-        if len(pts) > 1: body.append(f'<path class="s5 ln" stroke-dasharray="2 4" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
+        for ri, (rname, rs) in enumerate(right):
+            pts = [(xs(i), ry(rs[k])) for i, k in enumerate(keys) if rs.get(k) is not None]
+            if len(pts) > 1: body.append(f'<path class="s{len(series)+ri+1} ln" stroke-dasharray="2 4" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
         for t in ticks(rmax): body.append(f'<text class="ax" x="{W-MR+4}" y="{ry(t)+3.5:.1f}">{fmt(t)}</text>')
-        body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">{html.escape(rname)} →</text>')
+        body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">right →</text>')
     for i, k in enumerate(keys):  # hover layer: one hit target per step
-        tip = k + "".join(f"\n{name}: {fmt(s.get(k))}{unit}" for name, s in series) + (f"\n{right[0]}: {fmt(right[1].get(k))}{unit}" if right else "")
+        tip = k + "".join(f"\n{name}: {fmt(s.get(k))}{unit}" for name, s in series) + "".join(f"\n{rn} (right): {fmt(rs.get(k))}{unit}" for rn, rs in (right or ()))
         body.append(f'<rect class="hit" x="{xs(i)-pw/n/2:.1f}" y="{MT}" width="{pw/n:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
-    return card(title, "".join(body), ([n for n, _ in series] + ([right[0] + " (right axis)"] if right else [])) if len(series) > 1 or right else [])
+    return card(title, "".join(body), ([n for n, _ in series] + [rn + " (right axis)" for rn, _ in (right or ())]) if len(series) > 1 or right else [])
 
 def bars(title, keys, series, every=7, unit=""):
     """Stacked bars. series: [(name, {key: value})]; segments keep a 2px gap."""
@@ -374,7 +375,7 @@ def build(db, out, ndays):
             if v:
                 out["avg"][k] = round(sum(v) / len(v), 2); out["p10"][k] = round(pctl(v, .1), 2)
                 out["p90"][k] = round(pctl(v, .9), 2); out["p99"][k] = round(pctl(v, .99), 2); out["max"][k] = round(max(v), 2)
-        return [(n, out[n]) for n in ("p99", "p90", "avg", "p10")], ("max", out["max"])
+        return [("avg", out["avg"]), ("p10", out["p10"])], [("p90", out["p90"]), ("p99", out["p99"]), ("max", out["max"])]
     words_w = {r["w"]: r["wd"] for r in typing_w}
     words_m = {r["m"]: r["wd"] for r in q("select substr(first_ts, 1, 7) m, sum(words) wd from typing where first_ts is not null group by m")}
     mkeys = sorted(words_m)
@@ -559,8 +560,8 @@ def build(db, out, ndays):
         "cost": [
             areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", wkeys[-13:], model_series, every=1, wide=True),
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
-            lines("Session $ per day: p10, avg, p90, p99 (left axis) and max (right axis)", dkeys, stats(1)[0], unit="$", right=stats(1)[1]),
-            lines("Session $, rolling 7 days: p10, avg, p90, p99 (left axis) and max (right axis)", dkeys, stats(7)[0], unit="$", right=stats(7)[1]),
+            lines("Session $ per day: avg and p10 (left axis); p90, p99 and max (right axis)", dkeys, stats(1)[0], unit="$", right=stats(1)[1]),
+            lines("Session $, rolling 7 days: avg and p10 (left axis); p90, p99 and max (right axis)", dkeys, stats(7)[0], unit="$", right=stats(7)[1]),
             lines("Cold context share, weekly, by session length", wkeys, cold_g, every=4, unit="%"),
             lines("Context per turn, weekly mean, by session length", wkeys, ctx_g, every=4, unit="k"),
             lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),
