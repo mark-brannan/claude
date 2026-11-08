@@ -379,6 +379,32 @@ class TypingTest(FixtureTest):
         self.assertEqual(self.typing("sess-typed-1")[0], 5)
         self.assertIn("2 of 2 transcripts rescanned", self.build("--rescan-typing").stdout)
 
+    def test_each_typed_prompt_has_a_timed_row_that_sums_to_the_transcript(self):
+        self.build("--quiet")
+        rows = self.fx.q("select ts, words, chars, pasted_chars from typed_prompts "
+                         "where session_id='sess-typed-1' order by ts")
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0][0], "2026-10-01T10:00:00Z")
+        self.assertEqual(rows[-1][0], "2026-10-01T10:50:00Z")
+        _, chars, words, pasted, _, _, _ = self.typing("sess-typed-1")
+        self.assertEqual((sum(r[1] for r in rows), sum(r[2] for r in rows), sum(r[3] for r in rows)),
+                         (words, chars, pasted))
+
+    def test_machine_prompts_leave_no_timed_rows(self):
+        self.build("--quiet")
+        self.assertEqual(self.fx.q("select count(*) from typed_prompts where session_id='sess-headless-2'"), [(0,)])
+
+    def test_a_rescan_replaces_timed_rows_and_never_duplicates_them(self):
+        self.build("--quiet")
+        before = self.fx.q("select count(*) from typed_prompts")
+        self.build("--quiet", "--rescan-typing")
+        self.assertEqual(self.fx.q("select count(*) from typed_prompts"), before)
+        path = self.fx.projects / "-fixture-cwd" / "sess-typed-1.jsonl"
+        with open(path, "a") as f:
+            f.write(transcript_line("a late prompt", "2026-10-01T11:00:00Z") + "\n")
+        self.build("--quiet")
+        self.assertEqual(self.fx.q("select count(*) from typed_prompts where session_id='sess-typed-1'"), [(5,)])
+
     def test_no_typing_skips_the_scan(self):
         r = self.build("--no-typing")
         self.assertNotIn("typing", r.stdout)
@@ -401,6 +427,15 @@ class TypingCacheTest(FixtureTest):
         (self.fx.projects / "-fixture-cwd" / "sess-headless-2.jsonl").unlink()
         self.build("--quiet")
         self.assertEqual(self.fx.q("select session_id from typing"), [("sess-typed-1",)])
+
+    def test_a_database_from_before_timed_rows_is_rescanned_to_fill_them(self):
+        self.build("--quiet")
+        cx = sqlite3.connect(self.fx.db)
+        cx.execute("drop table typed_prompts")
+        cx.commit()
+        cx.close()
+        self.assertIn("2 of 2", self.build().stdout)
+        self.assertEqual(self.fx.q("select count(*) from typed_prompts where session_id='sess-typed-1'"), [(4,)])
 
     def test_a_cache_keyed_by_session_id_is_rebuilt(self):
         self.fx.db.parent.mkdir(parents=True)

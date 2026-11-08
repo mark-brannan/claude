@@ -431,7 +431,9 @@ metrics-db --quiet && metrics-dashboard    # warm: seconds; prints the page path
 
 `--github` also re-pulls issues and PRs (about a minute cold, a few dozen API
 calls). `--rescan-typing` rereads every transcript, after changing what counts
-as a typed prompt in `metrics-db`. A typed slash command counts as a touch;
+as a typed prompt in `metrics-db`; the scan fills `typing` (one row per
+transcript) and `typed_prompts` (one row per typed prompt, with its timestamp)
+together, and replaces a transcript's rows whole when it changes. A typed slash command counts as a touch;
 headless sessions count in the sessions tile and are listed apart.
 
 `--github` also collects the CI review checks' `headless-run` artifacts (claude-review,
