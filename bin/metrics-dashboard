@@ -95,7 +95,7 @@ def lines(title, keys, series, every=7, unit="", right=None):
         ry = lambda v: MT + ph - ph * v / rtop
         for ri, (rname, rs) in enumerate(right):
             pts = [(xs(i), ry(rs[k])) for i, k in enumerate(keys) if rs.get(k) is not None]
-            if len(pts) > 1: body.append(f'<path class="s{len(series)+ri+1} ln" stroke-dasharray="2 4" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
+            if len(pts) > 1: body.append(f'<path class="s{len(series)+ri+1} ln" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
         for t in ticks(rmax): body.append(f'<text class="ax" x="{W-MR+4}" y="{ry(t)+3.5:.1f}">{fmt(t)}</text>')
         body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">right →</text>')
     for i, k in enumerate(keys):  # hover layer: one hit target per step
