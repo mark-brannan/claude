@@ -1,10 +1,14 @@
 #!/usr/bin/env sh
 
-# Ensure the fleet's triage labels exist on every vended repo, at the colour
-# and description below. Safe to rerun: --force updates a label that exists.
+# Ensure the fleet's triage labels exist on every vended and non-vended repo,
+# at the colour and description below. Safe to rerun: --force updates a label
+# that exists.
 
 set -u
 OWNER="${OWNER:-mark-brannan}"
+for f in ~/.local/share/vended-repos.txt ~/.local/share/non-vended-repos.txt; do
+  [ -r "$f" ] || { echo "create-pr-labels: $f missing" >&2; exit 2; }
+done
 REPOS="$(cat ~/.local/share/vended-repos.txt ~/.local/share/non-vended-repos.txt | tr -d '\r' | grep -v '^[[:space:]]*$')"
 
 ensure() { # ensure <label> <color> <description>
