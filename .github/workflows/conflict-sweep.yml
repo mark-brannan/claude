@@ -50,7 +50,7 @@ permissions:
 
 env:
   # Bounds the fixer runs one push to main can start.
-  MAX_NUDGES: '5'
+  MAX_NUDGES: '2'
   CONFLICT_LABEL: Has Conflict
 
 jobs:
