@@ -86,7 +86,7 @@ def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=No
     """series: [(name, {key: value})]; one y axis, same unit for every series."""
     vmax = max([v for _, s in series for v in s.values() if v is not None] or [0])
     tk = [round(i * ystep, 2) for i in range(round(ycap / ystep) + 1)] if ycap else None  # a fixed, fine axis; values above it ride the top edge
-    g, y, pw, ph, top = frame(keys, vmax, every, tk, (lambda t: f"${t:,.2f}") if ycap else fmt)
+    g, y, pw, ph, top = frame(keys, vmax, every, tk, (lambda t: f"${t:,.2f}") if ycap else (lambda t: "$" + fmt(t)) if unit == "$" else fmt)
     n = max(len(keys), 1); xs = lambda i: ML + pw * (i + 0.5) / n
     body = [g]
     for si, (name, s) in enumerate(series):
@@ -126,7 +126,7 @@ def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=No
 def bars(title, keys, series, every=7, unit=""):
     """Stacked bars. series: [(name, {key: value})]; segments keep a 2px gap."""
     tot = {k: sum((s.get(k) or 0) for _, s in series) for k in keys}
-    g, y, pw, ph, top = frame(keys, max(tot.values() or [0]), every)
+    g, y, pw, ph, top = frame(keys, max(tot.values() or [0]), every, None, (lambda t: "$" + fmt(t)) if unit == "$" else fmt)
     n = max(len(keys), 1); bw = pw / n
     body = [g]
     for i, k in enumerate(keys):
@@ -142,10 +142,12 @@ def bars(title, keys, series, every=7, unit=""):
         body.append(f'<rect class="hit" x="{ML+bw*i:.1f}" y="{MT}" width="{bw:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
     return card(title, "".join(body), [n for n, _ in series] if len(series) > 1 else [])
 
-def areas(title, keys, series, every=7, unit="", wide=False, right=None):
+def areas(title, keys, series, every=7, unit="", wide=False, right=None, ycap=None, key=()):
     """Stacked areas. series: [(name, {key: value})], first at the bottom; a hover column per key."""
     tot = {k: sum((s.get(k) or 0) for _, s in series) for k in keys}
-    g, y, pw, ph, top = frame(keys, max(tot.values() or [0]), every)
+    tk = [round(i * ycap / 5, 2) for i in range(6)] if ycap else None  # a fixed axis; stacks above it ride the top edge
+    g, y0, pw, ph, top = frame(keys, max(tot.values() or [0]), every, tk, ((lambda t: "$" + fmt(t)) if unit == "$" else fmt))
+    y = (lambda v: y0(min(v, top))) if ycap else y0
     n = max(len(keys), 1); xs = lambda i: ML + pw * (i + 0.5) / n
     body = [g]; base = [0] * len(keys)
     for si, (name, s) in enumerate(series):
@@ -165,6 +167,11 @@ def areas(title, keys, series, every=7, unit="", wide=False, right=None):
         if len(pts) > 1: body.append(f'<path class="s6 ln" stroke-dasharray="2 3" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
         for t in ticks(max([v for v in rs.values() if v is not None] or [0])): body.append(f'<text class="ax" x="{W-MR+4}" y="{ry(t)+3.5:.1f}">{fmt(t)}</text>')
         body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">{html.escape(rname)} →</text>')
+    if key:  # a key inside the plot: swatch and text per line, on a faint panel
+        body.append(f'<rect x="{ML+4}" y="{MT+2}" width="250" height="{6+14*len(key)}" rx="3" fill="var(--surface)" fill-opacity=".85"/>')
+        for j, (cl, t) in enumerate(key):
+            yy = MT + 14 + 14 * j
+            body.append(f'<path class="s{cl} ln" d="M{ML+9},{yy-3.5} L{ML+25},{yy-3.5}"/><text class="lbl" x="{ML+30}" y="{yy}">{html.escape(t)}</text>')
     return card(title, "".join(body), [n for n, _ in series] + ([right[0] + " (right axis, dotted)"] if right else []), wide)
 
 def pie(title, items, unit="$"):
@@ -198,6 +205,8 @@ def table_card(title, head, rows, labels=1):
 def usd(v):
     return "–" if v is None else f"${v:,.2f}" if abs(v) >= 0.995 else f"${v:,.3f}"
 
+# fixed y tops, dollars, for the CI check charts
+CIAXIS = {"claude-review": 400, "claude-maxims": 100, "claude-arete": 100, "claude-fixer": 1, "claude-substantive": 5}
 CI_CHECKS = ["claude-review", "claude-maxims", "claude-arete"]
 
 def delta(now, prev, good):
@@ -493,18 +502,24 @@ def build(db, out, ndays):
             for m in ms:
                 for k, v in run_h[m].items(): runs_all[k] += v
             ysers = lambda f: [(m, f(usd_h[m])) for m in ms]
-            trend = areas(f"{nm(c)}: rolling 7-day $, by model (runs dotted, right)", hkeys, ysers(rolling), every=ev, unit="$", right=("runs", rolling(runs_all)))
-            cum = areas(f"{nm(c)}: cumulative $ since the weekly reset" + (", runs on the right" if len(ms) == 1 else ", by model"), hkeys, ysers(cumulative), every=ev, unit="$", right=("runs", cumulative(runs_all)))
+            cap = CIAXIS.get(c)
+            def per_run(m=None):  # mean and sd of a run's cost, over the rows charted
+                v = [r["cost_usd"] for r in ci if r["what"] == c and (m is None or model_name(r["model"]) == m)]
+                mu = sum(v) / len(v); return mu, (sum((x - mu) ** 2 for x in v) / len(v)) ** .5, len(v)
+            mu, sd, nr = per_run()
+            key = [(6, f"mean $/run ${mu:,.3f} (sd {sd:,.3f}, {nr} runs)")] + ([] if len(ms) == 1 else [(slot(m, 0), f"{m} ${per_run(m)[0]:,.3f} (sd {per_run(m)[1]:,.3f})") for m in ms])
+            trend = areas(f"{nm(c)}: rolling 7-day $, by model (runs dotted, right)", hkeys, ysers(rolling), every=ev, unit="$", right=("runs", rolling(runs_all)), ycap=cap, key=key)
+            cum = areas(f"{nm(c)}: cumulative $ since the weekly reset" + (", runs on the right" if len(ms) == 1 else ", by model"), hkeys, ysers(cumulative), every=ev, unit="$", right=("runs", cumulative(runs_all)), ycap=cap, key=key)
             extra = "" if len(ms) == 1 else areas(f"{nm(c)}: cumulative runs since the weekly reset, by model", hkeys, [(m, cumulative(run_h[m])) for m in ms], every=ev)
             per_check.append("<div>" + trend + cum + extra + "</div>")
         ci_figs.insert(0, '<div class="five">' + "".join(per_check) + "</div>")  # one row of up to five checks, $ over runs
         rr = sorted(repo_tot.items(), key=lambda kv: -kv[1])
         top = rr[:5] + ([("other", sum(v for _, v in rr[5:]))] if len(rr) > 5 else [])
         ci_figs.append(pie("CI check cost by repo, all collected runs", [(k.split("/")[-1], v) for k, v in top]))
-        for title, acc, hdr in (("Cost by repo and check", by_repo, "repo"), ("Cost by model and check", by_model, "model")):
-            ranked = sorted(acc.items(), key=lambda kv: -kv[1][0])
-            ci_figs.append(table_card(title, [hdr, "check", "total", "runs", "mean per run"],
-                [[k[1], k[0], usd(v[0]), v[1], usd(v[0] / v[1])] for k, v in ranked], labels=2))
+        for title, acc, hdr in (("Cost by check, then repo", by_repo, "repo"), ("Cost by check, then model", by_model, "model")):
+            ranked = sorted(acc.items(), key=lambda kv: (order.index(kv[0][0]), -kv[1][0], -kv[1][1]))
+            ci_figs.append(table_card(title, ["check", hdr, "total", "runs", "mean per run"],
+                [[k[0], k[1], usd(v[0]), v[1], usd(v[0] / v[1])] for k, v in ranked], labels=2))
         ci_note = (f"Rows are the headless-run artifacts of the CI review checks, collected by metrics-db --github (they expire after 90 days), "
                    f"one per check per workflow run, from trusted runs only; cost is the CLI's own total_cost_usd, not an estimate. "
                    f"{sum(cnt.values())} check rows from {len({r['repo'] for r in ci})} repos, {min(r['ts'][:10] for r in ci)} to {max(r['ts'][:10] for r in ci)}.")
