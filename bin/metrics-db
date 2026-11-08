@@ -378,9 +378,10 @@ def load_typing(cx, projects):
                     typed = PASTED.sub("", c)
                     prompts += 1
                     chars += len(typed)
-                    words += len(typed.split())
+                    n = len(typed.split())
+                    words += n
                     pasted += pasted_len
-                    per_prompt.append((ts, len(typed.split()), len(typed), pasted_len))
+                    per_prompt.append((ts, n, len(typed), pasted_len))
         except OSError:
             continue
         scanned += 1
