@@ -1,7 +1,7 @@
 ---
 name: wrapup
 disable-model-invocation: true
-description: Deprecated; the user's own, typed by the user only. Close a curia sitting or a session logged by request — write the narrative log to the state repo and list the issues the session opened or labelled. The agent cannot invoke it. A plain hand-off is the user's /handoff, not this.
+description: Deprecated; the user's own, typed by the user only. A curia sitting closes with /lastword. Close a session logged by request — write the narrative log to the state repo and list the issues the session opened or labelled. The agent cannot invoke it. A plain hand-off is the user's /handoff, not this.
 ---
 
 # Wrapping up

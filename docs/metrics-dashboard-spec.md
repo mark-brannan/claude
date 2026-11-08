@@ -17,6 +17,7 @@ READMEs say where things are and how to view them; they do not define.
 | Typed prompt | A user record a human typed, not a tag, relay or headless opening. Slash commands count. |
 | Pasted | Text inside `<pasted_content>` blocks. Counted apart; pasting is not typing. |
 | Touch | One typed prompt. |
+| Typed-prompt series | One row per typed prompt: transcript, session, time and counts; same scan as the typing totals. |
 | Headless session | A session with zero typed prompts. |
 | Keyboard hours | Sum of each session's `human_seconds`, as recorded by the Stop hook. |
 | Agent hours | Sum of each session's `agent_seconds`, as recorded by the Stop hook. |

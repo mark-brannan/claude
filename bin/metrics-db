@@ -14,6 +14,7 @@
 #                                 allocation=/actual= lines            -> item_money; views card_cost, batch_cost
 #   ~/.claude/projects/**/*.jsonl the user's own typed prompts         -> typing
 #                                 (local transcripts; incremental by mtime+size)
+#                                 and one row per typed prompt, with its timestamp -> typed_prompts
 #   metrics/input/<host>/*.jsonl  per-minute input counts, from bin/input-export
 #                                 on each host running ActivityWatch -> input, input_win, hosts;
 #                                 sessions.host is the host whose $HOME holds the session's cwd
@@ -124,6 +125,8 @@ create view if not exists batch_cost as
   from card_cost k where exists (select 1 from item_events where parent = k.card);
 create table if not exists typing(path text primary key, session_id text, mtime real, size int,
   cwd text, first_ts text, last_ts text, prompts int, chars int, words int, pasted_chars int);
+create table if not exists typed_prompts(path text, session_id text, ts text, words int, chars int, pasted_chars int);
+create index if not exists typed_prompts_path on typed_prompts(path);
 create table if not exists gh_repos(repo text primary key, topics text, archived int, private int);
 create table if not exists gh_items(repo text, number int, kind text, created_at text, closed_at text,
   merged_at text, state text, draft int, head_ref text, author text, title text,
@@ -334,7 +337,9 @@ def load_typing(cx, projects):
     paths = glob.glob(os.path.join(projects, "*", "*.jsonl"))
     present = set(paths)
     # A deleted transcript takes its row with it.
-    cx.executemany("delete from typing where path = ?", [(p,) for p in known if p not in present])
+    gone = [(p,) for p in known if p not in present]
+    cx.executemany("delete from typing where path = ?", gone)
+    cx.executemany("delete from typed_prompts where path = ?", gone)
     scanned = 0
     for p in paths:
         try:
@@ -345,6 +350,7 @@ def load_typing(cx, projects):
             continue
         prompts = chars = words = pasted = 0
         first = last = cwd = sid = None
+        per_prompt = []
         try:
             with open(p, encoding="utf-8", errors="replace") as f:
                 for line in f:
@@ -371,12 +377,18 @@ def load_typing(cx, projects):
                     typed = PASTED.sub("", c)
                     prompts += 1
                     chars += len(typed)
-                    words += len(typed.split())
+                    n = len(typed.split())
+                    words += n
                     pasted += pasted_len
+                    per_prompt.append((ts, n, len(typed), pasted_len))
         except OSError:
             continue
         scanned += 1
         sid = sid or os.path.basename(p)[:-6]
+        # The rows of a rescanned transcript are replaced whole, never added to.
+        cx.execute("delete from typed_prompts where path = ?", (p,))
+        cx.executemany("insert into typed_prompts values (?,?,?,?,?,?)",
+                       [(p, sid, *row) for row in per_prompt])
         cx.execute("insert or replace into typing values (?,?,?,?,?,?,?,?,?,?,?)",
                    (p, sid, st.st_mtime, st.st_size, cwd, first, last, prompts, chars, words, pasted))
     return scanned, len(paths)
@@ -633,6 +645,11 @@ def main():
     # rather than migrate it.
     if {r[1] for r in cx.execute("pragma table_info(typing)") if r[5]} == {"session_id"}:
         cx.execute("drop table typing")
+    # A database from before typed_prompts has typing rows the incremental
+    # scan would skip, so forget them and let the next scan fill both tables.
+    if not a.no_typing and cx.execute("select 1 from sqlite_master where name='typing'").fetchone() and \
+       not cx.execute("select 1 from sqlite_master where name='typed_prompts'").fetchone():
+        cx.execute("delete from typing")
     # sessions is rebuilt on every run, so a table from before a new column
     # is dropped, not migrated.
     cols = {r[1] for r in cx.execute("pragma table_info(sessions)")}
@@ -652,6 +669,7 @@ def main():
     if not a.no_typing:
         if a.rescan_typing:
             cx.execute("delete from typing")
+            cx.execute("delete from typed_prompts")
         scanned, total = load_typing(cx, a.projects)
         cx.commit()
         report["typing"] = f"{scanned} of {total} transcripts rescanned"
