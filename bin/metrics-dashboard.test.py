@@ -170,7 +170,9 @@ class RenderTest(DashboardFixture):
         self.assertIn("<tr><td>claude-review</td><td class=num>$1.00</td><td class=num>1</td><td class=num>$1.00</td></tr>", self.page)
         self.assertIn("<tr><td>claude-maxims</td><td class=num>$0.500</td><td class=num>1</td><td class=num>$0.500</td></tr>", self.page)
         self.assertNotIn("claude-arete", self.page)
-        self.assertIn("CI check $ per week, by check", self.page)
+        self.assertIn("CI check $ per day, stacked by check", self.page)
+        self.assertIn("CI check cost by repo", self.page)
+        self.assertIn("Session $, rolling 7 days", self.page)
 
     def test_cost_tiles_price_the_window_and_read_the_session_shape(self):
         self.assertEqual(self.tile("API-equivalent $, 7d"), "6")       # three sessions at $2

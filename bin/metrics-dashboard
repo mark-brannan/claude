@@ -10,7 +10,7 @@
 #   --days   the daily window (default 56); weekly series cover the whole span.
 # Writes <state>/metrics/dashboard/index.html by default and prints its path.
 # Python 3 stdlib only.
-import argparse, datetime as dt, html, os, re, sqlite3, sys
+import argparse, datetime as dt, html, math, os, re, sqlite3, sys
 from collections import defaultdict
 
 sys.dont_write_bytecode = True  # no __pycache__ left in the seeded tree
@@ -131,6 +131,23 @@ def areas(title, keys, series, every=7, unit="", wide=False):
         tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + f"\ntotal: {fmt(tot[k])}{unit}"
         body.append(f'<rect class="hit" x="{xs(i)-pw/n/2:.1f}" y="{MT}" width="{pw/n:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
     return card(title, "".join(body), [n for n, _ in series], wide)
+
+def pie(title, items, unit="$"):
+    """items: [(name, value)] largest first; a pie with its legend inside the figure."""
+    total = sum(v for _, v in items) or 1
+    cx, cy, r, a0, body = 100, H / 2, 70, -math.pi / 2, []
+    for i, (name, v) in enumerate(items):
+        a1 = a0 + 2 * math.pi * v / total
+        big = 1 if a1 - a0 > math.pi else 0
+        pt = lambda a: f"{cx + r * math.cos(a):.1f},{cy + r * math.sin(a):.1f}"
+        d = f"M{cx},{cy} L{pt(a0)} A{r},{r} 0 {big} 1 {pt(min(a1, a0 + 2 * math.pi - 1e-4))}Z" if len(items) > 1 else \
+            f"M{cx-r},{cy} a{r},{r} 0 1 0 {2*r},0 a{r},{r} 0 1 0 {-2*r},0Z"
+        body.append(f'<path class="a{i+1}" d="{d}"><title>{html.escape(name)}: {usd(v)} ({100*v/total:.0f}%)</title></path>')
+        ly = 18 + i * 20
+        body.append(f'<rect class="s{i+1}" x="200" y="{ly-9}" width="10" height="10" rx="2"/>'
+                    f'<text class="lbl" x="216" y="{ly}">{html.escape(name)} · {usd(v)} · {100*v/total:.0f}%</text>')
+        a0 = a1
+    return card(title, "".join(body), [])
 
 def card(title, svg_body, legend, wide=False):
     leg = "".join(f'<span><i class="s{i+1}"></i>{html.escape(n)}</span>' for i, n in enumerate(legend))
@@ -333,6 +350,25 @@ def build(db, out, ndays):
     for m in ranked[len(named):]:
         for w, v in mweek[m].items(): mweek["other"][w] += v
     model_series = [(m, {w: round(v, 2) for w, v in mweek[m].items()}) for m in named + (["other"] if len(named) < len(ranked) else [])]
+    sc = defaultdict(list)
+    for r in q("select substr(started_at, 1, 10) d, cost_usd c from sessions where cost_usd is not null"): sc[r["d"]].append(r["c"])
+    def pctl(v, p):
+        v = sorted(v); i = (len(v) - 1) * p; lo = int(i); return v[lo] + (v[min(lo + 1, len(v) - 1)] - v[lo]) * (i - lo)
+    def stats(win):
+        out = {n: {} for n in ("avg", "p10", "p90", "max")}
+        for k in dkeys:
+            d0 = dt.date.fromisoformat(k)
+            v = [c for j in range(win) for c in sc.get((d0 - dt.timedelta(days=j)).isoformat(), ())]
+            if v:
+                out["avg"][k] = round(sum(v) / len(v), 2); out["p10"][k] = round(pctl(v, .1), 2)
+                out["p90"][k] = round(pctl(v, .9), 2); out["max"][k] = round(max(v), 2)
+        return [(n, out[n]) for n in ("max", "p90", "avg", "p10")]
+    words_w = {r["w"]: r["wd"] for r in typing_w}
+    words_m = {r["m"]: r["wd"] for r in q("select substr(first_ts, 1, 7) m, sum(words) wd from typing where first_ts is not null group by m")}
+    mkeys = sorted(words_m)
+    cost_w = {r["w"]: r for r in costw}
+    def per_w(num, den_rows, den, scale=1.0):  # words that week over a per-week figure from another table; weeks with none are gaps
+        return {w: round(words_w[w] * scale / den_rows[w][den], 1) for w in words_w if w in den_rows and den_rows[w][den]}
     ratio = lambda rows, num, den, scale=1, nd=1: {r["w"]: round(scale * (r[num] or 0) / r[den], nd) for r in rows if r[den]}
 
     # ci checks: one row per check per workflow run (view ci_checks, metrics-db) ---
@@ -352,7 +388,17 @@ def build(db, out, ndays):
         ci_figs.append(table_card("Cost per check, all collected runs", ["check", "total", "runs", "mean per run"],
             [[c, usd(tot[c]), cnt[c], usd(tot[c] / cnt[c])] for c in order] +
             [["all checks", usd(sum(tot.values())), sum(cnt.values()), usd(sum(tot.values()) / sum(cnt.values()))]]))
-        ci_figs.append(bars("CI check $ per week, by check", cikeys, [(c, {w: round(v, 3) for w, v in ci_week[c].items()}) for c in order[:4]], every=max(len(cikeys) // 8, 1), unit="$"))
+        nm = lambda c: c[7:] if c.startswith("claude-") else c
+        ci_day = defaultdict(lambda: defaultdict(float)); repo_tot = defaultdict(float)
+        for r in ci:
+            ci_day[r["what"]][r["ts"][:10]] += r["cost_usd"]; repo_tot[r["repo"]] += r["cost_usd"]
+        cdays = days(min(ndays, (today - dt.date.fromisoformat(min(r["ts"][:10] for r in ci))).days + 1), today)
+        ci_figs.append(areas("CI check $ per day, stacked by check (review, arete, maxims, fixer, substantive)", cdays,
+                             [(nm(c), {d: round(v, 3) for d, v in ci_day[c].items()}) for c in sorted(order, key=lambda c: -tot[c])[:5]],
+                             every=max(len(cdays) // 8, 1), unit="$", wide=True))
+        rr = sorted(repo_tot.items(), key=lambda kv: -kv[1])
+        top = rr[:5] + ([("other", sum(v for _, v in rr[5:]))] if len(rr) > 5 else [])
+        ci_figs.append(pie("CI check cost by repo, all collected runs", [(k.split("/")[-1], v) for k, v in top]))
         for title, acc, hdr in (("Cost by repo and check", by_repo, "repo"), ("Cost by model and check", by_model, "model")):
             ranked = sorted(acc.items(), key=lambda kv: -kv[1][0])
             ci_figs.append(table_card(title, [hdr, "check", "total", "runs", "mean per run"],
@@ -474,6 +520,8 @@ def build(db, out, ndays):
         "typing": [
             bars("Prompts typed per day (by first-prompt day)", dkeys, [("prompts", series(typing_d, "d", "p"))]),
             bars("Words typed per day (by first-prompt day)", dkeys, [("words", series(typing_d, "d", "w"))]),
+            bars("Words typed per week", wkeys, [("words", words_w)], every=4),
+            bars("Words typed per month", mkeys, [("words", words_m)], every=1),
             lines("Words per prompt, weekly mean", wkeys, [("words/prompt", {r["w"]: round(r["wd"] / r["p"], 1) for r in typing_w if r["p"]})], every=4),
             lines("Characters per prompt, daily mean", dkeys, [("chars/prompt", {r["d"]: round(r["c"] / r["p"]) for r in typing_d if r["p"]})]),
         ],
@@ -484,7 +532,11 @@ def build(db, out, ndays):
             lines("Clicks per day", dkeys, [("clicks", dict(clicks_d))]),
         ],
         "agent": [
+            lines("Words you typed per week", wkeys, [("words", words_w)], every=4),
             lines("Words you typed per merged PR, weekly", wkeys, [("words/PR", words_pr_w)], every=4),
+            lines("Words you typed per commit, weekly", wkeys, [("words/commit", per_w("wd", sess_w, "cm"))], every=4),
+            lines("Words you typed per session, weekly", wkeys, [("words/session", per_w("wd", cost_w, "n"))], every=4),
+            lines("Words you typed per $100 of API-equivalent spend, weekly", wkeys, [("words/$100", per_w("wd", cost_w, "usd", 100.0))], every=4),
             bars("Sessions per week, by prompts typed", wkeys, [("0 (headless)", series(weekly, "w", "t0")), ("1", series(weekly, "w", "t1")), ("2–5", series(weekly, "w", "t2")), ("6+", series(weekly, "w", "t3"))], every=4),
             bars("Merged PRs per week, by prompts typed on the branch", wkeys, [(b, touches.get(b, {})) for b in touch_order], every=4),
             lines("Tool calls per prompt, weekly", wkeys, [("tool calls/prompt", per_prompt("tc", 1, 1))], every=4),
@@ -495,6 +547,8 @@ def build(db, out, ndays):
         "cost": [
             areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", wkeys[-13:], model_series, every=1, wide=True),
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
+            lines("Session $ per day: avg, p10, p90, max of that day's sessions", dkeys, stats(1), unit="$"),
+            lines("Session $, rolling 7 days: avg, p10, p90, max of the sessions started in the 7 days to each date", dkeys, stats(7), unit="$"),
             lines("Cold context share, weekly", wkeys, [("cold %", {r["w"]: round(100.0 * (r["cw"] or 0) / ((r["cw"] or 0) + (r["cr"] or 0)), 1) for r in costw if r["cw"] or r["cr"]})], every=4, unit="%"),
             lines("Context per turn, weekly mean", wkeys, [("k tokens/turn", ratio(costw, "ctx", "turns", 0.001))], every=4, unit="k"),
             lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),
@@ -571,7 +625,7 @@ figcaption {{ font-size:13px; color:var(--ink2); margin-bottom:4px }} svg {{ wid
 .grid line {{ stroke:var(--grid); stroke-width:1 }} line.base {{ stroke:var(--base) }} .ax {{ fill:var(--muted); font-size:10px }} .lbl {{ fill:var(--ink2); font-size:10px }}
 .ln {{ fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round }}
 path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }}
-path.a1 {{ fill:var(--s1) }} path.a2 {{ fill:var(--s2) }} path.a3 {{ fill:var(--s3) }} path.a4 {{ fill:var(--s4) }} path.a5 {{ fill:var(--muted) }} path[class^=a] {{ fill-opacity:.7; stroke:var(--surface); stroke-width:1 }}
+path.a1 {{ fill:var(--s1) }} path.a2 {{ fill:var(--s2) }} path.a3 {{ fill:var(--s3) }} path.a4 {{ fill:var(--s4) }} path.a5 {{ fill:var(--muted) }} path.a6 {{ fill:var(--ink2) }} rect.s6 {{ fill:var(--ink2) }} path[class^=a] {{ fill-opacity:.7; stroke:var(--surface); stroke-width:1 }}
 rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--s3) }} rect.s4 {{ fill:var(--s4) }} rect.s5 {{ fill:var(--muted) }}
 .hit {{ fill:transparent }} .hit:hover {{ fill:var(--ink); fill-opacity:.06 }}
 .leg {{ display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--ink2); margin-top:6px }} .leg i {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px }}
