@@ -162,7 +162,7 @@ class RenderTest(DashboardFixture):
         self.assertIn("Sessions per day: headless vs interactive", self.page)
         self.assertIn("Merged PRs per week, by prompts typed on the branch", self.page)
         self.assertIn("API-equivalent $ per week, by model", self.page)
-        self.assertIn('<span><i class="s1"></i>opus</span><span><i class="s2"></i>sonnet</span>', self.page)
+        self.assertIn('<span><i class="s1"></i>opus</span><span><i class="s3"></i>sonnet</span>', self.page)
 
     def test_ci_checks_section_totals_runs_and_means_per_check(self):
         self.assertIn('<h2 id="ci">', self.page)
@@ -172,6 +172,14 @@ class RenderTest(DashboardFixture):
         self.assertNotIn("claude-arete", self.page)
         self.assertIn("CI check $ per day, stacked by check", self.page)
         self.assertIn("CI check cost by repo", self.page)
+
+    def test_a_model_or_stat_has_one_colour_on_every_chart(self):
+        # fable is orange (slot 2) and opus blue (slot 1) wherever they are drawn, whatever their position
+        import importlib.machinery, importlib.util
+        loader = importlib.machinery.SourceFileLoader("md", os.path.join(os.path.dirname(os.path.abspath(__file__)), "metrics-dashboard"))
+        mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("md", loader)); loader.exec_module(mod)
+        self.assertEqual((mod.slot("fable", 3), mod.slot("opus", 3), mod.slot("max", 0), mod.slot("p90", 5)), (2, 1, 2, 1))
+        self.assertEqual(mod.slot("short", 0), 1)  # an unnamed series keeps its position
 
     def test_cost_tiles_price_the_window_and_read_the_session_shape(self):
         self.assertEqual(self.tile("API-equivalent $, 7d"), "6")       # three sessions at $2
