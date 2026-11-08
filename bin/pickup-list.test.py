@@ -73,6 +73,13 @@ class Handoff(unittest.TestCase):
         self.assertEqual(self.run_pl("handoff", ID, stdin=b"body\n").returncode, 0)
         self.assertEqual(f.read_bytes(), (HEAD + "body\n").encode())
 
+    def test_own_names_the_item_of_a_session_without_listing(self):
+        self.write(ID, (HEAD + "x\n").encode())
+        r = self.run_pl("own", "deadbeef")
+        self.assertEqual((r.returncode, r.stdout.decode().strip()), (0, ID))
+        self.assertEqual(self.run_pl("own", "00000000").returncode, 1)
+        self.assertEqual(self.run_pl("own", "../x").returncode, 1)
+
     def test_show_reads_back_and_no_temp_left(self):
         self.write(ID, (HEAD + "old\n").encode())
         self.run_pl("handoff", ID, stdin=b"fresh\n")

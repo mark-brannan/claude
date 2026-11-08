@@ -1,6 +1,7 @@
 ---
 name: wrapup
-description: Close a session — write the narrative log to the state repo, list the issues the session opened or labelled, and end with a paste-ready hand-off prompt. Use when the user says "wrap up", "log it", "hand off", "hand-off prompt", "call it there", or when a session is ending with work still open.
+disable-model-invocation: true
+description: Deprecated; the user's own, typed by the user only. Close a curia sitting or a session logged by request — write the narrative log to the state repo and list the issues the session opened or labelled. The agent cannot invoke it. A plain hand-off is the user's /handoff, not this.
 ---
 
 # Wrapping up
@@ -26,7 +27,7 @@ Read the verdict line at the top of this session's auto-checkpoint
   home (an issue, a PR or a card): say so in one line, name where the work
   lives, and **stop**. No log, no hand-off prompt. Archivable means archive;
   it does not mean silent: if a next session should continue there, write
-  the four-line block (spec in step 2b) with `link` = where the work lives
+  the five-line block (spec in step 2b) with `link` = where the work lives
   and `next` = the one thing that session does there first. There is no
   step-2 prompt on this path to derive from, and none is needed.
 - **`not archivable: <reasons>`**, or a loop with no home: continue below.
@@ -34,7 +35,7 @@ Read the verdict line at the top of this session's auto-checkpoint
   wrap-up and sometimes turns it into an archive.
 
 If the session's only remaining need is "the next session should start here",
-that is the pickup item's hand-off (step 2b, four lines), not a wrap-up.
+that is `/handoff`, not a wrap-up.
 
 ## 1. Narrative log
 
@@ -117,12 +118,11 @@ So every wrap-up that produced a hand-off in step 2 — the one-line
 `continue <link>` form included — also edits the body, before the closing
 message. **Push the branch first** (`git push -u origin <branch>`): the item
 points at a branch, and a `/pickup` on another machine fetches a branch
-that is not on origin and finds nothing. Same four lines as `/pickup`'s
-spec, plus an optional `title:`, a few words a person would name the session
-by, which `handoff-start` names the session with. `link` is the home step 2 found and the first line is the prompt's
-first action — one derivation, not a second one that can drift from the
+that is not on origin and finds nothing. Same five lines as `/pickup`'s
+spec; `title:` names the session the user's `/handoff` later launches. `link` is the home
+step 2 found and the first line is the prompt's first action — one derivation, not a second one that can drift from the
 prose. Replace everything below the `---` with
-`~/.claude/bin/pickup-list handoff <id>`, the four lines on stdin; one
+`~/.claude/bin/pickup-list handoff <id>`, the five lines on stdin; one
 hand-off per item, never two:
 
 ```
@@ -130,7 +130,7 @@ hand-off per item, never two:
 link: <the branch, PR, issue or card the prompt names>
 model: <opus | sonnet | haiku>
 effort: <low | medium | high>
-title: <optional, e.g. Reviewer model difficulty>
+title: <a few words a person would name the session by>
 ```
 
 Then check it landed:
@@ -168,12 +168,6 @@ two things: the hand-off prompt, and links to the `## Needs ruling` and
 `## Human's` cards this session wrote. Nothing else. If nothing hit a
 one-way door, that half is simply absent — a question you worked around is
 reported in the PR body, not here.
-
-Under the prompt, one line: `start` launches it, and nothing is pasted.
-On that word, run `~/.claude/bin/handoff-start --title "<the title>" <this session's item id>`
-once, the title being the few words the hand-off gives the session (its `title:` line), and relay the lines it prints. A refusal is relayed with the paste
-prompt still standing. Offering the word is not a question; it opens
-nothing.
 
 It **opens nothing**: no new question, no doubt, no hint, no "one thing to
 consider". A closing message may say *"next time we discuss X"* — with X
