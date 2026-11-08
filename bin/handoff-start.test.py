@@ -22,7 +22,7 @@ exec((HERE / "driver-start.test.py").read_text(), dst.__dict__)
 
 ID = "2026-11-06T19-27-94e9fcb0"
 WHERE = "where: log/auto/e0/2026-11-06-reviewer-model-difficulty-3e94d0-e0ff1112.md\n"
-NAME = "Hand-off %s: reviewer-model-difficulty" % ID
+NAME = "Hand-off: reviewer-model-difficulty"
 # pickup-list stub: `show` prints $STUB_PICKUP; take and open log to $STUB_PICKUP.log.
 PICKUP_LIST = r'''#!/bin/sh
 case "$1" in
@@ -88,12 +88,12 @@ class HandoffStart(unittest.TestCase):
     def test_a_title_line_in_the_body_names_the_session(self):
         self.write("open", "model: sonnet\ntitle: Check PR 415 CI\n")
         self.run_tool(ID)
-        self.assertEqual(self.name(), "Hand-off %s: Check PR 415 CI" % ID)
+        self.assertEqual(self.name(), "Hand-off: Check PR 415 CI")
 
     def test_a_title_argument_names_the_session(self):
         self.write("open", "model: sonnet\ntitle: Check PR 415 CI\n")
         self.run_tool(ID, "--title", "Reviewer model difficulty")
-        self.assertEqual(self.name(), "Hand-off %s: Reviewer model difficulty" % ID)
+        self.assertEqual(self.name(), "Hand-off: Reviewer model difficulty")
 
     def test_no_log_names_the_session_by_id_alone(self):
         self.pickup.write_text((ITEM % ("open", "model: sonnet\n")).replace(WHERE, ""))
