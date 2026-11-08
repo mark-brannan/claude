@@ -365,26 +365,32 @@ def build(db, out, ndays):
         for w, v in mweek[m].items(): mweek["other"][w] += v
     model_series = [(m, {w: round(v, 2) for w, v in mweek[m].items()}) for m in named + (["other"] if len(named) < len(ranked) else [])]
     sc = defaultdict(list)
-    for r in q("select substr(started_at, 1, 10) d, cost_usd c from sessions where cost_usd is not null"): sc[r["d"]].append(r["c"])
+    scm = defaultdict(lambda: defaultdict(list))
+    for r in q("select substr(started_at, 1, 10) d, cost_usd c, model m from sessions where cost_usd is not null"):
+        sc[r["d"]].append(r["c"]); scm[model_name(r["m"])][r["d"]].append(r["c"])
     def pctl(v, p):
         v = sorted(v); i = (len(v) - 1) * p; lo = int(i); return v[lo] + (v[min(lo + 1, len(v) - 1)] - v[lo]) * (i - lo)
-    def stats(win):
-        out = {n: {} for n in ("avg", "p10", "p90", "p99", "max")}
+    def stats(win, src):  # trailing win days of sessions started on or before each date
+        out = {n: {} for n in ("avg", "p10", "p25", "p90", "max")}
         for k in dkeys:
             d0 = dt.date.fromisoformat(k)
-            v = [c for j in range(win) for c in sc.get((d0 - dt.timedelta(days=j)).isoformat(), ())]
-            if v:
-                out["avg"][k] = round(sum(v) / len(v), 2); out["p10"][k] = round(pctl(v, .1), 2)
-                out["p90"][k] = round(pctl(v, .9), 2); out["p99"][k] = round(pctl(v, .99), 2); out["max"][k] = round(max(v), 2)
-        return [("avg", out["avg"]), ("p10", out["p10"])], [("p90", out["p90"]), ("p99", out["p99"]), ("max", out["max"])]
+            v = [c for j in range(win) for c in src.get((d0 - dt.timedelta(days=j)).isoformat(), ())]
+            if len(v) >= 3:
+                out["avg"][k] = round(sum(v) / len(v), 2)
+                for n, pq in (("p10", .1), ("p25", .25), ("p90", .9)): out[n][k] = round(pctl(v, pq), 2)
+                out["max"][k] = round(max(v), 2)
+        return out
+    def model_chart(m):
+        o = stats(7, scm[m]); n = sum(len(v) for v in scm[m].values())
+        return lines(f"Session $ for {m} ({n} sessions), rolling 7 days: p10, p25, avg, p90 (left) and max (right)", dkeys,
+                     [("p90", o["p90"]), ("avg", o["avg"]), ("p25", o["p25"]), ("p10", o["p10"])], unit="$", right=[("max", o["max"])])
+    model_charts = [model_chart(m) for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m)]
     words_w = {r["w"]: r["wd"] for r in typing_w}
     words_m = {r["m"]: r["wd"] for r in q("select substr(first_ts, 1, 7) m, sum(words) wd from typing where first_ts is not null group by m")}
     mkeys = sorted(words_m)
     cost_w = {r["w"]: r for r in costw}
     def per_w(num, den_rows, den, scale=1.0):  # words that week over a per-week figure from another table; weeks with none are gaps
         return {w: round(words_w[w] * scale / den_rows[w][den], 1) for w in words_w if w in den_rows and den_rows[w][den]}
-    allsc = [v for d in sc.values() for v in d]
-    SCAP = max(3, math.ceil(pctl(allsc, .75) * 1.5)) if allsc else 3  # left axis: whole dollars, about 1.5x the 75th-percentile session; spikes ride the top
     ratio = lambda rows, num, den, scale=1, nd=1: {r["w"]: round(scale * (r[num] or 0) / r[den], nd) for r in rows if r[den]}
 
     # ci checks: one row per check per workflow run (view ci_checks, metrics-db) ---
@@ -560,11 +566,9 @@ def build(db, out, ndays):
             lines("Commits per prompt, weekly", wkeys, [("commits/prompt", per_prompt("cm", 1, 2))], every=4),
         ],
         "ci": ci_figs,
-        "cost": [
+        "cost": model_charts + [
             areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", wkeys[-13:], model_series, every=1, wide=True),
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
-            lines("Session $ per day: avg and p10 (left axis, $0 to $1; anything higher is clipped at the top, hover for the value); p90, p99 and max (right axis)", dkeys, stats(1)[0], unit="$", right=stats(1)[1], ycap=1, ystep=0.25),
-            lines("Session $, rolling 7 days: avg and p10 (left axis, $0 to $1; anything higher is clipped at the top, hover for the value); p90, p99 and max (right axis)", dkeys, stats(7)[0], unit="$", right=stats(7)[1], ycap=1, ystep=0.25),
             lines("Cold context share, weekly, by session length", wkeys, cold_g, every=4, unit="%"),
             lines("Context per turn, weekly mean, by session length", wkeys, ctx_g, every=4, unit="k"),
             lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),

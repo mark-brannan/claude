@@ -172,7 +172,6 @@ class RenderTest(DashboardFixture):
         self.assertNotIn("claude-arete", self.page)
         self.assertIn("CI check $ per day, stacked by check", self.page)
         self.assertIn("CI check cost by repo", self.page)
-        self.assertIn("Session $, rolling 7 days", self.page)
 
     def test_cost_tiles_price_the_window_and_read_the_session_shape(self):
         self.assertEqual(self.tile("API-equivalent $, 7d"), "6")       # three sessions at $2
@@ -472,6 +471,14 @@ class WindowsAndBucketsTest(unittest.TestCase):
             "insert into input(host, minute, keys, clicks, scroll, move, afk, seen) values ('h', ?, 40, 1, 2, 3, 0, 1)",
             (int(dt.datetime.now(dt.timezone.utc).timestamp() // 60),))))
         self.assertIn("last 13 whole weeks", page)
+
+    def test_session_cost_stats_get_one_chart_per_model(self):
+        def setup(cx):
+            for i, m in enumerate(("claude-opus-5-5", "claude-opus-5-5", "claude-opus-5-5", "claude-sonnet-5-5") * 2):
+                cx.execute("insert into sessions(session_id, started_at, model, cost_usd) values (?, ?, ?, ?)", (f"m{i}", day(1), m, 1.0 + i))
+        page = self.render("permodel", setup)
+        self.assertIn("Session $ for opus (6 sessions), rolling 7 days: p10, p25, avg, p90", page)
+        self.assertIn("Session $ for sonnet (2 sessions)", page)
 
     def test_session_length_buckets_leave_no_gap(self):
         def setup(cx):
