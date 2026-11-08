@@ -1,0 +1,116 @@
+name: Conflict sweep
+
+# When main moves, find open pull requests it now conflicts with and hand each
+# to the shared fixer, which already merges the base in and resolves small,
+# plain conflicts with Haiku (see the `fixer` job in
+# mark-brannan/.github's claude-review.yml). That fixer reads `mergeable` live
+# but only wakes on a pull_request event, so a conflict that appears because
+# the base moved waits for the author's next push. This workflow supplies the
+# missing event and does no resolving of its own, and runs no model.
+#
+# The nudge is a close and reopen: it fires `reopened` and adds no commit. It
+# must use the agent App's token. An event made with GITHUB_TOKEN starts no
+# workflow, so the reopen would do nothing. Without the App secrets the job
+# skips with a warning.
+#
+# Skipped: drafts, forks (the shared review skips them too), PRs labelled
+# `fixer:skip`, and a head already nudged once. A conflict the fixer escalated
+# stays on its head, so the `conflict-sweep` commit status on that head keeps
+# the next push to main from nudging it again; a new push to the branch is a
+# new head and is eligible. `workflow_dispatch` with `force` ignores the status.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Nudge a conflicting head even if it was nudged before
+        type: boolean
+        default: false
+
+concurrency:
+  group: conflict-sweep
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+env:
+  # Bounds the fixer runs one push to main can start.
+  MAX_NUDGES: '5'
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check the agent App is configured
+        id: app
+        env:
+          APP_ID: ${{ secrets.AGENT_BOT_APP_ID }}
+          APP_KEY: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::warning::AGENT_BOT_APP_ID or AGENT_BOT_PRIVATE_KEY is not set; conflict-sweep skipped"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint the agent App token
+        if: steps.app.outputs.run == 'true'
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_BOT_APP_ID }}
+          private-key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+
+      - name: Nudge conflicting pull requests
+        if: steps.app.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          STATUS_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -uo pipefail
+          nudged=0
+          # One listing, then each PR read on its own: `mergeable` is computed
+          # lazily after a push, so a null is asked again for up to 15 s.
+          for pr in $(gh pr list --state open --draft=false --limit 100 \
+                        --json number,headRepositoryOwner,headRepository \
+                        --jq ".[] | select(.headRepositoryOwner.login + \"/\" + .headRepository.name == \"$GITHUB_REPOSITORY\") | .number"); do
+            for _ in 1 2 3 4 5; do
+              state=$(gh pr view "$pr" --json mergeable --jq .mergeable)
+              [ "$state" != UNKNOWN ] && break
+              sleep 3
+            done
+            echo "PR #$pr: $state"
+            [ "$state" = CONFLICTING ] || continue
+
+            info=$(gh pr view "$pr" --json headRefOid,labels)
+            sha=$(jq -r .headRefOid <<<"$info")
+            if jq -e '.labels[].name | select(. == "fixer:skip")' <<<"$info" >/dev/null; then
+              echo "  fixer:skip label; left alone"; continue
+            fi
+            seen=$(GH_TOKEN=$STATUS_TOKEN gh api "repos/$GITHUB_REPOSITORY/commits/$sha/statuses" \
+                     --jq '[.[] | select(.context == "conflict-sweep")] | length')
+            if [ "$seen" != 0 ] && [ "$FORCE" != true ]; then
+              echo "  head ${sha:0:8} was nudged before; left alone"; continue
+            fi
+            if [ "$nudged" -ge "$MAX_NUDGES" ]; then
+              echo "::warning::PR #$pr conflicts but $MAX_NUDGES were nudged already; the next push to main or a dispatch takes it"
+              continue
+            fi
+
+            # Mark the head first: a failed reopen below must not loop.
+            GH_TOKEN=$STATUS_TOKEN gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+              -f state=success -f context=conflict-sweep \
+              -f description="Handed to the fixer after main moved" >/dev/null
+            gh pr close "$pr" >/dev/null && gh pr reopen "$pr" >/dev/null
+            echo "  nudged #$pr at ${sha:0:8}"
+            nudged=$((nudged + 1))
+          done
+          echo "### Conflict sweep: $nudged nudged" >> "$GITHUB_STEP_SUMMARY"
