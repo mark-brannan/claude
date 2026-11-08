@@ -210,8 +210,7 @@ Then start the confer at once, in the background, and keep sitting:
 
 It starts one session on this box with Remote Control on, whose prompt is
 the confer hand-off for the card, logs `confer_session=<id>` on it, and
-prints how to attach. A confer is a discussion in chat prose, never an
-AskUserQuestion dialog. Model and effort come from the item's agent
+prints how to attach. Model and effort come from the item's agent
 rating (see Difficulty and model). The confer reads
 the card itself and waits on its first question, so the user can answer
 it in parallel or after the sitting; nothing is pasted. Relay its
@@ -228,8 +227,9 @@ the end of the sitting, print its confer prompt, ready to paste:
 Confer on <short name>: <the card's question, one sentence> (<card link>).
 A one-off session — a discussion held in chat. Set out the item, give
 your recommendation and one question as text; the user answers in their
-own words. Never use the AskUserQuestion dialog. It ends in a ruling, a spawned issue or a sharper card; open no curia
-unless the user says so, and then only through the gates in the curia
+own words. Never use the AskUserQuestion dialog. It ends in a ruling, a
+spawned issue or a sharper card; open no curia unless the user says so,
+and then only through the gates in the curia
 skill. Model: fable · Effort: high
 ```
 
