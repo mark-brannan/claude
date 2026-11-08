@@ -124,8 +124,31 @@ class DashboardFixture(unittest.TestCase):
         self.assertIsNotNone(m, f"no tile {label!r}")
         return m.group(1)
 
+    def kpi(self, label):
+        m = re.search(r'<label class="kpi" for="tab-(\w+)"><span class="aim">[^<]*</span><b>([^<]*)</b><span>'
+                      + re.escape(label) + r"</span>(<small[^>]*>)?", self.page)
+        self.assertIsNotNone(m, f"no overview card {label!r}")
+        return m.groups()
+
 
 class RenderTest(DashboardFixture):
+
+    def test_overview_cards_price_the_same_window_as_the_tiles_and_open_their_tab(self):
+        tab, value, _ = self.kpi("API-equivalent $, 7d")
+        self.assertEqual((tab, value), ("cost", self.tile("API-equivalent $, 7d")))
+        self.assertEqual(self.kpi("PRs merged, 7d")[0], "work")
+
+    def test_a_card_with_no_wanted_direction_never_colours_its_delta(self):
+        for label in ("decisions per keyboard hour, 7d", "PRs merged, 7d"):
+            small = self.kpi(label)[2]
+            if small: self.assertIn('class="flat"', small)
+        self.assertIn('class="flat"', md.delta(3, 1, None))
+        self.assertIn('class="good"', md.delta(3, 1, "up"))
+
+    def test_every_tab_label_points_at_a_radio_and_a_panel(self):
+        for t in re.findall(r'<label for="tab-(\w+)">', self.page):
+            self.assertIn(f'id="tab-{t}"', self.page)
+            self.assertIn(f'<section class="panel" id="p-{t}">', self.page)
     def test_exits_zero_and_prints_the_page_path(self):
         self.assertEqual(self.run_result.returncode, 0, self.run_result.stderr)
         self.assertEqual(self.run_result.stdout.strip(), str(self.out))
