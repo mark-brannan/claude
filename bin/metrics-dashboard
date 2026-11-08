@@ -476,6 +476,13 @@ def build(db, out, ndays):
                 if w != last: acc, last = 0.0, w
                 acc += per_hour.get(k, 0.0); out[k] = round(acc, 3)
             return out
+        def rolling(per_hour):  # trailing 7 days (168 hours) total at each hour: the smooth trend
+            out, acc = {}, 0.0
+            for i, k in enumerate(hkeys):
+                acc += per_hour.get(k, 0.0)
+                if i >= 168: acc -= per_hour.get(hkeys[i - 168], 0.0)
+                out[k] = round(acc, 3)
+            return out
         for c in order:  # per check: cumulative $ since the weekly reset by model; runs overlaid on the right axis, or under it when models vary
             usd_h, run_h = defaultdict(lambda: defaultdict(float)), defaultdict(lambda: defaultdict(float))
             for r in ci:
@@ -485,12 +492,11 @@ def build(db, out, ndays):
             runs_all = defaultdict(float)
             for m in ms:
                 for k, v in run_h[m].items(): runs_all[k] += v
-            title = f"{nm(c)}: cumulative $ since the weekly reset, by model"
-            if len(ms) == 1:
-                per_check.append("<div>" + areas(title + ", runs on the right", hkeys, [(m, cumulative(usd_h[m])) for m in ms], every=ev, unit="$", right=("runs", cumulative(runs_all))) + "</div>")
-            else:
-                per_check.append("<div>" + areas(title, hkeys, [(m, cumulative(usd_h[m])) for m in ms], every=ev, unit="$", right=("runs", cumulative(runs_all)))
-                                 + areas(f"{nm(c)}: cumulative runs since the weekly reset, by model", hkeys, [(m, cumulative(run_h[m])) for m in ms], every=ev) + "</div>")
+            ysers = lambda f: [(m, f(usd_h[m])) for m in ms]
+            trend = areas(f"{nm(c)}: rolling 7-day $, by model (runs dotted, right)", hkeys, ysers(rolling), every=ev, unit="$", right=("runs", rolling(runs_all)))
+            cum = areas(f"{nm(c)}: cumulative $ since the weekly reset" + (", runs on the right" if len(ms) == 1 else ", by model"), hkeys, ysers(cumulative), every=ev, unit="$", right=("runs", cumulative(runs_all)))
+            extra = "" if len(ms) == 1 else areas(f"{nm(c)}: cumulative runs since the weekly reset, by model", hkeys, [(m, cumulative(run_h[m])) for m in ms], every=ev)
+            per_check.append("<div>" + trend + cum + extra + "</div>")
         ci_figs.insert(0, '<div class="five">' + "".join(per_check) + "</div>")  # one row of up to five checks, $ over runs
         rr = sorted(repo_tot.items(), key=lambda kv: -kv[1])
         top = rr[:5] + ([("other", sum(v for _, v in rr[5:]))] if len(rr) > 5 else [])
