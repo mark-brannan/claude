@@ -72,9 +72,8 @@ jobs:
     needs: label
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The App token does the PR calls; github.token only writes the status.
     permissions:
-      contents: read
-      pull-requests: read
       statuses: write
     steps:
       - name: Check the agent App is configured
@@ -109,10 +108,10 @@ jobs:
           nudged=0
           failed=0
           for pr in $(gh pr list --state open --draft=false --limit 100 --label "$CONFLICT_LABEL" \
-                        --json number,headRepositoryOwner,headRepository \
-                        --jq ".[] | select(.headRepositoryOwner.login + \"/\" + .headRepository.name == \"$GITHUB_REPOSITORY\") | .number"); do
+                        --search '-label:"fixer:skip"' --json number,isCrossRepository \
+                        --jq '.[] | select(.isCrossRepository | not) | .number'); do
             for _ in 1 2 3 4 5; do
-              info=$(gh pr view "$pr" --json mergeable,headRefOid,labels)
+              info=$(gh pr view "$pr" --json mergeable,headRefOid)
               state=$(jq -r .mergeable <<<"$info")
               [ "$state" != UNKNOWN ] && break
               sleep 3
@@ -121,9 +120,6 @@ jobs:
             [ "$state" = CONFLICTING ] || continue
 
             sha=$(jq -r .headRefOid <<<"$info")
-            if jq -e '.labels[].name | select(. == "fixer:skip")' <<<"$info" >/dev/null; then
-              echo "  fixer:skip label; left alone"; continue
-            fi
             seen=$(GH_TOKEN=$STATUS_TOKEN gh api "repos/$GITHUB_REPOSITORY/commits/$sha/statuses" \
                      --jq '[.[] | select(.context == "conflict-sweep")] | length')
             if [ "$seen" != 0 ] && [ "$FORCE" != true ]; then
