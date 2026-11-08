@@ -80,7 +80,7 @@ def frame(keys, vmax, every, tk=None, lab=fmt):
 def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None):
     """series: [(name, {key: value})]; one y axis, same unit for every series."""
     vmax = max([v for _, s in series for v in s.values() if v is not None] or [0])
-    tk = [i * ystep for i in range(int(ycap / ystep) + 1)] if ycap else None  # a fixed, fine axis; values above it ride the top edge
+    tk = [round(i * ystep, 2) for i in range(round(ycap / ystep) + 1)] if ycap else None  # a fixed, fine axis; values above it ride the top edge
     g, y, pw, ph, top = frame(keys, vmax, every, tk, (lambda t: f"${t:,.2f}") if ycap else fmt)
     n = max(len(keys), 1); xs = lambda i: ML + pw * (i + 0.5) / n
     body = [g]
@@ -563,8 +563,8 @@ def build(db, out, ndays):
         "cost": [
             areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", wkeys[-13:], model_series, every=1, wide=True),
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
-            lines("Session $ per day: avg and p10 (left axis, spikes clipped at the top); p90, p99 and max (right axis)", dkeys, stats(1)[0], unit="$", right=stats(1)[1], ycap=SCAP, ystep=1),
-            lines("Session $, rolling 7 days: avg and p10 (left axis, spikes clipped at the top); p90, p99 and max (right axis)", dkeys, stats(7)[0], unit="$", right=stats(7)[1], ycap=SCAP, ystep=1),
+            lines("Session $ per day: avg and p10 (left axis, $0 to $1; anything higher is clipped at the top, hover for the value); p90, p99 and max (right axis)", dkeys, stats(1)[0], unit="$", right=stats(1)[1], ycap=1, ystep=0.25),
+            lines("Session $, rolling 7 days: avg and p10 (left axis, $0 to $1; anything higher is clipped at the top, hover for the value); p90, p99 and max (right axis)", dkeys, stats(7)[0], unit="$", right=stats(7)[1], ycap=1, ystep=0.25),
             lines("Cold context share, weekly, by session length", wkeys, cold_g, every=4, unit="%"),
             lines("Context per turn, weekly mean, by session length", wkeys, ctx_g, every=4, unit="k"),
             lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),
