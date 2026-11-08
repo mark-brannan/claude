@@ -36,9 +36,11 @@ LH=96
 def build(span,bk,label):
     start=end-span; nb=span//bk; x=lambda t:(t-start)/bk
     inb=lambda t:0<=int((t-start)//bk)<nb
-    K=[0]*nb;C=[0]*nb;Sc=[0]*nb;P=[0]*nb;O=[0]*nb;A=[0]*nb;CO=[0.0]*nb;DE=[0]*nb;FR=[0]*nb;WK=[0]*nb
+    KM=[[] for _ in range(nb)];K=[0]*nb;C=[0]*nb;Sc=[0]*nb;P=[0]*nb;O=[0]*nb;A=[0]*nb;CO=[0.0]*nb;DE=[0]*nb;FR=[0]*nb;WK=[0]*nb
     for t,k,cl,sc,mv,afk in act:
-        if start<=t<end: b=int((t-start)//bk); K[b]+=k; C[b]+=cl; Sc[b]+=sc
+        if start<=t<end:
+            b=int((t-start)//bk); K[b]+=k; C[b]+=cl; Sc[b]+=sc
+            if k>0: KM[b].append(k)          # keys in one active minute = a per-minute rate
     for m,v in streak.items():
         t=m*60
         if start<=t<end: b=int((t-start)//bk); WK[b]=max(WK[b],v)
@@ -82,16 +84,16 @@ def build(span,bk,label):
     ctr=lambda arr:[(i+.5,v) for i,v in enumerate(arr)]
     bw=max(1.5,(W-L-R)/nb*.8)
     PT=[x+y for x,y in zip(P,PP)]
-    ak=[v for v in K if v>0]; ap=[v for v in PT if v>0]
-    avgk=sum(ak)/len(ak) if ak else 1; avgp=sum(ap)/len(ap) if ap else 1; ratio=avgk/avgp
-    kmax=max(K) or 1
-    pmax=max(kmax/ratio,max(PT) or 1)           # right axis: same height as the left, scaled so typical prompts sit where typical keys do
+    def pct(v,q):
+        v=sorted(v); i=(len(v)-1)*q; lo=int(i); hi=min(lo+1,len(v)-1); return v[lo]+(v[hi]-v[lo])*(i-lo)
+    MEAN=[sum(v)/len(v) if v else 0 for v in KM]; P50=[pct(v,.5) if v else 0 for v in KM]
+    P90=[pct(v,.9) if v else 0 for v in KM]; MX=[max(v) if v else 0 for v in KM]
+    kmax=max(MX) or 1
     def inp(ch,ch2):
-        ch.p.append(f'<line x1="{L}" x2="{W-R}" y1="{ch.Y(avgk):.1f}" y2="{ch.Y(avgk):.1f}" stroke="{pal(0)}" stroke-dasharray="2 4" opacity=".5"/>'
-                    f'<text x="{L+4}" y="{ch.Y(avgk)-3:.1f}" class="t">average keys per active bucket: {avgk:,.0f}</text>')
-        ch.line(ctr(K),0,1.6); ch2.line(ctr(PT),4,2)
-    lane_svg(1,f"Input: keystrokes (blue, left) · prompts typed (violet, right). Scaled so 1 prompt ≈ {ratio:,.0f} keys",
-             inp,kmax,lambda v:f"{v:,.0f}",pmax,lambda v:f"{v:.1f}".rstrip("0").rstrip("."))
+        ch.line(ctr(MX),0,1.8)                       # sawtooth: peak minute in each bucket
+        ch.line(ctr(P90),4,1.2); ch.line(ctr(MEAN),1,1.6); ch.line(ctr(P50),3,1.2)
+    lane_svg(1,"Keystrokes per minute, over active minutes in each bucket: max (blue, bold) · p90 (violet) · mean (orange) · p50 (teal)",
+             inp,kmax,lambda v:f"{v:,.0f}/min")
     m=max(max(C),max(Sc)) or 1
     lane_svg(2,"Clicks (orange) · scroll (teal)",lambda ch,ch2:(ch.line(ctr(C),1,1.5),ch.line(ctr(Sc),3,1.5)),m,lambda v:f"{v:,.0f}")
     DS=saw(dts,start,bk,nb); FS=saw(fts,start,bk,nb)
