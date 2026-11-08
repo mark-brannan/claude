@@ -712,3 +712,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261108t051133z
 - /agora briefs makes every Admission move unattended, since none is a ruling Undo: limit /agora briefs to writing briefs ([#432](https://github.com/mark-brannan/claude/pull/432#discussion_r4505107203)) ([#432](https://github.com/mark-brannan/claude/pull/432))
+
+### 20261108t051144z
+- the agora sitting never offers a mid-sitting model switch; a hard item is a confer at its rating (the user's word in session 2814cb3c: Sonnet for many-turn sessions, Opus and Fable judiciously) Undo: restore the switch-offer sentence in Difficulty and model ([#432](https://github.com/mark-brannan/claude/pull/432#discussion_r4505106934)) ([#432](https://github.com/mark-brannan/claude/pull/432))
