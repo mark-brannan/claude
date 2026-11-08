@@ -1,7 +1,9 @@
 name: Conflict sweep
 
-# When main moves, find open pull requests it now conflicts with and hand each
-# to the shared fixer, which already merges the base in and resolves small,
+# When main moves, find open pull requests it now conflicts with (labelled by
+# hcancelik/pr-conflict-finder, which waits out GitHub's lazy `mergeable` and
+# also clears the label once a conflict is gone) and hand each to the shared
+# fixer, which already merges the base in and resolves small,
 # plain conflicts with Haiku (see the `fixer` job in
 # mark-brannan/.github's claude-review.yml). That fixer reads `mergeable` live
 # but only wakes on a pull_request event, so a conflict that appears because
@@ -42,18 +44,29 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
+  issues: write
   statuses: write
 
 env:
   # Bounds the fixer runs one push to main can start.
   MAX_NUDGES: '5'
+  CONFLICT_LABEL: Has Conflict
 
 jobs:
   sweep:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Pinned to v1.0.6; a third-party action, so it keeps its pin. Its label
+      # is the list below. It reads a mergeable still null after its tries as a
+      # conflict, so the loop re-reads `mergeable` before nudging.
+      - name: Label conflicting pull requests
+        uses: hcancelik/pr-conflict-finder@fc73dab98c64f867b4f7c67e92056de82aed120b # v1.0.6
+        with:
+          secret_token: ${{ github.token }}
+          conflict_label: ${{ env.CONFLICT_LABEL }}
+
       - name: Check the agent App is configured
         id: app
         env:
@@ -85,17 +98,11 @@ jobs:
           set -uo pipefail
           nudged=0
           failed=0
-          # One listing, then each PR read on its own: `mergeable` is computed
-          # lazily after a push, so a null is asked again for up to 15 s.
-          for pr in $(gh pr list --state open --draft=false --limit 100 \
+          for pr in $(gh pr list --state open --draft=false --limit 100 --label "$CONFLICT_LABEL" \
                         --json number,headRepositoryOwner,headRepository \
                         --jq ".[] | select(.headRepositoryOwner.login + \"/\" + .headRepository.name == \"$GITHUB_REPOSITORY\") | .number"); do
-            for _ in 1 2 3 4 5; do
-              info=$(gh pr view "$pr" --json mergeable,headRefOid,labels)
-              state=$(jq -r .mergeable <<<"$info")
-              [ "$state" != UNKNOWN ] && break
-              sleep 3
-            done
+            info=$(gh pr view "$pr" --json mergeable,headRefOid,labels)
+            state=$(jq -r .mergeable <<<"$info")
             echo "PR #$pr: $state"
             [ "$state" = CONFLICTING ] || continue
 
