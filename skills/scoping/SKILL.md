@@ -343,8 +343,9 @@ the rulings to date:
   green and marks it ready. CI runs the critical review (claude[bot]) on
   the PR, and its comments are the round's review; the driver starts no
   reviewer of its own, and a head the bot skipped has had no round. A
-  fresh fixer, spawned on `sonnet`, works the
-  comments to `/pickup` §6; a review is never moved below the coder's tier. A round is one review and one fixer pass;
+  fresh fixer, spawned on `sonnet`, works the comments to `/pickup` §6;
+  the review stays on the tier CI picks, whatever the fixer ran on. A
+  round is one review and one fixer pass;
   three rounds at most. A PR past the third, or one a fixer labels
   `fixup-hard`, is parked on an agora card and the driver moves on. The
   cap (pencil, 2026-10-23) and the park (pencil, 2026-10-24) are
