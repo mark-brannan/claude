@@ -709,3 +709,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261108t045921z
 - Default taken: the agora sitting runs on Sonnet medium and its briefs on Haiku low, batchable ahead of the sitting as /agora briefs. Per item the sitting shows a brief, asks one dialog and applies the output contract, so the cheapest model that holds the contract runs it; confers still escalate by the item's rating. Undo: delete the paragraph in the agora skill's Difficulty and model section ([#432](https://github.com/mark-brannan/claude/pull/432))
+
+### 20261108t051133z
+- /agora briefs makes every Admission move unattended, since none is a ruling Undo: limit /agora briefs to writing briefs ([#432](https://github.com/mark-brannan/claude/pull/432#discussion_r4505107203)) ([#432](https://github.com/mark-brannan/claude/pull/432))
