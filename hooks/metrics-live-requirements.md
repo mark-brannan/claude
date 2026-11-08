@@ -253,7 +253,8 @@ first prompt after the sitting is no longer live, where they help rather than
 interrupt. Counting continues and every metrics file is still written.
 
 **A batch driver and a live curia sitting are hushed.** A driver is a session
-that claimed an item carrying a `driver=` Log line. For it and for a live
+that claimed an item carrying a `driver=` Log line, or one that relayed it
+(`relayed_from=`). For it and for a live
 curia sitting, nothing nags the model: no context line or its repeat, no
 sitting line, and the Stop block never asks for a hand-off, whatever armed it.
 Crossings are still counted and recorded, and the block still shows them:

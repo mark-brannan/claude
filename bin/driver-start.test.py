@@ -174,7 +174,9 @@ class DriverStart(unittest.TestCase):
 
     # --relay: the session holding the parent hands the batch on.
     def has_driver(self, *sessions):
-        extra = "".join("2026-11-06T10:07:0%dZ c116ad7b driver_session=%s driver_about=batch-x\n" % (i, x)
+        # Every line after the first is a relay, as driver-start logs one.
+        extra = "".join("2026-11-06T10:07:0%dZ c116ad7b driver_session=%s driver_about=batch-x%s\n"
+                        % (i, x, " relayed_from=c116ad7b" if i else "")
                         for i, x in enumerate(sessions))
         self.item.write_text(ITEM % ("-", "-") + extra)
 
@@ -192,13 +194,15 @@ class DriverStart(unittest.TestCase):
         n = "Driver %s: batch-x 2026-11-06 relay 2" % PARENT
         bg = [c for c in self.calls() if c.startswith("--bg")]
         self.assertEqual(bg, ["--bg --remote-control %s -n %s /pickup %s" % (n, n, PARENT)])
-        self.assertEqual(self.logged(), ["%s driver_session=%s driver_about=batch-x" % (PARENT, UUID)])
+        self.assertEqual(self.logged(), ["%s driver_session=%s driver_about=batch-x relayed_from=aaaaaaaa"
+                                         % (PARENT, UUID)])
         self.assertEqual(self.moves(), ["release"])
 
     def test_relay_needs_no_driver_session_in_the_log(self):
         r = self.relay()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.moves(), ["release"])
+        self.assertTrue(any(" relay 1 " in c for c in self.calls() if c.startswith("--bg")), self.calls())
 
     def test_relay_from_a_non_holder_is_refused(self):
         self.has_driver("old-1")

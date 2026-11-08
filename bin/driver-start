@@ -145,12 +145,13 @@ def reclaim(item, relay):
 
 def check_relay(item):
     """Die unless the caller holds <item>: the claim, as the session hook
-    reads it, decides who is the driver."""
+    reads it, decides who is the driver. Returns the caller's short id."""
     r = subprocess.run([WORK_ITEM, "fold", item], text=True, capture_output=True)
     holder = re.search(r"^holder=(\S*)", r.stdout, re.M)
     me = os.environ.get("CLAUDE_CODE_SESSION_ID", "").replace("-", "")[:8].lower()
     if not me or not holder or holder.group(1) != me:
         die("only the session holding %s may relay, not %s" % (item, me or "no session"))
+    return me
 
 
 def start(item, text, name, prompt, key, facts, cwd, wait, relay=False, extra=""):
@@ -219,12 +220,14 @@ def main():
     kept_slug = slug(about_of(text, about))
     extra = "driver_about=%s" % kept_slug if kept_slug else ""
     if a.relay:
-        name += " relay %d" % max(1, len(re.findall(r"\bdriver_session=", text)))
+        name += " relay %d" % (len(re.findall(r"\brelayed_from=", text)) + 1)
     prompt = "/pickup %s" % a.parent
     if not a.relay:
         return start(a.parent, text, name, prompt, "driver_session", facts, a.cwd, a.wait,
                      extra=extra)
-    check_relay(a.parent)
+    me = check_relay(a.parent)
+    # Marks the relay, so the hand-off hush finds the driver that let go.
+    extra = ("%s relayed_from=%s" % (extra, me)).strip()
     # The successor's /pickup claims the parent, so the old driver lets go
     # first; a successor that never starts hands the claim back.
     r = subprocess.run([WORK_ITEM, "release", a.parent], text=True, capture_output=True)

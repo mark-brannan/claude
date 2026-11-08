@@ -1402,9 +1402,17 @@ class MetricsLiveTest(unittest.TestCase):
         drv4 = "d4d4d4d4-driver"
         claim("batch4.md", drv4)
         with open(items / "batch4.md", "a") as fh:
-            fh.write(f"2026-11-01T09:31:00Z {drv4[:8]} driver_session={drv4}\n")
+            fh.write(f"2026-11-01T09:31:00Z {drv4[:8]} driver_session=e5e5e5e5-next relayed_from={drv4[:8]}\n")
             fh.write(f"2026-11-01T10:00:00Z {drv4[:8]} status=ready\n")
         w.t("a driver that relayed away is not asked for a hand-off", "", w.decision(stop(drv4)))
+
+        # A driver_session= line alone does not hush once the claim is closed.
+        drv5 = "d5d5d5d5-driver"
+        claim("batch5.md", drv5)
+        with open(items / "batch5.md", "a") as fh:
+            fh.write(f"2026-11-01T09:31:00Z {drv5[:8]} driver_session={drv5}\n")
+            fh.write(f"2026-11-01T10:00:00Z {drv5[:8]} status=done evidence=x\n")
+        w.has("a started driver that finished is nagged again", "stopping point is due", w.ctx(tool(drv5)))
 
         drv3 = "d2d2d2d2-driver"
         claim("batch3.md", drv3)

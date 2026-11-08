@@ -822,7 +822,7 @@ class Hook:
     def in_driver(self):
         """True when this session is a batch driver: it still holds an item
         that carries a `driver=` Log line (only batch parents carry one), or
-        one it started as the driver (`driver_session=`) and since relayed. One
+        one it relayed (`relayed_from=`). One
         glob and a read of each file that mentions the short id. Memoized."""
         if self.driver_memo is None:
             short = self.sid[:8].encode()
@@ -840,9 +840,9 @@ class Hook:
                     for s, v in status.findall(data):
                         holder = s if v == b"claimed" else holder if v == b"blocked" else b""
                     # A driver that relayed has let go of the item but stays
-                    # one, hushed, until it ends: its own `driver_session=`
-                    # line, logged when it was started, still names it.
-                    if holder == short or re.search(rb"\bdriver_session=" + re.escape(short), data):
+                    # one, hushed, until it ends: its relay logged
+                    # `relayed_from=<its short id>`.
+                    if holder == short or re.search(rb"\brelayed_from=" + re.escape(short) + rb"\b", data):
                         self.driver_memo = True
                         break
         return self.driver_memo
