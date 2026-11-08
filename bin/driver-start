@@ -22,12 +22,14 @@
 # exits 1 after the attach lines, since the session is already running.
 #
 # --relay is the one way past that refusal: a driver at about 100k context
-# hands the batch to a successor. It is allowed only from the session the
-# log's newest `driver_session=` names (CLAUDE_CODE_SESSION_ID), so there is
-# still one live driver. It releases the parent (the successor's /pickup
-# claims it), starts the successor as above and logs its `driver_session=`;
-# the newest line wins. If the successor cannot start, the parent is claimed
-# again and the old driver carries on. The old driver ends after it.
+# hands the batch to a successor. It is allowed only from the session that
+# holds the parent (`work-item fold` holder, CLAUDE_CODE_SESSION_ID), so
+# there is still one live driver, however the driver was started. It
+# releases the parent (the successor's /pickup claims it), starts the
+# successor as above, under the same name plus " relay N", and logs its
+# `driver_session=`; the newest line wins. If the successor cannot start,
+# the parent is claimed again, or, when that is refused, the claim command is
+# said on stderr. The old driver ends after it, with no hand-off to write.
 # confer-start reuses start() for the agora's confer sessions.
 #
 # The name, <name>, is "Driver <parent-id>: <slug> <date>", so the session list
@@ -82,12 +84,18 @@ def slug(words):
     return s
 
 
-def session_name(parent, text, about):
-    """Driver <parent>: <slug> <date>, each part left out when it is empty."""
+def about_of(text, about):
+    """What the batch is about: --about, else the parent's title."""
     if not about:
         title = re.search(r"^# (.+)$", text, re.M)
         about = DATE.sub(" ", title.group(1)) if title else ""
         about = re.sub(r"^\s*drive( the)?\b", "", about, flags=re.I)
+    return about
+
+
+def session_name(parent, text, about):
+    """Driver <parent>: <slug> <date>, each part left out when it is empty."""
+    about = about_of(text, about)
     filed = re.search(r"^(\d{4}-\d{2}-\d{2})T\S+ \S+ status=open\b", text, re.M)
     tail = " ".join(x for x in (slug(about), filed.group(1) if filed else "") if x)
     return "Driver %s: %s" % (parent, tail) if tail else "Driver %s" % parent
@@ -129,19 +137,23 @@ def held_by(text, key):
 def reclaim(item, relay):
     """A relay whose successor never started: the old driver takes the parent back."""
     if relay:
-        subprocess.run([WORK_ITEM, "claim", item], text=True, capture_output=True)
+        r = subprocess.run([WORK_ITEM, "claim", item], text=True, capture_output=True)
+        if r.returncode:
+            sys.stderr.write("%s: could not claim %s back: %s; run work-item claim %s\n"
+                             % (os.path.basename(sys.argv[0]), item, r.stderr.strip(), item))
 
 
-def check_relay(item, text, key):
-    """Die unless the caller is the session <text>'s newest <key>= names."""
-    held, me = held_by(text, key), os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if not held:
-        die("%s has no %s to relay from" % (item, key))
-    if not (me and me.startswith(held)):
-        die("only the current %s (%s) may relay, not %s" % (key, held, me or "no session"))
+def check_relay(item):
+    """Die unless the caller holds <item>: the claim, as the session hook
+    reads it, decides who is the driver."""
+    r = subprocess.run([WORK_ITEM, "fold", item], text=True, capture_output=True)
+    holder = re.search(r"^holder=(\S*)", r.stdout, re.M)
+    me = os.environ.get("CLAUDE_CODE_SESSION_ID", "").replace("-", "")[:8].lower()
+    if not me or not holder or holder.group(1) != me:
+        die("only the session holding %s may relay, not %s" % (item, me or "no session"))
 
 
-def start(item, text, name, prompt, key, facts, cwd, wait, relay=False):
+def start(item, text, name, prompt, key, facts, cwd, wait, relay=False, extra=""):
     """Start one background session named <name> running <prompt> in <cwd>,
     log `<key>=<session uuid>` on <item>, and print how to attach. Refused
     when <text> already carries <key>=, unless <relay> and the caller is the
@@ -169,7 +181,7 @@ def start(item, text, name, prompt, key, facts, cwd, wait, relay=False):
     short = m.group(1)
 
     sid = session_uuid(short) or short
-    w = subprocess.run([WORK_ITEM, "log", item, "%s=%s" % (key, sid)],
+    w = subprocess.run([WORK_ITEM, "log", item, "%s=%s" % (key, sid)] + extra.split(),
                        text=True, capture_output=True)
     if w.returncode:
         sys.stderr.write("%s: %s not logged on %s: %s\n"
@@ -200,20 +212,26 @@ def main():
     a = ap.parse_args()
     check_args(a, a.parent)
     text, facts = parent_facts(a.parent)
-    name = session_name(a.parent, text, a.about)
+    # The batch's name rides on the log, so a successor keeps it.
+    kept = re.findall(r"\bdriver_about=(\S+)", text)
+    about = a.about or (kept[-1] if a.relay and kept else "")
+    name = session_name(a.parent, text, about)
+    kept_slug = slug(about_of(text, about))
+    extra = "driver_about=%s" % kept_slug if kept_slug else ""
     if a.relay:
-        name += " relay %d" % len(re.findall(r"\bdriver_session=", text))
+        name += " relay %d" % max(1, len(re.findall(r"\bdriver_session=", text)))
     prompt = "/pickup %s" % a.parent
     if not a.relay:
-        return start(a.parent, text, name, prompt, "driver_session", facts, a.cwd, a.wait)
-    check_relay(a.parent, text, "driver_session")
+        return start(a.parent, text, name, prompt, "driver_session", facts, a.cwd, a.wait,
+                     extra=extra)
+    check_relay(a.parent)
     # The successor's /pickup claims the parent, so the old driver lets go
     # first; a successor that never starts hands the claim back.
     r = subprocess.run([WORK_ITEM, "release", a.parent], text=True, capture_output=True)
     if r.returncode:
         die("cannot release %s: %s" % (a.parent, r.stderr.strip() or "work-item failed"))
     return start(a.parent, text, name, prompt, "driver_session", facts, a.cwd, a.wait,
-                 True)
+                 True, extra)
 
 
 if __name__ == "__main__":

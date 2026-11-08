@@ -1398,6 +1398,14 @@ class MetricsLiveTest(unittest.TestCase):
         w.t("two hours does not arm its Stop nag", "false", json.dumps(w.nag_field(drv2, "since_nag")))
         w.t("and its Stop is not blocked", "", w.decision(stop(drv2, lo)))
 
+        # A driver that relayed has released the item but is still hushed.
+        drv4 = "d4d4d4d4-driver"
+        claim("batch4.md", drv4)
+        with open(items / "batch4.md", "a") as fh:
+            fh.write(f"2026-11-01T09:31:00Z {drv4[:8]} driver_session={drv4}\n")
+            fh.write(f"2026-11-01T10:00:00Z {drv4[:8]} status=ready\n")
+        w.t("a driver that relayed away is not asked for a hand-off", "", w.decision(stop(drv4)))
+
         drv3 = "d2d2d2d2-driver"
         claim("batch3.md", drv3)
         with open(items / "batch3.md", "a") as fh:
