@@ -98,6 +98,7 @@ lib/sidlive.py
 lib/ids.py
 lib/lock.py
 lib/gitrun.py
+lib/lanes.py
 lib/hooktrace.py
 lib/libpath.py
 lib/critical_review.py
