@@ -969,12 +969,15 @@ class Stop:
         status = old_status
         # A new prompt reopens a session's item: the last thing talked about
         # is what the next session picks up, whatever the item said before.
-        if not status or prompt != old_prompt:
+        # A taken hand-off stays taken: its next session already runs, and the
+        # turn that launched it is itself a new prompt.
+        handed_off = old_status == "taken" and old_body.strip() != old_prompt.strip()
+        if not status or (prompt != old_prompt and not handed_off):
             status = "open"
         # A session states that work continues by writing a hand-off over the
-        # hook's default body (wrapup step 2b) and leaving the item open; the
-        # session's item reads it (requirements section 14).
-        self.handoff = body if status == "open" and body.strip() != prompt.strip() else ""
+        # hook's default body (the handoff skill); the session's item reads it
+        # (requirements section 14).
+        self.handoff = body if status in ("open", "taken") and body.strip() != prompt.strip() else ""
 
         self.pi_pr = old_pr or "none"
         if work_root:

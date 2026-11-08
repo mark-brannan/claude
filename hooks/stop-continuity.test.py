@@ -482,6 +482,13 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(body(ITEM), "pick up the fixture work and finish it", "an untouched body follows the new prompt")
         self.assertEqual(field(ITEM, "status"), "open", "a new prompt reopens the item")
 
+        # A taken hand-off stays taken through the prompt that launched it.
+        Path(ITEM).write_text(f"status: taken\nupdated: x\nsession: {SID}\nmodel: m\nbranch: b\npr: none\n"
+                              "where: w\nprompt: old prompt\n---\nfinish it\nlink: b\n")
+        w.run_hook(SID, WORK, tp=TP2, GH_PRS=PR7)
+        self.assertEqual(field(ITEM, "status"), "taken", "a new prompt does not reopen a taken hand-off")
+        self.assertEqual(body(ITEM), "finish it\nlink: b", "the hand-off body is kept")
+
     # ------------------------------------------------- the session's item
     def session_item(self):
         # Requirements section 14, cases 14.1 to 14.6 and 14.10 to 14.13. stop-item.py decides;
@@ -575,6 +582,15 @@ class StopContinuityTest(unittest.TestCase):
         self.hasnt("no PR: no home line", "home=", NOPR)
         self.assertEqual(brief_of(NOPR).split("\n")[0], "Finish the fixture work.",
                          "14.6: the brief is the hand-off's first line, not the prompt's")
+
+        # 14.14: handoff-start takes the item before the first Stop sees the
+        # hand-off; a taken hand-off mints too.
+        w.run_hook("f1f2f3f4-0000-1111-2222", WORK)
+        hand_off("f1f2f3f4", "Finish the taken work.\nlink: https://example.invalid/card\nmodel: sonnet\neffort: low")
+        tf = sorted(glob.glob(f"{w.PICKD}/*-f1f2f3f4.md"))[0]
+        Path(tf).write_text(re.sub(r"^status: open$", "status: taken", read(tf), flags=re.M))
+        w.run_hook("f1f2f3f4-0000-1111-2222", WORK)
+        self.assertEqual(len(mine("f1f2f3f4")), 1, "14.14: a taken hand-off mints its item")
 
         # 14.10: a hand-off whose link is a PR writes onto that PR's item.
         w.run_hook("c1c2c3c4-0000-1111-2222", WORK)

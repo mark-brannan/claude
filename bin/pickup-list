@@ -17,6 +17,7 @@
 #   pickup-list --oldest        oldest first
 #   pickup-list --closed        include taken and done items
 #   pickup-list find <word>     items whose text or fields match (any status)
+#   pickup-list own <sid8>      the id of the item a session's Stop hook wrote, no listing
 #   pickup-list show <id>       the item file
 #   pickup-list take <id>       mark an item taken (a session picked it up),
 #                               and every open item naming the same link
@@ -167,6 +168,12 @@ case "$cmd" in
           printf 'taken %s (same link)\n' "$o"
         done || exit 1
     exit 0 ;;
+  own)
+    case "${2:-}" in ''|*[!0-9a-f]*) printf 'pickup-list own: want the first 8 hex of a session id\n' >&2; exit 1 ;; esac
+    for f in "$PICKUP"/*-"$2".md; do
+      [ -f "$f" ] && { basename "$f" .md; exit 0; }
+    done
+    printf 'pickup-list own: no item for session %s\n' "$2" >&2; exit 1 ;;
   show)
     f=$(item_path "${2:-}") || exit 1
     cat "$f"; exit 0 ;;
