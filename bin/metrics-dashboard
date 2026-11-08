@@ -7,7 +7,7 @@
 # What each figure means: docs/metrics-dashboard-spec.md.
 #
 # Usage: metrics-dashboard [--db FILE] [--out FILE] [--days N]
-#   --days   the daily window (default 56); weekly series cover the whole span.
+#   --days   the daily window (default 90); weekly series cover the whole span.
 # Writes <state>/metrics/dashboard/index.html by default and prints its path.
 # Python 3 stdlib only.
 import argparse, datetime as dt, html, math, os, re, sqlite3, sys
@@ -40,6 +40,11 @@ def state_dir():
 # stylesheet, not a second render. Text never wears a series color.
 W, H, ML, MR, MT, MB = 560, 170, 44, 36, 10, 26
 
+# One colour per model and per session stat, wherever the name appears (spec: Colours). Values are palette slots: 1 blue, 2 orange, 3 green, 4 amber, 5 grey, 6 dark grey, 7 red, 8 purple, 9 teal.
+COLOR = {"fable": 2, "opus": 1, "sonnet": 3, "haiku": 4, "other": 5,
+         "max": 2, "p99.9": 7, "p99": 8, "p95": 3, "p90": 1, "avg": 6, "p25": 9, "p10": 5}
+def slot(name, i): return COLOR.get(name, i + 1)
+
 def fmt(v):
     if v is None: return "–"
     if isinstance(v, float) and not v.is_integer(): return f"{v:,.1f}"
@@ -60,7 +65,7 @@ def x_labels(keys, every):
     out = []
     for i, k in enumerate(keys):
         if i % every == 0 or i == len(keys) - 1 and len(keys) > 2 and (len(keys) - 1) % every >= every // 2:
-            out.append((i, k[5:] if len(k) == 10 else k))
+            out.append((i, k[5:10] if len(k) == 13 else k[5:] if len(k) == 10 else k))
     return out
 
 def frame(keys, vmax, every, tk=None, lab=fmt):
@@ -77,18 +82,18 @@ def frame(keys, vmax, every, tk=None, lab=fmt):
     g.append(f'<line class="base" x1="{ML}" x2="{W-MR}" y1="{y(0):.1f}" y2="{y(0):.1f}"/>')
     return "".join(g), y, pw, ph, top
 
-def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None):
+def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None, hl=(), box=(), reset=False, hlcolors=()):
     """series: [(name, {key: value})]; one y axis, same unit for every series."""
     vmax = max([v for _, s in series for v in s.values() if v is not None] or [0])
     tk = [round(i * ystep, 2) for i in range(round(ycap / ystep) + 1)] if ycap else None  # a fixed, fine axis; values above it ride the top edge
-    g, y, pw, ph, top = frame(keys, vmax, every, tk, (lambda t: f"${t:,.2f}") if ycap else fmt)
+    g, y, pw, ph, top = frame(keys, vmax, every, tk, (lambda t: f"${t:,.2f}") if ycap else (lambda t: "$" + fmt(t)) if unit == "$" else fmt)
     n = max(len(keys), 1); xs = lambda i: ML + pw * (i + 0.5) / n
     body = [g]
     for si, (name, s) in enumerate(series):
         pts = [(xs(i), y(min(s[k], top) if ycap else s[k])) for i, k in enumerate(keys) if s.get(k) is not None]
         if not pts: continue
         d = "M" + " L".join(f"{px:.1f},{py:.1f}" for px, py in pts)
-        body.append(f'<path class="s{si+1} ln" d="{d}"/>')
+        body.append(f'<path class="s{slot(name, si)} ln" d="{d}"/>')
         if 1 < len(series) <= 3:  # direct label at the line's end
             body.append(f'<text class="lbl" x="{pts[-1][0]+4:.1f}" y="{pts[-1][1]+3.5:.1f}">{html.escape(name)}</text>')
     if right:  # one series on its own right-hand axis (dotted, labelled), for an outlier that would flatten the rest
@@ -99,6 +104,20 @@ def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=No
             if len(pts) > 1: body.append(f'<path class="s{len(series)+ri+1} ln" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
         for t in ticks(rmax): body.append(f'<text class="ax" x="{W-MR+4}" y="{ry(t)+3.5:.1f}">{fmt(t)}</text>')
         body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">right →</text>')
+    if reset:  # the weekly usage limit resets Tuesday 14:00 UTC (6:00 PST); a day's column spans its 24 hours
+        for i, k in enumerate(keys):
+            if dt.date.fromisoformat(k).weekday() == 1:
+                rx = ML + pw * (i + 14 / 24) / n
+                body.append(f'<path class="s6 ln" stroke-width="1" stroke-dasharray="2 4" d="M{rx:.1f},{MT} L{rx:.1f},{MT+ph}"/>')
+    hlc = [c for c, _ in hlcolors] if hlcolors else [len(series) + n + 1 for n in range(len(hl))]
+    for n, (v, txt) in enumerate(hl):  # dotted reference lines
+        body.append(f'<path class="s{hlc[n]} ln" stroke-dasharray="2 4" d="M{ML},{y(min(v, top)):.1f} L{W-MR},{y(min(v, top)):.1f}"/>')
+    items = [(f"s{ci}", t) for ci, t in box] + [(f"s{c}", t) for c, (_, t) in zip(hlc, hl)]
+    if items:  # a key inside the plot: swatch and text per line, on a faint panel so it reads over the lines
+        body.append(f'<rect x="{ML+4}" y="{MT+2}" width="236" height="{6+14*len(items)}" rx="3" fill="var(--surface)" fill-opacity=".85"/>')
+        for n, (cls, t) in enumerate(items):
+            yy = MT + 14 + 14 * n
+            body.append(f'<path class="{cls} ln" d="M{ML+9},{yy-3.5} L{ML+25},{yy-3.5}"/><text class="lbl" x="{ML+30}" y="{yy}">{html.escape(t)}</text>')
     for i, k in enumerate(keys):  # hover layer: one hit target per step
         tip = k + "".join(f"\n{name}: {fmt(s.get(k))}{unit}" for name, s in series) + "".join(f"\n{rn} (right): {fmt(rs.get(k))}{unit}" for rn, rs in (right or ()))
         body.append(f'<rect class="hit" x="{xs(i)-pw/n/2:.1f}" y="{MT}" width="{pw/n:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
@@ -107,7 +126,7 @@ def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=No
 def bars(title, keys, series, every=7, unit=""):
     """Stacked bars. series: [(name, {key: value})]; segments keep a 2px gap."""
     tot = {k: sum((s.get(k) or 0) for _, s in series) for k in keys}
-    g, y, pw, ph, top = frame(keys, max(tot.values() or [0]), every)
+    g, y, pw, ph, top = frame(keys, max(tot.values() or [0]), every, None, (lambda t: "$" + fmt(t)) if unit == "$" else fmt)
     n = max(len(keys), 1); bw = pw / n
     body = [g]
     for i, k in enumerate(keys):
@@ -117,16 +136,18 @@ def bars(title, keys, series, every=7, unit=""):
             if v <= 0: continue
             y1, y0 = y(acc + v), y(acc)
             hgt = max(y0 - y1 - (2 if acc else 0), 0.5)
-            body.append(f'<rect class="s{si+1}" x="{x0:.1f}" y="{y1:.1f}" width="{max(bw-2*max(bw*0.12,1),1):.1f}" height="{hgt:.1f}" rx="1"/>')
+            body.append(f'<rect class="s{slot(name, si)}" x="{x0:.1f}" y="{y1:.1f}" width="{max(bw-2*max(bw*0.12,1),1):.1f}" height="{hgt:.1f}" rx="1"/>')
             acc += v
         tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + (f"\ntotal: {fmt(tot[k])}{unit}" if len(series) > 1 else "")
         body.append(f'<rect class="hit" x="{ML+bw*i:.1f}" y="{MT}" width="{bw:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
     return card(title, "".join(body), [n for n, _ in series] if len(series) > 1 else [])
 
-def areas(title, keys, series, every=7, unit="", wide=False):
+def areas(title, keys, series, every=7, unit="", wide=False, right=None, ycap=None, key=()):
     """Stacked areas. series: [(name, {key: value})], first at the bottom; a hover column per key."""
     tot = {k: sum((s.get(k) or 0) for _, s in series) for k in keys}
-    g, y, pw, ph, top = frame(keys, max(tot.values() or [0]), every)
+    tk = [round(i * ycap / 5, 2) for i in range(6)] if ycap else None  # a fixed axis; stacks above it ride the top edge
+    g, y0, pw, ph, top = frame(keys, max(tot.values() or [0]), every, tk, ((lambda t: "$" + fmt(t)) if unit == "$" else fmt))
+    y = (lambda v: y0(min(v, top))) if ycap else y0
     n = max(len(keys), 1); xs = lambda i: ML + pw * (i + 0.5) / n
     body = [g]; base = [0] * len(keys)
     for si, (name, s) in enumerate(series):
@@ -134,12 +155,24 @@ def areas(title, keys, series, every=7, unit="", wide=False):
         if len(keys) > 1:
             d = "M" + " L".join(f"{xs(i):.1f},{y(up[i]):.1f}" for i in range(len(keys))) \
                 + " L" + " L".join(f"{xs(i):.1f},{y(base[i]):.1f}" for i in range(len(keys) - 1, -1, -1)) + "Z"
-            body.append(f'<path class="a{si+1}" d="{d}"/>')
+            body.append(f'<path class="a{slot(name, si)}" d="{d}"/>')
         base = up
     for i, k in enumerate(keys):
-        tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + f"\ntotal: {fmt(tot[k])}{unit}"
+        tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + f"\ntotal: {fmt(tot[k])}{unit}" + (f"\n{right[0]}: {fmt(right[1].get(k))}" if right else "")
         body.append(f'<rect class="hit" x="{xs(i)-pw/n/2:.1f}" y="{MT}" width="{pw/n:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
-    return card(title, "".join(body), [n for n, _ in series], wide)
+    if right:  # one line on its own right-hand axis (dotted, labelled), e.g. a count over dollars
+        rname, rs = right; rtop = ticks(max([v for v in rs.values() if v is not None] or [0]))[-1] or 1
+        ry = lambda v: MT + ph - ph * v / rtop
+        pts = [(xs(i), ry(rs[k])) for i, k in enumerate(keys) if rs.get(k) is not None]
+        if len(pts) > 1: body.append(f'<path class="s6 ln" stroke-dasharray="2 3" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
+        for t in ticks(max([v for v in rs.values() if v is not None] or [0])): body.append(f'<text class="ax" x="{W-MR+4}" y="{ry(t)+3.5:.1f}">{fmt(t)}</text>')
+        body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">{html.escape(rname)} →</text>')
+    if key:  # a key inside the plot: swatch and text per line, on a faint panel
+        body.append(f'<rect x="{ML+4}" y="{MT+2}" width="250" height="{6+14*len(key)}" rx="3" fill="var(--surface)" fill-opacity=".85"/>')
+        for j, (cl, t) in enumerate(key):
+            yy = MT + 14 + 14 * j
+            body.append(f'<path class="s{cl} ln" d="M{ML+9},{yy-3.5} L{ML+25},{yy-3.5}"/><text class="lbl" x="{ML+30}" y="{yy}">{html.escape(t)}</text>')
+    return card(title, "".join(body), [n for n, _ in series] + ([right[0] + " (right axis, dotted)"] if right else []), wide)
 
 def pie(title, items, unit="$"):
     """items: [(name, value)] largest first; a pie with its legend inside the figure."""
@@ -159,7 +192,7 @@ def pie(title, items, unit="$"):
     return card(title, "".join(body), [], True, (900, 340))
 
 def card(title, svg_body, legend, wide=False, vb=None):
-    leg = "".join(f'<span><i class="s{i+1}"></i>{html.escape(n)}</span>' for i, n in enumerate(legend))
+    leg = "".join(f'<span><i class="s{slot(n, i)}"></i>{html.escape(n)}</span>' for i, n in enumerate(legend))
     return (f'<figure{" class=wide" if wide else ""}><figcaption>{html.escape(title)}</figcaption>'
             f'<svg viewBox="0 0 {vb[0] if vb else W} {vb[1] if vb else H}" role="img" aria-label="{html.escape(title)}">{svg_body}</svg>'
             f'{"<div class=leg>" + leg + "</div>" if leg else ""}</figure>')
@@ -172,6 +205,8 @@ def table_card(title, head, rows, labels=1):
 def usd(v):
     return "–" if v is None else f"${v:,.2f}" if abs(v) >= 0.995 else f"${v:,.3f}"
 
+# fixed y tops, dollars, for the CI check charts
+CIAXIS = {"claude-review": 400, "claude-maxims": 100, "claude-arete": 100, "claude-substantive": 5}  # fixer (haiku) is left to autoscale
 CI_CHECKS = ["claude-review", "claude-maxims", "claude-arete"]
 
 def delta(now, prev, good):
@@ -387,10 +422,20 @@ def build(db, out, ndays):
         top = max((c for k in dkeys for c in scm[m].get(k, ())), default=0)
         extra = [x for x in ("p95", "p99", "p99.9") if o[x] and max(o[x].values()) <= cap]  # every higher stat that still fits under the axis
         names = (["p10"] if m == "haiku" else []) + ["p25", "avg", "p90"] + extra
-        fig = lines(f"Session $ for {m} ({n} sessions), rolling 7 days: {', '.join(names)}", dkeys, [(x, o[x]) for x in reversed(names)],
-                    unit="$", ycap=cap, ystep=cap / 5)
-        return f'<div>{fig}<p class="note">Highest session in the {ndays} days: ${top:,.2f} (axis tops at ${cap}).</p></div>'
+        order = list(reversed(names)); mean = lambda d: sum(d.values()) / len(d) if d else 0
+        box = [(slot(x, i), f"avg of {x}: ${mean(o[x]):,.2f}") for i, x in enumerate(order)]
+        fig = lines(f"Session $ for {m} ({n} sessions), rolling 7 days: {', '.join(names)}", dkeys, [(x, o[x]) for x in order],
+                    unit="$", ycap=cap, ystep=cap / 5, box=box, reset=True)
+        return f'<div>{fig}<p class="note">Highest session in the {ndays} days: ${top:,.2f} (axis tops at ${cap}). Vertical dotted lines: the weekly limit reset, Tuesday 6:00 PST.</p>{max_chart(m)}</div>'
+    MAXAXIS = {"fable": 100, "opus": 100, "sonnet": 20, "haiku": 5}  # fixed tops for the daily-max charts; a higher session clips at the top edge
+    def max_chart(m):
+        mx = {k: round(max(scm[m][k]), 2) for k in dkeys if scm[m].get(k)}
+        cap = MAXAXIS[m]
+        o = stats(7, scm[m]); mean = lambda d: sum(d.values()) / len(d) if d else 0
+        hl = [(AXIS[m], f"stats axis top ${AXIS[m]}"), (mean(o["avg"]), f"avg of avg ${mean(o['avg']):,.2f}"), (mean(mx), f"avg of max ${mean(mx):,.2f}")]
+        return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5, hl=hl, box=[(slot("max", 0), "max session that day")], reset=True, hlcolors=[(5, 0), (6, 0), (2, 0)])
     model_charts = [model_chart(m) for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m)]
+    w90 = wkeys[-13:]  # the cost tab covers 13 whole weeks (91 days), like its daily charts
     words_w = {r["w"]: r["wd"] for r in typing_w}
     words_m = {r["m"]: r["wd"] for r in q("select substr(first_ts, 1, 7) m, sum(words) wd from typing where first_ts is not null group by m")}
     mkeys = sorted(words_m)
@@ -424,13 +469,57 @@ def build(db, out, ndays):
         ci_figs.append(areas("CI check $ per day, stacked by check (review, arete, maxims, fixer, substantive)", cdays,
                              [(nm(c), {d: round(v, 3) for d, v in ci_day[c].items()}) for c in sorted(order, key=lambda c: -tot[c])[:5]],
                              every=max(len(cdays) // 8, 1), unit="$", wide=True))
+        mord = [m for m, _ in sorted({model_name(r["model"]): 0 for r in ci}.items())]
+        mrank = sorted(mord, key=lambda m: -sum(r["cost_usd"] for r in ci if model_name(r["model"]) == m))
+        per_check = []
+        first = max(dt.date.fromisoformat(min(r["ts"][:10] for r in ci)), today - dt.timedelta(days=ndays - 1))
+        now_h = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+        hours, h = [], dt.datetime.combine(first, dt.time())
+        while h <= now_h: hours.append(h); h += dt.timedelta(hours=1)
+        hkeys = [h.strftime("%Y-%m-%dT%H") for h in hours]
+        REF = dt.datetime(2026, 11, 3, 14)  # a Tuesday 14:00 UTC (6:00 PST): the weekly limit resets every 7 days from here
+        wk_of = [(h - REF) // dt.timedelta(days=7) for h in hours]
+        def cumulative(per_hour):  # running total per hour, back to zero at each weekly reset
+            out, acc, last = {}, 0.0, None
+            for k, w in zip(hkeys, wk_of):
+                if w != last: acc, last = 0.0, w
+                acc += per_hour.get(k, 0.0); out[k] = round(acc, 3)
+            return out
+        def rolling(per_hour):  # trailing 7 days (168 hours) total at each hour: the smooth trend
+            out, acc = {}, 0.0
+            for i, k in enumerate(hkeys):
+                acc += per_hour.get(k, 0.0)
+                if i >= 168: acc -= per_hour.get(hkeys[i - 168], 0.0)
+                out[k] = round(acc, 3)
+            return out
+        for c in order:  # per check: cumulative $ since the weekly reset by model; runs overlaid on the right axis, or under it when models vary
+            usd_h, run_h = defaultdict(lambda: defaultdict(float)), defaultdict(lambda: defaultdict(float))
+            for r in ci:
+                if r["what"] != c: continue
+                m = model_name(r["model"]); k = r["ts"][:13]; usd_h[m][k] += r["cost_usd"]; run_h[m][k] += 1
+            ms = [m for m in mrank if m in usd_h]; ev = 48
+            runs_all = defaultdict(float)
+            for m in ms:
+                for k, v in run_h[m].items(): runs_all[k] += v
+            ysers = lambda f: [(m, f(usd_h[m])) for m in ms]
+            cap = CIAXIS.get(c)
+            def per_run(m=None):  # mean and sd of a run's cost, over the rows charted
+                v = [r["cost_usd"] for r in ci if r["what"] == c and (m is None or model_name(r["model"]) == m)]
+                mu = sum(v) / len(v); return mu, (sum((x - mu) ** 2 for x in v) / len(v)) ** .5, len(v)
+            mu, sd, nr = per_run()
+            key = [(6, f"mean $/run ${mu:,.3f} (sd {sd:,.3f}, {nr} runs)")] + ([] if len(ms) == 1 else [(slot(m, 0), f"{m} ${per_run(m)[0]:,.3f} (sd {per_run(m)[1]:,.3f})") for m in ms])
+            trend = areas(f"{nm(c)}: rolling 7-day $, by model (runs dotted, right)", hkeys, ysers(rolling), every=ev, unit="$", right=("runs", rolling(runs_all)), ycap=cap, key=key)
+            cum = areas(f"{nm(c)}: cumulative $ since the weekly reset" + (", runs on the right" if len(ms) == 1 else ", by model"), hkeys, ysers(cumulative), every=ev, unit="$", right=("runs", cumulative(runs_all)), ycap=cap, key=key)
+            extra = "" if len(ms) == 1 else areas(f"{nm(c)}: cumulative runs since the weekly reset, by model", hkeys, [(m, cumulative(run_h[m])) for m in ms], every=ev)
+            per_check.append("<div>" + trend + cum + extra + "</div>")
+        ci_figs.insert(0, '<div class="five">' + "".join(per_check) + "</div>")  # one row of up to five checks, $ over runs
         rr = sorted(repo_tot.items(), key=lambda kv: -kv[1])
         top = rr[:5] + ([("other", sum(v for _, v in rr[5:]))] if len(rr) > 5 else [])
         ci_figs.append(pie("CI check cost by repo, all collected runs", [(k.split("/")[-1], v) for k, v in top]))
-        for title, acc, hdr in (("Cost by repo and check", by_repo, "repo"), ("Cost by model and check", by_model, "model")):
-            ranked = sorted(acc.items(), key=lambda kv: -kv[1][0])
-            ci_figs.append(table_card(title, [hdr, "check", "total", "runs", "mean per run"],
-                [[k[1], k[0], usd(v[0]), v[1], usd(v[0] / v[1])] for k, v in ranked], labels=2))
+        for title, acc, hdr in (("Cost by check, then repo", by_repo, "repo"), ("Cost by check, then model", by_model, "model")):
+            ranked = sorted(acc.items(), key=lambda kv: (order.index(kv[0][0]), -kv[1][0], -kv[1][1]))
+            ci_figs.append(table_card(title, ["check", hdr, "total", "runs", "mean per run"],
+                [[k[0], k[1], usd(v[0]), v[1], usd(v[0] / v[1])] for k, v in ranked], labels=2))
         ci_note = (f"Rows are the headless-run artifacts of the CI review checks, collected by metrics-db --github (they expire after 90 days), "
                    f"one per check per workflow run, from trusted runs only; cost is the CLI's own total_cost_usd, not an estimate. "
                    f"{sum(cnt.values())} check rows from {len({r['repo'] for r in ci})} repos, {min(r['ts'][:10] for r in ci)} to {max(r['ts'][:10] for r in ci)}.")
@@ -573,12 +662,12 @@ def build(db, out, ndays):
         ],
         "ci": ci_figs,
         "cost": model_charts + [
-            areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", wkeys[-13:], model_series, every=1, wide=True),
-            lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
-            lines("Cold context share, weekly, by session length", wkeys, cold_g, every=4, unit="%"),
-            lines("Context per turn, weekly mean, by session length", wkeys, ctx_g, every=4, unit="k"),
-            lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),
-            bars("Sessions per week, by length", wkeys, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
+            areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", w90, model_series, every=1, wide=True),
+            lines("API-equivalent $ per merged PR, weekly mean", w90, [pr_cost], every=4),
+            lines("Cold context share, weekly, by session length", w90, cold_g, every=4, unit="%"),
+            lines("Context per turn, weekly mean, by session length", w90, ctx_g, every=4, unit="k"),
+            lines("Turns per session, weekly mean", w90, [("turns/session", ratio(costw, "turns", "n"))], every=4),
+            bars("Sessions per week, by length", w90, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
         ],
     }
     wtot = [sum(v.get(w, 0) for _, v in model_series) for w in wkeys]
@@ -623,10 +712,10 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 <title>Metrics</title>
 <style>
 :root {{ --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781; --grid:#e1e0d9; --base:#c3c2b7;
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --good:#006300; --bad:#d03b3b; }}
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s8:#7e57c2; --s9:#1597a8; --good:#006300; --bad:#d03b3b; }}
 @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#898781; --grid:#2c2c2a; --base:#383835;
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --good:#0ca30c; --bad:#e66767; }} }}
-:root[data-theme="dark"] {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --grid:#2c2c2a; --base:#383835; --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --good:#0ca30c; --bad:#e66767; }}
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s8:#9575cd; --s9:#26b5c7; --good:#0ca30c; --bad:#e66767; }} }}
+:root[data-theme="dark"] {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --grid:#2c2c2a; --base:#383835; --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s8:#9575cd; --s9:#26b5c7; --good:#0ca30c; --bad:#e66767; }}
 * {{ box-sizing:border-box }} body {{ margin:0; padding:16px; background:var(--page); color:var(--ink); font:14px/1.4 system-ui,sans-serif }}
 header {{ display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; margin-bottom:12px }} h1 {{ font-size:20px; margin:0 }} header small, .note {{ color:var(--ink2) }}
 input[name=tab] {{ position:absolute; opacity:0; pointer-events:none }}
@@ -651,12 +740,13 @@ figure {{ margin:0; background:var(--surface); border:1px solid var(--grid); bor
 figcaption {{ font-size:13px; color:var(--ink2); margin-bottom:4px }} svg {{ width:100%; height:auto; display:block; overflow:visible }}
 .grid line {{ stroke:var(--grid); stroke-width:1 }} line.base {{ stroke:var(--base) }} .ax {{ fill:var(--muted); font-size:10px }} .lbl {{ fill:var(--ink2); font-size:10px }} .pl {{ fill:var(--ink); font-size:20px }}
 .ln {{ fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round }}
-path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }} path.s6 {{ stroke:var(--ink2) }} path.s7 {{ stroke:var(--bad) }}
-path.a1 {{ fill:var(--s1) }} path.a2 {{ fill:var(--s2) }} path.a3 {{ fill:var(--s3) }} path.a4 {{ fill:var(--s4) }} path.a5 {{ fill:var(--muted) }} path.a6 {{ fill:var(--ink2) }} rect.s6 {{ fill:var(--ink2) }} path[class^=a] {{ fill-opacity:.7; stroke:var(--surface); stroke-width:1 }}
-rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--s3) }} rect.s4 {{ fill:var(--s4) }} rect.s5 {{ fill:var(--muted) }}
+path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }} path.s6 {{ stroke:var(--ink2) }} path.s7 {{ stroke:var(--bad) }} path.s8 {{ stroke:var(--s8) }} path.s9 {{ stroke:var(--s9) }}
+path.a1 {{ fill:var(--s1) }} path.a2 {{ fill:var(--s2) }} path.a3 {{ fill:var(--s3) }} path.a4 {{ fill:var(--s4) }} path.a5 {{ fill:var(--muted) }} path.a6 {{ fill:var(--ink2) }} path.a7 {{ fill:var(--bad) }} path.a8 {{ fill:var(--s8) }} path.a9 {{ fill:var(--s9) }} rect.s6 {{ fill:var(--ink2) }} path[class^=a] {{ fill-opacity:.7; stroke:var(--surface); stroke-width:1 }}
+rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--s3) }} rect.s4 {{ fill:var(--s4) }} rect.s5 {{ fill:var(--muted) }} rect.s7 {{ fill:var(--bad) }} rect.s8 {{ fill:var(--s8) }} rect.s9 {{ fill:var(--s9) }}
 .hit {{ fill:transparent }} .hit:hover {{ fill:var(--ink); fill-opacity:.06 }}
 .leg {{ display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--ink2); margin-top:6px }} .leg i {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px }}
-.leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }} .leg .s6 {{ background:var(--ink2) }} .leg .s7 {{ background:var(--bad) }}
+.leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }} .leg .s6 {{ background:var(--ink2) }} .leg .s7 {{ background:var(--bad) }} .leg .s8 {{ background:var(--s8) }} .leg .s9 {{ background:var(--s9) }}
+.five {{ grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px }} @media (min-width:1500px) {{ .five {{ grid-template-columns:repeat(5,minmax(0,1fr)) }} }}
 figure.wide {{ grid-column:1/-1 }} table {{ border-collapse:collapse; width:100%; font-size:13px }} th, td {{ text-align:left; padding:3px 10px 3px 0; border-bottom:1px solid var(--grid) }} th {{ color:var(--ink2); font-weight:500 }} td.num, th.num {{ text-align:right }}
 footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}
 </style></head><body>
@@ -668,7 +758,7 @@ footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db"); ap.add_argument("--out"); ap.add_argument("--days", type=int, default=56)
+    ap.add_argument("--db"); ap.add_argument("--out"); ap.add_argument("--days", type=int, default=90)
     a = ap.parse_args()
     sd = state_dir()
     if not sd and not (a.db and a.out):
