@@ -6,7 +6,13 @@ name: Conflict sweep
 # mark-brannan/.github's claude-review.yml). That fixer reads `mergeable` live
 # but only wakes on a pull_request event, so a conflict that appears because
 # the base moved waits for the author's next push. This workflow supplies the
-# missing event and does no resolving of its own, and runs no model.
+# missing event and does no resolving of its own, and runs no model itself.
+#
+# Cost per push to main: each nudge reopens a PR, which starts every
+# pull_request workflow on it (the Claude review, CI, the guards), so up to
+# MAX_NUDGES model reviews plus CI, drawing on the account's concurrent-job
+# cap. A pushed head is nudged once. If that is too dear, the fix is an entry
+# point on the shared fixer (workflow_dispatch with a PR number).
 #
 # The nudge is a close and reopen: it fires `reopened` and adds no commit. It
 # must use the agent App's token. An event made with GITHUB_TOKEN starts no
@@ -31,7 +37,8 @@ on:
 
 concurrency:
   group: conflict-sweep
-  cancel-in-progress: true
+  # Queue, never cancel: a cancel between close and reopen would leave a PR closed.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -77,20 +84,21 @@ jobs:
         run: |
           set -uo pipefail
           nudged=0
+          failed=0
           # One listing, then each PR read on its own: `mergeable` is computed
           # lazily after a push, so a null is asked again for up to 15 s.
           for pr in $(gh pr list --state open --draft=false --limit 100 \
                         --json number,headRepositoryOwner,headRepository \
                         --jq ".[] | select(.headRepositoryOwner.login + \"/\" + .headRepository.name == \"$GITHUB_REPOSITORY\") | .number"); do
             for _ in 1 2 3 4 5; do
-              state=$(gh pr view "$pr" --json mergeable --jq .mergeable)
+              info=$(gh pr view "$pr" --json mergeable,headRefOid,labels)
+              state=$(jq -r .mergeable <<<"$info")
               [ "$state" != UNKNOWN ] && break
               sleep 3
             done
             echo "PR #$pr: $state"
             [ "$state" = CONFLICTING ] || continue
 
-            info=$(gh pr view "$pr" --json headRefOid,labels)
             sha=$(jq -r .headRefOid <<<"$info")
             if jq -e '.labels[].name | select(. == "fixer:skip")' <<<"$info" >/dev/null; then
               echo "  fixer:skip label; left alone"; continue
@@ -105,12 +113,16 @@ jobs:
               continue
             fi
 
-            # Mark the head first: a failed reopen below must not loop.
+            gh pr close "$pr" >/dev/null || { echo "::error::PR #$pr: close failed"; failed=1; continue; }
+            if ! gh pr reopen "$pr" >/dev/null; then
+              echo "::error::PR #$pr was closed but did not reopen; reopen it by hand"; failed=1; continue
+            fi
+            # Marked only once the reopen has happened, so a failure retries on the next push.
             GH_TOKEN=$STATUS_TOKEN gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" \
               -f state=success -f context=conflict-sweep \
-              -f description="Handed to the fixer after main moved" >/dev/null
-            gh pr close "$pr" >/dev/null && gh pr reopen "$pr" >/dev/null
+              -f description="Reopened to hand the conflict to the fixer" >/dev/null || echo "::warning::PR #$pr: status not written; it may be nudged again"
             echo "  nudged #$pr at ${sha:0:8}"
             nudged=$((nudged + 1))
           done
-          echo "### Conflict sweep: $nudged nudged" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Conflict sweep: $nudged nudged, $failed failed" >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
