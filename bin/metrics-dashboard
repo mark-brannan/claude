@@ -7,7 +7,7 @@
 # What each figure means: docs/metrics-dashboard-spec.md.
 #
 # Usage: metrics-dashboard [--db FILE] [--out FILE] [--days N]
-#   --days   the daily window (default 56); weekly series cover the whole span.
+#   --days   the daily window (default 90); weekly series cover the whole span.
 # Writes <state>/metrics/dashboard/index.html by default and prints its path.
 # Python 3 stdlib only.
 import argparse, datetime as dt, html, math, os, re, sqlite3, sys
@@ -396,6 +396,7 @@ def build(db, out, ndays):
         cap = MAXAXIS[m]
         return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5)
     model_charts = [model_chart(m) for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m)]
+    w90 = wkeys[-13:]  # the cost tab covers 13 whole weeks (91 days), like its daily charts
     words_w = {r["w"]: r["wd"] for r in typing_w}
     words_m = {r["m"]: r["wd"] for r in q("select substr(first_ts, 1, 7) m, sum(words) wd from typing where first_ts is not null group by m")}
     mkeys = sorted(words_m)
@@ -578,12 +579,12 @@ def build(db, out, ndays):
         ],
         "ci": ci_figs,
         "cost": model_charts + [
-            areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", wkeys[-13:], model_series, every=1, wide=True),
-            lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
-            lines("Cold context share, weekly, by session length", wkeys, cold_g, every=4, unit="%"),
-            lines("Context per turn, weekly mean, by session length", wkeys, ctx_g, every=4, unit="k"),
-            lines("Turns per session, weekly mean", wkeys, [("turns/session", ratio(costw, "turns", "n"))], every=4),
-            bars("Sessions per week, by length", wkeys, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
+            areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", w90, model_series, every=1, wide=True),
+            lines("API-equivalent $ per merged PR, weekly mean", w90, [pr_cost], every=4),
+            lines("Cold context share, weekly, by session length", w90, cold_g, every=4, unit="%"),
+            lines("Context per turn, weekly mean, by session length", w90, ctx_g, every=4, unit="k"),
+            lines("Turns per session, weekly mean", w90, [("turns/session", ratio(costw, "turns", "n"))], every=4),
+            bars("Sessions per week, by length", w90, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
         ],
     }
     wtot = [sum(v.get(w, 0) for _, v in model_series) for w in wkeys]
@@ -673,7 +674,7 @@ footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db"); ap.add_argument("--out"); ap.add_argument("--days", type=int, default=56)
+    ap.add_argument("--db"); ap.add_argument("--out"); ap.add_argument("--days", type=int, default=90)
     a = ap.parse_args()
     sd = state_dir()
     if not sd and not (a.db and a.out):
