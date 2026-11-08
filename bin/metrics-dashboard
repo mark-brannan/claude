@@ -65,7 +65,7 @@ def x_labels(keys, every):
     out = []
     for i, k in enumerate(keys):
         if i % every == 0 or i == len(keys) - 1 and len(keys) > 2 and (len(keys) - 1) % every >= every // 2:
-            out.append((i, k[5:] if len(k) == 10 else k))
+            out.append((i, k[5:10] if len(k) == 13 else k[5:] if len(k) == 10 else k))
     return out
 
 def frame(keys, vmax, every, tk=None, lab=fmt):
@@ -142,7 +142,7 @@ def bars(title, keys, series, every=7, unit=""):
         body.append(f'<rect class="hit" x="{ML+bw*i:.1f}" y="{MT}" width="{bw:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
     return card(title, "".join(body), [n for n, _ in series] if len(series) > 1 else [])
 
-def areas(title, keys, series, every=7, unit="", wide=False):
+def areas(title, keys, series, every=7, unit="", wide=False, right=None):
     """Stacked areas. series: [(name, {key: value})], first at the bottom; a hover column per key."""
     tot = {k: sum((s.get(k) or 0) for _, s in series) for k in keys}
     g, y, pw, ph, top = frame(keys, max(tot.values() or [0]), every)
@@ -156,9 +156,16 @@ def areas(title, keys, series, every=7, unit="", wide=False):
             body.append(f'<path class="a{slot(name, si)}" d="{d}"/>')
         base = up
     for i, k in enumerate(keys):
-        tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + f"\ntotal: {fmt(tot[k])}{unit}"
+        tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + f"\ntotal: {fmt(tot[k])}{unit}" + (f"\n{right[0]}: {fmt(right[1].get(k))}" if right else "")
         body.append(f'<rect class="hit" x="{xs(i)-pw/n/2:.1f}" y="{MT}" width="{pw/n:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
-    return card(title, "".join(body), [n for n, _ in series], wide)
+    if right:  # one line on its own right-hand axis (dotted, labelled), e.g. a count over dollars
+        rname, rs = right; rtop = ticks(max([v for v in rs.values() if v is not None] or [0]))[-1] or 1
+        ry = lambda v: MT + ph - ph * v / rtop
+        pts = [(xs(i), ry(rs[k])) for i, k in enumerate(keys) if rs.get(k) is not None]
+        if len(pts) > 1: body.append(f'<path class="s6 ln" stroke-dasharray="2 3" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
+        for t in ticks(max([v for v in rs.values() if v is not None] or [0])): body.append(f'<text class="ax" x="{W-MR+4}" y="{ry(t)+3.5:.1f}">{fmt(t)}</text>')
+        body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">{html.escape(rname)} →</text>')
+    return card(title, "".join(body), [n for n, _ in series] + ([right[0] + " (right axis, dotted)"] if right else []), wide)
 
 def pie(title, items, unit="$"):
     """items: [(name, value)] largest first; a pie with its legend inside the figure."""
@@ -456,14 +463,34 @@ def build(db, out, ndays):
         mord = [m for m, _ in sorted({model_name(r["model"]): 0 for r in ci}.items())]
         mrank = sorted(mord, key=lambda m: -sum(r["cost_usd"] for r in ci if model_name(r["model"]) == m))
         per_check = []
-        for c in order:  # per check: $ per day by model, and under it runs per day by model
-            usd_d, run_d = defaultdict(lambda: defaultdict(float)), defaultdict(lambda: defaultdict(float))
+        first = max(dt.date.fromisoformat(min(r["ts"][:10] for r in ci)), today - dt.timedelta(days=ndays - 1))
+        now_h = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+        hours, h = [], dt.datetime.combine(first, dt.time())
+        while h <= now_h: hours.append(h); h += dt.timedelta(hours=1)
+        hkeys = [h.strftime("%Y-%m-%dT%H") for h in hours]
+        REF = dt.datetime(2026, 11, 3, 14)  # a Tuesday 14:00 UTC (6:00 PST): the weekly limit resets every 7 days from here
+        wk_of = [(h - REF) // dt.timedelta(days=7) for h in hours]
+        def cumulative(per_hour):  # running total per hour, back to zero at each weekly reset
+            out, acc, last = {}, 0.0, None
+            for k, w in zip(hkeys, wk_of):
+                if w != last: acc, last = 0.0, w
+                acc += per_hour.get(k, 0.0); out[k] = round(acc, 3)
+            return out
+        for c in order:  # per check: cumulative $ since the weekly reset by model; runs overlaid on the right axis, or under it when models vary
+            usd_h, run_h = defaultdict(lambda: defaultdict(float)), defaultdict(lambda: defaultdict(float))
             for r in ci:
                 if r["what"] != c: continue
-                m = model_name(r["model"]); usd_d[m][r["ts"][:10]] += r["cost_usd"]; run_d[m][r["ts"][:10]] += 1
-            ms = [m for m in mrank if m in usd_d]; ev = max(len(cdays) // 8, 1)
-            per_check.append("<div>" + areas(f"{nm(c)}: $ per day, by model", cdays, [(m, {d: round(v, 3) for d, v in usd_d[m].items()}) for m in ms], every=ev, unit="$")
-                             + areas(f"{nm(c)}: runs per day, by model", cdays, [(m, dict(run_d[m])) for m in ms], every=ev) + "</div>")
+                m = model_name(r["model"]); k = r["ts"][:13]; usd_h[m][k] += r["cost_usd"]; run_h[m][k] += 1
+            ms = [m for m in mrank if m in usd_h]; ev = 48
+            runs_all = defaultdict(float)
+            for m in ms:
+                for k, v in run_h[m].items(): runs_all[k] += v
+            title = f"{nm(c)}: cumulative $ since the weekly reset, by model"
+            if len(ms) == 1:
+                per_check.append("<div>" + areas(title + ", runs on the right", hkeys, [(m, cumulative(usd_h[m])) for m in ms], every=ev, unit="$", right=("runs", cumulative(runs_all))) + "</div>")
+            else:
+                per_check.append("<div>" + areas(title, hkeys, [(m, cumulative(usd_h[m])) for m in ms], every=ev, unit="$", right=("runs", cumulative(runs_all)))
+                                 + areas(f"{nm(c)}: cumulative runs since the weekly reset, by model", hkeys, [(m, cumulative(run_h[m])) for m in ms], every=ev) + "</div>")
         ci_figs.insert(0, '<div class="five">' + "".join(per_check) + "</div>")  # one row of up to five checks, $ over runs
         rr = sorted(repo_tot.items(), key=lambda kv: -kv[1])
         top = rr[:5] + ([("other", sum(v for _, v in rr[5:]))] if len(rr) > 5 else [])
