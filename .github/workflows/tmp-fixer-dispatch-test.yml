@@ -1,0 +1,27 @@
+name: tmp fixer dispatch test
+# Throwaway: exercises the pr-number input of the shared claude-review workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: pull request number
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  id-token: write
+
+jobs:
+  review:
+    uses: mark-brannan/.github/.github/workflows/claude-review.yml@feat/fixer-dispatch-pr-number
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      AGENT_BOT_APP_ID: ${{ secrets.AGENT_BOT_APP_ID }}
+      AGENT_BOT_PRIVATE_KEY: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+    with:
+      pr-number: ${{ inputs.pr }}
+      allowed-bots: mergify[bot],mark-brannan-release-please[bot],claude[bot],mark-brannan-agent[bot]
+      allowed-tools: ''
