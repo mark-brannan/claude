@@ -1062,10 +1062,15 @@ class Hook:
             # claim that ended gets its line on the next turn.
             self.m_ctx_hushed = 0
         if r > max(self.m_ctx_at, self.m_ctx_hushed):
-            if self.hush:
+            if self.hush and not self.driver:
                 self.m_ctx_hushed = r
                 return
-            if self.m_ctx_at == 0:
+            if self.driver:
+                # A driver is hushed except for this: its context is its
+                # relay signal (pickup skill, "the driver relays").
+                self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)}: "
+                                        "relay the driver now (pickup skill).")
+            elif self.m_ctx_at == 0:
                 self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)}: a stopping point is due.")
             else:
                 self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)} "

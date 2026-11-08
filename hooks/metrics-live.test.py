@@ -1384,7 +1384,7 @@ class MetricsLiveTest(unittest.TestCase):
 
         drv = "d0d0d0d0-driver"
         claim("batch.md", drv)
-        w.t("a driver past 105k gets no model line", "", w.ctx(tool(drv)))
+        w.has("a driver past 105k is told to relay, nothing else", "relay the driver now", w.ctx(tool(drv)))
         w.t("nor its repeat", "", w.ctx(tool(drv)))
         w.t("the driver's crossings are still recorded", "100000\n150000",
             "\n".join(str(r["at"]) for r in w.rows(drv, "context")))

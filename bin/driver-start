@@ -4,7 +4,7 @@
 # can open it from the Claude Desktop app, claude.ai/code or a phone, and
 # nothing to paste. Scoping's §6 runs it on the yes.
 #
-#   driver-start [--cwd <dir>] [--wait <seconds>] <parent-id>
+#   driver-start [--cwd <dir>] [--wait <seconds>] [--relay] <parent-id>
 #
 # Refused (exit 1) when the parent cannot be read, or its log already carries
 # `driver_session=`: one driver per yes. Otherwise it runs
@@ -20,6 +20,14 @@
 # is running and listed by name. Exit 2 on bad arguments; a `claude --bg`
 # that fails passes its code through; a driver_session that cannot be logged
 # exits 1 after the attach lines, since the session is already running.
+#
+# --relay is the one way past that refusal: a driver at about 100k context
+# hands the batch to a successor. It is allowed only from the session the
+# log's newest `driver_session=` names (CLAUDE_CODE_SESSION_ID), so there is
+# still one live driver. It releases the parent (the successor's /pickup
+# claims it), starts the successor as above and logs its `driver_session=`;
+# the newest line wins. If the successor cannot start, the parent is claimed
+# again and the old driver carries on. The old driver ends after it.
 # confer-start reuses start() for the agora's confer sessions.
 #
 # The name, <name>, is "Driver <parent-id>: <slug> <date>", so the session list
@@ -112,13 +120,35 @@ def remote_link(short, wait):
         time.sleep(min(2.0, left))
 
 
-def start(item, text, name, prompt, key, facts, cwd, wait):
+def held_by(text, key):
+    """The newest `<key>=` value in <text>'s log, or ""."""
+    found = re.findall(r"\b%s=(\S+)" % re.escape(key), text)
+    return found[-1] if found else ""
+
+
+def reclaim(item, relay):
+    """A relay whose successor never started: the old driver takes the parent back."""
+    if relay:
+        subprocess.run([WORK_ITEM, "claim", item], text=True, capture_output=True)
+
+
+def check_relay(item, text, key):
+    """Die unless the caller is the session <text>'s newest <key>= names."""
+    held, me = held_by(text, key), os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if not held:
+        die("%s has no %s to relay from" % (item, key))
+    if not (me and me.startswith(held)):
+        die("only the current %s (%s) may relay, not %s" % (key, held, me or "no session"))
+
+
+def start(item, text, name, prompt, key, facts, cwd, wait, relay=False):
     """Start one background session named <name> running <prompt> in <cwd>,
     log `<key>=<session uuid>` on <item>, and print how to attach. Refused
-    when <text> already carries <key>=. Returns the exit code."""
-    held = re.search(r"\b%s=(\S+)" % re.escape(key), text)
-    if held:
-        die("%s already has one, session %s: one session per yes" % (item, held.group(1)))
+    when <text> already carries <key>=, unless <relay> and the caller is the
+    session it names. Returns the exit code."""
+    held = held_by(text, key)
+    if held and not relay:
+        die("%s already has one, session %s: one session per yes" % (item, held))
 
     cmd = ["claude", "--bg", "--remote-control", name, "-n", name]
     for k in ("model", "effort"):
@@ -129,10 +159,12 @@ def start(item, text, name, prompt, key, facts, cwd, wait):
     r = subprocess.run(cmd, text=True, capture_output=True, cwd=cwd)
     if r.returncode:
         sys.stderr.write(r.stdout + r.stderr)
+        reclaim(item, relay)
         die("claude --bg failed", r.returncode)
     m = re.search(r"backgrounded\W+([0-9a-f]{8})", ANSI.sub("", r.stdout))
     if not m:
         sys.stderr.write(r.stdout)
+        reclaim(item, relay)
         die("claude --bg printed no session id; `claude agents` lists what runs")
     short = m.group(1)
 
@@ -164,12 +196,24 @@ def main():
     ap.add_argument("--cwd", default=os.getcwd())
     ap.add_argument("--wait", type=float, default=45.0)
     ap.add_argument("--about", default="")
+    ap.add_argument("--relay", action="store_true")
     a = ap.parse_args()
     check_args(a, a.parent)
     text, facts = parent_facts(a.parent)
     name = session_name(a.parent, text, a.about)
-    return start(a.parent, text, name, "/pickup %s" % a.parent,
-                 "driver_session", facts, a.cwd, a.wait)
+    if a.relay:
+        name += " relay %d" % len(re.findall(r"\bdriver_session=", text))
+    prompt = "/pickup %s" % a.parent
+    if not a.relay:
+        return start(a.parent, text, name, prompt, "driver_session", facts, a.cwd, a.wait)
+    check_relay(a.parent, text, "driver_session")
+    # The successor's /pickup claims the parent, so the old driver lets go
+    # first; a successor that never starts hands the claim back.
+    r = subprocess.run([WORK_ITEM, "release", a.parent], text=True, capture_output=True)
+    if r.returncode:
+        die("cannot release %s: %s" % (a.parent, r.stderr.strip() or "work-item failed"))
+    return start(a.parent, text, name, prompt, "driver_session", facts, a.cwd, a.wait,
+                 True)
 
 
 if __name__ == "__main__":

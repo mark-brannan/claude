@@ -257,7 +257,9 @@ that claimed an item carrying a `driver=` Log line. For it and for a live
 curia sitting, nothing nags the model: no context line or its repeat, no
 sitting line, and the Stop block never asks for a hand-off, whatever armed it.
 Crossings are still counted and recorded, and the block still shows them:
-hush is about what reaches the model, never the record.
+hush is about what reaches the model, never the record. One line gets
+through to a driver: at each model context rung, once, "relay the driver now"
+(the pickup skill says how); it has no repeat.
 
 ## The sitting clock, and getting out of the chair
 

@@ -5,6 +5,9 @@
 # `/pickup <parent>` as its prompt, in --cwd; the parent's model and effort
 # passed when its create line names them; `driver_session=<uuid>` logged on
 # the parent; a parent that already has one refused, and nothing started; the
+# --relay: allowed only from the session the newest driver_session= names,
+# releases the parent, starts a successor and logs it, and claims the parent
+# back when the successor cannot start.
 # claude.ai/code link read from the session's output and printed, or said
 # missing without failing; a failing `claude --bg` passes its code through.
 # `claude` and `work-item` are stubs; the tool runs from a copy beside the
@@ -38,11 +41,13 @@ esac
 exit 0
 '''
 
-# work-item stub: `show` prints $STUB_ITEM; `log` appends to $STUB_ITEM.log.
+# work-item stub: `show` prints $STUB_ITEM; `log` appends to $STUB_ITEM.log;
+# `release` and `claim` append their verb to $STUB_ITEM.moves.
 WORK_ITEM = r'''#!/bin/sh
 case "$1" in
   show) [ -f "$STUB_ITEM" ] || { echo "no such item" >&2; exit 1; }; cat "$STUB_ITEM" ;;
   log) shift; echo "$*" >> "$STUB_ITEM.log"; [ -z "$STUB_LOG_RC" ] || exit "$STUB_LOG_RC" ;;
+  release|claim) echo "$1" >> "$STUB_ITEM.moves" ;;
 esac
 '''
 
@@ -161,6 +166,47 @@ class DriverStart(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("claude attach 3aa1df25", r.stdout)
         self.assertIn("driver_session not logged", r.stderr)
+
+    # --relay: the current driver hands the batch on.
+    def has_driver(self, *sessions):
+        extra = "".join("2026-11-06T10:07:0%dZ c116ad7b driver_session=%s\n" % (i, x)
+                        for i, x in enumerate(sessions))
+        self.item.write_text(ITEM % ("-", "-") + extra)
+
+    def moves(self):
+        p = Path(str(self.item) + ".moves")
+        return p.read_text().split() if p.exists() else []
+
+    def test_relay_from_the_current_driver_starts_a_successor(self):
+        self.has_driver("old-1", "old-2")
+        r = self.run_tool("--relay", PARENT, CLAUDE_CODE_SESSION_ID="old-2")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        bg = [c for c in self.calls() if c.startswith("--bg")]
+        self.assertEqual(bg, ["--bg --remote-control %s relay 2 -n %s relay 2 /pickup %s" % (NAME, NAME, PARENT)])
+        self.assertEqual(self.logged(), ["%s driver_session=%s" % (PARENT, UUID)])
+        self.assertEqual(self.moves(), ["release"])
+
+    def test_relay_from_anyone_else_is_refused(self):
+        self.has_driver("old-1", "old-2")
+        for me in ({}, {"CLAUDE_CODE_SESSION_ID": "old-1"}, {"CLAUDE_CODE_SESSION_ID": "stranger"}):
+            r = self.run_tool("--relay", PARENT, **me)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("may relay", r.stderr)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(self.moves(), [])
+
+    def test_relay_with_no_driver_is_refused(self):
+        r = self.run_tool("--relay", PARENT, CLAUDE_CODE_SESSION_ID="x")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no driver_session to relay from", r.stderr)
+        self.assertEqual(self.moves(), [])
+
+    def test_a_relay_that_cannot_start_takes_the_parent_back(self):
+        self.has_driver("old-1")
+        r = self.run_tool("--relay", PARENT, CLAUDE_CODE_SESSION_ID="old-1", STUB_BG_RC="3")
+        self.assertEqual(r.returncode, 3)
+        self.assertEqual(self.moves(), ["release", "claim"])
+        self.assertEqual(self.logged(), [])
 
 
 if __name__ == "__main__":
