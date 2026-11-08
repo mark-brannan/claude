@@ -33,5 +33,5 @@ Write one line in **Where this stands**, replacing the **Size** line:
 
 A word count over its cap ends with ` !`. Add the same figures as one table
 row under the newest Trace entry in `agent-notes.md`, dated. Commit both.
-Do not warn about the curia WIP limit before 2026-10-14. Report back the
+Do not warn about the curia WIP limit before 2026-12-08. Report back the
 line.
