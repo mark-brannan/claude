@@ -462,6 +462,15 @@ class WindowsAndBucketsTest(unittest.TestCase):
         self.assertIn('id="lr3"', page)
         self.assertIn("Keystrokes per minute", page)
 
+    def test_usage_window_and_9pm_lines_render_and_cost_tab_is_13_weeks(self):
+        page = self.render("window", lambda cx: None)
+        self.assertIn("in this usage-limit window", page)
+        self.assertIn("on pace for $0", page)
+        self.assertIn('class="nt"', self.render("nines", lambda cx: cx.execute(
+            "insert into input(host, minute, keys, clicks, scroll, move, afk, seen) values ('h', ?, 40, 1, 2, 3, 0, 1)",
+            (int(dt.datetime.now(dt.timezone.utc).timestamp() // 60),))))
+        self.assertIn("last 13 whole weeks", page)
+
     def test_session_length_buckets_leave_no_gap(self):
         def setup(cx):
             for i, secs in enumerate((299.9, 300, 3599.5, 3600, 3600.5)):

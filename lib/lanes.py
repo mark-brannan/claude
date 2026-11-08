@@ -4,12 +4,19 @@ stretch since your last break, and sessions with their API-equivalent cost, with
 1 / 3 / 7 / 30 day range per CSS radio. Reads metrics.db read-only; stdlib only;
 returns an HTML fragment (inline SVG, no scripts) styled by the dashboard's CSS
 variables, every rule under .lanes."""
-import bisect, collections, datetime as dt, html, math, sqlite3
+import bisect, collections, datetime as dt, html, math, sqlite3, time
+try:
+    from zoneinfo import ZoneInfo
+    TZ = ZoneInfo("America/Los_Angeles")  # PST/PDT: the user's local time, whatever the host says
+except Exception:
+    TZ = None
 
 BREAK = 5          # minutes: a gap over this ends a stretch of work
 AWAY = 3 * 3600    # seconds: a gap this long is sleep or away
 RANGES = [("1 day", 86400, 300, "5 min"), ("3 days", 3 * 86400, 900, "15 min"),
           ("7 days", 7 * 86400, 3600, "1 hour"), ("30 days", 30 * 86400, 7200, "2 hours")]
+CAP = 2000.0       # API-priced dollars the weekly limit buys (measured with /usage, 2026-11-05)
+RESET = (1, 14)    # the limit resets Tuesdays 14:00 UTC (weekday, hour)
 W, L, R, T, B, LH = 900, 44, 44, 10, 4, 96
 PAL = ["--s1", "--s2", "--bad", "--s3", "--ink2", "--good", "--muted"]
 
@@ -18,10 +25,15 @@ CSS = """.lanes .rg { position:absolute; opacity:0; pointer-events:none }
 .lanes .rt label { padding:5px 12px; border-radius:99px; background:var(--surface); border:1px solid var(--grid); cursor:pointer; font-size:13px }
 .lanes .rp { display:none } .lanes svg.ch { width:100%; height:auto; display:block }
 .lanes .g { stroke:var(--grid); stroke-width:1 } .lanes .g2 { stroke:var(--grid); stroke-width:1; opacity:.5 }
-.lanes .t, .lanes .t2 { font-size:10px; fill:var(--muted) } .lanes .ln { font-size:11px; fill:var(--ink); font-weight:600 }
+.lanes .t, .lanes .t2 { font-size:12px; fill:var(--muted) } .lanes .ln { font-size:13px; fill:var(--ink); font-weight:600 }
+.lanes .nt { stroke:var(--muted); stroke-width:1; stroke-dasharray:1 4; opacity:.7 }
 .lanes .br { fill:var(--s2); opacity:.14 } .lanes .sl { fill:var(--ink2); opacity:.22 }
 """ + "".join(f".lanes #lr{i}:checked ~ .rt label[for=lr{i}] {{ border-color:var(--s1); color:var(--ink) }} "
                f".lanes #lr{i}:checked ~ #lp{i} {{ display:block }}\n" for i in range(len(RANGES)))
+
+
+def _local(t):
+    return dt.datetime.fromtimestamp(t, TZ)
 
 
 def _pct(v, q):
@@ -123,11 +135,16 @@ def lanes_html(db_path):
         step = {86400: 3 * 3600, 3 * 86400: 12 * 3600, 7 * 86400: 86400, 30 * 86400: 5 * 86400}[span]
         ticks, t = [], math.ceil(start / step) * step
         while t < end:
-            d = dt.datetime.fromtimestamp(t)
+            d = _local(t)
             ticks.append((x(t), d.strftime("%a %-d %H:%M") if step < 86400 else d.strftime("%b %-d"))); t += step
+        nines, d0 = [], _local(start).replace(hour=21, minute=0, second=0, microsecond=0)
+        for k in range(span // 86400 + 2):
+            tn = (d0 + dt.timedelta(days=k)).timestamp()
+            if start <= tn < end: nines.append(x(tn))
         def lane(i, name, fn, ymax, fmt, ymax2=None, fmt2=None):
             h = HS[i]; ch = _Ch(nb, ymax, h); ch2 = _Ch(nb, ymax2, h)
             for xt, _ in ticks: ch.p.append(f'<line x1="{ch.X(xt):.1f}" x2="{ch.X(xt):.1f}" y1="{T}" y2="{h-B}" class="g2"/>')
+            for xt in nines: ch.p.append(f'<line x1="{ch.X(xt):.1f}" x2="{ch.X(xt):.1f}" y1="{T}" y2="{h-B}" class="nt"/>')
             for a, b2 in gaps:
                 if (b2 - a >= AWAY or (span < 7 * 86400 and b2 - a > BREAK * 60)) and b2 > start and a < end:
                     xa = ch.X(max(0, x(a))); xb = ch.X(min(nb, x(b2)))
@@ -166,5 +183,83 @@ def lanes_html(db_path):
     tabs = "".join(f'<label for="lr{i}">{n} <small>· {b}</small></label>' for i, (n, _, _, b) in enumerate(RANGES))
     panels = "".join(f'<div class="rp" id="lp{i}">{build(s, b)}</div>' for i, (_, s, b, _) in enumerate(RANGES))
     return (f'<div class="lanes"><style>{CSS}</style><p class="note">One time axis; each range sets its bucket size. Orange bands are breaks '
-            f'over {BREAK} minutes (1 and 3 day views); grey bands are gaps of {AWAY // 3600} hours or more, sleep or away. Local time, newest at the right.</p>'
+            f'over {BREAK} minutes (1 and 3 day views); grey bands are gaps of {AWAY // 3600} hours or more, sleep or away. Dotted lines mark 9pm each day. Pacific time (PST/PDT), newest at the right.</p>'
             f'{radios}<div class="rt">{tabs}</div>{panels}</div>')
+
+
+def window_html(db_path, name=lambda m: m, now=None):
+    """The current usage-limit window: cumulative API-priced dollars since the last reset,
+    stacked by model, with a dotted projection to the reset and the cap line. Read-only.
+    A session's dollars are spread evenly over its run, as in the lanes (an assumption)."""
+    now = now or time.time()
+    nd = dt.datetime.fromtimestamp(now, dt.timezone.utc)
+    back = (nd.weekday() - RESET[0]) % 7
+    r0 = nd.replace(hour=RESET[1], minute=0, second=0, microsecond=0) - dt.timedelta(days=back)
+    if r0 > nd: r0 -= dt.timedelta(days=7)
+    start = r0.timestamp(); end = start + 7 * 86400; nb = 7 * 24; used = min(now, end)
+    cx = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        rows = cx.execute("select s.started_at, s.ts, s.ended_at, c.model, c.cost_usd from sessions s "
+                          "join session_cost c on c.session_id = s.session_id").fetchall()
+    finally:
+        cx.close()
+    per = collections.defaultdict(lambda: [0.0] * nb)
+    for sa, ts, ea, m, usd in rows:
+        try:
+            a = _ts(sa or ts); b = max(_ts(ea) if ea else a + 60, a + 60)
+        except Exception:
+            continue
+        lo, hi = max(a, start), min(b, used)
+        if hi <= lo or not usd: continue
+        for i in range(int((lo - start) // 3600), min(nb, int((hi - start) // 3600) + 1)):
+            bs = start + i * 3600; ov = min(hi, bs + 3600) - max(lo, bs)
+            if ov > 0: per[name(m)][i] += usd * ov / (b - a)
+    order = sorted(per, key=lambda m: -sum(per[m]))
+    if len(order) > 5:
+        for m in order[4:]:
+            for i, v in enumerate(per[m]): per["other"][i] += v
+            if m != "other": del per[m]
+        order = sorted(per, key=lambda m: -sum(per[m]))
+    nu = min(nb, int((used - start) // 3600) + 1)
+    cum = {m: [] for m in order}; tot = []
+    for m in order:
+        acc = 0.0
+        for i in range(nu): acc += per[m][i]; cum[m].append(acc)
+    tot = [sum(cum[m][i] for m in order) for i in range(nu)]
+    spent = tot[-1] if tot else 0.0
+    el = max(used - start, 1); rate = spent / el  # dollars per second so far
+    proj = spent + rate * (end - used)
+    runout = start + CAP / rate if rate and proj > CAP else None
+    ymax = max(CAP, proj, 1) * 1.08; Wd, Hd = 900, 300
+    X = lambda t: L + (W - L - R) * (t - start) / (end - start)
+    Y = lambda v: T + (Hd - 34 - T) * (1 - v / ymax)
+    g = []
+    for v in range(0, int(ymax) + 1, 500):
+        g.append(f'<line x1="{L}" x2="{W-R}" y1="{Y(v):.1f}" y2="{Y(v):.1f}" class="g"/><text x="{L-5}" y="{Y(v)+4:.1f}" class="t" text-anchor="end">${v:,}</text>')
+    for k in range(8):
+        t = start + k * 86400; d = _local(t)
+        g.append(f'<line x1="{X(t):.1f}" x2="{X(t):.1f}" y1="{T}" y2="{Hd-34}" class="g2"/>'
+                 f'<text x="{X(t)+(0 if k < 7 else -2):.1f}" y="{Hd-18}" class="t" text-anchor="{"start" if k < 7 else "end"}">{d.strftime("%a %-d %H:%M")}</text>')
+    base = [0.0] * nu
+    for si, m in enumerate(order):
+        up = [base[i] + cum[m][i] for i in range(nu)]
+        if nu > 1:
+            xs = [X(start + (i + 1) * 3600 if i < nu - 1 else used) for i in range(nu)]
+            d = "M" + " L".join(f"{xs[i]:.1f},{Y(up[i]):.1f}" for i in range(nu)) + " L" + " L".join(f"{xs[i]:.1f},{Y(base[i]):.1f}" for i in range(nu - 1, -1, -1)) + "Z"
+            g.append(f'<path class="wa{si+1}" d="{d}"/>')
+        base = up
+    g.append(f'<line x1="{L}" x2="{W-R}" y1="{Y(CAP):.1f}" y2="{Y(CAP):.1f}" class="cap"/><text x="{L+4}" y="{Y(CAP)-4:.1f}" class="t">cap ≈ ${CAP:,.0f}</text>')
+    g.append(f'<line x1="{X(used):.1f}" y1="{Y(spent):.1f}" x2="{X(end):.1f}" y2="{Y(proj):.1f}" class="pj"/>')
+    g.append(f'<text x="{W-R-4}" y="{Y(proj)-6:.1f}" class="ln" text-anchor="end">on pace for ${proj:,.0f}</text>')
+    if runout and runout < end:
+        g.append(f'<line x1="{X(runout):.1f}" x2="{X(runout):.1f}" y1="{T}" y2="{Hd-34}" class="ro"/>')
+    leg = "".join(f'<span><i class="w{i+1}"></i>{html.escape(m)}</span>' for i, m in enumerate(order))
+    when = f" At this pace the limit runs out {_local(runout).strftime('%a %-d %H:%M')} PST, {max(0, (end - runout) / 3600):.0f} hours before the reset." if runout and runout < end else ""
+    note = (f"Spent ${spent:,.0f} since the reset {_local(start).strftime('%a %-d %H:%M')} PST; projected ${proj:,.0f} at the pace so far "
+            f"(a straight line, measured spend over elapsed time).{when} The cap and reset day are the figures last read from /usage; API-priced, not what the plan charges.")
+    return (f'<div class="lanes" style="grid-column:1/-1"><style>.lanes .cap {{ stroke:var(--bad); stroke-dasharray:6 4; stroke-width:1.2 }} '
+            f'.lanes .pj {{ stroke:var(--ink2); stroke-dasharray:2 4; stroke-width:2 }} .lanes .ro {{ stroke:var(--bad); stroke-width:1; stroke-dasharray:3 3 }} '
+            + "".join(f'.lanes .wa{i} {{ fill:var(--{c}); fill-opacity:.72 }} .lanes .w{i} {{ background:var(--{c}) }} ' for i, c in enumerate(["s1", "s2", "s3", "s4", "muted"], 1))
+            + '.lanes .leg i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px }</style>'
+            f'<figure class="wide"><figcaption>API-equivalent $ in this usage-limit window, by model</figcaption>'
+            f'<svg viewBox="0 0 {Wd} {Hd}" class="ch">{"".join(g)}</svg><div class="leg">{leg}</div></figure><p class="note">{html.escape(note)}</p></div>')

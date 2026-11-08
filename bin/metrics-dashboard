@@ -493,7 +493,7 @@ def build(db, out, ndays):
         ],
         "ci": ci_figs,
         "cost": [
-            areas("API-equivalent $ per week, by model", wkeys, model_series, every=4, unit="", wide=True),
+            areas("API-equivalent $ per week, by model, last 13 whole weeks (91 days)", wkeys[-13:], model_series, every=1, wide=True),
             lines("API-equivalent $ per merged PR, weekly mean", wkeys, [pr_cost], every=4),
             lines("Cold context share, weekly", wkeys, [("cold %", {r["w"]: round(100.0 * (r["cw"] or 0) / ((r["cw"] or 0) + (r["cr"] or 0)), 1) for r in costw if r["cw"] or r["cr"]})], every=4, unit="%"),
             lines("Context per turn, weekly mean", wkeys, [("k tokens/turn", ratio(costw, "ctx", "turns", 0.001))], every=4, unit="k"),
@@ -501,6 +501,10 @@ def build(db, out, ndays):
             bars("Sessions per week, by length", wkeys, [("under 5 min", series(costw, "w", "short")), ("5 min to 1 h", series(costw, "w", "mid")), ("over 1 h", series(costw, "w", "long"))], every=4),
         ],
     }
+    wtot = [sum(v.get(w, 0) for _, v in model_series) for w in wkeys]
+    last7 = q("select coalesce(sum(cost_usd), 0) from sessions where substr(started_at, 1, 10) >= ?", dkeys[-7])[0][0]
+    cost_note = (f'Stacked: where the spend went. Weeks start Monday. Latest week ${wtot[-1]:,.0f}; the week before '
+                 f'${wtot[-2] if len(wtot) > 1 else 0:,.0f}; last 7 days ${last7:,.0f} (measured; API-priced, not what the plan charges). ')
     notes = {
         "open": "Issues and PRs are reconstructed from GitHub timestamps, so the history is complete; board cards start when the item store did.",
         "sessions": f"Daily series cover the last {ndays} days; weekly series the whole record.",
@@ -509,21 +513,19 @@ def build(db, out, ndays):
         "typing": "Prompts the user typed into interactive sessions, from the local transcripts. Harness-injected and headless prompts are excluded; pasted blocks are not counted as typing. Each transcript is counted on the day its first prompt was typed, so a session that runs past midnight or is resumed later keeps all its prompts on that first day.",
         "input": f"Per-minute counts from ActivityWatch on each host that exports them (input-export); counts and app categories only. A minute is active input at {ACTIVE_KEYS_PER_MIN}+ key presses; present is time ActivityWatch did not call away. A session's minutes are those between its start and end on the host whose home holds its cwd. Days with no data are gaps, never zeros; the coverage tile says how many there were.",
         "agent": "A touch is one typed prompt. A PR's touches are the prompts typed into every session that committed on its branch. Words per merged PR divides all words typed in the week by the PRs merged in it.",
-        "cost": "Dollars are the Stop hook's estimate at API list price, pricing each session's four token counts per model (hooks/session-metrics.jq): a weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. Cold context is the share of context tokens written to the cache instead of re-read from it; a write is priced far above a re-read, and a gap past the cache window makes the next turn cold for the whole context. A merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session are left out of the mean.",
+        "cost": cost_note + "Dollars are the Stop hook's estimate at API list price, pricing each session's four token counts per model (hooks/session-metrics.jq): a weight for comparing sessions, models and weeks, not a bill. A sub-agent's spend lands on its own model. Cold context is the share of context tokens written to the cache instead of re-read from it; a write is priced far above a re-read, and a gap past the cache window makes the next turn cold for the whole context. A merged PR's dollars are those of the sessions that committed on its branch, each session's figure split evenly across the branches it committed on; PRs with no session are left out of the mean.",
         "ci": ci_note,
     }
     titles = {"open": "Open work", "sessions": "Sessions", "friction": "Friction", "decisions": "Decisions",
               "typing": "Typing", "input": "Input", "agent": "Agent work vs touches", "cost": "Session cost", "ci": "CI review checks"}
     layout = {"time": ["sessions", "typing", "input"], "friction": ["friction", "decisions"],
               "work": ["open", "agent"], "cost": ["cost", "ci"]}
+    figs["cost"].insert(0, lanes.window_html(db, model_name))
     section = lambda k: f'<h2 id="{k}">{html.escape(titles[k])}</h2><p class="note">{html.escape(notes[k])}</p><div class="grid">{"".join(figs[k])}</div>'
-    wtot = [sum(v.get(w, 0) for _, v in model_series) for w in wkeys]
-    last7 = q("select coalesce(sum(cost_usd), 0) from sessions where substr(started_at, 1, 10) >= ?", dkeys[-7])[0][0]
-    cost_note = (f'<p class="note">Stacked: where the spend went. Weeks start Monday. Latest week ${wtot[-1]:,.0f}; the week before '
-                 f'${wtot[-2] if len(wtot) > 1 else 0:,.0f}; last 7 days ${last7:,.0f} (measured; API-priced, not what the plan charges).</p>')
-    panels = {"overview": (f'{lanes.lanes_html(db)}<div class="grid">{figs["cost"][0]}</div>{cost_note}<div class="kpis">{"".join(kpis)}</div><p class="note">Each card is the last 7 days against the 7 before, '
+    win = lanes.window_html(db, model_name)
+    panels = {"overview": (f'<div class="cols"><div>{lanes.lanes_html(db)}</div><div>{win}<div class="kpis">{"".join(kpis)}</div><p class="note">Each card is the last 7 days against the 7 before, '
                            'with twelve such windows as its trend; click one for its tab. Green moves the wanted way; '
-                           'decisions and merged PRs have no wanted direction, so they stay grey.</p>')}
+                           'decisions and merged PRs have no wanted direction, so they stay grey.</p></div></div>')}
     for t, ks in layout.items():
         panels[t] = f'<div class="tiles">{"".join(x for tt, x in tiles if tt == t)}</div>' + "".join(section(k) for k in ks)
     radios = "".join(f'<input type="radio" name="tab" id="tab-{t}"{" checked" if i == 0 else ""}>' for i, (t, _) in enumerate(TABS))
@@ -562,6 +564,7 @@ svg.spark {{ width:100%; height:32px; margin-top:6px }} .spark path {{ fill:none
 .tile b {{ font-size:22px; font-weight:600 }} .tile span {{ color:var(--ink2); font-size:12px }} .tile small {{ font-size:11px; color:var(--muted) }}
 .tile .good {{ color:var(--good) }} .tile .bad {{ color:var(--bad) }}
 h2 {{ font-size:16px; margin:24px 0 2px }} .note {{ margin:0 0 10px; font-size:12px }}
+.cols {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr)); gap:16px; align-items:start }}
 .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px }}
 figure {{ margin:0; background:var(--surface); border:1px solid var(--grid); border-radius:6px; padding:10px 12px 8px }}
 figcaption {{ font-size:13px; color:var(--ink2); margin-bottom:4px }} svg {{ width:100%; height:auto; display:block; overflow:visible }}
