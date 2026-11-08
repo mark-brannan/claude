@@ -35,7 +35,25 @@ Daily series cover the last 56 days (`--days`, minimum 14). Weekly series
 cover the whole record. Every tile compares the last 7 days with the 7 before.
 Open-work tiles compare today with 7 days ago.
 
+## Overview
+
+The page opens on one card per aim, each the last 7 days against the 7 before, with twelve
+such windows as a trend line. Each card opens the tab that holds its charts. A card with no
+wanted direction keeps its delta grey.
+
+| Aim | Card | Formula | Wanted | Tab |
+|---|---|---|---|---|
+| Your time | hours at the keyboard, 7d | sum `human_seconds` / 3600 | down | Your time |
+| Smoothness | friction per keyboard hour, 7d | sum `fr_total` / keyboard hours | down | Decisions & friction |
+| Decision load | decisions per keyboard hour, 7d | sum `dec_total` / keyboard hours | none | Decisions & friction |
+| Waiting on you | board cards owned by you, today | open cards owned `human-ruling` or `human-click` | down | Decisions & friction |
+| What lands | PRs merged, 7d | PRs with `merged_at` in window | none | Work landed |
+| Your words | words you typed per merged PR, 7d | typed words / PRs merged, same window | down | Work landed |
+| Cost | API-equivalent $, 7d | sum of session `cost_usd` | down | Cost |
+
 ## Tiles
+
+Each tab opens with the tiles for its charts.
 
 Delta colour: green when the change moves in the wanted direction.
 
@@ -58,7 +76,7 @@ Delta colour: green when the change moves in the wanted direction.
 
 ## Sections and charts
 
-### Open work
+### Open work (tab: Work landed)
 
 Issues and PRs are rebuilt from GitHub created and closed timestamps, so
 history is complete. Board cards start when the item store did.
@@ -68,21 +86,35 @@ history is complete. Board cards start when the item store did.
 | Open issues, by project | open issues per day, grouped by project | Where is the backlog? |
 | Open pull requests | open PRs per day, all repos | Is review keeping up? |
 | PRs merged per week | merged PRs by week, split `claude/*` head branch vs other | How much lands from agent branches? |
-| Board cards waiting on the user | open cards per day owned `human-ruling` and `human-click` | What do I owe the board? |
 | Board cards in the agent's queue | open cards per day owned `agent` | What is queued for the agent? |
 
-### Sessions and friction
+### Sessions (tab: Your time)
 
 | Chart | Formula | Question |
 |---|---|---|
 | Hours per day | keyboard hours and agent hours | Where does the time go? |
 | Sessions per day | headless vs interactive | What is the mix of unattended and attended work? |
-| Friction per day, by type | correction, override, rebuke, pushback counts | What kind of friction? |
-| Decisions pushed per day, by type | scoping, inline, gate counts | Which decisions reach me, and when? |
-| Friction per 100 prompts, weekly | 100 x friction events / typed prompts | Is friction falling relative to effort? |
-| Decisions per keyboard hour, weekly | decisions / keyboard hours | Is decision load falling relative to time? |
 
-### Typing
+### Friction (tab: Decisions & friction)
+
+| Chart | Formula | Question |
+|---|---|---|
+| Friction per keyboard hour, weekly | friction events / keyboard hours | Is it getting smoother, whatever the week's volume? |
+| Engaged sessions with no friction, weekly | 100 x sessions with `human_seconds` >= 60 and no friction / such sessions | How often does a session go clean? |
+| Repeat share of friction, weekly | 100 x `fr_repeat` / `fr_total` | Are lessons being learned? |
+| Friction per day, by type | correction, override, rebuke, pushback counts | What kind of friction? |
+| Friction per 100 prompts, weekly | 100 x friction events / typed prompts | Is friction falling relative to effort? |
+| Tool calls refused per week | `blk_classifier`, `blk_rule`, `blk_user` | Who stops the agent, and how often? |
+
+### Decisions (tab: Decisions & friction)
+
+| Chart | Formula | Question |
+|---|---|---|
+| Decisions per keyboard hour, weekly | decisions / keyboard hours | Is decision load falling relative to time? |
+| Decisions pushed per day, by type | scoping, inline, gate counts | Which decisions reach me, and when? |
+| Board cards waiting on the user | open cards per day owned `human-ruling` and `human-click` | What do I owe the board? |
+
+### Typing (tab: Your time)
 
 | Chart | Formula | Question |
 |---|---|---|
@@ -91,10 +123,11 @@ history is complete. Board cards start when the item store did.
 | Words per prompt, weekly | words / prompts | Am I saying more per touch? |
 | Characters per prompt, daily | chars / prompts, rounded | How long is a single touch? |
 
-### Agent work vs touches
+### Agent work vs touches (tab: Work landed)
 
 | Chart | Formula | Question |
 |---|---|---|
+| Words you typed per merged PR, weekly | typed words / merged PRs, by week | How much must I say per landed change? |
 | Sessions per week, by prompts typed | buckets 0, 1, 2-5, 6+ | Do sessions need fewer touches? |
 | Merged PRs per week, by prompts on the branch | typed prompts on the head branch's sessions; buckets 0-1, 2-5, 6+, none | How few touches does landed work take? |
 | Tool calls per prompt, weekly | tool calls / typed prompts | How much does one touch buy? |
@@ -103,7 +136,8 @@ history is complete. Board cards start when the item store did.
 
 A session counts toward a branch when it committed on the head branch.
 
-### Cost
+### Cost (tab: Cost)
+
 
 | Chart | Formula | Question |
 |---|---|---|
