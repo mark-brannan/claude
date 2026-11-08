@@ -390,7 +390,12 @@ def build(db, out, ndays):
         fig = lines(f"Session $ for {m} ({n} sessions), rolling 7 days: {', '.join(names)}", dkeys, [(x, o[x]) for x in reversed(names)],
                     unit="$", ycap=cap, ystep=cap / 5)
         return f'<div>{fig}<p class="note">Highest session in the {ndays} days: ${top:,.2f} (axis tops at ${cap}).</p></div>'
-    model_charts = [model_chart(m) for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m)]
+    MAXAXIS = {"fable": 100, "opus": 100, "sonnet": 20, "haiku": 5}  # fixed tops for the daily-max charts; a higher session clips at the top edge
+    def max_chart(m):
+        mx = {k: round(max(scm[m][k]), 2) for k in dkeys if scm[m].get(k)}
+        cap = MAXAXIS[m]
+        return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5)
+    model_charts = [f for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m) for f in (model_chart(m), max_chart(m))]
     words_w = {r["w"]: r["wd"] for r in typing_w}
     words_m = {r["m"]: r["wd"] for r in q("select substr(first_ts, 1, 7) m, sum(words) wd from typing where first_ts is not null group by m")}
     mkeys = sorted(words_m)
