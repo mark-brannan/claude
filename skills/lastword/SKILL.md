@@ -42,7 +42,7 @@ session's pickup item already has one; without it, the hook's ask lands
 after the close and the agent, not the user, speaks last.
 
 ```
-~/.claude/bin/pickup-list handoff <this session's item id> <<'EOF'
+~/.claude/bin/pickup-list handoff "$(~/.claude/bin/pickup-list own "${CLAUDE_CODE_SESSION_ID:0:8}")" <<'EOF'
 Open the next sitting: /curia <id>
 link: state/global/curia/<id>/
 model: <from the curia document's header>
@@ -81,10 +81,7 @@ answered with what it asks for and the same one line.
 
 ## Open
 
-- **A narrative log.** `/wrapup` wrote one; this writes none. The user's
-  final words are in `roll.md`, the meaning in **Where this stands** and
-  **Working memory**, the sitting in the Trace. Add one only if a sitting
-  turns up something none of those holds.
+- **A narrative log.** None here: `roll.md`, **Where this stands** and the Trace hold what `/wrapup`'s did.
 - **Confer sessions and the agora.** Whether they want the same closure;
   step 0 refuses them for now.
 - **Retiring `/wrapup`.** Once this and `/handoff` cover its uses and its
