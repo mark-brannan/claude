@@ -5,8 +5,7 @@
 
 set -u
 OWNER="${OWNER:-mark-brannan}"
-special_repos='dotfiles .github symphony'
-REPOS="$special_repos $(tr -d '\r' < ~/.local/share/vended-repos.txt | grep -v '^[[:space:]]*$')"
+REPOS="$(cat ~/.local/share/vended-repos.txt ~/.local/share/non-vended-repos.txt | tr -d '\r' | grep -v '^[[:space:]]*$')"
 
 ensure() { # ensure <label> <color> <description>
   for r in $REPOS; do
