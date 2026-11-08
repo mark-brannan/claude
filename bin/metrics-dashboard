@@ -77,7 +77,7 @@ def frame(keys, vmax, every, tk=None, lab=fmt):
     g.append(f'<line class="base" x1="{ML}" x2="{W-MR}" y1="{y(0):.1f}" y2="{y(0):.1f}"/>')
     return "".join(g), y, pw, ph, top
 
-def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None, hl=(), box=()):
+def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None, hl=(), box=(), reset=False):
     """series: [(name, {key: value})]; one y axis, same unit for every series."""
     vmax = max([v for _, s in series for v in s.values() if v is not None] or [0])
     tk = [round(i * ystep, 2) for i in range(round(ycap / ystep) + 1)] if ycap else None  # a fixed, fine axis; values above it ride the top edge
@@ -99,6 +99,11 @@ def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=No
             if len(pts) > 1: body.append(f'<path class="s{len(series)+ri+1} ln" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
         for t in ticks(rmax): body.append(f'<text class="ax" x="{W-MR+4}" y="{ry(t)+3.5:.1f}">{fmt(t)}</text>')
         body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">right →</text>')
+    if reset:  # the weekly usage limit resets Tuesday 14:00 UTC (6:00 PST); a day's column spans its 24 hours
+        for i, k in enumerate(keys):
+            if dt.date.fromisoformat(k).weekday() == 1:
+                rx = ML + pw * (i + 14 / 24) / n
+                body.append(f'<path class="s6 ln" stroke-width="1" stroke-dasharray="2 4" d="M{rx:.1f},{MT} L{rx:.1f},{MT+ph}"/>')
     for n, (v, txt) in enumerate(hl):  # dotted reference lines, drawn in the colour of series (len(series)+n+1)
         body.append(f'<path class="s{len(series)+n+1} ln" stroke-dasharray="2 4" d="M{ML},{y(min(v, top)):.1f} L{W-MR},{y(min(v, top)):.1f}"/>')
     items = [(f"s{ci}", t) for ci, t in box] + [(f"s{len(series)+n+1}", t) for n, (_, t) in enumerate(hl)]
@@ -398,15 +403,15 @@ def build(db, out, ndays):
         order = list(reversed(names)); mean = lambda d: sum(d.values()) / len(d) if d else 0
         box = [(i + 1, f"avg of {x}: ${mean(o[x]):,.2f}") for i, x in enumerate(order)]
         fig = lines(f"Session $ for {m} ({n} sessions), rolling 7 days: {', '.join(names)}", dkeys, [(x, o[x]) for x in order],
-                    unit="$", ycap=cap, ystep=cap / 5, box=box)
-        return f'<div>{fig}<p class="note">Highest session in the {ndays} days: ${top:,.2f} (axis tops at ${cap}).</p>{max_chart(m)}</div>'
+                    unit="$", ycap=cap, ystep=cap / 5, box=box, reset=True)
+        return f'<div>{fig}<p class="note">Highest session in the {ndays} days: ${top:,.2f} (axis tops at ${cap}). Vertical dotted lines: the weekly limit reset, Tuesday 6:00 PST.</p>{max_chart(m)}</div>'
     MAXAXIS = {"fable": 100, "opus": 100, "sonnet": 20, "haiku": 5}  # fixed tops for the daily-max charts; a higher session clips at the top edge
     def max_chart(m):
         mx = {k: round(max(scm[m][k]), 2) for k in dkeys if scm[m].get(k)}
         cap = MAXAXIS[m]
         o = stats(7, scm[m]); mean = lambda d: sum(d.values()) / len(d) if d else 0
         hl = [(AXIS[m], f"stats axis top ${AXIS[m]}"), (mean(o["avg"]), f"avg of avg ${mean(o['avg']):,.2f}"), (mean(mx), f"avg of max ${mean(mx):,.2f}")]
-        return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5, hl=hl, box=[(1, "max session that day")])
+        return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5, hl=hl, box=[(1, "max session that day")], reset=True)
     model_charts = [model_chart(m) for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m)]
     w90 = wkeys[-13:]  # the cost tab covers 13 whole weeks (91 days), like its daily charts
     words_w = {r["w"]: r["wd"] for r in typing_w}
