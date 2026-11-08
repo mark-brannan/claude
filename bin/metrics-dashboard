@@ -40,6 +40,11 @@ def state_dir():
 # stylesheet, not a second render. Text never wears a series color.
 W, H, ML, MR, MT, MB = 560, 170, 44, 36, 10, 26
 
+# One colour per model and per session stat, wherever the name appears (spec: Colours). Values are palette slots: 1 blue, 2 orange, 3 green, 4 amber, 5 grey, 6 dark grey, 7 red, 8 purple, 9 teal.
+COLOR = {"fable": 2, "opus": 1, "sonnet": 3, "haiku": 4, "other": 5,
+         "max": 2, "p99.9": 7, "p99": 8, "p95": 3, "p90": 1, "avg": 6, "p25": 9, "p10": 5}
+def slot(name, i): return COLOR.get(name, i + 1)
+
 def fmt(v):
     if v is None: return "–"
     if isinstance(v, float) and not v.is_integer(): return f"{v:,.1f}"
@@ -77,7 +82,7 @@ def frame(keys, vmax, every, tk=None, lab=fmt):
     g.append(f'<line class="base" x1="{ML}" x2="{W-MR}" y1="{y(0):.1f}" y2="{y(0):.1f}"/>')
     return "".join(g), y, pw, ph, top
 
-def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None, hl=(), box=(), reset=False):
+def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None, hl=(), box=(), reset=False, hlcolors=()):
     """series: [(name, {key: value})]; one y axis, same unit for every series."""
     vmax = max([v for _, s in series for v in s.values() if v is not None] or [0])
     tk = [round(i * ystep, 2) for i in range(round(ycap / ystep) + 1)] if ycap else None  # a fixed, fine axis; values above it ride the top edge
@@ -88,7 +93,7 @@ def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=No
         pts = [(xs(i), y(min(s[k], top) if ycap else s[k])) for i, k in enumerate(keys) if s.get(k) is not None]
         if not pts: continue
         d = "M" + " L".join(f"{px:.1f},{py:.1f}" for px, py in pts)
-        body.append(f'<path class="s{si+1} ln" d="{d}"/>')
+        body.append(f'<path class="s{slot(name, si)} ln" d="{d}"/>')
         if 1 < len(series) <= 3:  # direct label at the line's end
             body.append(f'<text class="lbl" x="{pts[-1][0]+4:.1f}" y="{pts[-1][1]+3.5:.1f}">{html.escape(name)}</text>')
     if right:  # one series on its own right-hand axis (dotted, labelled), for an outlier that would flatten the rest
@@ -104,9 +109,10 @@ def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=No
             if dt.date.fromisoformat(k).weekday() == 1:
                 rx = ML + pw * (i + 14 / 24) / n
                 body.append(f'<path class="s6 ln" stroke-width="1" stroke-dasharray="2 4" d="M{rx:.1f},{MT} L{rx:.1f},{MT+ph}"/>')
-    for n, (v, txt) in enumerate(hl):  # dotted reference lines, drawn in the colour of series (len(series)+n+1)
-        body.append(f'<path class="s{len(series)+n+1} ln" stroke-dasharray="2 4" d="M{ML},{y(min(v, top)):.1f} L{W-MR},{y(min(v, top)):.1f}"/>')
-    items = [(f"s{ci}", t) for ci, t in box] + [(f"s{len(series)+n+1}", t) for n, (_, t) in enumerate(hl)]
+    hlc = [c for c, _ in hlcolors] if hlcolors else [len(series) + n + 1 for n in range(len(hl))]
+    for n, (v, txt) in enumerate(hl):  # dotted reference lines
+        body.append(f'<path class="s{hlc[n]} ln" stroke-dasharray="2 4" d="M{ML},{y(min(v, top)):.1f} L{W-MR},{y(min(v, top)):.1f}"/>')
+    items = [(f"s{ci}", t) for ci, t in box] + [(f"s{c}", t) for c, (_, t) in zip(hlc, hl)]
     if items:  # a key inside the plot: swatch and text per line, on a faint panel so it reads over the lines
         body.append(f'<rect x="{ML+4}" y="{MT+2}" width="236" height="{6+14*len(items)}" rx="3" fill="var(--surface)" fill-opacity=".85"/>')
         for n, (cls, t) in enumerate(items):
@@ -130,7 +136,7 @@ def bars(title, keys, series, every=7, unit=""):
             if v <= 0: continue
             y1, y0 = y(acc + v), y(acc)
             hgt = max(y0 - y1 - (2 if acc else 0), 0.5)
-            body.append(f'<rect class="s{si+1}" x="{x0:.1f}" y="{y1:.1f}" width="{max(bw-2*max(bw*0.12,1),1):.1f}" height="{hgt:.1f}" rx="1"/>')
+            body.append(f'<rect class="s{slot(name, si)}" x="{x0:.1f}" y="{y1:.1f}" width="{max(bw-2*max(bw*0.12,1),1):.1f}" height="{hgt:.1f}" rx="1"/>')
             acc += v
         tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + (f"\ntotal: {fmt(tot[k])}{unit}" if len(series) > 1 else "")
         body.append(f'<rect class="hit" x="{ML+bw*i:.1f}" y="{MT}" width="{bw:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
@@ -147,7 +153,7 @@ def areas(title, keys, series, every=7, unit="", wide=False):
         if len(keys) > 1:
             d = "M" + " L".join(f"{xs(i):.1f},{y(up[i]):.1f}" for i in range(len(keys))) \
                 + " L" + " L".join(f"{xs(i):.1f},{y(base[i]):.1f}" for i in range(len(keys) - 1, -1, -1)) + "Z"
-            body.append(f'<path class="a{si+1}" d="{d}"/>')
+            body.append(f'<path class="a{slot(name, si)}" d="{d}"/>')
         base = up
     for i, k in enumerate(keys):
         tip = k + "".join(f"\n{name}: {fmt(s.get(k) or 0)}{unit}" for name, s in series) + f"\ntotal: {fmt(tot[k])}{unit}"
@@ -172,7 +178,7 @@ def pie(title, items, unit="$"):
     return card(title, "".join(body), [], True, (900, 340))
 
 def card(title, svg_body, legend, wide=False, vb=None):
-    leg = "".join(f'<span><i class="s{i+1}"></i>{html.escape(n)}</span>' for i, n in enumerate(legend))
+    leg = "".join(f'<span><i class="s{slot(n, i)}"></i>{html.escape(n)}</span>' for i, n in enumerate(legend))
     return (f'<figure{" class=wide" if wide else ""}><figcaption>{html.escape(title)}</figcaption>'
             f'<svg viewBox="0 0 {vb[0] if vb else W} {vb[1] if vb else H}" role="img" aria-label="{html.escape(title)}">{svg_body}</svg>'
             f'{"<div class=leg>" + leg + "</div>" if leg else ""}</figure>')
@@ -401,7 +407,7 @@ def build(db, out, ndays):
         extra = [x for x in ("p95", "p99", "p99.9") if o[x] and max(o[x].values()) <= cap]  # every higher stat that still fits under the axis
         names = (["p10"] if m == "haiku" else []) + ["p25", "avg", "p90"] + extra
         order = list(reversed(names)); mean = lambda d: sum(d.values()) / len(d) if d else 0
-        box = [(i + 1, f"avg of {x}: ${mean(o[x]):,.2f}") for i, x in enumerate(order)]
+        box = [(slot(x, i), f"avg of {x}: ${mean(o[x]):,.2f}") for i, x in enumerate(order)]
         fig = lines(f"Session $ for {m} ({n} sessions), rolling 7 days: {', '.join(names)}", dkeys, [(x, o[x]) for x in order],
                     unit="$", ycap=cap, ystep=cap / 5, box=box, reset=True)
         return f'<div>{fig}<p class="note">Highest session in the {ndays} days: ${top:,.2f} (axis tops at ${cap}). Vertical dotted lines: the weekly limit reset, Tuesday 6:00 PST.</p>{max_chart(m)}</div>'
@@ -411,7 +417,7 @@ def build(db, out, ndays):
         cap = MAXAXIS[m]
         o = stats(7, scm[m]); mean = lambda d: sum(d.values()) / len(d) if d else 0
         hl = [(AXIS[m], f"stats axis top ${AXIS[m]}"), (mean(o["avg"]), f"avg of avg ${mean(o['avg']):,.2f}"), (mean(mx), f"avg of max ${mean(mx):,.2f}")]
-        return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5, hl=hl, box=[(1, "max session that day")], reset=True)
+        return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5, hl=hl, box=[(slot("max", 0), "max session that day")], reset=True, hlcolors=[(5, 0), (6, 0), (2, 0)])
     model_charts = [model_chart(m) for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m)]
     w90 = wkeys[-13:]  # the cost tab covers 13 whole weeks (91 days), like its daily charts
     words_w = {r["w"]: r["wd"] for r in typing_w}
@@ -658,10 +664,10 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 <title>Metrics</title>
 <style>
 :root {{ --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781; --grid:#e1e0d9; --base:#c3c2b7;
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --good:#006300; --bad:#d03b3b; }}
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s8:#7e57c2; --s9:#1597a8; --good:#006300; --bad:#d03b3b; }}
 @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#898781; --grid:#2c2c2a; --base:#383835;
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --good:#0ca30c; --bad:#e66767; }} }}
-:root[data-theme="dark"] {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --grid:#2c2c2a; --base:#383835; --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --good:#0ca30c; --bad:#e66767; }}
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s8:#9575cd; --s9:#26b5c7; --good:#0ca30c; --bad:#e66767; }} }}
+:root[data-theme="dark"] {{ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --grid:#2c2c2a; --base:#383835; --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s8:#9575cd; --s9:#26b5c7; --good:#0ca30c; --bad:#e66767; }}
 * {{ box-sizing:border-box }} body {{ margin:0; padding:16px; background:var(--page); color:var(--ink); font:14px/1.4 system-ui,sans-serif }}
 header {{ display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; margin-bottom:12px }} h1 {{ font-size:20px; margin:0 }} header small, .note {{ color:var(--ink2) }}
 input[name=tab] {{ position:absolute; opacity:0; pointer-events:none }}
@@ -686,12 +692,12 @@ figure {{ margin:0; background:var(--surface); border:1px solid var(--grid); bor
 figcaption {{ font-size:13px; color:var(--ink2); margin-bottom:4px }} svg {{ width:100%; height:auto; display:block; overflow:visible }}
 .grid line {{ stroke:var(--grid); stroke-width:1 }} line.base {{ stroke:var(--base) }} .ax {{ fill:var(--muted); font-size:10px }} .lbl {{ fill:var(--ink2); font-size:10px }} .pl {{ fill:var(--ink); font-size:20px }}
 .ln {{ fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round }}
-path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }} path.s6 {{ stroke:var(--ink2) }} path.s7 {{ stroke:var(--bad) }}
-path.a1 {{ fill:var(--s1) }} path.a2 {{ fill:var(--s2) }} path.a3 {{ fill:var(--s3) }} path.a4 {{ fill:var(--s4) }} path.a5 {{ fill:var(--muted) }} path.a6 {{ fill:var(--ink2) }} rect.s6 {{ fill:var(--ink2) }} path[class^=a] {{ fill-opacity:.7; stroke:var(--surface); stroke-width:1 }}
-rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--s3) }} rect.s4 {{ fill:var(--s4) }} rect.s5 {{ fill:var(--muted) }}
+path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }} path.s6 {{ stroke:var(--ink2) }} path.s7 {{ stroke:var(--bad) }} path.s8 {{ stroke:var(--s8) }} path.s9 {{ stroke:var(--s9) }}
+path.a1 {{ fill:var(--s1) }} path.a2 {{ fill:var(--s2) }} path.a3 {{ fill:var(--s3) }} path.a4 {{ fill:var(--s4) }} path.a5 {{ fill:var(--muted) }} path.a6 {{ fill:var(--ink2) }} path.a7 {{ fill:var(--bad) }} path.a8 {{ fill:var(--s8) }} path.a9 {{ fill:var(--s9) }} rect.s6 {{ fill:var(--ink2) }} path[class^=a] {{ fill-opacity:.7; stroke:var(--surface); stroke-width:1 }}
+rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--s3) }} rect.s4 {{ fill:var(--s4) }} rect.s5 {{ fill:var(--muted) }} rect.s7 {{ fill:var(--bad) }} rect.s8 {{ fill:var(--s8) }} rect.s9 {{ fill:var(--s9) }}
 .hit {{ fill:transparent }} .hit:hover {{ fill:var(--ink); fill-opacity:.06 }}
 .leg {{ display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--ink2); margin-top:6px }} .leg i {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px }}
-.leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }} .leg .s6 {{ background:var(--ink2) }} .leg .s7 {{ background:var(--bad) }}
+.leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }} .leg .s6 {{ background:var(--ink2) }} .leg .s7 {{ background:var(--bad) }} .leg .s8 {{ background:var(--s8) }} .leg .s9 {{ background:var(--s9) }}
 .five {{ grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px }} @media (min-width:1500px) {{ .five {{ grid-template-columns:repeat(5,minmax(0,1fr)) }} }}
 figure.wide {{ grid-column:1/-1 }} table {{ border-collapse:collapse; width:100%; font-size:13px }} th, td {{ text-align:left; padding:3px 10px 3px 0; border-bottom:1px solid var(--grid) }} th {{ color:var(--ink2); font-weight:500 }} td.num, th.num {{ text-align:right }}
 footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}

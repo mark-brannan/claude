@@ -148,6 +148,10 @@ A session counts toward a branch when it committed on the head branch.
 | Turns per session, weekly mean | assistant turns / sessions | Are sessions getting longer? |
 | Sessions per week, by length | elapsed under 5 min, 5 min to 1 h, over 1 h | What is the mix of short and long sessions? |
 
+## Colours
+
+A colour added for a model or a session statistic is the same in every chart, legend and key on the page: the series is coloured by what it is, never by its position in the chart. Today: fable orange, opus blue, sonnet green, haiku amber, other grey; max (p100) orange, p99.9 red, p99 purple, p95 green, p90 blue, avg dark grey, p25 teal, p10 grey. The table is `COLOR` in `bin/metrics-dashboard`.
+
 ## Open for ruling
 
 - Are the "wanted" directions right? Two are debatable: headless sessions up,
