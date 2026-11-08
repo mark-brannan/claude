@@ -449,14 +449,16 @@ def build(db, out, ndays):
                              every=max(len(cdays) // 8, 1), unit="$", wide=True))
         mord = [m for m, _ in sorted({model_name(r["model"]): 0 for r in ci}.items())]
         mrank = sorted(mord, key=lambda m: -sum(r["cost_usd"] for r in ci if model_name(r["model"]) == m))
+        per_check = []
         for c in order:  # per check: $ per day by model, and under it runs per day by model
             usd_d, run_d = defaultdict(lambda: defaultdict(float)), defaultdict(lambda: defaultdict(float))
             for r in ci:
                 if r["what"] != c: continue
                 m = model_name(r["model"]); usd_d[m][r["ts"][:10]] += r["cost_usd"]; run_d[m][r["ts"][:10]] += 1
             ms = [m for m in mrank if m in usd_d]; ev = max(len(cdays) // 8, 1)
-            ci_figs.append("<div>" + bars(f"{nm(c)}: $ per day, by model", cdays, [(m, {d: round(v, 3) for d, v in usd_d[m].items()}) for m in ms], every=ev, unit="$")
-                           + bars(f"{nm(c)}: runs per day, by model", cdays, [(m, dict(run_d[m])) for m in ms], every=ev) + "</div>")
+            per_check.append("<div>" + areas(f"{nm(c)}: $ per day, by model", cdays, [(m, {d: round(v, 3) for d, v in usd_d[m].items()}) for m in ms], every=ev, unit="$")
+                             + areas(f"{nm(c)}: runs per day, by model", cdays, [(m, dict(run_d[m])) for m in ms], every=ev) + "</div>")
+        ci_figs.insert(0, '<div class="five">' + "".join(per_check) + "</div>")  # one row of up to five checks, $ over runs
         rr = sorted(repo_tot.items(), key=lambda kv: -kv[1])
         top = rr[:5] + ([("other", sum(v for _, v in rr[5:]))] if len(rr) > 5 else [])
         ci_figs.append(pie("CI check cost by repo, all collected runs", [(k.split("/")[-1], v) for k, v in top]))
@@ -690,6 +692,7 @@ rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--
 .hit {{ fill:transparent }} .hit:hover {{ fill:var(--ink); fill-opacity:.06 }}
 .leg {{ display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--ink2); margin-top:6px }} .leg i {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px }}
 .leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }} .leg .s6 {{ background:var(--ink2) }} .leg .s7 {{ background:var(--bad) }}
+.five {{ grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px }} @media (min-width:1500px) {{ .five {{ grid-template-columns:repeat(5,minmax(0,1fr)) }} }}
 figure.wide {{ grid-column:1/-1 }} table {{ border-collapse:collapse; width:100%; font-size:13px }} th, td {{ text-align:left; padding:3px 10px 3px 0; border-bottom:1px solid var(--grid) }} th {{ color:var(--ink2); font-weight:500 }} td.num, th.num {{ text-align:right }}
 footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}
 </style></head><body>
