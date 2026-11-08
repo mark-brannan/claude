@@ -60,6 +60,40 @@ parent filed before the fact existed, run it with sub-agents. A worker's
 first command is `~/.claude/bin/worker-start`, alone in its Bash call (flags
 in its header): where a chain of fetch, branch and log asks, it is allow-listed.
 
+**The driver dispatches; it does not do the work.** It holds the plan and one
+line per child, and never reads a diff, a CI log or a review thread body into
+its own context: a worker does that and returns one line. Context re-read on
+every turn is most of a session's cost, and a driver that pulls PR content in
+grows fastest.
+
+- **Picking a worker's model, unseen.** It reads metadata, never content:
+  the child card's model and effort (scoping set them), and the numbers CI
+  already posts on the PR. One call returns each headline (the complexity,
+  coverage and maxims-check comments; a repo with no coverage job has none):
+  `gh api repos/<o>/<r>/issues/<n>/comments --paginate --jq '.[]|select(.body|test("complexity-report|### Coverage:|check:maxims-check"))|.body as $b|$b|split("\n")|map(select(test("^### |breaks, ") or (($b|test("check:maxims-check")) and test("^- ")))|sub("^- (?<m>[^,]+),.*";"\(.m)"))|join(" | ")'`
+  (the maxims headline ends with each undeclared break's maxim, name only),
+  plus `gh pr view <n> --json changedFiles,reviewDecision,statusCheckRollup`
+  for files and failing check names. Read: complexity delta (`+N across M
+  functions`), coverage of changed lines and the total's move, which maxims
+  have undeclared breaks, failing checks. The card's model stands; a fixer
+  goes up one tier (Sonnet to Opus) on any of (guesses, not measured):
+  complexity +20 or more, changed-line coverage under 60% or total down over
+  2 points, an undeclared fail-fast, Chesterton's fence, SOLID or SoC break,
+  3 or more failing checks. Other maxims never escalate alone: they are
+  flagged too often to tell PRs apart. No signal posted, or a verdict
+  these cannot settle: a Haiku sub-agent returns a one-line triage.
+- **Every worker gets its model by name.** On `driver=workflow`, each
+  `agent()` call sets `model` explicitly, never the default; on
+  `driver=subagents`, each spawn does.
+- **Relay at about 100k context.** The context line the session hook adds
+  at the first rung is the signal. The driver writes the plan state to the
+  parent's log with `work-item log` (children and their PRs, rounds spent,
+  what is parked, the next step), then runs
+  `~/.claude/bin/driver-start --relay <parent-id>`, which releases the
+  parent, starts a successor and logs its session; the old driver then ends.
+  Only the session holding the parent can relay; it keeps the batch's name.
+  The successor reads the parent card and its log and nothing else.
+
 ## 2. Restate it, in three lines
 
 Before touching anything, three lines and no more:
@@ -289,7 +323,7 @@ do not paraphrase it into a second version that can drift from this one.
    cards: there the reference goes on the card's log only. A refused label
    is retried once, with the clean review named, then the driver carries on
    and never hands the label to the user. The review is the CI bot's; the
-   driver works its threads and starts no reviewer of its own, and a head
+   driver has a worker work its threads and starts no reviewer of its own, and a head
    the bot never reviewed is not clean: the labels wait. A diff outside
    the brief gets none of the three and waits
    for the user. A gated child, or a parent logging `lane=gated`, keeps

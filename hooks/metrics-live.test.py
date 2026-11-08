@@ -1384,7 +1384,7 @@ class MetricsLiveTest(unittest.TestCase):
 
         drv = "d0d0d0d0-driver"
         claim("batch.md", drv)
-        w.t("a driver past 105k gets no model line", "", w.ctx(tool(drv)))
+        w.has("a driver past 105k is told to relay, nothing else", "relay the driver now", w.ctx(tool(drv)))
         w.t("nor its repeat", "", w.ctx(tool(drv)))
         w.t("the driver's crossings are still recorded", "100000\n150000",
             "\n".join(str(r["at"]) for r in w.rows(drv, "context")))
@@ -1397,6 +1397,22 @@ class MetricsLiveTest(unittest.TestCase):
               "⏱ 2h", w.msg(w.hook(w.payload(lo, drv2, repo), "prompt")))
         w.t("two hours does not arm its Stop nag", "false", json.dumps(w.nag_field(drv2, "since_nag")))
         w.t("and its Stop is not blocked", "", w.decision(stop(drv2, lo)))
+
+        # A driver that relayed has released the item but is still hushed.
+        drv4 = "d4d4d4d4-driver"
+        claim("batch4.md", drv4)
+        with open(items / "batch4.md", "a") as fh:
+            fh.write(f"2026-11-01T09:31:00Z {drv4[:8]} driver_session=e5e5e5e5-next relayed_from={drv4[:8]}\n")
+            fh.write(f"2026-11-01T10:00:00Z {drv4[:8]} status=ready\n")
+        w.t("a driver that relayed away is not asked for a hand-off", "", w.decision(stop(drv4)))
+
+        # A driver_session= line alone does not hush once the claim is closed.
+        drv5 = "d5d5d5d5-driver"
+        claim("batch5.md", drv5)
+        with open(items / "batch5.md", "a") as fh:
+            fh.write(f"2026-11-01T09:31:00Z {drv5[:8]} driver_session={drv5}\n")
+            fh.write(f"2026-11-01T10:00:00Z {drv5[:8]} status=done evidence=x\n")
+        w.has("a started driver that finished is nagged again", "stopping point is due", w.ctx(tool(drv5)))
 
         drv3 = "d2d2d2d2-driver"
         claim("batch3.md", drv3)

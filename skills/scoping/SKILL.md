@@ -327,7 +327,9 @@ parent card on filing: the parent's id, the order, the review points, who
 merges, the exits (park the child on a card for the agora, or pull the
 andon cord), and the walk it hands back. Each child's card carries its
 worker model, effort and estimate; the brief repeats none of them. Never a
-list of prompts for the user to paste one at a time. The brief holds, from
+list of prompts for the user to paste one at a time. The driver only
+dispatches, and relays to a successor at about 100k context (`/pickup`, the
+batch parent); the brief says so. The brief holds, from
 the rulings to date:
 
 - **The plan's order.** Serial or parallel is scoping's call, made in
