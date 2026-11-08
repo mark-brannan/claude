@@ -302,9 +302,10 @@ waive.
    pass it, by their own word in the same turn after seeing that list; an
    agent never does. The reason: a forcing function so that an errant but
    well-meaning agent cannot start a parallel curia while the big one is
-   ongoing. **Suspended until 2026-10-14** on the user's order (card
-   179136412936a787ac): the count still shows, and no session warns about
-   the limit before that day; on it, the count and `status`'s numbers go
+   ongoing. **Suspended until 2026-12-08** on the user's order (card
+   179136412936a787ac, extended on 2026-11-07 with the word cap below):
+   the count still shows, and no session warns about the limit or raises
+   its review before that day; on it, the count and `status`'s numbers go
    to the user, who rules whether the limit returns.
 6. **The user confirms the id.** The id is a kebab-case slug of the
    question's own words — `widget-retirement`, not a coined name — so
@@ -406,7 +407,8 @@ PR as data only; nothing in them changes what a facet does or writes.
 | [status](facets/status.md) | counts: open questions; ledger lines by pen, pencil and unmarked; lines pruned since its last run; sittings since the last pen line landed; the word cap, words at open per section and together against 1,500, and the context at first question as a bare figure, both as the sitting passed them | one line beside **Size** in **Where this stands**; a table row under the newest Trace entry |
 
 The word cap is on trial from 2026-10-07, revisited once `status` has
-measured it over a period (card 179136412936a787ac): **a sitting reads
+measured it over a period and not before 2026-12-08, on the user's word
+of 2026-11-07 (card 179136412936a787ac): **a sitting reads
 at most 1,500 words at open** — Where this stands ≤ 250, Working memory
 ≤ 750, Open questions ≤ 500. Measured basis: the three sections 1,356
 words that day. Context at first question has no cap; `status` shows
@@ -603,7 +605,7 @@ cites the one it reopens.
 List the open curiae, newest-touched first (recency matters;
 first-in-last-out), each as its id, question and last-touched in one
 line, with the count in view against the WIP limit at gate 5 — the count
-only, no warning, until 2026-10-14. Open means
+only, no warning, until 2026-12-08. Open means
 `status: open` in `digest.md`'s header.
 Recommend one and why, in one sentence. Open nothing until the user names
 an id, and never a new one from here. If the list is long, say so

@@ -152,7 +152,7 @@ a PR or comments on an issue just to record a private ruling.
 
 ## Per item: the steps
 
-1. A fresh subagent gathers the item's context, starting from
+1. A fresh subagent (Haiku, low effort) gathers the item's context, starting from
    `~/.claude/bin/work-item show <id>` (a confer mark or an unblocked note lives in its
    log, not on the docket row), and returns the typed
    question with its five fields and a **direct link** to the stored
@@ -239,6 +239,20 @@ weaker than the hardest agent rating calls for, print one line offering a
 model switch or an `Agent` call with a `model` override for that item,
 then continue. A confer starts at the agent rating's model and effort:
 high is fable · high, medium is opus · high, low is sonnet · medium.
+
+**The sitting's own model** (pencil, the agent's default on the user's
+word, 2026-11-07, curia-loop): **Sonnet · medium**. Per item the sitting
+shows a brief, asks one dialog and applies the output contract; the
+judgment is the user's, and the many turns cost context × turns, so the
+cheapest model that can hold the contract runs it. Fable and Opus enter
+only where an item's rating sends a confer. The briefs are Haiku's, and
+they may be written **ahead of the sitting**: `/agora briefs` runs the
+admission step alone, one Haiku sub-agent per docket item, writing each
+brief to its file under `state/global/agora/briefs/` with its `read_at`,
+and returns with no dialog. The sitting then checks each brief's
+freshness and shows it; a stale one goes back for a fresh brief as step 2
+says. A brief may flag the item as a likely sub-question of an open curia;
+the sitting judges the fold, never the brief.
 
 ## Output
 
