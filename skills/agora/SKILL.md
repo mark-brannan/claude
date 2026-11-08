@@ -1,6 +1,6 @@
 ---
 name: agora
-description: Run an agora sitting — the quick decisions, in batch, one fresh subagent per item, the user rules. Use on "/agora", "walk the decision cards", "what needs deciding", or when the user says they have the headspace to rule on a queue of open decisions. Not for toil; that is grind. Not for a hard multi-turn question; "confer" is a closed answer here, and it sends the item to a one-off confer session, never straight to a curia.
+description: Run an agora sitting — the quick decisions, in batch, one fresh subagent per item, the user rules. Use on "/agora", "/agora briefs" (the briefs alone, ahead of a sitting), "walk the decision cards", "what needs deciding", or when the user says they have the headspace to rule on a queue of open decisions. Not for toil; that is grind. Not for a hard multi-turn question; "confer" is a closed answer here, and it sends the item to a one-off confer session, never straight to a curia.
 ---
 
 # Agora
@@ -16,6 +16,9 @@ Ancestor concepts: GTD inbox processing, office hours, a replenishment
 cadence; the ruling's default that holds is "act after a veto window".
 
 ## The sitting
+
+`/agora briefs` runs **Admission** below and nothing else: no opening
+list, no dialog; see [Difficulty and model](#difficulty-and-model).
 
 <!-- Sourcing is settled in design (awake items from the ruling items);
      the awake/asleep mechanism (worklist rung 3) is not built. Until
@@ -158,9 +161,10 @@ a PR or comments on an issue just to record a private ruling.
    question with its five fields and a **direct link** to the stored
    context, readable by the user. It also lists the open curiae exactly as
    the curia skill's bare `/curia` does (`status: open` in the header; a
-   header-less digest is open) and says whether the item is a
-   sub-question of one; if so the pick is "fold
-   into `<id>`" and the outcome is **Folded**. A subagent has no channel
+   header-less digest is open) and says whether the item is likely a
+   sub-question of one, naming it. The sitting, not the sub-agent,
+   decides whether its pick is "fold into `<id>`" (outcome **Folded**).
+   A subagent has no channel
    to the user, so it never asks; it only prepares. <!-- Context budget and
    return format: open (design doc, open question on the agora
    procedure). -->
@@ -234,10 +238,11 @@ context.
 
 Before the first item, rate each candidate twice from its `default:` /
 `risk:` text, as a triage table does: the user's difficulty and a
-high-stakes agent's, each low / medium / high. If the running model is
-weaker than the hardest agent rating calls for, print one line offering a
-model switch or an `Agent` call with a `model` override for that item,
-then continue. A confer starts at the agent rating's model and effort:
+high-stakes agent's, each low / medium / high. The sitting stays on its
+own model (below) whatever the ratings say; it never offers a switch, since
+a mid-session switch recomputes the context (`rules/code.md`). The agent
+rating has one use: an item that needs more than a brief and one dialog is
+a confer, and the confer starts at that rating's model and effort:
 high is fable · high, medium is opus · high, low is sonnet · medium.
 
 **The sitting's own model** (pencil, the agent's default on the user's
@@ -246,13 +251,18 @@ shows a brief, asks one dialog and applies the output contract; the
 judgment is the user's, and the many turns cost context × turns, so the
 cheapest model that can hold the contract runs it. Fable and Opus enter
 only where an item's rating sends a confer. The briefs are Haiku's, and
-they may be written **ahead of the sitting**: `/agora briefs` runs the
-admission step alone, one Haiku sub-agent per docket item, writing each
-brief to its file under `state/global/agora/briefs/` with its `read_at`,
-and returns with no dialog. The sitting then checks each brief's
-freshness and shows it; a stale one goes back for a fresh brief as step 2
-says. A brief may flag the item as a likely sub-question of an open curia;
-the sitting judges the fold, never the brief.
+they may be written **ahead of the sitting**: `/agora briefs` runs
+**Admission** whole and alone, on the sitting's model, with the same test
+and the same moves (a card without evidence goes back to the agent's
+queue, an overtaken card is restated or routed to `/sweep`; none is a
+ruling), one Haiku sub-agent per candidate that fails the card-alone
+test, writing each brief to its file under `state/global/agora/briefs/`
+with its `read_at` and linking it from the card. It ends as step 4 does:
+one `push_locked` commit whose pathspec is the briefs and the cards it
+touched, then returns with no dialog. The sitting then checks each
+brief's freshness and shows it; a stale one goes back for a fresh brief
+as step 2 says. A brief may flag the item as a likely sub-question of an
+open curia; the sitting judges the fold, never the brief.
 
 ## Output
 
