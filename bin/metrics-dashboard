@@ -77,7 +77,7 @@ def frame(keys, vmax, every, tk=None, lab=fmt):
     g.append(f'<line class="base" x1="{ML}" x2="{W-MR}" y1="{y(0):.1f}" y2="{y(0):.1f}"/>')
     return "".join(g), y, pw, ph, top
 
-def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None):
+def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=None, hl=(), box=()):
     """series: [(name, {key: value})]; one y axis, same unit for every series."""
     vmax = max([v for _, s in series for v in s.values() if v is not None] or [0])
     tk = [round(i * ystep, 2) for i in range(round(ycap / ystep) + 1)] if ycap else None  # a fixed, fine axis; values above it ride the top edge
@@ -99,6 +99,14 @@ def lines(title, keys, series, every=7, unit="", right=None, ycap=None, ystep=No
             if len(pts) > 1: body.append(f'<path class="s{len(series)+ri+1} ln" d="M{" L".join(f"{a:.1f},{b:.1f}" for a, b in pts)}"/>')
         for t in ticks(rmax): body.append(f'<text class="ax" x="{W-MR+4}" y="{ry(t)+3.5:.1f}">{fmt(t)}</text>')
         body.append(f'<text class="lbl" x="{W-MR+4}" y="{MT-1}">right →</text>')
+    for n, (v, txt) in enumerate(hl):  # dotted reference lines, drawn in the colour of series (len(series)+n+1)
+        body.append(f'<path class="s{len(series)+n+1} ln" stroke-dasharray="2 4" d="M{ML},{y(min(v, top)):.1f} L{W-MR},{y(min(v, top)):.1f}"/>')
+    items = [(f"s{ci}", t) for ci, t in box] + [(f"s{len(series)+n+1}", t) for n, (_, t) in enumerate(hl)]
+    if items:  # a key inside the plot: swatch and text per line, on a faint panel so it reads over the lines
+        body.append(f'<rect x="{ML+4}" y="{MT+2}" width="236" height="{6+14*len(items)}" rx="3" fill="var(--surface)" fill-opacity=".85"/>')
+        for n, (cls, t) in enumerate(items):
+            yy = MT + 14 + 14 * n
+            body.append(f'<path class="{cls} ln" d="M{ML+9},{yy-3.5} L{ML+25},{yy-3.5}"/><text class="lbl" x="{ML+30}" y="{yy}">{html.escape(t)}</text>')
     for i, k in enumerate(keys):  # hover layer: one hit target per step
         tip = k + "".join(f"\n{name}: {fmt(s.get(k))}{unit}" for name, s in series) + "".join(f"\n{rn} (right): {fmt(rs.get(k))}{unit}" for rn, rs in (right or ()))
         body.append(f'<rect class="hit" x="{xs(i)-pw/n/2:.1f}" y="{MT}" width="{pw/n:.1f}" height="{ph}"><title>{html.escape(tip)}</title></rect>')
@@ -387,14 +395,18 @@ def build(db, out, ndays):
         top = max((c for k in dkeys for c in scm[m].get(k, ())), default=0)
         extra = [x for x in ("p95", "p99", "p99.9") if o[x] and max(o[x].values()) <= cap]  # every higher stat that still fits under the axis
         names = (["p10"] if m == "haiku" else []) + ["p25", "avg", "p90"] + extra
-        fig = lines(f"Session $ for {m} ({n} sessions), rolling 7 days: {', '.join(names)}", dkeys, [(x, o[x]) for x in reversed(names)],
-                    unit="$", ycap=cap, ystep=cap / 5)
+        order = list(reversed(names)); mean = lambda d: sum(d.values()) / len(d) if d else 0
+        box = [(i + 1, f"avg of {x}: ${mean(o[x]):,.2f}") for i, x in enumerate(order)]
+        fig = lines(f"Session $ for {m} ({n} sessions), rolling 7 days: {', '.join(names)}", dkeys, [(x, o[x]) for x in order],
+                    unit="$", ycap=cap, ystep=cap / 5, box=box)
         return f'<div>{fig}<p class="note">Highest session in the {ndays} days: ${top:,.2f} (axis tops at ${cap}).</p>{max_chart(m)}</div>'
     MAXAXIS = {"fable": 100, "opus": 100, "sonnet": 20, "haiku": 5}  # fixed tops for the daily-max charts; a higher session clips at the top edge
     def max_chart(m):
         mx = {k: round(max(scm[m][k]), 2) for k in dkeys if scm[m].get(k)}
         cap = MAXAXIS[m]
-        return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5)
+        o = stats(7, scm[m]); mean = lambda d: sum(d.values()) / len(d) if d else 0
+        hl = [(AXIS[m], f"stats axis top ${AXIS[m]}"), (mean(o["avg"]), f"avg of avg ${mean(o['avg']):,.2f}"), (mean(mx), f"avg of max ${mean(mx):,.2f}")]
+        return lines(f"Max session $ for {m}, per day", dkeys, [("max", mx)], unit="$", ycap=cap, ystep=cap / 5, hl=hl, box=[(1, "max session that day")])
     model_charts = [model_chart(m) for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m)]
     w90 = wkeys[-13:]  # the cost tab covers 13 whole weeks (91 days), like its daily charts
     words_w = {r["w"]: r["wd"] for r in typing_w}
