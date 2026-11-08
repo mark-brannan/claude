@@ -1,11 +1,13 @@
-import json,sys,collections,math
-src=open("/home/solace/claude/.claude/worktrees/pr-424-fixup-dashboard-demo-278257/.scratch/proto.py").read().split("# 1 day shape")[0]
-sys.argv=[sys.argv[0],"/dev/null"]+sys.argv[1:]; OUT2=sys.argv[2]
-exec(src)
+#!/usr/bin/env python3
+"""Life-first dashboard, lanes view: one time axis, four lanes, a range per tab.
+Usage: proto2.py OUT.html [prompts.json]
+prompts.json (from prompts_probe.py) adds typed prompts; without it that series is empty."""
+import json, sys, math, bisect, collections
+from common import *
+OUT2=sys.argv[1]
+_pr=json.load(open(sys.argv[2])) if len(sys.argv)>2 else []
+css=CSS
 T,B=10,4
-_full=open("/home/solace/claude/.claude/worktrees/pr-424-fixup-dashboard-demo-278257/.scratch/proto.py").read()
-css=_full[_full.index("css='''")+6:_full.index("</style>'''")+8]
-_pr=json.load(open("/home/solace/claude/.claude/worktrees/pr-424-fixup-dashboard-demo-278257/.scratch/prompts.json"))
 prompts=[iso(t).timestamp() for t,f in _pr if not f]; pasted=[iso(t).timestamp() for t,f in _pr if f]
 end=max(r[0] for r in rows)+60
 # sessions as intervals; cost spread evenly over each session (an assumption)
@@ -16,11 +18,11 @@ for s in S:
     iv.append((a,max(b,a+60),s["cost_usd"] or 0))
 fts=[iso(r[0]).timestamp() for r in c.execute("select ts from friction where retracted=0").fetchall()]
 dts=[iso(r[0]).timestamp() for r in c.execute("select ts from decisions").fetchall()]
-# streaks: minutes since the last gap over 5 min; gaps for shading
+# streaks: minutes since the last gap over BREAK; gaps for shading
 am=[r[0]//60 for r in act]; streak={}; run=0; prev=None; gaps=[]
 for m in am:
-    run=run+1 if prev is not None and m-prev<=5 else 1
-    if prev is not None and m-prev>5: gaps.append((prev*60+60,m*60))
+    run=run+1 if prev is not None and m-prev<=BREAK else 1
+    if prev is not None and m-prev>BREAK: gaps.append((prev*60+60,m*60))
     streak[m]=run; prev=m
 import bisect
 RES=sorted(m*60 for m,v in streak.items() if v==1); fts.sort(); dts.sort()
@@ -60,9 +62,6 @@ def build(span,bk,label):
         for b in range(int((lo-start)//bk),min(nb,int((hi-start)//bk)+1)):
             bs=start+b*bk; ov=min(hi,bs+bk)-max(lo,bs)
             if ov>0: A[b]+=1; CO[b]+=usd*ov/(b2-a)
-    lanes=[]
-    def lane(name,series,kind="bars"):
-        lanes.append((name,series))
     HS=[LH+34,LH+34,LH,LH+10]; YS=[sum(HS[:i]) for i in range(len(HS))]; Ht=sum(HS)+22
     out=[f'<svg viewBox="0 0 {W} {Ht}" class="ch">']
     step={86400:3*3600,3*86400:12*3600,7*86400:86400,30*86400:5*86400}[span]
@@ -73,9 +72,9 @@ def build(span,bk,label):
         h=HS[i]; ch=Ch(0,nb,0,ymax*1.1 or 1,h=h); ch2=Ch(0,nb,0,(ymax2 or 1)*1.1,h=h)
         for xt,_ in ticks: ch.p.append(f'<line x1="{ch.X(xt):.1f}" x2="{ch.X(xt):.1f}" y1="{T}" y2="{h-B}" class="g2"/>')
         for a,b2 in gaps:
-            if b2-a>=(180*60 if span>=7*86400 else 600) and b2>start and a<end:
+            if (b2-a>=AWAY or (span<7*86400 and b2-a>BREAK*60)) and b2>start and a<end:
                 xa=ch.X(max(0,x(a))); xb=ch.X(min(nb,x(b2)))
-                ch.p.append(f'<rect x="{xa:.1f}" y="{T}" width="{max(1,xb-xa):.1f}" height="{h-T-B}" class="{"sl" if (b2-a)>=3*3600 else "br"}"/>')
+                ch.p.append(f'<rect x="{xa:.1f}" y="{T}" width="{max(1,xb-xa):.1f}" height="{h-T-B}" class="{"sl" if (b2-a)>=AWAY else "br"}"/>')
         ch.grid([0,ymax],fmt)
         if ymax2:
             for v in (0,ymax2): ch.p.append(f'<text x="{W-R+2}" y="{ch2.Y(v)+3:.1f}" class="t2">{fmt2(v)}</text>')
@@ -118,5 +117,5 @@ sel="".join(f'#r{i}:checked~.tabs label[for=r{i}]{{background:var(--c0);color:#f
 css=css.replace("</style>",f'''input[type=radio]{{position:absolute;opacity:0}}.tabs{{display:flex;gap:6px;margin:8px 0}}.tabs label{{padding:6px 12px;border-radius:99px;background:var(--card);cursor:pointer;font-size:13px}}small{{opacity:.7}}
 .pn{{display:none}}{sel}.br{{fill:var(--c1);opacity:.14}}.sl{{fill:var(--c4);opacity:.22}}.t2{{font-size:10px;fill:var(--mut)}}.ln{{font-size:11px;fill:var(--fg);font-weight:600}}
 </style>''')
-body=f'<h1>One time axis, four lanes</h1><p class=sub>Pick a range; each range sets its own bucket size. Orange bands are breaks of 10 min or more (30 min or more on the 7 and 30 day views); violet bands are gaps of 3 hours or more, which is sleep or away. Local time. Newest data at the right edge.</p>{radios}<div class=tabs>{tabs}</div>{panels}<p class=note>Prompts come from the transcripts on this machine (my count is higher than metrics.db\'s 1,977 for 31 days, probably because it includes injected user messages; treat as an estimate). Cost is spread evenly across each session\'s run (an assumption). Sessions running counts a session in every bucket it overlaps.</p>'
+body=f'<h1>One time axis, four lanes</h1><p class=sub>Pick a range; each range sets its own bucket size. Orange bands are breaks of over {BREAK} minutes (1 and 3 day views only); violet bands are gaps of 3 hours or more, which is sleep or away. Local time. Newest data at the right edge.</p>{radios}<div class=tabs>{tabs}</div>{panels}<p class=note>Prompts come from the transcripts on this machine (my count is higher than metrics.db\'s 1,977 for 31 days, probably because it includes injected user messages; treat as an estimate). Cost is spread evenly across each session\'s run (an assumption). Sessions running counts a session in every bucket it overlaps.</p>'
 open(OUT2,"w").write(css+body); print(OUT2)
