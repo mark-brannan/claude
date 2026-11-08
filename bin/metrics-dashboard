@@ -498,7 +498,7 @@ def build(db, out, ndays):
     layout = {"time": ["sessions", "typing", "input"], "friction": ["friction", "decisions"],
               "work": ["open", "agent"], "cost": ["cost", "ci"]}
     section = lambda k: f'<h2 id="{k}">{html.escape(titles[k])}</h2><p class="note">{html.escape(notes[k])}</p><div class="grid">{"".join(figs[k])}</div>'
-    panels = {"overview": (f'<div class="kpis">{"".join(kpis)}</div><p class="note">Each card is the last 7 days against the 7 before, '
+    panels = {"overview": (f'<div class="kpis">{"".join(kpis)}</div><div class="grid">{figs["cost"][0]}</div><p class="note">Each card is the last 7 days against the 7 before, '
                            'with twelve such windows as its trend; click one for its tab. Green moves the wanted way; '
                            'decisions and merged PRs have no wanted direction, so they stay grey.</p>')}
     for t, ks in layout.items():
