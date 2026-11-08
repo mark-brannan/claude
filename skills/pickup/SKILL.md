@@ -88,8 +88,8 @@ grows fastest.
   what is parked, the next step), then runs
   `~/.claude/bin/driver-start --relay <parent-id>`, which releases the
   parent, starts a successor and logs its session; the old driver then ends.
-  Only the session holding the parent can relay; it keeps the batch's name. The successor reads the parent card and
-  its log and nothing else.
+  Only the session holding the parent can relay; it keeps the batch's name.
+  The successor reads the parent card and its log and nothing else.
 
 ## 2. Restate it, in three lines
 
