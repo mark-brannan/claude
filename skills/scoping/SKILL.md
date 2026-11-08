@@ -125,7 +125,7 @@ the target. State today comes from the files the items name (read them).
 Work already started on an item shows as an open PR naming it or another
 session's pickup item (`~/.claude/bin/pickup-list find <word>`); the plan
 says so on that item, and the item is still planned. A wide state
-sweep goes to a read-only sub-agent on `haiku` (no worktree, no sub-agents
+sweep goes to a read-only `Explore` sub-agent on `haiku` (no worktree, no sub-agents
 of its own) that returns one row per item: its number or id, title,
 labels, the files its body names, any open PR or pickup item carrying it,
 and what it says blocks it, each fact as read, never judged. Spot-check a
