@@ -44,9 +44,6 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
-  statuses: write
 
 env:
   # Bounds the fixer runs one push to main can start.
@@ -54,19 +51,32 @@ env:
   CONFLICT_LABEL: Has Conflict
 
 jobs:
-  sweep:
+  # Its own job, so the third-party action shares no runner, env file or
+  # secret with the sweep, and holds only the label-write scopes.
+  label:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      pull-requests: write
+      issues: write
     steps:
-      # Pinned to v1.0.6; a third-party action, so it keeps its pin. Its label
-      # is the list below. It reads a mergeable still null after its tries as a
-      # conflict, so the loop re-reads `mergeable` before nudging.
+      # Pinned to v1.0.6. It reads a mergeable still null after its tries as a
+      # conflict, so the sweep re-reads `mergeable` before nudging.
       - name: Label conflicting pull requests
         uses: hcancelik/pr-conflict-finder@fc73dab98c64f867b4f7c67e92056de82aed120b # v1.0.6
         with:
           secret_token: ${{ github.token }}
           conflict_label: ${{ env.CONFLICT_LABEL }}
 
+  sweep:
+    needs: label
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
       - name: Check the agent App is configured
         id: app
         env:
@@ -101,8 +111,12 @@ jobs:
           for pr in $(gh pr list --state open --draft=false --limit 100 --label "$CONFLICT_LABEL" \
                         --json number,headRepositoryOwner,headRepository \
                         --jq ".[] | select(.headRepositoryOwner.login + \"/\" + .headRepository.name == \"$GITHUB_REPOSITORY\") | .number"); do
-            info=$(gh pr view "$pr" --json mergeable,headRefOid,labels)
-            state=$(jq -r .mergeable <<<"$info")
+            for _ in 1 2 3 4 5; do
+              info=$(gh pr view "$pr" --json mergeable,headRefOid,labels)
+              state=$(jq -r .mergeable <<<"$info")
+              [ "$state" != UNKNOWN ] && break
+              sleep 3
+            done
             echo "PR #$pr: $state"
             [ "$state" = CONFLICTING ] || continue
 
