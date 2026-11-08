@@ -9,7 +9,7 @@ Curia Regis: the inner court, the hard decision taken in council. `curia`
 names the skill and the session type in code and files.
 
 **A confer is not a curia.** A confer answered in the agora is a one-off
-session that may end in a curia or in a few rounds of question and answer.
+session that may end in a curia or in a discussion held in chat.
 A **confer** is that one-off session — no folder, no document, its record is the card and
 whatever it rules. A **curia** is what a confer becomes only when the user
 says so, at the gates below. Where exactly the line sits is still
