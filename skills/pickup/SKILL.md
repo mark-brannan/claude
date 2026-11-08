@@ -66,14 +66,19 @@ its own context: a worker does that and returns one line. Context re-read on
 every turn is most of a session's cost, and a driver that pulls PR content in
 grows fastest.
 
-- **Picking a worker's model, unseen.** It reads metadata, never content: the
-  child card's model and effort (scoping set them), and counts from
-  `gh pr view <n> --json additions,deletions,changedFiles,reviewDecision,statusCheckRollup`
-  reduced to lines changed, files, unresolved threads and failing check
-  names. The card's model stands; go up one tier (Sonnet to Opus) for a
-  fixer when the PR is over about 400 changed lines or 15 files, or has three
-  or more failing checks or open threads. If the counts cannot settle it, a
-  Haiku sub-agent returns a one-line triage (easy, or hard and why).
+- **Picking a worker's model, unseen.** It reads metadata, never content:
+  the child card's model and effort (scoping set them), and the numbers CI
+  already posts on the PR. One call returns each headline (the complexity,
+  coverage and maxims-check comments; a repo with no coverage job has none):
+  `gh api repos/<o>/<r>/issues/<n>/comments --paginate --jq '.[]|select(.body|test("complexity-report|### Coverage:|check:maxims-check"))|.body|split("\n")|map(select(test("^### |breaks, ")))|join(" | ")'`,
+  plus `gh pr view <n> --json changedFiles,reviewDecision,statusCheckRollup`
+  for files and failing check names. Read: complexity delta (`+N across M
+  functions`), coverage of changed lines and the total's move, undeclared
+  maxims breaks, failing checks. The card's model stands; a fixer goes up one
+  tier (Sonnet to Opus) on any of (guesses, not measured): complexity +20 or
+  more, changed-line coverage under 60% or total down over 2 points, 2 or more
+  undeclared breaks, 3 or more failing checks. No signal posted, or a verdict
+  these cannot settle: a Haiku sub-agent returns a one-line triage.
 - **Every worker gets its model by name.** On `driver=workflow`, each
   `agent()` call sets `model` explicitly, never the default; on
   `driver=subagents`, each spawn does.
