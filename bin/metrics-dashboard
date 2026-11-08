@@ -371,19 +371,25 @@ def build(db, out, ndays):
     def pctl(v, p):
         v = sorted(v); i = (len(v) - 1) * p; lo = int(i); return v[lo] + (v[min(lo + 1, len(v) - 1)] - v[lo]) * (i - lo)
     def stats(win, src):  # trailing win days of sessions started on or before each date
-        out = {n: {} for n in ("avg", "p10", "p25", "p90", "max")}
+        out = {n: {} for n in ("avg", "p10", "p25", "p90", "p95", "p99", "p99.9", "max")}
         for k in dkeys:
             d0 = dt.date.fromisoformat(k)
             v = [c for j in range(win) for c in src.get((d0 - dt.timedelta(days=j)).isoformat(), ())]
             if len(v) >= 3:
                 out["avg"][k] = round(sum(v) / len(v), 2)
-                for n, pq in (("p10", .1), ("p25", .25), ("p90", .9)): out[n][k] = round(pctl(v, pq), 2)
+                for n, pq in (("p10", .1), ("p25", .25), ("p90", .9), ("p95", .95), ("p99", .99), ("p99.9", .999)): out[n][k] = round(pctl(v, pq), 2)
                 out["max"][k] = round(max(v), 2)
         return out
+    AXIS = {"haiku": 1, "sonnet": 5, "opus": 25, "fable": 50}  # fixed left-axis tops, dollars per session
     def model_chart(m):
-        o = stats(7, scm[m]); n = sum(len(v) for v in scm[m].values())
-        return lines(f"Session $ for {m} ({n} sessions), rolling 7 days: p10, p25, avg, p90 (left) and max (right)", dkeys,
-                     [("p90", o["p90"]), ("avg", o["avg"]), ("p25", o["p25"]), ("p10", o["p10"])], unit="$", right=[("max", o["max"])])
+        o = stats(7, scm[m]); cap = AXIS[m]
+        n = sum(len(v) for v in scm[m].values())
+        top = max((c for k in dkeys for c in scm[m].get(k, ())), default=0)
+        extra = [x for x in ("p95", "p99", "p99.9") if o[x] and max(o[x].values()) <= cap]  # every higher stat that still fits under the axis
+        names = (["p10"] if m == "haiku" else []) + ["p25", "avg", "p90"] + extra
+        fig = lines(f"Session $ for {m} ({n} sessions), rolling 7 days: {', '.join(names)}", dkeys, [(x, o[x]) for x in reversed(names)],
+                    unit="$", ycap=cap, ystep=cap / 5)
+        return f'<div>{fig}<p class="note">Highest session in the {ndays} days: ${top:,.2f} (axis tops at ${cap}).</p></div>'
     model_charts = [model_chart(m) for m in ("fable", "opus", "sonnet", "haiku") if scm.get(m)]
     words_w = {r["w"]: r["wd"] for r in typing_w}
     words_m = {r["m"]: r["wd"] for r in q("select substr(first_ts, 1, 7) m, sum(words) wd from typing where first_ts is not null group by m")}
@@ -645,12 +651,12 @@ figure {{ margin:0; background:var(--surface); border:1px solid var(--grid); bor
 figcaption {{ font-size:13px; color:var(--ink2); margin-bottom:4px }} svg {{ width:100%; height:auto; display:block; overflow:visible }}
 .grid line {{ stroke:var(--grid); stroke-width:1 }} line.base {{ stroke:var(--base) }} .ax {{ fill:var(--muted); font-size:10px }} .lbl {{ fill:var(--ink2); font-size:10px }} .pl {{ fill:var(--ink); font-size:20px }}
 .ln {{ fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round }}
-path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }}
+path.s1 {{ stroke:var(--s1) }} path.s2 {{ stroke:var(--s2) }} path.s3 {{ stroke:var(--s3) }} path.s4 {{ stroke:var(--s4) }} path.s5 {{ stroke:var(--muted) }} path.s6 {{ stroke:var(--ink2) }} path.s7 {{ stroke:var(--bad) }}
 path.a1 {{ fill:var(--s1) }} path.a2 {{ fill:var(--s2) }} path.a3 {{ fill:var(--s3) }} path.a4 {{ fill:var(--s4) }} path.a5 {{ fill:var(--muted) }} path.a6 {{ fill:var(--ink2) }} rect.s6 {{ fill:var(--ink2) }} path[class^=a] {{ fill-opacity:.7; stroke:var(--surface); stroke-width:1 }}
 rect.s1 {{ fill:var(--s1) }} rect.s2 {{ fill:var(--s2) }} rect.s3 {{ fill:var(--s3) }} rect.s4 {{ fill:var(--s4) }} rect.s5 {{ fill:var(--muted) }}
 .hit {{ fill:transparent }} .hit:hover {{ fill:var(--ink); fill-opacity:.06 }}
 .leg {{ display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--ink2); margin-top:6px }} .leg i {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px }}
-.leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }}
+.leg .s1 {{ background:var(--s1) }} .leg .s2 {{ background:var(--s2) }} .leg .s3 {{ background:var(--s3) }} .leg .s4 {{ background:var(--s4) }} .leg .s5 {{ background:var(--muted) }} .leg .s6 {{ background:var(--ink2) }} .leg .s7 {{ background:var(--bad) }}
 figure.wide {{ grid-column:1/-1 }} table {{ border-collapse:collapse; width:100%; font-size:13px }} th, td {{ text-align:left; padding:3px 10px 3px 0; border-bottom:1px solid var(--grid) }} th {{ color:var(--ink2); font-weight:500 }} td.num, th.num {{ text-align:right }}
 footer {{ margin-top:24px; font-size:12px; color:var(--muted) }}
 </style></head><body>

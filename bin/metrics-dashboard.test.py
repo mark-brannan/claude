@@ -477,7 +477,7 @@ class WindowsAndBucketsTest(unittest.TestCase):
             for i, m in enumerate(("claude-opus-5-5", "claude-opus-5-5", "claude-opus-5-5", "claude-sonnet-5-5") * 2):
                 cx.execute("insert into sessions(session_id, started_at, model, cost_usd) values (?, ?, ?, ?)", (f"m{i}", day(1), m, 1.0 + i))
         page = self.render("permodel", setup)
-        self.assertIn("Session $ for opus (6 sessions), rolling 7 days: p10, p25, avg, p90", page)
+        self.assertIn("Session $ for opus (6 sessions), rolling 7 days: p25, avg, p90", page)
         self.assertIn("Session $ for sonnet (2 sessions)", page)
 
     def test_session_length_buckets_leave_no_gap(self):
