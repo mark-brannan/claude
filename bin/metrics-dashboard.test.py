@@ -162,7 +162,7 @@ class RenderTest(DashboardFixture):
         self.assertIn("Sessions per day: headless vs interactive", self.page)
         self.assertIn("Merged PRs per week, by prompts typed on the branch", self.page)
         self.assertIn("API-equivalent $ per week, by model", self.page)
-        self.assertIn('<span><i class="s1"></i>opus</span><span><i class="s2"></i>sonnet</span>', self.page)
+        self.assertIn('<span><i class="s1"></i>opus</span><span><i class="s3"></i>sonnet</span>', self.page)
 
     def test_ci_checks_section_totals_runs_and_means_per_check(self):
         self.assertIn('<h2 id="ci">', self.page)
@@ -170,7 +170,16 @@ class RenderTest(DashboardFixture):
         self.assertIn("<tr><td>claude-review</td><td class=num>$1.00</td><td class=num>1</td><td class=num>$1.00</td></tr>", self.page)
         self.assertIn("<tr><td>claude-maxims</td><td class=num>$0.500</td><td class=num>1</td><td class=num>$0.500</td></tr>", self.page)
         self.assertNotIn("claude-arete", self.page)
-        self.assertIn("CI check $ per week, by check", self.page)
+        self.assertIn("CI check $ per day, stacked by check", self.page)
+        self.assertIn("CI check cost by repo", self.page)
+
+    def test_a_model_or_stat_has_one_colour_on_every_chart(self):
+        # fable is orange (slot 2) and opus blue (slot 1) wherever they are drawn, whatever their position
+        import importlib.machinery, importlib.util
+        loader = importlib.machinery.SourceFileLoader("md", os.path.join(os.path.dirname(os.path.abspath(__file__)), "metrics-dashboard"))
+        mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("md", loader)); loader.exec_module(mod)
+        self.assertEqual((mod.slot("fable", 3), mod.slot("opus", 3), mod.slot("max", 0), mod.slot("p90", 5)), (2, 1, 2, 1))
+        self.assertEqual(mod.slot("short", 0), 1)  # an unnamed series keeps its position
 
     def test_cost_tiles_price_the_window_and_read_the_session_shape(self):
         self.assertEqual(self.tile("API-equivalent $, 7d"), "6")       # three sessions at $2
@@ -449,6 +458,35 @@ class WindowsAndBucketsTest(unittest.TestCase):
         page = self.render("weekly", setup)
         self.assertIn(f"<title>{self.monday(120)}\nwords/prompt: 2", page)
         self.assertRegex(page, rf"<title>{self.monday(100)}\nclaude/\* branch: 1\n")
+
+    def test_overview_carries_the_lanes_block_and_an_empty_database_still_renders(self):
+        page = self.render("lanes-empty", lambda cx: None)
+        self.assertIn('class="lanes"', page)
+        self.assertIn("No keyboard and mouse minutes", page)
+        def setup(cx):
+            now = int(dt.datetime.now(dt.timezone.utc).timestamp() // 60)
+            cx.executemany("insert into input(host, minute, keys, clicks, scroll, move, afk, seen) values ('h', ?, 40, 1, 2, 3, 0, 1)",
+                           [(now - i,) for i in (0, 1, 2, 30, 31)])
+        page = self.render("lanes", setup)
+        self.assertIn('id="lr3"', page)
+        self.assertIn("Keystrokes per minute", page)
+
+    def test_usage_window_and_9pm_lines_render_and_cost_tab_is_13_weeks(self):
+        page = self.render("window", lambda cx: None)
+        self.assertIn("in this usage-limit window", page)
+        self.assertIn("on pace for $0", page)
+        self.assertIn('class="nt"', self.render("nines", lambda cx: cx.execute(
+            "insert into input(host, minute, keys, clicks, scroll, move, afk, seen) values ('h', ?, 40, 1, 2, 3, 0, 1)",
+            (int(dt.datetime.now(dt.timezone.utc).timestamp() // 60),))))
+        self.assertIn("last 13 whole weeks", page)
+
+    def test_session_cost_stats_get_one_chart_per_model(self):
+        def setup(cx):
+            for i, m in enumerate(("claude-opus-5-5", "claude-opus-5-5", "claude-opus-5-5", "claude-sonnet-5-5") * 2):
+                cx.execute("insert into sessions(session_id, started_at, model, cost_usd) values (?, ?, ?, ?)", (f"m{i}", day(1), m, 1.0 + i))
+        page = self.render("permodel", setup)
+        self.assertIn("Session $ for opus (6 sessions), rolling 7 days: p25, avg, p90", page)
+        self.assertIn("Session $ for sonnet (2 sessions)", page)
 
     def test_session_length_buckets_leave_no_gap(self):
         def setup(cx):
