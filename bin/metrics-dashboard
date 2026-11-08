@@ -206,7 +206,7 @@ def usd(v):
     return "–" if v is None else f"${v:,.2f}" if abs(v) >= 0.995 else f"${v:,.3f}"
 
 # fixed y tops, dollars, for the CI check charts
-CIAXIS = {"claude-review": 400, "claude-maxims": 100, "claude-arete": 100, "claude-fixer": 1, "claude-substantive": 5}
+CIAXIS = {"claude-review": 400, "claude-maxims": 100, "claude-arete": 100, "claude-substantive": 5}  # fixer (haiku) is left to autoscale
 CI_CHECKS = ["claude-review", "claude-maxims", "claude-arete"]
 
 def delta(now, prev, good):
