@@ -1070,6 +1070,85 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(subject(SRORIGIN), f"State: work session {SID[:8]}", "stale rebase: the Stop's commit landed")
         self.assertTrue((STALE / "untracked-keep.txt").is_file(), "stale rebase: untracked files untouched")
 
+        # --- an untracked file in the way of the pull is set aside, not a wedge
+        # Upstream adds a path this clone holds untracked: `pull --rebase`
+        # refuses to check it out, and every later Stop failed the same way.
+        # The Stop pulls past it and puts the local bytes back as a change.
+        w.gitq(SRCLONE, "pull", "-q", "--rebase")
+        (SRCLONE / "drafts").mkdir(exist_ok=True)
+        (SRCLONE / "drafts" / "collide.md").write_text("upstream\n")
+        w.gitq(SRCLONE, "add", "drafts/collide.md")
+        w.gitq(SRCLONE, "commit", "-m", "upstream-adds-collide")
+        w.gitq(SRCLONE, "push", "origin", "main")
+        (STALE / "drafts").mkdir(exist_ok=True)
+        (STALE / "drafts" / "collide.md").write_text("local\n")
+        (STALE / "state" / "global" / "change.txt").write_text("change\n")
+        stamp(STALE).unlink(missing_ok=True)
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=STALE, CLAUDE_CODE_REMOTE="true")
+        self.assertEqual(w.git(STALE, "rev-list", "--left-right", "--count", "HEAD...origin/main"), "0\t0",
+                         "untracked collision: the clone is even with origin")
+        self.assertEqual(subject(SRORIGIN), f"State: work session {SID[:8]}",
+                         "untracked collision: the Stop's commit landed")
+        self.assertEqual(read(STALE / "drafts" / "collide.md"), "local\n",
+                         "untracked collision: the local bytes are back")
+        self.assertIn(" M drafts/collide.md", w.git(STALE, "status", "--porcelain"),
+                      "untracked collision: kept as a local change for the next Stop")
+        self.assertFalse((sgd / "claude-pull-aside").exists(), "untracked collision: nothing left aside")
+
+        # ... the same through a replayed local commit: it adds the path, a
+        # later one deletes it, the file is back on disk untracked, and
+        # upstream moved elsewhere. And a file a killed run left aside is
+        # put back by the next one.
+        (STALE / "drafts" / "replayed.md").write_text("first\n")
+        w.gitq(STALE, "add", "drafts/replayed.md")
+        w.gitq(STALE, "commit", "-m", "local-adds-replayed")
+        w.gitq(STALE, "rm", "-q", "drafts/replayed.md")
+        w.gitq(STALE, "commit", "-m", "local-deletes-replayed")
+        (STALE / "drafts" / "replayed.md").write_text("again\n")
+        (SRCLONE / "state" / "global" / "elsewhere.txt").write_text("elsewhere\n")
+        w.gitq(SRCLONE, "add", "state/global/elsewhere.txt")
+        w.gitq(SRCLONE, "commit", "-m", "upstream-elsewhere")
+        w.gitq(SRCLONE, "push", "origin", "main")
+        left = sgd / "claude-pull-aside" / "99999" / "drafts" / "left.md"
+        left.parent.mkdir(parents=True)
+        left.write_text("left\n")
+        (STALE / "state" / "global" / "change.txt").write_text("change 2\n")
+        stamp(STALE).unlink(missing_ok=True)
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=STALE, CLAUDE_CODE_REMOTE="true")
+        self.assertEqual(w.git(STALE, "rev-list", "--left-right", "--count", "HEAD...origin/main"), "0\t0",
+                         "replayed collision: the clone is even with origin")
+        self.assertEqual(read(STALE / "drafts" / "replayed.md"), "again\n", "replayed collision: local bytes kept")
+        self.assertEqual(read(STALE / "drafts" / "left.md"), "left\n", "killed run's leftover: put back")
+        self.assertFalse((sgd / "claude-pull-aside").exists(), "killed run's leftover: nothing left aside")
+
+        # a leftover the disk has superseded is dropped, never put over it
+        old = sgd / "claude-pull-aside" / "99998" / "drafts" / "left.md"
+        old.parent.mkdir(parents=True)
+        old.write_text("stale\n")
+        (STALE / "state" / "global" / "change.txt").write_text("change 3\n")
+        stamp(STALE).unlink(missing_ok=True)
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=STALE, CLAUDE_CODE_REMOTE="true")
+        self.assertEqual(read(STALE / "drafts" / "left.md"), "left\n", "superseded leftover: disk copy kept")
+        self.assertFalse((sgd / "claude-pull-aside").exists(), "superseded leftover: dropped, not left aside")
+
+        # ... and when the pull fails anyway (a real conflict), the file set
+        # aside goes back untracked with its own bytes.
+        for repo, text in ((SRCLONE, "upstream\n"), (STALE, "local\n")):
+            (repo / "state" / "global" / "clash.txt").write_text(text)
+            w.gitq(repo, "add", "state/global/clash.txt")
+            w.gitq(repo, "commit", "-m", "clash")
+        (SRCLONE / "drafts").mkdir(exist_ok=True)
+        (SRCLONE / "drafts" / "aside.md").write_text("upstream\n")
+        w.gitq(SRCLONE, "add", "drafts/aside.md")
+        w.gitq(SRCLONE, "commit", "-m", "upstream-adds-aside")
+        w.gitq(SRCLONE, "push", "origin", "main")
+        (STALE / "drafts" / "aside.md").write_text("local\n")
+        stamp(STALE).unlink(missing_ok=True)
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=STALE, CLAUDE_CODE_REMOTE="true")
+        self.assertIn("?? drafts/aside.md", w.git(STALE, "status", "--porcelain"), "failed pull: set-aside file back untracked")
+        self.assertEqual(read(STALE / "drafts" / "aside.md"), "local\n", "failed pull: with its own bytes")
+        self.assertFalse((sgd / "claude-pull-aside").exists(), "failed pull: nothing left aside")
+
         # --- the board's items/ are committed like any other state ------------
         # No lint stands between an item and the commit; the push lock is
         # still released. (The failed push above holds the window, so this

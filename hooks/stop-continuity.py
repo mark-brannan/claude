@@ -1286,34 +1286,112 @@ class Stop:
             backoff = float(os.environ.get("STOP_PUSH_BACKOFF_SECS") or 3)
         except ValueError:
             backoff = 3
-        for attempt in (1, 2):
-            # A cloud clone is checked out on the harness's claude/* branch;
-            # ordinary state never goes by PR, so the destination is main.
-            pull = ("origin", "main") if cloud else ()
-            # A conflicted rebase left in place wedges this clone for every
-            # later Stop and every hand commit: back out, and let the push
-            # below fail and say so. A rebase killed before it began leaves
-            # rebase-merge/ holding only its autostash, which --abort refuses
-            # (no head-name); --quit clears it, keeps HEAD and the tree, and
-            # saves the autostash to the stash list. Pull again at once so
-            # the push below lands on this attempt, not the reserve one.
-            if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
-                if not git_ok("rebase", "--abort") and git_ok("rebase", "--quit"):
-                    if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
-                        git_ok("rebase", "--abort")
-            if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
-                if cloud:
-                    # Park the clone on main so the harness's own stop check
-                    # sees nothing unpushed; best effort, the push has landed.
-                    git_ok("checkout", "-q", "-B", "main", "origin/main")
-                return
-            time.sleep(attempt * backoff)
+        if pull_and_push(SR, cloud, backoff):
+            return
         # In the cloud the optimistic verdict is now known to be wrong.
         # Correcting it leaves the checkpoint one commit behind the state repo
         # -- the next Stop carries both the correction and this commit.
         # Locally the commit is the promise, and it held.
         if cloud:
             self.set_verdict("state-repo push failed")
+
+
+# An untracked file at a path the pull checks out makes `pull --rebase`
+# refuse ("untracked working tree files would be overwritten"), and every
+# later Stop fails the same way. A live metrics file does this routinely: a
+# Stop commits its add or its deletion, the next turn writes it again, and
+# either upstream or a replayed local commit brings that path in.
+def set_aside_collisions(SR, upstream):
+    """Move each such file into the git dir; returns [(path, aside, only_if_absent)].
+    A killed run's leftover is the oldest copy: dropped where the disk has
+    one, else put back only where the path is still absent after the pull."""
+    root = f"{SR}/.git/claude-pull-aside"
+    moved = []
+    for d, _, names in os.walk(root):
+        for n in names:
+            src = os.path.join(d, n)
+            rel = os.path.relpath(src, root).split(os.sep, 1)[-1]
+            if os.path.lexists(f"{SR}/{rel}"):
+                try:
+                    os.remove(src)
+                except OSError:
+                    pass
+            else:
+                moved.append((rel, src, True))
+    if git_bounded(60, "fetch", "-q", "origin") != 0:
+        return moved
+    incoming = gitrun.exact("diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", "HEAD", upstream)
+    replayed = gitrun.exact("log", "--format=", "--name-only", "-z", "--no-renames", "--diff-filter=A",
+                            f"{upstream}..HEAD")
+    others = gitrun.exact("ls-files", "-z", "--others", "--exclude-standard")
+    if incoming.returncode or replayed.returncode or others.returncode:
+        return moved
+    paths = set(incoming.stdout.split("\0")) | set(replayed.stdout.split("\0"))
+    base = f"{root}/{os.getpid()}"
+    for f in sorted(paths & set(others.stdout.split("\0")) - {""}):
+        dst = f"{base}/{f}"
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            os.replace(f"{SR}/{f}", dst)
+            moved.append((f, dst, False))
+        except OSError:
+            pass
+    return moved
+
+
+def restore_aside(SR, moved):
+    """Put each file back: untracked again if the pull failed, or over the
+    incoming copy as a local change the next Stop commits. The incoming
+    bytes stay in history either way; a file that cannot go back stays
+    aside for the next run."""
+    for f, src, only_if_absent in moved:
+        try:
+            if only_if_absent and os.path.lexists(f"{SR}/{f}"):
+                os.remove(src)
+                continue
+            os.makedirs(os.path.dirname(f"{SR}/{f}"), exist_ok=True)
+            os.replace(src, f"{SR}/{f}")
+        except OSError:
+            pass
+    for d, _, _ in os.walk(f"{SR}/.git/claude-pull-aside", topdown=False):
+        try:
+            os.rmdir(d)  # empty ones only
+        except OSError:
+            pass
+
+
+def pull_and_push(SR, cloud, backoff=3):
+    """Rebase the state clone onto origin and push it; True once pushed.
+    Run under the push lock with cwd at SR. bin/state-push calls it too."""
+    for attempt in (1, 2):
+        # A cloud clone is checked out on the harness's claude/* branch;
+        # ordinary state never goes by PR, so the destination is main.
+        pull = ("origin", "main") if cloud else ()
+        # A conflicted rebase left in place wedges this clone for every
+        # later Stop and every hand commit: back out, and let the push
+        # below fail and say so. A rebase killed before it began leaves
+        # rebase-merge/ holding only its autostash, which --abort refuses
+        # (no head-name); --quit clears it, keeps HEAD and the tree, and
+        # saves the autostash to the stash list. Pull again at once so
+        # the push below lands on this attempt, not the reserve one.
+        # Restored in a finally: SIGTERM at the harness's timeout lands
+        # inside the pull, and _bye leaves by SystemExit.
+        aside = set_aside_collisions(SR, "origin/main" if cloud else "@{u}")
+        try:
+            if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
+                if not git_ok("rebase", "--abort") and git_ok("rebase", "--quit"):
+                    if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
+                        git_ok("rebase", "--abort")
+        finally:
+            restore_aside(SR, aside)
+        if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
+            if cloud:
+                # Park the clone on main so the harness's own stop check
+                # sees nothing unpushed; best effort, the push has landed.
+                git_ok("checkout", "-q", "-B", "main", "origin/main")
+            return True
+        time.sleep(attempt * backoff)
+    return False
 
 
 def _bye(signum, frame):
