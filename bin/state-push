@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""state-push: push state-repo commits the Stop hook left behind.
+
+The Stop hook pushes at most once per debounce window, so the last commits
+of a sitting wait for a later Stop that may never come. A timer runs this
+(systemd/state-push.timer): when the clone is ahead of origin, it takes the
+push lock and runs the Stop hook's own pull-and-push. Silent and offline
+when there is nothing to push. Exit 0 pushed or nothing to do, 1 the push
+failed, 2 no state repo.
+"""
+import os
+import signal
+import sys
+import time
+from importlib.machinery import SourceFileLoader
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path[:0] = [os.path.join(HERE, "..", "lib")]
+
+import gitrun  # noqa: E402
+import state  # noqa: E402
+
+hook = SourceFileLoader("stop_continuity", os.path.join(HERE, "..", "hooks", "stop-continuity.py")).load_module()
+# The hook imports these under its __main__ guard; its functions read them as globals.
+hook.gitrun, hook.state = gitrun, state
+
+
+def ahead():
+    p = gitrun.exact("rev-list", "--count", "@{u}..HEAD")
+    return int(p.stdout.strip() or 0) if p.returncode == 0 else 1  # no upstream: let the push say
+
+
+def main():
+    SR = state.state_repo()
+    if SR is None:
+        print("state-push: no state repo", file=sys.stderr)
+        return 2
+    os.chdir(SR)
+    if not ahead():
+        return 0
+    with state.push_lock() as held:
+        if not held:
+            return 0  # a Stop holds it, and pushes
+        n = ahead()
+        if not n:
+            return 0
+        ok = hook.pull_and_push(SR, cloud=False)
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    print(f"{stamp} state-push: {n} commit(s) {'pushed' if ok else 'NOT pushed'}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    # The hook's handler stops a git child's whole group; the lock comes off
+    # on the way out of push_lock.
+    signal.signal(signal.SIGTERM, hook._bye)
+    signal.signal(signal.SIGINT, hook._bye)
+    sys.exit(main())

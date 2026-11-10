@@ -1,0 +1,14 @@
+# Pairs with state-push.service. Install from the ~/.claude checkout:
+#   systemctl --user link ~/.claude/systemd/state-push.service ~/.claude/systemd/state-push.timer
+#   systemctl --user enable --now state-push.timer
+
+[Unit]
+Description=Push unpushed state-repo commits every five minutes
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
