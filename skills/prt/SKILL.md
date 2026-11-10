@@ -1,6 +1,8 @@
 ---
 name: prt
-description: PR triage — walk every open pull request in a repo, a project or all of the user's repos, work each one's CI critical review to the fixup contract, send what only the user can settle to the agora as Needs-ruling cards, and print a terminal summary. Use on "/prt", "/prt --dry-run", "/prt --project <name>", "triage the PRs", "drain the PR queue". Args that name PRs or repos are the whole job. Not for one PR (/critical-review, /pickup) and not for issues (/orchestrate). Merging is off. Fable or Opus; fixers Sonnet, Opus for a PR rated high.
+description: PR triage — walk every open pull request in a repo, a project or all of the user's repos, work each one's CI critical review to the fixup contract, send what only the user can settle to the agora as Needs-ruling cards, and print a terminal summary. Use on "/prt", "/prt --dry-run", "/prt --project", "triage the PRs", "drain the PR queue". Args that name PRs or repos are the whole job. Not for one PR (/critical-review, /pickup) and not for issues (/orchestrate). Merging is off. Fable or Opus; fixers Sonnet, Opus for a PR rated high.
+argument-hint: "[--dry-run] [--project <name>] [PR or repo...]"
+disable-model-invocation: true
 ---
 
 # PR triage

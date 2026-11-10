@@ -1,6 +1,7 @@
 ---
 name: agora
 description: Run an agora sitting — the quick decisions, in batch, one fresh subagent per item, the user rules. Use on "/agora", "/agora briefs" (the briefs alone, ahead of a sitting), "walk the decision cards", "what needs deciding", or when the user says they have the headspace to rule on a queue of open decisions. Not for toil; that is grind. Not for a hard multi-turn question; "confer" is a closed answer here, and it sends the item to a one-off confer session, never straight to a curia.
+disable-model-invocation: true
 ---
 
 # Agora
