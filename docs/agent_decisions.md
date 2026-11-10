@@ -727,3 +727,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261110t223948z
 - a set-aside file that cannot go back stays aside and later pulls retry it, not named via note_held ([#442](https://github.com/mark-brannan/claude/pull/442))
+
+### 20261110t223952z
+- state-push timer TimeoutStartSec=2m: 4.5 s measured plus the 90 s push-lock wait ([#442](https://github.com/mark-brannan/claude/pull/442))
