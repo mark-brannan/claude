@@ -496,6 +496,28 @@ has been read in full, and every figure is the page's own.
     path after it has been corrected.
   - Maps to: the read-back, and a fresh session over a corrected document in
     place of a correction made inside a long one.
+- **Geng et al. (2026).** "Markovian Generation Chains in LLMs."
+  arXiv:2603.11228, preprint. **Colaco and Lahjouji (2026).** "What to Keep,
+  What to Forget: Rate-Distortion View of Memory Compaction."
+  arXiv:2607.08032, preprint.
+  [arxiv.org](https://arxiv.org/abs/2603.11228),
+  [arxiv.org](https://arxiv.org/abs/2607.08032)
+  - Idea: text rephrased over and over either settles into a small set of
+    outputs or keeps changing; and, mostly as theory, repeated compaction in
+    agents is rarely measured. Neither abstract gives a figure.
+  - Maps to: a derived document that is rewritten at every close.
+- **Unverified, known from a search result only:** "B-score: Detecting
+  biases in LLMs using response history", arXiv:2505.18545; "Self-Anchoring
+  Calibration Drift", arXiv:2603.01239; "Can Errors From an AI Summary
+  Distort Memory?", a news write-up of a study,
+  [theneuron.ai](https://theneuron.ai/news/ai-summary-errors-distort-memory-study/);
+  and a vendor's evaluation of agent memory, raw messages against
+  model-written summaries,
+  [couchbase.com](https://couchbase.com/blog/what-we-learned-evaluating-agent-memorythe-results-part-2/).
+  - Idea: a model anchoring on its own earlier answers, a reader's memory
+    bent by a wrong summary, and raw messages scoring above summaries; each
+    as the search result gave it.
+  - Maps to: nothing yet; kept for reading.
 
 ## How long a working conversation runs
 
@@ -525,6 +547,22 @@ past which a conversation should stop.
     turns, and in mathematics later elaboration keeps helping.
   - Maps to: the length of a sitting. Evidence for a heuristic, not a limit:
     what a turn says matters more than how many there are.
+- **Tack, Laban and Neville (2026).** "LLMs Get Lost in Evolving User
+  Intent." arXiv:2607.20734, preprint.
+  [arxiv.org](https://arxiv.org/abs/2607.20734)
+  - Idea: performance drops across model families when the user's intent
+    changes during the conversation; the abstract gives no figure.
+  - Maps to: a sitting whose question has moved from the one it opened on.
+- **Unverified, title not recorded or known from a search result only:**
+  Huang et al. (2024), a chatbot study with dialogues held to 0, 3, 5 or 7
+  turns, arXiv:2404.17025; Zhang et al. (2025), coding conversations in two
+  public chat-log sets, arXiv:2512.10493; a 2025 study of clarifying
+  questions in multi-turn dialogue, arXiv:2512.13154; and a 2025 set of
+  shared conversations averaging 4.62 turns, arXiv:2512.17843.
+  - Idea: no drastic difference in rated quality across the four lengths;
+    satisfaction falling as coding conversations lengthen, as a correlation;
+    clarification raising task success while shortening the dialogue.
+  - Maps to: nothing yet; kept for reading.
 
 ## Prior art: recent tooling
 
