@@ -447,6 +447,123 @@ Checked against the web on 2026-10-02.
   - Maps to: the one-way-door test. A wish that cannot be unmade is a one-way
     door; name the undo before it is granted.
 
+## The record: the words as said, beside what is derived from them
+
+Added 2026-11-10 as a reading list. Each citation was checked that day
+against the paper's abstract page, and the first against its tables; none
+has been read in full, and every figure is the page's own.
+
+- **Kwon, A. (2026).** "Manufactured Confidence: How Memory Consolidation
+  Turns Hearsay into Confident Facts." arXiv:2606.29279, preprint, June 2026.
+  [arxiv.org](https://arxiv.org/abs/2606.29279)
+  - Idea: a memory store that extracts facts from a conversation rewrites a
+    hedged remark as a confident one, and an agent then acts on "the
+    confidence of the phrasing". A verbatim copy did not launder the remark;
+    an "unverified" tag only partly helped; wording the record tentatively
+    helped more. Constructed scenarios, 10 to 16 samples per cell.
+  - Maps to: the human's words kept verbatim beside the derived record, and
+    pen and pencil as the mark of how firm a line is. Whether the mark alone
+    is enough is the question this paper raises.
+- **Kwon, A. (2026).** "Explicit, Not Longer: What Makes Epistemic Stance
+  Survive Memory Compression." arXiv:2608.06953, preprint, August 2026.
+  [arxiv.org](https://arxiv.org/abs/2608.06953)
+  - Idea: across 60 claims in 7 registers, a labelled stance field raised how
+    often a claim's stance survived compression by about 15 points on two
+    models; making the note longer did not.
+  - Maps to: the firmness mark on a ledger line, as a field of its own.
+- **An (2025).** "Fidelity Before Structure: Verbatim Chunks Beat Lossy
+  Artifact Extraction." arXiv:2601.00821, preprint, revised July 2026.
+  [arxiv.org](https://arxiv.org/abs/2601.00821)
+  - Idea: with the pipeline held fixed and only the stored form changed,
+    verbatim chunks scored 43.9% against 28.0% for extracted artifacts on
+    LoCoMo, and 67.4% against 45.4% on LongMemEval-S.
+  - Maps to: the verbatim log as the source, and the summary as a view of it.
+- **Dennis et al. (2026).** "Beyond Inference-Only Deployment: Weight-Based
+  Consolidation vs Cascading Compaction." arXiv:2605.24657, preprint, May
+  2026. [arxiv.org](https://arxiv.org/abs/2605.24657)
+  - Idea: after three compaction cycles 36.8% of a conversation's knowledge
+    was retained, against 90.1% with the full context; 10 conversations,
+    1,146 questions.
+  - Maps to: a summary rewritten many times loses what it summarised; the
+    append-only log is what a rewrite can go back to.
+- **Lin et al. (2026).** "Clarification Is Not Correction: LLMs Fail to Let
+  Go." arXiv:2609.25337, preprint, September 2026. **Chen et al. (2026).**
+  "Breaking Contextual Inertia." arXiv:2603.04783, ACL Findings 2026.
+  [arxiv.org](https://arxiv.org/abs/2609.25337),
+  [arxiv.org](https://arxiv.org/abs/2603.04783)
+  - Idea: an ambiguous early turn collapses into one committed reading that a
+    later clarification does not undo, and a model keeps an earlier reasoning
+    path after it has been corrected.
+  - Maps to: the read-back, and a fresh session over a corrected document in
+    place of a correction made inside a long one.
+- **Geng et al. (2026).** "Markovian Generation Chains in LLMs."
+  arXiv:2603.11228, preprint. **Colaco and Lahjouji (2026).** "What to Keep,
+  What to Forget: Rate-Distortion View of Memory Compaction."
+  arXiv:2607.08032, preprint.
+  [arxiv.org](https://arxiv.org/abs/2603.11228),
+  [arxiv.org](https://arxiv.org/abs/2607.08032)
+  - Idea: text rephrased over and over either settles into a small set of
+    outputs or keeps changing; and, mostly as theory, repeated compaction in
+    agents is rarely measured. Neither abstract gives a figure.
+  - Maps to: a derived document that is rewritten at every close.
+- **Unverified, known from a search result only:** "B-score: Detecting
+  biases in LLMs using response history", arXiv:2505.18545; "Self-Anchoring
+  Calibration Drift", arXiv:2603.01239; "Can Errors From an AI Summary
+  Distort Memory?", a news write-up of a study,
+  [theneuron.ai](https://theneuron.ai/news/ai-summary-errors-distort-memory-study/);
+  and a vendor's evaluation of agent memory, raw messages against
+  model-written summaries,
+  [couchbase.com](https://couchbase.com/blog/what-we-learned-evaluating-agent-memorythe-results-part-2/).
+  - Idea: a model anchoring on its own earlier answers, a reader's memory
+    bent by a wrong summary, and raw messages scoring above summaries; each
+    as the search result gave it.
+  - Maps to: nothing yet; kept for reading.
+
+## How long a working conversation runs
+
+Added 2026-11-10, checked the same way. No source found gives a turn count
+past which a conversation should stop.
+
+- **Laban et al. (2025).** "LLMs Get Lost In Multi-Turn Conversation."
+  arXiv:2505.06120. [arxiv.org](https://arxiv.org/abs/2505.06120)
+  - Idea: the same instruction given whole in one turn, or in pieces over
+    several. Average performance fell from 90% to 65% across 15 models and
+    six tasks, "even in two-turn conversations": models "make assumptions in
+    early turns and prematurely attempt to generate final solutions, on which
+    they overly rely". Simulated users, by the authors' own caveat.
+  - Maps to: the implementing agent gets the goal whole, from the document;
+    the dialogue in pieces stays between the human and the sitting.
+- **Hong, Troynikov and Huber (2025).** "Context Rot." Chroma technical
+  report, 14 July 2025.
+  [trychroma.com](https://www.trychroma.com/research/context-rot)
+  - Idea: across 18 models reliability fell as the input grew, and a focused
+    excerpt of about 300 tokens beat the full chat history of about 113,000
+    on every model.
+  - Maps to: the small read at the open of a session.
+- **Javaji et al. (2025).** "Another Turn, Better Output?" arXiv:2509.06770.
+  [arxiv.org](https://arxiv.org/abs/2509.06770)
+  - Idea: over 12-turn conversations the gains in ideation and code come
+    early, vague feedback plateaus or lowers correctness after the first few
+    turns, and in mathematics later elaboration keeps helping.
+  - Maps to: the length of a sitting. Evidence for a heuristic, not a limit:
+    what a turn says matters more than how many there are.
+- **Tack, Laban and Neville (2026).** "LLMs Get Lost in Evolving User
+  Intent." arXiv:2607.20734, preprint.
+  [arxiv.org](https://arxiv.org/abs/2607.20734)
+  - Idea: performance drops across model families when the user's intent
+    changes during the conversation; the abstract gives no figure.
+  - Maps to: a sitting whose question has moved from the one it opened on.
+- **Unverified, title not recorded or known from a search result only:**
+  Huang et al. (2024), a chatbot study with dialogues held to 0, 3, 5 or 7
+  turns, arXiv:2404.17025; Zhang et al. (2025), coding conversations in two
+  public chat-log sets, arXiv:2512.10493; a 2025 study of clarifying
+  questions in multi-turn dialogue, arXiv:2512.13154; and a 2025 set of
+  shared conversations averaging 4.62 turns, arXiv:2512.17843.
+  - Idea: no drastic difference in rated quality across the four lengths;
+    satisfaction falling as coding conversations lengthen, as a correlation;
+    clarification raising task success while shortening the dialogue.
+  - Maps to: nothing yet; kept for reading.
+
 ## Prior art: recent tooling
 
 Dates are as found on 2026-09-29.
