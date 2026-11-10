@@ -6,6 +6,7 @@ SCRIPT="$(cd "$(dirname "$0")" && pwd)/create-pr-labels.sh"
 S=$(mktemp -d); trap 'rm -rf "$S"' EXIT
 mkdir -p "$S/bin" "$S/home/.local/share"
 printf 'repoa\n' > "$S/home/.local/share/vended-repos.txt"
+printf 'dotfiles\n' > "$S/home/.local/share/non-vended-repos.txt"
 printf '#!/bin/sh\necho "$@"\n' > "$S/bin/gh"; chmod +x "$S/bin/gh"
 
 out=$(HOME="$S/home" PATH="$S/bin:$PATH" sh "$SCRIPT")
