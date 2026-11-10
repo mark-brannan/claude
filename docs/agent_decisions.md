@@ -715,3 +715,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261108t051144z
 - the agora sitting never offers a mid-sitting model switch; a hard item is a confer at its rating (the user's word in session 2814cb3c: Sonnet for many-turn sessions, Opus and Fable judiciously) Undo: restore the switch-offer sentence in Difficulty and model ([#432](https://github.com/mark-brannan/claude/pull/432#discussion_r4505106934)) ([#432](https://github.com/mark-brannan/claude/pull/432))
+
+### 20261110t183033z
+- The two new reading-list sections sit before 'Prior art: recent tooling' in docs/references.md. Undo: move the two sections elsewhere in docs/references.md ([#440](https://github.com/mark-brannan/claude/pull/440))
