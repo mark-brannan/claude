@@ -8,7 +8,6 @@ Description=Push unpushed state-repo commits every five minutes
 [Timer]
 OnBootSec=2m
 OnUnitActiveSec=5m
-Persistent=true
 
 [Install]
 WantedBy=timers.target

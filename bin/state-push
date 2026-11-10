@@ -12,7 +12,7 @@ import os
 import signal
 import sys
 import time
-from importlib.machinery import SourceFileLoader
+import importlib.util
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(HERE, "..", "lib")]
@@ -20,7 +20,9 @@ sys.path[:0] = [os.path.join(HERE, "..", "lib")]
 import gitrun  # noqa: E402
 import state  # noqa: E402
 
-hook = SourceFileLoader("stop_continuity", os.path.join(HERE, "..", "hooks", "stop-continuity.py")).load_module()
+_spec = importlib.util.spec_from_file_location("stop_continuity", os.path.join(HERE, "..", "hooks", "stop-continuity.py"))
+hook = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(hook)
 # The hook imports these under its __main__ guard; its functions read them as globals.
 hook.gitrun, hook.state = gitrun, state
 
