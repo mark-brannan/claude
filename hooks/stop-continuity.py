@@ -1297,10 +1297,12 @@ class Stop:
             # (no head-name); --quit clears it, keeps HEAD and the tree, and
             # saves the autostash to the stash list. Pull again at once so
             # the push below lands on this attempt, not the reserve one.
+            aside = self.set_aside_collisions(SR, "origin/main" if cloud else "@{u}")
             if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
                 if not git_ok("rebase", "--abort") and git_ok("rebase", "--quit"):
                     if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
                         git_ok("rebase", "--abort")
+            self.restore_aside(SR, aside)
             if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
                 if cloud:
                     # Park the clone on main so the harness's own stop check
@@ -1314,6 +1316,53 @@ class Stop:
         # Locally the commit is the promise, and it held.
         if cloud:
             self.set_verdict("state-repo push failed")
+
+
+    # An untracked file at a path the incoming commits carry makes `pull
+    # --rebase` refuse to check them out ("untracked working tree files would
+    # be overwritten"), and every later Stop fails the same way. A live
+    # metrics file does this routinely: a Stop commits its deletion, the next
+    # turn writes it again, and another clone has pushed a copy meanwhile.
+    @staticmethod
+    def set_aside_collisions(SR, upstream):
+        """Move each such file into the git dir; returns [(path, aside)]."""
+        if git_bounded(120, "fetch", "-q", "origin") != 0:
+            return []
+        incoming = gitrun.exact("diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", "HEAD", upstream)
+        others = gitrun.exact("ls-files", "-z", "--others", "--exclude-standard")
+        if incoming.returncode != 0 or others.returncode != 0:
+            return []
+        hit = set(incoming.stdout.split("\0")) & set(others.stdout.split("\0")) - {""}
+        base = f"{SR}/.git/claude-pull-aside/{os.getpid()}"
+        moved = []
+        for f in sorted(hit):
+            dst = f"{base}/{f}"
+            try:
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                os.replace(f"{SR}/{f}", dst)
+                moved.append((f, dst))
+            except OSError:
+                pass
+        return moved
+
+    @staticmethod
+    def restore_aside(SR, moved):
+        """Put each file back: untracked again if the pull failed, or over the
+        incoming copy as a local change the next Stop commits. The incoming
+        bytes stay in history either way."""
+        stuck = False
+        for f, src in moved:
+            try:
+                os.makedirs(os.path.dirname(f"{SR}/{f}"), exist_ok=True)
+                os.replace(src, f"{SR}/{f}")
+            except OSError:
+                stuck = True  # left under .git/claude-pull-aside, never deleted
+        if moved and not stuck:
+            shutil.rmtree(f"{SR}/.git/claude-pull-aside/{os.getpid()}", ignore_errors=True)
+            try:
+                os.rmdir(f"{SR}/.git/claude-pull-aside")  # only if empty
+            except OSError:
+                pass
 
 
 def _bye(signum, frame):
