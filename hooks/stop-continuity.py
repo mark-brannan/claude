@@ -1303,7 +1303,7 @@ class Stop:
 # turn writes it again, and another clone has pushed a copy meanwhile.
 def set_aside_collisions(SR, upstream):
     """Move each such file into the git dir; returns [(path, aside)]."""
-    if git_bounded(120, "fetch", "-q", "origin") != 0:
+    if git_bounded(60, "fetch", "-q", "origin") != 0:
         return []
     incoming = gitrun.exact("diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", "HEAD", upstream)
     others = gitrun.exact("ls-files", "-z", "--others", "--exclude-standard")
