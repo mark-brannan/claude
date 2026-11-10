@@ -1296,23 +1296,33 @@ class Stop:
             self.set_verdict("state-repo push failed")
 
 
-# An untracked file at a path the incoming commits carry makes `pull
-# --rebase` refuse to check them out ("untracked working tree files would
-# be overwritten"), and every later Stop fails the same way. A live
-# metrics file does this routinely: a Stop commits its deletion, the next
-# turn writes it again, and another clone has pushed a copy meanwhile.
+# An untracked file at a path the pull checks out makes `pull --rebase`
+# refuse ("untracked working tree files would be overwritten"), and every
+# later Stop fails the same way. A live metrics file does this routinely: a
+# Stop commits its add or its deletion, the next turn writes it again, and
+# either upstream or a replayed local commit brings that path in.
 def set_aside_collisions(SR, upstream):
-    """Move each such file into the git dir; returns [(path, aside)]."""
-    if git_bounded(60, "fetch", "-q", "origin") != 0:
-        return []
-    incoming = gitrun.exact("diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", "HEAD", upstream)
-    others = gitrun.exact("ls-files", "-z", "--others", "--exclude-standard")
-    if incoming.returncode != 0 or others.returncode != 0:
-        return []
-    hit = set(incoming.stdout.split("\0")) & set(others.stdout.split("\0")) - {""}
-    base = f"{SR}/.git/claude-pull-aside/{os.getpid()}"
+    """Move each such file into the git dir; returns [(path, aside)], with
+    any left there by a run that was killed before it put them back."""
+    root = f"{SR}/.git/claude-pull-aside"
     moved = []
-    for f in sorted(hit):
+    for d, _, names in os.walk(root):
+        for n in names:
+            src = os.path.join(d, n)
+            rel = os.path.relpath(src, root).split(os.sep, 1)[-1]
+            if not os.path.lexists(f"{SR}/{rel}"):  # a newer copy on disk stays; this one stays aside
+                moved.append((rel, src))
+    if git_bounded(60, "fetch", "-q", "origin") != 0:
+        return moved
+    incoming = gitrun.exact("diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", "HEAD", upstream)
+    replayed = gitrun.exact("log", "--format=", "--name-only", "-z", "--no-renames", "--diff-filter=A",
+                            f"{upstream}..HEAD")
+    others = gitrun.exact("ls-files", "-z", "--others", "--exclude-standard")
+    if incoming.returncode or replayed.returncode or others.returncode:
+        return moved
+    paths = set(incoming.stdout.split("\0")) | set(replayed.stdout.split("\0"))
+    base = f"{root}/{os.getpid()}"
+    for f in sorted(paths & set(others.stdout.split("\0")) - {""}):
         dst = f"{base}/{f}"
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -1322,21 +1332,21 @@ def set_aside_collisions(SR, upstream):
             pass
     return moved
 
+
 def restore_aside(SR, moved):
     """Put each file back: untracked again if the pull failed, or over the
     incoming copy as a local change the next Stop commits. The incoming
-    bytes stay in history either way."""
-    stuck = False
+    bytes stay in history either way; a file that cannot go back stays
+    aside for the next run."""
     for f, src in moved:
         try:
             os.makedirs(os.path.dirname(f"{SR}/{f}"), exist_ok=True)
             os.replace(src, f"{SR}/{f}")
         except OSError:
-            stuck = True  # left under .git/claude-pull-aside, never deleted
-    if moved and not stuck:
-        shutil.rmtree(f"{SR}/.git/claude-pull-aside/{os.getpid()}", ignore_errors=True)
+            pass
+    for d, _, _ in os.walk(f"{SR}/.git/claude-pull-aside", topdown=False):
         try:
-            os.rmdir(f"{SR}/.git/claude-pull-aside")  # only if empty
+            os.rmdir(d)  # empty ones only
         except OSError:
             pass
 
@@ -1355,12 +1365,16 @@ def pull_and_push(SR, cloud, backoff=3):
         # (no head-name); --quit clears it, keeps HEAD and the tree, and
         # saves the autostash to the stash list. Pull again at once so
         # the push below lands on this attempt, not the reserve one.
+        # Restored in a finally: SIGTERM at the harness's timeout lands
+        # inside the pull, and _bye leaves by SystemExit.
         aside = set_aside_collisions(SR, "origin/main" if cloud else "@{u}")
-        if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
-            if not git_ok("rebase", "--abort") and git_ok("rebase", "--quit"):
-                if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
-                    git_ok("rebase", "--abort")
-        restore_aside(SR, aside)
+        try:
+            if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
+                if not git_ok("rebase", "--abort") and git_ok("rebase", "--quit"):
+                    if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
+                        git_ok("rebase", "--abort")
+        finally:
+            restore_aside(SR, aside)
         if git_bounded(120, "push", "-q", "origin", "HEAD:main" if cloud else "HEAD") == 0:
             if cloud:
                 # Park the clone on main so the harness's own stop check

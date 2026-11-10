@@ -425,6 +425,8 @@ test asserts each. A Given with `or` is two fixtures sharing the Then.
 | 13.4 | a pull that conflicts | Stop | rebase aborted, no rebase left in progress | test |
 | 13.5 | cloud, the push fails | Stop | `not archivable: state-repo push failed` | test |
 | 13.6 | local, the push fails | Stop | verdict unchanged; the next Stop in the window does not retry | test |
+| 13.7 | an untracked file at a path the pull brings in | Stop | set aside, pulled, put back as a local change | test |
+| 13.8 | files a killed run left set aside | Stop | put back by the next pull | test |
 | 14.1 | a session with no item, on a PR no open item is homed at | first Stop | one new item; its first log line `status=open` from this session | test |
 | 14.2 | 14.1 | a later Stop that writes | it writes the same item; no second item is minted | test |
 | 14.3 | a session that claimed an item with `work-item claim` | Stop | that item gets this session's line; nothing minted | test |
