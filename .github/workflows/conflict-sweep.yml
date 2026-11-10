@@ -1,0 +1,145 @@
+name: Conflict sweep
+
+# When main moves, find open pull requests it now conflicts with (labelled by
+# hcancelik/pr-conflict-finder, which waits out GitHub's lazy `mergeable` and
+# also clears the label once a conflict is gone) and hand each to the shared
+# fixer, which already merges the base in and resolves small,
+# plain conflicts with Haiku (see the `fixer` job in
+# mark-brannan/.github's claude-review.yml). That fixer reads `mergeable` live
+# but only wakes on a pull_request event, so a conflict that appears because
+# the base moved waits for the author's next push. This workflow supplies the
+# missing event and does no resolving of its own, and runs no model itself.
+#
+# Cost per push to main: each nudge reopens a PR, which starts every
+# pull_request workflow on it (the Claude review, CI, the guards), so up to
+# MAX_NUDGES model reviews plus CI, drawing on the account's concurrent-job
+# cap. A pushed head is nudged once. If that is too dear, the fix is an entry
+# point on the shared fixer (workflow_dispatch with a PR number).
+#
+# The nudge is a close and reopen: it fires `reopened` and adds no commit. It
+# must use the agent App's token. An event made with GITHUB_TOKEN starts no
+# workflow, so the reopen would do nothing. Without the App secrets the job
+# skips with a warning.
+#
+# Skipped: drafts, forks (the shared review skips them too), PRs labelled
+# `fixer:skip`, and a head already nudged once. A conflict the fixer escalated
+# stays on its head, so the `conflict-sweep` commit status on that head keeps
+# the next push to main from nudging it again; a new push to the branch is a
+# new head and is eligible. `workflow_dispatch` with `force` ignores the status.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Nudge a conflicting head even if it was nudged before
+        type: boolean
+        default: false
+
+concurrency:
+  group: conflict-sweep
+  # Queue, never cancel: a cancel between close and reopen would leave a PR closed.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Bounds the fixer runs one push to main can start.
+  MAX_NUDGES: '2'
+  CONFLICT_LABEL: Has Conflict
+
+jobs:
+  # Its own job, so the third-party action shares no runner, env file or
+  # secret with the sweep, and holds only the label-write scopes.
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      # Pinned to v1.0.6. It reads a mergeable still null after its tries as a
+      # conflict, so the sweep re-reads `mergeable` before nudging.
+      - name: Label conflicting pull requests
+        uses: hcancelik/pr-conflict-finder@fc73dab98c64f867b4f7c67e92056de82aed120b # v1.0.6
+        with:
+          secret_token: ${{ github.token }}
+          conflict_label: ${{ env.CONFLICT_LABEL }}
+
+  sweep:
+    needs: label
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The App token does the PR calls; github.token only writes the status.
+    permissions:
+      statuses: write
+    steps:
+      - name: Check the agent App is configured
+        id: app
+        env:
+          APP_ID: ${{ secrets.AGENT_BOT_APP_ID }}
+          APP_KEY: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::warning::AGENT_BOT_APP_ID or AGENT_BOT_PRIVATE_KEY is not set; conflict-sweep skipped"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint the agent App token
+        if: steps.app.outputs.run == 'true'
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_BOT_APP_ID }}
+          private-key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+
+      - name: Nudge conflicting pull requests
+        if: steps.app.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          STATUS_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -uo pipefail
+          nudged=0
+          failed=0
+          for pr in $(gh pr list --state open --draft=false --limit 100 --label "$CONFLICT_LABEL" \
+                        --search '-label:"fixer:skip"' --json number,isCrossRepository \
+                        --jq '.[] | select(.isCrossRepository | not) | .number'); do
+            for _ in 1 2 3 4 5; do
+              info=$(gh pr view "$pr" --json mergeable,headRefOid)
+              state=$(jq -r .mergeable <<<"$info")
+              [ "$state" != UNKNOWN ] && break
+              sleep 3
+            done
+            echo "PR #$pr: $state"
+            [ "$state" = CONFLICTING ] || continue
+
+            sha=$(jq -r .headRefOid <<<"$info")
+            seen=$(GH_TOKEN=$STATUS_TOKEN gh api "repos/$GITHUB_REPOSITORY/commits/$sha/statuses" \
+                     --jq '[.[] | select(.context == "conflict-sweep")] | length')
+            if [ "$seen" != 0 ] && [ "$FORCE" != true ]; then
+              echo "  head ${sha:0:8} was nudged before; left alone"; continue
+            fi
+            if [ "$nudged" -ge "$MAX_NUDGES" ]; then
+              echo "::warning::PR #$pr conflicts but $MAX_NUDGES were nudged already; the next push to main or a dispatch takes it"
+              continue
+            fi
+
+            gh pr close "$pr" >/dev/null || { echo "::error::PR #$pr: close failed"; failed=1; continue; }
+            if ! gh pr reopen "$pr" >/dev/null; then
+              echo "::error::PR #$pr was closed but did not reopen; reopen it by hand"; failed=1; continue
+            fi
+            # Marked only once the reopen has happened, so a failure retries on the next push.
+            GH_TOKEN=$STATUS_TOKEN gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+              -f state=success -f context=conflict-sweep \
+              -f description="Reopened to hand the conflict to the fixer" >/dev/null || echo "::warning::PR #$pr: status not written; it may be nudged again"
+            echo "  nudged #$pr at ${sha:0:8}"
+            nudged=$((nudged + 1))
+          done
+          echo "### Conflict sweep: $nudged nudged, $failed failed" >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"

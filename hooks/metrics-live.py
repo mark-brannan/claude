@@ -821,7 +821,8 @@ class Hook:
 
     def in_driver(self):
         """True when this session is a batch driver: it still holds an item
-        that carries a `driver=` Log line (only batch parents carry one). One
+        that carries a `driver=` Log line (only batch parents carry one), or
+        one it relayed (`relayed_from=`). One
         glob and a read of each file that mentions the short id. Memoized."""
         if self.driver_memo is None:
             short = self.sid[:8].encode()
@@ -838,7 +839,10 @@ class Hook:
                     holder = b""
                     for s, v in status.findall(data):
                         holder = s if v == b"claimed" else holder if v == b"blocked" else b""
-                    if holder == short:
+                    # A driver that relayed has let go of the item but stays
+                    # one, hushed, until it ends: its relay logged
+                    # `relayed_from=<its short id>`.
+                    if holder == short or re.search(rb"\brelayed_from=" + re.escape(short) + rb"\b", data):
                         self.driver_memo = True
                         break
         return self.driver_memo
@@ -1062,10 +1066,15 @@ class Hook:
             # claim that ended gets its line on the next turn.
             self.m_ctx_hushed = 0
         if r > max(self.m_ctx_at, self.m_ctx_hushed):
-            if self.hush:
+            if self.hush and not self.driver:
                 self.m_ctx_hushed = r
                 return
-            if self.m_ctx_at == 0:
+            if self.driver:
+                # A driver is hushed except for this: its context is its
+                # relay signal (pickup skill, "the driver relays").
+                self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)}: "
+                                        "relay the driver now (pickup skill).")
+            elif self.m_ctx_at == 0:
                 self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)}: a stopping point is due.")
             else:
                 self.model_lines.append(f"Context at {kfmt(ctx)}, past {kfmt(r)} "
