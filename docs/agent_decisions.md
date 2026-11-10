@@ -721,3 +721,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261110t222244z
 - on a pull collision the local untracked copy is restored over the incoming one, as a modification Undo: restore the incoming copy instead of the local one in restore_aside ([#442](https://github.com/mark-brannan/claude/pull/442))
+
+### 20261110t223943z
+- replayed local adds join the pull's collision set although git 2.53 does not wedge on them ([#442](https://github.com/mark-brannan/claude/pull/442))
