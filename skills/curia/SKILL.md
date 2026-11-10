@@ -1,6 +1,7 @@
 ---
 name: curia
-description: Open or continue a curia — the hard, multi-turn decision session on one question, over as many sessions as it takes. Use on "/curia <id>" — an id whose folder exists continues that curia; an unknown id lists the open ones and guesses the one meant — or bare "/curia" to list them; "/curia <id> lint edit status" runs the named facets in the background, in that order, and returns, no sitting. A confer is a one-off session, not a curia, and never a trigger for this skill. This skill never creates a curia on its own; a new one opens only on the user's words in the current turn, after the gates below. Not for quick rulings in batch; that is /agora. Not for toil; that is grind.
+description: Open or continue a curia — the hard, multi-turn decision session on one question, over as many sessions as it takes. Use on "/curia" — an id whose folder exists continues that curia; an unknown id lists the open ones and guesses the one meant — or bare "/curia" to list them; "/curia lint edit status" runs the named facets in the background, in that order, and returns, no sitting. A confer is a one-off session, not a curia, and never a trigger for this skill. This skill never creates a curia on its own; a new one opens only on the user's words in the current turn, after the gates below. Not for quick rulings in batch; that is /agora. Not for toil; that is grind.
+argument-hint: "<id> [lint edit status]"
 ---
 
 # Curia

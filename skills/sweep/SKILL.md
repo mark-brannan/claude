@@ -1,6 +1,7 @@
 ---
 name: sweep
 description: Garbage-collect the global board's ruling and click-work cards (items owned human-ruling and human-click) — find cards already ruled elsewhere or gone stale, show them with proof, retire or defer only what the user ticks, and rerank the rest by what they block. Use on "/sweep", "sweep the board", "what's stale", "prune the rulings", and before `worklist` or `/card-helper` shows the board. `--dry-run` reports and changes nothing.
+disable-model-invocation: true
 ---
 
 # Sweeping the board

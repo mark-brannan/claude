@@ -1,6 +1,7 @@
 ---
 name: scoping
-description: Plan a large, open-ended umbrella of work — pick an ordering, fill in the details, and propose session-sized work items in that order, then stop for the user's yes. The umbrella's own items (issues, cards, rulings, tickets in any work system) are the input to plan. Any umbrella fits — a curia, an ADR, a GitHub epic or a repo's open issues, a parent card's children, a Jira or Trello board the day one is added. Use on "/scoping <target>" or bare "/scoping" (the most recently touched curia). Builds nothing; files nothing before the yes. Not for running a sitting (/curia), ruling (/agora), or doing the work (grind, /orchestrate).
+description: Plan a large, open-ended umbrella of work — pick an ordering, fill in the details, and propose session-sized work items in that order, then stop for the user's yes. The umbrella's own items (issues, cards, rulings, tickets in any work system) are the input to plan. Any umbrella fits — a curia, an ADR, a GitHub epic or a repo's open issues, a parent card's children, a Jira or Trello board the day one is added. Use on "/scoping" or bare "/scoping" (the most recently touched curia). Builds nothing; files nothing before the yes. Not for running a sitting (/curia), ruling (/agora), or doing the work (grind, /orchestrate).
+argument-hint: "<target>"
 ---
 
 # Scoping

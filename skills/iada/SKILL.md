@@ -1,6 +1,7 @@
 ---
 name: iada
 description: Rank the parts of a system by how many parties must change when each part changes (Identifiers, then API, then Data, then Architecture) and catch inversions where a cheap-to-change layer has leaked into an expensive one. Use when designing or reviewing identifiers, REST or package APIs, schemas, storage, or a data model; when someone says "/iada" or asks whether a change is safe or a name is stable; or when a design question turns on "what would this cost to change later".
+disable-model-invocation: true
 ---
 
 # IADA: what is hard to change comes first

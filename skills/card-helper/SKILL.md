@@ -1,6 +1,7 @@
 ---
 name: card-helper
 description: Walk the user through one open-loop card, one step at a time, with exact links, click paths and copy-paste commands. Use when they say "walk me through card N", "/card-helper", "escort me through this", or ask to work a specific card off the board or a similar open-loops list. Not for doing the work autonomously — this is for loops only the user can close, in UIs and accounts an agent cannot reach.
+disable-model-invocation: true
 ---
 
 # Walking a card

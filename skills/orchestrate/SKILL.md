@@ -1,6 +1,7 @@
 ---
 name: orchestrate
 description: Work a repo's open issues as the PM — triage and cluster them, dispatch one worker agent per issue in its own worktree, watch each worker's context and stop it before it runs dry, and keep five to ten PRs awaiting the user's look, refilling as they drain. Use on "/orchestrate", "prioritise the issues and sequence the work", "be the orchestrator / PM / taskmaster", "work the backlog with sub-agents". Not for one PR (/critical-review, /pickup) and not headless (grind). Fable or Opus; workers Sonnet, Opus for an issue rated hard.
+disable-model-invocation: true
 ---
 
 # Orchestrate

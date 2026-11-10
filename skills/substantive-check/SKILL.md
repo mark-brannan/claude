@@ -1,6 +1,7 @@
 ---
 name: substantive-check
-description: Read one target — a PR first, or any file or hunk — and decide whether it changes the substance of the governance or only its form, against eight criteria, one file each in checks/, after 10 CFR 50.59(c)(2)'s eight. Substantive means the system would afterwards do, permit, forbid, decide or judge something it did not before, or stop doing one it did. Returns a verdict per file and per PR (substantive, form, unknown) with the criteria that fired, old beside new, and asks the author for one "## Substantive:" line per file. CI's review workflow reads the verdict to pick the reviewer's tier; nothing else gates on it. Use on "/substantive-check <target>", "is this loop one or loop two", "does this change the rules or only the words", "did this change the ruler" (criterion 8, Method of evaluation). Not for software maxims (/maxims-check), effect on people (/arete-check) or how settled a document is (/doc-settledness-check).
+description: "Decide whether one target (a PR first, or any file or hunk) changes the substance of the governance or only its form, against eight criteria in checks/. Returns a verdict per file and per PR (substantive, form, unknown) and asks the author for one \"## Substantive:\" line per file. CI reads the verdict to pick the reviewer tier. Use on \"/substantive-check\", \"is this loop one or loop two\", \"does this change the rules or only the words\". Not for maxims (/maxims-check) or effect on people (/arete-check)."
+argument-hint: "<target>"
 ---
 
 # Substantive check
