@@ -1,6 +1,7 @@
 ---
 name: worklist
 description: Report a project's status and the next unblocked work, by running the worklist script and reading its output. Use when the user asks "what's next", "what can we work on", "project status", "what's on the roadmap", "what's outstanding", "what's stale", "what's my turn", asks for a sweep or a reconcile, or says "/worklist".
+disable-model-invocation: true
 ---
 
 # Worklist
