@@ -1,6 +1,7 @@
 ---
 name: arete-check
-description: Assess one target — a governing document first (a curia, an ADR, a design doc), but also any PR, file, directory or script — for its effect on people, the good it does and the good it diminishes, and print a brief that leads with the good (what the item is for, up to the owner's aims) and signed findings with a recommendation and its reasons; what the caller does with them depends on where it runs. Runs on demand, on a scoping stack, and on an ADR promotion. Use on "/arete-check <target>", "what could this harm", "is this good for people", "arete check before we promote", "arete check this PR". Never refuse a target because it is not a governing document. Not for whether the ink is dry (/doc-settledness-check), running a sitting (/curia) or a batch of decisions (/agora).
+description: "Assess one target (a governing document first, but any PR, file or script) for its effect on people: the good it does and the good it diminishes. Prints a brief that leads with the good, then signed findings with a recommendation. Use on \"/arete-check\", \"what could this harm\", \"is this good for people\". Not for settledness (/doc-settledness-check), a sitting (/curia) or a batch (/agora)."
+argument-hint: "<target>"
 ---
 
 # Arete check

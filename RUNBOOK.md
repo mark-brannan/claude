@@ -22,6 +22,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Prune stale worktrees](#prune-stale-worktrees)
 - [Open the metrics dashboard](#open-the-metrics-dashboard)
 - [Read the pickup items](#read-the-pickup-items)
+- Push unpushed state-repo commits: `~/.claude/bin/state-push`; install its timer per `systemd/state-push.timer`
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
 - List the pen decisions with no embedded or effective state, and overdue reviews: `~/.claude/bin/ledger-review` (`--json` for machines)
 

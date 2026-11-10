@@ -1,6 +1,7 @@
 ---
 name: critical-review
-description: Review one pull request and comment on it — read the diff, post tagged findings, print a summary. It never edits, pushes or resolves; whoever owns the PR works the comments. Use on "/critical-review <PR>" or "critical review of #N". The driver picks a reviewer unlike the coder; the skill itself never switches model, and flags a run on a coder's family.
+description: "Review one pull request and comment on it — read the diff, post tagged findings, print a summary. It never edits, pushes or resolves; whoever owns the PR works the comments. Use on \"/critical-review\" or \"critical review of #N\". The driver picks a reviewer unlike the coder; the skill itself never switches model, and flags a run on a coder's family."
+argument-hint: "<PR>"
 ---
 
 Do a critical review of $ARGUMENTS. You comment; you never edit, push

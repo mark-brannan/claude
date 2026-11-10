@@ -1,6 +1,7 @@
 ---
 name: pickup
-description: Pick up a session where an earlier one left it, from the pickup item the Stop hook wrote for that session. Use when the user says "resume", "pick up", "/pickup", "/pickup <branch>", "/pickup owner/repo#n" or a PR URL, "fix up this PR", "pick up where we left off", or opens a session meaning to continue work rather than choose new work. Not `/resume` — that name is claimed by Claude Code's own terminal-session resume.
+description: "Pick up a session where an earlier one left it, from the pickup item the Stop hook wrote for that session. Use when the user says \"resume\", \"pick up\", \"/pickup\", \"/pickup\" with a branch, owner/repo#n or PR URL, \"fix up this PR\", \"pick up where we left off\", or opens a session meaning to continue work rather than choose new work. Not `/resume` — that name is claimed by Claude Code's own terminal-session resume."
+argument-hint: "[<branch> | owner/repo#n | PR URL]"
 ---
 
 # Pickup

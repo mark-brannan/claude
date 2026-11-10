@@ -1,6 +1,7 @@
 ---
 name: maxims-check
-description: Read one target — a PR first, or any file, directory or design doc — for breaks of the software maxims in checks/ (POLA, KISS, DRY and its rivals WET and AHA, YAGNI, SOLID, SoC, GRASP, robustness and fail fast, premature optimization and premature pessimization, Chesterton's fence), and return one table: each break, whether it was declared where the owner reads, its cost and how that was measured, with rival maxims paired where they pull against each other on the same lines. Findings, never a verdict; it gates nothing. Use on "/maxims-check <target>", "what here would surprise me", "check this PR for DRY/YAGNI", "which maxims does this break". Not for effect on people (/arete-check) or commenting on a PR (/critical-review).
+description: "Read one target (a PR first, or any file, directory or design doc) for breaks of the software maxims in checks/ (POLA, KISS, DRY, YAGNI, SOLID and the rest) and return one table of breaks, cost and rival maxims. Findings, never a verdict. Use on \"/maxims-check\", \"what here would surprise me\", \"check this PR for DRY/YAGNI\". Not for effect on people (/arete-check) or PR comments (/critical-review)."
+argument-hint: "<target>"
 ---
 
 # Maxims check
