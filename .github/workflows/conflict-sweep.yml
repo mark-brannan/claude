@@ -15,7 +15,7 @@ name: Conflict sweep
 #
 # Cost per push to main: one fixer run per conflicting pull request, at most
 # MAX_NUDGES, drawing on the account's concurrent-job cap. A pushed head is
-# handed over once.
+# handed over once unless the fixer run errors.
 #
 # Needs no App token of its own: the fixer job mints the agent App's token
 # itself from the secrets passed to it. Without them it skips with a warning.
@@ -36,7 +36,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: Nudge a conflicting head even if it was nudged before
+        description: Hand a conflicting head to the fixer even if it was handed over before
         type: boolean
         default: false
 
