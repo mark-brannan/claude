@@ -1121,6 +1121,16 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(read(STALE / "drafts" / "left.md"), "left\n", "killed run's leftover: put back")
         self.assertFalse((sgd / "claude-pull-aside").exists(), "killed run's leftover: nothing left aside")
 
+        # a leftover the disk has superseded is dropped, never put over it
+        old = sgd / "claude-pull-aside" / "99998" / "drafts" / "left.md"
+        old.parent.mkdir(parents=True)
+        old.write_text("stale\n")
+        (STALE / "state" / "global" / "change.txt").write_text("change 3\n")
+        stamp(STALE).unlink(missing_ok=True)
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=STALE, CLAUDE_CODE_REMOTE="true")
+        self.assertEqual(read(STALE / "drafts" / "left.md"), "left\n", "superseded leftover: disk copy kept")
+        self.assertFalse((sgd / "claude-pull-aside").exists(), "superseded leftover: dropped, not left aside")
+
         # ... and when the pull fails anyway (a real conflict), the file set
         # aside goes back untracked with its own bytes.
         for repo, text in ((SRCLONE, "upstream\n"), (STALE, "local\n")):

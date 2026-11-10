@@ -12,5 +12,7 @@ StateDirectory=state-push
 StandardOutput=append:%S/state-push/timer.log
 StandardError=append:%S/state-push/timer.log
 # Measured 4.5s pushing one commit on NucBoxK12, 2026-11-10; the rest is the
-# up-to-90s wait for the push lock while a Stop holds it.
+# up-to-90s wait for the push lock while a Stop holds it. A slow network can
+# outlast it: a kill inside the pull is the designed outcome (the set-aside
+# files go back, the next run clears the rebase), not a fault.
 TimeoutStartSec=2m

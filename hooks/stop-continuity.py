@@ -1302,16 +1302,22 @@ class Stop:
 # Stop commits its add or its deletion, the next turn writes it again, and
 # either upstream or a replayed local commit brings that path in.
 def set_aside_collisions(SR, upstream):
-    """Move each such file into the git dir; returns [(path, aside)], with
-    any left there by a run that was killed before it put them back."""
+    """Move each such file into the git dir; returns [(path, aside, only_if_absent)].
+    A killed run's leftover is the oldest copy: dropped where the disk has
+    one, else put back only where the path is still absent after the pull."""
     root = f"{SR}/.git/claude-pull-aside"
     moved = []
     for d, _, names in os.walk(root):
         for n in names:
             src = os.path.join(d, n)
             rel = os.path.relpath(src, root).split(os.sep, 1)[-1]
-            if not os.path.lexists(f"{SR}/{rel}"):  # a newer copy on disk stays; this one stays aside
-                moved.append((rel, src))
+            if os.path.lexists(f"{SR}/{rel}"):
+                try:
+                    os.remove(src)
+                except OSError:
+                    pass
+            else:
+                moved.append((rel, src, True))
     if git_bounded(60, "fetch", "-q", "origin") != 0:
         return moved
     incoming = gitrun.exact("diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", "HEAD", upstream)
@@ -1327,7 +1333,7 @@ def set_aside_collisions(SR, upstream):
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             os.replace(f"{SR}/{f}", dst)
-            moved.append((f, dst))
+            moved.append((f, dst, False))
         except OSError:
             pass
     return moved
@@ -1338,8 +1344,11 @@ def restore_aside(SR, moved):
     incoming copy as a local change the next Stop commits. The incoming
     bytes stay in history either way; a file that cannot go back stays
     aside for the next run."""
-    for f, src in moved:
+    for f, src, only_if_absent in moved:
         try:
+            if only_if_absent and os.path.lexists(f"{SR}/{f}"):
+                os.remove(src)
+                continue
             os.makedirs(os.path.dirname(f"{SR}/{f}"), exist_ok=True)
             os.replace(src, f"{SR}/{f}")
         except OSError:
