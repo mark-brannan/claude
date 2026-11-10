@@ -2,7 +2,6 @@
 name: doc-settledness-check
 description: "Measure how settled one governing document is — a curia, an ADR, a design doc, or a PR that touches one — against the twelve-row settledness rubric, and print the table and a one-line verdict. A dry run for now: it gates nothing and edits nothing. Use on \"/doc-settledness-check\", \"how settled is X\", \"is this curia ready to promote\". Not for its effect on people, harm or flourishing (/arete-check), running a sitting (/curia) or ruling (/agora)."
 argument-hint: "<target>"
-disable-model-invocation: true
 ---
 
 # Settledness check

@@ -1,7 +1,6 @@
 ---
 name: summary
 description: A terse account of the session so far, in the agent's words — the goal as it was set, whether it was reached, changed course or left open, what it produced, what is left, and where a fresh session would take it next. Printed in the chat; no log, no pickup item, no launch. For a hot context, or between parts of a session the user is building in steps. Not for summarizing a file, a PR or a document.
-disable-model-invocation: true
 ---
 
 # Summary
