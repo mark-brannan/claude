@@ -718,3 +718,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261110t183033z
 - The two new reading-list sections sit before 'Prior art: recent tooling' in docs/references.md. Undo: move the two sections elsewhere in docs/references.md ([#440](https://github.com/mark-brannan/claude/pull/440))
+
+### 20261110t222244z
+- on a pull collision the local untracked copy is restored over the incoming one, as a modification Undo: restore the incoming copy instead of the local one in restore_aside ([#442](https://github.com/mark-brannan/claude/pull/442))
