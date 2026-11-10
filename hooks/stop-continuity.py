@@ -1324,7 +1324,7 @@ class Stop:
     # metrics file does this routinely: a Stop commits its deletion, the next
     # turn writes it again, and another clone has pushed a copy meanwhile.
     @staticmethod
-    def set_aside_collisions(SR, upstream):
+        if git_bounded(60, "fetch", "-q", "origin") != 0:
         """Move each such file into the git dir; returns [(path, aside)]."""
         if git_bounded(120, "fetch", "-q", "origin") != 0:
             return []
