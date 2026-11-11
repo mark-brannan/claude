@@ -28,7 +28,7 @@
    agent never does. The reason: a forcing function so that an errant but
    well-meaning agent cannot start a parallel curia while the big one is
    ongoing. **Suspended until 2026-12-08** on the user's order (card
-   179136412936a787ac, extended on 2026-11-07 with the word cap below):
+   179136412936a787ac, extended on 2026-11-07 with the word cap in [facet-table.md](facet-table.md)):
    the count still shows, and no session warns about the limit or raises
    its review before that day; on it, the count and `status`'s numbers go
    to the user, who rules whether the limit returns.

@@ -16,7 +16,7 @@
      digest.md's `adr:` header field at promotion. -->
 
 **Layers, each with its reader and home.** `roll.md` is the user's words,
-as above. `decided.md` is the ledger, for the agent and lint: one line per
+as in SKILL.md, "Where a curia lives". `decided.md` is the ledger, for the agent and lint: one line per
 ruling — what was ruled, pen or pencil, the date, the stamp — by topic, a
 **Superseded** group last; a ruling lands there at once. `digest.md` is
 the design, for a human reading cold, shaped like an ADR
@@ -41,7 +41,7 @@ ledger line links the row, not the other way. A spec takes three inputs: the
 rulings, the existing code, and the incidents in `inputs/`. One document
 per question; parallel files per layer and per form. A Design section
 leaves the digest only when it is promoted to an ADR in its public repo,
-and a line linking the ADR stays in its place. The epic issue below
+and a line linking the ADR stays in its place. The epic issue (filed in [gates.md](gates.md))
 replicates `digest.md` alone.
 
 <!-- pencil (2026-10-07): a trial, all of it — the ledger split out of the

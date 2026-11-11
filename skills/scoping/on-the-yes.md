@@ -72,7 +72,7 @@ the rulings to date:
   against. Through the batch, as each child's worker ends and again at
   the walk, the driver reports actual beside estimate in the cost table's
   form: each child's dollars, the batch's totals in dollars with their
-  shares under them, plan figures read from config as above. A child
+  shares under them, plan figures read from config as in SKILL.md §4. A child
   reads `running` until its worker's Stop writes its cost. Its actual is its
   sessions' priced `cost_usd`, or `~/.claude/bin/spend --by pr` once the
   PR is in the metrics. Running over is reported, never a reason to

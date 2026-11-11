@@ -2,7 +2,7 @@
 
 - **Cards die when done, never by an edit to the brief.** Per
   [the lifecycle](../../docs/work-item-lifecycle.md), an `open` item gets
-  `work-item log <id> status=ready` first (the second call above), then
+  `work-item log <id> status=ready` first (the second call in SKILL.md, "Check it before you write it"), then
   `work-item claim <id>`, then `work-item log <id> status=done
   'evidence=<link>'` — the PR, commit or decisions line that shows it. Stop
   there: no skill writes `closed`; that waits on the user's acceptance and a
