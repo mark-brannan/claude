@@ -745,3 +745,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261111t185249z
 - prune-scratch holds and lists a session dir over 200k entries instead of dating it Undo: skip past-cap dirs silently ([#449](https://github.com/mark-brannan/claude/pull/449))
+
+### 20261111t191023z
+- prune-scratch keeps a scratch dir whose session the local registry holds as alive Undo: drop the registry check ([#449](https://github.com/mark-brannan/claude/pull/449))
