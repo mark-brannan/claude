@@ -8,7 +8,9 @@ subprocess):
     dotfiles' `jobs run`: a non-zero exit or timed_out is one line naming
     the job, when it ended, its exit and its log ~/.local/state/jobs/NAME.log
   - ~/.local/state/prune-scratch/held.json, written by bin/prune-scratch: a
-    non-empty list is one line with the count and the oldest few
+    non-empty list is one line with the count and the oldest few, at most
+    once a day per machine unless the count grew since it was last shown
+    (stamped in ~/.local/state/prune-scratch/held-shown.json, the one write)
 
 Silent when neither has anything to say.
 
@@ -19,6 +21,7 @@ import glob
 import json
 import os
 import sys
+import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
@@ -27,6 +30,7 @@ sys.dont_write_bytecode = True
 MAX_JOBS = 50       # .last files read at most
 MAX_BYTES = 65536   # per file
 OLDEST = 3          # held paths shown
+QUIET_SECS = 86400  # between two showings of an unchanged held list
 
 
 def read(path):
@@ -56,6 +60,19 @@ def held_line(state):
     held = read(os.path.join(state, "prune-scratch", "held.json"))
     if not isinstance(held, list) or not held:
         return None
+    stamp_path = os.path.join(state, "prune-scratch", "held-shown.json")
+    stamp = read(stamp_path)
+    now = time.time()
+    if isinstance(stamp, dict):
+        at, count = stamp.get("at"), stamp.get("count")
+        if (isinstance(at, (int, float)) and isinstance(count, int)
+                and now - at < QUIET_SECS and len(held) <= count):
+            return None
+    try:
+        import atomic  # lib/, on sys.path above
+        atomic.write(stamp_path, json.dumps({"at": now, "count": len(held)}) + "\n")
+    except OSError:
+        pass  # unstamped: shown again next session, never lost
     rows = sorted((h for h in held if isinstance(h, dict)),
                   key=lambda h: -(h.get("age_days") or 0))[:OLDEST]
     shown = "; ".join(f"{h.get('path')} ({h.get('reason')})" for h in rows)
