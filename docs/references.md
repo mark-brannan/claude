@@ -585,27 +585,27 @@ Added 2026-11-11. Holtzblatt checked by the user; Loewy from Wikipedia only.
   - Maps to: nothing yet; kept beside Holtzblatt as adjacent reading.
 
 - **Loewy, R. (1951).** *Never Leave Well Enough Alone.* Source of MAYA.
-  Unverified; the book is unread.
+  The book exists (1951, Simon and Schuster, per a catalog record); MAYA is credited to Loewy in secondary sources but not found quoted in the book. Unverified.
   - Maps to: nothing yet.
 - **Hekkert, P., Snelders, D. and van Wieringen, P. C. W. (2003).** "'Most
   advanced, yet acceptable'", *British Journal of Psychology* 94, 111–124,
-  DOI 10.1348/000712603762842147. Unverified; from a search.
-  - Idea: typicality and novelty jointly predict preference in design.
+  DOI 10.1348/000712603762842147. Fields and abstract checked 2026-11-11; paper unread.
+  - Idea: typicality and novelty jointly predict preference in design, each suppressing the other.
   - Maps to: MAYA, tested.
 - **Warren, C. and Campbell, M. C. (2014).** "What makes things cool? How
   autonomy influences perceived coolness", *Journal of Consumer Research*
-  41(2), 543–63. Unverified; from a search.
-  - Idea: coolness depends on an appropriate degree of autonomy.
+  41(2), 543–63. Fields and abstract checked 2026-11-11, DOI 10.1086/676680; paper unread.
+  - Idea: autonomy raises coolness only when it seems appropriate: a bounded departure from a norm seen as unnecessary or illegitimate.
 - **Ryan, R. M., Huta, V. and Deci, E. L. (2008).** "Living well: a
   self-determination theory perspective on eudaimonia", *Journal of
-  Happiness Studies* 9, 139–170. Unverified; from memory.
+  Happiness Studies* 9, 139–170. Fields checked in Crossref 2026-11-11 (online 2006, issue 2008, DOI 10.1007/s10902-006-9023-4); paper unread.
   - Maps to: autonomy and eudaimonia together.
 - **Zajonc, R. B. (1968)** and **Bornstein, R. F. (1989).** The mere-exposure
   effect; *J. Personality and Social Psychology* 9(2, Pt 2), 1–27 and
-  *Psychological Bulletin* 106(2), 265–289. Unverified; from memory.
+  *Psychological Bulletin* 106(2), 265–289. Fields checked in Crossref 2026-11-11; works unread.
 - **Brickman, P. and Campbell, D. T. (1971)** and **Frederick, S. and
   Loewenstein, G. (1999).** Hedonic relativism and hedonic adaptation, the
-  basis for avoiding habituation. Unverified; from memory.
+  basis for avoiding habituation. Fields checked 2026-11-11 from catalog listings; works unread.
 
 ## Prior art: recent tooling
 
