@@ -730,3 +730,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261110t223952z
 - state-push timer TimeoutStartSec=2m: 4.5 s measured plus the 90 s push-lock wait ([#442](https://github.com/mark-brannan/claude/pull/442))
+
+### 20261111t044913z
+- Level 3a leaves pickup's driver block in SKILL.md: a driver holds it all session and relays near compaction, which keeps the body's first 5,000 tokens but not a file read earlier. Undo: move the block with the same script ([#445](https://github.com/mark-brannan/claude/pull/445))
