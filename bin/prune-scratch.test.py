@@ -81,11 +81,11 @@ class PruneScratch(unittest.TestCase):
         open(os.path.join(co, "build", "a.o"), "w").close()
         return co
 
-    def run_tool(self, *argv, cwds=frozenset()):
+    def run_tool(self, *argv, cwds=frozenset(), sessions=frozenset()):
         out, err = io.StringIO(), io.StringIO()
         provider = (lambda: None) if cwds is None else (lambda: set(cwds))
         with redirect_stdout(out), redirect_stderr(err):
-            rc = ps.main(list(argv), cwds_provider=provider)
+            rc = ps.main(list(argv), cwds_provider=provider, sessions_provider=lambda: set(sessions))
         return rc, out.getvalue() + err.getvalue()
 
     def held(self):
@@ -197,6 +197,64 @@ class PruneScratch(unittest.TestCase):
     def test_empty_dot_git_dir_is_scratch(self):
         p = self.session("leftover")
         os.makedirs(os.path.join(p, "x", ".git"))
+        backdate(p, 30)
+        self.run_tool("--delete")
+        self.assertFalse(os.path.exists(p))
+
+    def test_cwd_seen_through_a_symlinked_root_keeps_dir(self):
+        real = os.path.join(self.home, "elsewhere")
+        os.makedirs(real)
+        link = os.path.join(self.home, "linked-tmp")
+        os.symlink(real, link)
+        os.environ["CLAUDE_CODE_TMPDIR"] = link
+        p = os.path.join(link, f"claude-{os.getuid()}", "-home-p", "s1")
+        os.makedirs(p)
+        backdate(p, 30)
+        self.run_tool("--delete", cwds={os.path.realpath(p)})
+        self.assertTrue(os.path.isdir(p))
+
+    def test_registered_live_session_keeps_its_dir(self):
+        p = self.session("1234-live-session")
+        backdate(p, 30)
+        reg = os.path.join(self.home, "sessions")
+        os.makedirs(reg)
+        with open(os.path.join(reg, f"{os.getpid()}.json"), "w") as f:
+            json.dump({"pid": os.getpid(), "sessionId": "1234-live-session", "status": "idle",
+                       "procStart": ps.state._proc_start(os.getpid(), "/proc")}, f)
+        os.environ["CLAUDE_SESSIONS_DIR"] = reg
+        self.assertEqual(ps.registered_live(), {"1234-live-session"})
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            ps.main(["--delete"], cwds_provider=set)
+        self.assertTrue(os.path.isdir(p))
+
+    def test_stash_and_unborn_branch_commits_hold(self):
+        st = self.session("stash")
+        co = self.checkout(st)
+        with open(os.path.join(co, ".gitignore"), "a") as f:
+            f.write("x\n")
+        git(co, "stash", "-q")
+        orphan = self.session("orphan")
+        co = self.checkout(orphan)
+        git(co, "branch", "side")
+        git(co, "checkout", "-q", "side")
+        git(co, "commit", "-q", "--allow-empty", "-m", "local only")
+        git(co, "checkout", "-q", "--orphan", "fresh")
+        git(co, "rm", "-rfq", "--cached", ".")
+        os.remove(os.path.join(co, ".gitignore"))
+        subprocess.run(["rm", "-rf", os.path.join(co, "build")], check=True)
+        for p in (st, orphan):
+            backdate(p, 30)
+        self.run_tool("--delete")
+        self.assertTrue(os.path.isdir(st))
+        self.assertTrue(os.path.isdir(orphan))
+        self.assertEqual({h["path"] for h in self.held()}, {st, orphan})
+
+    def test_dangling_worktree_git_file_is_scratch(self):
+        p = self.session("dangling")
+        os.makedirs(os.path.join(p, "wt"))
+        with open(os.path.join(p, "wt", ".git"), "w") as f:
+            f.write("gitdir: /nowhere/.git/worktrees/wt\n")
         backdate(p, 30)
         self.run_tool("--delete")
         self.assertFalse(os.path.exists(p))

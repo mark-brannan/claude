@@ -31,6 +31,13 @@ MAX_JOBS = 50       # .last files read at most
 MAX_BYTES = 65536   # per file
 OLDEST = 3          # held paths shown
 QUIET_SECS = 86400  # between two showings of an unchanged held list
+FIELD_CAP = 160     # chars per shown field: these land in every session's context
+
+
+def clean(v):
+    """A field from a file as one short line: control characters become spaces."""
+    text = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in str(v))
+    return text if len(text) <= FIELD_CAP else text[:FIELD_CAP - 1] + "…"
 
 
 def read(path):
@@ -49,9 +56,9 @@ def failed_jobs(state):
             continue
         if rec.get("exit") in (0, None) and not rec.get("timed_out"):
             continue
-        name = os.path.basename(last)[:-len(".last")]
-        how = "timed out" if rec.get("timed_out") else f"exit {rec.get('exit')}"
-        when = rec.get("ended") or rec.get("started") or "unknown time"
+        name = clean(os.path.basename(last)[:-len(".last")])
+        how = "timed out" if rec.get("timed_out") else f"exit {clean(rec.get('exit'))}"
+        when = clean(rec.get("ended") or rec.get("started") or "unknown time")
         lines.append(f"job {name} failed ({how}) at {when}; log ~/.local/state/jobs/{name}.log")
     return lines
 
@@ -75,7 +82,7 @@ def held_line(state):
         pass  # unstamped: shown again next session, never lost
     rows = sorted((h for h in held if isinstance(h, dict)),
                   key=lambda h: -(h.get("age_days") or 0))[:OLDEST]
-    shown = "; ".join(f"{h.get('path')} ({h.get('reason')})" for h in rows)
+    shown = "; ".join(f"{clean(h.get('path'))} ({clean(h.get('reason'))})" for h in rows)
     return (f"prune-scratch is holding {len(held)} old scratch dir(s) it will not delete "
             f"(~/.local/state/prune-scratch/held.json); oldest: {shown}")
 

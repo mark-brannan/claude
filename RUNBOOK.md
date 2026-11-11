@@ -421,7 +421,7 @@ Preview:
 ~/.claude/bin/prune-scratch
 ```
 
-Verify: the summary line reads `would remove N session dir(s), SIZE; M held`, and `jobs status` shows the job's last run at exit 0.
+Verify: the summary line reads `would remove N session dir(s), SIZE; M held`, and `cron-jobs status` shows the job's last run at exit 0.
 
 ## Open the metrics dashboard
 

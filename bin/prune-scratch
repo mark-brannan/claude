@@ -9,11 +9,14 @@ A session directory is removed only when all of these hold:
   - the newest mtime anywhere inside it is older than --days (default 10);
     node_modules and .git internals do not count, and a tree past the walk
     cap is held;
-  - no running process has its cwd inside it (/proc on Linux, lsof on
-    macOS; when neither can be read, nothing is removed and the run says so);
+  - its session is not running (this machine's session registry), and no
+    running process has its cwd inside it (/proc on Linux, lsof on macOS;
+    when neither can be read, nothing is removed and the run says so);
   - every git checkout inside it (depth 4 or less, node_modules skipped) is
-    clean apart from ignored files, has a remote, and has no commit on HEAD
-    or a local branch that is absent from every remote ref. Nothing is
+    clean apart from ignored files, has a remote, and has no commit on HEAD,
+    a local branch or the stash that is absent from every remote ref. A
+    .git dir with no HEAD, or a .git file whose gitdir is gone, is not a
+    checkout. Nothing is
     fetched. Loose files outside a checkout are scratch and hold nothing.
 
 A directory whose checkout holds work and is older than --flag-days (default
@@ -29,7 +32,6 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
 
@@ -39,8 +41,11 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
 try:
     import atomic  # noqa: E402
     import gitrun  # noqa: E402
+    import proccwd  # noqa: E402
+    import sidlive  # noqa: E402
+    import state  # noqa: E402
 except ModuleNotFoundError as e:
-    if e.name not in ("atomic", "gitrun"):
+    if e.name not in ("atomic", "gitrun", "proccwd", "sidlive", "state"):
         raise
     print(f"prune-scratch: lib/{e.name}.py not found (looked beside the tool and in ~/.claude/lib)",
           file=sys.stderr)
@@ -49,6 +54,7 @@ except ModuleNotFoundError as e:
 WALK_CAP = 200_000   # entries per session dir before its age is called unknown
 GIT_DEPTH = 4
 GIT_TIMEOUT = 30
+RESCAN_SECS = 5
 SKIP = {"node_modules"}
 # A scratch checkout's own config must not run anything during a read.
 GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0")
@@ -79,37 +85,31 @@ def refuse(root):
     return None
 
 
-def live_cwds():
-    """Every running process's cwd, or None when they cannot be read."""
-    if os.path.isdir("/proc/self") and os.path.islink("/proc/self/cwd"):
-        cwds = set()
-        for pid in os.listdir("/proc"):
-            if pid.isdigit():
-                try:
-                    cwds.add(os.readlink(f"/proc/{pid}/cwd").removesuffix(" (deleted)"))
-                except OSError:
-                    pass
-        return cwds
-    if sys.platform == "darwin":  # best effort: another user's processes are unseen
-        try:
-            p = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fn"], capture_output=True,
-                               text=True, timeout=30)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        cwds = {l[1:] for l in p.stdout.splitlines() if l.startswith("n")}
-        return cwds or None
-    return None
+class Cwds:
+    """Process cwds, rescanned when the last scan is over RESCAN_SECS old:
+    a removal must not trust a table from minutes ago, nor pay a full scan
+    per directory."""
+
+    def __init__(self, provider):
+        self.provider, self.at, self.cwds = provider, 0.0, None
+
+    def get(self):
+        if time.monotonic() - self.at > RESCAN_SECS:
+            c = self.provider()
+            if c is not None:
+                c.discard("/")
+                c.add(os.path.realpath(os.getcwd()))
+            self.cwds, self.at = c, time.monotonic()
+        return self.cwds
 
 
-def in_use(path, cwds):
-    p = path.rstrip("/") + "/"
-    return any(c == path or c.startswith(p) for c in cwds)
-
-
-def still_in_use(path, provider):
-    """A fresh scan just before a removal; unreadable counts as in use."""
-    now = provider()
-    return now is None or in_use(path, now)
+def registered_live():
+    """Ids of the sessions this machine's registry holds whose process is
+    alive (live, parked or waiting). A session reaches its scratch dir
+    through TMPDIR, not its cwd, so the cwd scan alone misses an idle one."""
+    reg = os.environ.get("CLAUDE_SESSIONS_DIR") or state.sessions_dir()
+    ids = {e["sessionId"] for e in state._registry(reg) if isinstance(e.get("sessionId"), str)}
+    return {i for i in ids if sidlive.verdict(i) not in (None, "dead")}
 
 
 def is_checkout(entry):
@@ -119,7 +119,15 @@ def is_checkout(entry):
         return False
     if entry.is_dir(follow_symlinks=False):
         return os.path.exists(os.path.join(entry.path, "HEAD"))
-    return True
+    try:  # a worktree whose gitdir is gone: git cannot read it either
+        with open(entry.path, encoding="utf-8", errors="replace") as f:
+            line = f.readline(4096).strip()
+    except OSError:
+        return True
+    if not line.startswith("gitdir:"):
+        return True
+    gitdir = line[len("gitdir:"):].strip()
+    return os.path.isdir(os.path.join(os.path.dirname(entry.path), gitdir))
 
 
 def survey(top):
@@ -162,13 +170,13 @@ def holds_work(co):
     remotes = git(co, "for-each-ref", "--format=%(refname)", "refs/remotes")
     if remotes.returncode or not remotes.stdout.strip():
         return "no remote"
-    if git(co, "rev-parse", "-q", "--verify", "HEAD").returncode:
-        return None  # unborn and clean: no commit to lose
-    n = git(co, "rev-list", "--count", "HEAD", "--branches", "--not", "--remotes")
+    tips = [r for r in ("HEAD", "refs/stash")
+            if not git(co, "rev-parse", "-q", "--verify", r).returncode]
+    n = git(co, "rev-list", "--count", *tips, "--branches", "--not", "--remotes")
     if n.returncode:
         return "rev-list failed"
     if n.stdout.strip() != "0":
-        return f"{n.stdout.strip()} commit(s) on no remote"
+        return f"{n.stdout.strip()} commit(s) on no remote (HEAD, branches or stash)"
     return None
 
 
@@ -191,7 +199,7 @@ def human(n):
     return f"{n:.1f}T"
 
 
-def main(argv=None, cwds_provider=live_cwds):
+def main(argv=None, cwds_provider=proccwd.live_cwds, sessions_provider=registered_live):
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--delete", action="store_true")
     ap.add_argument("--dry-run", dest="delete", action="store_false")
@@ -211,12 +219,10 @@ def main(argv=None, cwds_provider=live_cwds):
     base = os.path.join(root, f"claude-{os.getuid()}")
     real_base = os.path.realpath(base)
     now = time.time()
-    cwds = cwds_provider()
-    if cwds is None:
+    cwds = Cwds(cwds_provider)
+    if cwds.get() is None:
         print("prune-scratch: cannot read running processes' cwds -- removing nothing", file=sys.stderr)
-    else:
-        cwds.discard("/")
-        cwds.add(os.getcwd())
+    sessions = sessions_provider()
 
     held, errors, freed, count = [], 0, 0, 0
     verb = "removed" if args.delete else "would remove"
@@ -251,14 +257,18 @@ def main(argv=None, cwds_provider=live_cwds):
                 continue
             if age < args.days:
                 continue
-            if cwds is None:
-                continue
-            if in_use(path, cwds) or (args.delete and still_in_use(path, cwds_provider)):
+            if sess in sessions:
                 if args.verbose:
+                    print(f"keep {path} -- its session is still running")
+                continue
+            rp = os.path.realpath(path)
+            if not rp.startswith(real_base + os.sep):
+                continue  # a renamed link mid-run: never follow out of the root
+            live = cwds.get()
+            if live is None or proccwd.in_use(rp, live):
+                if args.verbose and live is not None:
                     print(f"keep {path} -- a live process is inside it")
                 continue
-            if not os.path.realpath(path).startswith(real_base + os.sep):
-                continue  # a renamed link mid-run: never follow out of the root
             n = size(path)
             if args.delete:
                 failed = []

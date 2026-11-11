@@ -108,6 +108,7 @@ lib/sidlive.py
 lib/ids.py
 lib/lock.py
 lib/gitrun.py
+lib/proccwd.py
 lib/lanes.py
 lib/hooktrace.py
 lib/libpath.py
