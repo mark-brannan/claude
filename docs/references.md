@@ -584,6 +584,29 @@ Added 2026-11-11. Holtzblatt checked by the user; Loewy from Wikipedia only.
   - Idea: MAYA, "most advanced, yet acceptable".
   - Maps to: nothing yet; kept beside Holtzblatt as adjacent reading.
 
+- **Loewy, R. (1951).** *Never Leave Well Enough Alone.* Source of MAYA.
+  Unverified; the book is unread.
+  - Maps to: nothing yet.
+- **Hekkert, P., Snelders, D. and van Wieringen, P. C. W. (2003).** "'Most
+  advanced, yet acceptable'", *British Journal of Psychology* 94, 111–124,
+  DOI 10.1348/000712603762842147. Unverified; from a search.
+  - Idea: typicality and novelty jointly predict preference in design.
+  - Maps to: MAYA, tested.
+- **Warren, C. and Campbell, M. C. (2014).** "What makes things cool? How
+  autonomy influences perceived coolness", *Journal of Consumer Research*
+  41(2), 543–63. Unverified; from a search.
+  - Idea: coolness depends on an appropriate degree of autonomy.
+- **Ryan, R. M., Huta, V. and Deci, E. L. (2008).** "Living well: a
+  self-determination theory perspective on eudaimonia", *Journal of
+  Happiness Studies* 9, 139–170. Unverified; from memory.
+  - Maps to: autonomy and eudaimonia together.
+- **Zajonc, R. B. (1968)** and **Bornstein, R. F. (1989).** The mere-exposure
+  effect; *J. Personality and Social Psychology* 9(2, Pt 2), 1–27 and
+  *Psychological Bulletin* 106(2), 265–289. Unverified; from memory.
+- **Brickman, P. and Campbell, D. T. (1971)** and **Frederick, S. and
+  Loewenstein, G. (1999).** Hedonic relativism and hedonic adaptation, the
+  basis for avoiding habituation. Unverified; from memory.
+
 ## Prior art: recent tooling
 
 Dates are as found on 2026-09-29.
