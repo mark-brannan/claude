@@ -564,6 +564,20 @@ past which a conversation should stop.
     clarification raising task success while shortening the dialogue.
   - Maps to: nothing yet; kept for reading.
 
+## Flourishing: design for what is worth wanting
+
+Added 2026-11-11; not yet checked against the web.
+
+- **Holtzblatt, K. (2011).** "What makes things cool?", *Interactions*
+  XVIII.6 (Nov–Dec 2011), p. 40, per a web search; a CHI 2014 case study,
+  "Intentional design for innovation", DOI 10.1145/2559206.2559968, may be
+  the same work or a follow-up. Supplied as the ResearchGate link
+  [researchgate.net](https://www.researchgate.net/publication/220382572_What_makes_things_cool_intentional_design_for_innovation).
+  Unverified: neither the ResearchGate nor the ACM page was read.
+  - Idea: coolness is something design can aim at on purpose.
+  - Maps to: eudaimonia, the standing orders' "a flourishing life, not
+    throughput". Far from the rest of this list; kept for reading.
+
 ## Prior art: recent tooling
 
 Dates are as found on 2026-09-29.
