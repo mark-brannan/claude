@@ -566,14 +566,13 @@ past which a conversation should stop.
 
 ## Flourishing: design for what is worth wanting
 
-Added 2026-11-11; not yet checked against the web.
+Added 2026-11-11. Holtzblatt checked by the user; Loewy from Wikipedia only.
 
-- **Holtzblatt, K. (2011).** "What makes things cool?", *Interactions*
-  XVIII.6 (Nov–Dec 2011), p. 40, per a web search; a CHI 2014 case study,
-  "Intentional design for innovation", DOI 10.1145/2559206.2559968, may be
-  the same work or a follow-up. Supplied as the ResearchGate link
-  [researchgate.net](https://www.researchgate.net/publication/220382572_What_makes_things_cool_intentional_design_for_innovation).
-  Unverified: neither the ResearchGate nor the ACM page was read.
+- **Holtzblatt, K. (2011).** "What makes things cool? Intentional design
+  for innovation", *Interactions* XVIII.6 (Nov–Dec 2011), p. 40, cover
+  story. DOI 10.1145/2029976.2029988.
+  [dl.acm.org](https://dl.acm.org/doi/10.1145/2029976.2029988)
+  Verified by the user 2026-11-11; a copy is kept in the state repo.
   - Idea: coolness is something design can aim at on purpose.
   - Maps to: eudaimonia, the standing orders' "a flourishing life, not
     throughput". Far from the rest of this list; kept for reading.
