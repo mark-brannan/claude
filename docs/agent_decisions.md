@@ -736,3 +736,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261111t044917z
 - Level 3a reference files are named for the branch they serve (held-branch, handoff, tentative-adr, lifecycle, on-the-yes, layers-and-queue, gates, form, facet-table, survey-first); cited headings stay in SKILL.md above their pointer. Undo: rename or reword in a follow-up ([#445](https://github.com/mark-brannan/claude/pull/445))
+
+### 20261111t185241z
+- prune-scratch counts commits on HEAD or any local branch absent from every remote as held work Undo: test HEAD alone ([#449](https://github.com/mark-brannan/claude/pull/449))
