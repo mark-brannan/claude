@@ -20,9 +20,10 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Check a repo's prose budgets](#check-a-repos-prose-budgets)
 - [Prune stale Stop-hook salvage refs](#prune-stale-stop-hook-salvage-refs)
 - [Prune stale worktrees](#prune-stale-worktrees)
+- [Prune old session scratch dirs](#prune-old-session-scratch-dirs)
 - [Open the metrics dashboard](#open-the-metrics-dashboard)
 - [Read the pickup items](#read-the-pickup-items)
-- Push unpushed state-repo commits: `~/.claude/bin/state-push`; install its timer per `systemd/state-push.timer`
+- Push unpushed state-repo commits: `~/.claude/bin/state-push`; a scheduled job in dotfiles' `~/.config/jobs` runs it
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
 - List the pen decisions with no embedded or effective state, and overdue reviews: `~/.claude/bin/ledger-review` (`--json` for machines)
 
@@ -396,26 +397,31 @@ carries its undo. `prune-wip-refs --help` has the rules.
 
 ## Prune stale worktrees
 
-A daily timer removes every clean worktree whose commits are on a remote,
-across all repos under `$HOME`, and drops plugin entries for directories
-that are gone. Install once:
-
-```bash
-systemctl --user link ~/.claude/systemd/prune-worktrees.service ~/.claude/systemd/prune-worktrees.timer
-```
-
-```bash
-systemctl --user enable --now prune-worktrees.timer
-```
+A daily scheduled job (dotfiles' `~/.config/jobs`, installed by
+`~/.local/bin/jobs install`) removes every clean worktree whose commits are
+on a remote, across all repos under `$HOME`, and drops plugin entries for
+directories that are gone.
 
 By hand: `prune-worktrees` previews, `prune-worktrees --delete` acts; each
 removal line carries its undo.
 
-Verify: the log ends in `removed N worktree(s), kept M (...)` dated today.
+Verify: `jobs status` shows its last run at exit 0, today.
+
+## Prune old session scratch dirs
+
+A scheduled job runs `prune-scratch --delete` every six hours. It deletes
+Claude Code's per-session scratch dirs untouched for 10 days, unless a
+process is inside one or a git checkout in it holds uncommitted or unpushed
+work. Those it holds, never deletes, and lists in
+`~/.local/state/prune-scratch/held.json`; a session start names them.
+
+Preview:
 
 ```bash
-tail -3 ~/.local/state/prune-worktrees/timer.log
+~/.claude/bin/prune-scratch
 ```
+
+Verify: the last line reads `would remove N session dir(s), SIZE; M held`.
 
 ## Open the metrics dashboard
 
@@ -454,35 +460,14 @@ the shared `headless-run-cost` action, a `headless-run` upload nor a call of the
 `claude-review.yml`. One contents listing per repo plus one fetch per workflow file whose blob sha
 is not in `metrics/dashboard/workflow-verdicts.json`; warm, one call per repo. Exit status is unchanged.
 
-A timer rebuilds both every four hours, and it is the only thing that harvests the CI
-artifacts before they expire. It is per machine: dotfiles does not install it, and a new or
-rebuilt machine has none until someone runs the two commands below. First check whether
-this machine runs it; `0 timers listed` means it does not. If `link` below then says the
-file exists, skip to `enable --now`:
+A scheduled job in dotfiles' `~/.config/jobs` rebuilds both every four hours, and it is
+the only thing that harvests the CI artifacts before they expire. `~/.local/bin/jobs install`
+puts it on a machine.
 
-```bash
-systemctl --user list-timers metrics-dashboard.timer --no-pager
-```
+Verify: `jobs status` shows its last run at exit 0, and the page's header shows a `built`
+time within the last four hours.
 
-Install once:
-
-```bash
-systemctl --user link ~/.claude/systemd/metrics-dashboard.service ~/.claude/systemd/metrics-dashboard.timer
-```
-
-```bash
-systemctl --user enable --now metrics-dashboard.timer
-```
-
-Verify: `list-timers` above now shows a `NEXT` time, the page's header shows a
-`built` time within the last four hours, and the log's last lines are the page
-path with no error.
-
-```bash
-tail -3 ~/.local/state/metrics-dashboard/timer.log
-```
-
-Without the timer, harvest by hand well inside every 90 days (3m39s on
+Without the job, harvest by hand well inside every 90 days (3m39s on
 NucBoxK12, 2026-11-06, mostly GitHub calls):
 
 ```bash

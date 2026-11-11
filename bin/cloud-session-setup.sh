@@ -155,6 +155,7 @@ hooks/subagent-permission-approve.py
 hooks/statusline-metrics.py
 hooks/connector-budget.py
 hooks/session-start-sync-status.py
+hooks/session-start-jobs.py
 hooks/session-start-hook-errors.py
 hooks/prose-budget-edit.py
 hooks/branch-home-gate.py

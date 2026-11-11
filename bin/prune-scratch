@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""prune-scratch [--delete] [--days N] [--flag-days N] [-v]
+
+Removes (dry run unless --delete) Claude Code's per-session scratch
+directories, <root>/claude-<uid>/<project-slug>/<session-id>/, where <root>
+is $CLAUDE_CODE_TMPDIR or ~/.local/state/claude-tmpdir.
+
+A session directory is removed only when all of these hold:
+  - the newest mtime anywhere inside it is older than --days (default 10);
+    node_modules and .git internals do not count, and a tree past the walk
+    cap is held;
+  - no running process has its cwd inside it (/proc on Linux, lsof on
+    macOS; when neither can be read, nothing is removed and the run says so);
+  - every git checkout inside it (depth 4 or less, node_modules skipped) is
+    clean apart from ignored files, has a remote, and has no commit on HEAD
+    or a local branch that is absent from every remote ref. Nothing is
+    fetched. Loose files outside a checkout are scratch and hold nothing.
+
+A directory whose checkout holds work and is older than --flag-days (default
+3) is held: never removed, printed, and written to
+~/.local/state/prune-scratch/held.json as [{path, age_days, reason}],
+rewritten every run (an empty list when none). Project directories left
+empty are removed after. Each removal prints what it removed and its size.
+
+Refuses to run when the root resolves outside $HOME or to $HOME itself.
+Exit 1 if a removal failed, 2 on a refused root.
+"""
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import atomic  # noqa: E402
+    import gitrun  # noqa: E402
+except ModuleNotFoundError as e:
+    if e.name not in ("atomic", "gitrun"):
+        raise
+    print(f"prune-scratch: lib/{e.name}.py not found (looked beside the tool and in ~/.claude/lib)",
+          file=sys.stderr)
+    sys.exit(3)
+
+WALK_CAP = 200_000   # entries per session dir before its age is called unknown
+GIT_DEPTH = 4
+GIT_TIMEOUT = 30
+SKIP = {"node_modules"}
+# A scratch checkout's own config must not run anything during a read.
+GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0")
+
+
+def git(repo, *args):
+    return gitrun.run("-c", "core.fsmonitor=false", "-C", repo, *args,
+                      timeout=GIT_TIMEOUT, env=GIT_ENV, errors="surrogateescape")
+
+
+def scratch_root():
+    return os.environ.get("CLAUDE_CODE_TMPDIR") or os.path.join(
+        os.path.expanduser("~"), ".local", "state", "claude-tmpdir")
+
+
+def state_dir():
+    return os.path.join(os.path.expanduser("~"), ".local", "state", "prune-scratch")
+
+
+def refuse(root):
+    """Why root must not be pruned, or None."""
+    home = os.path.realpath(os.path.expanduser("~"))
+    real = os.path.realpath(root)
+    if real == home:
+        return f"root {root} is $HOME itself"
+    if not real.startswith(home + os.sep):
+        return f"root {root} resolves to {real}, outside $HOME"
+    return None
+
+
+def live_cwds():
+    """Every running process's cwd, or None when they cannot be read."""
+    if os.path.isdir("/proc/self") and os.path.islink("/proc/self/cwd"):
+        cwds = set()
+        for pid in os.listdir("/proc"):
+            if pid.isdigit():
+                try:
+                    cwds.add(os.readlink(f"/proc/{pid}/cwd").removesuffix(" (deleted)"))
+                except OSError:
+                    pass
+        return cwds
+    if sys.platform == "darwin":  # best effort: another user's processes are unseen
+        try:
+            p = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fn"], capture_output=True,
+                               text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        cwds = {l[1:] for l in p.stdout.splitlines() if l.startswith("n")}
+        return cwds or None
+    return None
+
+
+def in_use(path, cwds):
+    p = path.rstrip("/") + "/"
+    return any(c == path or c.startswith(p) for c in cwds)
+
+
+def still_in_use(path, provider):
+    """A fresh scan just before a removal; unreadable counts as in use."""
+    now = provider()
+    return now is None or in_use(path, now)
+
+
+def is_checkout(entry):
+    """A .git file (a linked worktree) or a .git dir git could read; an
+    empty or HEAD-less .git dir is a leftover with nothing in it."""
+    if entry.name != ".git":
+        return False
+    if entry.is_dir(follow_symlinks=False):
+        return os.path.exists(os.path.join(entry.path, "HEAD"))
+    return True
+
+
+def survey(top):
+    """(newest mtime, git checkouts) of a session dir, walking without
+    following links. Newest is None past WALK_CAP entries."""
+    newest = os.lstat(top).st_mtime
+    checkouts, seen = [], 0
+    stack = [(top, 0)]
+    while stack:
+        d, depth = stack.pop()
+        try:
+            it = list(os.scandir(d))
+        except OSError:
+            continue
+        if depth <= GIT_DEPTH and any(is_checkout(e) for e in it):
+            checkouts.append(d)
+        for e in it:
+            seen += 1
+            if seen > WALK_CAP:
+                return None, checkouts
+            if e.name in SKIP or e.name == ".git":
+                continue
+            try:
+                st = e.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            newest = max(newest, st.st_mtime)
+            if e.is_dir(follow_symlinks=False):
+                stack.append((e.path, depth + 1))
+    return newest, checkouts
+
+
+def holds_work(co):
+    """Why a checkout holds work, or None when it has nothing to lose."""
+    st = git(co, "status", "--porcelain")
+    if st.returncode:
+        return "git status failed"
+    if st.stdout.strip():
+        return f"uncommitted changes ({len(st.stdout.splitlines())} path(s))"
+    remotes = git(co, "for-each-ref", "--format=%(refname)", "refs/remotes")
+    if remotes.returncode or not remotes.stdout.strip():
+        return "no remote"
+    if git(co, "rev-parse", "-q", "--verify", "HEAD").returncode:
+        return None  # unborn and clean: no commit to lose
+    n = git(co, "rev-list", "--count", "HEAD", "--branches", "--not", "--remotes")
+    if n.returncode:
+        return "rev-list failed"
+    if n.stdout.strip() != "0":
+        return f"{n.stdout.strip()} commit(s) on no remote"
+    return None
+
+
+def size(top):
+    total = 0
+    for d, dirs, files in os.walk(top):
+        for n in dirs + files:
+            try:
+                total += os.lstat(os.path.join(d, n)).st_blocks * 512
+            except OSError:
+                pass
+    return total
+
+
+def human(n):
+    for unit in ("B", "K", "M", "G"):
+        if n < 1024:
+            return f"{n:.0f}{unit}" if unit == "B" else f"{n:.1f}{unit}"
+        n /= 1024
+    return f"{n:.1f}T"
+
+
+def main(argv=None, cwds_provider=live_cwds):
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--delete", action="store_true")
+    ap.add_argument("--dry-run", dest="delete", action="store_false")
+    ap.add_argument("--days", type=float, default=10)
+    ap.add_argument("--flag-days", type=float, default=3)
+    ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("-h", "--help", action="store_true")
+    args = ap.parse_args(argv)
+    if args.help:
+        print(__doc__.strip()); return 0
+
+    root = scratch_root()
+    why = refuse(root)
+    if why:
+        print(f"prune-scratch: refusing to run: {why}", file=sys.stderr)
+        return 2
+    base = os.path.join(root, f"claude-{os.getuid()}")
+    real_base = os.path.realpath(base)
+    now = time.time()
+    cwds = cwds_provider()
+    if cwds is None:
+        print("prune-scratch: cannot read running processes' cwds -- removing nothing", file=sys.stderr)
+    else:
+        cwds.discard("/")
+        cwds.add(os.getcwd())
+
+    held, errors, freed, count = [], 0, 0, 0
+    verb = "removed" if args.delete else "would remove"
+    slugs = sorted(os.listdir(base)) if os.path.isdir(base) else []
+    for slug in slugs:
+        sd = os.path.join(base, slug)
+        if os.path.islink(sd) or not os.path.isdir(sd):
+            continue
+        for sess in sorted(os.listdir(sd)):
+            path = os.path.join(sd, sess)
+            if os.path.islink(path) or not os.path.isdir(path):
+                continue
+            newest, checkouts = survey(path)
+            if newest is None:  # never removed; listed, so it is not kept unseen
+                age = (now - os.lstat(path).st_mtime) / 86400
+                if age >= args.flag_days:
+                    held.append({"path": path, "age_days": round(age, 1),
+                                 "reason": f"over {WALK_CAP} entries, too many to age"})
+                continue
+            age = (now - newest) / 86400
+            if age < min(args.days, args.flag_days):
+                continue
+            reason = None
+            for co in checkouts:
+                reason = holds_work(co)
+                if reason:
+                    reason = f"{os.path.relpath(co, path)}: {reason}"
+                    break
+            if reason:
+                if age >= args.flag_days:
+                    held.append({"path": path, "age_days": round(age, 1), "reason": reason})
+                continue
+            if age < args.days:
+                continue
+            if cwds is None:
+                continue
+            if in_use(path, cwds) or (args.delete and still_in_use(path, cwds_provider)):
+                if args.verbose:
+                    print(f"keep {path} -- a live process is inside it")
+                continue
+            if not os.path.realpath(path).startswith(real_base + os.sep):
+                continue  # a renamed link mid-run: never follow out of the root
+            n = size(path)
+            if args.delete:
+                failed = []
+                note = lambda f, p, e: failed.append(p)  # noqa: E731
+                if sys.version_info >= (3, 12):
+                    shutil.rmtree(path, onexc=note)
+                else:
+                    shutil.rmtree(path, onerror=note)
+                if failed:
+                    errors += 1
+                    print(f"prune-scratch: {path}: {len(failed)} path(s) not removed, first {failed[0]}",
+                          file=sys.stderr)
+                    continue
+            print(f"{verb} {path} ({human(n)}, {age:.0f}d old)")
+            freed += n
+            count += 1
+        if args.delete and not os.listdir(sd):
+            try:
+                os.rmdir(sd)
+                print(f"removed empty {sd}")
+            except OSError:
+                pass
+
+    held.sort(key=lambda h: -h["age_days"])
+    for h in held:
+        print(f"held {h['path']} -- {h['reason']} ({h['age_days']:.0f}d old)")
+    os.makedirs(state_dir(), exist_ok=True)
+    atomic.write(os.path.join(state_dir(), "held.json"), json.dumps(held, indent=1) + "\n")
+
+    print(f"{verb} {count} session dir(s), {human(freed)}; {len(held)} held")
+    if not args.delete and count:
+        print("rerun with --delete to act")
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

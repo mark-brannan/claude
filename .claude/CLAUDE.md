@@ -9,6 +9,11 @@ them. This file is live at `~/.claude/.claude/CLAUDE.md` and loads only in
 this repo, its worktrees and `~/.claude`. README "Layout" maps every repo
 path to its live one.
 
+This layer is deployed beside dotfiles (mark-brannan/dotfiles, yadm, worktree
+`$HOME`): machine setup is the dotfiles bootstrap, and its sync fast-forwards
+`~/.claude`. A new scheduled job is a line in dotfiles' `~/.config/jobs`,
+installed by `~/.local/bin/jobs install`, never a systemd unit or crontab line here.
+
 Where each subsystem's design lives:
 
 - Layout and delivery: README "Layout"; RUNBOOK "Where things are" indexes every operation.
