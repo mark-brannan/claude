@@ -578,6 +578,13 @@ Added 2026-11-11; not yet checked against the web.
   - Maps to: eudaimonia, the standing orders' "a flourishing life, not
     throughput". Far from the rest of this list; kept for reading.
 
+- **Loewy, R.** Raymond Loewy (1893–1986), French-born American industrial
+  designer; Lucky Strike package, Coldspot refrigerators, Studebaker Avanti,
+  Air Force One livery. Wikipedia, read 2026-11-11 (a tertiary source):
+  [wikipedia.org](https://en.wikipedia.org/wiki/Raymond_Loewy).
+  - Idea: MAYA, "most advanced, yet acceptable".
+  - Maps to: nothing yet; kept beside Holtzblatt as adjacent reading.
+
 ## Prior art: recent tooling
 
 Dates are as found on 2026-09-29.
