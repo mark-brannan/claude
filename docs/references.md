@@ -576,7 +576,6 @@ Added 2026-11-11. Holtzblatt checked by the user; Loewy from Wikipedia only.
   - Idea: coolness is something design can aim at on purpose.
   - Maps to: eudaimonia, the standing orders' "a flourishing life, not
     throughput". Far from the rest of this list; kept for reading.
-
   - Cool Concepts in the paper, read from the PDF 2026-11-11: the Wheel of
     Joy (what: Accomplishment, Connection, Identity, Sensation); the
     Triangle of Design (how: Direct into Action, the Hassle Factor, the
