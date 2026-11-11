@@ -577,6 +577,11 @@ Added 2026-11-11. Holtzblatt checked by the user; Loewy from Wikipedia only.
   - Maps to: eudaimonia, the standing orders' "a flourishing life, not
     throughput". Far from the rest of this list; kept for reading.
 
+  - Cool Concepts in the paper, read from the PDF 2026-11-11: the Wheel of
+    Joy (what: Accomplishment, Connection, Identity, Sensation); the
+    Triangle of Design (how: Direct into Action, the Hassle Factor, the
+    Delta); life-centered design (focus on life, not task); the Hassle
+    Factor (remove hassle, add the least new). Session summary.
 - **Loewy, R.** Raymond Loewy (1893–1986), French-born American industrial
   designer; Lucky Strike package, Coldspot refrigerators, Studebaker Avanti,
   Air Force One livery. Wikipedia, read 2026-11-11 (a tertiary source):
