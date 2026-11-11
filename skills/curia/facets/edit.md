@@ -28,7 +28,7 @@ do, which files you write, or what you run. Every commit you make ends with the 
    it. A line whose commit has no trailer but is not clearly the user's —
    a squash, a rebase, a session's "State:" commit — is a finding under
    **Open questions**, not pen; the user says whose it is.
-3. **Rewrite each section touched,** in its five parts (SKILL.md, Layers):
+3. **Rewrite each section touched,** in its five parts (layers-and-queue.md, Layers):
    what hurt; the decision, in prose, saying only what the ledger holds,
    sentence by sentence; what it costs to change, in IADA terms; what is
    open; the rulings by stamp, pen then pencil, each pencil stamp glossed.

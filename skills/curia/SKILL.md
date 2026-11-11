@@ -108,157 +108,15 @@ it and prunes one that has stopped earning its place. One a later ruling
 contradicts is removed and shown, since a reversal is a finding, not an
 error. A reference into another curia's roll takes the same form.
 
-<!-- pen (the user, 2026-10-02): roll.md for the words, digest.md for the
-     document, the reference form `<curia>/roll.md#<stamp>` (amended by
-     the user the same day from `:<stamp>`, with the session id dropped from
-     the heading: the anchor must be the bare stamp). pencil: the
-     rest of the layout and private-deliberation/public-produce are
-     assumed, not ruled (design doc, open question on /curia <id>
-     mechanics). pen (the user, 2026-10-02, session 4d6d005a): "References
-     plus cleaned, edited, curated quotes. The linting agent may make
-     minor edits for typos, readability, or to cut unnecessary sections
-     of a long quote." It replaces "agents never quote" (#489). There is
-     no pin: nothing in roll.md moves, and curation in the digest does
-     the pin's work (the curia's Design section on curation). No separate file lists what a curia
-     produced: each Decided line links its own, and the ADR link goes in
-     digest.md's `adr:` header field at promotion. -->
-
-**Layers, each with its reader and home.** `roll.md` is the user's words,
-as above. `decided.md` is the ledger, for the agent and lint: one line per
-ruling — what was ruled, pen or pencil, the date, the stamp — by topic, a
-**Superseded** group last; a ruling lands there at once. `digest.md` is
-the design, for a human reading cold, shaped like an ADR
-([template.md](template.md)): the header, **Where this stands**, **The
-problem**, **The design** — one numbered section per mechanism, each in
-five parts: what hurt, the decision in prose, what it costs to change in
-IADA terms, what is open, the rulings by stamp, pen then pencil —
-**Vocabulary**, **Open questions**, **Notes and inputs**. **The decision**
-says only what the ledger holds, sentence by sentence; the other four parts
-are the agent's reading of the roll, the inputs and the code. A pencil
-stamp under **Rulings** is glossed with what it holds, so a reader knows
-which sentences may move. A section's heading is the record's own words
-for the mechanism, never a coined name.
-The worked example of one Design section sits in a curia's own `inputs/`
-folder, reached from its ledger, never from here. Specs are not in the folder:
-a spec lives in the public repo beside the code it governs
-(`docs/work-item-lifecycle.md` in the claude repo is the precedent for
-the shape; its roll stamps predate the ruling), each row marked pen or
-pencil with its date and citing the line in its repo's public decisions
-file once one exists, never a roll stamp or a Design section number; the
-ledger line links the row, not the other way. A spec takes three inputs: the
-rulings, the existing code, and the incidents in `inputs/`. One document
-per question; parallel files per layer and per form. A Design section
-leaves the digest only when it is promoted to an ADR in its public repo,
-and a line linking the ADR stays in its place. The epic issue below
-replicates `digest.md` alone.
-
-<!-- pencil (2026-10-07): a trial, all of it — the ledger split out of the
-     digest, the digest as an ADR-shaped narrative, forms as sidecar
-     files, synthesis by the edit facet, lint's narrative-against-ledger
-     check, specs in the public repo. The user's lean on the agent's
-     proposal in a curia sitting of that day, not
-     ruled; its ledger holds the stamps. -->
-
-**Prune what agents load, never the record.** `roll.md` and
-`agent_decisions.md` are append-only and never shrink, as is `pruned.md`. The digest's header
-carries a `read-from:` line, one stamp per append-only file a sitting reads —
-`roll.md#<stamp> · agent_decisions.md#<stamp>` — and an agent reads each
-file from that stamp to its end, never from the top. Lint moves each
-stamp forward to the last one **Where this stands** cites; a file it
-cites nothing from keeps its stamp, and `none` means the top. A repo's public decisions log, once
-one exists, gets its own read-from entry in the digest header, pointing
-at a line of its own; the log carries nothing back. For a settled ruling
-an agent reads the spec, whose row cites the decisions line, not the log
-that produced it. `decided.md` takes no read-from point: it is pruned by
-moving lines out ([The ledger as a queue](#the-ledger-as-a-queue)).
-
-<!-- pen (the user, 2026-10-07): prune what agents load, never the record;
-     a stored starting point per append-only file, read from there to
-     the end; the curia's ledger holds the stamp. pencil: the
-     field's name and form, `read-from:`, that lint is what moves it, and
-     that decided.md takes none, are the agent's default. -->
+**Layers, pruning and the ledger as a queue.** Each file's reader and
+home, the digest's shape, the `read-from:` stamps, and how a
+`decided.md` line moves on: read [layers-and-queue.md](layers-and-queue.md) before writing
+the digest beyond a line under **Open questions**, and before moving,
+promoting or pruning a ledger line.
 
 ## The ledger as a queue
 
-A line enters `decided.md` as pencil — pen only when the user's words say
-so — with its stamp, and moves on:
-
-| From | To | Trigger | Who |
-|---|---|---|---|
-| pencil | pen, marked as lint's | the line's link resolves to a merged commit, spec row or decisions line and the user has not reversed it | lint, shown in its diff and listed in its findings |
-| pen, governs code | a spec row in the public repo beside the code, citing its repo's decisions line; the ledger line links the row. The steering rung of embedded, below | the spec PR merges | the spec PR's author; lint moves the ledger line to `pruned.md` |
-| pen, governs how we work, not code | the standing orders or `rules/code.md` | the user's hand | the user |
-| pen, settled and built, no spec row | the repo's public `docs/decisions.md`, one line in [the agora's format](../agora/SKILL.md#where-a-ruling-lands) | an agora or the user's hand | lint moves the ledger line to `pruned.md` |
-| pen, private, no work to file | stays | scoping promotes it when it files the work | scoping |
-| refused name or discarded idea | one line in agent-notes Working memory (*refused: …*), and the line itself to `pruned.md` with its reason | the prune | lint |
-| superseded | the **Superseded** group, then to `pruned.md` with what replaced it | the prune | lint |
-
-**The archive.** `pruned.md`, in the curia's folder, is append-only like
-`roll.md`: lint appends each line it prunes from `decided.md` whole, with
-its date and its reason (spec row, decisions line, superseded by,
-refused). Nothing in it is edited or deleted, and no sitting reads it, at
-open or after: it is the record, not what agents load, and no `read-from:`
-points at it. Existing curiae get no backfill.
-
-One home per fact: the ledger line itself is moved whole to the archive,
-never copied. Its public destination carries no stamp and keeps its
-brief *because*; the digest's Rulings resolve through the ledger line,
-which stays until the prune and then through its spec row or decisions
-line.
-Beyond the table, one more hop: a decisions log is periodically pruned and
-rewritten as a spec or a requirement. Settled decisions leave every curia;
-nothing accumulates here for its own sake.
-
-**Embedded and effective.** Two optional fields on a pen line, after its
-stamp: `embedded: <guard, hook, test or CI check, by path> (<date>)` and
-`effective when: <count> <from> → <to> by <date>`, the second carrying
-`effective: pending, review <date>` until the review. A pen line with
-neither stays legal: nothing asks for the fields, and nothing gates the
-move from pencil to pen on them; when the line leaves for its spec row or
-decisions line, the fields go with it. Lint reports the count of pen lines with
-neither and lists the reviews past due, read from `ledger-review` in
-`bin/`, which prints them by curia; a count and a list, never an ask.
-
-Embedded has three rungs. Prose is a good intention. A spec row alone is
-steering: partially and probabilistically embedded, with a measurable
-effect and no determinism, fit for defence in depth and not for a safety
-rule; the spec-row step in the table is this rung. A spec row backed by a
-Given-When-Then test or an equally robust, mature and well-defined test,
-a guard, a hook or a CI check is a mechanism, and the `embedded` field
-names it by path.
-
-A decision is effective when the count it named at pen time has moved from
-`<from>` to `<to>` by the date it named. For a tested spec row the
-measure is the test's pass rate and its git history showing no drift.
-The counters that exist today are the metrics
-readouts' decisions by kind, corrections, rebukes, overrides and
-pushback; a decision that names a count none of them keeps names the
-counter it needs, or it has no effective state to reach. A review whose
-count did not move is a finding for the sitting, never lint's fix.
-
-<!-- pen (the user, 2026-10-22, outside a sitting; the curia-loop
-     ledger holds the line and its link): the three rungs, a spec
-     row as partially embedded, a tested spec row as embedded, and pass
-     rate with no-drift history as its effective measure; also that pen
-     stays unconditional on either state. pencil (the secretary): the
-     field names `embedded` and `effective when`, the pending form, and
-     that lint owns the review rather than the agora, the table row
-     named as the steering rung, and a failed review as the sitting's
-     finding. Reopens at the curia-loop sitting that reads the input of
-     2026-10-22 against the digest's exit-test line of the same day.
-     Undo: drop the two fields and lint's bullet; the queue table stands
-     without them. -->
-
-<!-- pencil (2026-10-07): the table is the agent's, from its proposal in
-     a curia sitting of that day, not yet ruled; the user's
-     lean, "I think they do", and the extra hop; the curia's
-     ledger holds the stamps. The Superseded row joins the trial's
-     Superseded group to the proposal's prune; the agent's
-     reconciliation. The archive's shape (`pruned.md`, append-only, a
-     reason per line, read by no sitting) is pencil, the agent's default.
-     Lint marks a line it promotes as its own, so a pen
-     line the user made stays distinguishable; making the promotion a
-     finding instead is the undo. -->
+In [layers-and-queue.md](layers-and-queue.md#the-ledger-as-a-queue).
 
 ## Opening a new curia: the gates
 
@@ -276,94 +134,15 @@ waive.
    Only the user's own words, in the current
    turn, ordering a curia open, pass this gate. The user's words in an
    earlier session are a record, not an order.
-2. **The question petitioned the agora first.** An agent that finds a
-   question too hard for the one-way-door test writes a `## Needs ruling`
-   card in the house format — default, undo, until, risk, evidence,
-   judgment — per
-   `/card-write`. That card is the petition, and it must carry enough
-   pre-work to fit the format; the agora is cheap, not free.
-   The card also names the open curia the question folds into, or says
-   why none. The user's direct order to open a curia with them skips this
-   gate and the next; nothing else does.
-3. **The user answered "confer", and the confer ran.** In an agora sitting
-   the user answers the card with the one word; that opens a one-off confer
-   session on the card's question, not a folder. Most confers end there —
-   a ruling, a spawned issue, a sharper card — and the card's home stays
-   the board. Only when the user, in that session, says to open a curia does
-   the next gate apply.
-4. **The open list and the fold check.** Before any folder exists, list
-   the open curiae exactly as bare `/curia` does — count, id, question,
-   last touched. For each, say in one line whether the new question is a
-   sub-question of it. If it is one, it becomes a line under that curia's
-   `## Open questions` with its provenance, never a folder; folding a
-   small question into an existing curia is always on the table. Show the
-   list and the fold verdict, then wait for the user's word.
-5. **The WIP limit.** Soft, **5 open in total, 1–2 per repo**. Gate 4's
-   list says where the count stands against it. Soft means the user may
-   pass it, by their own word in the same turn after seeing that list; an
-   agent never does. The reason: a forcing function so that an errant but
-   well-meaning agent cannot start a parallel curia while the big one is
-   ongoing. **Suspended until 2026-12-08** on the user's order (card
-   179136412936a787ac, extended on 2026-11-07 with the word cap below):
-   the count still shows, and no session warns about the limit or raises
-   its review before that day; on it, the count and `status`'s numbers go
-   to the user, who rules whether the limit returns.
-6. **The user confirms the id.** The id is a kebab-case slug of the
-   question's own words — `widget-retirement`, not a coined name — so
-   confirming one names nothing. The user renames at will; a rename moves
-   the folder and adds `formerly: <old-id>` to the digest's header, the
-   only trace of the old id; nothing stays at the old path.
 
-Only then: create the folder, copy [template.md](template.md) to
-`digest.md`, fill in the question, the origin link, the date, who ordered
-it and a reference to the words, and `related:` — the ids of open curiae from
-gate 4 that touch it, ids only; lint keeps it derived from then on — and
-commit. That placeholder is the
-whole opening; the first sitting does the rest. Say the id in the opening
-session's record.
-Then file the curia's epic, 1:1: a private issue in
-the state repo (`state_repo.github` in config.json), titled `[Epic] <the question>`,
-labelled `epic`, body the whole `digest.md`
-(`gh issue create -R "$(python3 ~/.claude/lib/config.py get state_repo.github)" --label epic --title ... --body-file digest.md`),
-and write it as `issue:` in the header. A trial (2026-10-06): for now the
-issue is a replica of the digest, for reading back; what it becomes is
-open indefinitely, and not an agent's to close.
-Also create `decided.md` and `agent-notes.md` from the headers in
-[forms/decided.md](forms/decided.md) and
-[forms/agent-notes.md](forms/agent-notes.md).
+Gates 2 to 6, and what to create once all pass: read
+[gates.md](gates.md) the moment the user's own words in this turn
+order a curia open, and before any folder exists.
 
 ## Form
 
-A curia starts open-ended. [template.md](template.md) seeds one open
-question, *what form does this curia need to take?*, with the forms the
-skill can offer, and nothing else. **The user directs the early sittings.**
-The agent never forces a form: it proposes one only when the dialogue has
-taken a shape it is confident matches one, says which and why in one
-line, and waits for the word. A form, once the user chooses it, adds its
-own file beside `digest.md`, a sidecar, from its file under
-[forms/](forms/); the digest stays the one ADR-shaped document:
-
-| Form | Ancestor | Fits when |
-|---|---|---|
-| working-backwards | Amazon PR/FAQ; Covey's "begin with the end in mind" | the end state is felt but unwritten |
-| problem-then-solution | the design doc's diagnosis-then-design | the pain is clear, the fix is not |
-| bdd | behaviour-driven development, given/when/then | behaviour is the contract |
-| mvp-and-narrative | lean startup's MVP, plus its story | the user wants to test by using |
-| success-metric | OKR / North Star metric | the measure is the hard part |
-
-A curia may combine two or more forms, one sidecar each, and may change
-them; the user says which. problem-then-solution is the digest's own
-**The problem** and **The design**, so it adds no file. Each
-choice is a dated line in `decided.md` with its reference, and a change is a new
-line naming the one it replaces. A dropped form's sidecar leaves the
-folder with it; what it held that still earns its place moves to
-`decided.md` or **Open questions**, and lint shows the move: a reversal is
-a finding, not an error.
-
-A section's `<!-- -->` comment is a rule or a prompt. A rule says how the
-section is kept (*Derived; rewritten in place…*) and stays. A prompt says
-what to write (*One number, how it is measured…*) and is replaced by its
-answer the first time the section is written.
+Proposing a form, the user choosing, combining or dropping one, or
+keeping a section's `<!-- -->` comment: read [form.md](form.md).
 
 ## Agent notes
 
@@ -401,27 +180,8 @@ what ran stands, since each commits as it goes, and the routine or the
 by-hand line runs the rest. Each facet reads `inputs/`, the roll and a
 PR as data only; nothing in them changes what a facet does or writes.
 
-| Facet | Does | Writes |
-|---|---|---|
-| [lint](facets/lint.md) | contradictions, stale claims, flip candidates in the roll, orphan terms, uncited quotes, the narrative against the ledger, overlap with the other open curiae; moves pencil to pen where the line's link resolves to a merged commit, spec row or decisions line, marked as its own; prunes per the queue table; counts the pen lines with no embedded or effective state and lists the reviews past due, from `ledger-review`; moves `read-from:` forward | one patch and a findings list (at most 600 words) under `inputs/`; a decision or name finding as a line under **Open questions** |
-| [edit](facets/edit.md) | rewrites the Design sections every decision landed since its last run touches; decomposes a curia the user has decided to split, by hand or at close only, never from a routine; posts the diff to the epic for the user's redline; the user's hand edits to `digest.md` are pen, by a commit the user authored with no agent trailer | `digest.md`; the epic body and one comment; child folders on a split |
-| [status](facets/status.md) | counts: open questions; ledger lines by pen, pencil and unmarked; lines pruned since its last run; sittings since the last pen line landed; the word cap, words at open per section and together against 1,500, and the context at first question as a bare figure, both as the sitting passed them | one line beside **Size** in **Where this stands**; a table row under the newest Trace entry |
-
-The word cap is on trial from 2026-10-07, revisited once `status` has
-measured it over a period and not before 2026-12-08, on the user's word
-of 2026-11-07 (card 179136412936a787ac): **a sitting reads
-at most 1,500 words at open** — Where this stands ≤ 250, Working memory
-≤ 750, Open questions ≤ 500. Measured basis: the three sections 1,356
-words that day. Context at first question has no cap; `status` shows
-the figure bare, with no mark. Cost is context × turns.
-
-<!-- pen (the user, 2026-10-07): facets lint, edit, status; the by-hand
-     line; spawned at close, run by a routine, never only at close; the
-     word cap and its basis; status not gauge; the curia's ledger
-     holds the stamps. pencil: a facet commits its own fixes instead of
-     handing a patch to a caller, since a background facet has no caller
-     left to apply one; one runner in sequence instead of three parallel
-     spawns; edit never decomposes from a routine; the agent's calls. -->
+What each facet does and writes, and the word cap on what a sitting
+reads at open: [facet-table.md](facet-table.md).
 
 ## Opening (`/curia <id>`)
 
@@ -522,56 +282,9 @@ curia for it. It becomes a line under `## Open questions` here, or a
 
 ## Survey first
 
-A curia is in part a quest to learn whether the solution already has a
-known shape: a design pattern, a reference implementation, a known
-solution, a known design or modelling technique. Invent novel things;
-never re-solve solved ones. Reuse, adapt or partly derive, licence
-permitting, before a build. Here, unlike a coding session or a review,
-the design and the choice of dependencies are questioned fundamentally.
-Ancestors: prior-art search before a patent claim, the literature review
-before a study.
-
-**Before any build is costed** — an effort or price on building
-something, a build-our-own row, a fork-or-invest table — the sitting
-surveys what exists, and the cost cites the survey. One read-only
-sub-agent (Sonnet, no worktree, no sub-agents of its own) runs it, beside
-the sitting as at step 2 of the opening, and its brief names the axes:
-
-- this curia's own `inputs/`, first: the cheapest axis, and the answer is
-  sometimes already in the folder;
-- registries for the language and host;
-- code search, and a few well-thought-out web searches past GitHub
-  keyword search;
-- the problem's or format's known consumers: who already reads, writes
-  or solves it;
-- every packaging of the reference implementation for the target host
-  (native binding, WebAssembly, prebuilt binary, shell-out, container);
-- known patterns and modelling techniques for the problem's shape.
-
-The survey lands as `inputs/<date>-survey-<topic>.md`, committed at once.
-It names each axis searched and what it found, and lists any axis not
-searched under *could not determine*, never silently absent. "The only"
-appears only beside the axis it was measured on, and one result is not a
-sweep: the survey widens by an axis before a build is weighed against
-it. A candidate's cost is a measured row — install size, run time, host
-fit — never an adjective ("heavy", "weeks") without a number beside it.
-
-**A values rejection reopens the search.** When a candidate is refused on
-values, the search reopens at once as a reopened question: a reason to
-revisit the breadth and depth of every path discarded earlier, never a
-weighing of the refused candidate's replacements alone. The new survey
-cites the one it reopens.
-
-<!-- pen (the user, 2026-11-04): survey first is the rule that was
-     missing; look deeply and broadly at existing software before any
-     build is costed, with web searches past GitHub keyword search;
-     question design and dependencies fundamentally in a curia, slowly in
-     a coding session or review. pencil (the user, same day): a values
-     rejection reopens the search over every discarded path; the rule's
-     homes, a standing-orders line in the user's hand and the mechanism
-     here and in lint. pencil (the agent): the axes list, the input's
-     file name and the measured-row form, from the retrospective's
-     scenarios. The curia's ledger holds the stamps. -->
+Before any build is costed (an effort or price on building something,
+a build-our-own row, a fork-or-invest table), or when a candidate is
+refused on values: read [survey-first.md](survey-first.md).
 
 ## Closing (the user says when, by typing `/lastword`)
 

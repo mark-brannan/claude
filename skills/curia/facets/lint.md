@@ -30,7 +30,7 @@ Find and fix, mechanically, in one commit of the derived files:
   ruling, a lean, a correction or a reopening in the roll entries read
   with no line citing it is a pull; a quote nothing rests on is a prune;
   one a later ruling contradicts is removed and shown;
-- the queue (SKILL.md, The ledger as a queue): a pencil line whose link
+- the queue (layers-and-queue.md, The ledger as a queue): a pencil line whose link
   resolves to a merged commit, spec row or decisions line, and the user
   has not reversed, becomes pen, marked `pen (lint, <date>)` so it stays
   distinguishable from a line the user made pen, and listed in your
@@ -42,7 +42,7 @@ Find and fix, mechanically, in one commit of the derived files:
   read by no sitting) with the date and its reason: the spec row or
   decisions line, what superseded it, or *refused*. Nothing is deleted
   outright; existing curiae get no backfill. Show every move in the diff;
-- embedded and effective (SKILL.md, The ledger as a queue): run
+- embedded and effective (layers-and-queue.md, The ledger as a queue): run
   `ledger-review --json`, take this curia's entries, and write under
   *Embedded and effective* in the findings one line with the count of
   pen lines carrying neither `embedded:` nor `effective when:` against
@@ -70,7 +70,7 @@ Find and fix, mechanically, in one commit of the derived files:
   what has stopped earning its place, moving a long open question's text
   to a file under `inputs/` with a link; never cut a ruling or the user's
   words;
-- survey first (SKILL.md, Survey first): read every file under `inputs/`
+- survey first (survey-first.md): read every file under `inputs/`
   and every Design section that costs a build — an effort or price on
   building something, a build-our-own row, a fork-or-invest table — and
   list under *Survey first* in the findings each one that cites no

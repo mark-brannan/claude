@@ -142,61 +142,10 @@ If it stops on `a branch named <b> already exists`, run
 below applies. No line means a stale local branch:
 `git checkout <b> && git merge --ff-only origin/<b>`.
 
-If git refuses because the branch is checked out in another worktree, that
-worktree holds it — but a holder is not always alive. A finished sub-agent
-keeps its worktree and branch; a desktop tab left open holds its branch for
-hours doing nothing. Check without entering the worktree (`<name>` is the last
-part of the path named). A running sub-agent has no registry file, so scan
-for a process first: any pid found means **live**, whatever the verdict says,
-and `~/.claude/sessions/<pid>.json` carries the session `name`:
-
-```
-for p in /proc/[0-9]*; do case $(readlink "$p/cwd" 2>/dev/null) in */<name> | */<name>/*) echo "live: pid ${p#/proc/}" ;; esac; done
-```
-
-Only when the scan finds nothing, read the verdict (grace 0 for an
-interactive pickup; `branch_brief`'s `worktrees:` line gives the same) and the
-stamp, read off the card by its link, since `read -C .` reads your own fork's branch:
-
-```
-python3 ~/.claude/lib/state.py liveness <holder worktree path>   # dead | live | parked | waiting
-~/.claude/hooks/claim-stamp.py read <the PR or issue link the item names>
-```
-
-A stamp from another session means another machine holds it: **live**.
-
-**Dead** or **parked** — the holder is free. Leave its worktree alone and work
-on a local branch off the remote, pushing with
-`git push --force-with-lease origin HEAD:<the branch>` (a plain `git push`
-would create a remote branch named for the local one):
-
-```
-git checkout -B <short-name> origin/<the branch>
-```
-
-Check what the holder has not pushed, from outside its checkout:
-`git -C <holder worktree> log origin/<the branch>..HEAD --oneline`. Absorb
-it: cherry-pick those commits onto your own signed branch before you push,
-and report it in the line below. A refused lease means someone
-else pushed, possibly the holder waking up: §6's stop rule applies. A
-cherry-pick that conflicts is a stop: abort it, push nothing, report.
-
-**Live** — it is working, which narrows the work; it does not end it. Do
-every step that needs no push, from the same local branch. Reply to and
-resolve the threads that need no change, read the failing checks, merge the
-base in locally if it conflicts and report it. Do not push. Re-check
-before stopping: a holder gone idle meanwhile is parked,
-and the push proceeds as above.
-
-**Waiting** — the holder is at a permission prompt, not idle. Tell
-the user at once, naming the session, and push nothing until it is answered.
-
-The report names what was checked, never "another session":
-
-```
-Branch <branch> is held by your session "<name>" (worktree <path>).
-Verdict <dead | live | parked | waiting> (<pid, or none>). Absorbed <n> unpushed commits.
-```
+If git refuses because the branch is checked out in another worktree:
+read [held-branch.md](held-branch.md) before anything else. It checks
+whether the holder is live, dead, parked or waiting, and says how to
+take the branch without entering its worktree.
 
 Then claim it on the card, so a session on *another machine* — which git
 cannot see — knows:
@@ -338,37 +287,5 @@ do not paraphrase it into a second version that can drift from this one.
 
 ## Writing the hand-off
 
-The other half, for a session that is *leaving* work: the Stop hook already
-wrote **your own** pickup item — `state/global/pickup/<start>-<sid8>.md`,
-body defaulted to the last prompt line — and it keeps any edit you make to
-the body, forever. the user's `/handoff` writes it (and `/wrapup` step 2b), as does a
-session when the Stop nag blocks once, or when the user says "update
-the hand-off". The nag is a backstop, not the trigger: it arms on a
-context, clock or friction crossing, and a session that ends cleanly never
-sees it. Replace everything below the `---` with five lines, house hand-off
-spec, through `~/.claude/bin/pickup-list handoff <id>` with the lines on
-stdin:
-
-```
-<one sentence, imperative — what the next session does first>
-link: <the branch, PR, issue or card it acts on>
-model: <opus | sonnet | haiku>
-effort: <low | medium | high>
-title: <a few words a person would name the session by>
-```
-
-Push before you write it — the item points at a branch, and a branch that
-only exists in your worktree hands over nothing. A session that is *finished*
-(pushed, PR open) also releases its worktree, so the branch is free for
-whoever picks it up; one that is pausing mid-work keeps it, and the branch
-stays claimed until it comes back.
-
-One item per session; the newest edit replaces. The first line is a step,
-not a status — "add the fixture for a taken item", never "pickup-list is
-half done". No state adjectives: the link carries state, live, at the other
-end.
-
-This is not a wrap-up. The hand-off costs five lines; `/wrapup` costs a
-log and is for a curia sitting or a session the user asks to log. If the
-checkpoint's verdict line says `archivable`, the five lines are usually all
-that is wanted, and often not even that.
+A session *leaving* work (the user's `/handoff`, the Stop nag, "update
+the hand-off"): read [handoff.md](handoff.md) before writing it.
