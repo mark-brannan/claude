@@ -12,11 +12,12 @@ A session directory is removed only when all of these hold:
   - its session is not running (this machine's session registry), and no
     running process has its cwd inside it (/proc on Linux, lsof on macOS;
     when neither can be read, nothing is removed and the run says so);
-  - every git checkout inside it (depth 4 or less, node_modules skipped) is
+  - every git checkout inside it (node_modules skipped) is
     clean apart from ignored files, has a remote, and has no commit on HEAD,
     a local branch or the stash that is absent from every remote ref. A
     .git dir with no HEAD, or a .git file whose gitdir is gone, is not a
-    checkout. Nothing is
+    checkout. A checkout with a linked worktree outside the dir holds it.
+    Nothing is
     fetched. Loose files outside a checkout are scratch and hold nothing.
 
 A directory whose checkout holds work and is older than --flag-days (default
@@ -52,7 +53,6 @@ except ModuleNotFoundError as e:
     sys.exit(3)
 
 WALK_CAP = 200_000   # entries per session dir before its age is called unknown
-GIT_DEPTH = 4
 GIT_TIMEOUT = 30
 RESCAN_SECS = 5
 SKIP = {"node_modules"}
@@ -109,6 +109,8 @@ def registered_live():
     through TMPDIR, not its cwd, so the cwd scan alone misses an idle one."""
     reg = os.environ.get("CLAUDE_SESSIONS_DIR") or state.sessions_dir()
     ids = {e["sessionId"] for e in state._registry(reg) if isinstance(e.get("sessionId"), str)}
+    if not os.path.isdir(os.environ.get("CLAUDE_PROC_ROOT") or "/proc"):
+        return ids  # no /proc (macOS): liveness unreadable, so every entry counts
     return {i for i in ids if sidlive.verdict(i) not in (None, "dead")}
 
 
@@ -142,7 +144,7 @@ def survey(top):
             it = list(os.scandir(d))
         except OSError:
             continue
-        if depth <= GIT_DEPTH and any(is_checkout(e) for e in it):
+        if any(is_checkout(e) for e in it):
             checkouts.append(d)
         for e in it:
             seen += 1
@@ -160,13 +162,22 @@ def survey(top):
     return newest, checkouts
 
 
-def holds_work(co):
-    """Why a checkout holds work, or None when it has nothing to lose."""
+def holds_work(co, top):
+    """Why a checkout holds work, or None when it has nothing to lose.
+    A linked worktree outside top would lose its gitdir with this one."""
     st = git(co, "status", "--porcelain")
     if st.returncode:
         return "git status failed"
     if st.stdout.strip():
         return f"uncommitted changes ({len(st.stdout.splitlines())} path(s))"
+    wl = git(co, "worktree", "list", "--porcelain")
+    if wl.returncode:
+        return "git worktree list failed"
+    inside = os.path.realpath(top) + os.sep
+    others = [l[len("worktree "):] for l in wl.stdout.splitlines()[1:] if l.startswith("worktree ")]
+    outside = [w for w in others if os.path.exists(w) and not (os.path.realpath(w) + os.sep).startswith(inside)]
+    if outside:
+        return f"{len(outside)} linked worktree(s) outside this dir"
     remotes = git(co, "for-each-ref", "--format=%(refname)", "refs/remotes")
     if remotes.returncode or not remotes.stdout.strip():
         return "no remote"
@@ -247,7 +258,7 @@ def main(argv=None, cwds_provider=proccwd.live_cwds, sessions_provider=registere
                 continue
             reason = None
             for co in checkouts:
-                reason = holds_work(co)
+                reason = holds_work(co, path)
                 if reason:
                     reason = f"{os.path.relpath(co, path)}: {reason}"
                     break

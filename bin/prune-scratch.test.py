@@ -250,6 +250,27 @@ class PruneScratch(unittest.TestCase):
         self.assertTrue(os.path.isdir(orphan))
         self.assertEqual({h["path"] for h in self.held()}, {st, orphan})
 
+    def test_main_clone_with_a_worktree_in_a_sibling_dir_holds(self):
+        a = self.session("a-main")
+        co = self.checkout(a)
+        b = self.session("b-wt")
+        git(co, "worktree", "add", "-q", "-b", "wt", os.path.join(b, "wt"))
+        open(os.path.join(b, "wt", "edit.txt"), "w").close()
+        for p in (a, b):
+            backdate(p, 30)
+        self.run_tool("--delete")
+        self.assertTrue(os.path.isdir(a))
+        self.assertTrue(os.path.isdir(b))
+
+    def test_deep_checkout_still_holds(self):
+        p = self.session("deep")
+        d = os.path.join(p, "a", "b", "c", "d", "e")
+        os.makedirs(d)
+        self.checkout(d, pushed=False)
+        backdate(p, 30)
+        self.run_tool("--delete")
+        self.assertTrue(os.path.isdir(p))
+
     def test_dangling_worktree_git_file_is_scratch(self):
         p = self.session("dangling")
         os.makedirs(os.path.join(p, "wt"))
