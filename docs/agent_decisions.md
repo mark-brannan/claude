@@ -739,3 +739,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261111t185241z
 - prune-scratch counts commits on HEAD or any local branch absent from every remote as held work Undo: test HEAD alone ([#449](https://github.com/mark-brannan/claude/pull/449))
+
+### 20261111t185245z
+- prune-scratch holds a checkout git cannot read and exits 0, so the scheduled job does not fail every run Undo: count read failures as exit 1 ([#449](https://github.com/mark-brannan/claude/pull/449))
