@@ -12,7 +12,7 @@ path to its live one.
 This layer is deployed beside dotfiles (mark-brannan/dotfiles, yadm, worktree
 `$HOME`): machine setup is the dotfiles bootstrap, and its sync fast-forwards
 `~/.claude`. A new scheduled job is a line in dotfiles' `~/.config/jobs`,
-installed by `~/.local/bin/jobs install`, never a systemd unit or crontab line here.
+installed by `~/.local/bin/cron-jobs install`, never a systemd unit or crontab line here.
 
 Where each subsystem's design lives:
 

@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -71,6 +72,32 @@ class Jobs(unittest.TestCase):
         self.assertIn("5", msg)
         self.assertIn("/s/4 (r4)", msg)
         self.assertNotIn("/s/0", msg)
+
+    def stamp(self, **rec):
+        (self.home / ".local/state/prune-scratch/held-shown.json").write_text(json.dumps(rec))
+
+    def test_held_line_shows_at_most_once_a_day(self):
+        self.held([{"path": "/s/1", "age_days": 9, "reason": "r"}])
+        self.assertIsNotNone(self.run_hook())
+        self.assertIsNone(self.run_hook())
+        self.stamp(at=time.time() - 86401, count=1)
+        self.assertIsNotNone(self.run_hook())
+
+    def test_held_line_shows_again_when_the_count_grows(self):
+        self.held([{"path": "/s/1", "age_days": 9, "reason": "r"}])
+        self.run_hook()
+        self.held([{"path": f"/s/{i}", "age_days": 9, "reason": "r"} for i in range(2)])
+        self.assertIn("2", self.run_hook())
+        self.held([{"path": "/s/1", "age_days": 9, "reason": "r"}])
+        self.assertIsNone(self.run_hook())
+
+    def test_failed_jobs_show_every_session(self):
+        self.held([{"path": "/s/1", "age_days": 9, "reason": "r"}])
+        self.last("broken", exit=1)
+        self.run_hook()
+        msg = self.run_hook()
+        self.assertIn("broken", msg)
+        self.assertNotIn("prune-scratch is holding", msg)
 
     def test_garbage_files_are_ignored(self):
         (self.jobs / "bad.last").write_text("not json")

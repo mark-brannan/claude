@@ -398,14 +398,14 @@ carries its undo. `prune-wip-refs --help` has the rules.
 ## Prune stale worktrees
 
 A daily scheduled job (dotfiles' `~/.config/jobs`, installed by
-`~/.local/bin/jobs install`) removes every clean worktree whose commits are
+`~/.local/bin/cron-jobs install`) removes every clean worktree whose commits are
 on a remote, across all repos under `$HOME`, and drops plugin entries for
 directories that are gone.
 
 By hand: `prune-worktrees` previews, `prune-worktrees --delete` acts; each
 removal line carries its undo.
 
-Verify: `jobs status` shows its last run at exit 0, today.
+Verify: `cron-jobs status` shows its last run at exit 0, today.
 
 ## Prune old session scratch dirs
 
@@ -461,10 +461,10 @@ the shared `headless-run-cost` action, a `headless-run` upload nor a call of the
 is not in `metrics/dashboard/workflow-verdicts.json`; warm, one call per repo. Exit status is unchanged.
 
 A scheduled job in dotfiles' `~/.config/jobs` rebuilds both every four hours, and it is
-the only thing that harvests the CI artifacts before they expire. `~/.local/bin/jobs install`
+the only thing that harvests the CI artifacts before they expire. `~/.local/bin/cron-jobs install`
 puts it on a machine.
 
-Verify: `jobs status` shows its last run at exit 0, and the page's header shows a `built`
+Verify: `cron-jobs status` shows its last run at exit 0, and the page's header shows a `built`
 time within the last four hours.
 
 Without the job, harvest by hand well inside every 90 days (3m39s on
