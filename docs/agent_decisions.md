@@ -733,3 +733,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261111t044913z
 - Level 3a leaves pickup's driver block in SKILL.md: a driver holds it all session and relays near compaction, which keeps the body's first 5,000 tokens but not a file read earlier. Undo: move the block with the same script ([#445](https://github.com/mark-brannan/claude/pull/445))
+
+### 20261111t044917z
+- Level 3a reference files are named for the branch they serve (held-branch, handoff, tentative-adr, lifecycle, on-the-yes, layers-and-queue, gates, form, facet-table, survey-first); cited headings stay in SKILL.md above their pointer. Undo: rename or reword in a follow-up ([#445](https://github.com/mark-brannan/claude/pull/445))
