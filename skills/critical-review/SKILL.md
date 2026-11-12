@@ -59,8 +59,10 @@ makes is never a thread.
 
 **Easy.** A finding you judge easy and unambiguous carries a second tag,
 `[easy]`, right after the first: `🤖 [nit] [easy] <what is wrong>`. Easy is a
-nit, typo, name, one-line fix, the PR title, a missing "try it". Never `[easy]`
-on a `[blocker]`, a Judgment line or a reversal. Where the fix replaces whole
+nit, typo, name, one-line fix, a missing "try it". Never `[easy]`
+on a `[blocker]`, a Judgment line or a reversal, nor on a title or label
+fix: the fixer edits the files and the PR body, nothing else, so the
+tag only queues the thread for its decline. Where the fix replaces whole
 lines of the file, the comment is an inline thread on those lines and carries a
 suggestion fence holding the replacement, before the signature:
 
@@ -72,10 +74,37 @@ suggestion fence holding the replacement, before the signature:
 🤖 claude-sonnet-5-5 · medium · 1a2b3c4d
 ````
 
-A later job reads exactly two things, the `[easy]` token and a
-```` ```suggestion ```` fence on the inline thread; a title, PR-body or
-multi-file fix has no fence, so say the wanted text in words and expect no
-automatic fix.
+Where the fix is to the PR body, the comment carries a pair of fences
+instead, the text in the body now and the text to put in its place:
+
+````
+🤖 [nit] [easy] The body names a head two pushes old.
+```body-old
+Head: 6324f84
+```
+```body-new
+Head: c0ec689
+```
+🤖 claude-sonnet-5-5 · medium · 1a2b3c4d
+````
+
+`body-old` is whole lines of the body, copied verbatim as it reads now,
+never empty, and enough of them to occur there exactly once; part of a
+longer line does not match. To change `Head: abc1234`, the fence holds
+that whole line. One pair to a thread, one
+body edit to a pair, and no suggestion fence beside it. An addition is
+written as a replace: `body-old` holds the whole existing line to add
+after (`## Pencil:`, say), `body-new` that line and the addition. A body
+ask you do not write as an
+exact pair (a paragraph to rewrite, say) carries no `[easy]` and goes to
+the author.
+
+A later job reads exactly three things, the `[easy]` token, a
+```` ```suggestion ```` fence on the inline thread, and a `body-old`,
+`body-new` pair; a title, label or multi-file fix has none of the fences,
+so say the wanted change in words and expect no automatic fix. For a
+title, the words are the text itself, whole in a ```` ```text ```` fence,
+so the author pastes it rather than composes it.
 
 Then summarize. Open with one line, before any heading: what the PR does
 in your words and whether it is ready to merge, which it is only when you
