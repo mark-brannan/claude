@@ -787,3 +787,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t223107z
 - self-check wsl row: order-7 counted in Normal zone only self-check wsl row: separate fixes per cause; compact_memory for fragmentation, wsl.exe --shutdown for leaked Relays ([#470](https://github.com/mark-brannan/claude/pull/470))
+
+### 20261112t224839z
+- claude#470: Relay counted by comm prefix; includes ~5 init relays under the 50 threshold (no PR, branch detached)
