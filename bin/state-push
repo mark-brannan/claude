@@ -2,8 +2,8 @@
 """state-push: push state-repo commits the Stop hook left behind.
 
 The Stop hook pushes at most once per debounce window, so the last commits
-of a sitting wait for a later Stop that may never come. A timer runs this
-(systemd/state-push.timer): when the clone is ahead of origin, it takes the
+of a sitting wait for a later Stop that may never come. A scheduled job runs
+this (dotfiles' ~/.config/jobs): when the clone is ahead of origin, it takes the
 push lock and runs the Stop hook's own pull-and-push. Silent and offline
 when there is nothing to push. Exit 0 pushed or nothing to do, 1 the push
 failed, 2 no state repo.
