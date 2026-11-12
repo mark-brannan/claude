@@ -165,6 +165,18 @@ class Test(unittest.TestCase):
         for want in ("merge conflict", "check failing: lint", "check pending: slow", "check pending: legacy"):
             self.assertIn(want, out)
 
+    def test_a_run_cancelled_by_its_rerun_is_not_a_failure(self):
+        def run(name, at, done, wf="Churn guard"):
+            return {"name": name, "workflowName": wf, "status": "COMPLETED", "conclusion": done, "startedAt": at}
+        checks = [run("churn", "2026-01-01T00:00:01Z", "CANCELLED"), run("churn", "2026-01-01T00:00:04Z", "SUCCESS"),
+                  run("gate", "2026-01-01T00:00:01Z", "CANCELLED", "A"), run("gate", "2026-01-01T00:00:04Z", "SUCCESS", "B"),
+                  run("lint", "2026-01-01T00:00:09Z", "CANCELLED")]
+        code, out = self.run_tool(view(checks=checks), page(commit("a")))
+        self.assertEqual(code, 1)
+        self.assertNotIn("churn", out, "a later run of the same check superseded the cancelled one")
+        self.assertIn("check failing: gate", out, "another workflow's run of the same name supersedes nothing")
+        self.assertIn("check failing: lint", out, "a cancelled run with no later rerun still fails")
+
     def test_only_behind_is_clean(self):
         # The fixup contract (pickup skill, section 6): a branch merely behind
         # its base is the queue's to update, so it is not a blocker line, and
