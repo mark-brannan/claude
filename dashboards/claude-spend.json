@@ -1,0 +1,347 @@
+{
+  "uid": "claude-spend",
+  "title": "Claude spend and tokens",
+  "description": "Spend and tokens by model and UTC day: the live OTel stream (VictoriaMetrics) on the left, the SQLite build from bin/metrics-db on the right.",
+  "tags": [
+    "claude"
+  ],
+  "timezone": "utc",
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d/d",
+    "to": "now"
+  },
+  "refresh": "",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Spend in range, live",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 4
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-metrics-datasource",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(sum_over_time({__name__=\"claude_code.cost.usage\"}[$__range]))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "none",
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Spend in range, SQLite build",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 4
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-sqlite"
+          },
+          "queryType": "table",
+          "rawQueryText": "select coalesce(sum(c.cost_usd), 0) as usd from session_cost c join sessions s using (session_id) where c.model != '<synthetic>' and s.ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') and s.ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')",
+          "queryText": "select coalesce(sum(c.cost_usd), 0) as usd from session_cost c join sessions s using (session_id) where c.model != '<synthetic>' and s.ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') and s.ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "none",
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Spend by model per day, live",
+      "description": "claude_code.cost.usage, summed per UTC day. Counts every API request, subagents included, as it happens.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 12
+      },
+      "interval": "1d",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-metrics-datasource",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (model) (sum_over_time({__name__=\"claude_code.cost.usage\"}[1d] offset -1d))",
+          "legendFormat": "{{model}}",
+          "interval": "1d",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Spend by model per day, SQLite build",
+      "description": "session_cost from bin/metrics-db, dated by the day each session ended (UTC); fresh only as of the last build.",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 12
+      },
+      "interval": "1d",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-sqlite"
+          },
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ],
+          "rawQueryText": "select cast(strftime('%s', date(s.ts)) as integer) as time, c.model as model, sum(c.cost_usd) as usd from session_cost c join sessions s using (session_id) where c.model != '<synthetic>' and s.ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') and s.ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') group by 1, 2 order by 1",
+          "queryText": "select cast(strftime('%s', date(s.ts)) as integer) as time, c.model as model, sum(c.cost_usd) as usd from session_cost c join sessions s using (session_id) where c.model != '<synthetic>' and s.ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') and s.ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') group by 1, 2 order by 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "displayName": "${__field.labels.model}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tokens by model per day, live",
+      "description": "claude_code.token.usage, all four types (input, output, cache read, cache creation) summed per UTC day.",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 12
+      },
+      "interval": "1d",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-metrics-datasource",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (model) (sum_over_time({__name__=\"claude_code.token.usage\"}[1d] offset -1d))",
+          "legendFormat": "{{model}}",
+          "interval": "1d",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tokens by model per day, SQLite build",
+      "description": "sessions from bin/metrics-db, the same four types; a session's tokens all go to its main model, so subagents on other models land there too.",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 12
+      },
+      "interval": "1d",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-sqlite"
+          },
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ],
+          "rawQueryText": "select cast(strftime('%s', date(ts)) as integer) as time, model, sum(tokens) as tokens from (select s.ts as ts, coalesce((select c.model from session_cost c where c.session_id = s.session_id and c.model != '<synthetic>' order by c.cost_usd desc limit 1), nullif(s.model, '<synthetic>')) as model, coalesce(s.input_tokens, 0) + coalesce(s.output_tokens, 0) + coalesce(s.cache_read_tokens, 0) + coalesce(s.cache_creation_tokens, 0) as tokens from sessions s where s.ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') and s.ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')) where model is not null group by 1, 2 order by 1",
+          "queryText": "select cast(strftime('%s', date(ts)) as integer) as time, model, sum(tokens) as tokens from (select s.ts as ts, coalesce((select c.model from session_cost c where c.session_id = s.session_id and c.model != '<synthetic>' order by c.cost_usd desc limit 1), nullif(s.model, '<synthetic>')) as model, coalesce(s.input_tokens, 0) + coalesce(s.output_tokens, 0) + coalesce(s.cache_read_tokens, 0) + coalesce(s.cache_creation_tokens, 0) as tokens from sessions s where s.ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') and s.ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')) where model is not null group by 1, 2 order by 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.model}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}
