@@ -1,8 +1,9 @@
 name: Conflict sweep
 
 # Hands pull requests that conflict with main to the shared fixer; the design
-# and its costs are in the called workflow's header. `dequeued` is the label
-# Mergify adds when it drops a pull request from its queue.
+# and its costs are in the called workflow's header. `Has Conflict` is the
+# label the shared .mergify.yml adds while a pull request conflicts with its
+# base; a pull request Mergify dequeues for a conflict gets it too.
 
 on:
   push:
@@ -21,7 +22,7 @@ permissions:
 
 jobs:
   sweep:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'dequeued'
+    if: github.event_name != 'pull_request' || (github.event.label.name == 'Has Conflict' && !github.event.pull_request.head.repo.fork)
     # What the called workflow's jobs ask for; a caller must grant at least that.
     permissions:
       contents: read
