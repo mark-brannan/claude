@@ -75,7 +75,8 @@ is what survives it.
 ## 3. The worker contract
 
 One text. A dispatch is the task — issue number, files, what it depends on,
-which PR head to branch from if stacked — followed by this block verbatim.
+which PR head to branch from if stacked — followed by this block verbatim,
+then the shell and git block in `/pickup` §1.
 
 ```
 ## Ground rules (from the orchestrating session)

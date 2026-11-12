@@ -61,6 +61,24 @@ parent filed before the fact existed, run it with sub-agents. A worker's
 first command is `~/.claude/bin/worker-start`, alone in its Bash call (flags
 in its header): where a chain of fetch, branch and log asks, it is allow-listed.
 
+Every worker's prompt, a fixer's too, carries this block verbatim, the
+driver's values filled in. Each line is a call that otherwise stops for a
+permission dialog.
+
+```
+## Shell and git (from the driver)
+
+- Your worktree is <repo>/.claude/worktrees/<slug>. Never call EnterWorktree
+  on a path anywhere else.
+- Never `cd`. `git -C <worktree> ...` and absolute paths; one action per
+  Bash call, nothing chained.
+- A PR body, a commit message or a script is a file made with the Write
+  tool, never a heredoc or a redirect.
+- Stage by path, never `git add -A` or `git commit -a`.
+- Open the PR alone in its Bash call: `gh pr create --repo <owner/repo>
+  --head <branch> --title <title> --body-file <file>`.
+```
+
 **The driver dispatches; it does not do the work.** It holds the plan and one
 line per child, and never reads a diff, a CI log or a review thread body into
 its own context: a worker does that and returns one line. Context re-read on
