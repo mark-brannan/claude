@@ -36,7 +36,7 @@ is all inside Claude Code.
 
 | Source | What it gives | Reach | Status |
 |---|---|---|---|
-| `cost-state`, last line of a transcript | Session total and per-model cost, sub-agents included | Clean exit only; absent live or after a crash | [V] in 853 of 995 transcripts; undocumented |
+| `cost-state`, last line of a transcript | Session total and per-model cost, sub-agents included | Written at clean exit only; absent live or after a crash | [V] in 853 of 995 transcripts; event name undocumented |
 | Statusline stdin | Live `cost.total_cost_usd`; `rate_limits.five_hour` and `seven_day` used % and reset time | Statusline scripts only, not hooks, not desktop | [V] in docs; [?] on our own input |
 | `claude -p --output-format json`, Agent SDK result | `total_cost_usd`, per-model cost, sub-agents included | Headless and batch callers | [V] docs |
 | OpenTelemetry | `claude_code.cost.usage`, `claude_code.token.usage`, `api_request` events with per-request cost, model, session, main vs sub-agent | Needs a collector; claude#460 | [?] whether it emits on Max |
@@ -51,7 +51,7 @@ All checked against the official card for 21 models [V].
 
 | Table | Correct use | Notes |
 |---|---|---|
-| LiteLLM `model_prices_and_context_window.json` | The sync source since #458, pinned by commit | 18/18 current models exact; never pip install it (compromised twice in 2026) [U] |
+| LiteLLM `model_prices_and_context_window.json` | The sync source since #458, pinned by commit | 18/18 current models exact; 5m/1h split, Haiku tier, fast and geo multipliers; never install the pip package, twice compromised in 2026 [U] |
 | pydantic `genai-prices`, v2 `data.json` | Second opinion; has retired models and dated history | Lacks Mythos; v1 path is frozen and wrong |
 | Langfuse default prices | Drift check; regex rules like ours | Licence mixed |
 | Portkey `pricing/anthropic.json` | Drift check; smallest full file (41 KB) | MIT |
@@ -60,14 +60,11 @@ All checked against the official card for 21 models [V].
 | simonw `llm-prices` | None | Sonnet 5.5 cache read wrong; no cache write |
 | tokencost, tokonomics, Helicone, tokenlens, npm `llm-cost` | None | Stale or wrappers over LiteLLM |
 
-LiteLLM entries also carry the 5m and 1h cache-write split, the Haiku tier,
-and the fast-mode and geo multipliers as fields [U].
-
 ## Third-party Claude Code usage tools
 
 | Tool | What it does | Correct use |
 |---|---|---|
-| ccusage (MIT, Rust behind npm) | LiteLLM prices; dedups on message + request id; reads sub-agents | Occasional cross-check of our totals; batch only |
+| ccusage (MIT, Rust behind npm) | LiteLLM prices, global dedup on message + request id, reads sub-agents, 5h blocks | Occasional cross-check of our totals; batch only |
 | Claude-Code-Usage-Monitor (Python) | Captures official `rate_limits`; own table is stale | The idea, not the library |
 | tokscale (Rust) | Three price sources, nested sub-agents | Second cross-check |
 | ccstatusline, claude-powerline (Node) | Statusline readouts; ccstatusline documents the stdin schema | Schema reference |
