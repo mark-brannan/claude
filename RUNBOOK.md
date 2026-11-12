@@ -24,6 +24,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Open the metrics dashboard](#open-the-metrics-dashboard)
 - [Read the pickup items](#read-the-pickup-items)
 - Push unpushed state-repo commits: `~/.claude/bin/state-push`; a scheduled job in dotfiles' `~/.config/jobs` runs it
+- Reprice stored session dollars from this machine's transcripts: `python3 ~/.claude/lib/claude_costing backfill` (`--dry-run` reports only); safe to rerun, and a second run prints `changed 0 records`
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
 - List the pen decisions with no embedded or effective state, and overdue reviews: `~/.claude/bin/ledger-review` (`--json` for machines)
 

@@ -18,7 +18,7 @@ sys.dont_write_bytecode = True
 LIB = Path(__file__).resolve().parent
 sys.path.insert(0, str(LIB))
 import claude_costing as cc  # noqa: E402
-from claude_costing import check, sync  # noqa: E402
+from claude_costing import backfill, check, sync  # noqa: E402
 
 JQF = LIB.parent / "hooks" / "session-metrics.jq"
 FIXTURE = LIB / "claude_costing.fixture.jsonl"
@@ -288,6 +288,87 @@ class CheckTest(unittest.TestCase):
             self.projects(d, [([call(FIRST)], cost_state(10.0, T0))])
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(check.main(["--projects", d]), 1)
+
+
+class BackfillTest(unittest.TestCase):
+    SID = "11111111-2222-3333-4444-555555555555"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.d = Path(tmp.name)
+        (self.d / "projects" / "proj").mkdir(parents=True)
+        (self.d / "sessions" / "11").mkdir(parents=True)
+        self.record = self.d / "sessions" / "11" / f"{self.SID}.json"
+        self.record.write_text(json.dumps({"session_id": self.SID, "cost_usd": 99.0, "model": "claude-opus-5-5"},
+                                          separators=(",", ":")))
+
+    def session(self, *lines):
+        p = self.d / "projects" / "proj" / f"{self.SID}.jsonl"
+        p.write_text("".join(json.dumps(e) + "\n" for e in lines))
+        return p
+
+    def run_it(self, write=True):
+        return backfill.run(str(self.d / "sessions"), str(self.d / "projects"), write)
+
+    def stored(self):
+        return json.loads(self.record.read_text())
+
+    def test_a_trusted_stored_total_is_the_record_split_as_claude_code_split_it(self):
+        self.session(call(FIRST), cost_state(41.0, T0, modelUsage={
+            "claude-opus-5-5": {"costUSD": 30.0}, "claude-opus-5-5[1m]": {"costUSD": 10.0},
+            "claude-haiku-5-5": {"costUSD": 1.0}}))
+        self.assertEqual(self.run_it()["changed"], [1, 99.0, 41.0])
+        rec = self.stored()
+        self.assertEqual((rec["cost_usd"], rec["cost_source"], rec["model"]), (41.0, "claude-code", "claude-opus-5-5"))
+        self.assertEqual(rec["cost_usd_by_model"], {"claude-haiku-5-5": 1.0, "claude-opus-5-5": 40.0})
+
+    def test_without_one_the_table_prices_the_transcript_and_its_subagents(self):
+        p = self.session(call(FIRST))
+        sub = p.with_suffix("") / "subagents" / "agent-x.jsonl"
+        sub.parent.mkdir(parents=True)
+        sub.write_text(json.dumps(call(LATER, "sub")) + "\n")
+        self.run_it()
+        rec = self.stored()
+        self.assertEqual((rec["cost_usd"], rec["cost_source"]), (40.0, "price-table"))
+        self.assertEqual(rec["cost_usd_by_model"], {"claude-opus-5-5": 40.0})
+
+    def test_a_second_run_writes_nothing_and_a_later_exit_total_replaces_the_price(self):
+        self.session(call(FIRST))
+        self.run_it()
+        first = self.record.read_bytes()
+        self.assertEqual(self.run_it()["same"][0], 1)
+        self.assertEqual(self.record.read_bytes(), first)
+        self.session(call(FIRST), cost_state(21.0, T0))
+        self.assertEqual(self.run_it()["changed"], [1, 20.0, 21.0])
+        self.assertEqual(self.stored()["cost_source"], "claude-code")
+
+    def test_a_dry_run_reports_and_leaves_the_record(self):
+        self.session(call(FIRST))
+        before = self.record.read_bytes()
+        self.assertEqual(self.run_it(write=False)["changed"], [1, 99.0, 20.0])
+        self.assertEqual(self.record.read_bytes(), before)
+
+    def test_a_record_with_no_transcript_here_and_a_file_that_is_no_record_are_left_alone(self):
+        junk = self.d / "sessions" / "junk.json"
+        junk.write_text("not json")
+        before = self.record.read_bytes()
+        self.assertEqual(self.run_it()["skipped"][0], 2)
+        self.assertEqual((self.record.read_bytes(), junk.read_text()), (before, "not json"))
+
+    def test_both_record_layouts_and_the_command(self):
+        self.session(call(FIRST))
+        flat = self.d / "sessions" / f"{self.SID}.json"
+        flat.write_text(json.dumps({"session_id": self.SID}, indent=2) + "\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(backfill.main(["--sessions", str(self.d / "sessions"),
+                                            "--projects", str(self.d / "projects")]), 0)
+        self.assertIn("changed 2 records: $99.00 -> $40.00", out.getvalue())
+        self.assertEqual(json.loads(flat.read_text())["cost_usd"], 20.0)
+        self.assertTrue(flat.read_text().startswith("{\n") and flat.read_text().endswith("}\n"))
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(backfill.main(["--sessions", str(self.d / "absent")]), 1)
 
 
 class ShellTest(unittest.TestCase):
