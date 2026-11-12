@@ -134,6 +134,18 @@ if undo:
     subprocess.run(shlex.split(undo[0]), env=ENV, cwd="/", capture_output=True)
     check(os.path.isdir(wts["landed"]), "undo restores the worktree", undo[0])
 
+# --- git status fails: kept, named without -v, and the run exits 1 --------
+broken = os.path.join(W, "broken")
+git(R, "worktree", "add", "-q", "-b", "broken", broken, "main")
+age(broken)
+with open(os.path.join(R, ".git", "worktrees", "broken", "index"), "wb") as f:
+    f.write(b"not an index")
+rc, out = run("--delete", "--no-plugins")
+check(rc == 1 and os.path.isdir(broken) and "keep .claude/worktrees/broken -- git status failed:" in out,
+      "unreadable worktree kept, named, exit 1", out)
+subprocess.run(["rm", "-rf", broken], check=True)
+git(R, "worktree", "prune", "--expire=now")
+
 # --- fetch fails: a remote ref the remote dropped no longer counts ---------
 dropped = os.path.join(W, "dropped")
 git(R, "worktree", "add", "-q", "-b", "dropped", dropped, "main")
