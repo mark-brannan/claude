@@ -4,7 +4,9 @@
   python3 lib/claude_costing check [--days N]   reprice local transcripts
                                              against Claude Code's stored totals
   python3 lib/claude_costing sync [--commit SHA] [--from FILE] [--check]
-                                             rebuild prices.json from its source"""
+                                             rebuild prices.json from its source
+  python3 lib/claude_costing backfill [--dry-run]   reprice stored session records
+                                             from this machine's transcripts"""
 import os
 import sys
 
@@ -21,6 +23,9 @@ def main(argv):
     if argv and argv[0] == "check":
         from claude_costing import check
         return check.main(argv[1:])
+    if argv and argv[0] == "backfill":
+        from claude_costing import backfill
+        return backfill.main(argv[1:])
     if argv and argv[0] == "sync":
         from claude_costing import sync
         return sync.main(argv[1:])
