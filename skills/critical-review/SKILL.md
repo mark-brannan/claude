@@ -75,10 +75,11 @@ suggestion fence holding the replacement, before the signature:
 ````
 
 A later job reads exactly two things, the `[easy]` token and a
-```` ```suggestion ```` fence on the inline thread; a title, PR-body or
-multi-file fix has no suggestion fence. For a title or body, write the
-wanted text itself, whole lines in a ```` ```text ```` fence, so the author
-pastes it rather than composes it.
+```` ```suggestion ```` fence on the inline thread; a title, body, label or
+multi-file fix has no suggestion fence, so say the wanted change in words
+and expect no automatic fix. For a title or body, the words are the text
+itself, whole lines in a ```` ```text ```` fence, so the author pastes it
+rather than composes it.
 
 Then summarize. Open with one line, before any heading: what the PR does
 in your words and whether it is ready to merge, which it is only when you
