@@ -766,3 +766,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t073149z
 - unknown model falls back to the dearest rate the source lists (10/50), not the retired 15/75 a bare alias prices as its family's newest version sync leaves the file and pin alone when no rate changed a hand-kept rule the source later lists is dropped if equal, an error if different prices-sync opens its PR even when the package tests fail on the new table fixture tolerance 0.97-1.001; check flags a model with 2% of stored dollars outside 0.95-1.01 check.py and sync.py are not seeded into cloud sessions one PR for all four steps Undo: revert the PR ([#458](https://github.com/mark-brannan/claude/pull/458))
+
+### 20261112t074201z
+- The worker shell-and-git block lives in /pickup section 1 and /orchestrate points at it, so stage-by-path reaches an orchestrate worker twice worker-start --worktree keeps taking any path; a default under .claude/worktrees/ is not built Undo: revert the PR ([#459](https://github.com/mark-brannan/claude/pull/459))
