@@ -252,6 +252,7 @@ def rest_read(owner, repo, n):
     for rv in ghrest.rest_pages(run_gh, f"{r}/pulls/{n}/reviews"):
         if rv["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
             latest[(rv["user"] or {}).get("login")] = rv["state"]
+    # No workflow name on this route, so superseded() keys REST runs on name alone.
     checks = [{"name": c["name"], "status": c["status"].upper(), "conclusion": (c["conclusion"] or "").upper(),
                "startedAt": c.get("started_at") or ""}
               for c in ghrest.rest_pages(run_gh, f"{r}/commits/{sha}/check-runs", "check_runs")]
