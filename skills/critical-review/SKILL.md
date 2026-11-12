@@ -59,8 +59,10 @@ makes is never a thread.
 
 **Easy.** A finding you judge easy and unambiguous carries a second tag,
 `[easy]`, right after the first: `🤖 [nit] [easy] <what is wrong>`. Easy is a
-nit, typo, name, one-line fix, the PR title, a missing "try it". Never `[easy]`
-on a `[blocker]`, a Judgment line or a reversal. Where the fix replaces whole
+nit, typo, name, one-line fix, a missing "try it". Never `[easy]`
+on a `[blocker]`, a Judgment line or a reversal, nor on a fix outside the
+files (the PR title, the body, a label): the fixer edits only files, so the
+tag only queues the thread for its decline. Where the fix replaces whole
 lines of the file, the comment is an inline thread on those lines and carries a
 suggestion fence holding the replacement, before the signature:
 
@@ -74,8 +76,9 @@ suggestion fence holding the replacement, before the signature:
 
 A later job reads exactly two things, the `[easy]` token and a
 ```` ```suggestion ```` fence on the inline thread; a title, PR-body or
-multi-file fix has no fence, so say the wanted text in words and expect no
-automatic fix.
+multi-file fix has no suggestion fence. For a title or body, write the
+wanted text itself, whole lines in a ```` ```text ```` fence, so the author
+pastes it rather than composes it.
 
 Then summarize. Open with one line, before any heading: what the PR does
 in your words and whether it is ready to merge, which it is only when you
