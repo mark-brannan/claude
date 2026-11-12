@@ -781,3 +781,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t090939z
 - OTLP endpoint default http://localhost:4317 gRPC, a literal in settings.json Undo: change the one value; per machine via settings.local.json ([#468](https://github.com/mark-brannan/claude/pull/468))
+
+### 20261112t100326z
+- Claude dashboards live at dashboards/ in the claude repo, data source uids victoriametrics and claude-sqlite Undo: rename the directory ([#469](https://github.com/mark-brannan/claude/pull/469))
