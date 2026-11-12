@@ -456,11 +456,11 @@ caps_of() {
 rm -f "$S/state/grind"/*.json
 run --dry-run
 eq 'sonnet/medium: the item budget, hard 3x' 'soft $5.00 hard $15.00' "$(caps_of 5)"
-eq 'opus/high: 2.5x the price, 2x the effort; its lower budget: loses; hard 3x, past the session' 'soft $25.00 hard $75.00' "$(caps_of 20)"
+eq 'opus/high: 2x the price, 2x the effort; its lower budget: loses; hard 3x, past the session' 'soft $20.00 hard $60.00' "$(caps_of 20)"
 eq 'sonnet/low: half' 'soft $2.50 hard $7.50' "$(caps_of 21)"
 eq 'a higher budget: wins; a later budget: that is not a number is no field' 'soft $12.00 hard $36.00' "$(caps_of 22)"
 run --dry-run --session-budget 6
-eq 'a small session cuts no item cap' 'soft $25.00 hard $75.00' "$(caps_of 20)"
+eq 'a small session cuts no item cap' 'soft $20.00 hard $60.00' "$(caps_of 20)"
 run --dry-run --session-hard-budget 30
 eq 'there is no run hard budget flag' 2 "$RC"
 for flag in --item-budget --session-budget; do
@@ -478,14 +478,14 @@ reply 5.00 "done" 2
 : > "$CLAUDE_LOG"; : > "$S/claude-env.log"
 run --session-budget 6 --pause-every 10
 eq 'each worker gets its soft cap as the spend gate line, and the hand-off file (claude#69)' \
-  '5.00 HANDOFF.md|25.00 HANDOFF.md' "$(paste -sd'|' "$S/claude-env.log")"
+  '5.00 HANDOFF.md|20.00 HANDOFF.md' "$(paste -sd'|' "$S/claude-env.log")"
 eq 'two workers ran: the opus item started with $4 of soft budget left' 2 "$(calls_claude)"
-eq 'each worker gets 3x its soft cap, the session notwithstanding ($15, then $75)' '15.00 75.00' \
+eq 'each worker gets 3x its soft cap, the session notwithstanding ($15, then $60)' '15.00 60.00' \
   "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk '{print $2}' | paste -sd' ' -)"
 PROMPT=$(cat "$S/prompt.txt")
-prompt_has 'the worker is told its soft cap as the stop' 'stop and report at ~$25.00'
-prompt_has 'and its hard stop' 'Your hard stop is $75.00'
-prompt_has 'and that past its soft cap only the hand-off write is left' 'Past ~$25.00 a hook denies every tool but one Write'
+prompt_has 'the worker is told its soft cap as the stop' 'stop and report at ~$20.00'
+prompt_has 'and its hard stop' 'Your hard stop is $60.00'
+prompt_has 'and that past its soft cap only the hand-off write is left' 'Past ~$20.00 a hook denies every tool but one Write'
 has 'dispatch stops once spend reaches the soft budget' '^pause: session budget reached \(\$7\.00 / \$6\.00\)\.'
 eq 'the session file says why it ended' 'pause-budget 0' "$(jq -r '"\(.ended.reason) \(.ended.exit)"' "$(latest_session)")"
 # --resume with cap flags applies them and records them
@@ -503,7 +503,7 @@ eq 'the resumed run applies --pause-every' 2 "$(calls_claude)"
 eq 'and records the flags' '7 50 2' \
   "$(jq -r '"\(.item_budget) \(.session_budget) \(.pause_every)"' "$sess")"
 eq 'and that the item budget was given' 1 "$(jq -r '.item_budget_set' "$sess")"
-eq 'its workers run on the new item budget: opus/high at 3x $35' '105.00' \
+eq 'its workers run on the new item budget: opus/high at 3x $28' '84.00' \
   "$(grep -oE -- '--max-budget-usd [0-9.]+' "$CLAUDE_LOG" | awk 'NR == 1 {print $2}')"
 # a resume that cannot write its caps back stops, saying so, before any spend
 chmod a-w "$S/state/grind"

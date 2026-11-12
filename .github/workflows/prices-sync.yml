@@ -1,0 +1,136 @@
+name: Prices sync
+
+# Rebuilds lib/claude_costing/prices.json from its source, LiteLLM's price
+# file at the newest commit that touches it, and opens a pull request with the
+# rate diff when a price changed. A person reviews and merges it: nothing here
+# merges, and nothing here adds a label. The source is data, parsed and
+# bounds-checked by lib/claude_costing/sync.py, never run.
+#
+# Cost: one job a week. A quiet week is about 10 seconds (estimated: a
+# checkout, then two unauthenticated GETs, 1.2s measured locally). A week
+# with a price change adds the package tests (under a second, measured), one
+# commit and one pull request, which then runs CI once.
+#
+# The pull request is the agent App's: what GITHUB_TOKEN opens starts no
+# workflow, so CI would never run on it. The App's token is made only after
+# the fetched file has been parsed, and asks for contents and pull requests
+# on this repository alone. Without the App's secrets the job fails with the
+# diff in its summary.
+
+on:
+  schedule:
+    - cron: "23 7 * * 3"
+  workflow_dispatch:
+
+concurrency:
+  group: prices-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TABLE: lib/claude_costing/prices.json
+  BRANCH: prices-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Rebuild the table
+        id: sync
+        run: |
+          set -euo pipefail
+          python3 lib/claude_costing sync > "$RUNNER_TEMP/rates.diff"
+          if git diff --quiet -- "$TABLE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No price changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          { echo '```diff'; cat "$RUNNER_TEMP/rates.diff"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      # A real price change fails the suite's copy of the official card until a
+      # person updates it, so the result goes in the pull request, not the gate.
+      - name: Package tests
+        if: steps.sync.outputs.changed == 'true'
+        id: tests
+        run: |
+          set -uo pipefail
+          if python3 lib/claude_costing.test.py > "$RUNNER_TEMP/tests.txt" 2>&1; then
+            echo "result=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+          fi
+          tail -n 30 "$RUNNER_TEMP/tests.txt"
+
+      - name: The App's secrets are set
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          APP_ID: ${{ secrets.AGENT_BOT_APP_ID }}
+        run: |
+          if [ -z "$APP_ID" ]; then
+            echo "::error::prices changed (see the summary) and AGENT_BOT_APP_ID is not set, so no pull request was opened"
+            exit 1
+          fi
+
+      - if: steps.sync.outputs.changed == 'true'
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_BOT_APP_ID }}
+          private-key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # The commit goes through the contents API, so GitHub signs it. One
+      # branch: a pull request still open from an earlier week is updated.
+      - name: Open or update the pull request
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          TESTS: ${{ steps.tests.outputs.result }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          commit=$(jq -r '.source.commit' "$TABLE")
+          if ! gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" > /dev/null 2>&1; then
+            gh api "repos/$GH_REPO/git/refs" -f "ref=refs/heads/$BRANCH" -f "sha=$GITHUB_SHA" > /dev/null
+          fi
+          theirs=$(gh api "repos/$GH_REPO/contents/$TABLE?ref=$BRANCH" --jq .sha)
+          if [ "$theirs" != "$(git hash-object "$TABLE")" ]; then
+            gh api -X PUT "repos/$GH_REPO/contents/$TABLE" \
+              -f "message=prices: sync the price table from LiteLLM ${commit:0:12}" \
+              -f "branch=$BRANCH" -f "sha=$theirs" -f "content=$(base64 -w0 "$TABLE")" > /dev/null
+          fi
+          {
+            echo "The weekly prices-sync workflow rebuilt \`$TABLE\` from"
+            echo "https://github.com/BerriAI/litellm/blob/$commit/model_prices_and_context_window.json"
+            echo "and a price changed. Check each changed rate against"
+            echo "https://platform.claude.com/docs/en/about-claude/pricing before merging."
+            echo
+            echo '```diff'
+            cat "$RUNNER_TEMP/rates.diff"
+            echo '```'
+            echo
+            if [ "$TESTS" = pass ]; then
+              echo "\`python3 lib/claude_costing.test.py\` passes on the new table."
+            else
+              echo "\`python3 lib/claude_costing.test.py\` fails on the new table: its copy of the official card (\`OFFICIAL\`) needs the same change, by hand."
+            fi
+          } > "$RUNNER_TEMP/body.md"
+          open=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh pr edit "$open" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --head "$BRANCH" --base "$BASE" \
+              --title "prices: sync the price table from LiteLLM" --body-file "$RUNNER_TEMP/body.md"
+          fi
