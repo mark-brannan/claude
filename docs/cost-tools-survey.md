@@ -98,3 +98,6 @@ Each row names what would change the answer and which way.
 | `cost-state` is documented, or shows up live mid-session | Batch tools and the gate reading it instead of recomputing |
 | A batch tool starts summing across resumed sessions | ccusage's dedup, or shelling out to it |
 | A tool appears that reads OTLP from Claude Code and prices it | Integrating instead of building on the collector |
+
+Raw evidence (downloads, clones, comparison scripts) stayed in the survey
+session's scratch space and is not kept.
