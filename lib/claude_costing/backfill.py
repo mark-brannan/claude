@@ -28,12 +28,10 @@ STORED, PRICED = "claude-code", "price-table"
 
 def default_sessions():
     """The state repo's session records on this machine, or None."""
-    import config
-    for d in config.state_repo_dirs(os.path.expanduser("~")):
-        p = os.path.join(d, "state", "global", "metrics", "sessions")
-        if os.path.isdir(p):
-            return p
-    return None
+    import state
+    d = state.state_dir_or_none()
+    p = d and os.path.join(d, "metrics", "sessions")
+    return p if p and os.path.isdir(p) else None
 
 
 def cents(usd):
@@ -84,9 +82,14 @@ def rewrite(record_path, transcripts, write=True):
         out = json.dumps(rec, ensure_ascii=False, indent=2 if pretty else None,
                          separators=None if pretty else (",", ":"))
         tmp = record_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(out + ("\n" if raw.endswith("\n") else ""))
-        os.replace(tmp, record_path)
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(out + ("\n" if raw.endswith("\n") else ""))
+            os.replace(tmp, record_path)
+        except OSError:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            return "skipped", before, before
     return "changed", before, new["cost_usd"]
 
 
