@@ -1,5 +1,10 @@
-"""Shell's way in: python3 lib/claude_costing rates <model> prints
-input, output, cache_read and cache_write_5m in USD per 1M tokens."""
+"""Shell's way in:
+  python3 lib/claude_costing rates <model>   input, output, cache_read and
+                                             cache_write_5m in USD per 1M tokens
+  python3 lib/claude_costing check [--days N]   reprice local transcripts
+                                             against Claude Code's stored totals
+  python3 lib/claude_costing sync [--commit SHA] [--from FILE] [--check]
+                                             rebuild prices.json from its source"""
 import os
 import sys
 
@@ -12,6 +17,13 @@ def main(argv):
         r = claude_costing.rates(argv[1])
         print(f'{r["input"]:g} {r["output"]:g} {r["cache_read"]:g} {r["cache_write_5m"]:g}')
         return 0
+    # Imported on use: sync is the one module that reaches the network.
+    if argv and argv[0] == "check":
+        from claude_costing import check
+        return check.main(argv[1:])
+    if argv and argv[0] == "sync":
+        from claude_costing import sync
+        return sync.main(argv[1:])
     print(__doc__.strip(), file=sys.stderr)
     return 2
 

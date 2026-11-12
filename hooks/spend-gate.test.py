@@ -180,9 +180,9 @@ class SpendGateTest(unittest.TestCase):
         self.assertIn("SPEND_GATE_USD='five' is not a number", why)
 
     def test_model_prices(self):
-        # 1M output tokens on each model: opus $25, fable $50, haiku $5,
+        # 1M output tokens on each model: opus $20, fable $50, haiku $5,
         # sonnet $10, an unknown name at the top tier's $50.
-        for model, usd in (("claude-opus-5-5", 25), ("claude-fable-5-1", 50),
+        for model, usd in (("claude-opus-5-5", 20), ("claude-fable-5-1", 50),
                            ("claude-haiku-5", 5), ("claude-sonnet-5", 10), ("mystery", 50)):
             self.transcript.write_text(json.dumps(assistant("m", model, out=1_000_000)) + "\n")
             self.assertEqual(self.run_hook(*self.BASH, SPEND_GATE_USD=str(usd))[0], "deny", model)
