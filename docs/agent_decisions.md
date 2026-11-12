@@ -757,3 +757,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t031046z
 - critical-review skill's body-old/body-new example ends with the reviewer's signature line, as the suggestion example does Undo: drop the signature line from the example ([#450](https://github.com/mark-brannan/claude/pull/450))
+
+### 20261112t031050z
+- critical-review skill does not say which line a body thread sits on Undo: add a sentence naming the line ([#450](https://github.com/mark-brannan/claude/pull/450))
