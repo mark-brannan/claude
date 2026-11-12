@@ -64,7 +64,8 @@
       "Artifact",
       "SearchPlugins",
       "SuggestPluginInstall",
-      "SuggestSkills"
+      "SuggestSkills",
+      "ScheduleWakeup"
     ],
     "additionalDirectories": [
       "~/claude_prompts_scratch"
@@ -453,7 +454,7 @@
     "signalk-registry@sailingnaturali": false,
     "github@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
-    "mergify@claude-plugins-official": true,
+    "mergify@claude-plugins-official": false,
     "languette@languette": true
   },
   "extraKnownMarketplaces": {
