@@ -784,3 +784,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t100326z
 - Claude dashboards live at dashboards/ in the claude repo, data source uids victoriametrics and claude-sqlite Undo: rename the directory ([#469](https://github.com/mark-brannan/claude/pull/469))
+
+### 20261112t223107z
+- self-check wsl row: order-7 counted in Normal zone only self-check wsl row: separate fixes per cause; compact_memory for fragmentation, wsl.exe --shutdown for leaked Relays ([#470](https://github.com/mark-brannan/claude/pull/470))
