@@ -7,6 +7,7 @@ another user's processes are unseen. Anywhere neither works, live_cwds
 returns None, and the caller removes nothing.
 """
 import os
+import shutil
 import subprocess
 import sys
 
@@ -24,7 +25,7 @@ def live_cwds(proc="/proc"):
         return cwds
     if sys.platform == "darwin":
         try:
-            p = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fn"], capture_output=True,
+            p = subprocess.run([shutil.which("lsof") or "/usr/sbin/lsof", "-a", "-d", "cwd", "-Fn"], capture_output=True,
                                text=True, timeout=30)
         except (OSError, subprocess.SubprocessError):
             return None
