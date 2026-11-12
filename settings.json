@@ -60,7 +60,11 @@
     ],
     "deny": [
       "Bash(git reset --hard:*)",
-      "Skill(mergify:mergify-stack)"
+      "Skill(mergify:mergify-stack)",
+      "Artifact",
+      "SearchPlugins",
+      "SuggestPluginInstall",
+      "SuggestSkills"
     ],
     "additionalDirectories": [
       "~/claude_prompts_scratch"
