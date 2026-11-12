@@ -23,6 +23,7 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Prune old session scratch dirs](#prune-old-session-scratch-dirs)
 - [Open the metrics dashboard](#open-the-metrics-dashboard)
 - [Read the pickup items](#read-the-pickup-items)
+- [Bring the telemetry stack up or down](#bring-the-telemetry-stack-up-or-down)
 - Push unpushed state-repo commits: `~/.claude/bin/state-push`; a scheduled job in dotfiles' `~/.config/jobs` runs it
 - Reprice session records from local transcripts: `python3 ~/.claude/lib/claude_costing backfill`
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
@@ -474,6 +475,24 @@ NucBoxK12, 2026-11-06, mostly GitHub calls):
 ```bash
 ~/.claude/bin/metrics-db --github --quiet
 ```
+
+## Bring the telemetry stack up or down
+
+Claude Code sends metrics and events over OTLP gRPC to `localhost:4317`, the exporter's default; the stack in
+home-automation's `telemetry/` folder receives them. Prompts and tool details are not sent.
+
+```bash
+docker compose --project-directory ~/home-automation/telemetry up -d
+docker compose --project-directory ~/home-automation/telemetry down    # data stays in the volumes
+```
+
+Verify, after one Claude session: the query returns at least one series.
+
+```bash
+curl -s 'http://localhost:8428/api/v1/series?match[]={__name__=~"claude_code[._].*"}'
+```
+
+On a machine pointing elsewhere, export `OTEL_EXPORTER_OTLP_ENDPOINT` in the shell profile (dotfiles).
 
 ## Read the pickup items
 
