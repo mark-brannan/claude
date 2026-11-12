@@ -268,7 +268,10 @@ def prune_repo(repo, args, cwds, me, tally):
             keep("no HEAD"); continue
         st = git(path, "status", "--porcelain")
         if st.returncode:
-            keep("git status failed"); tally["errors"] += 1; continue
+            # Always said: it fails the run, and keep() prints only with -v.
+            err = (st.stderr.strip().splitlines() or ["no message"])[-1]
+            print(f"{label}: keep {name} -- git status failed: {err}", file=sys.stderr)
+            tally["kept"] += 1; tally["errors"] += 1; continue
         if st.stdout.strip():
             n = len(st.stdout.splitlines())
             keep(f"dirty ({n} path(s))"); tally["dirty"].append(f"{label}: {name}"); continue
