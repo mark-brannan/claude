@@ -751,3 +751,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t024011z
 - Body-ask fix is reviewer-side only; the fixer gets no PR-body write ([#450](https://github.com/mark-brannan/claude/pull/450))
+
+### 20261112t025716z
+- pr-blockers supersedes only cancelled runs, not failed ones a rerun fixed Undo: widen superseded() to any conclusion ([#451](https://github.com/mark-brannan/claude/pull/451))
