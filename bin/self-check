@@ -259,8 +259,11 @@ def wsl_inputs():
                 comms.append(fh.read().strip())
         except OSError:
             pass
-    with open("/proc/buddyinfo") as fh:
-        return comms, fh.read()
+    try:
+        with open("/proc/buddyinfo") as fh:
+            return comms, fh.read()
+    except OSError:
+        return None
 
 
 def find_transcript(arg):
