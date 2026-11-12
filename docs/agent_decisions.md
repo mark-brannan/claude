@@ -778,3 +778,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t090857z
 - RUNBOOK verify query uses VictoriaMetrics port 8428 and ~/home-automation checkout Undo: edit the RUNBOOK line to match the home-automation half ([#468](https://github.com/mark-brannan/claude/pull/468))
+
+### 20261112t090939z
+- OTLP endpoint default http://localhost:4317 gRPC, a literal in settings.json Undo: change the one value; per machine via settings.local.json ([#468](https://github.com/mark-brannan/claude/pull/468))
