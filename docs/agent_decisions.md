@@ -769,3 +769,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t074201z
 - The worker shell-and-git block lives in /pickup section 1 and /orchestrate points at it, so stage-by-path reaches an orchestrate worker twice worker-start --worktree keeps taking any path; a default under .claude/worktrees/ is not built Undo: revert the PR ([#459](https://github.com/mark-brannan/claude/pull/459))
+
+### 20261112t074748z
+- cost-tools survey lives in its own file docs/cost-tools-survey.md, raw evidence not kept Undo: move the content into docs/cost-practices.md ([#465](https://github.com/mark-brannan/claude/pull/465))
