@@ -477,7 +477,7 @@ NucBoxK12, 2026-11-06, mostly GitHub calls):
 
 ## Bring the telemetry stack up or down
 
-Claude Code sends metrics and events to `localhost:4318` (`settings.json`); the stack in
+Claude Code sends metrics and events over OTLP gRPC to `localhost:4317` (`settings.json`); the stack in
 home-automation's `telemetry/` folder receives them. Its two variables are in that folder's
 `.env.example`. Prompts and tool details are not sent.
 
