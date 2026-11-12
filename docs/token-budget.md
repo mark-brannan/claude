@@ -159,7 +159,7 @@ so the 13.8 KB is no longer the lever #74 took it for.
 Superseded by the next section, which split row 10 and found the tool schemas
 partly configurable.
 
-## First turn, 2026-11-12 (Desktop, `claude` current, before #455)
+## First turn, 2026-11-12 (Desktop, `claude` 2.1.321, before #455)
 
 Total **measured: 56,717** (read off the first request recorded in a
 transcript). Rows are that request's characters at one measured rate: 17,008
