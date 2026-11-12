@@ -129,8 +129,8 @@ class CriticalReviewTest(unittest.TestCase):
         self.assertEqual((row["turns"], row["tool_calls"], row["subagents"]), (4, 2, 2))
         self.assertEqual(row["wall_s"], 120, "the command to the review's last event")
         self.assertEqual((row["model"], row["effort"]), ("claude-opus-5-5", "high"))
-        # Opus $5/$25: 150 out + 1000 read; Haiku $1/$5: 11 out.
-        self.assertAlmostEqual(row["usd"], round((150 * 25 + 1000 * 0.5 + 11 * 5) / 1e6, 4))
+        # Opus 5.5, $20 out and $0.20 read: 151 out + 1000 read; Haiku at $5 out: 10.
+        self.assertAlmostEqual(row["usd"], round((151 * 20 + 1000 * 0.2 + 10 * 5) / 1e6, 4))
         self.assertEqual([row[k] for k in ("fixed", "look_at", "pencil", "decide")], [2, 0, 1, 0])
 
     def reviewer(self, *argv):

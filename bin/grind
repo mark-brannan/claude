@@ -112,9 +112,9 @@
 #         hand-off and ends its turn (claude#69). The higher of the item's
 #         `budget:` and --item-budget scaled by its model's price against
 #         Sonnet's and its effort weight. At the $5 default:
-#           sonnet/low $2.50, sonnet/medium $5.00, opus/high $25.00
+#           sonnet/low $2.50, sonnet/medium $5.00, opus/high $20.00
 #   hard  3x the soft cap (pencil), the worker's --max-budget-usd, never cut:
-#         $7.50, $15.00 and $75.00 above. It ends only a worker that has run
+#         $7.50, $15.00 and $60.00 above. It ends only a worker that has run
 #         three times past the stop it was told.
 # The run has one, --session-budget ($20), where dispatch stops; nothing at the
 # run level kills a worker, so a run overshoots by at most the last item's

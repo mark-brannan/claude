@@ -576,7 +576,8 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
 
 # --- cost ------------------------------------------------------------------
 # A dollar estimate, priced here rather than read: the transcript JSONL carries
-# no cost field at all (checked across every transcript on this machine). The
+# no cost field while the session runs (Claude Code writes its own total, a
+# cost-state line, only when the session exits). The
 # `total_cost_usd` the grind script prints comes from the `--output-format json`
 # result envelope, which only a headless `claude -p` run produces and which
 # never lands in a transcript. Interactive Claude Code does know the number --
@@ -595,31 +596,29 @@ def prev_ask($h): (last($atext[] | select(.i < $h)) // {text: null}).text | ask_
 #               2026-09-15, 45% of written cache tokens were 5m and 55% 1h.
 #               A flat multiplier either way is wrong by ~6% on the total.
 #               Split by TTL, which the transcript gives exactly.
-#   fable       the price table had no fable entry, so every fable session fell
-#               through to the Opus rate -- half the real one. Fable is the
-#               second-most-used model in this corpus (237 of 1213 records at
-#               the time of writing) and 32% of the dollars this script has
-#               reported since it started reporting any, so the whole series
-#               was understated. Fable 5.1 and Mythos 5.1 also price cache
-#               reads at a flat $0.25/MTok, not 0.1x base input.
 # The rates come from lib/claude_costing/prices.json, the one price table,
-# which says how a model is matched and what an unknown one costs.
-def price:
+# which says how a model is matched, what an unknown one costs, and which
+# rules price a request by its prompt size. Each message is priced at its own
+# prompt size, as lib/claude_costing prices it.
+def rule:
     . as $m
-    | ([$prices[0].rules[] | select(.match as $re | $m | test($re))] | first // $prices[0].fallback) as $r
-    | {i: $r.input, o: $r.output, r: ($r.cache_read // ($r.input * $prices[0].cache_read_ratio)),
-       w5: ($r.input * $prices[0].cache_write_5m), w1: ($r.input * $prices[0].cache_write_1h)};
+    | ([$prices[0].rules[] | select(.match as $re | $m | test($re))] | first // $prices[0].fallback);
+def tier($prompt):
+    if .above != null and $prompt > .above.prompt_tokens then .above else . end;
 
 ([ $cmsgs[] | {m: (.message.model // "unknown"), u: (.message.usage // {})} ]
    | group_by(.m)
    | map({ key: .[0].m,
-           value: ((.[0].m | price) as $p
-             | ( (map(.u.input_tokens // 0) | add) * $p.i
-               + (map(.u.cache_creation.ephemeral_5m_input_tokens // 0) | add) * $p.w5
-               + (map(.u.cache_creation.ephemeral_1h_input_tokens  // 0) | add) * $p.w1
-               + (map(.u.cache_read_input_tokens // 0) | add) * $p.r
-               + (map(.u.output_tokens // 0) | add) * $p.o
-               ) / 1000000
+           value: ((.[0].m | rule) as $rule
+             | map(.u as $u
+                 | ($rule | tier(($u.input_tokens // 0) + ($u.cache_read_input_tokens // 0)
+                                 + ($u.cache_creation_input_tokens // 0))) as $p
+                 | ($u.input_tokens // 0) * $p.input
+                   + ($u.cache_creation.ephemeral_5m_input_tokens // 0) * $p.cache_write_5m
+                   + ($u.cache_creation.ephemeral_1h_input_tokens // 0) * $p.cache_write_1h
+                   + ($u.cache_read_input_tokens // 0) * $p.cache_read
+                   + ($u.output_tokens // 0) * $p.output)
+             | add / 1000000
              | . * 10000 | round | . / 10000) })
    | from_entries) as $cost_by_model
 

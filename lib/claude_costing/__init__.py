@@ -7,15 +7,14 @@ import from the rest of lib/, and settings (the plan figures) come in as
 arguments, never read here. hooks/session-metrics.jq reads the same table,
 prices.json, as jq data.
 
-The table was checked against Claude Code's own figure: the claude#69 test
-run's total_cost_usd ($0.41907) reproduces to the cent at these input, output
-and cache multipliers (cache reads 0.1x input, writes 1.25x for the 5-minute
-cache and 2x for the 1-hour one, which Claude Code writes by default).
+The table is generated (sync.py, never imported here) and held to Claude
+Code's own stored totals by claude_costing.test.py and `check`.
 
 Usage folds into a dict of messages keyed by message id: a message's content
 blocks each arrive as a transcript event carrying the same usage, so each
 field keeps its largest value rather than summing.
 """
+import datetime
 import glob
 import json
 import os
@@ -29,15 +28,24 @@ with open(os.path.join(HERE, "prices.json"), encoding="utf-8") as _f:
     TABLE = json.load(_f)
 
 
-def rates(model):
+RATES = ("input", "output", "cache_read", "cache_write_5m", "cache_write_1h")
+_RULES = [(re.compile(r["match"]), r) for r in TABLE["rules"]]
+_SEEN = {}  # model name -> its rule: a transcript repeats a handful of names
+
+
+def _rule(name):
+    if name not in _SEEN:
+        _SEEN[name] = next((r for rx, r in _RULES if rx.search(name)), TABLE["fallback"])
+    return _SEEN[name]
+
+
+def rates(model, prompt_tokens=0):
     """{input, output, cache_read, cache_write_5m, cache_write_1h} in USD per
-    1M tokens for a model name."""
-    name = model or ""
-    rule = next((r for r in TABLE["rules"] if re.search(r["match"], name)), TABLE["fallback"])
-    return {"input": rule["input"], "output": rule["output"],
-            "cache_read": rule.get("cache_read", rule["input"] * TABLE["cache_read_ratio"]),
-            "cache_write_5m": rule["input"] * TABLE["cache_write_5m"],
-            "cache_write_1h": rule["input"] * TABLE["cache_write_1h"]}
+    1M tokens for a model name, at the tier a request with that prompt pays."""
+    rule = _rule(model or "")
+    above = rule.get("above")
+    tier = above if above and prompt_tokens > above["prompt_tokens"] else rule
+    return {k: tier[k] for k in RATES}
 
 
 def add_usage(e, msgs):
@@ -80,11 +88,11 @@ def read_usage(path, msgs):
 
 
 def price(msgs):
-    """USD for folded messages, each at its own model's rates."""
+    """USD for folded messages, each at its own model's rates and prompt size."""
     spend = 0.0
     for u in msgs.values():
-        r = rates(u["model"])
         write = u["cache_creation_input_tokens"]
+        r = rates(u["model"], u["input_tokens"] + u["cache_read_input_tokens"] + write)
         w1h = min(u["cache_1h"], write)
         w5m = write - w1h  # unsplit writes price as the 5-minute cache
         spend += (u["input_tokens"] * r["input"] + u["output_tokens"] * r["output"]
@@ -124,6 +132,55 @@ def session_spend(path):
         except OSError:
             continue
     return price(msgs), ctx
+
+
+def recorded_state(path):
+    """The cost-state line Claude Code writes when a session exits, or None
+    when it cannot stand for the whole session: none written; usage follows
+    it; the process that wrote it started after the transcript's first call
+    (a resume starts the count again); the session was continued in another,
+    which takes its running sub-agents' spend; or it holds a model Claude
+    Code could not price. OSError if the transcript cannot be read."""
+    state, first, stale = None, None, False
+    with open(path, "rb") as f:
+        for line in f:
+            costs = b'"cost-state"' in line or b'"continued-in"' in line
+            if not costs and (b'"assistant"' not in line or b'"usage"' not in line):
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(e, dict):
+                continue
+            if e.get("type") == "continued-in":
+                return None
+            if e.get("type") == "cost-state":
+                state, stale = e, False
+            elif e.get("type") == "assistant" and (e.get("message") or {}).get("usage"):
+                stale = True
+                if first is None:
+                    first = e.get("timestamp") or ""
+    if state is None or stale or state.get("hasUnknownModelCost"):
+        return None
+    total, start = state.get("totalCostUSD"), state.get("startTime")
+    if isinstance(total, bool) or not isinstance(total, (int, float)) or total < 0:
+        return None
+    if first is not None:
+        try:
+            began = datetime.datetime.fromisoformat(str(first).replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+        if isinstance(start, bool) or not isinstance(start, (int, float)) or start / 1000 > began:
+            return None
+    return state
+
+
+def recorded_spend(path):
+    """USD Claude Code itself recorded for the session, sub-agents included,
+    or None when recorded_state trusts no record. Absent mid-session."""
+    state = recorded_state(path)
+    return state["totalCostUSD"] if state else None
 
 
 def share_of_week(usd, week_usd):
