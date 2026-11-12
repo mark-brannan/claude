@@ -64,7 +64,6 @@ jobs:
         id: tests
         run: |
           set -uo pipefail
-          sudo apt-get update -q && sudo apt-get install -y -q jq
           if python3 lib/claude_costing.test.py > "$RUNNER_TEMP/tests.txt" 2>&1; then
             echo "result=pass" >> "$GITHUB_OUTPUT"
           else

@@ -75,8 +75,13 @@ def main(argv):
     ap.add_argument("--projects", default=os.path.expanduser("~/.claude/projects"), help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     cutoff = time.time() - args.days * 86400
-    paths = [p for p in glob.glob(os.path.join(glob.escape(args.projects), "*", "*.jsonl"))
-             if os.path.getmtime(p) >= cutoff]
+    paths = []
+    for p in glob.glob(os.path.join(glob.escape(args.projects), "*", "*.jsonl")):
+        try:
+            if os.path.getmtime(p) >= cutoff:
+                paths.append(p)
+        except OSError:
+            continue
     rows, trusted, seen = compare(sorted(paths))
     print(f"{trusted} of {seen} transcripts carry a trusted stored total")
     print(f"{'model':30} {'sessions':>8} {'ours':>10} {'stored':>10} {'ratio':>6}")
