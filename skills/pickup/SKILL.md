@@ -68,8 +68,9 @@ permission dialog.
 ```
 ## Shell and git (from the driver)
 
-- Your worktree is <repo>/.claude/worktrees/<slug>. Never call EnterWorktree
-  on a path anywhere else.
+- Your worktree is the one you were started in, or else
+  <repo>/.claude/worktrees/<slug>, which `worker-start --worktree` makes.
+  Never call EnterWorktree on a path anywhere else.
 - Never `cd`. `git -C <worktree> ...` and absolute paths; one action per
   Bash call, nothing chained.
 - A PR body, a commit message or a script is a file made with the Write
