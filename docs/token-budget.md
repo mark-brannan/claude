@@ -2,7 +2,7 @@
 
 Measured 2026-08-20 in a cloud container, `claude` 2.1.236, by running
 headless probes (`claude -p "ok" --output-format json`) against real config
-and reading `usage` off each. Every number below is measured, not estimated.
+and reading `usage` off each. The August numbers are measured, not estimated.
 Re-measure before trusting these after a CLI upgrade. The floor table and
 rules 1-4 are the August snapshot; later sections carry their own dates, and
 "First turn, 2026-11-12" is the current one.
@@ -169,11 +169,11 @@ not `/context` readings.
 
 | ~Tokens | Component | Mine to trim? |
 |---:|---|---|
-| 13.4k | Artifact schema | denied, #455 |
+| 12.7k | Artifact schema | denied, #455 |
 | 8.2k | Global standing orders | yes (loop two) |
 | 5.7k | Skills listing: mine 2.0k, mergify plugin 1.0k, built-in 2.7k | partly |
 | 3.8k | System prompt | no |
-| 6.6k | Workflow 2.0k, ScheduleWakeup 1.7k, ReportFindings 0.8k, SuggestPluginInstall 0.9k, SearchPlugins 0.65k, SuggestSkills 0.6k | by deny |
+| 6.6k | Workflow 2.0k, ScheduleWakeup 1.7k, the three suggesters 2.2k, ReportFindings 0.8k | by deny, not ReportFindings |
 | 7.2k | Core tool schemas (Agent, Bash, Read, Edit, Write, ...) | mostly no |
 | 1.7k | Memory index | yes |
 | 1.6k | Agent listing | no |
@@ -181,12 +181,18 @@ not `/context` readings.
 | 0.7k | This repo's project instructions | yes |
 | ~5k | Environment, deferred tool names, MCP instructions, reminders | little |
 
-Tool calls per month, in sessions, from transcripts (Aug, Sep, Oct, Nov):
-ScheduleWakeup 42, 65, 4, 0; Artifact 18, 13, 6 (Sep to Nov); Workflow
-3, 23, 23 (Sep to Nov); a mergify skill 0, 40, 7, 1; the three suggesters
-never. #455 denied Artifact and the suggesters; a later change denied
-ScheduleWakeup and disabled the mergify plugin. A Desktop session opened
-after #455 started at 40,641, from 56,717.
+Sessions that called each tool, from transcripts (Nov to the 12th; – not counted):
+
+| Tool | Aug | Sep | Oct | Nov |
+|---|---:|---:|---:|---:|
+| ScheduleWakeup | 42 | 65 | 4 | 0 |
+| Artifact | – | 18 | 13 | 6 |
+| Workflow | – | 3 | 23 | 23 |
+| a mergify skill | 0 | 40 | 7 | 1 |
+
+The three suggesters were never called. #455 denied Artifact and the
+suggesters; a later change denied ScheduleWakeup and disabled the mergify
+plugin. A Desktop session opened after #455 started at 40,641, from 56,717.
 
 ## Why `/clear` is the whole game
 
