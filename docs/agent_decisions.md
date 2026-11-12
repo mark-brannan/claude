@@ -754,3 +754,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t025716z
 - pr-blockers supersedes only cancelled runs, not failed ones a rerun fixed Undo: widen superseded() to any conclusion ([#451](https://github.com/mark-brannan/claude/pull/451))
+
+### 20261112t031046z
+- critical-review skill's body-old/body-new example ends with the reviewer's signature line, as the suggestion example does Undo: drop the signature line from the example ([#450](https://github.com/mark-brannan/claude/pull/450))
