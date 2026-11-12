@@ -760,3 +760,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t031050z
 - critical-review skill does not say which line a body thread sits on Undo: add a sentence naming the line ([#450](https://github.com/mark-brannan/claude/pull/450))
+
+### 20261112t033616z
+- critical-review's [easy] size bound is about ten changed lines, the measured size of easy-shaped fixes in a 40-finding sample Undo: change the number ([#453](https://github.com/mark-brannan/claude/pull/453))
