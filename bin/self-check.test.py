@@ -43,6 +43,15 @@ class WslRowTest(unittest.TestCase):
         self.assertEqual(status, "warn")
         self.assertIn("sudo sysctl vm.compact_memory=1", value)
 
+    def test_both_exhausted_names_both_fixes(self):
+        status, value = sc.wsl_row(["Relay"] * 124, BUDDY % 0)
+        self.assertEqual(status, "warn")
+        self.assertIn("sudo sysctl vm.compact_memory=1", value)
+        self.assertIn("wsl.exe --shutdown", value)
+
+    def test_relay_with_pid_suffix_counts(self):
+        self.assertIn("2 Relay", sc.wsl_row(["Relay", "Relay(478)"], BUDDY % 902)[1])
+
 
 class LiveCloneTest(unittest.TestCase):
     def setUp(self):

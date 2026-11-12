@@ -229,7 +229,10 @@ def hook_errors_row(sd, rows=None):
     return ("warn", "%d: %s" % (len(rows), hooktrace.summary(rows)))
 
 
-RELAY_MAX = 50  # orphaned interop Relays seen alive before accept4 failed: 124
+# Orphaned interop Relays seen alive before accept4 failed: 124. /proc/<pid>/comm reads
+# `Relay` for most and `Relay(<pid>)` for a few under init (2026-11-12: 127 and 5), so
+# the count is a prefix match.
+RELAY_MAX = 50
 
 
 def wsl_row(comms, buddyinfo):
@@ -237,14 +240,17 @@ def wsl_row(comms, buddyinfo):
 
     Either running out makes every interop call fail with `UtilAcceptVsock accept4 failed 110`.
     """
-    relays = sum(1 for c in comms if c == "Relay")
+    relays = sum(1 for c in comms if c.startswith("Relay"))
     zones = {f[3]: [int(n) for n in f[4:]] for f in (ln.split() for ln in buddyinfo.splitlines()) if len(f) > 11}
     order7 = sum(z[7] for z in ([zones["Normal"]] if "Normal" in zones else zones.values()))
     value = "%d Relay, %d free order-7 blocks" % (relays, order7)
+    fixes = []
     if order7 == 0:
-        return ("warn", value + "; run: sudo sysctl vm.compact_memory=1")
+        fixes.append("run: sudo sysctl vm.compact_memory=1")
     if relays > RELAY_MAX:
-        return ("warn", value + "; leaked, cleared by: wsl.exe --shutdown")
+        fixes.append("leaked, cleared by: wsl.exe --shutdown")
+    if fixes:
+        return ("warn", value + "; " + "; ".join(fixes))
     return ("ok", value)
 
 
