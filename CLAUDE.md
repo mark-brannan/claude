@@ -158,6 +158,13 @@ I'm fine, drop it.
 
 ## Execution
 
+- **Built once, for every repo.** The Claude layer is the global setting
+  for all my work, so what goes into it generalizes by default. A CI
+  workflow or action that would serve other repos lives in
+  `mark-brannan/.github`, with a caller in each repo; a tool or hook
+  lives in this layer. A repo-only thing is the exception: named as
+  one and confined to that repo, like colregs' conformance runs or
+  symphony's docker and ansible.
 - **No scoped-down "safer alternative."** Do the thing asked, completely,
   with real safety mechanics — transactions, reversibility, snapshots — not
   hedging. Push back on correctness, not nerves.

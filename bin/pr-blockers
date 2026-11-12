@@ -75,6 +75,19 @@ def is_pending(r):
     return r.get("status") not in (None, "COMPLETED") or (r.get("conclusion") or r.get("state") or "") in PENDING
 
 
+def superseded(checks):
+    """Drop a cancelled check run when a later run of the same check exists: a rerun cancelled it."""
+    def key(r):
+        return (r.get("workflowName"), r.get("name"))
+    last = {}
+    for r in checks:
+        if r.get("name") and (r.get("startedAt") or "") > last.get(key(r), ""):
+            last[key(r)] = r["startedAt"]
+    return [r for r in checks if not (
+        r.get("name") and (r.get("conclusion") or "") == "CANCELLED"
+        and (r.get("startedAt") or "") < last.get(key(r), ""))]
+
+
 COMMITS = """query($owner:String!,$name:String!,$n:Int!,$endCursor:String){
   repository(owner:$owner,name:$name){pullRequest(number:$n){
     commits(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
@@ -239,7 +252,9 @@ def rest_read(owner, repo, n):
     for rv in ghrest.rest_pages(run_gh, f"{r}/pulls/{n}/reviews"):
         if rv["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
             latest[(rv["user"] or {}).get("login")] = rv["state"]
-    checks = [{"name": c["name"], "status": c["status"].upper(), "conclusion": (c["conclusion"] or "").upper()}
+    # No workflow name on this route, so superseded() keys REST runs on name alone.
+    checks = [{"name": c["name"], "status": c["status"].upper(), "conclusion": (c["conclusion"] or "").upper(),
+               "startedAt": c.get("started_at") or ""}
               for c in ghrest.rest_pages(run_gh, f"{r}/commits/{sha}/check-runs", "check_runs")]
     checks += [{"context": s["context"], "state": s["state"].upper()}
                for s in ghrest.rest(run_gh, f"{r}/commits/{sha}/status").get("statuses") or []]
@@ -291,7 +306,7 @@ def blockers(owner, repo, n, leave_easy=False):
     # a branch that is merely behind its base alone, the queue updates it.
     if state == "DRAFT":
         out.append("the PR is a draft; fix: mark it ready for review")
-    for r in pr.get("statusCheckRollup") or []:
+    for r in superseded(pr.get("statusCheckRollup") or []):
         name = r.get("name") or r.get("context") or "?"
         done = r.get("conclusion") or r.get("state") or ""
         if is_pending(r):
