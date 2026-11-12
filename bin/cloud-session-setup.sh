@@ -108,6 +108,7 @@ lib/sidlive.py
 lib/ids.py
 lib/lock.py
 lib/gitrun.py
+lib/proccwd.py
 lib/lanes.py
 lib/hooktrace.py
 lib/libpath.py
@@ -155,6 +156,7 @@ hooks/subagent-permission-approve.py
 hooks/statusline-metrics.py
 hooks/connector-budget.py
 hooks/session-start-sync-status.py
+hooks/session-start-jobs.py
 hooks/session-start-hook-errors.py
 hooks/prose-budget-edit.py
 hooks/branch-home-gate.py

@@ -49,10 +49,11 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 try:
     import gitrun  # noqa: E402
+    from proccwd import in_use, live_cwds  # noqa: E402
 except ModuleNotFoundError as e:
-    if e.name != "gitrun":
+    if e.name not in ("gitrun", "proccwd"):
         raise
-    print("prune-worktrees: lib/gitrun.py not found (looked beside the tool and in ~/.claude/lib)",
+    print(f"prune-worktrees: lib/{e.name}.py not found (looked beside the tool and in ~/.claude/lib)",
           file=sys.stderr)
     sys.exit(3)
 
@@ -119,22 +120,6 @@ def worktrees(repo):
     if cur:
         items.append(cur)
     return items
-
-
-def live_cwds():
-    cwds = set()
-    for pid in os.listdir("/proc"):
-        if pid.isdigit():
-            try:
-                cwds.add(os.readlink(f"/proc/{pid}/cwd").removesuffix(" (deleted)"))
-            except OSError:
-                pass
-    return cwds
-
-
-def in_use(path, cwds):
-    p = path.rstrip("/") + "/"
-    return any(c == path or c.startswith(p) for c in cwds)
 
 
 def last_touch(wt):
@@ -369,6 +354,9 @@ def main():
         print(__doc__.strip()); return 0
 
     cwds = live_cwds()
+    if cwds is None:
+        print("prune-worktrees: cannot read running processes' cwds -- removing nothing", file=sys.stderr)
+        return 1
     cwds.discard("/")
     me = os.getcwd()
     tally = {"removed": 0, "kept": 0, "metadata": 0, "errors": 0, "dirty": [], "unlanded": []}
