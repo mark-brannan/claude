@@ -14,6 +14,8 @@
 #   does the same for that PR's head and prints the PR. With --worktree the
 #   checkout goes in a new worktree at <path> (a --head or --pr one detached,
 #   so the branch stays free for whoever holds it); without, in <repo>.
+#   <path> belongs under the repo's .claude/worktrees/: EnterWorktree asks
+#   on a path anywhere else.
 # A local branch is never reset: --head fails if one by that name exists.
 # A PR whose head is in a fork is refused. gh runs in <repo>, so it reads
 # that repo's issues and PRs.
