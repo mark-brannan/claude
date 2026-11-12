@@ -24,6 +24,26 @@ def sh(cwd, *args):
                             GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t"))
 
 
+BUDDY = ("Node 0, zone    DMA32   5349   5724   5263   5496   3757   2356   1301    619    319    108     21\n"
+         "Node 0, zone   Normal  21059  14249   9781   4128   4515   3663   2044    %s    267     26      0\n")
+
+
+class WslRowTest(unittest.TestCase):
+    def test_few_relays_and_free_blocks_is_ok(self):
+        self.assertEqual(sc.wsl_row(["Relay"] * 3 + ["bash"], BUDDY % 902), ("ok", "3 Relay, 902 free order-7 blocks"))
+
+    def test_leaked_relays_warn_and_name_the_fix(self):
+        status, value = sc.wsl_row(["Relay"] * 124, BUDDY % 902)
+        self.assertEqual(status, "warn")
+        self.assertIn("124 Relay", value)
+        self.assertIn("wsl.exe --shutdown", value)
+
+    def test_no_order7_blocks_in_normal_warns_despite_dma32(self):
+        status, value = sc.wsl_row([], BUDDY % 0)
+        self.assertEqual(status, "warn")
+        self.assertIn("sudo sysctl vm.compact_memory=1", value)
+
+
 class LiveCloneTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
