@@ -763,3 +763,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t033616z
 - critical-review's [easy] size bound is about ten changed lines, the measured size of easy-shaped fixes in a 40-finding sample Undo: change the number ([#453](https://github.com/mark-brannan/claude/pull/453))
+
+### 20261112t073149z
+- unknown model falls back to the dearest rate the source lists (10/50), not the retired 15/75 a bare alias prices as its family's newest version sync leaves the file and pin alone when no rate changed a hand-kept rule the source later lists is dropped if equal, an error if different prices-sync opens its PR even when the package tests fail on the new table fixture tolerance 0.97-1.001; check flags a model with 2% of stored dollars outside 0.95-1.01 check.py and sync.py are not seeded into cloud sessions one PR for all four steps Undo: revert the PR ([#458](https://github.com/mark-brannan/claude/pull/458))
