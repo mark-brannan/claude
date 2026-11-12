@@ -60,6 +60,9 @@ All checked against the official card for 21 models [V].
 | simonw `llm-prices` | None | Sonnet 5.5 cache read wrong; no cache write |
 | tokencost, tokonomics, Helicone, tokenlens, npm `llm-cost` | None | Stale or wrappers over LiteLLM |
 
+LiteLLM entries also carry the 5m and 1h cache-write split, the Haiku tier,
+and the fast-mode and geo multipliers as fields [U].
+
 ## Third-party Claude Code usage tools
 
 | Tool | What it does | Correct use |
