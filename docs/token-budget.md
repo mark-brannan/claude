@@ -64,10 +64,11 @@ which side of the threshold a session lands on.
 
 ### Dead end, tested and rejected
 
-Denying tools does not help. `--disallowedTools` on NotebookEdit, WebSearch,
+Denying the core tools does not help. `--disallowedTools` on NotebookEdit, WebSearch,
 WebFetch and the entire Task family saves **33 tokens**. Agent+Task saves
 2,039. The only large savings come from denying Bash/Read/Edit/Write/Glob/
-Grep — the six that make the tool useful. Do not revisit this.
+Grep — the six that make the tool useful. Harness-added tools are the
+exception: denying Artifact saved 12,653 (2026-11-11, #455).
 
 ## Cache churn: what a mid-session switch actually costs
 
