@@ -60,8 +60,8 @@ makes is never a thread.
 **Easy.** A finding you judge easy and unambiguous carries a second tag,
 `[easy]`, right after the first: `🤖 [nit] [easy] <what is wrong>`. Easy is a
 nit, typo, name, a missing "try it", or any fix the finding states in
-full that stays inside one file, changes about ten lines or fewer, and
-needs no new test. Never `[easy]`
+full as one suggestion fence or one body pair, about ten lines or fewer,
+that needs no new test. Never `[easy]`
 on a `[blocker]`, a Judgment line or a reversal, nor on a title or label
 fix: the fixer edits the files and the PR body, nothing else, so the
 tag only queues the thread for its decline. Where the fix replaces whole
