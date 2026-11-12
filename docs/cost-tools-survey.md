@@ -5,8 +5,6 @@ transcript pricing and plan-usage readouts, from Anthropic and from third
 parties. Done 2026-11-11 by three research agents reading source and docs,
 with the claims that drove action rechecked by hand. It led to claude#458
 (prices generated from LiteLLM, checked against Claude Code's stored totals).
-claude#458 is open as of writing; rows marked "since #458" and the "After"
-column assume it.
 The telemetry side continues in the epic claude#460.
 
 Tags: **[V]** read or measured in the survey session · **[U]** an agent's
@@ -18,14 +16,14 @@ Keep `claude_costing`; it is small, and its transcript reading is sound.
 What it got wrong was the data: the hand-kept rate card was stale for every
 5.2 and 5.5 model.
 
-| Measure, last 14 days | Before #458 | After |
+| Measure, last 14 days, single-model sessions | Before #458 | After |
 |---|---|---|
 | Ours over Claude Code's stored total, Opus 5.5 sessions | 1.67 | 0.97 [V] |
 | Same, Fable 5.2 | 1.91 | 0.98 [V] |
 | Same, Haiku 5.5 | 5.36 | 0.96 [V] |
 | All 853 sessions with a stored total | $2,818 vs $1,836 | — |
 
-Repriced correctly, we land 2–4% under Claude Code and never over [V]. The
+Repriced correctly, we land 1–4% under Claude Code and never over [V]. The
 shortfall is probably calls that never reach the transcript [?].
 
 ## Anthropic and Claude Code
