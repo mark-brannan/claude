@@ -269,8 +269,8 @@ class CheckTest(unittest.TestCase):
             sub = Path(d) / "proj" / "s0" / "subagents" / "agent-x.jsonl"
             sub.parent.mkdir(parents=True)
             sub.write_text(json.dumps(call(LATER, "sub")) + "\n")
-            rows, trusted, seen = check.compare(paths)
-            self.assertEqual((trusted, seen), (1, 2))
+            rows, covered, seen = check.compare(paths)
+            self.assertEqual((covered, seen), (1, 2))
             n, ours, stored = rows["claude-opus-5-5"]
             self.assertEqual((n, stored), (1, 41.0))
             self.assertAlmostEqual(ours, 40.0)

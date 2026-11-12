@@ -39,8 +39,8 @@ def session_by_model(path):
 
 
 def compare(paths):
-    """({model: [sessions, ours, stored]}, sessions trusted, sessions seen)."""
-    rows, trusted, seen = {}, 0, 0
+    """({model: [sessions, ours, stored]}, sessions covered, sessions seen)."""
+    rows, covered, seen = {}, 0, 0
     for path in paths:
         try:
             state = cc.recorded_state(path)
@@ -50,7 +50,7 @@ def compare(paths):
         seen += 1
         if not state:
             continue
-        trusted += 1
+        covered += 1
         stored = {m: (u or {}).get("costUSD") or 0.0 for m, u in (state.get("modelUsage") or {}).items()}
         for model in set(ours) | set(stored):
             if not ours.get(model) and not stored.get(model):
@@ -59,7 +59,7 @@ def compare(paths):
             row[0] += 1
             row[1] += ours.get(model, 0.0)
             row[2] += stored.get(model, 0.0)
-    return rows, trusted, seen
+    return rows, covered, seen
 
 
 def failing(rows):
@@ -82,8 +82,8 @@ def main(argv):
                 paths.append(p)
         except OSError:
             continue
-    rows, trusted, seen = compare(sorted(paths))
-    print(f"{trusted} of {seen} transcripts carry a trusted stored total")
+    rows, covered, seen = compare(sorted(paths))
+    print(f"{covered} of {seen} transcripts carry a trusted stored total")
     print(f"{'model':30} {'sessions':>8} {'ours':>10} {'stored':>10} {'ratio':>6}")
     bad = failing(rows)
     for model in sorted(rows):
@@ -91,7 +91,7 @@ def main(argv):
         ratio = f"{ours / stored:.3f}" if stored else "-"
         print(f"{model:30} {n:8d} {ours:10.2f} {stored:10.2f} {ratio:>6}{'  OUT' if model in bad else ''}")
     ours, stored = sum(r[1] for r in rows.values()), sum(r[2] for r in rows.values())
-    print(f"{'all':30} {trusted:8d} {ours:10.2f} {stored:10.2f} {ours / stored if stored else 0:6.3f}")
+    print(f"{'all':30} {covered:8d} {ours:10.2f} {stored:10.2f} {ours / stored if stored else 0:6.3f}")
     if bad:
         print(f"outside {LOW}..{HIGH}: {', '.join(bad)}", file=sys.stderr)
     return 1 if bad else 0
