@@ -3,7 +3,9 @@
 Measured 2026-08-20 in a cloud container, `claude` 2.1.236, by running
 headless probes (`claude -p "ok" --output-format json`) against real config
 and reading `usage` off each. Every number below is measured, not estimated.
-Re-measure before trusting these after a CLI upgrade.
+Re-measure before trusting these after a CLI upgrade. The floor table and
+rules 1-4 are the August snapshot; later sections carry their own dates, and
+"First turn, 2026-11-12" is the current one.
 
 ## The floor, line by line
 
@@ -22,14 +24,16 @@ before the first word of work.
 Remote/managed session (desktop or web routed through a cloud container):
 **47,796 tokens**. The +11,139 is harness text I do not control — container
 instructions, GitHub integration, PR babysitting rules, branch requirements,
-plus three extra tools (Artifact, Workflow, ToolSearch).
+plus three extra tools (Artifact, Workflow, ToolSearch). Artifact has been
+denied in `settings.json` since #455.
 
 Two facts that reframe the bill:
 
 - The floor is **cached**. 26,754 of 32,277 came back as `cache_read`, billed
   at 10%. The floor costs context window, not much money.
-- My own config is **4,520 of 47,796 — 9%**. Halving CLAUDE.md buys 2k. It is
-  not the lever, despite what CLAUDE.md's own preamble implies.
+- In August my own config was **4,520 of 47,796 — 9%**, and halving CLAUDE.md
+  bought 2k. By 2026-11-12 the standing orders alone are ~8.2k, the largest
+  piece of the start that I write.
 
 ## What actually works, ranked
 
@@ -64,11 +68,12 @@ which side of the threshold a session lands on.
 
 ### Dead end, tested and rejected
 
-Denying the core tools does not help. `--disallowedTools` on NotebookEdit, WebSearch,
-WebFetch and the entire Task family saves **33 tokens**. Agent+Task saves
-2,039. The only large savings come from denying Bash/Read/Edit/Write/Glob/
-Grep — the six that make the tool useful. Harness-added tools are the
-exception: denying Artifact saved 12,653 (2026-11-11, #455).
+Denying built-in tools does not help. `--disallowedTools` on NotebookEdit,
+WebSearch, WebFetch and the entire Task family saves **33 tokens**. Agent+Task
+saves 2,039. The only large savings come from denying Bash/Read/Edit/Write/
+Glob/Grep — the six that make the tool useful. Harness-added tools are the
+exception: denying Artifact saved ~12.7k (#455; `claude -p`, local, 50,687 to
+38,034).
 
 ## Cache churn: what a mid-session switch actually costs
 
@@ -151,11 +156,37 @@ so the 13.8 KB is no longer the lever #74 took it for.
 
 ### Follow-up
 
-The rows worth switching, largest first: skills listing (4.5k, 17.9 KB),
-user CLAUDE.md (4.3k), SessionStart hook context (1.4k to 2.8k),
-and plugin skills. Tool schemas and the system prompt (rows 3 and 10, over
-36k together) are the bulk and not configurable. Re-measure the unattributed
-13k to 21k with one `/context` run on the current version.
+Superseded by the next section, which split row 10 and found the tool schemas
+partly configurable.
+
+## First turn, 2026-11-12 (Desktop, `claude` current, before #455)
+
+Total **measured: 56,717** (read off the first request recorded in a
+transcript). Rows are that request's characters at one measured rate: 17,008
+characters of skills listing = 5,744 tokens (about 3 characters per token).
+Artifact is the exception, measured directly by a `claude -p` toggle. Estimates,
+not `/context` readings.
+
+| ~Tokens | Component | Mine to trim? |
+|---:|---|---|
+| 13.4k | Artifact schema | denied, #455 |
+| 8.2k | Global standing orders | yes (loop two) |
+| 5.7k | Skills listing: mine 2.0k, mergify plugin 1.0k, built-in 2.7k | partly |
+| 3.8k | System prompt | no |
+| 6.6k | Workflow 2.0k, ScheduleWakeup 1.7k, ReportFindings 0.8k, SuggestPluginInstall 0.9k, SearchPlugins 0.65k, SuggestSkills 0.6k | by deny |
+| 7.2k | Core tool schemas (Agent, Bash, Read, Edit, Write, ...) | mostly no |
+| 1.7k | Memory index | yes |
+| 1.6k | Agent listing | no |
+| 1.8k | SessionStart notices | yes |
+| 0.7k | This repo's project instructions | yes |
+| ~5k | Environment, deferred tool names, MCP instructions, reminders | little |
+
+Tool calls per month, in sessions, from transcripts (Aug, Sep, Oct, Nov):
+ScheduleWakeup 42, 65, 4, 0; Artifact 18, 13, 6 (Sep to Nov); Workflow
+3, 23, 23 (Sep to Nov); a mergify skill 0, 40, 7, 1; the three suggesters
+never. #455 denied Artifact and the suggesters; a later change denied
+ScheduleWakeup and disabled the mergify plugin. A Desktop session opened
+after #455 started at 40,641, from 56,717.
 
 ## Why `/clear` is the whole game
 
