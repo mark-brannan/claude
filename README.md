@@ -17,8 +17,8 @@ The repo root is `~/.claude`: delivery clones this repo there. So
 `hooks/`, `skills/`, `rules/`, `settings.json` and `CLAUDE.md` sit at the
 root, and dotfiles' `.claude/X` is `X` here. Two more directories hold what
 dotfiles keeps elsewhere: `bin/` (dotfiles' `.local/bin/`, so it lands at
-`~/.claude/bin`) and `systemd/` (dotfiles' `.config/systemd/user/`; the
-units are not installed from here yet). `docs/` holds the layer's docs and
+`~/.claude/bin`) and `systemd/` (the `grind-prs@` units, set aside and not
+installed from here; scheduled jobs live in dotfiles' `~/.config/jobs`). `docs/` holds the layer's docs and
 the two repo docs copied from dotfiles' own `docs/`. The rest of the root,
 this README, `.github/` and the editor and merge config, is repo
 scaffolding; in `~/.claude` Claude Code ignores it.

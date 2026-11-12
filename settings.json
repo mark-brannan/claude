@@ -404,6 +404,11 @@
           },
           {
             "type": "command",
+            "command": "h=\"$HOME/.claude/hooks/session-start-jobs.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "h=\"$HOME/.claude/hooks/session-start-hook-errors.py\"; [ -f \"$h\" ] && python3 \"$h\" || true",
             "timeout": 10
           }
