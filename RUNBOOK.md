@@ -475,6 +475,25 @@ NucBoxK12, 2026-11-06, mostly GitHub calls):
 ~/.claude/bin/metrics-db --github --quiet
 ```
 
+## Bring the telemetry stack up or down
+
+Claude Code sends metrics and events to `localhost:4318` (`settings.json`); the stack in
+home-automation's `telemetry/` folder receives them. Its two variables are in that folder's
+`.env.example`. Prompts and tool details are not sent.
+
+```bash
+docker compose --project-directory ~/home-automation/telemetry up -d
+docker compose --project-directory ~/home-automation/telemetry down    # data stays in the volumes
+```
+
+Verify, after one Claude session: the query returns at least one series.
+
+```bash
+curl -s 'http://localhost:8428/api/v1/series?match[]={__name__=~"claude_code_.*"}'
+```
+
+On a machine pointing elsewhere, set `OTEL_EXPORTER_OTLP_ENDPOINT` in `~/.claude/settings.local.json`.
+
 ## Read the pickup items
 
 The Stop hook writes one pickup item per session to the state repo's
