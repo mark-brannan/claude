@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -355,6 +356,19 @@ class BackfillTest(unittest.TestCase):
         before = self.record.read_bytes()
         self.assertEqual(self.run_it()["skipped"][0], 2)
         self.assertEqual((self.record.read_bytes(), junk.read_text()), (before, "not json"))
+
+    def test_a_record_rewritten_while_the_transcript_parses_is_left_as_the_writer_left_it(self):
+        self.session(call(FIRST))
+        real = backfill.answer
+
+        def answer_then_stop_hook_writes(path):
+            out = real(path)
+            self.record.write_text(json.dumps({"session_id": self.SID, "cost_usd": 5.0}))
+            return out
+
+        with unittest.mock.patch.object(backfill, "answer", answer_then_stop_hook_writes):
+            self.assertEqual(self.run_it()["skipped"][0], 1)
+        self.assertEqual(self.stored()["cost_usd"], 5.0)
 
     def test_both_record_layouts_and_the_command(self):
         self.session(call(FIRST))

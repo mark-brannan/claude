@@ -77,6 +77,12 @@ def rewrite(record_path, transcripts, write=True):
     if all(rec.get(k) == new[k] for k in FIELDS):
         return "same", before, before
     if write:
+        try:
+            with open(record_path, encoding="utf-8") as f:
+                if f.read() != raw:  # the Stop hook wrote it while we parsed
+                    return "skipped", before, before
+        except OSError:
+            return "skipped", before, before
         rec.update(new)
         pretty = raw.startswith("{\n")
         out = json.dumps(rec, ensure_ascii=False, indent=2 if pretty else None,
