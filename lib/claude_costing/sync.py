@@ -214,7 +214,10 @@ def build(data, old=None, source=None):
     newest = {f: max(v for g, v in versions if g == f) for f in families}
     for fams, r in grouped((f, versions[(f, newest[f])]) for f in families):
         rules.append({"match": f"^(claude-)?{families_re(fams)}($|\\[)", **r})
-    for fams, r in grouped((f, dearest([r for (g, _), r in versions.items() if g == f]))
+    # A family's dearest among the versions the source lists; a hand-kept retired
+    # one prices a new name only when the family has nothing else.
+    for fams, r in grouped((f, dearest([r for (g, v), r in versions.items() if g == f and (g, v) not in manual]
+                                       or [r for (g, _), r in versions.items() if g == f]))
                            for f in families):
         rules.append({"match": "|".join(fams), **r})
     # The dearest model the source lists: a retired one does not price what is new.

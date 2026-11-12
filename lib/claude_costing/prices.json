@@ -26,7 +26,7 @@
     {"match": "^(claude-)?sonnet($|\\[)", "input": 2, "output": 10, "cache_read": 0.1, "cache_write_5m": 2.5, "cache_write_1h": 4},
     {"match": "fable|mythos", "input": 10, "output": 50, "cache_read": 1, "cache_write_5m": 12.5, "cache_write_1h": 20},
     {"match": "haiku", "input": 1, "output": 5, "cache_read": 0.1, "cache_write_5m": 1.25, "cache_write_1h": 2},
-    {"match": "opus", "input": 15, "output": 75, "cache_read": 1.5, "cache_write_5m": 18.75, "cache_write_1h": 30},
+    {"match": "opus", "input": 5, "output": 25, "cache_read": 0.5, "cache_write_5m": 6.25, "cache_write_1h": 10},
     {"match": "sonnet", "input": 3, "output": 15, "cache_read": 0.3, "cache_write_5m": 3.75, "cache_write_1h": 6}
   ],
   "fallback": {"input": 10, "output": 50, "cache_read": 1, "cache_write_5m": 12.5, "cache_write_1h": 20}

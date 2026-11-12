@@ -45,7 +45,7 @@ ALIASES = (("opus", "opus-5-5"), ("sonnet", "sonnet-5-5"), ("haiku", "haiku-5-5"
            ("fable", "fable-5-2"), ("mythos", "mythos-5-2"), ("opus[1m]", "opus-5-5"),
            ("claude-opus", "opus-5-5"),
            # an unlisted version reads as its family's dearest
-           ("claude-opus-4-9", "opus-4-1"), ("claude-opus-6", "opus-4-1"),
+           ("claude-opus-4-9", "opus-5"), ("claude-opus-6", "opus-5"),
            ("claude-sonnet-6", "sonnet-4-6"), ("claude-haiku-6", "haiku-4-5"),
            ("claude-fable-6", "fable-5"), ("claude-mythos-preview", "mythos-5"),
            ("claude-3-5-sonnet-20241022", "sonnet-4-6"))
@@ -383,8 +383,8 @@ class SyncTest(unittest.TestCase):
                 "claude-opus-5-20270101": (5, 6.25, 10, 0.5, 25),
                 "claude-opus-4-1-20250805": (15, 18.75, 30, 1.5, 75),      # the manual rule
                 "opus": (4, 5, 8, 0.2, 20),                                # newest
-                "claude-opus-7": (15, 18.75, 30, 1.5, 75),                 # dearest listed
-                "claude-opus-5-9": (15, 18.75, 30, 1.5, 75),
+                "claude-opus-7": (5, 6.25, 10, 0.5, 25),                    # dearest listed
+                "claude-opus-5-9": (5, 6.25, 10, 0.5, 25),
                 "claude-mythos-5-2": (8, 10, 16, 0.2, 40), "fable[1m]": (8, 10, 16, 0.2, 40),
                 "claude-haiku-4-5": (1, 1.25, 2, 0.1, 5), "haiku": (0.1, 0.125, 0.2, 0.01, 0.5),
                 "claude-haiku-9": (1, 1.25, 2, 0.1, 5),
