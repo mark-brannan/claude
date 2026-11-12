@@ -34,6 +34,7 @@ it go live from `main`, never by editing the live clone in place.
 | `config.json` | `~/.claude/config.json` | the state repo's name and search places, and the plan figures |
 | `rules/`, `skills/` | `~/.claude/rules/`, `~/.claude/skills/` | every session, by path or by name |
 | `bin/` | `~/.claude/bin/` | when a hook, skill or person calls a tool |
+| `dashboards/` | `~/.claude/dashboards/` | when the telemetry stack's Grafana reads `$CLAUDE_CHECKOUT` |
 
 Pull requests here meet the same bar as dotfiles: one required check
 (`ci-gate / gate`), both secret scanners, a signed-commit, squash-only `main`,
