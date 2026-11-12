@@ -478,8 +478,7 @@ NucBoxK12, 2026-11-06, mostly GitHub calls):
 ## Bring the telemetry stack up or down
 
 Claude Code sends metrics and events over OTLP gRPC to `localhost:4317` (`settings.json`); the stack in
-home-automation's `telemetry/` folder receives them. Its two variables are in that folder's
-`.env.example`. Prompts and tool details are not sent.
+home-automation's `telemetry/` folder receives them. Prompts and tool details are not sent.
 
 ```bash
 docker compose --project-directory ~/home-automation/telemetry up -d
@@ -489,10 +488,10 @@ docker compose --project-directory ~/home-automation/telemetry down    # data st
 Verify, after one Claude session: the query returns at least one series.
 
 ```bash
-curl -s 'http://localhost:8428/api/v1/series?match[]={__name__=~"claude_code_.*"}'
+curl -s 'http://localhost:8428/api/v1/series?match[]={__name__=~"claude_code[._].*"}'
 ```
 
-On a machine pointing elsewhere, set `OTEL_EXPORTER_OTLP_ENDPOINT` in `~/.claude/settings.local.json`.
+On a machine pointing elsewhere, export `OTEL_EXPORTER_OTLP_ENDPOINT` in the shell profile (dotfiles).
 
 ## Read the pickup items
 
