@@ -214,3 +214,5 @@ and both of them think more clearly, because nothing in the window is stale.
 
 The habit is small and unglamorous: finish a thing, log it, clear, pull the
 next thing off the board. That is the change.
+
+<!-- sg-test -->
