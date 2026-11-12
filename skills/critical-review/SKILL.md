@@ -88,11 +88,14 @@ Head: c0ec689
 🤖 claude-sonnet-5-5 · medium · 1a2b3c4d
 ````
 
-`body-old` is copied verbatim from the body as it reads now, never empty,
-and long enough to occur there exactly once. One pair to a thread, one
+`body-old` is whole lines of the body, copied verbatim as it reads now,
+never empty, and enough of them to occur there exactly once; part of a
+longer line does not match. To change `Head: abc1234`, the fence holds
+that whole line. One pair to a thread, one
 body edit to a pair, and no suggestion fence beside it. An addition is
-written as a replace: `body-old` holds the existing line to add after,
-`body-new` that line and the addition. A body ask you do not write as an
+written as a replace: `body-old` holds the whole existing line to add
+after (`## Pencil:`, say), `body-new` that line and the addition. A body
+ask you do not write as an
 exact pair (a paragraph to rewrite, say) carries no `[easy]` and goes to
 the author.
 
