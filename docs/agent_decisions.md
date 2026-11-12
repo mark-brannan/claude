@@ -775,3 +775,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t082127z
 - cost_source is a new field on a session record; nothing reads it yet backfill writes by default; --dry-run reports only a model name's bracket suffix folds into the plain name the Stop hook is unchanged; a live session's record settles on a later backfill run backfill is not seeded into cloud sessions one RUNBOOK index line, no section ([#466](https://github.com/mark-brannan/claude/pull/466))
+
+### 20261112t090857z
+- RUNBOOK verify query uses VictoriaMetrics port 8428 and ~/home-automation checkout Undo: edit the RUNBOOK line to match the home-automation half ([#468](https://github.com/mark-brannan/claude/pull/468))
