@@ -13,3 +13,9 @@ skills/synced/
 /sessions/
 /shell-snapshots/
 /.last-cleanup
+/todos/
+/statsig/
+/state/
+/history.jsonl
+/.credentials.json
+/settings.local.json
