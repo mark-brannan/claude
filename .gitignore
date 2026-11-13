@@ -2,3 +2,20 @@
 __pycache__/
 .pytest_cache/
 skills/synced/
+# Claude Code's own runtime state in ~/.claude (this repo's live clone):
+# written by the harness, per machine, never part of the layer.
+/backups/
+/cache/
+/file-history/
+/plugins/
+/projects/
+/security/
+/sessions/
+/shell-snapshots/
+/.last-cleanup
+/todos/
+/statsig/
+/state/
+/history.jsonl
+/.credentials.json
+/settings.local.json
