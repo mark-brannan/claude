@@ -6,7 +6,8 @@ Opt-in per clone: config.json's `clone_sync.clones` maps a clone path to what
 to do with the user's uncommitted edits to a file that upstream also changed:
 
   keep      leave the clone alone and say which files are in the way
-  upstream  save the edits under refs/clone-sync/<stamp> and take upstream's
+  upstream  save the edits under refs/clone-sync/<stamp> and take upstream's;
+            nothing drops those refs, they are the operator's to prune
 
 Fires after a Bash call that pushes, merges a PR or waits on one
 (`pr-blockers`), after the GitHub MCP merge, and on Stop (an armed auto-merge
@@ -145,25 +146,42 @@ def sync(clone, policy, quiet=False):
             return f"{where} not synced: could not back up your edits to {listed}"
         ref = f"refs/clone-sync/{time.strftime('%Y%m%dT%H%M%S')}"
         gitrun.run("update-ref", ref, saved, cwd=clone, check=True)
-        gitrun.run("checkout", "HEAD", "--", *overlap, cwd=clone, check=True)
+        added = set(names(gitrun.out("-c", "core.quotePath=off", "diff", "--name-only",
+                                     "--diff-filter=A", "HEAD", cwd=clone))) & set(overlap)
+        if added:  # staged new files: HEAD has nothing to check out
+            gitrun.run("rm", "-q", "--cached", "--", *sorted(added), cwd=clone, check=True)
+            for n in added:
+                os.remove(os.path.join(clone, n))
+        rest = [n for n in overlap if n not in added]
+        if rest:
+            gitrun.run("checkout", "HEAD", "--", *rest, cwd=clone, check=True)
         note = f"; your edits to {listed} were replaced, back with `git -C {where} checkout {ref} -- {' '.join(overlap)}`"
+
+    def undo():
+        """Put replaced edits back, so a sync that did not happen loses nothing."""
+        if note:
+            gitrun.run("checkout", ref, "--", *overlap, cwd=clone)
+        return ""
+
     local = int(gitrun.out("rev-list", "--count", f"{up}..HEAD", cwd=clone) or 0)
     stash = gitrun.out("rev-parse", "-q", "--verify", "refs/stash", cwd=clone)
     if not local:
         m = gitrun.run("merge", "-q", "--ff-only", "--autostash", up, cwd=clone)
         if m.returncode:
-            return f"{where} not synced: fast-forward refused ({(m.stderr.strip().splitlines() or ['?'])[0]}){note}"
+            return f"{where} not synced: fast-forward refused ({(m.stderr.strip().splitlines() or ['?'])[0]}){undo()}"
         how = "fast-forward"
     else:
         r = gitrun.run("rebase", "-q", "--autostash", up, cwd=clone)
         if r.returncode:
             clash = names(gitrun.out("diff", "--name-only", "--diff-filter=U", cwd=clone))
             gitrun.run("rebase", "--abort", cwd=clone)
+            note = undo()
             if gitrun.out("rev-parse", "-q", "--verify", "refs/stash", cwd=clone) != stash:
                 note += "; your other edits did not reapply and are in git stash, pop to restore"
-            files = ", ".join(clash[:3]) or "?"
+            failed = (f"conflicts in {', '.join(clash[:3])}" if clash
+                      else f"failed ({(r.stderr.strip().splitlines() or ['?'])[-1]})")
             return (f"{where} not synced: rebasing your {local} local commit(s) onto upstream "
-                    f"conflicts in {files}; aborted, the clone is as it was{note}")
+                    f"{failed}; aborted, the clone is as it was{note}")
         how = f"rebased your {local} local commit(s)"
     after = gitrun.out("rev-parse", "--short", "HEAD", cwd=clone)
     if gitrun.out("rev-parse", "-q", "--verify", "refs/stash", cwd=clone) != stash:
@@ -173,7 +191,7 @@ def sync(clone, policy, quiet=False):
 
 
 def main():
-    ev = hookio.read()
+    ev = lib_state.event()
     event = ev.get("hook_event_name") or ""
     tool = ev.get("tool_name") or ""
     if event == "PostToolUse":

@@ -208,6 +208,32 @@ class CloneSyncTest(unittest.TestCase):
         self.assertIsNone(self.fire(event="Stop"))
         self.assertIn("fetch failed", self.fire()["systemMessage"])
 
+    def test_upstream_policy_replaces_a_staged_new_file(self):
+        self.policy("upstream")
+        self.write(self.top, "c.txt", "mine\n")
+        git(self.top, "add", "c.txt")
+        self.write(self.agent, "c.txt", "upstream\n")
+        git(self.agent, "add", "c.txt")
+        git(self.agent, "commit", "-qm", "add c.txt")
+        git(self.agent, "push", "-q", "origin", "main")
+        self.fire()
+        self.assertEqual(self.head(self.top), self.head(self.agent))
+        self.assertEqual((self.top / "c.txt").read_text(), "upstream\n")
+        ref = git(self.top, "for-each-ref", "--format=%(refname)", "refs/clone-sync").stdout.split()[0]
+        self.assertEqual(git(self.top, "show", f"{ref}:c.txt").stdout, "mine\n")
+
+    def test_upstream_policy_puts_edits_back_when_the_rebase_aborts(self):
+        self.policy("upstream")
+        self.write(self.top, "a.txt", "local\n")
+        git(self.top, "commit", "-qm", "local", "a.txt")
+        self.write(self.top, "a.txt", "mine\n")
+        before = self.head(self.top)
+        self.land("a.txt")
+        out = self.fire()
+        self.assertEqual(self.head(self.top), before)
+        self.assertEqual((self.top / "a.txt").read_text(), "mine\n")
+        self.assertIn("as it was", out["systemMessage"])
+
     def test_already_current_says_nothing(self):
         self.assertIsNone(self.fire())
 
