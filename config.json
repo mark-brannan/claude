@@ -3,6 +3,9 @@
     "github": "mark-brannan/claude_prompts_scratch",
     "search": ["/home/user", "/workspace", "~", "~/src", "~/Projects", "~/code"]
   },
+  "clone_sync": {
+    "clones": {"~/workshop": "upstream", "~/home-automation": "keep", "~/symphony": "keep"}
+  },
   "plan": {
     "week_usd": 2000,
     "fable_week_usd": 510,

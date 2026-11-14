@@ -24,6 +24,8 @@ one misbehaves. What the layer is and how it is laid out: [README.md](README.md)
 - [Open the metrics dashboard](#open-the-metrics-dashboard)
 - [Read the pickup items](#read-the-pickup-items)
 - [Bring the telemetry stack up or down](#bring-the-telemetry-stack-up-or-down)
+- Restore edits clone-sync replaced: the `git -C <clone> checkout refs/clone-sync/<stamp> -- <files>` line it printed
+- Drop clone-sync's backups in a clone: `git for-each-ref --format='%(refname)' refs/clone-sync | xargs -rn1 git update-ref -d`
 - Push unpushed state-repo commits: `~/.claude/bin/state-push`; a scheduled job in dotfiles' `~/.config/jobs` runs it
 - Reprice session records from local transcripts: `python3 ~/.claude/lib/claude_costing backfill`
 - [Check a curia's roll is recording](#check-a-curias-roll-is-recording)
