@@ -48,7 +48,9 @@ def clones():
     out = []
     for path, policy in conf.items():
         p = os.path.realpath(os.path.expanduser(path))
-        if os.path.isdir(os.path.join(p, ".git")) and policy in ("keep", "upstream"):
+        if policy not in ("keep", "upstream"):
+            lib_state.trace_failure("clone-sync", "config", ValueError(f"clone_sync.clones[{path!r}] = {policy!r}, not keep or upstream"), stage="config", once=True)
+        elif os.path.isdir(os.path.join(p, ".git")):
             out.append((p, policy))
     return out
 
@@ -125,9 +127,9 @@ def sync(clone, policy, quiet=False):
     before = gitrun.out("rev-parse", "--short", "HEAD", cwd=clone)
     if gitrun.ok("merge-base", "--is-ancestor", up, "HEAD", cwd=clone):
         return None
-    incoming = set(names(gitrun.out("diff", "--name-only", "--no-renames", f"HEAD...{up}", cwd=clone)))
-    untracked = set(names(gitrun.out("ls-files", "--others", "--exclude-standard", cwd=clone)))
-    dirty = set(names(gitrun.out("diff", "--name-only", "HEAD", cwd=clone))) | untracked
+    incoming = set(names(gitrun.out("-c", "core.quotePath=off", "diff", "--name-only", "--no-renames", f"HEAD...{up}", cwd=clone)))
+    untracked = set(names(gitrun.out("-c", "core.quotePath=off", "ls-files", "--others", "--exclude-standard", cwd=clone)))
+    dirty = set(names(gitrun.out("-c", "core.quotePath=off", "diff", "--name-only", "HEAD", cwd=clone))) | untracked
     overlap = sorted(incoming & dirty)
     note = ""
     if overlap:
@@ -157,6 +159,8 @@ def sync(clone, policy, quiet=False):
         if r.returncode:
             clash = names(gitrun.out("diff", "--name-only", "--diff-filter=U", cwd=clone))
             gitrun.run("rebase", "--abort", cwd=clone)
+            if gitrun.out("rev-parse", "-q", "--verify", "refs/stash", cwd=clone) != stash:
+                note += "; your other edits did not reapply and are in git stash, pop to restore"
             files = ", ".join(clash[:3]) or "?"
             return (f"{where} not synced: rebasing your {local} local commit(s) onto upstream "
                     f"conflicts in {files}; aborted, the clone is as it was{note}")
