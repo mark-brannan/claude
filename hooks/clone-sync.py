@@ -18,7 +18,7 @@ merge or rebase already half-done is skipped; local commits are rebased, and
 a rebase that conflicts is aborted, so the clone is as it was. Each outcome
 other than "already current" is one line to the user and the model.
 
-Fails open: any error exits 0 and the call is untouched.
+Fails open: any error is traced and exits 0, and the call is untouched.
 """
 import json
 import os
@@ -28,7 +28,7 @@ import time
 
 sys.dont_write_bytecode = True
 
-import lib_state  # noqa: E402,F401  (puts lib/ on sys.path)
+import lib_state  # noqa: E402  (puts lib/ on sys.path)
 import config  # noqa: E402
 import gitrun  # noqa: E402
 import hookio  # noqa: E402
@@ -104,8 +104,9 @@ def busy(clone):
     return None
 
 
-def sync(clone, policy):
-    """One line saying what happened, or None when nothing worth saying."""
+def sync(clone, policy, quiet=False):
+    """One line saying what happened, or None when nothing worth saying.
+    quiet (Stop, which the user did not cause) says nothing on a failed fetch."""
     where = short(clone)
     default = gitrun.out("symbolic-ref", "--short", "refs/remotes/origin/HEAD", cwd=clone)
     branch = default.split("/", 1)[1] if default.startswith("origin/") else "main"
@@ -116,21 +117,27 @@ def sync(clone, policy):
         return f"{where} left alone: {why} is half-done there{files}; finish or abort it, then pull"
     if gitrun.out("symbolic-ref", "--short", "-q", "HEAD", cwd=clone) != branch:
         return None  # the user has it on another branch on purpose
-    f = gitrun.run("fetch", "-q", "origin", branch, cwd=clone, timeout=FETCH_TIMEOUT)
+    f = gitrun.run("fetch", "-q", "origin", branch, cwd=clone, timeout=FETCH_TIMEOUT,
+                   env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
     if f.returncode:
-        return f"{where} not synced: fetch failed ({(f.stderr.strip().splitlines() or ['?'])[-1]})"
+        return None if quiet else f"{where} not synced: fetch failed ({(f.stderr.strip().splitlines() or ['?'])[-1]})"
     up = f"origin/{branch}"
     before = gitrun.out("rev-parse", "--short", "HEAD", cwd=clone)
     if gitrun.ok("merge-base", "--is-ancestor", up, "HEAD", cwd=clone):
         return None
     incoming = set(names(gitrun.out("diff", "--name-only", "--no-renames", f"HEAD...{up}", cwd=clone)))
-    dirty = set(names(gitrun.out("diff", "--name-only", "HEAD", cwd=clone)))
+    untracked = set(names(gitrun.out("ls-files", "--others", "--exclude-standard", cwd=clone)))
+    dirty = set(names(gitrun.out("diff", "--name-only", "HEAD", cwd=clone))) | untracked
     overlap = sorted(incoming & dirty)
     note = ""
     if overlap:
         listed = ", ".join(overlap[:3]) + (f" +{len(overlap) - 3}" if len(overlap) > 3 else "")
         if policy == "keep":
             return f"{where} not synced: your uncommitted edits to {listed} clash with upstream"
+        lost = sorted(untracked & incoming)
+        if lost:  # stash create cannot back up an untracked file
+            return (f"{where} not synced: untracked {', '.join(lost[:3])} would be overwritten "
+                    "by upstream; move or add them")
         saved = gitrun.out("stash", "create", f"clone-sync backup of {listed}", cwd=clone)
         if not saved:
             return f"{where} not synced: could not back up your edits to {listed}"
@@ -139,6 +146,7 @@ def sync(clone, policy):
         gitrun.run("checkout", "HEAD", "--", *overlap, cwd=clone, check=True)
         note = f"; your edits to {listed} were replaced, back with `git -C {where} checkout {ref} -- {' '.join(overlap)}`"
     local = int(gitrun.out("rev-list", "--count", f"{up}..HEAD", cwd=clone) or 0)
+    stash = gitrun.out("rev-parse", "-q", "--verify", "refs/stash", cwd=clone)
     if not local:
         m = gitrun.run("merge", "-q", "--ff-only", "--autostash", up, cwd=clone)
         if m.returncode:
@@ -154,6 +162,9 @@ def sync(clone, policy):
                     f"conflicts in {files}; aborted, the clone is as it was{note}")
         how = f"rebased your {local} local commit(s)"
     after = gitrun.out("rev-parse", "--short", "HEAD", cwd=clone)
+    if gitrun.out("rev-parse", "-q", "--verify", "refs/stash", cwd=clone) != stash:
+        # git exits 0 when the autostash will not reapply and parks it in refs/stash
+        note += "; your other edits did not reapply and are in git stash, pop to restore"
     return f"{where} {branch} {before} -> {after} ({how}){note}"
 
 
@@ -167,7 +178,8 @@ def main():
             return 0
     elif event != "Stop" or hookio.stop_hook_active(ev):
         return 0
-    lines = [s for s in (sync(c, p) for c, p in in_play(ev, clones())) if s]
+    quiet = event == "Stop"
+    lines = [s for s in (sync(c, p, quiet) for c, p in in_play(ev, clones())) if s]
     if not lines:
         return 0
     text = "clone-sync: " + "\nclone-sync: ".join(lines)
@@ -179,7 +191,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001 -- never break the call or the stop
-        sys.exit(0)
+    lib_state.run_hook("clone-sync", "PostToolUse|Stop", main)

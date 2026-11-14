@@ -254,7 +254,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/clone-sync.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null; true",
+            "command": "h=\"$HOME/.claude/hooks/clone-sync.py\"; [ -f \"$h\" ] && python3 \"$h\"; true",
             "timeout": 60
           }
         ]
@@ -354,7 +354,7 @@
           },
           {
             "type": "command",
-            "command": "h=\"$HOME/.claude/hooks/clone-sync.py\"; [ -f \"$h\" ] && python3 \"$h\" 2>/dev/null; true",
+            "command": "h=\"$HOME/.claude/hooks/clone-sync.py\"; [ -f \"$h\" ] && python3 \"$h\"; true",
             "timeout": 60
           }
         ]

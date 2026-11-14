@@ -137,6 +137,8 @@ class CloneSyncTest(unittest.TestCase):
         refs = git(self.top, "for-each-ref", "--format=%(refname)", "refs/clone-sync").stdout.split()
         self.assertEqual(len(refs), 1)
         self.assertEqual(git(self.top, "show", f"{refs[0]}:a.txt").stdout, "mine\n")
+        git(self.top, "checkout", refs[0], "--", "a.txt")  # the command the hook's line prints
+        self.assertEqual((self.top / "a.txt").read_text(), "mine\n")
 
     def test_local_commit_is_rebased_onto_upstream(self):
         self.write(self.top, "b.txt", "local\n")
@@ -173,6 +175,38 @@ class CloneSyncTest(unittest.TestCase):
         self.assertIn("half-done", out["systemMessage"])
         gd = Path(git(self.top, "rev-parse", "--absolute-git-dir").stdout.strip())
         self.assertTrue((gd / "MERGE_HEAD").exists())
+
+    def test_autostash_that_will_not_reapply_is_reported(self):
+        self.write(self.top, "b.txt", "mine\n")
+        hook = Path(git(self.top, "rev-parse", "--absolute-git-dir").stdout.strip()) / "hooks" / "post-merge"
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text("#!/bin/sh\necho racer > b.txt\n")  # a live writer between merge and pop
+        hook.chmod(0o755)
+        self.land("a.txt")
+        out = self.fire()
+        self.assertEqual(self.head(self.top), self.head(self.agent))
+        self.assertIn("git stash", out["systemMessage"])
+
+    def test_untracked_file_upstream_adds_is_named(self):
+        for p in ("keep", "upstream"):
+            with self.subTest(policy=p):
+                self.policy(p)
+                self.write(self.top, "c.txt", "mine\n")
+                if not (self.agent / "c.txt").exists():
+                    self.write(self.agent, "c.txt", "upstream\n")
+                    git(self.agent, "add", "c.txt")
+                    git(self.agent, "commit", "-qm", "add c.txt")
+                    git(self.agent, "push", "-q", "origin", "main")
+                before = self.head(self.top)
+                out = self.fire()
+                self.assertEqual(self.head(self.top), before)
+                self.assertIn("c.txt", out["systemMessage"])
+                self.assertEqual((self.top / "c.txt").read_text(), "mine\n")
+
+    def test_stop_is_silent_when_offline(self):
+        git(self.top, "remote", "set-url", "origin", str(Path(self.tmp.name) / "gone.git"))
+        self.assertIsNone(self.fire(event="Stop"))
+        self.assertIn("fetch failed", self.fire()["systemMessage"])
 
     def test_already_current_says_nothing(self):
         self.assertIsNone(self.fire())
