@@ -107,6 +107,17 @@ def busy(clone):
     return None
 
 
+def parked(clone):
+    """The loud line for edits git could not put back after a sync. Rare: a
+    file rewritten while the sync had it stashed. Also traced, so self-check
+    and the next session's notice show it."""
+    where = short(clone)
+    lib_state.trace_failure("clone-sync", "sync", RuntimeError(
+        f"{where}: uncommitted edits did not reapply after a sync; parked in git stash"), stage="autostash")
+    return (f"\n\u26a0\ufe0f WARNING {where}: your uncommitted edits did NOT come back after the sync. "
+            f"They are parked in git stash; run `git -C {where} stash pop` to restore them")
+
+
 def sync(clone, policy, quiet=False):
     """One line saying what happened, or None when nothing worth saying.
     quiet (Stop, which the user did not cause) says nothing on a failed fetch."""
@@ -177,7 +188,7 @@ def sync(clone, policy, quiet=False):
             gitrun.run("rebase", "--abort", cwd=clone)
             note = undo()
             if gitrun.out("rev-parse", "-q", "--verify", "refs/stash", cwd=clone) != stash:
-                note += "; your other edits did not reapply and are in git stash, pop to restore"
+                note += parked(clone)
             failed = (f"conflicts in {', '.join(clash[:3])}" if clash
                       else f"failed ({(r.stderr.strip().splitlines() or ['?'])[-1]})")
             return (f"{where} not synced: rebasing your {local} local commit(s) onto upstream "
@@ -186,7 +197,7 @@ def sync(clone, policy, quiet=False):
     after = gitrun.out("rev-parse", "--short", "HEAD", cwd=clone)
     if gitrun.out("rev-parse", "-q", "--verify", "refs/stash", cwd=clone) != stash:
         # git exits 0 when the autostash will not reapply and parks it in refs/stash
-        note += "; your other edits did not reapply and are in git stash, pop to restore"
+        note += parked(clone)
     return f"{where} {branch} {before} -> {after} ({how}){note}"
 
 

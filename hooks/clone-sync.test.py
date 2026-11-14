@@ -39,6 +39,7 @@ class CloneSyncTest(unittest.TestCase):
         git(self.top, "remote", "set-head", "origin", "main")
         git(root, "clone", "-q", str(self.remote), str(self.agent))
         self.cfg = root / "config.json"
+        (root / "state" / ".git").mkdir(parents=True)  # traces land here, not in the real state repo
         self.policy("keep")
 
     def tearDown(self):
@@ -60,7 +61,8 @@ class CloneSyncTest(unittest.TestCase):
         ev = {"hook_event_name": event, "cwd": str(cwd or self.top), "tool_name": "Bash",
               "tool_input": {"command": command}, **extra}
         p = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(ev), text=True,
-                           capture_output=True, env={**GITENV, "CLONE_SYNC_CONFIG": str(self.cfg)})
+                           capture_output=True, env={**GITENV, "CLONE_SYNC_CONFIG": str(self.cfg),
+                                                 "CLAUDE_STATE_REPO": str(Path(self.tmp.name) / "state")})
         return json.loads(p.stdout) if p.stdout.strip() else None
 
     def head(self, repo):
@@ -185,7 +187,10 @@ class CloneSyncTest(unittest.TestCase):
         self.land("a.txt")
         out = self.fire()
         self.assertEqual(self.head(self.top), self.head(self.agent))
-        self.assertIn("git stash", out["systemMessage"])
+        self.assertIn("WARNING", out["systemMessage"])
+        self.assertIn("stash pop", out["systemMessage"])
+        traced = list((Path(self.tmp.name) / "state").rglob("*.jsonl"))
+        self.assertTrue(traced and "did not reapply" in traced[0].read_text())
 
     def test_untracked_file_upstream_adds_is_named(self):
         for p in ("keep", "upstream"):
