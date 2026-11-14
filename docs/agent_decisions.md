@@ -790,3 +790,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261112t224839z
 - claude#470: Relay counted by comm prefix; includes ~5 init relays under the 50 threshold (no PR, branch detached)
+
+### 20261114t050432z
+- clone-sync policies: workshop upstream, home-automation and symphony keep Undo: set the clone's policy in config.json ([#472](https://github.com/mark-brannan/claude/pull/472))
