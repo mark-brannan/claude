@@ -109,21 +109,21 @@ def sync(clone, policy):
     where = short(clone)
     default = gitrun.out("symbolic-ref", "--short", "refs/remotes/origin/HEAD", cwd=clone)
     branch = default.split("/", 1)[1] if default.startswith("origin/") else "main"
-    if gitrun.out("symbolic-ref", "--short", "-q", "HEAD", cwd=clone) != branch:
-        return None  # the user has it on another branch on purpose
     why = busy(clone)
     if why:
         stuck = names(gitrun.out("diff", "--name-only", "--diff-filter=U", cwd=clone))
         files = f" ({', '.join(stuck[:3])} unmerged)" if stuck else ""
         return f"{where} left alone: {why} is half-done there{files}; finish or abort it, then pull"
+    if gitrun.out("symbolic-ref", "--short", "-q", "HEAD", cwd=clone) != branch:
+        return None  # the user has it on another branch on purpose
     f = gitrun.run("fetch", "-q", "origin", branch, cwd=clone, timeout=FETCH_TIMEOUT)
     if f.returncode:
-        return f"{where} not synced: fetch failed ({f.stderr.strip().splitlines()[-1:] or ['?']})"
+        return f"{where} not synced: fetch failed ({(f.stderr.strip().splitlines() or ['?'])[-1]})"
     up = f"origin/{branch}"
     before = gitrun.out("rev-parse", "--short", "HEAD", cwd=clone)
     if gitrun.ok("merge-base", "--is-ancestor", up, "HEAD", cwd=clone):
         return None
-    incoming = set(names(gitrun.out("diff", "--name-only", f"HEAD...{up}", cwd=clone)))
+    incoming = set(names(gitrun.out("diff", "--name-only", "--no-renames", f"HEAD...{up}", cwd=clone)))
     dirty = set(names(gitrun.out("diff", "--name-only", "HEAD", cwd=clone)))
     overlap = sorted(incoming & dirty)
     note = ""
@@ -137,12 +137,12 @@ def sync(clone, policy):
         ref = f"refs/clone-sync/{time.strftime('%Y%m%dT%H%M%S')}"
         gitrun.run("update-ref", ref, saved, cwd=clone, check=True)
         gitrun.run("checkout", "HEAD", "--", *overlap, cwd=clone, check=True)
-        note = f"; your edits to {listed} were replaced, back with `git -C {where} stash apply {ref}`"
+        note = f"; your edits to {listed} were replaced, back with `git -C {where} checkout {ref} -- {' '.join(overlap)}`"
     local = int(gitrun.out("rev-list", "--count", f"{up}..HEAD", cwd=clone) or 0)
     if not local:
         m = gitrun.run("merge", "-q", "--ff-only", "--autostash", up, cwd=clone)
         if m.returncode:
-            return f"{where} not synced: fast-forward refused ({m.stderr.strip().splitlines()[:1]}){note}"
+            return f"{where} not synced: fast-forward refused ({(m.stderr.strip().splitlines() or ['?'])[0]}){note}"
         how = "fast-forward"
     else:
         r = gitrun.run("rebase", "-q", "--autostash", up, cwd=clone)
