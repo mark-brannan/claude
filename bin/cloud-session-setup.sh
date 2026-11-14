@@ -133,6 +133,7 @@ hooks/measure-git-events.py
 hooks/no-persistent-polling.py
 hooks/no-late-pr-subscribe.py
 hooks/release-subagent-branch.py
+hooks/clone-sync.py
 hooks/pr-ownership-context.py
 hooks/pr-threads-gate.py
 hooks/pr-blockers-prompt.py
