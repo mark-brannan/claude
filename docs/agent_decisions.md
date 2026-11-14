@@ -793,3 +793,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261114t050432z
 - clone-sync policies: workshop upstream, home-automation and symphony keep Undo: set the clone's policy in config.json ([#472](https://github.com/mark-brannan/claude/pull/472))
+
+### 20261114t050436z
+- clone-sync also runs on Stop to catch auto-merges that land later Undo: drop the Stop entry in settings.json ([#472](https://github.com/mark-brannan/claude/pull/472))
