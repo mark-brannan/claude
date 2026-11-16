@@ -1161,6 +1161,160 @@ class StopContinuityTest(unittest.TestCase):
                                         capture_output=True).returncode, 0, "items/: a new item is committed")
         self.assertFalse((SREPO / ".git" / "claude-state-push.lock.d").exists(), "items/: the push lock is released")
 
+        # --- a detached HEAD is put back on main, nothing stranded ----------
+        # A rebase killed past its first checkout, cleared by `rebase --quit`,
+        # left HEAD detached: every later Stop committed onto no branch and
+        # none pushed, for four days (2026-11-12). main itself held commits
+        # the detached line lacked. The Stop reattaches, merges those back,
+        # and pushes all of it.
+        DET = w.S / "state-detached"
+        sh("git", "clone", "-q", "-b", "main", str(SRORIGIN), str(DET), env=w.base)
+        w.git(DET, "config", "user.name", "t")
+        w.git(DET, "config", "user.email", "t@example.invalid")
+        shared = DET / "state" / "global" / "shared.txt"
+        shared.write_text("one\ntwo\nthree\nfour\nfive\n")
+        w.gitq(DET, "add", "state/global/shared.txt")
+        w.gitq(DET, "commit", "-m", "shared-base")
+        w.gitq(DET, "push", "-q", "origin", "main")
+        (DET / "state" / "global" / "stranded.txt").write_text("on main only\n")
+        shared.write_text("ONE\ntwo\nthree\nfour\nfive\n")
+        w.gitq(DET, "add", "state/global/stranded.txt", "state/global/shared.txt")
+        w.gitq(DET, "commit", "-m", "stranded-on-main")
+        w.gitq(DET, "checkout", "-q", "--detach", "origin/main")
+        (DET / "state" / "global" / "detached.txt").write_text("on no branch\n")
+        w.gitq(DET, "add", "state/global/detached.txt")
+        w.gitq(DET, "commit", "-m", "detached-work")
+        OTHER = w.S / "state-other-machine"
+        sh("git", "clone", "-q", "-b", "main", str(SRORIGIN), str(OTHER), env=w.base)
+        w.git(OTHER, "config", "user.name", "t")
+        w.git(OTHER, "config", "user.email", "t@example.invalid")
+        (OTHER / "state" / "global" / "elsewhere.txt").write_text("other machine\n")
+        w.gitq(OTHER, "add", "state/global/elsewhere.txt")
+        w.gitq(OTHER, "commit", "-m", "other-machine")
+        w.gitq(OTHER, "push", "origin", "main")
+        # The Stop's own rewrite of a file a stranded commit also touched:
+        # merged into that dirty tree, main's commits went to rescue/.
+        shared.write_text("one\ntwo\nthree\nfour\nFIVE\n")
+        stamp(DET).unlink(missing_ok=True)
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=DET)
+        self.assertEqual(w.git(DET, "symbolic-ref", "HEAD"), "refs/heads/main", "detached: back on main")
+        self.assertEqual(w.git(DET, "rev-list", "--left-right", "--count", "HEAD...origin/main"), "0\t0",
+                         "detached: the clone is even with origin")
+        for f in ("stranded.txt", "detached.txt", "elsewhere.txt"):
+            self.assertEqual(subprocess.run(["git", "-C", str(SRORIGIN), "cat-file", "-e", f"main:state/global/{f}"],
+                                            env=w.base).returncode, 0, f"detached: {f} reached origin")
+        self.assertEqual(w.git(SRORIGIN, "show", "main:state/global/shared.txt"), "ONE\ntwo\nthree\nfour\nFIVE",
+                         "detached: the stranded edit and the Stop's dirty one both reached origin")
+        self.assertEqual(w.git(DET, "branch", "--list", "rescue/*"), "", "detached: no rescue branch left")
+
+        # --- a clone that cannot take a commit safely refuses it, loudly ----
+        def fresh(name):
+            c = w.S / name
+            sh("git", "clone", "-q", "-b", "main", str(SRORIGIN), str(c), env=w.base)
+            w.git(c, "config", "user.name", "t")
+            w.git(c, "config", "user.email", "t@example.invalid")
+            stamp(c).unlink(missing_ok=True)
+            return c
+
+        def head_of(c):
+            return w.git(c, "rev-parse", "HEAD")
+
+        def ckpt_in(c):  # the checkpoint lives in the clone it reports on
+            return sorted(glob.glob(f"{c}/state/global/log/auto/*/*-work-{SID[:8]}.md"))[0]
+
+        # An autostash pop that conflicted left markers in a state file;
+        # `add` would mark them resolved and commit them to main.
+        MK = fresh("state-markers")
+        h0 = head_of(MK)
+        (MK / "state" / "global" / "marked.txt").write_text("<<<<<<< Updated upstream\na\n=======\nb\n>>>>>>> Stashed changes\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=MK)
+        self.assertEqual(head_of(MK), h0, "markers: nothing committed")
+        self.assertEqual(subprocess.run(["git", "-C", str(SRORIGIN), "cat-file", "-e", "main:state/global/marked.txt"],
+                                        env=w.base, capture_output=True).returncode, 128, "markers: never reach origin")
+
+        # A SIGKILLed git's index.lock, past any bounded step's age, is cleared.
+        LK = fresh("state-lock")
+        lock = Path(w.git(LK, "rev-parse", "--absolute-git-dir")) / "index.lock"
+        lock.write_text("")
+        os.utime(lock, (time.time() - 3600, time.time() - 3600))
+        (LK / "state" / "global" / "after-lock.txt").write_text("x\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=LK)
+        self.assertFalse(lock.exists(), "stale index.lock: removed")
+        self.assertEqual(subprocess.run(["git", "-C", str(SRORIGIN), "cat-file", "-e", "main:state/global/after-lock.txt"],
+                                        env=w.base, capture_output=True).returncode, 0, "stale index.lock: the commit landed")
+
+        # A clone left on another branch pushed to origin/<branch> with exit 0
+        # while main never moved; it now commits nothing and says why.
+        OB = fresh("state-offbranch")
+        w.gitq(OB, "checkout", "-q", "-b", "side", "--track", "origin/main")
+        h0 = head_of(OB)
+        (OB / "state" / "global" / "side.txt").write_text("x\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=OB)
+        self.assertEqual(head_of(OB), h0, "off main: nothing committed")
+        self.assertEqual(w.git(SRORIGIN, "branch", "--list", "side"), "", "off main: no branch pushed")
+        self.assertIn("clone on side, not main", verdict(ckpt_in(OB)), "off main: the verdict says why")
+
+        # A seven-`=` line alone is a setext underline, not a conflict.
+        ST = fresh("state-setext")
+        (ST / "state" / "global" / "setext.md").write_text("Summary\n=======\n\ntext\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=ST)
+        self.assertEqual(subprocess.run(["git", "-C", str(SRORIGIN), "cat-file", "-e", "main:state/global/setext.md"],
+                                        env=w.base, capture_output=True).returncode, 0, "setext underline: committed")
+
+        # A commit made inside a stopped rebase was lost to the next --abort.
+        RB = fresh("state-rebase")
+        rbd = Path(w.git(RB, "rev-parse", "--absolute-git-dir")) / "rebase-merge"
+        rbd.mkdir()
+        (rbd / "head-name").write_text("refs/heads/main\n")
+        (rbd / "onto").write_text(head_of(RB) + "\n")
+        h0 = head_of(RB)
+        (RB / "state" / "global" / "mid-rebase.txt").write_text("x\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=RB)
+        self.assertEqual(head_of(RB), h0, "stopped rebase: nothing committed")
+        self.assertTrue(rbd.is_dir(), "stopped rebase: a person's rebase is left alone")
+        self.assertIn("rebase-merge in progress", verdict(ckpt_in(RB)), "stopped rebase: the verdict names it")
+
+        # The hook's own pull, killed before its --abort, left a rebase under
+        # its mark: the next Stop backs it out and commits.
+        OWN = fresh("state-own-rebase")
+        (OTHER / "state" / "global" / "own.txt").write_text("theirs\n")
+        w.gitq(OTHER, "pull", "-q", "--rebase", "origin", "main")
+        w.gitq(OTHER, "add", "state/global/own.txt")
+        w.gitq(OTHER, "commit", "-m", "theirs")
+        w.gitq(OTHER, "push", "origin", "HEAD:main")
+        (OWN / "state" / "global" / "own.txt").write_text("ours\n")
+        w.gitq(OWN, "add", "state/global/own.txt")
+        w.gitq(OWN, "commit", "-m", "ours")
+        w.gitq(OWN, "pull", "-q", "--rebase")
+        ogd = Path(w.git(OWN, "rev-parse", "--absolute-git-dir"))
+        self.assertTrue((ogd / "rebase-merge" / "head-name").is_file(), "own rebase: the setup left one stopped")
+        (ogd / "claude-pull-running").write_text("1\n")
+        (OWN / "state" / "global" / "after-rebase.txt").write_text("x\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=OWN)
+        self.assertFalse((ogd / "rebase-merge").exists(), "own rebase: backed out")
+        self.assertEqual(w.git(OWN, "symbolic-ref", "HEAD"), "refs/heads/main", "own rebase: back on main")
+        self.assertEqual(subprocess.run(["git", "-C", str(OWN), "cat-file", "-e", "HEAD:state/global/after-rebase.txt"],
+                                        env=w.base, capture_output=True).returncode, 0, "own rebase: the Stop's commit landed")
+
+        # Detached, and main's stranded commit conflicts with the detached
+        # line: main's commits stay on rescue/, and the verdict says where.
+        RS = fresh("state-rescue")
+        (RS / "state" / "global" / "both.txt").write_text("main's\n")
+        w.gitq(RS, "add", "state/global/both.txt")
+        w.gitq(RS, "commit", "-m", "main-side")
+        w.gitq(RS, "checkout", "-q", "--detach", "origin/main")
+        (RS / "state" / "global" / "both.txt").write_text("detached\n")
+        w.gitq(RS, "add", "state/global/both.txt")
+        w.gitq(RS, "commit", "-m", "detached-side")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=RS)
+        rescue = w.git(RS, "for-each-ref", "--format=%(refname:short)", "refs/heads/rescue/main-*")
+        self.assertRegex(rescue, r"^rescue/main-\S+$", "conflicted reattach: one rescue branch")
+        self.assertEqual(w.git(RS, "log", "-1", "--format=%s", rescue), "main-side", "conflicted reattach: it holds main's commit")
+        self.assertEqual(w.git(RS, "symbolic-ref", "HEAD"), "refs/heads/main", "conflicted reattach: back on main")
+        self.assertFalse(w.git(RS, "ls-files", "-u"), "conflicted reattach: no merge left half-done")
+        self.assertIn(f"main's commits kept on {rescue}", verdict(ckpt_in(RS)), "conflicted reattach: the verdict names it")
+        self.has("conflicted reattach: the checkpoint names it", re.escape(f"`{rescue}`"), ckpt_in(RS))
+
     def state_signing(self):
         # --- the state-repo commit is signed iff this machine has a signing key
         # Same test as no-unsigned-push.py (`git config user.signingkey`): a
