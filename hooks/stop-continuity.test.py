@@ -1161,6 +1161,83 @@ class StopContinuityTest(unittest.TestCase):
                                         capture_output=True).returncode, 0, "items/: a new item is committed")
         self.assertFalse((SREPO / ".git" / "claude-state-push.lock.d").exists(), "items/: the push lock is released")
 
+        # --- a detached HEAD is put back on main, nothing stranded ----------
+        # A rebase killed past its first checkout, cleared by `rebase --quit`,
+        # left HEAD detached: every later Stop committed onto no branch and
+        # none pushed, for four days (2026-11-12). main itself held commits
+        # the detached line lacked. The Stop reattaches, merges those back,
+        # and pushes all of it.
+        DET = w.S / "state-detached"
+        sh("git", "clone", "-q", "-b", "main", str(SRORIGIN), str(DET), env=w.base)
+        w.git(DET, "config", "user.name", "t")
+        w.git(DET, "config", "user.email", "t@example.invalid")
+        (DET / "state" / "global" / "stranded.txt").write_text("on main only\n")
+        w.gitq(DET, "add", "state/global/stranded.txt")
+        w.gitq(DET, "commit", "-m", "stranded-on-main")
+        w.gitq(DET, "checkout", "-q", "--detach", "origin/main")
+        (DET / "state" / "global" / "detached.txt").write_text("on no branch\n")
+        w.gitq(DET, "add", "state/global/detached.txt")
+        w.gitq(DET, "commit", "-m", "detached-work")
+        OTHER = w.S / "state-other-machine"
+        sh("git", "clone", "-q", "-b", "main", str(SRORIGIN), str(OTHER), env=w.base)
+        w.git(OTHER, "config", "user.name", "t")
+        w.git(OTHER, "config", "user.email", "t@example.invalid")
+        (OTHER / "state" / "global" / "elsewhere.txt").write_text("other machine\n")
+        w.gitq(OTHER, "add", "state/global/elsewhere.txt")
+        w.gitq(OTHER, "commit", "-m", "other-machine")
+        w.gitq(OTHER, "push", "origin", "main")
+        stamp(DET).unlink(missing_ok=True)
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=DET)
+        self.assertEqual(w.git(DET, "symbolic-ref", "HEAD"), "refs/heads/main", "detached: back on main")
+        self.assertEqual(w.git(DET, "rev-list", "--left-right", "--count", "HEAD...origin/main"), "0\t0",
+                         "detached: the clone is even with origin")
+        for f in ("stranded.txt", "detached.txt", "elsewhere.txt"):
+            self.assertEqual(subprocess.run(["git", "-C", str(SRORIGIN), "cat-file", "-e", f"main:state/global/{f}"],
+                                            env=w.base).returncode, 0, f"detached: {f} reached origin")
+
+        # --- a clone that cannot take a commit safely refuses it, loudly ----
+        def fresh(name):
+            c = w.S / name
+            sh("git", "clone", "-q", "-b", "main", str(SRORIGIN), str(c), env=w.base)
+            w.git(c, "config", "user.name", "t")
+            w.git(c, "config", "user.email", "t@example.invalid")
+            stamp(c).unlink(missing_ok=True)
+            return c
+
+        def head_of(c):
+            return w.git(c, "rev-parse", "HEAD")
+
+        # An autostash pop that conflicted left markers in a state file;
+        # `add` would mark them resolved and commit them to main.
+        MK = fresh("state-markers")
+        h0 = head_of(MK)
+        (MK / "state" / "global" / "marked.txt").write_text("<<<<<<< Updated upstream\na\n=======\nb\n>>>>>>> Stashed changes\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=MK)
+        self.assertEqual(head_of(MK), h0, "markers: nothing committed")
+        self.assertEqual(subprocess.run(["git", "-C", str(SRORIGIN), "cat-file", "-e", "main:state/global/marked.txt"],
+                                        env=w.base, capture_output=True).returncode, 128, "markers: never reach origin")
+
+        # A SIGKILLed git's index.lock, past any bounded step's age, is cleared.
+        LK = fresh("state-lock")
+        lock = Path(w.git(LK, "rev-parse", "--absolute-git-dir")) / "index.lock"
+        lock.write_text("")
+        os.utime(lock, (time.time() - 3600, time.time() - 3600))
+        (LK / "state" / "global" / "after-lock.txt").write_text("x\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=LK)
+        self.assertFalse(lock.exists(), "stale index.lock: removed")
+        self.assertEqual(subprocess.run(["git", "-C", str(SRORIGIN), "cat-file", "-e", "main:state/global/after-lock.txt"],
+                                        env=w.base, capture_output=True).returncode, 0, "stale index.lock: the commit landed")
+
+        # A clone left on another branch pushed to origin/<branch> with exit 0
+        # while main never moved; it now commits nothing and says why.
+        OB = fresh("state-offbranch")
+        w.gitq(OB, "checkout", "-q", "-b", "side", "--track", "origin/main")
+        h0 = head_of(OB)
+        (OB / "state" / "global" / "side.txt").write_text("x\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=OB)
+        self.assertEqual(head_of(OB), h0, "off main: nothing committed")
+        self.assertEqual(w.git(SRORIGIN, "branch", "--list", "side"), "", "off main: no branch pushed")
+
     def state_signing(self):
         # --- the state-repo commit is signed iff this machine has a signing key
         # Same test as no-unsigned-push.py (`git config user.signingkey`): a
