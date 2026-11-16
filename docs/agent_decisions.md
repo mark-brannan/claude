@@ -805,3 +805,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261116t221150z
 - pull_and_push aborts a stopped rebase only when its own pull left it (a mark in the git dir); a rebase a person stopped by hand stays a named wedge Undo: drop the claude-pull-running mark and abort any stopped rebase whose onto equals its branch's upstream ([#473](https://github.com/mark-brannan/claude/pull/473#discussion_r4592324276)) ([#473](https://github.com/mark-brannan/claude/pull/473))
+
+### 20261116t223944z
+- A rescue branch is named by the commit it holds (rescue/main-<commit>), not by time and pid, so two runs park one tip under one name Undo: rename in reattach(); one line ([#473](https://github.com/mark-brannan/claude/pull/473))
