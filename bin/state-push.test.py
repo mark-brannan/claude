@@ -77,6 +77,37 @@ check(git(ORIGIN, "log", "-1", "--format=%s", "main") == "local-ahead", "ahead: 
 with open(os.path.join(SR, "state/global/live.json")) as f:
     check(f.read() == "ours\n", "collision: the local bytes are back")
 
+# A conflicted pull the hook's own run left stopped (killed before its
+# --abort) is aborted and pushed; one a person stopped by hand is left alone.
+def stopped_rebase(own):
+    git(OTHER, "pull", "-q", "--rebase")
+    commit(OTHER, "state/global/a.txt", "theirs\n", "other-edits-a")
+    git(OTHER, "push", "-q", "origin", "main")
+    commit(SR, "state/global/a.txt", "ours\n", "local-edits-a")
+    subprocess.run(["git", "-C", SR, "pull", "-q", "--rebase", "--autostash"], env=ENV, capture_output=True)
+    gd = git(SR, "rev-parse", "--absolute-git-dir")
+    check(os.path.isfile(os.path.join(gd, "rebase-merge", "head-name")), "setup: the pull stopped on its conflict")
+    if own:
+        open(os.path.join(gd, "claude-pull-running"), "w").close()
+    git(OTHER, "revert", "--no-edit", "HEAD")  # the conflict is gone upstream now
+    git(OTHER, "push", "-q", "origin", "main")
+    return gd
+
+
+gd = stopped_rebase(own=False)
+rc, out = run(SR)
+check(rc == 1 and "not pushed (" in out, "a person's rebase: not pushed, says why", out)
+check(os.path.isdir(os.path.join(gd, "rebase-merge")), "a person's rebase: left in place")
+git(SR, "rebase", "--abort")
+git(SR, "fetch", "-q")
+git(SR, "reset", "-q", "--hard", "origin/main")
+gd = stopped_rebase(own=True)
+rc, out = run(SR)
+check(rc == 0 and "pushed" in out, "the hook's own rebase: aborted, then pushed", out)
+check(not os.path.exists(os.path.join(gd, "rebase-merge")), "the hook's own rebase: cleared")
+check(not os.path.exists(os.path.join(gd, "claude-pull-running")), "the hook's own rebase: the mark is off")
+check(git(ORIGIN, "log", "-1", "--format=%s", "main") == "local-edits-a", "the hook's own rebase: the local commit landed")
+
 # No state repo.
 rc, out = run(None)
 check(rc == 2, "no state repo: exit 2", out)
