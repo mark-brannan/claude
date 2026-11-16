@@ -1274,6 +1274,28 @@ class StopContinuityTest(unittest.TestCase):
         self.assertTrue(rbd.is_dir(), "stopped rebase: a person's rebase is left alone")
         self.assertIn("rebase-merge in progress", verdict(ckpt_in(RB)), "stopped rebase: the verdict names it")
 
+        # The hook's own pull, killed before its --abort, left a rebase under
+        # its mark: the next Stop backs it out and commits.
+        OWN = fresh("state-own-rebase")
+        (OTHER / "state" / "global" / "own.txt").write_text("theirs\n")
+        w.gitq(OTHER, "pull", "-q", "--rebase", "origin", "main")
+        w.gitq(OTHER, "add", "state/global/own.txt")
+        w.gitq(OTHER, "commit", "-m", "theirs")
+        w.gitq(OTHER, "push", "origin", "HEAD:main")
+        (OWN / "state" / "global" / "own.txt").write_text("ours\n")
+        w.gitq(OWN, "add", "state/global/own.txt")
+        w.gitq(OWN, "commit", "-m", "ours")
+        w.gitq(OWN, "pull", "-q", "--rebase")
+        ogd = Path(w.git(OWN, "rev-parse", "--absolute-git-dir"))
+        self.assertTrue((ogd / "rebase-merge" / "head-name").is_file(), "own rebase: the setup left one stopped")
+        (ogd / "claude-pull-running").write_text("1\n")
+        (OWN / "state" / "global" / "after-rebase.txt").write_text("x\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=OWN)
+        self.assertFalse((ogd / "rebase-merge").exists(), "own rebase: backed out")
+        self.assertEqual(w.git(OWN, "symbolic-ref", "HEAD"), "refs/heads/main", "own rebase: back on main")
+        self.assertEqual(subprocess.run(["git", "-C", str(OWN), "cat-file", "-e", "HEAD:state/global/after-rebase.txt"],
+                                        env=w.base, capture_output=True).returncode, 0, "own rebase: the Stop's commit landed")
+
         # Detached, and main's stranded commit conflicts with the detached
         # line: main's commits stay on rescue/, and the verdict says where.
         RS = fresh("state-rescue")

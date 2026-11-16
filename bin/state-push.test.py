@@ -98,15 +98,24 @@ gd = stopped_rebase(own=False)
 rc, out = run(SR)
 check(rc == 1 and "not pushed (" in out, "a person's rebase: not pushed, says why", out)
 check(os.path.isdir(os.path.join(gd, "rebase-merge")), "a person's rebase: left in place")
-git(SR, "rebase", "--abort")
-git(SR, "fetch", "-q")
-git(SR, "reset", "-q", "--hard", "origin/main")
+for a in (("rebase", "--abort"), ("fetch", "-q"), ("reset", "-q", "--hard", "origin/main")):
+    subprocess.run(["git", "-C", SR, *a], env=ENV, capture_output=True)  # a broken scenario above costs one FAIL
 gd = stopped_rebase(own=True)
 rc, out = run(SR)
 check(rc == 0 and "pushed" in out, "the hook's own rebase: aborted, then pushed", out)
 check(not os.path.exists(os.path.join(gd, "rebase-merge")), "the hook's own rebase: cleared")
 check(not os.path.exists(os.path.join(gd, "claude-pull-running")), "the hook's own rebase: the mark is off")
 check(git(ORIGIN, "log", "-1", "--format=%s", "main") == "local-edits-a", "the hook's own rebase: the local commit landed")
+
+# The job finds a detached clone before any Stop does: main's own commit is
+# merged back and pushed with the detached line, no rescue branch left.
+commit(SR, "state/global/stranded.txt", "s\n", "stranded-on-main")
+git(SR, "checkout", "-q", "--detach", "origin/main")
+commit(SR, "state/global/detached.txt", "d\n", "detached-work")
+rc, out = run(SR)
+check(rc == 0 and "pushed" in out, "detached: reattached and pushed", out)
+check(git(ORIGIN, "ls-tree", "-r", "--name-only", "main").count("ed.txt") == 2, "detached: both lines reached origin")
+check(git(SR, "branch", "--list", "rescue/*") == "", "detached: no rescue branch left")
 
 # No state repo.
 rc, out = run(None)
