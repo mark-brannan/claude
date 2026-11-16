@@ -1496,8 +1496,10 @@ def pull_and_push(SR, cloud, backoff=3):
         # clone pushes HEAD:main and parks itself on main below.
         if not cloud:
             reattach()
-            # state-push reaches here without the commit step's check: never
-            # pull into or push from a clone that is mid-rebase or off main.
+            why = clone_wedge(False)
+            if why:
+                print(f"state repo: not pushed ({why})", file=sys.stderr)
+                return False
             if clone_wedge(False):
                 return False
         aside = set_aside_collisions(SR, "origin/main" if cloud else "@{u}")
