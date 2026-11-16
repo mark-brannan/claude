@@ -1555,8 +1555,9 @@ def pull_and_push(SR, cloud, backoff=3):
         # autostash-only rebase-merge/ cleared, and a local clone, which
         # pushes its branch, is put on one; a clone still mid-rebase or off
         # main is never pulled into or pushed. A cloud clone pushes HEAD:main
-        # and parks itself on main below.
-        if not cloud:
+            clear_own_rebase()
+            clear_stale_rebase()
+            clear_stale_index_lock()
             clear_own_rebase()
             clear_stale_rebase()
             reattach()
