@@ -796,3 +796,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261114t050436z
 - clone-sync also runs on Stop to catch auto-merges that land later Undo: drop the Stop entry in settings.json ([#472](https://github.com/mark-brannan/claude/pull/472))
+
+### 20261116t203905z
+- local state clone that refuses a commit sets a non-archivable verdict Undo: revert the clone_wedge verdict ([#473](https://github.com/mark-brannan/claude/pull/473))
