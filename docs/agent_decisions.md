@@ -799,3 +799,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261116t203905z
 - local state clone that refuses a commit sets a non-archivable verdict Undo: revert the clone_wedge verdict ([#473](https://github.com/mark-brannan/claude/pull/473))
+
+### 20261116t203908z
+- stale index.lock threshold 600 s Undo: change STALE_LOCK_SECS ([#473](https://github.com/mark-brannan/claude/pull/473))
