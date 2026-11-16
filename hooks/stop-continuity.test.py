@@ -1238,6 +1238,73 @@ class StopContinuityTest(unittest.TestCase):
         self.assertEqual(head_of(OB), h0, "off main: nothing committed")
         self.assertEqual(w.git(SRORIGIN, "branch", "--list", "side"), "", "off main: no branch pushed")
 
+        def said(c):
+            return jfield(c / "state" / "global" / "metrics" / "sessions" / SID[:2] / f"{SID}.json", "verdict")
+
+        def at_origin(f):
+            return subprocess.run(["git", "-C", str(SRORIGIN), "cat-file", "-e", f"main:state/global/{f}"],
+                                  env=w.base, capture_output=True).returncode == 0
+
+        # A markdown heading underline is seven `=`, and no conflict.
+        SX = fresh("state-setext")
+        (SX / "state" / "global" / "setext.md").write_text("Summary\n=======\nbody\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=SX)
+        self.assertTrue(at_origin("setext.md"), "a bar of = alone: committed and pushed")
+
+        # A rebase a person stopped: a commit made inside it is lost to the
+        # next `rebase --abort`, so none is made, and the rebase is left alone.
+        RB = fresh("state-rebase")
+        rm = Path(w.git(RB, "rev-parse", "--absolute-git-dir")) / "rebase-merge"
+        rm.mkdir()
+        (rm / "head-name").write_text("refs/heads/main\n")
+        (rm / "onto").write_text("0" * 40 + "\n")
+        h0 = head_of(RB)
+        (RB / "state" / "global" / "mid-rebase.txt").write_text("x\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=RB)
+        self.assertEqual(head_of(RB), h0, "stopped rebase: nothing committed")
+        self.assertTrue(rm.is_dir(), "stopped rebase: a person's rebase is not aborted")
+        self.assertIn("rebase-merge in progress", said(RB), "stopped rebase: the verdict names it")
+
+        # The hook's own pull, killed between its conflict and its abort,
+        # leaves a rebase stopped onto origin's tip: backed out on the next run.
+        OWN = fresh("state-own-rebase")
+        (OTHER / "state" / "global" / "own.txt").write_text("theirs\n")
+        w.gitq(OTHER, "pull", "-q", "--rebase", "origin", "main")
+        w.gitq(OTHER, "add", "state/global/own.txt")
+        w.gitq(OTHER, "commit", "-m", "theirs")
+        w.gitq(OTHER, "push", "origin", "HEAD:main")
+        (OWN / "state" / "global" / "own.txt").write_text("ours\n")
+        w.gitq(OWN, "add", "state/global/own.txt")
+        w.gitq(OWN, "commit", "-m", "ours")
+        w.gitq(OWN, "pull", "-q", "--rebase")
+        rm = Path(w.git(OWN, "rev-parse", "--absolute-git-dir")) / "rebase-merge"
+        self.assertTrue((rm / "head-name").is_file(), "own rebase: the setup left one stopped")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=OWN)
+        self.assertFalse(rm.is_dir(), "own rebase: backed out")
+        self.assertEqual(w.git(OWN, "symbolic-ref", "HEAD"), "refs/heads/main", "own rebase: back on main")
+        self.assertEqual(w.git(OWN, "log", "--format=%s", "origin/main..HEAD"), "ours",
+                         "own rebase: the clone's own commit is kept")
+
+        # main's stranded commits and the detached line edit one path: they
+        # cannot merge, so they stay on a rescue branch and the verdict says so.
+        RC = fresh("state-rescue")
+        def clash(text):
+            (RC / "state" / "global" / "clash.txt").write_text(text)
+            w.gitq(RC, "add", "state/global/clash.txt")
+            w.gitq(RC, "commit", "-m", "clash")
+
+        clash("main\n")
+        stranded = head_of(RC)
+        w.gitq(RC, "checkout", "-q", "--detach", "origin/main")
+        clash("detached\n")
+        w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=RC)
+        self.assertEqual(w.git(RC, "symbolic-ref", "HEAD"), "refs/heads/main", "rescue: back on main")
+        rescue = w.git(RC, "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads/rescue/")
+        self.assertEqual(rescue, f"rescue/main-{stranded[:12]} {stranded}", "rescue: main's old tip is kept on a branch")
+        self.assertIn(f"kept on rescue/main-{stranded[:12]}", said(RC), "rescue: the verdict names the branch")
+        self.assertFalse((Path(w.git(RC, "rev-parse", "--absolute-git-dir")) / "MERGE_HEAD").exists(),
+                         "rescue: no merge left half done")
+
     def state_signing(self):
         # --- the state-repo commit is signed iff this machine has a signing key
         # Same test as no-unsigned-push.py (`git config user.signingkey`): a

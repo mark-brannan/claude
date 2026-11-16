@@ -1209,10 +1209,6 @@ class Stop:
         # a person clears it; committing anyway wrote conflict markers to main
         # and lost commits made inside a stopped rebase.
         cloud = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
-        clear_stale_index_lock()
-        clear_stale_rebase()
-        if not cloud:
-            reattach()
         why = clone_wedge(cloud)
         if why:
             self.set_verdict(f"state repo not committed ({why})")
@@ -1266,6 +1262,15 @@ class Stop:
                     self.stage(files, "reset", "-q")
                     self.note_held(SR, [(x, "the second commit refused") for x in files])
             self.drop_state_dirt()
+        # After the commits, when the tree is clean of what a Stop rewrites:
+        # a merge into those files dirty refuses.
+        left = merge_rescued()
+        if left:
+            kept = ", ".join(left)
+            append(self.ckpt,
+                   f"\n**NOT MERGED** — main's commits from before HEAD was detached did not\n"
+                   f"merge back; they are kept on {kept}. Merge by hand, then delete the branch.\n")
+            self.set_verdict(f"state repo: main's commits kept on {kept}")
         if not committed:
             return  # nothing changed
 
@@ -1283,7 +1288,6 @@ class Stop:
         # which read as "never pushed" and let the next Stop push at once. It
         # records the attempt, not the success: a push that keeps failing is
         # retried once per window, not on every Stop.
-        cloud = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
         # "$SR/.git" is the directory state_repo found, not a git query that
         # can come back empty and put the stamp at the filesystem root.
         sentinel = f"{SR}/.git/claude-last-state-push"
@@ -1382,82 +1386,96 @@ def restore_aside(SR, moved):
             pass
 
 
-def in_rebase():
-    for d in ("rebase-merge", "rebase-apply"):
-        rc, p = git("rev-parse", "--git-path", d)
-        if rc == 0 and os.path.isdir(p.strip()):
-            return True
-    return False
+def git_path(name):
+    """Where this clone keeps a git-dir file, or "" when git cannot say."""
+    rc, p = git("rev-parse", "--git-path", name)
+    return p.strip() if rc == 0 else ""
+
+
+def stopped():
+    """The rebase, merge or pick this clone is in the middle of, or None."""
+    for d in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"):
+        if os.path.exists(git_path(d)):
+            return d
+    return None
 
 
 def reattach(branch="main"):
-    """Put a detached HEAD back on `branch`; True when HEAD is on a branch after.
-    A rebase killed after its first checkout, then cleared by `rebase --quit`,
-    leaves HEAD detached: every later commit lands on no branch, `pull --rebase`
-    refuses and `push origin HEAD` refuses, so the clone stops syncing
-    silently (2026-11-12 to 11-16). The detached commits become `branch`;
-    commits only the old `branch` held are merged back in, or, on a conflict,
-    kept on a rescue/ branch and the failure said. Never during a rebase."""
-    if git_ok("symbolic-ref", "-q", "HEAD"):
-        return True
-    if in_rebase():
-        return False
+    """Put a detached HEAD back on `branch`. A rebase killed after its first
+    checkout, then cleared by `rebase --quit`, leaves HEAD detached: every
+    later commit lands on no branch, and `pull --rebase` and `push origin
+    HEAD` both refuse. The detached commits become `branch`; commits only the
+    old `branch` held go to a rescue/ branch first, so no ref ever drops
+    them, and merge_rescued() brings them back. Never mid-rebase."""
+    if git_ok("symbolic-ref", "-q", "HEAD") or stopped():
+        return
     rc, old = git("rev-parse", "-q", "--verify", f"refs/heads/{branch}^{{commit}}")
-    old = old.strip() if rc == 0 else ""
+    old = old.strip()
+    if rc == 0 and not git_ok("merge-base", "--is-ancestor", old, "HEAD"):
+        # Named by the commit, so a second run parks the same tip the same way.
+        if not git_ok("branch", "-f", f"rescue/{branch}-{old[:12]}", old):
+            return
     # -B with no start point keeps HEAD's commit and the working tree as they are.
-    if not git_ok("checkout", "-q", "-B", branch):
-        return False
-    if old and not git_ok("merge-base", "--is-ancestor", old, "HEAD"):
-        if git_bounded(60, "merge", "-q", "--no-edit", "-m",
-                       f"Merge {branch}'s commits stranded while HEAD was detached", old) != 0:
-            git_ok("merge", "--abort")
-            rescue = f"rescue/{branch}-{time.strftime('%Y%m%dT%H%M%S')}"
-            git_ok("branch", rescue, old)
-            print(f"state repo: HEAD was detached; {branch}'s own commits did not merge cleanly, "
-                  f"kept on {rescue}", file=sys.stderr)
-    if not git_ok("rev-parse", "-q", "--verify", "@{u}"):
+    if git_ok("checkout", "-q", "-B", branch) and not git_ok("rev-parse", "-q", "--verify", "@{u}"):
         git_ok("branch", "-q", f"--set-upstream-to=origin/{branch}", branch)
-    return True
+
+
+def merge_rescued(branch="main"):
+    """Merge back the commits reattach() parked; the rescue/ branches that
+    would not merge, which stay until a person merges them."""
+    left = []
+    for r in git("for-each-ref", "--format=%(refname:short)", f"refs/heads/rescue/{branch}-*")[1].split():
+        if git_ok("merge-base", "--is-ancestor", r, "HEAD") or git_bounded(
+                60, "merge", "-q", "--no-edit", "-m",
+                f"Merge {branch}'s commits stranded while HEAD was detached", r) == 0:
+            git_ok("branch", "-q", "-D", r)
+        else:
+            git_ok("merge", "--abort")
+            left.append(r)
+    return left
 
 
 STALE_LOCK_SECS = 600  # past every bounded git step here, and the Stop's own cap
 
 
-def clear_stale_index_lock():
-    """A git killed by SIGKILL (a WSL shutdown, stop_group's escalation)
-    leaves index.lock behind: every later `add` fails, and a failed add read
-    as "nothing staged" stopped this clone silently. One older than any
-    bounded step here is a corpse."""
-    rc, p = git("rev-parse", "--git-path", "index.lock")
-    p = p.strip()
-    try:
-        if rc == 0 and time.time() - os.path.getmtime(p) > STALE_LOCK_SECS:
-            os.remove(p)
-    except OSError:
-        pass
-
-
-def clear_stale_rebase():
-    """A rebase killed before it began leaves rebase-merge/ holding only its
-    autostash: no head-name, so --abort refuses. --quit clears it, keeps
-    HEAD and the tree, and saves the autostash to the stash list."""
-    rc, p = git("rev-parse", "--git-path", "rebase-merge")
-    p = p.strip()
-    if rc == 0 and os.path.isdir(p) and not os.path.exists(os.path.join(p, "head-name")):
-        git_ok("rebase", "--quit")
-
-
 def clone_wedge(cloud):
-    """Why this clone must not take a commit now, or None. A commit on
+    """Clear what a killed git left behind, under the push lock; then why
+    this clone must not take a commit or a pull now, or None. A commit on
     unmerged paths or inside a stopped rebase, merge or pick is how conflict
     markers reached main (an autostash pop that conflicted, then `add`), and
     how a commit made mid-rebase was lost to the next `rebase --abort`."""
+    # A git killed by SIGKILL (a WSL shutdown, stop_group's escalation)
+    # leaves index.lock behind, and every later `add` fails.
+    try:
+        lock = git_path("index.lock")
+        if time.time() - os.path.getmtime(lock) > STALE_LOCK_SECS:
+            os.remove(lock)
+    except OSError:
+        pass
+    rebase = git_path("rebase-merge")
+    if os.path.isdir(rebase):
+        if not os.path.exists(f"{rebase}/head-name"):
+            # Killed before it began, it holds only its autostash, and
+            # --abort refuses; --quit keeps HEAD and the tree, and saves the
+            # autostash to the stash list.
+            git_ok("rebase", "--quit")
+        else:
+            # Stopped onto origin's tip, it is this hook's own pull, killed
+            # between its conflict and its abort. Any other is a person's.
+            rc, tip = git("rev-parse", "-q", "--verify", "origin/main^{commit}")
+            try:
+                onto = read(f"{rebase}/onto").strip()
+            except OSError:
+                onto = ""
+            if rc == 0 and onto == tip.strip():
+                git_ok("rebase", "--abort")
+    if not cloud:
+        reattach()
     if gitrun.exact("ls-files", "-u").stdout.strip():
         return "unresolved conflict in the clone"
-    for d in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"):
-        rc, p = git("rev-parse", "--git-path", d)
-        if rc == 0 and os.path.exists(p.strip()):
-            return f"{d} in progress in the clone"
+    d = stopped()
+    if d:
+        return f"{d} in progress in the clone"
     if not cloud:
         # A local clone syncs main and nothing else: on another branch its
         # push lands on origin/<branch> with exit 0 while main never moves.
@@ -1470,15 +1488,29 @@ def clone_wedge(cloud):
 
 
 def staged_markers():
-    """Staged paths carrying conflict markers; `--check` also flags
-    whitespace, which state files carry legitimately, so only markers count."""
-    out = gitrun.exact("diff", "--cached", "--check").stdout
-    return sorted({ln.split(":", 1)[0] for ln in out.splitlines() if "leftover conflict marker" in ln})
+    """Staged paths that add both ends of a conflict, `<<<<<<< ` and
+    `>>>>>>> `. Never the `=======` bar alone, which `diff --check` flags
+    and a markdown heading underline is."""
+    names = gitrun.exact("diff", "--cached", "--name-only", "-z", "--no-renames",
+                         "-G^(<<<<<<<|>>>>>>>) ").stdout
+    marked = []
+    for f in sorted(filter(None, names.split("\0"))):
+        added = gitrun.exact("--literal-pathspecs", "diff", "--cached", "-U0", "--", f).stdout
+        if all(re.search(rf"^\+{m} ", added, re.M) for m in ("<<<<<<<", ">>>>>>>")):
+            marked.append(f)
+    return marked
 
 
 def pull_and_push(SR, cloud, backoff=3):
     """Rebase the state clone onto origin and push it; True once pushed.
     Run under the push lock with cwd at SR. bin/state-push calls it too."""
+    # bin/state-push reaches here without the commit step's check: a local
+    # clone mid-rebase or off main is never pulled into or pushed.
+    if not cloud:
+        why = clone_wedge(False)
+        if why:
+            print(f"state repo: not pushed ({why})", file=sys.stderr)
+            return False
     for attempt in (1, 2):
         # A cloud clone is checked out on the harness's claude/* branch;
         # ordinary state never goes by PR, so the destination is main.
@@ -1492,16 +1524,6 @@ def pull_and_push(SR, cloud, backoff=3):
         # the push below lands on this attempt, not the reserve one.
         # Restored in a finally: SIGTERM at the harness's timeout lands
         # inside the pull, and _bye leaves by SystemExit.
-        # A local clone pushes its branch, so it must be on one; a cloud
-        # clone pushes HEAD:main and parks itself on main below.
-        if not cloud:
-            reattach()
-            why = clone_wedge(False)
-            if why:
-                print(f"state repo: not pushed ({why})", file=sys.stderr)
-                return False
-            if clone_wedge(False):
-                return False
         aside = set_aside_collisions(SR, "origin/main" if cloud else "@{u}")
         try:
             if git_bounded(120, "pull", "--rebase", "--autostash", "-q", *pull) != 0:
