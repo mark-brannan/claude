@@ -13,6 +13,11 @@ import subprocess
 
 TIMEOUT = 124  # returncode when git ran past its timeout, as timeout(1) reports
 MISSING = 127  # returncode when git could not be started, as a shell reports
+# Git-dir markers of an operation stopped part-way, each with the git verb
+# that owns it (`git <verb> --abort` clears it); a rebase first, as it can
+# leave the others behind it.
+IN_PROGRESS = (("rebase-merge", "rebase"), ("rebase-apply", "rebase"), ("MERGE_HEAD", "merge"),
+               ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert"))
 
 
 def run(*args, cwd=None, timeout=None, check=False, env=None, input=None, errors="replace",

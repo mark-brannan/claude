@@ -111,10 +111,27 @@ class SyncStatus(unittest.TestCase):
         self.assertIn("~/.claude is wedged", text)
         self.assertIn(".git/HEAD.lock (16h old)", text)
         self.assertIn(".git/refs/heads/main.lock (16h old)", text)
+        self.assertIn("run `rm ~/.claude/.git/HEAD.lock ~/.claude/.git/refs/heads/main.lock"
+                      " && git -C ~/.claude merge --ff-only origin/main`", text)
 
     def test_merge_in_progress_is_a_wedge(self):
         self.stale("MERGE_HEAD", 600)
-        self.assertIn(".git/MERGE_HEAD (10m old)", self.run_hook()["systemMessage"])
+        text = self.run_hook()["systemMessage"]
+        self.assertIn(".git/MERGE_HEAD (10m old)", text)
+        self.assertIn("`git -C ~/.claude merge --abort && git -C ~/.claude merge --ff-only origin/main`", text)
+        # Level and not skipped: only the wedge and the last sync's line, no lag claim.
+        self.assertNotIn("skipped by the last sync", text)
+        self.assertNotIn("stale hooks and skills", text)
+
+    def test_stalled_rebase_directory_is_a_wedge(self):
+        # A directory marker: pruned from the lock walk, found as a marker.
+        d = self.clone / ".git" / "rebase-merge"
+        d.mkdir()
+        old = time.time() - 600
+        os.utime(d, (old, old))
+        text = self.run_hook()["systemMessage"]
+        self.assertIn(".git/rebase-merge (10m old)", text)
+        self.assertIn("git -C ~/.claude rebase --abort", text)
 
     def test_fresh_lock_is_silent(self):
         # A git command running right now holds a lock; that is not a wedge.
