@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+# github-limits-snapshot: keep one github-limits reading per run, so trends
+# are visible and the session-start line (hooks/session-start-github-limits.py)
+# has something local to read.
+#
+# Usage: github-limits-snapshot [REPO_DIR]
+#
+# REPO_DIR defaults to the state repo (lib/state.py). One JSON line,
+# github-limits' own `--json` output, is appended to
+# ~/.local/state/github-limits/snapshots.jsonl. An over row is a reading, not
+# a failure: it is kept and exit is 0. Exit 2 where there is no state repo
+# (nothing to measure, as state-push); 3 when github-limits could not measure.
+# Scheduled by dotfiles' ~/.config/jobs.
+import json
+import os
+import subprocess
+import sys
+
+NAME = "github-limits-snapshot"
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import jsonl  # noqa: E402
+    import state  # noqa: E402
+except ImportError:
+    print("%s: lib/ not found (looked beside the tool and in ~/.claude/lib)" % NAME, file=sys.stderr)
+    sys.exit(3)
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def snapshot_path():
+    return os.path.join(os.path.expanduser("~"), ".local", "state", "github-limits", "snapshots.jsonl")
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    repo = argv[0] if argv else state.state_repo()
+    if not repo:
+        print("%s: no state repo here; nothing to measure" % NAME, file=sys.stderr)
+        return 2
+    p = subprocess.run([sys.executable, os.path.join(HERE, "github-limits"), repo, "--json"],
+                       capture_output=True, text=True)
+    try:
+        reading = json.loads(p.stdout) if p.returncode in (0, 1) else None
+    except ValueError:
+        reading = None
+    if not isinstance(reading, dict):
+        sys.stderr.write(p.stderr or "%s: github-limits exited %d with no reading\n" % (NAME, p.returncode))
+        return 3
+    jsonl.append(snapshot_path(), reading)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

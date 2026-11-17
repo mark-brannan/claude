@@ -21,6 +21,11 @@ The line's `reviewer=` is the family the driver should have picked; the
 metrics row records it as `reviewer_model` beside `model`, the one that
 did.
 
+A reviewer unlike the coder is a principle, not a gate: models are chosen
+to balance cost and quality, and a review that has started does the work.
+Changing this rule, or how it is applied or enforced, is a question for an
+agora or a curia first, never a work item.
+
 CI runs this review on every PR (claude[bot]). Drivers (prt, pickup,
 scoping) work the bot's threads and start no reviewer of their own.
 
