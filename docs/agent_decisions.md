@@ -814,3 +814,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t124942z
 - A conflicting rescue branch is detected with merge-tree and never merged in the working tree; a git older than 2.38 attempts the merge as before, under the mark Undo: revert the PR ([#477](https://github.com/mark-brannan/claude/pull/477))
+
+### 20261117t124946z
+- A merge is the hook's own only when MERGE_HEAD names the mark's commit and was written within 65 s after the mark; the pull mark stays matched by presence alone Undo: revert the PR ([#477](https://github.com/mark-brannan/claude/pull/477))
