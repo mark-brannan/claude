@@ -42,10 +42,14 @@ def main(argv=None):
         return 2
     p = subprocess.run([sys.executable, os.path.join(HERE, "github-limits"), repo, "--json"],
                        capture_output=True, text=True)
-    if p.returncode not in (0, 1) or not p.stdout.strip():
-        sys.stderr.write(p.stderr or "%s: github-limits exited %d\n" % (NAME, p.returncode))
+    try:
+        reading = json.loads(p.stdout) if p.returncode in (0, 1) else None
+    except ValueError:
+        reading = None
+    if not isinstance(reading, dict):
+        sys.stderr.write(p.stderr or "%s: github-limits exited %d with no reading\n" % (NAME, p.returncode))
         return 3
-    jsonl.append(snapshot_path(), json.loads(p.stdout))
+    jsonl.append(snapshot_path(), reading)
     return 0
 
 

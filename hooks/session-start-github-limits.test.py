@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -22,6 +23,10 @@ def row(metric, value, limit, status, unit=""):
             "used": value / limit, "status": status, "note": ""}
 
 
+def stamp(ago=timedelta(hours=1)):
+    return (datetime.now(timezone.utc) - ago).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class Line(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -29,10 +34,11 @@ class Line(unittest.TestCase):
         self.home = Path(tmp.name)
         self.snaps = self.home / ".local/state/github-limits/snapshots.jsonl"
         self.snaps.parent.mkdir(parents=True)
+        self.at = stamp()
 
-    def snap(self, *rows, at="2026-11-17T05:17:00Z"):
+    def snap(self, *rows, at=None):
         with self.snaps.open("a") as f:
-            f.write(json.dumps({"at": at, "rows": list(rows)}) + "\n")
+            f.write(json.dumps({"at": at or self.at, "rows": list(rows)}) + "\n")
 
     def run_hook(self):
         p = subprocess.run([sys.executable, str(HOOK)], input="{}", capture_output=True, text=True,
@@ -51,7 +57,7 @@ class Line(unittest.TestCase):
         self.snap(row("API core used this window", 4500, 5000, "warn"))
         self.assertEqual(self.run_hook(),
                          "github-limits: API core used this window 4,500 of 5,000 (90%), warn; "
-                         "snapshot 2026-11-17T05:17Z; run `github-limits` for the table")
+                         f"snapshot {self.at[:16]}Z; run `github-limits` for the table")
 
     def test_worst_row_with_count_of_the_rest(self):
         self.snap(row("remote branches", 3000, 5000, "warn"),
@@ -59,7 +65,11 @@ class Line(unittest.TestCase):
                   row("deepest path", 30, 50, "warn", "levels"))
         self.assertEqual(self.run_hook(),
                          "github-limits: widest directory 3,100 entries of 3,000 (103%), over; +2 more; "
-                         "snapshot 2026-11-17T05:17Z; run `github-limits` for the table")
+                         f"snapshot {self.at[:16]}Z; run `github-limits` for the table")
+
+    def test_stale_snapshot_is_silent(self):
+        self.snap(row("deepest path", 30, 50, "warn"), at=stamp(timedelta(days=3)))
+        self.assertIsNone(self.run_hook())
 
     def test_only_the_latest_snapshot_counts(self):
         self.snap(row("deepest path", 30, 50, "warn"))
