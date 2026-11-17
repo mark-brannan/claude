@@ -18,9 +18,9 @@ whose tiers are current thinking), in place of the 100/500 line stand-in:
 | default | `medium` |
 | none (a review typed in a session) | `high` |
 
-Nothing reviews at `low`. The review workflow's brief does not name the tier
-today; one line naming it, which the skill reads, is the only change outside
-this repo. The tiers themselves do not change.
+Nothing reviews at `low`. The review workflow's brief names the tier today only
+in passing, in its triage sentence; one line naming it as a field the skill reads
+is the only change outside this repo. The tiers themselves do not change.
 
 Why the tier and not `bin/prt`'s score:
 
@@ -58,8 +58,8 @@ reviews called `/code-review`:
 | languette#357 | high | high | high | 1168 | 0 |
 
 No `low` run; the one `medium` was on ampacity#17, which has no row of its own. The
-`high` the line rule gives for languette#415 and claude#427 comes from its path
-arm (a desk path or a `SKILL.md`), not their size. Of the other 220 rows, 210 predate the rule and
+`high` the line rule gives for languette#415, claude#427 and colregs-mcp#69 comes from its
+path arm (a desk path or a `SKILL.md`), not their size. Of the other 220 rows, 210 predate the rule and
 10 are prt-dispatched agents that never called `/code-review`.
 
 ### 2. CI runs, by the level the line rule would assign and by tier
@@ -119,8 +119,7 @@ until then the rule bands in section 2 are a proxy.
 - **Findings per level at one model:** unmeasured; no row records the level.
 - **Whether "fixed" is real:** no human labels yet on mark-brannan/.github#70.
 - **The tier today:** the snapshot's tiers came from paths, not the verdict.
-- **Skip by size:** the review workflow's opt-in `skip-under-lines` and
-  `docs-skip-lines` (off by default) still read line count to skip a review.
+- **Skip by size:** the workflow's opt-in `skip-under-lines` and `docs-skip-lines` still read line count.
 
 The 40-thread label sheet on #70 has no human labels; an agent's blind pass
 agreed with the script on 31 of 40, with no *fixed* overturned. The workflow

@@ -8,6 +8,7 @@ maintainer's words.
 - 2026-11-17 — review depth: the CI review tier owns how hard a pull request
   is reviewed, and depth is never set from line count, because the tier is
   where review is spent and picks the model, the lever that moves cost per
-  fix, while size sorted neither findings nor cost
-  ([#482](https://github.com/mark-brannan/claude/pull/482),
+  fix, while size sorted cost in neither table and findings in only one
+  ([the maintainer's words](https://github.com/mark-brannan/claude_prompts_scratch/blob/e5d0b87f97c9811cb856127b143beceb7c0cd943/state/global/log/2026-11-17-review-depth-decision.md#L6),
+  [#482](https://github.com/mark-brannan/claude/pull/482),
   [#343](https://github.com/mark-brannan/claude/issues/343)).
