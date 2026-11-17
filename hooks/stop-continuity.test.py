@@ -1326,8 +1326,12 @@ class StopContinuityTest(unittest.TestCase):
         _, WORK = w.make_work()
         RESCUE = "rescue/main-000000000000"
         # git, with another session writing $OTHER_SESSION_WRITES the moment
-        # a merge stops short, or a person merging $PERSON_MERGES just before one.
+        # a merge stops short, or a person merging $PERSON_MERGES just before
+        # one. $MERGE_LOG takes each merge's arguments; $OLD_GIT is a git
+        # with no `merge-tree --write-tree`.
         (w.BIN / "git").write_text(f"""#!/bin/sh
+[ "$1" = merge ] && [ -n "${{MERGE_LOG:-}}" ] && echo "$*" >> "$MERGE_LOG"
+[ "$1" = merge-tree ] && [ -n "${{OLD_GIT:-}}" ] && exit 129
 if [ "$1" = merge ] && [ "$2" != --abort ] && [ -n "${{PERSON_MERGES:-}}" ]; then
   {shutil.which("git")} merge -q --no-edit "$PERSON_MERGES"
 fi
@@ -1373,17 +1377,28 @@ exec {shutil.which("git")} "$@"
         def ckpt_in(c):
             return sorted(glob.glob(f"{c}/state/global/log/auto/*/*-work-{SID[:8]}.md"))[0]
 
-        # Another session rewrites a file the merge staged, between the merge
-        # and its back-out: the back-out refused, silently.
-        c, g, gd = stranded("merge-raced")
-        stop(c, OTHER_SESSION_WRITES=g / "live.json")
-        self.assertFalse((gd / "MERGE_HEAD").exists(), "raced: no merge left in progress")
-        self.assertFalse(w.git(c, "ls-files", "-u"), "raced: no unmerged path")
-        self.assertEqual(w.git(c, "branch", "--list", RESCUE).strip(), RESCUE, "raced: the rescue branch is kept")
-        self.assertEqual(read(c / "notes.txt"), "a session's, uncommitted\n", "raced: an uncommitted file keeps its bytes")
+        # A rescue branch that conflicts never starts a merge in the tree.
+        c, g, gd = stranded("merge-conflicting")
+        stop(c, OTHER_SESSION_WRITES=g / "live.json", MERGE_LOG=w.S / "merges")
+        self.assertEqual(read(w.S / "merges"), "", "conflicting: no merge was started")
+        self.assertFalse((gd / "MERGE_HEAD").exists(), "conflicting: no merge left in progress")
+        self.assertEqual(w.git(c, "branch", "--list", RESCUE).strip(), RESCUE, "conflicting: the rescue branch is kept")
         (g / "next.txt").write_text("x\n")
         stop(c)
-        self.assertTrue(committed(c, "state/global/next.txt"), "raced: the next Stop commits")
+        self.assertTrue(committed(c, "state/global/next.txt"), "conflicting: the next Stop commits")
+
+        # Where the merge does start and stops on its conflicts (a git too
+        # old to try it first), another session rewrites a file the merge
+        # staged before the back-out: the back-out refused, silently.
+        c, g, gd = stranded("merge-raced")
+        stop(c, OLD_GIT=1, OTHER_SESSION_WRITES=g / "live.json")
+        self.assertFalse((gd / "MERGE_HEAD").exists(), "raced: no merge left in progress")
+        self.assertFalse((gd / "claude-merge-running").exists(), "raced: the mark is off")
+        self.assertFalse(w.git(c, "ls-files", "-u"), "raced: no unmerged path")
+        self.assertEqual(read(g / "both.txt"), "detached\n", "raced: the conflicted file is HEAD's again")
+        self.assertEqual(read(g / "live.json"), "another session's\n", "raced: the rewritten file keeps its bytes")
+        self.assertEqual(w.git(c, "branch", "--list", RESCUE).strip(), RESCUE, "raced: the rescue branch is kept")
+        self.assertEqual(read(c / "notes.txt"), "a session's, uncommitted\n", "raced: an uncommitted file keeps its bytes")
 
         # A hook killed between its merge and the back-out left the merge
         # under its mark; a session has since rewritten a file the merge

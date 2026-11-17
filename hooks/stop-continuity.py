@@ -1460,9 +1460,7 @@ def back_out_merge(mark, tries=3):
         gone = set(znames("diff", "--cached", "--diff-filter=D", "HEAD"))
         theirs = [p for p in znames("diff", "--cached", "--diff-filter=u", "HEAD")
                   if p in tree or (p in gone and os.path.lexists(p))]
-        if theirs:
-            git_ok("reset", "-q", "HEAD", "--", *theirs)
-        elif n + 1 < tries:
+        if not (theirs and git_ok("reset", "-q", "HEAD", "--", *theirs)) and n + 1 < tries:
             time.sleep(n + 1)  # another git holds index.lock
     return not own_merge(mark)
 
