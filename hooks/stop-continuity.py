@@ -1432,8 +1432,9 @@ MERGE_MARK = "claude-merge-running"
 def znames(*args):
     return [p for p in gitrun.exact(*args, "--name-only", "-z", "--no-renames").stdout.split("\0") if p]
 
-
-def back_out_merge(tries=3):
+    """Back out the merge in progress; True once none is. A file another
+    session wrote after the merge staged it keeps its bytes; a conflicted
+    path goes back to HEAD."""
     """Back out the merge in progress; True once none is. Every file another
     session wrote keeps its bytes."""
     for n in range(tries):
