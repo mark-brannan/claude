@@ -829,3 +829,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t131917z
 - combined plan cost table rule lives once, in scoping SKILL.md cost section Undo: add a pointer in on-the-yes.md walk bullet ([#478](https://github.com/mark-brannan/claude/pull/478))
+
+### 20261117t210658z
+- The PR-hooks proposal lives in docs/ beside the layer's other research docs Undo: move the file ([#480](https://github.com/mark-brannan/claude/pull/480))
