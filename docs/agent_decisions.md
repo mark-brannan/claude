@@ -847,3 +847,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t232321z
 - one session per 30 minutes (live_clone.repair_every_minutes) sends the repair sub-agent; the rest are told one is on its way Undo: drop repair_every_minutes and first_repair() ([#486](https://github.com/mark-brannan/claude/pull/486))
+
+### 20261117t233053z
+- repair_behind_commits counts only once the clone is past warn_behind_minutes, so a merge burst the next sync takes is not a repair Undo: use n instead of late in the repair_commits test ([#486](https://github.com/mark-brannan/claude/pull/486))
