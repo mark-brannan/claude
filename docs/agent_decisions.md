@@ -811,3 +811,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t124620z
 - Review's deeper fix (clean rescue merge via commit-tree and --ff-only, never writing MERGE_HEAD) is deferred out of PR 477 to card 1794919560090cf579, since it would replace most of the reviewed fix Undo: take card 1794919560090cf579 into this PR ([#477](https://github.com/mark-brannan/claude/pull/477#discussion_r4599735918)) ([#477](https://github.com/mark-brannan/claude/pull/477))
+
+### 20261117t124942z
+- A conflicting rescue branch is detected with merge-tree and never merged in the working tree; a git older than 2.38 attempts the merge as before, under the mark Undo: revert the PR ([#477](https://github.com/mark-brannan/claude/pull/477))
