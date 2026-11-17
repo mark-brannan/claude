@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+# pr-live: is a merged PR live on this machine, not merely merged?
+#
+# Usage: pr-live <owner/repo#n>...
+#
+# A PR in a repo this layer deploys (config.json's live_clone.repos: claude,
+# dotfiles, languette) is live once its merge commit is in the local copy
+# that runs it: the clone's HEAD, or for a plugin the commit Claude Code
+# installed. A sync can lag a merge, or be wedged for hours, so a driver
+# releases a PR that depends on another only when this says live. A repo
+# not listed there is live once merged.
+#
+# One line per ref. Exit 0 when every ref is live, 1 when any is not (or
+# cannot be told), 2 on bad usage.
+import json
+import os
+import re
+import subprocess
+import sys
+
+NAME = "pr-live"
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+import config  # noqa: E402
+
+TIMEOUT = 30
+PLUGINS = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+
+
+def repos():
+    seam = os.environ.get("PR_LIVE_CONFIG")  # tests point at their own config
+    cfg = config.load((seam,)) if seam else config.load()
+    return cfg.get("live_clone", {}).get("repos", {})
+
+
+def git(spec, *args):
+    base = [os.path.expanduser(a) if a.startswith("~") else a for a in spec["git"]]
+    try:
+        return subprocess.run(["git", *base, *args], capture_output=True, text=True, timeout=TIMEOUT)
+    except (OSError, subprocess.SubprocessError) as e:
+        return subprocess.CompletedProcess(args, 128, "", str(e))
+
+
+def live_sha(spec):
+    """The commit that runs here: the plugin's installed commit, or HEAD."""
+    plugin = spec.get("plugin")
+    if plugin:
+        try:
+            with open(os.environ.get("PR_LIVE_PLUGINS", PLUGINS), encoding="utf-8") as f:
+                rows = json.load(f)["plugins"].get(plugin, [])
+        except (OSError, ValueError, KeyError):
+            return None
+        return next((r.get("gitCommitSha") for r in rows if r.get("scope") == "user"), None)
+    p = git(spec, "rev-parse", "HEAD")
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+def contains(spec, merge, live):
+    """True or False when live has merge; None when it cannot be told."""
+    for attempt in (0, 1):
+        p = git(spec, "merge-base", "--is-ancestor", merge, live)
+        if p.returncode in (0, 1):
+            return p.returncode == 0
+        if attempt == 0:  # an object not fetched yet
+            git(spec, "fetch", "-q", "origin")
+    return None
+
+
+def check(ref, known):
+    m = re.fullmatch(r"([\w.-]+/[\w.-]+)#(\d+)", ref)
+    if not m:
+        return None, f"{ref}: not owner/repo#n"
+    repo, n = m.groups()
+    p = subprocess.run(["gh", "pr", "view", n, "--repo", repo, "--json", "state,mergeCommit"],
+                       capture_output=True, text=True, timeout=TIMEOUT)
+    if p.returncode != 0:
+        return False, f"{ref}: cannot read the PR: {p.stderr.strip()[:120]}"
+    pr = json.loads(p.stdout)
+    if pr.get("state") != "MERGED":
+        return False, f"{ref}: not merged ({(pr.get('state') or '?').lower()})"
+    merge = (pr.get("mergeCommit") or {}).get("oid")
+    spec = known.get(repo)
+    if not spec:
+        return True, f"{ref}: live (merged; {repo} is not deployed here)"
+    where = spec.get("plugin") or " ".join(spec["git"][1:])
+    live = live_sha(spec)
+    if not live or not merge:
+        return False, f"{ref}: merged, cannot tell if live in {where} (no live commit or merge commit)"
+    has = contains(spec, merge, live)
+    if has is None:
+        return False, f"{ref}: merged, cannot tell if live in {where} ({merge[:7]} unknown there)"
+    if has:
+        return True, f"{ref}: live in {where}"
+    return False, (f"{ref}: merged, NOT live in {where} (live at {live[:7]}, needs {merge[:7]}); "
+                   f"hold what depends on it, and see ~/.claude/bin/self-check")
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print("usage: pr-live <owner/repo#n>...", file=sys.stderr)
+        return 2
+    try:
+        known = repos()
+    except config.ConfigError as e:
+        print(f"{NAME}: {e}", file=sys.stderr)
+        return 1
+    ok = True
+    for ref in argv:
+        good, line = check(ref, known)
+        print(line)
+        ok = ok and bool(good)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

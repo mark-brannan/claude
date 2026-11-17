@@ -23,8 +23,8 @@ sys.dont_write_bytecode = True
 HOOK = Path(__file__).resolve().parent / "session-start-sync-status.py"
 
 
-def git(*args, cwd=None):
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+def git(*args, cwd=None, env=None):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, env=env)
 
 
 class SyncStatus(unittest.TestCase):
@@ -45,8 +45,12 @@ class SyncStatus(unittest.TestCase):
         self.env.update(HOME=str(self.home), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         self.status("2026-10-22T08:55:05Z level with origin/main; claude: level with origin/main")
 
-    def commit(self):
-        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "c", cwd=self.work)
+    def commit(self, minutes_ago=15):
+        # 15 minutes: past warn_behind_minutes, short of repair_behind_minutes.
+        when = f"@{int(time.time()) - minutes_ago * 60} +0000"
+        env = {**os.environ, "GIT_COMMITTER_DATE": when, "GIT_AUTHOR_DATE": when}
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "c",
+            cwd=self.work, env=env)
         git("push", "-q", "origin", "HEAD:main", cwd=self.work)
 
     def status(self, line):
@@ -70,9 +74,30 @@ class SyncStatus(unittest.TestCase):
         out = self.run_hook()
         self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "SessionStart")
         text = out["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("2 commit(s) behind origin/main", text)
+        self.assertIn("2 commit(s) behind origin/main, the oldest 15m old", text)
         self.assertIn("claude: level with origin/main", text)
         self.assertEqual(out["systemMessage"], text)
+        self.assertNotIn("PRIORITY", text)
+
+    def test_behind_by_less_than_a_sync_is_silent(self):
+        self.commit(minutes_ago=2)
+        git("fetch", "-q", cwd=self.clone)
+        self.assertIsNone(self.run_hook())
+
+    def test_behind_long_asks_for_a_repair(self):
+        self.commit(minutes_ago=16 * 60)
+        git("fetch", "-q", cwd=self.clone)
+        out = self.run_hook()
+        self.assertTrue(out["hookSpecificOutput"]["additionalContext"].startswith("PRIORITY"))
+        self.assertIn("sub-agent", out["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("needs repair", out["systemMessage"])
+        self.assertNotIn("PRIORITY", out["systemMessage"])
+
+    def test_many_commits_behind_asks_for_a_repair(self):
+        for _ in range(20):
+            self.commit(minutes_ago=2)
+        git("fetch", "-q", cwd=self.clone)
+        self.assertTrue(self.run_hook()["hookSpecificOutput"]["additionalContext"].startswith("PRIORITY"))
 
     def test_behind_unfetched_is_silent(self):
         # No network call: a commit the clone has not fetched is not seen.
@@ -107,7 +132,9 @@ class SyncStatus(unittest.TestCase):
         # 2026-11-17: a killed pull left both locks; the clone looked merely behind.
         self.stale("HEAD.lock", 16 * 3600)
         self.stale("refs/heads/main.lock", 16 * 3600)
-        text = self.run_hook()["systemMessage"]
+        out = self.run_hook()
+        self.assertTrue(out["hookSpecificOutput"]["additionalContext"].startswith("PRIORITY"))
+        text = out["systemMessage"]
         self.assertIn("~/.claude is wedged", text)
         self.assertIn(".git/HEAD.lock (16h old)", text)
         self.assertIn(".git/refs/heads/main.lock (16h old)", text)
