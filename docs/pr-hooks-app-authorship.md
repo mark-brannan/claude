@@ -1,11 +1,12 @@
-# The PR hooks once the App carries authorship: a proposal
+# The PR hooks once agents post as a bot account: a proposal
 
 Status: proposal, 2026-11-17. Homes: #339, #244, dotfiles#553. Nothing here is
 built. A new guard, or a new surface on one, waits until its use case and name
 have been reviewed.
 
-Agents' `gh` calls and MCP calls are authored by the `mark-brannan-agent` App; RUNBOOK
-"Act on GitHub as the agent App" has the split. Three questions follow from it:
+Agents' `gh` calls and MCP calls now post on GitHub as a bot account,
+`mark-brannan-agent[bot]` (a GitHub App), not as the human; RUNBOOK "Act on
+GitHub as the agent App" has the split. Three questions follow from it:
 who guards a raw thread resolve, what the PR hooks keep, and whether touches
 still need matching.
 
@@ -45,14 +46,14 @@ permission mode (from Claude Code's docs).
 Authorship changes one thing. `guard-review-threads` accepts a reply from the
 login its own `gh` call sees, or from a login in `review_thread_logins`. In a
 session that login is `mark-brannan-agent[bot]` (checked with a `viewer` query),
-and the guard already reads the App's replies as that login. Outside the App
-(`AGENT_BOT_OFF`, a fallback) the guard sees the human, and the App's replies
-count only if the setting lists the App.
+and the guard already reads the bot account's replies as that login. When a
+call runs as the human instead (`AGENT_BOT_OFF`, a fallback) the guard sees the
+human, and the bot account's replies count only if the setting lists it.
 
 | Layer | Reaches | Leaves open | Cost |
 |---|---|---|---|
 | Classifier rule only (today) | gh, MCP, curl, in auto mode | 193 ran, mode unknown | none |
-| `guard_review_threads` on, App login listed | gh, in every mode | MCP, curl, a script | two settings |
+| `guard_review_threads` on, bot login listed | gh, in every mode | MCP, curl, a script | two settings |
 | That guard extended to MCP `resolve_thread` | adds MCP | curl | new guard surface: review first |
 | A hook in this repo | whatever it names | duplicates languette | one more custom hook |
 
@@ -64,22 +65,31 @@ stays with the classifier.
 
 ## 2. What pr-ownership-context and pr-threads-gate keep (#244)
 
-App authorship cannot replace the ownership record: every agent's PR has the
+The bot account cannot replace the ownership record: every agent's PR has the
 same author, so the author says nothing about which agent holds it.
+
+An agent here is one session, or one sub-agent inside it; ownership lasts as
+long as it runs. A session that is killed or handed off leaves no record and
+no check; its PR goes back to the pickup list (`/pickup`), and the next session
+to hold or push the branch owns it.
 
 | Part | Proposal |
 |---|---|
 | Rules text, once per session | Keep; inject on the first work call, once per agent, so a sub-agent gets it too |
 | The record of PRs touched | Change: an agent owns a PR whose branch it holds or pushed; comments and reads don't count |
-| Open threads at Stop | Keep; also at a sub-agent's finish, on its own record. A parent never gates on a sub-agent's PR |
+| Open threads at Stop | Keep; also at a sub-agent's finish, on its own record. Each check blocks once and then lets the agent go, as the Stop check does today: one nudge, then an honest report of what stays open, never a loop. A parent never gates on a sub-agent's PR |
 | Conflicting with its base | Keep |
 | Defer a PR whose branch a live sub-agent holds | Drop: a gate never judges liveness ("A gate reads only"); the per-agent record removes the case |
+
+When an author stops working a PR at all is not this gate's call: it follows
+whatever bound the pr-chain workflow sets on rounds of fixing, and that bound
+may change.
 
 To verify before building: that the hook run at a sub-agent's finish carries
 the agent's id, and that agents a Workflow starts carry one too. The second
 decides whether the per-agent record covers a batch driver.
 
-## 3. Does App authorship retire the touch matching (dotfiles#553)
+## 3. Does the bot account retire the touch matching (dotfiles#553)
 
 Mostly. What still lands under the human's login when an agent acts:
 
@@ -88,7 +98,7 @@ Mostly. What still lands under the human's login when an agent acts:
 | `git push` | by design | 2,921 | no: pushes are not touches |
 | `gh pr merge` | by design: merging stays the human's | 28 | yes |
 | Mergify commands from `prt`, `pr-label-audit` | `AGENT_BOT_OFF=1` | not split in the log | no: signed comments |
-| Any `gh` call with no App secret, or `GH_TOKEN` set | silent fallback | unknown: the log records no identity | yes, any verb |
+| Any `gh` call with no bot-account secret, or `GH_TOKEN` set | silent fallback | unknown: the log records no identity | yes, any verb |
 
 Proposed:
 
