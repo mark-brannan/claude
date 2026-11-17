@@ -129,10 +129,7 @@ def ago(iso):
     except (ValueError, AttributeError):
         return "?"
     s = max(0, time.time() - (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).timestamp())
-    for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
-        if s >= n:
-            return f"{int(s // n)}{unit}"
-    return "now"
+    return when.age(s) if s >= 60 else "now"
 
 
 def dash(v):

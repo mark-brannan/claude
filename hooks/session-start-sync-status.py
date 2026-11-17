@@ -114,14 +114,6 @@ def first_repair(home, now, every):
     return True
 
 
-def age(seconds):
-    """A duration as its largest whole unit: 7m, 16h, 3d."""
-    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
-        if seconds >= size:
-            return f"{int(seconds // size)}{unit}"
-    return f"{int(seconds)}s"
-
-
 def wedge(clone, now, stale_after):
     """Stale git locks and operations in progress in the clone, oldest
     first, as (path under .git, age, verb): verb is the git command whose
@@ -145,15 +137,21 @@ def wedge(clone, now, stale_after):
             continue
         if now - mtime > stale_after:
             stale.append((mtime, os.path.relpath(path, gitdir), verb))
-    return [(rel, age(now - m), verb) for m, rel, verb in sorted(stale)]
+    import when  # lib/, on sys.path above
+    return [(rel, when.age(now - m), verb) for m, rel, verb in sorted(stale)]
 
 
 def unwedge(stuck):
     """The shell line that clears a wedge and fast-forwards: locks off
-    first, since an --abort takes the index lock, then each abort once."""
+    first, since an --abort takes the index lock, then each abort once, in
+    gitrun.IN_PROGRESS order. A rebase killed before its first step refuses
+    --abort; --quit clears that one."""
     locks = [f"~/.claude/.git/{shlex.quote(rel)}" for rel, _, verb in stuck if not verb]
     steps = [f"rm {' '.join(locks)}"] if locks else []
-    steps += [f"git -C ~/.claude {v} --abort" for v in dict.fromkeys(v for _, _, v in stuck if v)]
+    verbs = {v for _, _, v in stuck if v}
+    for v in dict.fromkeys(v for _, v in gitrun.IN_PROGRESS if v in verbs):
+        abort = f"git -C ~/.claude {v} --abort"
+        steps.append(f"({abort} || git -C ~/.claude rebase --quit)" if v == "rebase" else abort)
     return " && ".join(steps + ["git -C ~/.claude merge --ff-only origin/main"])
 
 
@@ -198,7 +196,8 @@ def main():
            f"config.json's live_clone has no usable {', '.join(unread)}; what it sets is off. " if unread else "")
     if not late and not skipped and not repair and not off:
         return
-    lag = (f"~/.claude is {n} commit(s) behind origin/main, the oldest {age(lag_secs)} old" if n
+    import when  # lib/, on sys.path above
+    lag = (f"~/.claude is {n} commit(s) behind origin/main, the oldest {when.age(lag_secs)} old" if n
            else "~/.claude was skipped by the last sync" if skipped else "")
     text = f"{lag}, so this session may run stale hooks and skills. " if lag else ""
     text = off + text + f"Last sync (`dotfiles-sync.sh --status`): {status or 'no output'}"

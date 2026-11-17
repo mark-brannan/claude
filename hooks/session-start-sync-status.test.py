@@ -196,6 +196,18 @@ class SyncStatus(unittest.TestCase):
         self.assertIn(".git/rebase-merge (10m old)", text)
         self.assertIn("git -C ~/.claude rebase --abort", text)
 
+    def test_locks_come_off_before_the_abort_and_each_abort_once(self):
+        self.stale("index.lock", 600)
+        self.stale("MERGE_HEAD", 900)
+        for d in ("rebase-merge", "rebase-apply"):
+            (self.clone / ".git" / d).mkdir()
+            old = time.time() - 600
+            os.utime(self.clone / ".git" / d, (old, old))
+        text = self.run_hook()["systemMessage"]
+        self.assertIn("run `rm ~/.claude/.git/index.lock"
+                      " && (git -C ~/.claude rebase --abort || git -C ~/.claude rebase --quit)"
+                      " && git -C ~/.claude merge --abort && git -C ~/.claude merge --ff-only origin/main`", text)
+
     def test_fresh_lock_is_silent(self):
         # A git command running right now holds a lock; that is not a wedge.
         self.stale("index.lock", 10)
