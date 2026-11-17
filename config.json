@@ -6,6 +6,9 @@
   "clone_sync": {
     "clones": {"~/workshop": "upstream", "~/home-automation": "keep", "~/symphony": "keep"}
   },
+  "live_clone": {
+    "stale_lock_minutes": 5
+  },
   "plan": {
     "week_usd": 2000,
     "fable_week_usd": 510,

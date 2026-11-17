@@ -14,7 +14,8 @@ Three triggers, any one:
     call here: the cron fetches)
   - the `claude:` part of `dotfiles-sync.sh --status` starts with "skipped"
   - the clone is wedged: a git lock file, or a merge, rebase, cherry-pick or
-    revert in progress, older than STALE. Nothing in ~/.claude legitimately
+    revert in progress, older than config.json's
+    live_clone.stale_lock_minutes. Nothing in ~/.claude legitimately
     holds one that long, and no sync can move the clone until it is cleared,
     so the warning names the file and its age rather than relay the sync's
     guess at the cause (on 2026-11-17 a pull killed mid-update left HEAD.lock
@@ -40,7 +41,6 @@ except ImportError:  # a seed without lib/: how far behind is unknown
 sys.dont_write_bytecode = True
 
 TIMEOUT = 5
-STALE = 300  # seconds: a git operation in ~/.claude finishes well inside it
 IN_PROGRESS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")
 
 
@@ -70,9 +70,22 @@ def age(seconds):
     return f"{int(seconds)}s"
 
 
+def stale_secs():
+    """config.json's live_clone.stale_lock_minutes, in seconds; None when it
+    cannot be read, and the wedge check is then skipped."""
+    try:
+        import config  # lib/, on sys.path above
+        return float(config.get("live_clone.stale_lock_minutes")) * 60
+    except Exception:  # ConfigError, ImportError, a non-number
+        return None
+
+
 def wedge(clone, now):
     """Stale git locks and operations in progress in the clone, as
     "<path under .git> (<age> old)" phrases, oldest first."""
+    stale_after = stale_secs()
+    if stale_after is None:
+        return []
     gitdir = os.path.join(clone, ".git")
     found = []
     for root, dirs, files in os.walk(gitdir):
@@ -87,7 +100,7 @@ def wedge(clone, now):
             mtime = os.stat(path).st_mtime
         except OSError:
             continue
-        if now - mtime > STALE:
+        if now - mtime > stale_after:
             stale.append((mtime, path))
     return [f".git/{os.path.relpath(p, gitdir)} ({age(now - m)} old)" for m, p in sorted(stale)]
 
