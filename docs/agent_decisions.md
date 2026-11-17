@@ -835,3 +835,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t210711z
 - The 28-day window is transcript mtime for transcript counts and commit date for the blocked-call log Undo: recount with another window source ([#480](https://github.com/mark-brannan/claude/pull/480))
+
+### 20261117t211504z
+- a missing --as refuses the review in a session rather than letting it run unchecked Undo: drop the not-running branch in refusal() ([#483](https://github.com/mark-brannan/claude/pull/483))
