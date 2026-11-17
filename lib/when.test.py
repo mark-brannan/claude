@@ -10,6 +10,9 @@ import when  # noqa: E402
 
 
 class Stamp(unittest.TestCase):
+    def test_age_is_the_largest_whole_unit(self):
+        self.assertEqual([when.age(x) for x in (45, 420, 16 * 3600 + 59, 3 * 86400)], ["45s", "7m", "16h", "3d"])
+
     def test_round_trip(self):
         self.assertEqual(when.stamp(1_700_000_000), "2023-11-14T22:13:20Z")
         self.assertEqual(when.unstamp("2023-11-14T22:13:20Z"), 1_700_000_000)

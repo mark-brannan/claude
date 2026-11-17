@@ -6,6 +6,18 @@
   "clone_sync": {
     "clones": {"~/workshop": "upstream", "~/home-automation": "keep", "~/symphony": "keep"}
   },
+  "live_clone": {
+    "wedged_after_minutes": 5,
+    "warn_behind_minutes": 5,
+    "repair_behind_minutes": 30,
+    "repair_behind_commits": 4,
+    "repair_every_minutes": 30,
+    "repos": {
+      "mark-brannan/claude": {"git": ["-C", "~/.claude"]},
+      "mark-brannan/dotfiles": {"git": ["--git-dir", "~/.local/share/yadm/repo.git"]},
+      "mark-brannan/languette": {"git": ["-C", "~/languette"], "plugin": "languette@languette"}
+    }
+  },
   "plan": {
     "week_usd": 2000,
     "fable_week_usd": 510,
