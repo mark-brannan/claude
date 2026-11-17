@@ -1426,78 +1426,30 @@ def reattach():
 RESCUE = "rescue/main-"
 
 
-MERGE_MARK = "claude-merge-running"
-MERGE_SECS = 60
-
-
-def znames(*args):
-    return [p for p in gitrun.exact(*args, "--name-only", "-z", "--no-renames").stdout.split("\0") if p]
-
-
-def own_merge(mark):
-    """Whether the merge in progress is the one this hook started under mark:
-    MERGE_HEAD names the mark's commit and was written inside the merge's
-    bound after it. Any other merge is a person's."""
-    head = git_paths("MERGE_HEAD")[0]
-    try:
-        age = os.path.getmtime(head) - os.path.getmtime(mark)
-        return read(head).split() == read(mark).split() and 0 <= age <= MERGE_SECS + 5
-    except OSError:
-        return False  # no merge in progress, or no mark
-
-
-def back_out_merge(mark, tries=3):
-    """Back out the merge this hook started under mark; True once none is in
-    progress. A file another session wrote after the merge staged it keeps
-    its bytes; a conflicted path goes back to HEAD."""
-    for n in range(tries):
-        if not own_merge(mark) or git_ok("merge", "--abort"):
-            return True
-        # The abort refuses while a path the merge staged differs in the tree
-        # (another session wrote it since): that path's index entry goes back
-        # to HEAD, so the next abort keeps the file as written.
-        tree = set(znames("diff", "--diff-filter=u"))
-        gone = set(znames("diff", "--cached", "--diff-filter=D", "HEAD"))
-        theirs = [p for p in znames("diff", "--cached", "--diff-filter=u", "HEAD")
-                  if p in tree or (p in gone and os.path.lexists(p))]
-        if not (theirs and git_ok("reset", "-q", "HEAD", "--", *theirs)) and n + 1 < tries:
-            time.sleep(n + 1)  # another git holds index.lock
-    return not own_merge(mark)
-
-
 def merge_stranded():
     """Merge back what reattach() parked; the rescue branches that would not
-    merge, kept for a person. Into a tree the Stop has not committed yet, a
-    merge refuses whenever a stranded commit touches a rewritten file."""
+    merge, kept for a person. The merge commit is built off the tree and the
+    clone fast-forwarded to it, so no merge is ever left in progress: one
+    that conflicts, or that touches a file the Stop has not committed, is kept."""
     kept = []
-    mark = git_paths(MERGE_MARK)[0]
     for ref in git("for-each-ref", "--format=%(refname:short)", f"refs/heads/{RESCUE}*")[1].split():
         if git_ok("merge-base", "--is-ancestor", ref, "HEAD"):
             git_ok("branch", "-q", "-D", ref)
             continue
-        # Tried first where it touches no file: a merge that would conflict
-        # is never started in the tree every session writes to. 1 is a
-        # conflict; a git too old to say is let through to the merge.
-        tip = git("rev-parse", "-q", "--verify", f"{ref}^{{commit}}")[1].strip()
-        if not mark or not tip or git_bounded(60, "merge-tree", "--write-tree", "HEAD", ref) == 1:
+        head = git("rev-parse", "-q", "--verify", "HEAD^{commit}")[1].strip()
+        # 1 is a conflict; a git older than 2.38 cannot write the tree either.
+        rc, tree = bounded(["git", "merge-tree", "--write-tree", head, ref], 60, capture=True)
+        if not head or rc != 0 or not tree.split():
             kept.append(ref)
             continue
-        # The mark names the merge as this hook's, as PULL_MARK does a pull:
-        # killed before the back-out, clear_killed_git finishes it.
-        try:
-            write(mark, f"{tip}\n")
-        except OSError:
-            kept.append(ref)
-            continue
-        if git_bounded(MERGE_SECS, "merge", "-q", "--no-edit", "-m",
-                       "Merge main's commits stranded while HEAD was detached", ref) == 0:
+        rc, commit = bounded(["git", "-c", f"commit.gpgsign={Stop.sign_if_key('.')}", "commit-tree",
+                              tree.split()[0], "-p", head, "-p", ref,
+                              "-m", "Merge main's commits stranded while HEAD was detached"], 30, capture=True)
+        # --ff-only refuses before it touches a file a local change would lose.
+        if rc == 0 and commit.strip() and git_bounded(60, "merge", "-q", "--ff-only", commit.strip()) == 0:
             git_ok("branch", "-q", "-D", ref)
         else:
             kept.append(ref)
-        if back_out_merge(mark):
-            rm_f(mark)
-        else:
-            break  # the mark stays for the next run; no second merge on top
     return kept
 
 
@@ -1523,10 +1475,6 @@ def clear_killed_git(cloud):
         if stopped(("rebase-merge", "rebase-apply")):
             git_ok("rebase", "--abort")
         rm_f(mark)
-    # Likewise the merge this hook started under its mark, and no other.
-    merge_mark = git_paths(MERGE_MARK)[0]
-    if merge_mark and os.path.exists(merge_mark) and back_out_merge(merge_mark):
-        rm_f(merge_mark)
     # Killed before it began, a rebase holds only its autostash and --abort
     # refuses; --quit keeps HEAD and the tree and saves the autostash.
     if os.path.isdir(rebase) and not os.path.exists(f"{rebase}/head-name"):
