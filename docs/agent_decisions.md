@@ -832,3 +832,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t210658z
 - The PR-hooks proposal lives in docs/ beside the layer's other research docs Undo: move the file ([#480](https://github.com/mark-brannan/claude/pull/480))
+
+### 20261117t210711z
+- The 28-day window is transcript mtime for transcript counts and commit date for the blocked-call log Undo: recount with another window source ([#480](https://github.com/mark-brannan/claude/pull/480))
