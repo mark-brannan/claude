@@ -1426,20 +1426,66 @@ def reattach():
 RESCUE = "rescue/main-"
 
 
+MERGE_MARK = "claude-merge-running"
+
+
+def znames(*args):
+    return [p for p in gitrun.exact(*args, "--name-only", "-z", "--no-renames").stdout.split("\0") if p]
+
+
+def back_out_merge(tries=3):
+    """Back out the merge in progress; True once none is. Every file another
+    session wrote keeps its bytes."""
+    for n in range(tries):
+        if not stopped(("MERGE_HEAD",)) or git_ok("merge", "--abort"):
+            return True
+        # The abort refuses while a path the merge staged differs in the tree
+        # (another session wrote it since): that path's index entry goes back
+        # to HEAD, so the next abort keeps the file as written.
+        tree = set(znames("diff", "--diff-filter=u"))
+        gone = set(znames("diff", "--cached", "--diff-filter=D", "HEAD"))
+        theirs = [p for p in znames("diff", "--cached", "--diff-filter=u", "HEAD")
+                  if p in tree or (p in gone and os.path.lexists(p))]
+        if theirs:
+            git_ok("reset", "-q", "HEAD", "--", *theirs)
+        elif n + 1 < tries:
+            time.sleep(n + 1)  # another git holds index.lock
+    return not stopped(("MERGE_HEAD",))
+
+
 def merge_stranded():
     """Merge back what reattach() parked; the rescue branches that would not
     merge, kept for a person. Into a tree the Stop has not committed yet, a
     merge refuses whenever a stranded commit touches a rewritten file."""
     kept = []
+    mark = git_paths(MERGE_MARK)[0]
     for ref in git("for-each-ref", "--format=%(refname:short)", f"refs/heads/{RESCUE}*")[1].split():
-        if git_ok("merge-base", "--is-ancestor", ref, "HEAD") or git_bounded(
-                60, "merge", "-q", "--no-edit", "-m",
-                "Merge main's commits stranded while HEAD was detached", ref) == 0:
+        if git_ok("merge-base", "--is-ancestor", ref, "HEAD"):
+            git_ok("branch", "-q", "-D", ref)
+            continue
+        # Tried first where it touches no file: a merge that would conflict
+        # is never started in the tree every session writes to. 1 is a
+        # conflict; a git too old to say is let through to the merge.
+        tip = git("rev-parse", "-q", "--verify", f"{ref}^{{commit}}")[1].strip()
+        if not mark or not tip or git_bounded(60, "merge-tree", "--write-tree", "HEAD", ref) == 1:
+            kept.append(ref)
+            continue
+        # The mark names the merge as this hook's, as PULL_MARK does a pull:
+        # killed before the back-out, clear_killed_git finishes it.
+        try:
+            write(mark, f"{tip}\n")
+        except OSError:
+            kept.append(ref)
+            continue
+        if git_bounded(60, "merge", "-q", "--no-edit", "-m",
+                       "Merge main's commits stranded while HEAD was detached", ref) == 0:
             git_ok("branch", "-q", "-D", ref)
         else:
-            if stopped(("MERGE_HEAD",)):
-                git_ok("merge", "--abort")
             kept.append(ref)
+        if back_out_merge():
+            rm_f(mark)
+        else:
+            break  # the mark stays for the next run; no second merge on top
     return kept
 
 
@@ -1465,6 +1511,16 @@ def clear_killed_git(cloud):
         if stopped(("rebase-merge", "rebase-apply")):
             git_ok("rebase", "--abort")
         rm_f(mark)
+    # Likewise a merge under its mark, when MERGE_HEAD is the commit the mark
+    # names: a merge a person started is another commit's, or has no mark.
+    merge_mark, merge_head = git_paths(MERGE_MARK, "MERGE_HEAD")
+    if merge_mark and os.path.exists(merge_mark):
+        try:
+            own = read(merge_head).split() == read(merge_mark).split()
+        except OSError:
+            own = False  # no merge in progress
+        if not own or back_out_merge():
+            rm_f(merge_mark)
     # Killed before it began, a rebase holds only its autostash and --abort
     # refuses; --quit keeps HEAD and the tree and saves the autostash.
     if os.path.isdir(rebase) and not os.path.exists(f"{rebase}/head-name"):

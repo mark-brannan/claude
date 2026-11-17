@@ -1315,6 +1315,102 @@ class StopContinuityTest(unittest.TestCase):
         self.assertIn(f"main's commits kept on {rescue}", verdict(ckpt_in(RS)), "conflicted reattach: the verdict names it")
         self.has("conflicted reattach: the checkpoint names it", re.escape(f"`{rescue}`"), ckpt_in(RS))
 
+    def state_merge(self):
+        # --- a merge the hook starts is never left in progress ---------------
+        # A rescue branch that conflicts is retried on every Stop. The merge
+        # stopped on its conflicts in the tree every session writes to, the
+        # back-out after it did not take, and MERGE_HEAD sat there: no commit,
+        # no pull and no scoping lock for any session, for 25 minutes
+        # (2026-11-17).
+        w = self.world("merge")
+        _, WORK = w.make_work()
+        RESCUE = "rescue/main-000000000000"
+        # git, with another session writing $OTHER_SESSION_WRITES the moment
+        # a merge stops short.
+        (w.BIN / "git").write_text(f"""#!/bin/sh
+if [ "$1" = merge ] && [ "$2" != --abort ] && [ -n "${{OTHER_SESSION_WRITES:-}}" ]; then
+  {shutil.which("git")} "$@"; rc=$?
+  [ $rc -ne 0 ] && echo "another session's" > "$OTHER_SESSION_WRITES"
+  exit $rc
+fi
+exec {shutil.which("git")} "$@"
+""")
+        (w.BIN / "git").chmod(0o755)
+
+        def stranded(name):
+            """A clone on main beside a rescue branch: both.txt conflicts,
+            live.json merges cleanly, notes.txt is no one's to commit."""
+            _, c = w.make_state(name)
+            w.git(c, "config", "user.name", "t")
+            w.git(c, "config", "user.email", "t@example.invalid")
+            g = c / "state" / "global"
+            for f in (g / "both.txt", g / "live.json", c / "notes.txt"):
+                f.write_text("base\n")
+            w.gitq(c, "add", "state/global/both.txt", "state/global/live.json", "notes.txt")
+            w.gitq(c, "commit", "-m", "base")
+            w.gitq(c, "checkout", "-q", "-b", RESCUE)
+            for f in (g / "both.txt", g / "live.json"):
+                f.write_text("main's\n")
+            w.gitq(c, "commit", "-a", "-m", "main-side")
+            w.gitq(c, "checkout", "-q", "main")
+            (g / "both.txt").write_text("detached\n")
+            w.gitq(c, "commit", "-a", "-m", "detached-side")
+            w.gitq(c, "push", "origin", "main")
+            (c / "notes.txt").write_text("a session's, uncommitted\n")
+            return c, g, Path(w.git(c, "rev-parse", "--absolute-git-dir"))
+
+        def stop(c, **env):
+            (c / ".git" / "claude-last-state-push").unlink(missing_ok=True)
+            w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=c, **env)
+
+        def committed(c, path):
+            return subprocess.run(["git", "-C", str(c), "cat-file", "-e", f"HEAD:{path}"], env=w.base,
+                                  capture_output=True).returncode == 0
+
+        def ckpt_in(c):
+            return sorted(glob.glob(f"{c}/state/global/log/auto/*/*-work-{SID[:8]}.md"))[0]
+
+        # Another session rewrites a file the merge staged, between the merge
+        # and its back-out: the back-out refused, silently.
+        c, g, gd = stranded("merge-raced")
+        stop(c, OTHER_SESSION_WRITES=g / "live.json")
+        self.assertFalse((gd / "MERGE_HEAD").exists(), "raced: no merge left in progress")
+        self.assertFalse(w.git(c, "ls-files", "-u"), "raced: no unmerged path")
+        self.assertEqual(w.git(c, "branch", "--list", RESCUE).strip(), RESCUE, "raced: the rescue branch is kept")
+        self.assertEqual(read(c / "notes.txt"), "a session's, uncommitted\n", "raced: an uncommitted file keeps its bytes")
+        (g / "next.txt").write_text("x\n")
+        stop(c)
+        self.assertTrue(committed(c, "state/global/next.txt"), "raced: the next Stop commits")
+
+        # A hook killed between its merge and the back-out left the merge
+        # under its mark; a session has since rewritten a file the merge
+        # staged. The next Stop backs it out, and that file keeps its bytes.
+        c, g, gd = stranded("merge-killed")
+        w.gitq(c, "merge", "-q", "--no-edit", "-m", "m", RESCUE)
+        self.assertTrue((gd / "MERGE_HEAD").exists(), "killed: the setup left a merge in progress")
+        (gd / "claude-merge-running").write_text(w.git(c, "rev-parse", RESCUE) + "\n")
+        (g / "live.json").write_text("another session's\n")
+        (g / "after.txt").write_text("x\n")
+        stop(c)
+        self.assertFalse((gd / "MERGE_HEAD").exists(), "killed: the merge is backed out")
+        self.assertFalse((gd / "claude-merge-running").exists(), "killed: the mark is off")
+        self.assertFalse(w.git(c, "ls-files", "-u"), "killed: no unmerged path")
+        self.assertEqual(read(g / "both.txt"), "detached\n", "killed: the conflicted file is HEAD's again")
+        self.assertEqual(read(g / "live.json"), "another session's\n", "killed: the rewritten file keeps its bytes")
+        self.assertEqual(read(c / "notes.txt"), "a session's, uncommitted\n", "killed: an uncommitted file keeps its bytes")
+        self.assertTrue(committed(c, "state/global/after.txt"), "killed: the Stop's commit landed")
+        self.assertEqual(w.git(c, "branch", "--list", RESCUE).strip(), RESCUE, "killed: the rescue branch is kept")
+
+        # A merge of any other commit is a person's, mark or no mark.
+        c, g, gd = stranded("merge-person")
+        w.gitq(c, "merge", "-q", "--no-edit", "-m", "m", RESCUE)
+        (gd / "claude-merge-running").write_text(w.git(c, "rev-parse", "HEAD") + "\n")
+        h0 = w.git(c, "rev-parse", "HEAD")
+        stop(c)
+        self.assertTrue((gd / "MERGE_HEAD").exists(), "a person's merge: left alone")
+        self.assertEqual(w.git(c, "rev-parse", "HEAD"), h0, "a person's merge: nothing committed")
+        self.assertIn("state repo not committed", verdict(ckpt_in(c)), "a person's merge: the verdict says so")
+
     def state_signing(self):
         # --- the state-repo commit is signed iff this machine has a signing key
         # Same test as no-unsigned-push.py (`git config user.signingkey`): a
@@ -1644,7 +1740,7 @@ class StopContinuityTest(unittest.TestCase):
         self.assertNotIn("state repo", box(out), "incident, pushed: the 📦 line never names the state repo")
 
     SECTIONS = ("verdict_basics", "verdict_branches", "resume_and_pickup", "session_item", "curia_digests",
-                "salvage", "state_push", "state_signing", "state_items", "state_paths", "state_debounce",
+                "salvage", "state_push", "state_merge", "state_signing", "state_items", "state_paths", "state_debounce",
                 "live_lock", "incident", "critical_review")
 
     def test_term_stops_the_child_before_the_lock_comes_off(self):
