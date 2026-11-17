@@ -95,7 +95,7 @@ it moves four to six times over.
 ### 3. CI runs, by prt's score
 
 The score's static part (lines, files, governing and safety paths, pencils);
-the thread term is left out, since it depends on when prt reads the PR.
+the thread and depends-on terms are left out, since they depend on when prt reads the PR.
 
 | prt band | paid runs | median lines | threads per run | $ per fixed thread |
 |---|--:|--:|--:|--:|
