@@ -838,3 +838,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t211504z
 - a missing --as refuses the review in a session rather than letting it run unchecked Undo: drop the not-running branch in refusal() ([#483](https://github.com/mark-brannan/claude/pull/483))
+
+### 20261117t223625z
+- A git lock or in-progress op in ~/.claude counts as a wedge when its mtime is over five minutes old; no process check Undo: change STALE in session-start-sync-status.py ([#486](https://github.com/mark-brannan/claude/pull/486))
