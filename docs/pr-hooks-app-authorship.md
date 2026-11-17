@@ -99,5 +99,5 @@ Proposed:
   join is exact and small, with no time window; signed comments drop out by
   their signature.
 
-This changes #553's done-when: the hand check of every unmatched event shrinks
+This changes dotfiles#553's done-when: the hand check of every unmatched event shrinks
 to the rows that ran as the human.
