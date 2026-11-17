@@ -37,9 +37,10 @@ an agent's.
 
 ## 1. Which layer guards the raw resolve (#339)
 
-The classifier does not hold the line: 193 raw resolves ran in 28 days. It
-judges only in auto mode, while a hook runs in every permission mode (from
-Claude Code's docs; the 193 are not split by mode here).
+193 raw resolves ran in 28 days, mode unknown (the count is not split by
+permission mode), so the classifier's reach is unmeasured; its 68 refusals are
+the only evidence about it. A hook does not depend on mode: it runs in every
+permission mode (from Claude Code's docs).
 
 Authorship changes one thing. `guard-review-threads` accepts a reply from the
 login its own `gh` call sees, or from a login in `review_thread_logins`. In a
@@ -50,7 +51,7 @@ count only if the setting lists the App.
 
 | Layer | Reaches | Leaves open | Cost |
 |---|---|---|---|
-| Classifier rule only (today) | gh, MCP, curl, in auto mode | 193 raw resolves ran | none |
+| Classifier rule only (today) | gh, MCP, curl, in auto mode | 193 ran, mode unknown | none |
 | `guard_review_threads` on, App login listed | gh, in every mode | MCP, curl, a script | two settings |
 | That guard extended to MCP `resolve_thread` | adds MCP | curl | new guard surface: review first |
 | A hook in this repo | whatever it names | duplicates languette | one more custom hook |
@@ -91,13 +92,17 @@ Mostly. What still lands under the human's login when an agent acts:
 
 Proposed:
 
-- Retire the time-window matching script.
+- Retire the time-window matching script that dotfiles#553 specifies (a repo
+  and a window in, human touches out; the issue gives it no name, and it is not
+  yet built).
 - Make a fallback say so: one stderr line from the `gh` shim, and the write log
   records which identity each call ran as.
 - Touches are the human account's merge, label, review and comment events,
   minus log rows that ran as the human with the same verb and target. The
   join is exact and small, with no time window; signed comments drop out by
-  their signature.
+  their signature. Log rows from before the identity field lands carry none,
+  so events in the first 28 days after it are hand-checked once; after that
+  the window holds only rows with an identity.
 
 This changes dotfiles#553's done-when: the hand check of every unmatched event shrinks
 to the rows that ran as the human.
