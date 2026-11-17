@@ -27,7 +27,7 @@ Why the tier and not `bin/prt`'s score:
 - **The tier is where review is spent.** CI reviews every PR; sessions ran `/code-review` five times (section 1).
 - **The tier owns the cost lever.** Model moves $ per fix four to six times; tier, a third at most (section 2).
 - **prt's score does not sort findings.** Its high band costs most per fix (section 3).
-- **Only the tier is measured.** The metrics script already splits spend by tier.
+- **Only the tier is measured.** `bin/metrics-db` already splits CI spend by tier.
 
 The prt score measures how much a human's eyes are worth (threads, pencils,
 desk paths), a different question. A typed review runs `high`: the user asked
@@ -112,9 +112,9 @@ mark-brannan/.github#70 also found ($0.38 first, $1.79 third and later).
 
 ## Open numbers
 
-Findings per level at one model is the number this choice turns on. It needs
-the level written into the critical-review metrics row and the CI review row;
-until then the rule bands in section 2 are a proxy.
+Findings per level at one model is the number this choice turns on; until the
+level is written into the critical-review metrics row and the CI review row, the
+rule bands in section 2 are a proxy.
 
 - **Findings per level at one model:** unmeasured; no row records the level.
 - **Whether "fixed" is real:** no human labels yet on mark-brannan/.github#70.
