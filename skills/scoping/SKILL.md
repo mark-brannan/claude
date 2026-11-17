@@ -263,10 +263,10 @@ as `<0.1%`. Effort is abbreviated low, med, high.
 
 **Plans shown together.** When more than one plan waits on the user at
 once, as when a batch's children each return a plan, each plan's own yes
-still stands, and the screen that asks for them carries one more account: a row per plan, its items and its
-estimate, the total and its share of the week at the foot. Each plan's
-"one word takes it" is small; the words together are not, and no single
-plan shows that.
+still stands, and the screen that asks for them carries one more account:
+a row per plan, its items and its estimate, the total and its share of
+the week at the foot. Each plan's "one word takes it" is small; the words
+together are not, and no single plan shows that.
 
 ```
  #  Plan                      Items       Est.
