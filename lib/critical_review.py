@@ -357,7 +357,7 @@ def refusal(running, present, reviewer):
         return "pass --as <this session's model>; the review cannot check itself without it"
     if not present:
         return "no trailer names the coder and no --coder was given; pass the hand-off's coder"
-    if present.get(running):
+    if present.get(running) and running != reviewer:
         return f"this session runs on {running}, which coded this PR; run the review on {reviewer}"
     return ""
 

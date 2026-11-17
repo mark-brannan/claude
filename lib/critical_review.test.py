@@ -171,6 +171,11 @@ class CriticalReviewTest(unittest.TestCase):
         # the hand-off's coder counts as a coder: an Opus fix on a Sonnet PR
         self.text = trailer.format("Sonnet 5.5")
         self.assertEqual(self.run_as("claude-opus-5-5", "--coder", "opus")[0], cr.REFUSED)
+        # every family coded it: the least-present family is the reviewer and is let through
+        self.text = "\n".join(trailer.format(n) for n in ("Opus 5.5", "Fable 5.1", "Sonnet 5.5", "Haiku 5"))
+        line = self.reviewer()
+        picked = line.split("reviewer=")[1].split()[0]
+        self.assertEqual(self.run_as(f"claude-{picked}-5-1")[0], 0)
 
     def test_an_unreadable_coder_or_a_missing_as_is_refused_and_says_why(self):
         self.text = "Co-Authored-By: Pat <pat@example.com>"

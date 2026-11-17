@@ -19,7 +19,8 @@ the PR link. The reviewer's model is the driver's choice, made before this
 skill runs; the skill never changes model, forks or spawns a sub-agent.
 In CI the workflow's triage has already picked the model, so the script
 does not refuse there; follow what the CI prompt says about the family. A
-note after the line (every family coded it) goes into your summary. The
+note after the line (coder unknown in CI, or every family coded it) goes
+into your summary. The
 metrics row records `reviewer=` as `reviewer_model` beside `model`, the
 one that ran.
 
