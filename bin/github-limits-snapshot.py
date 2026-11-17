@@ -45,9 +45,7 @@ def main(argv=None):
     if p.returncode not in (0, 1) or not p.stdout.strip():
         sys.stderr.write(p.stderr or "%s: github-limits exited %d\n" % (NAME, p.returncode))
         return 3
-    path = snapshot_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    jsonl.append(path, json.loads(p.stdout))
+    jsonl.append(snapshot_path(), json.loads(p.stdout))
     return 0
 
 
