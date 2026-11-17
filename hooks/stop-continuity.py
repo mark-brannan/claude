@@ -1402,8 +1402,10 @@ def git_paths(*names):
     return out.split("\n")[:len(names)] if rc == 0 else [""] * len(names)
 
 
-def stopped(names=("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD")):
-    """The first of these the clone is in the middle of, or None."""
+def stopped(names=None):
+    """The first of these the clone is in the middle of, or None; by default
+    every in-progress marker git can leave."""
+    names = names or tuple(m for m, _ in gitrun.IN_PROGRESS)
     return next((n for n, p in zip(names, git_paths(*names)) if p and os.path.exists(p)), None)
 
 

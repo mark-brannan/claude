@@ -16,8 +16,8 @@ Three triggers, any one:
   - the clone is wedged: a git lock file, or a merge, rebase, cherry-pick or
     revert in progress, older than STALE. Nothing in ~/.claude legitimately
     holds one that long, and no sync can move the clone until it is cleared,
-    so the warning names the file and its age rather than relay the sync's
-    guess at the cause (on 2026-11-17 a pull killed mid-update left HEAD.lock
+    so the warning names the file, its age and the commands that clear it,
+    rather than relay the sync's guess at the cause (on 2026-11-17 a pull killed mid-update left HEAD.lock
     and refs/heads/main.lock for 16 hours; the sync called it "diverged").
 
 No clone, or no sync script: silent; there is nothing to report on.
@@ -26,6 +26,7 @@ CONVENIENCE: never blocks a session, always exits 0; a crash is traced to
 the state repo's metrics/hook-errors/ (lib/hooktrace.py).
 """
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -41,7 +42,6 @@ sys.dont_write_bytecode = True
 
 TIMEOUT = 5
 STALE = 300  # seconds: a git operation in ~/.claude finishes well inside it
-IN_PROGRESS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")
 
 
 def run(args):
@@ -71,26 +71,36 @@ def age(seconds):
 
 
 def wedge(clone, now):
-    """Stale git locks and operations in progress in the clone, as
-    "<path under .git> (<age> old)" phrases, oldest first."""
+    """Stale git locks and operations in progress in the clone, oldest
+    first, as (path under .git, age, verb): verb is the git command whose
+    --abort clears the path, or None for a lock, which is removed."""
     gitdir = os.path.join(clone, ".git")
+    markers = dict(gitrun.IN_PROGRESS) if gitrun else {}
     found = []
     for root, dirs, files in os.walk(gitdir):
         if root == gitdir:
-            dirs[:] = [d for d in dirs if d not in ("objects", "rebase-merge", "rebase-apply")]
-        for f in files:
-            if f.endswith(".lock"):
-                found.append(os.path.join(root, f))
-    found += [os.path.join(gitdir, m) for m in IN_PROGRESS if os.path.exists(os.path.join(gitdir, m))]
+            dirs[:] = [d for d in dirs if d != "objects" and d not in markers]
+        found += [(os.path.join(root, f), None) for f in files if f.endswith(".lock")]
+    found += [(os.path.join(gitdir, m), verb) for m, verb in markers.items()
+              if os.path.exists(os.path.join(gitdir, m))]
     stale = []
-    for path in found:
+    for path, verb in found:
         try:
             mtime = os.stat(path).st_mtime
         except OSError:
             continue
         if now - mtime > STALE:
-            stale.append((mtime, path))
-    return [f".git/{os.path.relpath(p, gitdir)} ({age(now - m)} old)" for m, p in sorted(stale)]
+            stale.append((mtime, os.path.relpath(path, gitdir), verb))
+    return [(rel, age(now - m), verb) for m, rel, verb in sorted(stale)]
+
+
+def unwedge(stuck):
+    """The shell line that clears a wedge and fast-forwards: locks off
+    first, since an --abort takes the index lock, then each abort once."""
+    locks = [f"~/.claude/.git/{shlex.quote(rel)}" for rel, _, verb in stuck if not verb]
+    steps = [f"rm {' '.join(locks)}"] if locks else []
+    steps += [f"git -C ~/.claude {v} --abort" for v in dict.fromkeys(v for _, _, v in stuck if v)]
+    return " && ".join(steps + ["git -C ~/.claude merge --ff-only origin/main"])
 
 
 def claude_part(status):
@@ -113,13 +123,14 @@ def main():
     stuck = wedge(clone, time.time())
     if not n and not skipped and not stuck:
         return
-    lag = f"~/.claude is {n} commit(s) behind origin/main" if n else "~/.claude was skipped by the last sync"
-    text = (f"{lag}, so this session may run stale hooks and skills. "
-            f"Last sync (`dotfiles-sync.sh --status`): {status or 'no output'}")
+    lag = (f"~/.claude is {n} commit(s) behind origin/main" if n
+           else "~/.claude was skipped by the last sync" if skipped else "")
+    text = f"{lag}, so this session may run stale hooks and skills. " if lag else ""
+    text += f"Last sync (`dotfiles-sync.sh --status`): {status or 'no output'}"
     if stuck:
-        text = (f"~/.claude is wedged: {', '.join(stuck)}. No sync can move it until that is cleared: "
-                f"check no git process is running in ~/.claude, then remove the stale lock or abort the "
-                f"operation, and fast-forward. {text}")
+        named = ", ".join(f".git/{rel} ({old} old)" for rel, old, _ in stuck)
+        text = (f"~/.claude is wedged: {named}. No sync can move it until that is cleared; with no git "
+                f"process running in ~/.claude, run `{unwedge(stuck)}`. {text}")
     import hookio  # lib/, on sys.path above
     hookio.emit(hookio.context("SessionStart", text, system=text), ascii=False)
 
