@@ -23,21 +23,17 @@ this repo. The tiers themselves do not change.
 
 Why the tier and not `bin/prt`'s score:
 
-- **The tier is where review is spent.** CI reviews every PR. Sessions ran
-  `/code-review` 5 times between the line rule landing (2026-10-28) and the
-  last metrics row (2026-11-12), all at `high`.
+- **The tier is where review is spent.** CI reviews every PR; five sessions
+  ran `/code-review` since the line rule landed (2026-10-28), all but one run at `high`.
 - **The tier owns the lever that moves cost.** The model moves the price of a
-  fixed thread four to six times over; depth at one model barely moves it
-  (table 2).
-- **prt's score does not sort findings.** Its high band has the worst cost per
-  fixed thread of the three (table 3). It measures how much a human's eyes are
-  worth (threads, pencils, desk paths), which is a different question.
-- **Only the tier is measured.** The review workflow's metrics script already
-  splits threads and spend by tier, so the rule can be checked against its own
-  results.
+  fixed thread four to six times over; tier at one model, a third at most
+  (second table of section 2).
+- **prt's score does not sort findings.** Its high band costs most per fix (section 3).
+- **Only the tier is measured.** The metrics script already splits spend by tier.
 
-A typed review runs `high`: the user asked for it, and every measured one ran
-there anyway.
+The prt score measures how much a human's eyes are worth (threads, pencils,
+desk paths), a different question. A typed review runs `high`: the user asked
+for it, and all but one measured run did anyway.
 
 ## What was measured
 
@@ -64,7 +60,9 @@ reviews called `/code-review`:
 | colregs-mcp#69 | high | high | medium | 132 | 4 |
 | languette#357 | high | high | high | 1168 | 0 |
 
-No `low` run, one `medium`. Of the other 220 rows, 210 predate the rule and
+No `low` run; the one `medium` was on ampacity#17, a PR not in the table. The
+`high` the line rule gives for languette#415 and claude#427 comes from its path
+arm (a desk path or a `SKILL.md`), not their size. Of the other 220 rows, 210 predate the rule and
 10 are prt-dispatched agents that never called `/code-review`.
 
 ### 2. CI runs, by the level the line rule would assign and by tier
@@ -89,13 +87,14 @@ The same split by model, which the tier picks:
 | default, Fable | 7 | 1.57 | $2.64 |
 | deep, Fable | 25 | 2.64 | $1.91 |
 
-At one model the cost per fixed thread barely moves with tier; across models
-it moves four to six times over.
+These rows sum to 111 of the 112 paid runs: one deep run has no model
+recorded. At Opus the cost per fixed thread is flat across tiers; at Fable it
+drops by about a third in deep. Across models it moves four to six times over.
 
 ### 3. CI runs, by prt's score
 
 The score's static part (lines, files, governing and safety paths, pencils);
-the thread term is left out, since it depends on when prt reads the PR.
+the thread and depends-on terms are left out, since they depend on when prt reads the PR.
 
 | prt band | paid runs | median lines | threads per run | $ per fixed thread |
 |---|--:|--:|--:|--:|
@@ -116,12 +115,14 @@ mark-brannan/.github#70 also found ($0.38 first, $1.79 third and later).
 
 ## Open numbers
 
-- **Findings per level at one model.** The number this choice turns on. It
-  needs the level written into the critical-review metrics row and the CI
-  review row; until then table 2's rule bands are a proxy.
-- **Whether "fixed" is real.** The 40-thread label sheet on
-  mark-brannan/.github#70 has no human labels yet; an agent's blind pass
-  agreed with the script on 31 of 40, with no *fixed* overturned.
-- **The tier as it stands today.** The snapshot's tiers were set by paths; the
-  workflow now sets them from the substantive-check verdict, which no snapshot
-  has measured.
+Findings per level at one model is the number this choice turns on. It needs
+the level written into the critical-review metrics row and the CI review row;
+until then the rule bands in section 2 are a proxy.
+
+- **Findings per level at one model:** unmeasured; no row records the level.
+- **Whether "fixed" is real:** no human labels yet on mark-brannan/.github#70.
+- **The tier today:** the snapshot's tiers came from paths, not the verdict.
+
+The 40-thread label sheet on #70 has no human labels; an agent's blind pass
+agreed with the script on 31 of 40, with no *fixed* overturned. The workflow
+now sets tiers from the substantive-check verdict, which no snapshot has measured.
