@@ -23,11 +23,8 @@ this repo. The tiers themselves do not change.
 
 Why the tier and not `bin/prt`'s score:
 
-- **The tier is where review is spent.** CI reviews every PR; five sessions
-  ran `/code-review` since the line rule landed (2026-10-28), all but one run at `high`.
-- **The tier owns the lever that moves cost.** The model moves the price of a
-  fixed thread four to six times over; tier at one model, a third at most
-  (second table of section 2).
+- **The tier is where review is spent.** CI reviews every PR; sessions ran `/code-review` five times (section 1).
+- **The tier owns the cost lever.** Model moves $ per fix four to six times; tier, a third at most (section 2).
 - **prt's score does not sort findings.** Its high band costs most per fix (section 3).
 - **Only the tier is measured.** The metrics script already splits spend by tier.
 
@@ -40,12 +37,11 @@ for it, and all but one measured run did anyway.
 Two sources, both read 2026-11-17. Lines are additions plus deletions at the
 PR's state today, not at review time. Spend is the CLI's API-equivalent price.
 
-- **Session reviews:** 225 rows of the critical-review metrics (2026-10-09 to
-  2026-11-12), joined to each session's transcript and to the PR.
-- **CI reviews:** the 2026-11-06 snapshot of the review workflow's metrics
-  (newest 300 runs, 2026-11-04 to 2026-11-06, 9 repos): 112 paid review runs
-  on 77 PRs, each bot thread charged to the last paid run on its PR before it.
-  *Fixed* means resolved with its anchored lines changed after it.
+- **Session reviews:** 225 critical-review metrics rows, 2026-10-09 to 2026-11-12, joined to transcript and PR.
+- **CI reviews:** 2026-11-06 snapshot, newest 300 runs over 9 repos: 112 paid runs on 77 PRs, 2026-11-04 to 11-06.
+
+Each bot thread is charged to the last paid run on its PR before it. *Fixed*
+means resolved with its anchored lines changed after it.
 
 ### 1. Findings per `/code-review` level: not measurable yet
 
@@ -60,7 +56,7 @@ reviews called `/code-review`:
 | colregs-mcp#69 | high | high | medium | 132 | 4 |
 | languette#357 | high | high | high | 1168 | 0 |
 
-No `low` run; the one `medium` was on ampacity#17, a PR not in the table. The
+No `low` run; the one `medium` was on ampacity#17, which has no row of its own. The
 `high` the line rule gives for languette#415 and claude#427 comes from its path
 arm (a desk path or a `SKILL.md`), not their size. Of the other 220 rows, 210 predate the rule and
 10 are prt-dispatched agents that never called `/code-review`.
