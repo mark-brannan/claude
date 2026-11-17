@@ -3,7 +3,8 @@
 
 What matters: silent when ~/.claude is current and the sync did not skip it;
 the sync's status line, in valid JSON, when the clone is behind or skipped;
-silent and exit 0 with no clone or no sync script.
+silent and exit 0 with no clone or no sync script; a stale git lock or
+an operation left in progress named with its age, a fresh one not.
 
 A scratch HOME holds a real clone of a local bare repo (no network) and a
 stub dotfiles-sync.sh that prints a canned status. Cost per push: under a
@@ -14,6 +15,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -93,6 +95,31 @@ class SyncStatus(unittest.TestCase):
         self.commit()
         git("fetch", "-q", cwd=self.clone)
         self.assertIn("never run", self.run_hook()["systemMessage"])
+
+    def stale(self, rel, seconds=3600):
+        path = self.clone / ".git" / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("")
+        old = time.time() - seconds
+        os.utime(path, (old, old))
+
+    def test_stale_locks_are_named_with_age(self):
+        # 2026-11-17: a killed pull left both locks; the clone looked merely behind.
+        self.stale("HEAD.lock", 16 * 3600)
+        self.stale("refs/heads/main.lock", 16 * 3600)
+        text = self.run_hook()["systemMessage"]
+        self.assertIn("~/.claude is wedged", text)
+        self.assertIn(".git/HEAD.lock (16h old)", text)
+        self.assertIn(".git/refs/heads/main.lock (16h old)", text)
+
+    def test_merge_in_progress_is_a_wedge(self):
+        self.stale("MERGE_HEAD", 600)
+        self.assertIn(".git/MERGE_HEAD (10m old)", self.run_hook()["systemMessage"])
+
+    def test_fresh_lock_is_silent(self):
+        # A git command running right now holds a lock; that is not a wedge.
+        self.stale("index.lock", 10)
+        self.assertIsNone(self.run_hook())
 
     def test_no_sync_script_is_silent(self):
         (self.home / ".local/bin/dotfiles-sync.sh").unlink()
