@@ -11,10 +11,11 @@ One turn. When the turn ends, the next session is already running.
 ## 1. Land the work
 
 On a branch with work on it: commit what is uncommitted (stage by path),
-then push, `git push -u origin HEAD`. The next session starts in the
-repo's main worktree and fetches the branch, so anything that isn't on
-origin doesn't reach it. A comment on the PR or issue is where anything the
-next reader would otherwise redo goes. Skip it when there is nothing to say.
+then push, `git push -u origin <branch>`, the branch written out. The next
+session starts in the repo's main worktree and fetches the branch, so
+anything that isn't on origin doesn't reach it. A comment on the PR or issue
+is where anything the next reader would otherwise redo goes. Skip it when
+there is nothing to say.
 
 Release the branch, so the next session doesn't read this one as its live
 holder: `~/.claude/hooks/claim-stamp.py release -C . --scan $CLAUDE_CODE_SESSION_ID`.
