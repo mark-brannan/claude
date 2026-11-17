@@ -1326,8 +1326,11 @@ class StopContinuityTest(unittest.TestCase):
         _, WORK = w.make_work()
         RESCUE = "rescue/main-000000000000"
         # git, with another session writing $OTHER_SESSION_WRITES the moment
-        # a merge stops short.
+        # a merge stops short, or a person merging $PERSON_MERGES just before one.
         (w.BIN / "git").write_text(f"""#!/bin/sh
+if [ "$1" = merge ] && [ "$2" != --abort ] && [ -n "${{PERSON_MERGES:-}}" ]; then
+  {shutil.which("git")} merge -q --no-edit "$PERSON_MERGES"
+fi
 if [ "$1" = merge ] && [ "$2" != --abort ] && [ -n "${{OTHER_SESSION_WRITES:-}}" ]; then
   {shutil.which("git")} "$@"; rc=$?
   [ $rc -ne 0 ] && echo "another session's" > "$OTHER_SESSION_WRITES"
@@ -1386,9 +1389,9 @@ exec {shutil.which("git")} "$@"
         # under its mark; a session has since rewritten a file the merge
         # staged. The next Stop backs it out, and that file keeps its bytes.
         c, g, gd = stranded("merge-killed")
+        (gd / "claude-merge-running").write_text(w.git(c, "rev-parse", RESCUE) + "\n")
         w.gitq(c, "merge", "-q", "--no-edit", "-m", "m", RESCUE)
         self.assertTrue((gd / "MERGE_HEAD").exists(), "killed: the setup left a merge in progress")
-        (gd / "claude-merge-running").write_text(w.git(c, "rev-parse", RESCUE) + "\n")
         (g / "live.json").write_text("another session's\n")
         (g / "after.txt").write_text("x\n")
         stop(c)
@@ -1401,15 +1404,30 @@ exec {shutil.which("git")} "$@"
         self.assertTrue(committed(c, "state/global/after.txt"), "killed: the Stop's commit landed")
         self.assertEqual(w.git(c, "branch", "--list", RESCUE).strip(), RESCUE, "killed: the rescue branch is kept")
 
-        # A merge of any other commit is a person's, mark or no mark.
+        # A mark a failed back-out left, then a person's own abort and hand
+        # merge of the same commit, long after: theirs, left alone.
         c, g, gd = stranded("merge-person")
+        (gd / "claude-merge-running").write_text(w.git(c, "rev-parse", RESCUE) + "\n")
+        os.utime(gd / "claude-merge-running", (time.time() - 120, time.time() - 120))
         w.gitq(c, "merge", "-q", "--no-edit", "-m", "m", RESCUE)
-        (gd / "claude-merge-running").write_text(w.git(c, "rev-parse", "HEAD") + "\n")
         h0 = w.git(c, "rev-parse", "HEAD")
         stop(c)
         self.assertTrue((gd / "MERGE_HEAD").exists(), "a person's merge: left alone")
         self.assertEqual(w.git(c, "rev-parse", "HEAD"), h0, "a person's merge: nothing committed")
         self.assertIn("state repo not committed", verdict(ckpt_in(c)), "a person's merge: the verdict says so")
+
+        # A person starts a merge while the Stop runs, just before the hook's
+        # own merge of a branch that would merge cleanly: the hook's refuses,
+        # and its back-out leaves theirs.
+        c, g, gd = stranded("merge-beside")
+        w.gitq(c, "checkout", "-q", "-b", "rescue/main-111111111111", "HEAD~1")
+        (g / "clean.txt").write_text("main's\n")
+        w.gitq(c, "add", "state/global/clean.txt")
+        w.gitq(c, "commit", "-m", "main-side, clean")
+        w.gitq(c, "checkout", "-q", "main")
+        stop(c, PERSON_MERGES=RESCUE)
+        self.assertEqual(read(gd / "MERGE_HEAD").strip(), w.git(c, "rev-parse", RESCUE), "beside: the person's merge is still in progress")
+        self.assertTrue(w.git(c, "ls-files", "-u"), "beside: with its conflicts")
 
     def state_signing(self):
         # --- the state-repo commit is signed iff this machine has a signing key
