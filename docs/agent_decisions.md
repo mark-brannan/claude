@@ -844,3 +844,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t231802z
 - config key for the wedge age is live_clone.wedged_after_minutes, not stale_lock_minutes: it covers stalled merges and rebases too Undo: rename the key back in config.json and the hook ([#486](https://github.com/mark-brannan/claude/pull/486))
+
+### 20261117t232321z
+- one session per 30 minutes (live_clone.repair_every_minutes) sends the repair sub-agent; the rest are told one is on its way Undo: drop repair_every_minutes and first_repair() ([#486](https://github.com/mark-brannan/claude/pull/486))
