@@ -1315,6 +1315,122 @@ class StopContinuityTest(unittest.TestCase):
         self.assertIn(f"main's commits kept on {rescue}", verdict(ckpt_in(RS)), "conflicted reattach: the verdict names it")
         self.has("conflicted reattach: the checkpoint names it", re.escape(f"`{rescue}`"), ckpt_in(RS))
 
+    def state_merge(self):
+        # --- a merge the hook starts is never left in progress ---------------
+        # A rescue branch that conflicts is retried on every Stop. The merge
+        # stopped on its conflicts in the tree every session writes to, the
+        # back-out after it did not take, and MERGE_HEAD sat there: no commit,
+        # no pull and no scoping lock for any session, for 25 minutes
+        # (2026-11-17).
+        w = self.world("merge")
+        _, WORK = w.make_work()
+        RESCUE = "rescue/main-000000000000"
+        CLEAN = "rescue/main-111111111111"
+        # git, with a person merging $PERSON_MERGES just before any merge.
+        # $MERGE_LOG takes each merge's arguments; $OLD_GIT is a git with no
+        # `merge-tree --write-tree`.
+        (w.BIN / "git").write_text(f"""#!/bin/sh
+[ "$1" = merge ] && [ -n "${{MERGE_LOG:-}}" ] && echo "$*" >> "$MERGE_LOG"
+[ "$1" = merge-tree ] && [ -n "${{OLD_GIT:-}}" ] && exit 129
+if [ "$1" = merge ] && [ -n "${{PERSON_MERGES:-}}" ]; then
+  {shutil.which("git")} merge -q --no-edit "$PERSON_MERGES"
+fi
+exec {shutil.which("git")} "$@"
+""")
+        (w.BIN / "git").chmod(0o755)
+
+        def stranded(name):
+            """A clone on main beside two rescue branches: RESCUE conflicts on
+            both.txt, CLEAN merges cleanly and touches notes.txt, which is no
+            one's to commit."""
+            _, c = w.make_state(name)
+            w.git(c, "config", "user.name", "t")
+            w.git(c, "config", "user.email", "t@example.invalid")
+            g = c / "state" / "global"
+            for f in (g / "both.txt", c / "notes.txt"):
+                f.write_text("base\n")
+            w.gitq(c, "add", "state/global/both.txt", "notes.txt")
+            w.gitq(c, "commit", "-m", "base")
+            w.gitq(c, "checkout", "-q", "-b", RESCUE)
+            (g / "both.txt").write_text("main's\n")
+            w.gitq(c, "commit", "-a", "-m", "main-side")
+            w.gitq(c, "checkout", "-q", "-b", CLEAN, "main")
+            (c / "notes.txt").write_text("main's\n")
+            w.gitq(c, "commit", "-a", "-m", "main-side, clean")
+            w.gitq(c, "checkout", "-q", "main")
+            (g / "both.txt").write_text("detached\n")
+            w.gitq(c, "commit", "-a", "-m", "detached-side")
+            w.gitq(c, "push", "origin", "main")
+            return c, g, Path(w.git(c, "rev-parse", "--absolute-git-dir"))
+
+        def stop(c, **env):
+            (c / ".git" / "claude-last-state-push").unlink(missing_ok=True)
+            w.run_hook(SID, WORK, GH_PRS=PR7, CLAUDE_STATE_REPO=c, **env)
+
+        def committed(c, path):
+            return subprocess.run(["git", "-C", str(c), "cat-file", "-e", f"HEAD:{path}"], env=w.base,
+                                  capture_output=True).returncode == 0
+
+        def ckpt_in(c):
+            return sorted(glob.glob(f"{c}/state/global/log/auto/*/*-work-{SID[:8]}.md"))[0]
+
+        def kept(c):
+            return w.git(c, "for-each-ref", "--format=%(refname:short)", "refs/heads/rescue/").split()
+
+        # A branch that conflicts never starts a merge; one that merges
+        # cleanly is fast-forwarded to, as a merge commit built off the tree.
+        c, g, gd = stranded("merge-clean")
+        tip = w.git(c, "rev-parse", CLEAN)
+        stop(c, MERGE_LOG=w.S / "merges")
+        merges = read(w.S / "merges").split()
+        self.assertEqual(merges[:3], ["merge", "-q", "--ff-only"], "clean: the one merge is a fast-forward")
+        self.assertEqual(len(merges), 4, "clean: and there is only one")
+        self.assertEqual(w.git(c, "rev-list", "--parents", "-n1", merges[3]).split()[2], tip,
+                         "clean: to a merge commit, the clean branch its second parent")
+        self.assertIn("main-side, clean", w.git(c, "log", "--format=%s", "origin/main"), "clean: its commit reached main")
+        self.assertFalse((gd / "MERGE_HEAD").exists(), "clean: no merge left in progress")
+        self.assertEqual(kept(c), [RESCUE], "clean: the conflicting branch is kept, the clean one merged")
+        self.assertEqual(read(c / "notes.txt"), "main's\n", "clean: its change is in the tree")
+        self.assertEqual(read(g / "both.txt"), "detached\n", "clean: the conflicted file is untouched")
+        (g / "next.txt").write_text("x\n")
+        stop(c)
+        self.assertTrue(committed(c, "state/global/next.txt"), "clean: the next Stop commits")
+
+        # A clean branch touching a file a session has not committed: the
+        # fast-forward refuses up front and the file keeps its bytes.
+        c, g, gd = stranded("merge-dirty")
+        (c / "notes.txt").write_text("a session's, uncommitted\n")
+        stop(c)
+        self.assertFalse((gd / "MERGE_HEAD").exists(), "dirty: no merge left in progress")
+        self.assertEqual(read(c / "notes.txt"), "a session's, uncommitted\n", "dirty: the uncommitted file keeps its bytes")
+        self.assertEqual(kept(c), [RESCUE, CLEAN], "dirty: both branches kept")
+
+        # A git too old to write the merged tree merges nothing.
+        c, g, gd = stranded("merge-old-git")
+        h0 = w.git(c, "rev-parse", "HEAD")
+        stop(c, OLD_GIT=1, MERGE_LOG=w.S / "merges-old")
+        self.assertEqual(read(w.S / "merges-old"), "", "old git: no merge was started")
+        self.assertEqual(kept(c), [RESCUE, CLEAN], "old git: both branches kept")
+        self.assertEqual(w.git(c, "rev-list", "--merges", f"{h0}..HEAD"), "", "old git: no merge commit")
+
+        # A person's merge in progress: left alone, nothing committed.
+        c, g, gd = stranded("merge-person")
+        w.gitq(c, "merge", "-q", "--no-edit", "-m", "m", RESCUE)
+        h0 = w.git(c, "rev-parse", "HEAD")
+        stop(c)
+        self.assertTrue((gd / "MERGE_HEAD").exists(), "a person's merge: left alone")
+        self.assertEqual(w.git(c, "rev-parse", "HEAD"), h0, "a person's merge: nothing committed")
+        self.assertIn("state repo not committed", verdict(ckpt_in(c)), "a person's merge: the verdict says so")
+
+        # A person starts a merge while the Stop runs, just before the hook's
+        # fast-forward to a clean merge: the fast-forward refuses and theirs
+        # is left as it is.
+        c, g, gd = stranded("merge-beside")
+        stop(c, PERSON_MERGES=RESCUE)
+        self.assertEqual(read(gd / "MERGE_HEAD").strip(), w.git(c, "rev-parse", RESCUE), "beside: the person's merge is still in progress")
+        self.assertTrue(w.git(c, "ls-files", "-u"), "beside: with its conflicts")
+        self.assertIn(CLEAN, kept(c), "beside: the clean branch is kept")
+
     def state_signing(self):
         # --- the state-repo commit is signed iff this machine has a signing key
         # Same test as no-unsigned-push.py (`git config user.signingkey`): a
@@ -1644,7 +1760,7 @@ class StopContinuityTest(unittest.TestCase):
         self.assertNotIn("state repo", box(out), "incident, pushed: the 📦 line never names the state repo")
 
     SECTIONS = ("verdict_basics", "verdict_branches", "resume_and_pickup", "session_item", "curia_digests",
-                "salvage", "state_push", "state_signing", "state_items", "state_paths", "state_debounce",
+                "salvage", "state_push", "state_merge", "state_signing", "state_items", "state_paths", "state_debounce",
                 "live_lock", "incident", "critical_review")
 
     def test_term_stops_the_child_before_the_lock_comes_off(self):
