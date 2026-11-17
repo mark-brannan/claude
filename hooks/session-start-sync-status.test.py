@@ -12,6 +12,7 @@ second.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -58,8 +59,8 @@ class SyncStatus(unittest.TestCase):
         sync.parent.mkdir(parents=True, exist_ok=True)
         sync.write_text(f"#!/bin/sh\n[ \"$1\" = --status ] && echo '{line}'\nexit 0\n")
 
-    def run_hook(self):
-        p = subprocess.run([sys.executable, str(HOOK)], input="{}", capture_output=True, text=True, env=self.env)
+    def run_hook(self, hook=HOOK):
+        p = subprocess.run([sys.executable, str(hook)], input="{}", capture_output=True, text=True, env=self.env)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(p.stderr, "")
         return json.loads(p.stdout) if p.stdout.strip() else None
@@ -92,6 +93,41 @@ class SyncStatus(unittest.TestCase):
         self.assertIn("sub-agent", out["hookSpecificOutput"]["additionalContext"])
         self.assertIn("needs repair", out["systemMessage"])
         self.assertNotIn("PRIORITY", out["systemMessage"])
+
+    def test_one_repair_per_window(self):
+        # Sessions opened together must not each send a sub-agent at the same locks.
+        self.commit(minutes_ago=16 * 60)
+        git("fetch", "-q", cwd=self.clone)
+        self.assertTrue(self.run_hook()["hookSpecificOutput"]["additionalContext"].startswith("PRIORITY"))
+        second = self.run_hook()["hookSpecificOutput"]["additionalContext"]
+        self.assertNotIn("PRIORITY", second)
+        self.assertIn("another session sent a sub-agent", second)
+
+    def hook_with_config(self, live_clone):
+        """A copy of the hook beside its own lib/ and a config.json whose
+        live_clone block is the one given."""
+        tree = self.home.parent / "tree"
+        (tree / "hooks").mkdir(parents=True)
+        for f in (HOOK, HOOK.parent / "lib_state.py"):
+            shutil.copy(f, tree / "hooks")
+        shutil.copytree(HOOK.parent.parent / "lib", tree / "lib")
+        cfg = json.loads((HOOK.parent.parent / "config.json").read_text())
+        cfg["live_clone"] = live_clone
+        (tree / "config.json").write_text(json.dumps(cfg))
+        return tree / "hooks" / HOOK.name
+
+    def test_wedge_age_comes_from_config(self):
+        self.stale("MERGE_HEAD", 600)
+        live = json.loads((HOOK.parent.parent / "config.json").read_text())["live_clone"]
+        self.assertIsNone(self.run_hook(self.hook_with_config({**live, "wedged_after_minutes": 15})))
+
+    def test_unusable_setting_is_named_not_silent(self):
+        self.stale("MERGE_HEAD", 600)
+        live = json.loads((HOOK.parent.parent / "config.json").read_text())["live_clone"]
+        del live["wedged_after_minutes"]
+        text = self.run_hook(self.hook_with_config(live))["systemMessage"]
+        self.assertIn("no usable wedged_after_minutes", text)
+        self.assertNotIn("wedged:", text)
 
     def test_many_commits_behind_asks_for_a_repair(self):
         for _ in range(20):

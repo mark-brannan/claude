@@ -1404,7 +1404,7 @@ def git_paths(*names):
 
 def stopped(names=None):
     """The first of these the clone is in the middle of, or None; by default
-    every in-progress marker git can leave."""
+    each marker in gitrun.IN_PROGRESS."""
     names = names or tuple(m for m, _ in gitrun.IN_PROGRESS)
     return next((n for n, p in zip(names, git_paths(*names)) if p and os.path.exists(p)), None)
 
