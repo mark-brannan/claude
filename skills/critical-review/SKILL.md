@@ -1,6 +1,6 @@
 ---
 name: critical-review
-description: "Review one pull request and comment on it — read the diff, post tagged findings, print a summary. It never edits, pushes or resolves; whoever owns the PR works the comments. Use on \"/critical-review\" or \"critical review of #N\". The driver picks a reviewer unlike the coder; the skill itself never switches model, and flags a run on a coder's family."
+description: "Review one pull request and comment on it — read the diff, post tagged findings, print a summary. It never edits, pushes or resolves; whoever owns the PR works the comments. Use on \"/critical-review\" or \"critical review of #N\". It refuses to run on a model family that coded the PR, or when it cannot read who coded it; it never switches model itself."
 argument-hint: "<PR>"
 ---
 
@@ -8,18 +8,20 @@ Do a critical review of $ARGUMENTS. You comment; you never edit, push
 or resolve a thread.
 
 First, learn the models: run `python3 ~/.claude/lib/critical_review.py
-reviewer <PR> [--coder <model>]`, with `--coder` when the hand-off names
-the coder. Otherwise it reads every model named in the PR's commit
-trailers and prints `coder=<families> reviewer=<family>`, the reviewer a
-family that coded none of it. A note after the line (coder unknown, or every
-family coded it) goes into your summary. The reviewer's model is the
-driver's choice, made before this skill runs, and should be a family that
-coded none of the PR. The skill never changes model, forks or spawns a
-sub-agent. When this session's family is a coder's, the summary opens with
-that as a flaw of the run: "review ran on a coder's family (<family>)".
-The line's `reviewer=` is the family the driver should have picked; the
-metrics row records it as `reviewer_model` beside `model`, the one that
-did.
+reviewer <PR> --as <this session's model id> [--coder <model>]`, with
+`--coder` when the hand-off names the coder. It reads every model named in
+the PR's commit trailers and prints `coder=<families> reviewer=<family>`,
+the reviewer a family that coded none of it. When it then prints
+`refused: <why>` and exits 3 (this session's family coded the PR, or no
+trailer or hand-off names the coder), stop: post nothing, and reply with
+the refusal line, the `reviewer=` family the review should run on, and
+the PR link. The reviewer's model is the driver's choice, made before this
+skill runs; the skill never changes model, forks or spawns a sub-agent.
+In CI the workflow's triage has already picked the model, so the script
+does not refuse there; follow what the CI prompt says about the family. A
+note after the line (every family coded it) goes into your summary. The
+metrics row records `reviewer=` as `reviewer_model` beside `model`, the
+one that ran.
 
 CI runs this review on every PR (claude[bot]). Drivers (prt, pickup,
 scoping) work the bot's threads and start no reviewer of their own.

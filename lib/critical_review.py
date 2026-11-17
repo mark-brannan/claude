@@ -12,8 +12,9 @@ sharded like sessions/ (lib/state.py state_shard_path). The Stop
 hook recomputes its rows (by=user) from the transcript every time it fires;
 prt's rows are keyed by agent id. Either rewrite replaces its own rows and
 keeps the other's, under a lock on the file. Imported; its one direct use is
-`critical_review.py reviewer <PR> [--coder <model>]`, which the skill runs to
-learn the coder's families and the family an independent review would take;
+`critical_review.py reviewer <PR> [--coder <model>] [--as <model>]`, which the
+skill runs to learn the coder's families and the family an independent review
+would take, and which refuses a review on a coder's family (see main);
 the review itself runs on the session's model (the row's `model`), and the
 rows read that printed line back from the transcript. Stdlib only.
 """
@@ -346,23 +347,50 @@ def save_agent(row):
           lambda r: r.get("by") == "prt" and r.get("review_id") == row["review_id"])
 
 
+USAGE_LINE = "usage: critical_review.py reviewer <PR> [--coder <model>] [--as <model>]"
+REFUSED = 3
+
+
+def refusal(running, present, reviewer):
+    """Why a review on the family `running` may not go ahead, or "" when it may."""
+    if not running:
+        return "pass --as <this session's model>; the review cannot check itself without it"
+    if not present:
+        return "no trailer names the coder and no --coder was given; pass the hand-off's coder"
+    if present.get(running):
+        return f"this session runs on {running}, which coded this PR; run the review on {reviewer}"
+    return ""
+
+
 def main(argv):
-    """`reviewer <PR> [--coder <model>]`: print the coder's families and the reviewer's.
-    The excluded set is --coder plus the PR's trailer families."""
-    if len(argv) not in (2, 4) or argv[0] != "reviewer" or argv[2:3] not in ([], ["--coder"]):
-        sys.exit("usage: critical_review.py reviewer <PR> [--coder <model>]")
+    """`reviewer <PR> [--coder <model>] [--as <model>]`: print the coder's families
+    and the reviewer's. The excluded set is --coder plus the PR's trailer
+    families. --as is the session's own model: the review is refused, exit 3,
+    when its family coded the PR or no coder can be read. Under GitHub Actions
+    the workflow's triage has already picked the model, so nothing refuses."""
+    if len(argv) < 2 or argv[0] != "reviewer" or len(argv) % 2:
+        sys.exit(USAGE_LINE)
+    opts = dict(zip(argv[2::2], argv[3::2]))
+    if set(opts) - {"--coder", "--as"} or len(opts) * 2 != len(argv) - 2:
+        sys.exit(USAGE_LINE)
+    for flag, name in opts.items():
+        if not family(name):
+            sys.exit(f"{flag} {name}: not a model family ({', '.join(FAMILIES)})")
     present = collections.Counter()
-    if len(argv) == 4:
-        if not family(argv[3]):
-            sys.exit(f"--coder {argv[3]}: not a model family ({', '.join(FAMILIES)})")
-        present[family(argv[3])] += 1
+    if "--coder" in opts:
+        present[family(opts["--coder"])] += 1
     text = pr_text(argv[1])
-    if text is None and len(argv) == 2:
+    if text is None and "--coder" not in opts:
         sys.exit(f"gh could not read {argv[1]}")
     present += coders(text)
     reviewer, note = pick_reviewer(present)
     print(f"coder={','.join(sorted(present)) or 'unknown'} reviewer={reviewer}"
           + (f" ({note})" if note else ""))
+    why = "" if os.environ.get("GITHUB_ACTIONS") == "true" else refusal(
+        family(opts.get("--as")), present, reviewer)
+    if why:
+        print(f"refused: {why}")
+        sys.exit(REFUSED)
 
 
 if __name__ == "__main__":

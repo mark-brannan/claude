@@ -71,8 +71,9 @@ class CriticalReviewTest(unittest.TestCase):
             self.skipTest("a cloud path holds a state repo here; rows would land in it")
         self.tmp = tempfile.TemporaryDirectory()
         self.T = Path(self.tmp.name)
-        self.saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_STATE_REPO")}
+        self.saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_STATE_REPO", "GITHUB_ACTIONS")}
         os.environ["HOME"], os.environ["CLAUDE_STATE_REPO"] = str(self.T / "home"), ""
+        os.environ.pop("GITHUB_ACTIONS", None)  # this suite runs in CI too; a test sets it
         self.tp = self.T / "proj" / f"{SID}.jsonl"
         self.pr_text, self.text = cr.pr_text, ""  # no network: the PR's text is whatever a test sets
         cr.pr_text = lambda pr: self.text
@@ -134,9 +135,62 @@ class CriticalReviewTest(unittest.TestCase):
         self.assertEqual([row[k] for k in ("fixed", "look_at", "pencil", "decide")], [2, 0, 1, 0])
 
     def reviewer(self, *argv):
-        with contextlib.redirect_stdout(io.StringIO()) as out:
-            cr.main(["reviewer", "o/r#1", *argv])
+        """The printed line alone, as under GitHub Actions, where nothing refuses."""
+        os.environ["GITHUB_ACTIONS"] = "true"
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                cr.main(["reviewer", "o/r#1", *argv])
+        finally:
+            os.environ.pop("GITHUB_ACTIONS")
         return out.getvalue().strip()
+
+    def run_as(self, model, *argv):
+        """(exit code, output) of a review this session, on model, would run."""
+        code = 0
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            try:
+                cr.main(["reviewer", "o/r#1", *argv, *(("--as", model) if model else ())])
+            except SystemExit as e:
+                code = e.code
+        return code, out.getvalue().strip()
+
+    def test_a_review_on_a_family_that_coded_the_pr_is_refused(self):
+        trailer = "Co-Authored-By: Claude {} <noreply@anthropic.com>"
+        # The dry run the issue asks for: a Sonnet-coded PR and a Fable-coded PR.
+        self.text = trailer.format("Sonnet 5.5")
+        self.assertEqual(self.run_as("claude-opus-5-5"), (0, "coder=sonnet reviewer=opus"))
+        self.assertEqual(self.run_as("claude-fable-5-1"), (0, "coder=sonnet reviewer=opus"))
+        code, out = self.run_as("claude-sonnet-5-5")
+        self.assertEqual(code, cr.REFUSED)
+        self.assertIn("refused: this session runs on sonnet, which coded this PR; run the review on opus", out)
+        self.text = trailer.format("Fable 5.1")
+        self.assertEqual(self.run_as("claude-opus-5-5"), (0, "coder=fable reviewer=opus"))
+        code, out = self.run_as("claude-fable-5-1")
+        self.assertEqual(code, cr.REFUSED)
+        self.assertIn("which coded this PR; run the review on opus", out)
+        # the hand-off's coder counts as a coder: an Opus fix on a Sonnet PR
+        self.text = trailer.format("Sonnet 5.5")
+        self.assertEqual(self.run_as("claude-opus-5-5", "--coder", "opus")[0], cr.REFUSED)
+
+    def test_an_unreadable_coder_or_a_missing_as_is_refused_and_says_why(self):
+        self.text = "Co-Authored-By: Pat <pat@example.com>"
+        code, out = self.run_as("claude-opus-5-5")
+        self.assertEqual(code, cr.REFUSED)
+        self.assertTrue(out.startswith("coder=unknown reviewer=opus"), "the line prints first, for the row")
+        self.assertIn("refused: no trailer names the coder", out)
+        self.assertEqual(self.run_as("claude-opus-5-5", "--coder", "sonnet"), (0, "coder=sonnet reviewer=opus"))
+        self.text = "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+        code, out = self.run_as(None)
+        self.assertEqual(code, cr.REFUSED)
+        self.assertIn("refused: pass --as", out)
+        code, out = self.run_as("gpt-9")
+        self.assertNotIn(code, (0, cr.REFUSED), "not a family: a usage exit, not a refusal")
+
+    def test_under_github_actions_the_workflows_pick_stands(self):
+        os.environ["GITHUB_ACTIONS"] = "true"
+        self.text = "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+        self.assertEqual(self.run_as("claude-sonnet-5-5"), (0, "coder=sonnet reviewer=opus"))
+        self.assertEqual(self.run_as(None), (0, "coder=sonnet reviewer=opus"))
 
     def test_the_reviewer_is_no_family_that_coded_the_pr(self):
         trailer = "Co-Authored-By: Claude {} <noreply@anthropic.com>"
