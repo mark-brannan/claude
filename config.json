@@ -8,9 +8,9 @@
   },
   "live_clone": {
     "wedged_after_minutes": 5,
-    "warn_behind_minutes": 10,
+    "warn_behind_minutes": 5,
     "repair_behind_minutes": 30,
-    "repair_behind_commits": 20,
+    "repair_behind_commits": 4,
     "repair_every_minutes": 30,
     "repos": {
       "mark-brannan/claude": {"git": ["-C", "~/.claude"]},

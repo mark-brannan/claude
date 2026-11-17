@@ -14,7 +14,8 @@ Three tiers, thresholds in config.json's live_clone block:
   - warn, one line: behind longer than warn_behind_minutes, or the
     `claude:` part of `dotfiles-sync.sh --status` starts with "skipped"
   - repair: wedged, or behind longer than repair_behind_minutes, or by
-    repair_behind_commits or more. The session is told to hand the repair
+    repair_behind_commits or more once past warn_behind_minutes (a burst of
+    merges the next sync will take is not a repair). The session is told to hand the repair
     to a sub-agent before any other work and to tell the user so: stale
     hooks and skills in every session are a blocker, not a nag. One session
     per repair_every_minutes sends it; the rest are told one is on its way,
@@ -190,7 +191,7 @@ def main():
     every = number(lim, "repair_every_minutes", unread, 60)
     late = n and lag_secs >= warn_after
     repair = bool(stuck) or bool(n and repair_after is not None and lag_secs >= repair_after) \
-        or bool(n and repair_commits is not None and n >= repair_commits)
+        or bool(late and repair_commits is not None and n >= repair_commits)
     off = (f"config.json's live_clone is unreadable ({why}), so any lag warns and there is no wedge check "
            f"or repair tier. " if why else
            f"config.json's live_clone has no usable {', '.join(unread)}; what it sets is off. " if unread else "")

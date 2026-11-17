@@ -130,10 +130,17 @@ class SyncStatus(unittest.TestCase):
         self.assertNotIn("wedged:", text)
 
     def test_many_commits_behind_asks_for_a_repair(self):
-        for _ in range(20):
-            self.commit(minutes_ago=2)
+        for _ in range(4):
+            self.commit(minutes_ago=6)
         git("fetch", "-q", cwd=self.clone)
         self.assertTrue(self.run_hook()["hookSpecificOutput"]["additionalContext"].startswith("PRIORITY"))
+
+    def test_a_fresh_burst_of_merges_is_silent(self):
+        # Inside one sync's window, however many: the next sync takes them.
+        for _ in range(6):
+            self.commit(minutes_ago=2)
+        git("fetch", "-q", cwd=self.clone)
+        self.assertIsNone(self.run_hook())
 
     def test_behind_unfetched_is_silent(self):
         # No network call: a commit the clone has not fetched is not seen.
