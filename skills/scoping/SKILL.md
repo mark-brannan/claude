@@ -261,6 +261,26 @@ estimate:
 Dollars show cents; a share rounds to one decimal, and under 0.1% shows
 as `<0.1%`. Effort is abbreviated low, med, high.
 
+**Plans shown together.** When more than one plan waits on the user at
+once, as when a batch's children each return a plan, each plan's own yes
+still stands, and the screen that asks for them carries one more account:
+a row per plan, numbered in the order the plans are shown, its items and
+its estimate, the total and its share of the week at the foot; when any
+plan carries Fable items, the foot adds their total and share of the
+Fable week, as the item table does. Each plan's "one word takes it" is
+small; the words together are not, and no single plan shows that.
+
+```
+ #  Plan                      Items       Est.
+ 1  colregs family                7     $41.00
+ 2  nav-wright                   11     $84.00
+ 3  searoom                      38    $363.00
+    Total, 3 plans               56    $488.00
+      % of week                         24.4%
+    Fable items                   5     $60.00
+      % of Fable week                   11.8%
+```
+
 ## 5. Stop and show
 
 Show the proposal and stop. Nothing is claimable before the user's yes.
