@@ -1,13 +1,14 @@
 # Review depth: one owner
 
 How hard a pull request is reviewed has one owner, so a skill, a governing
-document or a hook never rates low by size alone (claude#343). This is the
-measurement behind the choice and the owner proposed, 2026-11-17. It changes
-no code; the CI tiers stay as they are.
+document or a hook never rates low by size alone (claude#343). The owner is
+the CI tier, and depth is never set from line count (docs/decisions.md,
+2026-11-17). Below are the mapping and the measurement behind it.
 
-## Proposal
+## The owner
 
-**The CI tier owns review depth.** `/critical-review` takes its `/code-review`
+**The CI tier owns review depth, and line count sets none of it.**
+`/critical-review` takes its `/code-review`
 level from the tier the review workflow already picks (mark-brannan/.github#68,
 whose tiers are current thinking), in place of the 100/500 line stand-in:
 
@@ -118,6 +119,8 @@ until then the rule bands in section 2 are a proxy.
 - **Findings per level at one model:** unmeasured; no row records the level.
 - **Whether "fixed" is real:** no human labels yet on mark-brannan/.github#70.
 - **The tier today:** the snapshot's tiers came from paths, not the verdict.
+- **Skip by size:** the review workflow's opt-in `skip-under-lines` and
+  `docs-skip-lines` (off by default) still read line count to skip a review.
 
 The 40-thread label sheet on #70 has no human labels; an agent's blind pass
 agreed with the script on 31 of 40, with no *fixed* overturned. The workflow
