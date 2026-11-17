@@ -820,3 +820,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t124951z
 - A file another session rewrote after the merge staged it is kept as written, not restored to HEAD Undo: revert the PR ([#477](https://github.com/mark-brannan/claude/pull/477))
+
+### 20261117t124956z
+- The reviewer's deeper fix (commit-tree plus merge --ff-only, never writing MERGE_HEAD) is declined for this PR and carded Undo: take it up from card 1794919777d269f698 ([#477](https://github.com/mark-brannan/claude/pull/477))
