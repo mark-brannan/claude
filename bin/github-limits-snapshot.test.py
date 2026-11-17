@@ -6,11 +6,20 @@ import os
 import subprocess
 import sys
 import tempfile
+import importlib.util
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.dont_write_bytecode = True
 TOOL = Path(__file__).resolve().parent / "github-limits-snapshot.py"
+
+
+def load_tool():
+    spec = importlib.util.spec_from_file_location("github_limits_snapshot", TOOL)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 class Snapshot(unittest.TestCase):
@@ -25,8 +34,10 @@ class Snapshot(unittest.TestCase):
                               env=self.env, timeout=30)
 
     def test_no_state_repo_exits_2_and_writes_nothing(self):
-        p = self.run_tool()
-        self.assertEqual(p.returncode, 2)
+        snap = load_tool()
+        with mock.patch.object(snap.state, "state_repo", return_value=None), \
+             mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+            self.assertEqual(snap.main([]), 2)
         self.assertFalse((self.home / ".local/state/github-limits").exists())
 
     def test_unmeasurable_repo_exits_3_and_writes_nothing(self):

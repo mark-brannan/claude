@@ -3,9 +3,7 @@
 row at warn or over; silent below warn.
 
 Reads only ~/.local/state/github-limits/snapshots.jsonl (written daily by
-bin/github-limits-snapshot.py): no network, no git. The API quota rows are
-left out of the line, since a day-old "used this window" figure says nothing
-about now; they stay in the snapshot for trend.
+bin/github-limits-snapshot.py): no network, no git.
 
 CONVENIENCE: never blocks a session, always exits 0; a crash is traced to
 the state repo's metrics/hook-errors/ (lib/hooktrace.py).
@@ -34,8 +32,7 @@ def latest(path):
 
 
 def line(rec):
-    rows = [r for r in rec["rows"] if isinstance(r, dict) and r.get("status") in ("warn", "over")
-            and not str(r.get("metric", "")).startswith("API ")]
+    rows = [r for r in rec["rows"] if isinstance(r, dict) and r.get("status") in ("warn", "over")]
     if not rows:
         return None
     rows.sort(key=lambda r: (r["status"] != "over", -(r.get("used") or 0)))
@@ -45,7 +42,7 @@ def line(rec):
     unit = f" {r['unit']}" if r.get("unit") else ""
     more = f"; +{len(rows) - 1} more" if len(rows) > 1 else ""
     text = (f"github-limits: {r['metric']} {r['value']:,}{unit} of {r['limit']:,}{pct}, {r['status']}"
-            f"{more}; snapshot {str(rec.get('at', '?'))[:16]}; run `github-limits` for the table")
+            f"{more}; snapshot {str(rec.get('at', '?'))[:16]}Z; run `github-limits` for the table")
     return "".join(" " if ord(c) < 32 else c for c in text)[:FIELD_CAP * 2]
 
 
