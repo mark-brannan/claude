@@ -808,3 +808,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261116t223944z
 - A rescue branch is named by the commit it holds (rescue/main-<commit>), not by time and pid, so two runs park one tip under one name Undo: rename in reattach(); one line ([#473](https://github.com/mark-brannan/claude/pull/473))
+
+### 20261117t124620z
+- Review's deeper fix (clean rescue merge via commit-tree and --ff-only, never writing MERGE_HEAD) is deferred out of PR 477 to card 1794919560090cf579, since it would replace most of the reviewed fix Undo: take card 1794919560090cf579 into this PR ([#477](https://github.com/mark-brannan/claude/pull/477#discussion_r4599735918)) ([#477](https://github.com/mark-brannan/claude/pull/477))
