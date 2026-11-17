@@ -115,11 +115,11 @@ say otherwise for a PR or a repo.
   its log, and never asks whether it is green. Beyond that, run locally
   only what CI can't (macOS). Read CI once after the push; if it is still running, hand over
   with the link.
-- **A push names its branch:** `git push origin <branch>`, or
-  `git -C <literal path> push origin <branch>` from outside the clone,
-  never a bare `origin HEAD` after a `cd`, a `-C $var` or inside a loop.
-  The ruleset guard can't tell which branch a bare `HEAD` sends from
-  there, so it stops the call for a human, who has nothing to judge.
+- **A push names its branch:** `git push origin <literal branch>`, or
+  `git -C <literal path> push origin <literal branch>` from outside the clone,
+  never a bare `HEAD` after a `cd`, through `-C $var` or in a loop, and never
+  `$var` for the branch: `guard-bypass-ruleset` can't read either, so it
+  stops the call for a human, who has nothing to judge.
 - **A conflict gets a merge, never a rebase afterwards:** the merge commit
   holds the hand-resolution, and a rebase drops it. Behind is not a
   conflict; the queue updates it. A stacked PR is the one rebase left, with
