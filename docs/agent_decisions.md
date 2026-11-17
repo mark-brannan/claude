@@ -826,3 +826,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t125459z
 - On a git older than 2.38 a rescue branch is kept unmerged rather than merged in the tree Undo: revert 4a9fd8d ([#477](https://github.com/mark-brannan/claude/pull/477#discussion_r4599735918)) ([#477](https://github.com/mark-brannan/claude/pull/477))
+
+### 20261117t131917z
+- combined plan cost table rule lives once, in scoping SKILL.md cost section Undo: add a pointer in on-the-yes.md walk bullet ([#478](https://github.com/mark-brannan/claude/pull/478))
