@@ -841,3 +841,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t223625z
 - A git lock or in-progress op in ~/.claude counts as a wedge when its mtime is over five minutes old; no process check Undo: change STALE in session-start-sync-status.py ([#486](https://github.com/mark-brannan/claude/pull/486))
+
+### 20261117t231802z
+- config key for the wedge age is live_clone.wedged_after_minutes, not stale_lock_minutes: it covers stalled merges and rebases too Undo: rename the key back in config.json and the hook ([#486](https://github.com/mark-brannan/claude/pull/486))
