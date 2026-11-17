@@ -3,7 +3,7 @@
 row at warn or over; silent below warn.
 
 Reads only ~/.local/state/github-limits/snapshots.jsonl (written daily by
-bin/github-limits-snapshot.py): no network, no git.
+bin/github-limits-snapshot): no network, no git.
 
 CONVENIENCE: never blocks a session, always exits 0; a crash is traced to
 the state repo's metrics/hook-errors/ (lib/hooktrace.py).
@@ -15,7 +15,7 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", 
                 os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
 sys.dont_write_bytecode = True
 
-FIELD_CAP = 120
+LINE_CAP = 240  # the line lands in every session's context
 
 
 def latest(path):
@@ -43,7 +43,8 @@ def line(rec):
     more = f"; +{len(rows) - 1} more" if len(rows) > 1 else ""
     text = (f"github-limits: {r['metric']} {r['value']:,}{unit} of {r['limit']:,}{pct}, {r['status']}"
             f"{more}; snapshot {str(rec.get('at', '?'))[:16]}Z; run `github-limits` for the table")
-    return "".join(" " if ord(c) < 32 else c for c in text)[:FIELD_CAP * 2]
+    text = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in text)
+    return text if len(text) <= LINE_CAP else text[:LINE_CAP - 1] + "…"
 
 
 def main():

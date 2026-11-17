@@ -6,17 +6,19 @@ import os
 import subprocess
 import sys
 import tempfile
+import importlib.machinery
 import importlib.util
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.dont_write_bytecode = True
-TOOL = Path(__file__).resolve().parent / "github-limits-snapshot.py"
+TOOL = Path(__file__).resolve().parent / "github-limits-snapshot"
 
 
 def load_tool():
-    spec = importlib.util.spec_from_file_location("github_limits_snapshot", TOOL)
+    loader = importlib.machinery.SourceFileLoader("github_limits_snapshot", str(TOOL))
+    spec = importlib.util.spec_from_loader("github_limits_snapshot", loader)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
