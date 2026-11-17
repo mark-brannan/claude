@@ -1428,17 +1428,27 @@ RESCUE = "rescue/main-"
 
 def merge_stranded():
     """Merge back what reattach() parked; the rescue branches that would not
-    merge, kept for a person. Into a tree the Stop has not committed yet, a
-    merge refuses whenever a stranded commit touches a rewritten file."""
+    merge, kept for a person. The merge commit is built off the tree and the
+    clone fast-forwarded to it, so no merge is ever left in progress: one
+    that conflicts, or that touches a file the Stop has not committed, is kept."""
     kept = []
     for ref in git("for-each-ref", "--format=%(refname:short)", f"refs/heads/{RESCUE}*")[1].split():
-        if git_ok("merge-base", "--is-ancestor", ref, "HEAD") or git_bounded(
-                60, "merge", "-q", "--no-edit", "-m",
-                "Merge main's commits stranded while HEAD was detached", ref) == 0:
+        if git_ok("merge-base", "--is-ancestor", ref, "HEAD"):
+            git_ok("branch", "-q", "-D", ref)
+            continue
+        head = git("rev-parse", "-q", "--verify", "HEAD^{commit}")[1].strip()
+        # 1 is a conflict; a git older than 2.38 cannot write the tree either.
+        rc, tree = bounded(["git", "merge-tree", "--write-tree", head, ref], 60, capture=True)
+        if not head or rc != 0 or not tree.split():
+            kept.append(ref)
+            continue
+        rc, commit = bounded(["git", "-c", f"commit.gpgsign={Stop.sign_if_key('.')}", "commit-tree",
+                              tree.split()[0], "-p", head, "-p", ref,
+                              "-m", "Merge main's commits stranded while HEAD was detached"], 30, capture=True)
+        # --ff-only refuses before it touches a file a local change would lose.
+        if rc == 0 and commit.strip() and git_bounded(60, "merge", "-q", "--ff-only", commit.strip()) == 0:
             git_ok("branch", "-q", "-D", ref)
         else:
-            if stopped(("MERGE_HEAD",)):
-                git_ok("merge", "--abort")
             kept.append(ref)
     return kept
 
