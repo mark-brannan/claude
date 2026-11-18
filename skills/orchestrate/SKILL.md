@@ -60,6 +60,11 @@ Then rule on each row yourself:
   the first's PR when it depends on it.
 - **Stack only on a real dependency**, per `CLAUDE.md`: the worker branches
   from the base PR's head and writes `Depends-On: #<n>` in its body.
+- **A dependency is met when it is live, not when it merged.** Across
+  repos (a dotfiles PR on a claude one, say), `~/.claude/bin/pr-live
+  <owner/repo#n>` must exit 0 before the dependent PR is released, merged
+  or reported as waiting for nothing: a merge the sync has not pulled is
+  not running here. Not live: hold the dependent and fix the sync first.
 - **Order by value** — what it unblocks, what is broken now, what the user
   has asked for — and let the file constraint only reorder within that.
   The tail of the queue never runs: the user stopped new dispatch after an

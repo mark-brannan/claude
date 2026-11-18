@@ -29,6 +29,14 @@ def parse(s):
     return datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+def age(seconds):
+    """A duration as its largest whole unit: 45s, 7m, 16h, 3d."""
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds >= size:
+            return f"{int(seconds // size)}{unit}"
+    return f"{int(seconds)}s"
+
+
 def epoch(s):
     """parse(s) as epoch seconds (a float; fractional seconds kept)."""
     return parse(s).timestamp()

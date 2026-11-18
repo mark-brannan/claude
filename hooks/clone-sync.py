@@ -97,11 +97,9 @@ def names(text):
 def busy(clone):
     """Why the clone is mid-operation, or None."""
     gd = gitrun.out("rev-parse", "--absolute-git-dir", cwd=clone)
-    for marker, what in (("rebase-merge", "a rebase"), ("rebase-apply", "a rebase"),
-                         ("MERGE_HEAD", "a merge"), ("CHERRY_PICK_HEAD", "a cherry-pick"),
-                         ("REVERT_HEAD", "a revert")):
+    for marker, verb in gitrun.IN_PROGRESS:
         if os.path.exists(os.path.join(gd, marker)):
-            return what
+            return f"a {verb}"
     if names(gitrun.out("diff", "--name-only", "--diff-filter=U", cwd=clone)):
         return "a conflict"
     return None
