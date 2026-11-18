@@ -22,6 +22,10 @@ Nothing reviews at `low`. The review workflow's brief names the tier today only
 in passing, in its triage sentence; one line naming it as a field the skill reads
 is the only change outside this repo. The tiers themselves do not change.
 
+The workflow's opt-in `skip-under-lines` and `docs-skip-lines` stay outside the
+rule: they decide whether a review runs, and a review that does not run has no
+depth. Changing them is a CI change, which #343 puts out of scope.
+
 Why the tier and not `bin/prt`'s score:
 
 - **The tier is where review is spent.** CI reviews every PR; sessions ran `/code-review` five times (section 1).
@@ -119,7 +123,6 @@ rule bands in section 2 are a proxy.
 - **Findings per level at one model:** unmeasured; no row records the level.
 - **Whether "fixed" is real:** no human labels yet on mark-brannan/.github#70.
 - **The tier today:** the snapshot's tiers came from paths, not the verdict.
-- **Skip by size:** the workflow's opt-in `skip-under-lines` and `docs-skip-lines` still read line count.
 
 The 40-thread label sheet on #70 has no human labels; an agent's blind pass
 agreed with the script on 31 of 40, with no *fixed* overturned. The workflow
