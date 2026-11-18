@@ -20,11 +20,11 @@ whose tiers are current thinking), in place of the 100/500 line stand-in:
 
 Nothing reviews at `low`. The review workflow's brief names the tier today only
 in passing, in its triage sentence; one line naming it as a field the skill reads
-is the only change outside this repo. The tiers themselves do not change.
+is one change outside this repo. The tiers themselves do not change.
 
-The workflow's opt-in `skip-under-lines` and `docs-skip-lines` stay outside the
-rule: they decide whether a review runs, and a review that does not run has no
-depth. Changing them is a CI change, which #343 puts out of scope.
+The workflow's opt-in `skip-under-lines` and `docs-skip-lines` fall inside the
+rule: a skip is the lowest rating there is, set from line count. Their removal
+is the second change outside this repo, in the same follow-up.
 
 Why the tier and not `bin/prt`'s score:
 
