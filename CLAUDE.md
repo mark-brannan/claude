@@ -172,6 +172,9 @@ I'm fine, drop it.
   predate the change, note it, maybe ask for a card, move on.
 - **Investigate where the problem occurs,** and confirm which environment
   you're in first.
+- **Build for the second visit, not the first.** Whatever gets changed,
+  checked or redone in use — a cable tie, a fuse, a filter, a setting — is
+  reached from where I stand, without taking apart what holds it.
 - **One-time operations leave no permanent scaffolding.** Snapshot the
   before-state somewhere disposable.
 - **Give yourself a way to verify:** tests, diff, browser, second agent,
