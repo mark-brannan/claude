@@ -29,7 +29,8 @@ project-specific facts belong in that project's own CLAUDE.md.
   `git show <branch>:<path>`); to work it, fork your own worktree and check it
   out there. If git says the branch is checked out elsewhere, that is a
   claim only while its holder lives — a fresh claim stamp or a process in
-  that worktree: report it and stop. An idle holder is not a claim; the
+  that worktree: report it and stop, unless it is an open PR's branch,
+  where a live holder is a co-worker (below). An idle holder is not a claim; the
   pickup skill judges liveness and says how to take the branch without
   touching it. The languette plugin's `guard-worktrees` keeps you out of
   another session's worktree; it never judges liveness.
@@ -59,6 +60,17 @@ project-specific facts belong in that project's own CLAUDE.md.
   printing nothing is what says it is my turn. A branch opened this
   way ends only one way: merged via PR, never folded back to main and
   deleted.
+
+- **One idea, one PR.** A PR is where an idea gets worked out. Every
+  iteration on it lands there until it merges, however many sessions work
+  on it, in turn or at once: specs from one, drawings from another. Before
+  the first edit, look for the open PR on the same subject, start from its
+  head and push to its branch, each session from its own worktree, merging
+  the branch head before every push; no force push while another session
+  lives on the branch. A session's fresh branch name and a
+  hand-off that says there is no PR are names, not evidence. A second PR
+  on an idea that has one is a stacked PR, and that is for software repos
+  with deep CI. Anywhere else, ask me before opening it.
 
 - **Cloud sessions: a pre-assigned `claude/*` branch name is not, by
   itself, a decision to branch.** Apply the rule above as normal — if
