@@ -9,6 +9,7 @@ set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 venv=${BDD_TEST_VENV:-$HOME/.local/share/claude-bdd-venv}
 [ "${1:-}" = --venv ] && { echo "$venv"; exit 0; }
+command -v uv >/dev/null || { echo "bdd-test: needs uv on PATH (https://docs.astral.sh/uv/)" >&2; exit 127; }
 [ -x "$venv/bin/python" ] || uv venv -q "$venv"
 uv pip install -q -p "$venv/bin/python" -r "$root/requirements-dev.txt"
 cd "$root"
