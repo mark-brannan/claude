@@ -66,7 +66,8 @@ project-specific facts belong in that project's own CLAUDE.md.
   on it, in turn or at once: specs from one, drawings from another. Before
   the first edit, look for the open PR on the same subject, start from its
   head and push to its branch, each session from its own worktree, merging
-  the branch head before every push, a plain push, never a force. A session's fresh branch name and a
+  the branch head before every push; no force push while another session
+  lives on the branch. A session's fresh branch name and a
   hand-off that says there is no PR are names, not evidence. A second PR
   on an idea that has one is a stacked PR, and that is for software repos
   with deep CI. Anywhere else, ask me before opening it.
