@@ -175,6 +175,8 @@ I'm fine, drop it.
 - **Build for the second visit, not the first.** Whatever gets changed,
   checked or redone in use — a cable tie, a fuse, a filter, a setting — is
   reached from where I stand, without taking apart what holds it.
+- **Boat wiring meets ABYC E-11:** 16 AWG minimum, 18 AWG only inside a
+  multi-conductor sheath; never spec smaller.
 - **One-time operations leave no permanent scaffolding.** Snapshot the
   before-state somewhere disposable.
 - **Give yourself a way to verify:** tests, diff, browser, second agent,
