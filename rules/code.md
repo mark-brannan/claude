@@ -60,6 +60,15 @@ project-specific facts belong in that project's own CLAUDE.md.
   way ends only one way: merged via PR, never folded back to main and
   deleted.
 
+- **One idea, one PR.** A PR is where an idea gets worked out. Every
+  iteration on it lands there until it merges, however many sessions work
+  on it, in turn or at once: specs from one, drawings from another. Before
+  the first edit, look for the open PR on the same subject, start from its
+  head and push to its branch. A session's fresh branch name and a
+  hand-off that says there is no PR are names, not evidence. A second PR
+  on an idea that has one is a stacked PR, and that is for software repos
+  with deep CI. Anywhere else, ask me before opening it.
+
 - **Cloud sessions: a pre-assigned `claude/*` branch name is not, by
   itself, a decision to branch.** Apply the rule above as normal — if
   nothing crosses a trigger, still land the work with
