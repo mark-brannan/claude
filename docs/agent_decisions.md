@@ -853,3 +853,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261123t221345z
 - a logged-out hand-off still writes the body and leaves the item open Undo: move ds.require_login() above the --body write in bin/handoff-start ([#492](https://github.com/mark-brannan/claude/pull/492))
+
+### 20261123t221350z
+- only an explicit loggedIn false refuses a launch; an unreadable answer launches Undo: refuse on any non-zero claude auth status in driver-start require_login ([#492](https://github.com/mark-brannan/claude/pull/492))
