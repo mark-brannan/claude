@@ -304,7 +304,7 @@ The user's, name neutralised.
     anything happen". A mechanism is a complete process: build a tool, drive
     its adoption, inspect the results and course-correct; a virtuous cycle,
     not a reminder.
-  - Maps to: "forbid a command with a guard, not prose". A standing order is
+  - Maps to: "a guard where a check can decide, prose where it must weigh". A standing order is
     the intention; the hook that fires on the action is the mechanism, and the
     decision-load counters are its inspection.
 - **Bryar, C. and Carr, B. (2021).** *Working Backwards.* St. Martin's Press,
