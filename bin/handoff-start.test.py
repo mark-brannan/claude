@@ -4,7 +4,8 @@
 # What matters: one background session per open item, Remote Control on,
 # `/pickup <id>` as its prompt, the hand-off's model and effort when named;
 # it runs in the repo's main worktree, never a linked one; the item taken
-# before the launch and reopened if it fails; an item that is not open is
+# before the launch and reopened if it fails; a logged-out CLI starts nothing
+# and leaves the item open; an item that is not open is
 # refused and nothing starts. `claude` is driver-start's stub;
 # `pickup-list` is a stub beside a copy of the tool.
 import importlib.util
@@ -143,6 +144,15 @@ class HandoffStart(unittest.TestCase):
         self.assertEqual(self.run_tool(ID).returncode, 3)
         self.assertEqual(self.marks(), ["take %s" % ID, "open %s" % ID])
 
+
+    def test_a_logged_out_cli_writes_the_body_and_leaves_the_item_open(self):
+        self.env["STUB_LOGGED_OUT"] = "1"
+        r = self.run_tool(ID, "--body", "-", stdin="Finish it.\nlink: b\n")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("claude auth login", r.stderr)
+        self.assertEqual(self.bg(), [])
+        self.assertEqual(self.marks(), ["handoff %s" % ID])
+        self.assertIn("Finish it.", self.pickup.read_text())
 
     def test_no_id_starts_this_sessions_own_item(self):
         self.env["CLAUDE_CODE_SESSION_ID"] = "94e9fcb0-c89a-43c1-bfb1-0248dc3cfc6e"

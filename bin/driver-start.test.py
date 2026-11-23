@@ -26,16 +26,19 @@ PARENT = "17939595623168262a"
 NAME = "Driver %s: hooks-guards-languette-batch-6-children 2026-11-06" % PARENT
 UUID = "3aa1df25-b265-443b-8cc2-40e2313ef52c"
 
-# claude stub: logs argv and cwd; --bg prints what the real one prints;
+# claude stub: logs argv, and the cwd of a --bg; --bg prints what the real one prints;
 # `agents --json` lists the session; `logs` prints the link, ANSI-wrapped,
-# unless $STUB_NO_LINK is set; $STUB_BG_RC makes --bg fail.
+# unless $STUB_NO_LINK is set; $STUB_BG_RC makes --bg fail; `auth status`
+# says logged in, or logged out when $STUB_LOGGED_OUT is set.
 CLAUDE = r'''#!/bin/sh
 printf '%s\n' "$*" >> "$STUB_LOG"
-pwd -P >> "$STUB_LOG.pwd"
+[ "$1" = --bg ] && pwd -P >> "$STUB_LOG.pwd"
 case "$1" in
   --bg)
     [ -n "$STUB_BG_RC" ] && { echo "boom" >&2; exit "$STUB_BG_RC"; }
     printf 'Starting background service\342\200\246\nbackgrounded \302\267 3aa1df25\n  claude agents             list sessions\n' ;;
+  auth) [ -n "$STUB_LOGGED_OUT" ] && { echo '{"loggedIn": false, "authMethod": "none"}'; exit 1; }
+    echo '{"loggedIn": true}' ;;
   agents) echo '[{"id": "0000aaaa", "sessionId": "x"}, {"id": "3aa1df25", "sessionId": "3aa1df25-b265-443b-8cc2-40e2313ef52c"}]' ;;
   logs) [ -z "$STUB_NO_LINK" ] && printf '\033[1m/remote-control is active \302\267 at \033[4mhttps://claude.ai/code/session_01YKXwAD8LvCtzSVyNvDgUcb\033[0m\n' ;;
 esac
@@ -130,6 +133,13 @@ class DriverStart(unittest.TestCase):
         bg = [c for c in self.calls() if c.startswith("--bg")][0]
         self.assertIn("-n Driver %s: every-open-issue-in-the-signalk-noaa 2026-11-06 /pickup" % PARENT, bg)
 
+    def test_a_logged_out_cli_is_refused_and_starts_nothing(self):
+        r = self.run_tool(PARENT, STUB_LOGGED_OUT="1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("claude auth login", r.stderr)
+        self.assertEqual(self.calls(), ["auth status"])
+        self.assertEqual(self.logged(), [])
+
     def test_a_missing_link_is_said_not_failed(self):
         r = self.run_tool(PARENT, STUB_NO_LINK="1")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -186,6 +196,12 @@ class DriverStart(unittest.TestCase):
 
     def relay(self, holder="aaaaaaaa", me="aaaaaaaa-1111-2222", **env):
         return self.run_tool("--relay", PARENT, STUB_HOLDER=holder, CLAUDE_CODE_SESSION_ID=me, **env)
+
+    def test_a_logged_out_relay_keeps_the_parent(self):
+        self.has_driver("old-1", "old-2")
+        r = self.relay(STUB_LOGGED_OUT="1")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(self.moves(), [])
 
     def test_relay_from_the_holder_starts_a_successor_under_the_batch_name(self):
         self.has_driver("old-1", "old-2")

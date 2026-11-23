@@ -11,6 +11,9 @@
 # handoff`. Refused (exit 1) when the item cannot be found or read, or is not
 # open: a taken item already has its session. The item is taken before the
 # launch, so a second run starts nothing, and reopened if the launch fails.
+# Refused too when the claude CLI is logged out (driver-start's
+# require_login), after --body is written: the item stays open with the
+# hand-off in it, for a `/pickup` by hand or a second run after the login.
 #
 # The session runs in the main worktree of the git repo at --cwd (default:
 # here), never in a linked worktree that its own session may be about to
@@ -125,6 +128,7 @@ def main():
         if facts[key]:
             cmd += ["--" + key, facts[key]]
     cmd.append("/pickup %s" % a.item)
+    ds.require_login()
     t = subprocess.run([PICKUP_LIST, "take", a.item], text=True, capture_output=True)
     if t.returncode:
         die("cannot take %s: %s" % (a.item, t.stderr.strip() or "pickup-list failed"))
