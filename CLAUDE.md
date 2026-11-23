@@ -193,11 +193,12 @@ I'm fine, drop it.
   where each half stands alone, never just to turn a guard green. A guard
   that says split opens a negotiation with me.
 - **A guard where a check can decide, prose where it must weigh.** A rule
-  that names an action a check can see, and admits no exception, gets a
-  guard on that action: a rule works only if it loads, and a guard fires on
-  the action itself. A rule that weighs ("prefer X over Y where feasible")
-  stays prose: a guard can't tell when either would do. Prose names the
-  remedy and points at the guard where one exists.
+  that names an action a check can see, and admits no exception but one I
+  explicitly grant, gets a guard on that action: a rule works only if it
+  loads, and a guard fires on the action itself. A rule that weighs
+  ("prefer X over Y where feasible") stays prose: a guard can't tell when
+  either would do. Prose names the remedy and points at the guard where
+  one exists.
 - **A sanctioned script before a hand-rolled command;** each runs without
   a dialog. A worker opens with `worker-start`; a scripted edit is
   `apply-edits`; a hand-off is `pickup-list handoff <id>`; a wait on CI is
