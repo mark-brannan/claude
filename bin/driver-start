@@ -122,10 +122,10 @@ def require_login():
     uses the CLI's own login, not the app's, and `claude --bg` still exits 0
     for a session that then stops at its first turn. An answer that cannot
     be read refuses nothing."""
-    r = subprocess.run(["claude", "auth", "status"], text=True, capture_output=True)
     try:
+        r = subprocess.run(["claude", "auth", "status"], text=True, capture_output=True, timeout=20)
         status = json.loads(r.stdout)
-    except ValueError:
+    except (OSError, subprocess.TimeoutExpired, ValueError):
         return
     if isinstance(status, dict) and status.get("loggedIn") is False:
         die("the claude CLI on this box is logged out, so a background session would stop "
