@@ -850,3 +850,6 @@ heading is the UTC stamp, so `agent_decisions.md#<stamp>` links one entry.
 
 ### 20261117t233053z
 - repair_behind_commits counts only once the clone is past warn_behind_minutes, so a merge burst the next sync takes is not a repair Undo: use n instead of late in the repair_commits test ([#486](https://github.com/mark-brannan/claude/pull/486))
+
+### 20261123t221345z
+- a logged-out hand-off still writes the body and leaves the item open Undo: move ds.require_login() above the --body write in bin/handoff-start ([#492](https://github.com/mark-brannan/claude/pull/492))
