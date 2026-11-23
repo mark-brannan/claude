@@ -20,6 +20,9 @@
 # is running and listed by name. Exit 2 on bad arguments; a `claude --bg`
 # that fails passes its code through; a driver_session that cannot be logged
 # exits 1 after the attach lines, since the session is already running.
+# Refused (exit 1) too when `claude auth status` says the CLI is logged out:
+# a background session has only the CLI's own login, and would start, stop at
+# its first turn and still be reported as running.
 #
 # --relay is the one way past that refusal: a driver at about 100k context
 # hands the batch to a successor. It is allowed only from the session that
@@ -114,6 +117,21 @@ def session_uuid(short):
     return ""
 
 
+def require_login():
+    """Die when the claude CLI says it is logged out: a background session
+    uses the CLI's own login, not the app's, and `claude --bg` still exits 0
+    for a session that then stops at its first turn. An answer that cannot
+    be read refuses nothing."""
+    r = subprocess.run(["claude", "auth", "status"], text=True, capture_output=True)
+    try:
+        status = json.loads(r.stdout)
+    except ValueError:
+        return
+    if isinstance(status, dict) and status.get("loggedIn") is False:
+        die("the claude CLI on this box is logged out, so a background session would stop "
+            "at its first turn; nothing started. In a terminal: claude auth login")
+
+
 def remote_link(short, wait):
     """The session's claude.ai/code link from its terminal output, or ""."""
     end = time.monotonic() + wait
@@ -162,6 +180,7 @@ def start(item, text, name, prompt, key, facts, cwd, wait, relay=False, extra=""
     held = held_by(text, key)
     if held and not relay:
         die("%s already has one, session %s: one session per yes" % (item, held))
+    require_login()
 
     cmd = ["claude", "--bg", "--remote-control", name, "-n", name]
     for k in ("model", "effort"):
@@ -230,6 +249,7 @@ def main():
     extra = ("%s relayed_from=%s" % (extra, me)).strip()
     # The successor's /pickup claims the parent, so the old driver lets go
     # first; a successor that never starts hands the claim back.
+    require_login()  # before the release: a refused relay leaves the old driver holding the parent
     r = subprocess.run([WORK_ITEM, "release", a.parent], text=True, capture_output=True)
     if r.returncode:
         die("cannot release %s: %s" % (a.parent, r.stderr.strip() or "work-item failed"))
