@@ -311,6 +311,36 @@ class InputTest(FixtureTest):
         self.assertEqual(self.fx.q("select count(*) from input"), [(1,)])
 
 
+class PresenceTest(FixtureTest):
+    def write_device(self, dev, minutes, day="2026-10-20"):
+        d = self.fx.sd / "metrics" / "presence" / dev
+        d.mkdir(parents=True, exist_ok=True)
+        write_jsonl(d / f"{day}.jsonl", minutes)
+        return d / f"{day}.jsonl"
+
+    def test_minutes_load_per_device_and_bad_rows_are_skipped(self):
+        self.write_device("desk", [{"minute": 100, "present": 42, "seen": 60}, {"minute": "bad"}])
+        self.write_device("sofa", [{"minute": 100, "present": 0, "seen": 60}])
+        r = self.build("--no-typing")
+        self.assertEqual(self.fx.q("select device, minute, present, seen from presence order by device"),
+                         [("desk", 100, 42, 60), ("sofa", 100, 0, 60)])
+        self.assertIn("2 minutes from 2 devices", r.stdout)
+
+    def test_a_rebuild_drops_minutes_whose_file_is_gone(self):
+        p = self.write_device("desk", [{"minute": 100, "present": 42, "seen": 60}])
+        self.build("--quiet", "--no-typing")
+        p.unlink()
+        self.build("--quiet", "--no-typing")
+        self.assertEqual(self.fx.q("select count(*) from presence"), [(0,)])
+
+    def test_no_presence_leaves_the_table_as_it_was(self):
+        p = self.write_device("desk", [{"minute": 100, "present": 42, "seen": 60}])
+        self.build("--quiet", "--no-typing")
+        p.unlink()
+        self.build("--quiet", "--no-typing", "--no-presence")
+        self.assertEqual(self.fx.q("select count(*) from presence"), [(1,)])
+
+
 class TypingTest(FixtureTest):
     def typing(self, sid):
         return self.fx.q("select prompts, chars, words, pasted_chars, cwd, first_ts, last_ts "

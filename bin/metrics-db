@@ -18,12 +18,14 @@
 #   metrics/input/<host>/*.jsonl  per-minute input counts, from bin/input-export
 #                                 on each host running ActivityWatch -> input, input_win, hosts;
 #                                 sessions.host is the host whose $HOME holds the session's cwd
+#   metrics/presence/<device>/*.jsonl per-minute desk presence, from bin/presence-export
+#                                 (a Home Assistant radar sensor)       -> presence
 #   GitHub (--github)             issues and PRs of every repo the user owns -> gh_items
 #
 # The file is derived and per-machine, like metrics.json: it lives under
 # metrics/dashboard/ in the state repo and is gitignored, never committed.
 #
-# Usage: metrics-db [--db FILE] [--github] [--no-typing] [--no-input] [--quiet]
+# Usage: metrics-db [--db FILE] [--github] [--no-typing] [--no-input] [--no-presence] [--quiet]
 #   --github     refresh gh_items (about one GraphQL call per 100 items per
 #                repo; ~70 calls for the current account, well inside the
 #                5000/hour limit). Without it the table is left as it was.
@@ -40,6 +42,7 @@
 #   --no-typing  skip the transcript scan (the one slow source on first run).
 #   --rescan-typing  rescan every transcript (after changing what counts as typed).
 #   --no-input   leave the input tables as they were.
+#   --no-presence  leave the presence table as it was.
 # Exit 0 on success, 2 on usage, 3 when the state repo cannot be found, 4 when
 # the database path is inside a git checkout and not gitignored (it is private).
 # Python 3 stdlib only.
@@ -145,6 +148,7 @@ create table if not exists input(host text, minute int, keys int, clicks int, sc
   afk int, seen int, primary key(host, minute));
 create table if not exists input_win(host text, minute int, category text, seconds int);
 create table if not exists hosts(host text primary key, home text);
+create table if not exists presence(device text, minute int, present int, seen int, primary key(device, minute));
 create table if not exists meta(key text primary key, value text);
 """
 
@@ -416,6 +420,21 @@ def load_input(cx, sd):
     cx.executemany("insert or replace into hosts values (?,?)", hosts)
     return len(rows), len(hosts)
 
+def load_presence(cx, sd):
+    """Every presence device's per-minute files, reloaded whole like input."""
+    rows, devices = [], set()
+    for p in sorted(glob.glob(os.path.join(sd, "metrics", "presence", "*", "*.jsonl"))):
+        dev = os.path.basename(os.path.dirname(p))
+        for d in json_rows(p):
+            m = d.get("minute")
+            if not isinstance(m, int):
+                continue
+            devices.add(dev)
+            rows.append((dev, m, d.get("present"), d.get("seen")))
+    cx.execute("delete from presence")
+    cx.executemany("insert or replace into presence values (?,?,?,?)", rows)
+    return len(rows), len(devices)
+
 GQL = """query($owner:String!,$name:String!,$ia:String,$pa:String,$doI:Boolean!,$doP:Boolean!){
   repository(owner:$owner,name:$name){
     issues(first:100,after:$ia,orderBy:{field:CREATED_AT,direction:ASC}) @include(if:$doI){
@@ -625,6 +644,7 @@ def main():
     ap.add_argument("--github", action="store_true")
     ap.add_argument("--no-typing", action="store_true")
     ap.add_argument("--no-input", action="store_true")
+    ap.add_argument("--no-presence", action="store_true")
     ap.add_argument("--rescan-typing", action="store_true", help="forget the per-transcript cache first")
     ap.add_argument("--projects", default=os.path.expanduser("~/.claude/projects"))
     ap.add_argument("--quiet", action="store_true")
@@ -677,6 +697,10 @@ def main():
         n, hosts = load_input(cx, sd)
         cx.commit()
         report["input"] = f"{n} minutes from {hosts} hosts"
+    if not a.no_presence:
+        n, devices = load_presence(cx, sd)
+        cx.commit()
+        report["presence"] = f"{n} minutes from {devices} devices"
     if a.github:
         report["gh_items"] = f"{gh_n} from {repos} repos in {calls} calls"
     cx.execute("insert or replace into meta values ('built_at', ?)", (when.stamp(),))

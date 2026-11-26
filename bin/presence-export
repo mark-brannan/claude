@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+# presence-export -- per-minute desk presence from a Home Assistant radar
+# sensor, written to the state repo so metrics-db can chart it beside
+# ActivityWatch's input. On/off seconds only; nothing else leaves HA.
+#
+# Reads the history of one binary_sensor (--entity, PRESENCE_ENTITY, default
+# binary_sensor.desk_presence_presence) from Home Assistant's REST API
+# (--url, HA_URL, default http://192.168.0.142) with the long-lived token in
+# HOME_ASSISTANT_TOKEN. Each state holds from its last_changed to the next.
+#
+# Writes <state repo>/state/global/metrics/presence/<device>/YYYY-MM-DD.jsonl,
+# one file per UTC day, one line per minute the history knows a state for:
+#   {"minute":29875783,"present":42,"seen":60}
+# minute is UTC unix seconds / 60; present is seconds of that minute the
+# sensor said "on", seen the seconds it said "on" or "off". "unknown" and
+# "unavailable" count toward neither: a minute with no line is no data,
+# never absence. <device> defaults to the entity's object id less a trailing
+# "_presence" (desk_presence).
+#
+# Incremental like input-export: each run rewrites the days from the newest
+# file's day onward (or --days back on the first run; HA's recorder keeps 10
+# days by default) and leaves a file untouched when its content would not
+# change. The minute still in progress is never written.
+#
+# Usage: presence-export [--days N] [--state DIR] [--url URL] [--entity ID] [--device NAME] [--quiet]
+# Exit 0 on success and when no token is set or HA does not answer (a host
+# off the home network has nothing to export), 1 when HA refuses the request,
+# 3 when the state repo cannot be found.
+# Python 3 stdlib only.
+import argparse, datetime, json, os, re, socket, sys, time, urllib.error, urllib.parse, urllib.request
+
+sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import atomic  # noqa: E402
+    import when  # noqa: E402
+except ImportError:
+    sys.exit("presence-export: lib/ not found (looked beside the tool and in ~/.claude/lib)")
+
+KNOWN = {"on", "off"}
+
+def state_dir():
+    try:
+        import state
+    except ModuleNotFoundError as e:
+        if e.name != "state":
+            raise
+        return None
+    return state.state_dir_or_none()
+
+def iso(t):
+    return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+
+def history(base, token, entity, start, end):
+    """The entity's state changes in [start, end], as HA returns them."""
+    q = urllib.parse.urlencode({"end_time": iso(end), "filter_entity_id": entity,
+                                "minimal_response": "", "no_attributes": ""})
+    url = f"{base.rstrip('/')}/api/history/period/{urllib.parse.quote(iso(start))}?{q}"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return json.load(r)
+
+def spans(changes, start, end):
+    """(t0, t1, state) for each state in the history, clipped to [start, end)."""
+    pts = []
+    for e in changes:
+        t = e.get("last_changed") or e.get("last_updated")
+        if t is None:
+            continue
+        pts.append((max(when.epoch(t), start), e.get("state")))
+    pts.sort(key=lambda p: p[0])
+    out = []
+    for i, (t0, s) in enumerate(pts):
+        t1 = pts[i + 1][0] if i + 1 < len(pts) else end
+        if t1 > t0:
+            out.append((t0, min(t1, end), s))
+    return out
+
+def spread(t0, secs, add):
+    """Call add(minute, seconds) for each minute the span [t0, t0+secs) touches."""
+    t1 = t0 + max(secs or 0, 0)
+    while t0 < t1:
+        m = int(t0 // 60)
+        edge = min(t1, (m + 1) * 60)
+        add(m, edge - t0)
+        t0 = edge
+
+def aggregate(changes, start, end, before):
+    """Per-minute records from the history, known-state minutes < before only."""
+    rows = {}
+    for t0, t1, s in spans(changes, start, end):
+        if s not in KNOWN:
+            continue
+        def add(m, secs, on=s == "on"):
+            r = rows.setdefault(m, {"minute": m, "present": 0.0, "seen": 0.0})
+            r["seen"] += secs
+            if on:
+                r["present"] += secs
+        spread(t0, t1 - t0, add)
+    out = []
+    for m in sorted(rows):
+        r = rows[m]
+        if m >= before:
+            continue
+        r["present"], r["seen"] = min(round(r["present"]), 60), min(round(r["seen"]), 60)
+        if r["seen"]:
+            out.append(r)
+    return out
+
+def day_of(minute):
+    return datetime.datetime.fromtimestamp(minute * 60, datetime.timezone.utc).strftime("%Y-%m-%d")
+
+def write_if_changed(path, text):
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == text:
+                return False
+    except OSError:
+        pass
+    atomic.write(path, text)
+    return True
+
+def device_of(entity):
+    obj = entity.split(".", 1)[-1]
+    obj = re.sub(r"_presence$", "", obj) or obj
+    return re.sub(r"[^a-z0-9_.-]", "-", obj.lower())
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--days", type=int, default=10, help="how far back the first run reaches")
+    ap.add_argument("--state", help="state/global directory (default: found by lib/state.py)")
+    ap.add_argument("--url", default=os.environ.get("HA_URL", "http://192.168.0.142"))
+    ap.add_argument("--entity", default=os.environ.get("PRESENCE_ENTITY", "binary_sensor.desk_presence_presence"))
+    ap.add_argument("--device", help="directory name (default: from the entity id)")
+    ap.add_argument("--quiet", action="store_true")
+    a = ap.parse_args()
+    sd = a.state or state_dir()
+    if not sd:
+        print("presence-export: state repo not found", file=sys.stderr)
+        return 3
+    token = os.environ.get("HOME_ASSISTANT_TOKEN")
+    if not token:
+        if not a.quiet:
+            print("presence-export: HOME_ASSISTANT_TOKEN not set; nothing to export")
+        return 0
+    device = a.device or device_of(a.entity)
+    out = os.path.join(sd, "metrics", "presence", device)
+    now = time.time()
+    days = sorted(f for f in os.listdir(out) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.jsonl", f)) \
+        if os.path.isdir(out) else []
+    if days:
+        start = datetime.datetime.strptime(days[-1][:10], "%Y-%m-%d").replace(
+            tzinfo=datetime.timezone.utc).timestamp()
+    else:
+        start = (now // 86400 - a.days) * 86400
+    try:
+        got = history(a.url, token, a.entity, start, now)
+    except urllib.error.HTTPError as e:
+        print(f"presence-export: Home Assistant at {a.url} answered {e.code}", file=sys.stderr)
+        return 1
+    except (urllib.error.URLError, socket.timeout, OSError, ValueError):
+        if not a.quiet:
+            print(f"presence-export: no Home Assistant at {a.url}; nothing to export")
+        return 0
+    changes = got[0] if got and isinstance(got[0], list) else []
+    rows = aggregate(changes, start, now, before=int(now // 60))
+    by_day = {}
+    for r in rows:
+        by_day.setdefault(day_of(r["minute"]), []).append(r)
+    changed = 0
+    for day, rs in sorted(by_day.items()):
+        os.makedirs(out, exist_ok=True)
+        text = "".join(json.dumps(r, separators=(",", ":")) + "\n" for r in rs)
+        changed += write_if_changed(os.path.join(out, day + ".jsonl"), text)
+    if not a.quiet:
+        print(f"presence-export: {device}: {len(changes)} states, {len(rows)} known minutes "
+              f"over {len(by_day)} days, {changed} files written")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
