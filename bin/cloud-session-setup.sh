@@ -120,6 +120,7 @@ lib/jsonl.py
 lib/hookio.py
 lib/atomic.py
 lib/cksum.py
+lib/memfloor.py
 hooks/curia-roll.py
 hooks/curia_words.py
 hooks/session-metrics.jq

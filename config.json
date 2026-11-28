@@ -18,6 +18,9 @@
       "mark-brannan/languette": {"git": ["-C", "~/languette"], "plugin": "languette@languette"}
     }
   },
+  "memory": {
+    "floor_gb": 3.0
+  },
   "plan": {
     "week_usd": 2000,
     "fable_week_usd": 510,

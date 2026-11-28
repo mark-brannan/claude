@@ -7,7 +7,8 @@
 # the run with its code; --item logs `dispatched` last and never fails it;
 # --issue alone only prints the issue; with --worktree a repo in the SETUP
 # table (keyed by its origin's owner/name) gets links, excludes or npm ci,
-# unless --no-setup. A real git repo with a local "origin"; gh and npm are stubs.
+# unless --no-setup; under the memory floor (a faked /proc/meminfo) a
+# checkout is refused with the numbers, an issue read is not. A real git repo with a local "origin"; gh and npm are stubs.
 import contextlib
 import importlib.machinery
 import importlib.util
@@ -38,6 +39,19 @@ exit 0
 '''
 
 
+def fake_proc(tmp, avail_gb=8.0, swapfree_gb=4.0):
+    """A faked /proc ($CLAUDE_PROC) under <tmp>, its meminfo 14 GB RAM and 4 GB swap,
+    and this checkout's lib/ linked beside a copy of the tool in tmp/<dir>."""
+    proc = Path(tmp) / "proc"
+    proc.mkdir(exist_ok=True)
+    (proc / "meminfo").write_text(
+        "MemTotal:       14680064 kB\nMemAvailable:   %d kB\nSwapTotal:       4194304 kB\nSwapFree:       %d kB\n"
+        % (round(avail_gb * 1048576), round(swapfree_gb * 1048576)))
+    if not (Path(tmp) / "lib").exists():
+        (Path(tmp) / "lib").symlink_to(TOOL.parent.parent / "lib")
+    return proc
+
+
 def sh(*cmd, cwd=None):
     return subprocess.run(cmd, cwd=cwd, check=True, text=True, capture_output=True).stdout
 
@@ -59,7 +73,9 @@ class WorkerStart(unittest.TestCase):
         (bindir / "npm").write_text(NPM)
         (bindir / "npm").chmod(0o755)
         self.log = self.tmp / "gh.log"
-        self.env = dict(os.environ, PATH="%s:%s" % (bindir, os.environ["PATH"]), GH_LOG=str(self.log))
+        self.proc = fake_proc(self.tmp)
+        self.env = dict(os.environ, PATH="%s:%s" % (bindir, os.environ["PATH"]), GH_LOG=str(self.log),
+                        CLAUDE_PROC=str(self.proc))
 
     def run_tool(self, *args, cwd=None):
         return subprocess.run([sys.executable, str(TOOL), "-C", str(self.repo), *args],
@@ -123,6 +139,22 @@ class WorkerStart(unittest.TestCase):
             r = self.run_tool(*args)
             self.assertEqual(r.returncode, 2, args)
             self.assertNotIn("fetch", r.stdout, args)
+
+    def test_under_the_memory_floor_a_checkout_is_refused_before_the_fetch(self):
+        fake_proc(self.tmp, 1.4, 0.2)
+        r = self.run_tool("--new", "fix-m", "--issue", "7")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stderr, "worker-start: 1.4 GB available + 0.2 GB swap, "
+                                   "under the 3.0 GB floor; not starting\n")
+        self.assertEqual(r.stdout, "")
+        self.assertEqual(self.branch(), "main")
+        self.assertEqual(self.gh_calls(), [])
+
+    def test_under_the_memory_floor_an_issue_read_still_runs(self):
+        fake_proc(self.tmp, 1.4, 0.2)
+        r = self.run_tool("--issue", "7")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.gh_calls(), ["gh issue view 7 --comments"])
 
     def test_failing_step_stops_the_run(self):
         r = self.run_tool("--new", "fix-z", "--base", "origin/nope", "--issue", "7")
@@ -201,7 +233,9 @@ class Setup(unittest.TestCase):
             (bindir / name).write_text(body)
             (bindir / name).chmod(0o755)
         self.log = self.tmp / "gh.log"
-        self.env = dict(os.environ, PATH="%s:%s" % (bindir, os.environ["PATH"]), GH_LOG=str(self.log))
+        self.proc = fake_proc(self.tmp)
+        self.env = dict(os.environ, PATH="%s:%s" % (bindir, os.environ["PATH"]), GH_LOG=str(self.log),
+                        CLAUDE_PROC=str(self.proc))
         self.exclude = self.repo / ".git" / "info" / "exclude"
 
     def fake_origin(self, url):

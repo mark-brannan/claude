@@ -213,6 +213,18 @@ class HookErrorsRowTest(unittest.TestCase):
         self.assertIn("log-commit x1", value)
 
 
+class MemoryRowTest(unittest.TestCase):
+    def test_the_row_prints_in_the_table(self):
+        with tempfile.TemporaryDirectory() as proc:
+            os.mkdir(os.path.join(proc, "pressure"))
+            Path(proc, "meminfo").write_text("MemTotal: 14680064 kB\nMemAvailable: 1468006 kB\n"
+                                             "SwapTotal: 4194304 kB\nSwapFree: 209715 kB\n")
+            Path(proc, "pressure", "memory").write_text("some avg10=12.00 avg60=8.10 avg300=3.02 total=9\n"
+                                                        "full avg10=6.50 avg60=4.00 avg300=1.10 total=4\n")
+            row = ("memory", *sc.memfloor.row(proc, 3.0))
+        self.assertEqual(sc.table([row]), "warn  memory  1.6 GB free of 18 GB (RAM+swap) · pressure 12% avg10")
+
+
 class StaleUntrackedRowTest(unittest.TestCase):
     def test_only_files_untracked_over_a_day_warn(self):
         with tempfile.TemporaryDirectory() as sr:
