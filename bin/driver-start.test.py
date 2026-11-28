@@ -10,7 +10,8 @@
 # --relay: allowed only from the session holding the parent, however the
 # driver was started; it releases the parent, starts a successor under the
 # batch's name and logs it, and claims the parent back when the successor
-# cannot start, or says how when that is refused.
+# cannot start, or says how when that is refused. Under the memory floor
+# (a faked /proc/meminfo), a start or a relay is refused with the numbers.
 # `claude` and `work-item` are stubs; the tool runs from a copy beside the
 # work-item stub, as it finds its own work-item.
 import os
@@ -70,6 +71,11 @@ The driver brief. https://example.com/plan
 2026-11-06T10:06:03Z c116ad7b driver=workflow
 """
 
+# A faked /proc/meminfo ($CLAUDE_PROC): 14 GB RAM, 4 GB swap; MemAvailable and SwapFree in kB.
+GIB = 1024 * 1024
+MEMINFO = ("MemTotal:       14680064 kB\nMemAvailable:   %d kB\n"
+           "SwapTotal:       4194304 kB\nSwapFree:       %d kB\n")
+
 
 class DriverStart(unittest.TestCase):
     def setUp(self):
@@ -79,6 +85,11 @@ class DriverStart(unittest.TestCase):
         tools.mkdir()
         stubs.mkdir()
         shutil.copy(TOOL, tools / "driver-start")
+        # lib/ beside the copy, so it reads this checkout's memfloor and config.json.
+        (self.tmp / "lib").symlink_to(TOOL.parent.parent / "lib")
+        self.proc = self.tmp / "proc"
+        self.proc.mkdir()
+        (self.proc / "meminfo").write_text(MEMINFO % (8 * GIB, 4 * GIB))
         (tools / "work-item").write_text(WORK_ITEM)
         (stubs / "claude").write_text(CLAUDE)
         for p in (tools / "work-item", stubs / "claude", tools / "driver-start"):
@@ -90,7 +101,8 @@ class DriverStart(unittest.TestCase):
         self.item.write_text(ITEM % ("-", "-"))
         self.claude_log = self.tmp / "claude.log"
         self.env = dict(os.environ, PATH="%s:%s" % (stubs, os.environ["PATH"]),
-                        STUB_LOG=str(self.claude_log), STUB_ITEM=str(self.item))
+                        STUB_LOG=str(self.claude_log), STUB_ITEM=str(self.item),
+                        CLAUDE_PROC=str(self.proc))
 
     def run_tool(self, *args, **env):
         return subprocess.run([sys.executable, str(self.tool), "--cwd", str(self.cwd), "--wait", "0", *args],
@@ -139,6 +151,17 @@ class DriverStart(unittest.TestCase):
         self.assertIn("claude auth login", r.stderr)
         self.assertEqual(self.calls(), ["auth status"])
         self.assertEqual(self.logged(), [])
+
+    def test_under_the_memory_floor_is_refused_with_the_numbers(self):
+        (self.proc / "meminfo").write_text(MEMINFO % (round(1.4 * GIB), round(0.2 * GIB)))
+        for args in ((PARENT,), ("--relay", PARENT)):
+            r = self.run_tool(*args, STUB_HOLDER="aaaaaaaa", CLAUDE_CODE_SESSION_ID="aaaaaaaa-1")
+            self.assertEqual(r.returncode, 1)
+            self.assertEqual(r.stderr, "driver-start: 1.4 GB available + 0.2 GB swap, "
+                                       "under the 3.0 GB floor; not starting\n")
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(self.logged(), [])
+        self.assertEqual(self.moves(), [])
 
     def test_a_missing_link_is_said_not_failed(self):
         r = self.run_tool(PARENT, STUB_NO_LINK="1")

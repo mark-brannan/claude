@@ -4,7 +4,9 @@
 # go quiet and nothing says why.
 #
 # Rows: the live ~/.claude clone's branch and sha against origin/main, its
-# dirty files, the hooks that traced a swallowed error in the last day, on WSL
+# dirty files, the hooks that traced a swallowed error in the last day, the
+# memory free (RAM plus swap) and its pressure, warn under the start floor
+# (lib/memfloor.py), on WSL
 # the interop headroom (leaked Relay processes, fragmented memory), the
 # state repo's files untracked for over a day, this
 # session's hook records by event and the last one, the metrics cache's last
@@ -36,6 +38,7 @@ try:
     import gitrun  # noqa: E402
     import hooktrace  # noqa: E402
     import jsonl  # noqa: E402
+    import memfloor  # noqa: E402
     import state  # noqa: E402
     import when as when_  # noqa: E402
 except ImportError:
@@ -312,7 +315,7 @@ def main(argv):
     args = ap.parse_args(argv)
 
     rows = [("live ~/.claude", *live_row(not args.offline)), ("dirty files", *dirty_row()),
-            ("hook errors", *hook_errors_row(state_dir()))]
+            ("hook errors", *hook_errors_row(state_dir())), ("memory", *memfloor.row())]
     wsl = wsl_inputs()
     if wsl:
         rows.append(("wsl interop", *wsl_row(*wsl)))

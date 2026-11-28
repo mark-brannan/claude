@@ -20,6 +20,9 @@
 # A PR whose head is in a fork is refused. gh runs in <repo>, so it reads
 # that repo's issues and PRs.
 # --issue alone only prints the issue: no fetch, no checkout.
+# A checkout is refused (exit 1), with the numbers and before the fetch, when
+#   available RAM plus free swap is under config.json's memory.floor_gb
+#   (lib/memfloor.py); --issue alone is a read and is never refused.
 # With --worktree, a repo in SETUP below gets its opening chores after the
 #   checkout (links to the main checkout's installs, shared excludes). The
 #   table lives here, never in the target repo, so what runs is what was
@@ -39,6 +42,24 @@ import sys
 from pathlib import Path
 
 sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import memfloor  # noqa: E402
+except ImportError:
+    memfloor = None
+
+
+def require_memory():
+    """Exit 1 when available RAM plus free swap is under config.json's
+    memory.floor_gb (lib/memfloor.py): refused, never queued."""
+    if memfloor is None:
+        sys.stderr.write("worker-start: lib/memfloor.py not found; memory not checked\n")
+        return
+    why = memfloor.refusal()
+    if why:
+        sys.stderr.write("worker-start: %s\n" % why)
+        sys.exit(1)
 
 
 def run(cmd, capture=False, cwd=None):
@@ -159,6 +180,7 @@ def main(argv):
         a.worktree = os.path.abspath(a.worktree)
     git = ["git", "-C", a.repo]
     if checkout:
+        require_memory()
         run(git + ["fetch", "-q", "origin"])
     if a.pr is not None:
         out = run(["gh", "pr", "view", str(a.pr), "--json", "headRefName,isCrossRepository",

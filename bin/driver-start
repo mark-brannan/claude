@@ -23,6 +23,8 @@
 # Refused (exit 1) too when `claude auth status` says the CLI is logged out:
 # a background session has only the CLI's own login, and would start, stop at
 # its first turn and still be reported as running.
+# Refused (exit 1), with the numbers, when available RAM plus free swap is
+# under config.json's memory.floor_gb (lib/memfloor.py); a relay too.
 #
 # --relay is the one way past that refusal: a driver at about 100k context
 # hands the batch to a successor. It is allowed only from the session that
@@ -49,6 +51,12 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"),
+                os.path.expanduser("~/.claude/lib")]  # lib/libpath.py
+try:
+    import memfloor  # noqa: E402
+except ImportError:
+    memfloor = None
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 WORK_ITEM = os.path.join(HERE, "work-item")
@@ -161,6 +169,18 @@ def reclaim(item, relay):
                              % (os.path.basename(sys.argv[0]), item, r.stderr.strip(), item))
 
 
+def require_memory():
+    """Die when available RAM plus free swap is under config.json's
+    memory.floor_gb (lib/memfloor.py): refused, never queued."""
+    if memfloor is None:
+        sys.stderr.write("%s: lib/memfloor.py not found; memory not checked\n"
+                         % os.path.basename(sys.argv[0]))
+        return
+    why = memfloor.refusal()
+    if why:
+        die(why)
+
+
 def check_relay(item):
     """Die unless the caller holds <item>: the claim, as the session hook
     reads it, decides who is the driver. Returns the caller's short id."""
@@ -231,6 +251,7 @@ def main():
     ap.add_argument("--relay", action="store_true")
     a = ap.parse_args()
     check_args(a, a.parent)
+    require_memory()
     text, facts = parent_facts(a.parent)
     # The batch's name rides on the log, so a successor keeps it.
     kept = re.findall(r"\bdriver_about=(\S+)", text)
