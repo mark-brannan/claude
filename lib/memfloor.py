@@ -8,7 +8,8 @@ a directory laid out like /proc (meminfo, pressure/memory), for tests and
 fixtures; it defaults to /proc.
 
 What cannot be read refuses nothing: no /proc/meminfo (not Linux), or no
-floor in config.json, and refusal() is None. Stdlib only.
+floor in config.json, and refusal() is None; no /proc/meminfo, and row()
+is None. Stdlib only.
 """
 import os
 import re
@@ -72,10 +73,11 @@ def refusal():
 
 
 def row(proc=None, floor=None):
-    """self-check's memory row: (status, value)."""
+    """self-check's memory row: (status, value), or None when /proc/meminfo
+    is unreadable (not Linux), so the row is left out rather than warned."""
     info = meminfo(proc)
     if info is None:
-        return ("warn", "%s/meminfo unreadable" % (proc or proc_dir()))
+        return None
     free = info["MemAvailable"] + info.get("SwapFree", 0)
     total = info.get("MemTotal", 0) + info.get("SwapTotal", 0)
     p = pressure_avg10(proc)

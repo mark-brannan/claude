@@ -6,7 +6,7 @@
 # Rows: the live ~/.claude clone's branch and sha against origin/main, its
 # dirty files, the hooks that traced a swallowed error in the last day, the
 # memory free (RAM plus swap) and its pressure, warn under the start floor
-# (lib/memfloor.py), on WSL
+# (lib/memfloor.py) where /proc/meminfo reads, on WSL
 # the interop headroom (leaked Relay processes, fragmented memory), the
 # state repo's files untracked for over a day, this
 # session's hook records by event and the last one, the metrics cache's last
@@ -315,7 +315,10 @@ def main(argv):
     args = ap.parse_args(argv)
 
     rows = [("live ~/.claude", *live_row(not args.offline)), ("dirty files", *dirty_row()),
-            ("hook errors", *hook_errors_row(state_dir())), ("memory", *memfloor.row())]
+            ("hook errors", *hook_errors_row(state_dir()))]
+    mem = memfloor.row()
+    if mem:
+        rows.append(("memory", *mem))
     wsl = wsl_inputs()
     if wsl:
         rows.append(("wsl interop", *wsl_row(*wsl)))
